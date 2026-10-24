@@ -44,8 +44,11 @@ function configure(token) {
   if (!app.isPackaged) return false;
   const u = load();
   const { owner, repo } = publishTarget();
-  const opts = { provider: "github", owner, repo };
-  if (token) Object.assign(opts, { private: true, token });
+  // Öffentlich: direkt latest.yml über GitHubs Weiterleitung auf das neueste Release laden. Der GitHub-Provider
+  // braucht dafür zusätzlich releases.atom, das bei manchen Nutzern mit 404 scheitert.
+  const opts = token
+    ? { provider: "github", owner, repo, private: true, token }
+    : { provider: "generic", url: `https://github.com/${owner}/${repo}/releases/latest/download` };
   u.setFeedURL(opts);
   configured = true;
   return true;
@@ -63,8 +66,8 @@ async function check(isManual = false) {
   } catch (e) {
     const msg = String(e && e.message || e);
     if (/\b401\b|Bad credentials/i.test(msg)) return { message: "Zugriff verweigert – Token prüfen (Berechtigung »Contents: Read-only« für das Repository)." };
-    // 404 auf die Release-Liste: GitHub antwortet so, wenn das Repository privat ist
-    if (/^404\b/.test(msg)) return { message: "Update-Quelle nicht erreichbar (404). Ist das Repository auf GitHub privat? Dann öffentlich machen oder oben einen Token eintragen." };
+    // 404 auf latest.yml: Repository privat oder neuestes Release ohne latest.yml
+    if (/\b404\b/.test(msg)) return { message: "Update-Datei nicht gefunden (404). Ist das Repository auf GitHub privat oder fehlt latest.yml im neuesten Release? " + msg.split("\n")[0] };
     // sonst die Originalmeldung anzeigen, damit die Ursache erkennbar bleibt
     return { message: "Prüfung fehlgeschlagen: " + msg.split("\n")[0] };
   }
