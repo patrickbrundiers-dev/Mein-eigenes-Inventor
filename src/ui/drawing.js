@@ -6,6 +6,8 @@ import { uid } from "../core/examples.js";
 import { scaleLabel } from "./tree.js";
 import { v3 } from "../core/geom.js";
 import { hatchLines } from "../core/hatch.js";
+import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
+import { bomRows } from "./props.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
 export const CAMS = {
@@ -269,6 +271,10 @@ export class DrawingEditor {
       const g = this.renderDim(d, this.pendingDim.m, false);
       if (g) { g.setAttribute("opacity", "0.55"); svg.append(g); }
     }
+    const rows = this.bomRowsOf(d);
+    const posOf = new Map(rows.map((r) => [r.part.id, r.pos]));
+    for (const b of d.balloons || []) { const g = this.renderBalloon(d, b, posOf, interactive); if (g) svg.append(g); }
+    if (d.bomTable?.show && rows.length) svg.append(this.bomTableSvg(rows, W, H));
     for (const n of d.notes || []) {
       const t = svgEl("text", { x: n.x, y: n.y, "font-size": n.size || 3.5, fill: "#111a24", class: interactive ? "dw-dimgrp" + (this.sel?.id === n.id ? " sel" : "") : undefined, "data-note": n.id });
       t.textContent = n.text;
@@ -404,6 +410,80 @@ export class DrawingEditor {
     g.append(text(mx + nrm[0] * 1.2, my + nrm[1] * 1.2, rot));
     return g;
   }
+  // ---------- Positionsnummern und Stückliste (nur Baugruppen) ----------
+  bomRowsOf(d = this.doc) {
+    const src = d?.source && this.app.doc(d.source.id);
+    return src?.kind === "assembly" ? bomRows(this.app, src) : [];
+  }
+  /** Ein Kreis je Stücklisten-Position in der gewählten Ansicht (sonst Isometrie), rund um die Ansicht verteilt */
+  autoBalloons() {
+    const d = this.doc;
+    const src = d?.source && this.app.doc(d.source.id);
+    if (src?.kind !== "assembly") return toast("Positionsnummern gibt es nur in Zeichnungen von Baugruppen");
+    const v = (this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "iso") || d.views[0];
+    if (!v || !this.proj.get(v.id)) return toast("Zuerst Ansichten erzeugen");
+    const anchors = balloonAnchors(src, (pid) => this.app.results.get(pid));
+    if (!anchors.length) return toast("Die Bauteile sind noch nicht berechnet – bitte kurz warten");
+    const cam = this.viewCam(d, v);
+    const xf = this.viewXf(v);
+    const at = anchors.map((a) => ({ key: a.part, at: xf.to(...projectPoint(a.p3, cam.dir, cam.up)) }));
+    const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
+    const pos = placeBalloons(at, { x0, y0, x1, y1 });
+    const [W, H] = this.sheetSize(d);
+    for (const [k, [x, y]] of pos) pos.set(k, [Math.min(W - 15, Math.max(25, x)), Math.min(H - 15, Math.max(15, y))]); // im Zeichnungsrahmen halten
+    this.app.edit("Positionsnummern", () => {
+      d.balloons = anchors.map((a) => ({ id: uid("b"), view: v.id, part: a.part, p3: a.p3, at: pos.get(a.part) }));
+      d.bomTable = { show: true };
+    }, { rebuild: false });
+    this.render();
+  }
+  toggleBomTable() {
+    const d = this.doc;
+    if (!this.bomRowsOf(d).length) return toast("Stückliste gibt es nur in Zeichnungen von Baugruppen");
+    this.app.edit("Stückliste", () => { d.bomTable = { show: !d.bomTable?.show }; }, { rebuild: false });
+    this.render();
+  }
+  renderBalloon(d, b, posOf, interactive) {
+    const v = d.views.find((x) => x.id === b.view);
+    const n = posOf.get(b.part);
+    if (!v || !this.proj.get(v.id) || n === undefined) return null;
+    const cam = this.viewCam(d, v);
+    const [ax, ay] = this.viewXf(v).to(...projectPoint(b.p3, cam.dir, cam.up));
+    const [bx, by] = b.at, r = 4;
+    const len = Math.hypot(bx - ax, by - ay) || 1;
+    const g = svgEl("g", { "data-balloon": b.id, class: interactive ? "dw-dimgrp" + (this.sel?.id === b.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    if (len > r) g.append(svgEl("line", { x1: r3(ax), y1: r3(ay), x2: r3(bx - ((bx - ax) * r) / len), y2: r3(by - ((by - ay) * r) / len) }));
+    g.append(svgEl("circle", { cx: r3(ax), cy: r3(ay), r: 0.6, fill: "#111a24" }));
+    g.append(svgEl("circle", { cx: r3(bx), cy: r3(by), r, fill: "#fff", "stroke-width": LW.hid }));
+    const t = svgEl("text", { x: r3(bx), y: r3(by + 1.75), "text-anchor": "middle", "font-size": 5, fill: "#111a24", stroke: "none" });
+    t.textContent = String(n);
+    g.append(t);
+    return g;
+  }
+  /** Stückliste über dem Schriftfeld (DIN-Art: Kopf unten, Pos. 1 direkt darüber) */
+  bomTableSvg(rows, W, H) {
+    const cols = [["Pos", 12], ["Benennung", 64], ["Sachnummer", 34], ["Menge", 14], ["Werkstoff", 36], ["Masse kg", 20]];
+    const rh = 6, x0 = W - 10 - 180, yb = H - 10 - 46;
+    const g = svgEl("g", { "data-bom": "1", fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    const top = yb - rh * (rows.length + 1);
+    g.append(svgEl("rect", { x: x0, y: r3(top), width: 180, height: r3(rh * (rows.length + 1)), "stroke-width": LW.frame }));
+    for (let i = 1; i <= rows.length; i++) g.append(svgEl("line", { x1: x0, y1: r3(yb - rh * i), x2: x0 + 180, y2: r3(yb - rh * i), "stroke-width": i === 1 ? LW.vis : LW.thin }));
+    let x = x0;
+    for (const [, w] of cols.slice(0, -1)) { x += w; g.append(svgEl("line", { x1: x, y1: r3(top), x2: x, y2: yb })); }
+    const cell = (ci, y, s, size = 2.5) => {
+      const cx = x0 + cols.slice(0, ci).reduce((a, c) => a + c[1], 0);
+      const max = Math.floor(cols[ci][1] / (size * 0.55));
+      const e = svgEl("text", { x: r3(cx + 1.2), y: r3(y - 1.8), "font-size": size, fill: "#111a24", stroke: "none" });
+      e.textContent = String(s ?? "").length > max ? String(s).slice(0, max - 1) + "…" : String(s ?? "");
+      g.append(e);
+    };
+    cols.forEach(([t], i) => cell(i, yb, t, 2.2));
+    rows.forEach((r, k) => {
+      const y = yb - rh * (k + 1);
+      [r.pos, r.name, r.number, r.qty, r.material, Number.isFinite(r.mass) ? fmtNum(r.mass, 2) : ""].forEach((s, i) => cell(i, y, s));
+    });
+    return g;
+  }
   titleBlock(d, W, H) {
     const t = d.title || {};
     const x0 = W - 10 - 180, y0 = H - 10 - 46;
@@ -531,8 +611,10 @@ export class DrawingEditor {
       if (this.tool === "text") return this.textClick(sx, sy);
       const dimEl = e.target.closest("[data-dim]");
       const noteEl = e.target.closest("[data-note]");
+      const balloonEl = e.target.closest("[data-balloon]");
       const viewEl = e.target.closest("[data-view]");
-      if (dimEl) { this.select({ type: "dim", id: dimEl.getAttribute("data-dim") }); drag = { kind: "dim", id: this.sel.id, start: [sx, sy], moved: false }; }
+      if (balloonEl) { this.select({ type: "balloon", id: balloonEl.getAttribute("data-balloon") }); drag = { kind: "balloon", id: this.sel.id, start: [sx, sy], moved: false }; }
+      else if (dimEl) { this.select({ type: "dim", id: dimEl.getAttribute("data-dim") }); drag = { kind: "dim", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (noteEl) { this.select({ type: "note", id: noteEl.getAttribute("data-note") }); drag = { kind: "note", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (viewEl) {
         const id = viewEl.getAttribute("data-view");
@@ -573,6 +655,10 @@ export class DrawingEditor {
           const xf = this.viewXf(v);
           if (m.kind === "dia" || m.kind === "rad") { const [cx, cy] = xf.to(m.circle.cx, m.circle.cy); m.angle = Math.atan2(sy - cy, sx - cx); }
           else m.off = this.offsetFor(m, xf, sx, sy);
+        } else if (drag.kind === "balloon") {
+          const b = d.balloons.find((x) => x.id === drag.id);
+          if (!drag.o) drag.o = [...b.at];
+          b.at = [drag.o[0] + dx, drag.o[1] + dy];
         } else if (drag.kind === "note") {
           const n = d.notes.find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [n.x, n.y];
@@ -727,6 +813,7 @@ export class DrawingEditor {
       const d = this.doc;
       if (this.sel.type === "view") this.deleteView(this.sel.id);
       else if (this.sel.type === "dim") { this.app.edit("Maß löschen", () => { d.dims = d.dims.filter((m) => m.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
+      else if (this.sel.type === "balloon") { this.app.edit("Positionsnummer löschen", () => { d.balloons = d.balloons.filter((b) => b.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "note") { this.app.edit("Text löschen", () => { d.notes = d.notes.filter((m) => m.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       return true;
     }
@@ -891,6 +978,17 @@ export class DrawingEditor {
     for (const el of tb.querySelectorAll("rect")) { const x = +el.getAttribute("x"), y = +el.getAttribute("y"), ww = +el.getAttribute("width"), hh = +el.getAttribute("height"); w.polyline([[x, Y(y)], [x + ww, Y(y)], [x + ww, Y(y + hh)], [x, Y(y + hh)]], "RAHMEN", true); }
     for (const el of tb.querySelectorAll("text")) if (el.textContent) w.text(+el.getAttribute("x"), Y(+el.getAttribute("y")), +el.getAttribute("font-size"), el.textContent, "TEXT");
     for (const n of d.notes || []) w.text(n.x, Y(n.y), n.size || 3.5, n.text, "TEXT");
+    // Positionsnummern und Stückliste
+    const rows = this.bomRowsOf(d);
+    const posOf = new Map(rows.map((r) => [r.part.id, r.pos]));
+    const groups = (d.balloons || []).map((b) => this.renderBalloon(d, b, posOf, false)).filter(Boolean);
+    if (d.bomTable?.show && rows.length) groups.push(this.bomTableSvg(rows, Wd, H));
+    for (const g of groups) {
+      for (const el of g.querySelectorAll("line")) w.line(+el.getAttribute("x1"), Y(+el.getAttribute("y1")), +el.getAttribute("x2"), Y(+el.getAttribute("y2")), "MASSE");
+      for (const el of g.querySelectorAll("circle")) w.circle(+el.getAttribute("cx"), Y(+el.getAttribute("cy")), +el.getAttribute("r"), "MASSE");
+      for (const el of g.querySelectorAll("rect")) { const x = +el.getAttribute("x"), y = +el.getAttribute("y"), ww = +el.getAttribute("width"), hh = +el.getAttribute("height"); w.polyline([[x, Y(y)], [x + ww, Y(y)], [x + ww, Y(y + hh)], [x, Y(y + hh)]], "RAHMEN", true); }
+      for (const el of g.querySelectorAll("text")) if (el.textContent) w.text(+el.getAttribute("x"), Y(+el.getAttribute("y")), +el.getAttribute("font-size"), el.textContent, "TEXT", { align: el.getAttribute("text-anchor") === "middle" ? "center" : "left" });
+    }
     await this.app.files.saveText(w.toString(), this.fileBase() + ".dxf", "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
   }
 }
