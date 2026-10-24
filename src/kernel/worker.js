@@ -87,7 +87,9 @@ const handlers = {
       const list = it.kind === "face" ? body.shape.faces : body.shape.edges;
       const sub = list[it.idx];
       if (!sub) throw new Error("Element nicht gefunden – Modell neu berechnen");
-      entries.push({ shape: K.placed(sub, it.pos || [0, 0, 0], it.rot || [0, 0, 0]), kind: it.kind });
+      const shape = K.placed(sub, it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
+      // Ecke: Anfang oder Ende der Kante (it.end), als Punkt-Form für den Abstand
+      entries.push(it.kind === "vertex" ? { ...K.vertexOf(shape, it.end), kind: "vertex" } : { shape, kind: it.kind });
     }
     return K.measure(entries);
   },

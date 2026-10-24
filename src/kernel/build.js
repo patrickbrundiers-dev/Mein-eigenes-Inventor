@@ -1057,8 +1057,14 @@ export function createKernel(R) {
    * → {items: [{kind, type, area|length, radius?, center?, normal?, dir?, start?, end?}], distance?, angle?}
    * Kein Messwert wird aus dem Anzeigenetz geschätzt.
    */
+  /** Anfangs- (end=0) oder Endpunkt (end=1) einer Kante als Vertex */
+  function vertexOf(edge, end) {
+    const point = tuple(end ? edge.endPoint : edge.startPoint);
+    return { shape: R.makeVertex(point), point };
+  }
   function measure(entries) {
-    const items = entries.map(({ shape: s, kind }) => {
+    const items = entries.map(({ shape: s, kind, point }) => {
+      if (kind === "vertex") return { kind, type: "POINT", point };
       if (kind === "face") {
         const type = s.geomType === "CYLINDRE" ? "CYLINDER" : s.geomType;
         const sp = R.measureShapeSurfaceProperties(s);
@@ -1086,6 +1092,7 @@ export function createKernel(R) {
     if (entries.length === 2) {
       out.distance = R.measureDistanceBetween(entries[0].shape, entries[1].shape);
       const [a, b] = items;
+      if (a.point && b.point) out.delta = b.point.map((v, k) => v - a.point[k]);
       const va = a.normal || a.dir || null, vb = b.normal || b.dir || null;
       if (va && vb) {
         const dot = Math.abs(va[0] * vb[0] + va[1] * vb[1] + va[2] * vb[2]);
@@ -1261,7 +1268,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { buildPart, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

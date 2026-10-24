@@ -659,11 +659,33 @@ try {
     await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 2 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
     await shot("24-messen");
     const two = await evalApp(() => ({ r: window.__werkcad.measure.result, text: document.querySelector("#props").textContent }));
+    // Ecken: beide Enden einer geraden oberen Kante anklicken → Abstand = Kantenlänge
+    const ends = await evalApp(() => {
+      const v = window.__werkcad.viewer;
+      const r = v.container.getBoundingClientRect();
+      let best = null;
+      for (const pk of v.pickables) for (const e of pk.lines.userData.edges) {
+        if (e.type !== "LINE") continue;
+        const P = e.positions, a = [P[0], P[1], P[2]], b = [P[P.length - 3], P[P.length - 2], P[P.length - 1]];
+        const L = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+        if (a[2] > 11 && b[2] > 11 && (!best || L > best.L)) best = { a, b, L };
+      }
+      const s = (p) => { const [x, y] = v.worldToScreen(p); return [r.left + x, r.top + y]; };
+      return { a: s(best.a), b: s(best.b), L: best.L };
+    });
+    await page.mouse.click(ends.a[0], ends.a[1]);
+    await page.waitForTimeout(150);
+    await page.mouse.click(ends.a[0], ends.a[1]);
+    await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 1 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
+    await page.mouse.click(ends.b[0], ends.b[1]);
+    await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 2 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
+    const vx = await evalApp(() => { const r = window.__werkcad.measure.result; return { types: r.items.map((i) => i.type), d: r.distance, delta: r.delta, text: document.querySelector("#props").textContent }; });
     await page.keyboard.press("Escape");
     const off = await evalApp(() => !window.__werkcad.pick && !window.__werkcad.measure);
     const it = two.r.items[1];
-    step("Messen", one.type === "PLANE" && one.area > 1000 && it.type === "CIRCLE" && Math.abs(it.radius * 2 - 11) < 0.6 && Math.abs(two.r.distance) < 1e-6 && /Durchmesser/.test(two.text) && off,
-      JSON.stringify({ one: { type: one.type, area: one.area }, two: { type: it.type, r: it.radius, d: two.r.distance }, off }));
+    step("Messen", one.type === "PLANE" && one.area > 1000 && it.type === "CIRCLE" && Math.abs(it.radius * 2 - 11) < 0.6 && Math.abs(two.r.distance) < 1e-6 && /Durchmesser/.test(two.text) && off
+      && vx.types.join() === "POINT,POINT" && Math.abs(vx.d - ends.L) < 0.05 && /Δ X\/Y\/Z/.test(vx.text),
+      JSON.stringify({ one: { type: one.type, area: one.area }, two: { type: it.type, r: it.radius, d: two.r.distance }, off, vx: { types: vx.types, d: vx.d, L: ends.L } }));
   }
 
   // Auswahlfilter und Körper ausblenden/isolieren (Rahmen hat mehrere Körper)

@@ -569,6 +569,14 @@ test("Messen: exakte Werte für Flächen, Kanten, Abstand, Winkel, Schwerpunkt",
   // platziert (Baugruppe): Abstand verschiebt sich mit
   const moved = K.placed(faces[top], [0, 0, 5], [0, 0, 0]);
   near(K.measure([{ shape: moved, kind: "face" }, { shape: faces[bottom], kind: "face" }]).distance, 25, 1e-6, "platziert");
+  // Ecken: Endpunkte der langen Kante, Abstand Ecke–Ecke = 100 mit Δ, Ecke–Deckfläche
+  const va = K.vertexOf(edges[long], 0), vb = K.vertexOf(edges[long], 1);
+  const r7 = K.measure([{ ...va, kind: "vertex" }, { ...vb, kind: "vertex" }]);
+  assert.equal(r7.items[0].type, "POINT");
+  near(r7.distance, 100, 1e-9, "Ecke–Ecke");
+  near(Math.hypot(...r7.delta), 100, 1e-9, "Δ");
+  const r8 = K.measure([{ ...va, kind: "vertex" }, { shape: faces[top], kind: "face" }]);
+  near(r8.distance, Math.abs(va.point[2] - 20) < 1e-9 ? 0 : 20, 1e-9, "Ecke–Deckfläche");
 });
 
 test("Konturen am Rohr (Rohr-Editor): Bohrung, Langloch, Ausklinkung, Seite und Muster", async () => {

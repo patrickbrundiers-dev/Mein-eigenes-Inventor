@@ -229,8 +229,8 @@ export class Props {
     const dec = app.prefs.get("allgemein.dezimalstellen");
     const L = (v) => fmtNum(v, dec) + " mm";
     const P = (p) => p.map((v) => fmtNum(v, dec)).join(" / ");
-    const T = { PLANE: "Ebene Fläche", CYLINDER: "Zylinderfläche", CONE: "Kegelfläche", SPHERE: "Kugelfläche", TORUS: "Torusfläche", BSPLINE: "Freiformfläche", LINE: "Gerade Kante", CIRCLE: "Kreiskante", ELLIPSE: "Ellipsenkante", BSPLINE_CURVE: "Freiformkante" };
-    const out = [h("p", { class: "hint" }, "Eine oder zwei Flächen/Kanten anklicken. Ein dritter Klick beginnt neu. Esc beendet.")];
+    const T = { PLANE: "Ebene Fläche", CYLINDER: "Zylinderfläche", CONE: "Kegelfläche", SPHERE: "Kugelfläche", TORUS: "Torusfläche", BSPLINE: "Freiformfläche", POINT: "Ecke", LINE: "Gerade Kante", CIRCLE: "Kreiskante", ELLIPSE: "Ellipsenkante", BSPLINE_CURVE: "Freiformkante" };
+    const out = [h("p", { class: "hint" }, "Eine oder zwei Flächen, Kanten oder Ecken anklicken (Ecke: nahe am Kantenende). Ein dritter Klick beginnt neu. Esc beendet.")];
     if (m.busy) out.push(h("p", { class: "hint" }, "Messe …"));
     if (m.error) out.push(h("div", { class: "msg err" }, m.error));
     const r = m.result;
@@ -242,12 +242,14 @@ export class Props {
         if (it.radius !== undefined) rows.push(h("dt", {}, "Radius"), h("dd", {}, L(it.radius)), h("dt", {}, "Durchmesser"), h("dd", {}, "Ø " + L(2 * it.radius)));
         if (it.center && it.kind === "edge") rows.push(h("dt", {}, "Mittelpunkt"), h("dd", {}, P(it.center)));
         if (it.kind === "edge" && it.type === "LINE") rows.push(h("dt", {}, "Start"), h("dd", {}, P(it.start)), h("dt", {}, "Ende"), h("dd", {}, P(it.end)));
+        if (it.point) rows.push(h("dt", {}, "Lage X/Y/Z"), h("dd", {}, P(it.point)));
         if (it.normal) rows.push(h("dt", {}, "Normale"), h("dd", {}, it.normal.map((v) => fmtNum(v, 3)).join(" / ")));
         out.push(this.section(`Element ${i + 1}`, h("dl", { class: "kv" }, ...rows)));
       });
       if (r.items.length === 2) {
         const rows = [h("dt", {}, "Kürzester Abstand"), h("dd", {}, L(r.distance))];
         if (r.angle !== undefined) rows.push(h("dt", {}, "Winkel"), h("dd", {}, fmtNum(r.angle, dec) + "°"));
+        if (r.delta) rows.push(h("dt", {}, "Δ X/Y/Z"), h("dd", {}, P(r.delta)));
         const cc = centerDistance(r.items);
         if (cc !== null) rows.push(h("dt", {}, "Mittenabstand"), h("dd", {}, L(cc)));
         out.push(this.section("Zwischen beiden", h("dl", { class: "kv" }, ...rows)));
