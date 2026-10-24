@@ -325,4 +325,6 @@ table.grid input.inp { padding: 2px 4px; }
 #status .status-btn { border: 1px solid var(--steel-3); background: #fff; border-radius: var(--radius-s); padding: 0 6px; cursor: pointer; font-size: 11.5px; color: var(--ink); }
 .sk-dim.err { stroke: var(--err); }
 .sk-dim-text.err { fill: var(--err); }
+.sk-dim.off, .sk-dim-text.off { opacity: 0.45; stroke-dasharray: 3 2; }
+.sk-glyph.off { opacity: 0.4; }
 .sk-glyph.err rect { stroke: var(--err); fill: var(--err-soft); stroke-width: 1.5; }

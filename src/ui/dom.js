@@ -94,6 +94,7 @@ const P = {
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
   slot: '<path d="M8 7h8a5 5 0 010 10H8A5 5 0 018 7z"/><circle cx="8" cy="12" r="1"/><circle cx="16" cy="12" r="1"/>',
   polygon: '<path d="M12 3l8 4.6v8.8L12 21l-8-4.6V7.6z"/>',
+  offset: '<path d="M5 19V9a4 4 0 014-4h10"/><path d="M9 19v-8a2 2 0 012-2h8" stroke-dasharray="2 2"/>',
   search: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
   fit: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
   origin: '<path d="M12 12h9M12 12V3M12 12l-7 7"/><circle cx="12" cy="12" r="1.5"/>',

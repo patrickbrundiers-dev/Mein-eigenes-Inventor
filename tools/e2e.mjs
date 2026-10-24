@@ -687,6 +687,59 @@ try {
       JSON.stringify({ sk1, conflict }));
   }
 
+  // Skizze: Rechteck versetzen (Kontur anklicken, Seite, Abstand), Maß ändern, Bedingung unterdrücken
+  {
+    await evalApp(() => window.__werkcad.newPart("Versatz"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const vb = await page.locator("#viewer canvas").boundingBox();
+    const mx = vb.x + vb.width / 2, my = vb.y + vb.height / 2;
+    await evalApp(() => window.__werkcad.sketcher.setTool("rect"));
+    await page.mouse.click(mx - 120, my - 60);
+    await page.mouse.click(mx + 120, my + 60);
+    await page.waitForTimeout(200);
+    await evalApp(() => window.__werkcad.sketcher.setTool("offset"));
+    const edge = await evalApp(() => {
+      const s = window.__werkcad.sketcher, P = new Map(s.sk.points.map((p) => [p.id, p]));
+      const l = s.sk.entities.find((e) => e.type === "line" && !e.construction);
+      const a = P.get(l.p1), b = P.get(l.p2), r = s.canvas.getBoundingClientRect();
+      const [x, y] = s.S((a.x + b.x) / 2, (a.y + b.y) / 2);
+      return { x: r.left + x, y: r.top + y };
+    });
+    await page.mouse.click(edge.x, edge.y);
+    const selN = await evalApp(() => window.__werkcad.sketcher.sel.size);
+    await page.mouse.click(mx - 220, my - 140);
+    await page.locator(".dim-input input").fill("10");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    await shot("26-versatz");
+    const off = await evalApp(() => {
+      const a = window.__werkcad, s = a.sketcher, r = s.solve();
+      const offs = s.sk.constraints.filter((c) => c.type === "offset");
+      const lines = s.sk.entities.filter((e) => e.type === "line" && !e.construction);
+            const master = offs.find((c) => !c.hidden);
+      s.commit("Maß ändern", (sk) => { sk.constraints.find((c) => c.id === master.id).value = "4"; });
+      const P = new Map(s.sk.points.map((p) => [p.id, p])), E = (id) => s.sk.entities.find((e) => e.id === id);
+      const dist = (c) => { const l = E(c.e1), q = P.get(E(c.e2).p1), A = P.get(l.p1), B = P.get(l.p2); return Math.abs((B.x - A.x) * (q.y - A.y) - (B.y - A.y) * (q.x - A.x)) / Math.hypot(B.x - A.x, B.y - A.y); };
+      const d1 = offs.map(dist);
+      const visible = document.querySelectorAll("#overlay .sk-dim-text").length;
+      return { ok: r.ok, lines: lines.length, offs: offs.length, shown: offs.filter((c) => !c.hidden).length, d1, visible, master: master.id };
+    });
+    // Bedingung unterdrücken über die Eigenschaften
+    const dof0 = await evalApp(() => window.__werkcad.sketcher.solve().dof);
+    await evalApp((id) => { const a = window.__werkcad; a.sketcher.sel.clear(); a.sketcher.sel.add("c:" + id); a.selectSketchItems(["c:" + id]); }, off.master);
+    await page.locator("#props label", { hasText: "Unterdrückt" }).click();
+    await page.waitForTimeout(200);
+    const sup = await evalApp((id) => { const s = window.__werkcad.sketcher; return { disabled: !!s.sk.constraints.find((c) => c.id === id).disabled, dof: s.solve().dof, dimmed: document.querySelectorAll("#overlay .sk-dim-text.off").length }; }, off.master);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    step("Skizze: Versatz und Bedingung unterdrücken", selN === 4 && off.ok && off.lines === 8 && off.offs === 4 && off.shown === 1 && off.d1.every((d) => Math.abs(d - 4) < 1e-6) && sup.disabled && sup.dof > dof0 && sup.dimmed === 1,
+      JSON.stringify({ selN, off, dof0, sup }));
+  }
+
   // Plan 5.5: große Baugruppe (150 Komponenten) öffnen und bedienen
   {
     const t0 = Date.now();

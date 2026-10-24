@@ -6,7 +6,7 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, v3 } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt } from "../core/sketchedit.js";
-import { buildSlot, buildPolygon, mirrorEntities } from "../core/sketchshapes.js";
+import { buildSlot, buildPolygon, mirrorEntities, offsetEntities } from "../core/sketchshapes.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
 const PT_R = 7, CURVE_R = 6;
@@ -22,6 +22,7 @@ export const SKETCH_TOOLS = {
   point: "Punkt / Bohrungsmitte setzen",
   slot: "Langloch: erster Mittelpunkt, zweiter Mittelpunkt, dann Breite klicken",
   polygon: "Polygon: Mittelpunkt, dann eine Ecke klicken – danach Anzahl der Ecken eingeben",
+  offset: "Versatz: Kontur anklicken (oder vorher Elemente wählen), dann die Seite klicken und den Abstand eingeben",
   mirror: "Spiegeln: vorher Elemente wählen (Auswählen, Umschalt für mehrere), dann die Spiegellinie anklicken",
   dimension: "Bemaßung: Linie, Kreis, zwei Punkte oder zwei Linien wählen, dann Lage klicken",
   project: "Kante des 3D-Modells anklicken, um sie in die Skizze zu übernehmen",
@@ -742,6 +743,29 @@ export class Sketcher {
       this.render();
       return;
     }
+    if (t === "offset") {
+      const ids = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => k.slice(2));
+      if (!ids.length) {
+        const hit = this.hitTest(sx, sy, { points: false, dims: false });
+        if (hit?.kind !== "entity") return toast("Linie, Bogen oder Kreis der Kontur anklicken");
+        for (const id of this.connectedChain(hit.id)) this.sel.add("e:" + id);
+        this.app.selectSketchItems([...this.sel]);
+        toast("Jetzt die Seite anklicken, zu der versetzt wird");
+        this.render();
+        return;
+      }
+      const pick = { x: lx, y: ly };
+      this.askValue(sx, sy, this.lastOffset || "5", (val) => {
+        const d = evaluate(val, this.scope());
+        try { offsetEntities(JSON.parse(JSON.stringify(this.sk)), ids, d, pick, { uid, value: val }); } catch (err) { return toast(err.message, { kind: "err" }); }
+        this.lastOffset = val;
+        this.commit("Versatz", (sk) => offsetEntities(sk, ids, d, pick, { uid, value: val }));
+        this.sel.clear();
+        this.app.selectSketchItems([]);
+        this.render();
+      });
+      return;
+    }
     if (t === "mirror") {
       const hit = this.hitTest(sx, sy, { points: false, dims: false });
       const line = hit?.kind === "entity" && this.entity(hit.id)?.type === "line" ? hit.id : null;
@@ -823,6 +847,19 @@ export class Sketcher {
         break;
     }
     this.render();
+  }
+  /** zusammenhängende Linien/Bögen über gemeinsame Punkte (Kreis: nur er selbst) */
+  connectedChain(id) {
+    const start = this.entity(id);
+    if (!start || start.type === "circle" || start.type === "point") return start ? [id] : [];
+    const kind = !!start.construction;
+    const pool = this.sk.entities.filter((e) => (e.type === "line" || e.type === "arc") && !e.origin && !!e.construction === kind);
+    const out = new Set([id]), queue = [start];
+    while (queue.length) {
+      const e = queue.pop();
+      for (const o of pool) if (!out.has(o.id) && [o.p1, o.p2].some((p) => p === e.p1 || p === e.p2)) { out.add(o.id); queue.push(o); }
+    }
+    return [...out];
   }
   inferHV(a, b) {
     if (b.pointId) return b;
@@ -1097,7 +1134,7 @@ export class Sketcher {
   renderDim(g, c, P) {
     const sel = this.sel.has("c:" + c.id);
     const bad = this.lastSolve?.failed?.includes(c.id);
-    const cls = "sk-dim" + (c.driven ? " driven" : "") + (bad ? " err" : "");
+    const cls = "sk-dim" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (bad ? " err" : "");
     const grp = svgEl("g");
     const text = this.dimText(c);
     let tx, ty, rot = 0;
@@ -1144,6 +1181,31 @@ export class Sketcher {
       rot = (Math.atan2(ddy, ddx) * 180) / Math.PI;
       if (rot > 90) rot -= 180;
       if (rot < -90) rot += 180;
+    } else if (c.type === "offset") {
+      const e1 = this.entity(c.e1), e2 = this.entity(c.e2);
+      if (!e1 || !e2) return;
+      let p, f;
+      if (e1.type === "line") {
+        const a2 = P.get(e2.p1), b2 = P.get(e2.p2), a = P.get(e1.p1), b = P.get(e1.p2);
+        p = { x: (a2.x + b2.x) / 2, y: (a2.y + b2.y) / 2 };
+        const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1;
+        const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2;
+        f = { x: a.x + t * dx, y: a.y + t * dy };
+      } else {
+        const cc = P.get(e1.c);
+        const rad = (e) => (e.type === "circle" ? e.r : Math.hypot(P.get(e.p1).x - cc.x, P.get(e.p1).y - cc.y));
+        let ang = Math.PI / 4;
+        if (e2.type === "arc") { const a1 = P.get(e2.p1), a2 = P.get(e2.p2); let t1 = Math.atan2(a1.y - cc.y, a1.x - cc.x), sw = Math.atan2(a2.y - cc.y, a2.x - cc.x) - t1; while (sw <= 1e-12) sw += 2 * Math.PI; ang = t1 + sw / 2; }
+        p = { x: cc.x + rad(e2) * Math.cos(ang), y: cc.y + rad(e2) * Math.sin(ang) };
+        f = { x: cc.x + rad(e1) * Math.cos(ang), y: cc.y + rad(e1) * Math.sin(ang) };
+      }
+      const sp = this.S(p.x, p.y), sf = this.S(f.x, f.y);
+      const ddx = sf[0] - sp[0], ddy = sf[1] - sp[1];
+      grp.append(svgEl("path", { class: cls, d: `M${sp[0]},${sp[1]}L${sf[0]},${sf[1]}` + arrow(sf[0], sf[1], ddx, ddy) + arrow(sp[0], sp[1], -ddx, -ddy) }));
+      tx = (sp[0] + sf[0]) / 2; ty = (sp[1] + sf[1]) / 2;
+      rot = (Math.atan2(ddy, ddx) * 180) / Math.PI;
+      if (rot > 90) rot -= 180;
+      if (rot < -90) rot += 180;
     } else if (c.type === "radius" || c.type === "diameter") {
       const e = this.entity(c.e);
       if (!e) return;
@@ -1156,7 +1218,7 @@ export class Sketcher {
       const start = c.type === "diameter" ? this.S(cc.x - r * Math.cos(ang), cc.y - r * Math.sin(ang)) : sc;
       grp.append(svgEl("path", { class: cls, d: `M${start[0]},${start[1]}L${sx[0]},${sx[1]}` + arrow(so[0], so[1], so[0] - sc[0], so[1] - sc[1]) }));
       tx = sx[0] + (sx[0] >= sc[0] ? 4 : -4); ty = sx[1];
-      grp.append(textEl(text, tx, ty, 0, "sk-dim-text" + (c.driven ? " driven" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), sx[0] >= sc[0] ? "start" : "end"));
+      grp.append(textEl(text, tx, ty, 0, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), sx[0] >= sc[0] ? "start" : "end"));
       g.append(grp);
       const bb = estimateBox(text, tx, ty, sx[0] >= sc[0] ? "start" : "end");
       this.dimBoxes.push({ id: c.id, ...bb });
@@ -1181,7 +1243,7 @@ export class Sketcher {
     if (tx === undefined) return;
     const anchorUp = 4;
     const nx = Math.sin((rot * Math.PI) / 180) * anchorUp, ny = -Math.cos((rot * Math.PI) / 180) * anchorUp;
-    grp.append(textEl(text, tx + nx, ty + ny, rot, "sk-dim-text" + (c.driven ? " driven" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), "middle"));
+    grp.append(textEl(text, tx + nx, ty + ny, rot, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), "middle"));
     g.append(grp);
     this.dimBoxes.push({ id: c.id, ...estimateBox(text, tx + nx, ty + ny - 4, "middle") });
   }
@@ -1215,7 +1277,7 @@ export class Sketcher {
       const gx = x + ux * 14 + n * 16, gy = y + uy * 14;
       const w = label.length > 1 ? 20 : 13;
       const sel = this.sel.has("c:" + c.id);
-      const grp = svgEl("g", { class: "sk-glyph" + (sel ? " sel" : "") + (this.lastSolve?.failed?.includes(c.id) ? " err" : "") });
+      const grp = svgEl("g", { class: "sk-glyph" + (sel ? " sel" : "") + (c.disabled ? " off" : "") + (this.lastSolve?.failed?.includes(c.id) ? " err" : "") });
       grp.append(svgEl("rect", { x: gx - w / 2, y: gy - 7, width: w, height: 13, rx: 2 }));
       const t = svgEl("text", { x: gx, y: gy + 3.5, "text-anchor": "middle" });
       t.textContent = label;

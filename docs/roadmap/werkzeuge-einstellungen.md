@@ -51,7 +51,8 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Ellipse, Spline | blockiert | Solver (`src/core/solver.js`) und Profilbildung kennen nur Linie/Kreis/Bogen |
 | Stutzen, Skizzenrundung | vorhanden | `src/core/sketchedit.js` |
 | Spiegeln | vorhanden | Stufe 6: Kopien über »symmetrisch« an Originale gebunden |
-| Versatz, Muster, Verlängern, Teilen | fehlt | geplant; Versatz braucht Bogenverbindung an Ecken |
+| Versatz | vorhanden | Stufe 7: Kontur anklicken (ganze Kette), Seite klicken, Abstand; Ecken im Schnittpunkt, Bögen konzentrisch; ein sichtbares Maß steuert alle Kopien |
+| Muster, Verlängern, Teilen | fehlt | geplant |
 | Projizieren, Konstruktionslinien | vorhanden | |
 | 12 Bedingungsarten, Bemaßung mit Formeln | vorhanden | `solver.js` |
 | Automatische Bedingungen beim Zeichnen | teilweise | horizontal/vertikal, auf Linie/Kreis, Mittelpunkt |
@@ -59,7 +60,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Status unter-/vollständig bestimmt | vorhanden | Freiheitsgrade im HUD |
 | Überbestimmt / widersprüchlich mit Ursache | vorhanden | Stufe 6: HUD nennt die nicht erfüllbaren Bedingungen, Maße/Symbole rot |
 | Offene Konturen erkennen | vorhanden | `extractProfiles` |
-| Bedingungen unterdrücken | fehlt | |
+| Bedingungen unterdrücken | vorhanden | Stufe 7: Eigenschaften → „Unterdrückt“; bleibt gespeichert, wirkt nicht, wird blass gezeigt |
 
 ## Messen und Prüfen (Masterplan 7)
 
@@ -108,4 +109,5 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 3 | Befehlssuche und anpassbare Tastaturkürzel mit Konfliktanzeige | Unit-Test Kürzel-Tabelle, Oberflächentest |
 | 4 | Messwerkzeug: Punkt/Kante/Fläche, Radius, Koordinaten; Oberfläche und Schwerpunkt aus dem Kernel | Kernel-Test (Würfel/Zylinder bekannte Werte) |
 | 5 | Auswahlfilter, Körper ausblenden/isolieren | Oberflächentest |
-| 6 | Skizze: Langloch, Polygon, Spiegeln (Versatz offen); Ursache bei widersprüchlichen Bedingungen | Solver-Tests |
+| 6 | Skizze: Langloch, Polygon, Spiegeln; Ursache bei widersprüchlichen Bedingungen | Solver-Tests |
+| 7 | Skizze: Versatz, Bedingungen unterdrücken | Unit-Tests Versatz (Rechteck innen/außen, Langloch, Kreis, offene Kette), Oberflächentest |
