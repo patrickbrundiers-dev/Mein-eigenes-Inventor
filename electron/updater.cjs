@@ -2,29 +2,41 @@
 // Öffentliches Repository: ohne Token. Privates Repository: Lese-Token aus den Einstellungen.
 const { app } = require("electron");
 const pkg = require("../package.json");
+const log = require("./log.cjs");
 
 let autoUpdater = null;
 let win = null;
 let configured = false;
 let manual = false;
+let downloading = false;
 
 function publishTarget() {
   const p = (pkg.build && pkg.build.publish && pkg.build.publish[0]) || {};
   return { owner: p.owner, repo: p.repo };
 }
 function send(ev) { if (win && !win.isDestroyed()) win.webContents.send("update:event", ev); }
+// alles, was electron-updater meldet, landet im Fehlerprotokoll – sonst ist ein fehlgeschlagenes Update nicht nachvollziehbar
+const text = (a) => a.map((x) => (x && x.stack) || String(x)).join(" ");
+const logger = {
+  info: (...a) => log.write("info", "update", text(a)),
+  warn: (...a) => log.write("warn", "update", text(a)),
+  error: (...a) => log.write("error", "update", text(a)),
+  debug: () => {},
+};
 
 function load() {
   if (autoUpdater) return autoUpdater;
   ({ autoUpdater } = require("electron-updater"));
+  autoUpdater.logger = logger;
   autoUpdater.autoDownload = false;          // erst nach Freigabe laden
   autoUpdater.autoInstallOnAppQuit = true;   // geladenes Update beim Beenden installieren
   autoUpdater.allowPrerelease = false;
   autoUpdater.on("update-available", (info) => send({ type: "available", version: info.version, notes: info.releaseNotes || "" }));
   autoUpdater.on("update-not-available", () => { if (manual) send({ type: "none" }); });
   autoUpdater.on("download-progress", (p) => send({ type: "progress", percent: p.percent }));
-  autoUpdater.on("update-downloaded", (info) => send({ type: "downloaded", version: info.version }));
-  autoUpdater.on("error", (err) => send({ type: "error", message: String(err && err.message || err).split("\n")[0], manual }));
+  autoUpdater.on("update-downloaded", (info) => { downloading = false; send({ type: "downloaded", version: info.version }); });
+  // Fehler beim Herunterladen immer anzeigen, Fehler der Suche beim Start nur protokollieren (z. B. offline)
+  autoUpdater.on("error", (err) => send({ type: "error", message: String(err && err.message || err).split("\n")[0], manual: manual || downloading, stage: downloading ? "download" : "check" }));
   return autoUpdater;
 }
 
@@ -65,8 +77,14 @@ function init(window, getToken, readSettings) {
 }
 
 async function download() {
-  try { await load().downloadUpdate(); } catch (e) { send({ type: "error", message: String(e.message || e), manual: true }); }
+  if (downloading) return;
+  downloading = true;
+  try { await load().downloadUpdate(); } catch { /* Meldung kommt über das error-Ereignis */ } finally { downloading = false; }
 }
-function install() { load().quitAndInstall(false, true); }
+// still installieren (gleicher Ordner wie bisher, ohne erneuten Installationsassistenten) und danach WerkCAD neu starten
+function install() {
+  log.write("info", "update", "Installation gestartet");
+  load().quitAndInstall(true, true);
+}
 
 module.exports = { init, configure, check, download, install };
