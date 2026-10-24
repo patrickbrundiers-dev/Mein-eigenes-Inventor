@@ -385,3 +385,54 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null, note
   }
   return dims;
 }
+
+// ---------- Ansichtswahl ----------
+/**
+ * Zeigt eine Ansicht etwas, das die anderen nicht zeigen? Nein, wenn sie nur aus achsparallelen Kanten über die
+ * ganze Breite oder Höhe besteht (Rechteck, Streifen, Tangentenkanten) und keine Kreise hat – oder, bei einem
+ * Profilteil, nur den Querschnitt zeigt, der schon in der Profilangabe steht.
+ */
+export function viewHasInfo(p, { endView = false } = {}) {
+  const b = p?.bbox;
+  if (!b) return false;
+  const w = b.x1 - b.x0, h = b.y1 - b.y0, tol = 1e-3;
+  const circles = uniqueCircles([...(p.arcs || []), ...circlesFromLines(p.visible, 0.5 * Math.max(w, h))]);
+  const rim = (c) => c.cx - c.r <= b.x0 + tol || c.cx + c.r >= b.x1 - tol || c.cy - c.r <= b.y0 + tol || c.cy + c.r >= b.y1 - tol;
+  const rims = circles.filter(rim);
+  const inner = circles.filter((c) => !rims.some((o) => Math.abs(o.cx - c.cx) < tol && Math.abs(o.cy - c.cy) < tol));
+  if (endView) return inner.length > 0;
+  if (circles.length) return true;
+  if ((p.arcs || []).length) return true; // Rundungen, Bögen
+  for (const pl of p.visible || []) for (let i = 0; i + 1 < pl.length; i++) {
+    const [a, c] = [pl[i], pl[i + 1]];
+    const vert = Math.abs(a[0] - c[0]) < tol, hor = Math.abs(a[1] - c[1]) < tol;
+    if (vert && Math.abs(Math.abs(c[1] - a[1]) - h) < tol) continue;
+    if (hor && Math.abs(Math.abs(c[0] - a[0]) - w) < tol) continue;
+    if (Math.hypot(c[0] - a[0], c[1] - a[1]) < tol) continue;
+    // Stücke einer langen geraden Kante (Polylinie mit Zwischenpunkten) liegen auf dem Umriss
+    if (vert && (Math.abs(a[0] - b.x0) < tol || Math.abs(a[0] - b.x1) < tol)) continue;
+    if (hor && (Math.abs(a[1] - b.y0) < tol || Math.abs(a[1] - b.y1) < tol)) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Nötige Grundansichten nach DIN ISO 128-30: so wenige wie möglich, so viele wie nötig.
+ * proj: { front, top, left } Projektionen; axes: { front: [r, o], … }; profile: Ergebnis von profileSpec
+ * Rückgabe: Liste der Ansichtstypen, Vorderansicht immer dabei
+ */
+export function chooseViews(proj, axes, profile = null) {
+  const isEnd = (t) => !!profile && (axes[t] || []).every((a) => a && profile.cross.includes(a));
+  const info = (t) => viewHasInfo(proj[t], { endView: isEnd(t) });
+  const out = ["front"];
+  const covered = new Set(axes.front || []);
+  if (profile) for (const a of profile.cross) covered.add(a);
+  for (const t of ["top", "left"]) if (proj[t]?.bbox && info(t)) { out.push(t); for (const a of axes[t] || []) covered.add(a); }
+  // jede Raumrichtung muss in einer Ansicht bemaßt werden können
+  for (const t of ["top", "left"]) {
+    if (out.includes(t) || !proj[t]?.bbox) continue;
+    if ((axes[t] || []).some((a) => a && !covered.has(a))) { out.push(t); for (const a of axes[t]) covered.add(a); }
+  }
+  return out;
+}
