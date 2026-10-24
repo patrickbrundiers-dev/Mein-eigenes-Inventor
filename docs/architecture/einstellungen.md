@@ -48,6 +48,7 @@ Stand: 24.10.2026 · Masterplan Werkzeuge/Einstellungen, Abschnitte 13 und 14.
 | | Rasterweite | 0 = automatisch | feste Weite in mm für Fang und Anzeige |
 | | Fangradius | 7 px | Punkte, Mittelpunkte, Elemente |
 | | Symbole der Abhängigkeiten | ja | |
+| Werkzeuge | Tastaturkürzel | Standardbelegung | nur Abweichungen gespeichert, Konflikte abgelehnt (`src/core/commands.js`) |
 | Darstellung | Ansichtswechsel animieren | ja | aus = reduzierte Bewegung |
 | | Oberflächengröße | 100 % | nur Desktop (Zoomfaktor des Fensters) |
 | Updates | Token, Prüfung beim Start | – | wie bisher, jetzt als Kategorie im Center |

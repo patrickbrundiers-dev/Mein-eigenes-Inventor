@@ -9,6 +9,7 @@ import { DrawingEditor } from "./drawing.js";
 import { Files } from "./files.js";
 import { StartScreen } from "./start.js";
 import { Prefs } from "./prefs.js";
+import { CommandKeys } from "./commands.js";
 import { h, toast, confirmDialog, contextMenu, fmtNum } from "./dom.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { newSketch } from "../core/sketch.js";
@@ -46,6 +47,7 @@ export class App {
     this.props = new Props(this);
     this.drawing = new DrawingEditor(this);
     this.start = new StartScreen(this);
+    this.commands = new CommandKeys(this);
     this.applyPrefs();
     this.prefs.onChange((keys) => this.applyPrefs(keys));
     if (this.prefs.warnings.length) setTimeout(() => toast("Einstellungen: " + this.prefs.warnings[0] + (this.prefs.warnings.length > 1 ? ` (+${this.prefs.warnings.length - 1} weitere)` : ""), { kind: "err", timeout: 8000 }), 300);
@@ -670,6 +672,7 @@ export class App {
     this.sketcher.applyPrefs(p.values);
     if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);
     if (keys?.includes("ansicht.qualitaet") && this.quality !== p.get("ansicht.qualitaet")) { this.quality = p.get("ansicht.qualitaet"); this.ribbon.render(); this.rebuild(); }
+    if (!keys || keys.includes("werkzeuge.kuerzel")) this.commands.update();
     if (keys) { this.refreshSelectionHits(); this.props.render(); this.updateStatus(); this.ribbon.render(); }
   }
 
@@ -773,16 +776,11 @@ export class App {
 
   bindKeys() {
     document.addEventListener("keydown", (e) => {
+      if (e.defaultPrevented) return;
       const tag = e.target.tagName;
       const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.target.isContentEditable;
-      const ctrl = e.ctrlKey || e.metaKey;
-      if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); this.files.save(e.shiftKey); return; }
-      if (ctrl && e.key.toLowerCase() === "o") { e.preventDefault(); this.files.open(); return; }
-      if (ctrl && e.key.toLowerCase() === "n") { e.preventDefault(); this.newProject(); return; }
-      if (ctrl && e.key === ",") { e.preventDefault(); this.props.settingsDialog(); return; }
-      if (typing) return;
-      if (ctrl && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); return; }
-      if (ctrl && e.key.toLowerCase() === "y") { e.preventDefault(); this.redo(); return; }
+      // Strg-Kürzel für Datei/Einstellungen/Suche auch aus Eingabefeldern; alles andere nicht
+      if (typing) { this.commands.handle(e, { typing: true }); return; }
       if (this.mode === "sketch" && this.sketcher.key(e)) { e.preventDefault(); return; }
       if (this.mode === "drawing" && this.drawing.key(e)) { e.preventDefault(); return; }
       if (e.key === "Escape") {
@@ -790,19 +788,13 @@ export class App {
         if (this.sel) { this.sel = null; this.selHits = []; this.refreshSelectionHits(); this.tree.render(); this.props.render(); }
         return;
       }
-      if (e.key === "F6") { e.preventDefault(); this.viewer.fit(); return; }
       if (e.key === "Delete") {
         if (this.sel?.type === "feature") this.deleteFeature(this.sel.id);
         else if (this.sel?.type === "component") this.props.deleteComponent(this.sel.id);
         else if (this.sel?.type === "constraint") this.props.deleteConstraint(this.sel.id);
         return;
       }
-      if (this.mode === "part" && !ctrl) {
-        const k = e.key.toLowerCase();
-        if (k === "s") this.beginSketchCreation();
-        if (k === "e") this.ribbon.run("extrude");
-        if (k === "h") this.ribbon.run("hole");
-      }
+      this.commands.handle(e, { typing: false });
     });
   }
 }

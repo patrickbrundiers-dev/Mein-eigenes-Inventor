@@ -2,6 +2,7 @@
 import { h, modal, toast } from "./dom.js";
 import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings } from "../core/settings.js";
 import { MATERIALS } from "../core/sections.js";
+import { keymapEditor } from "./commands.js";
 
 const STATUS = { aktiv: "", teilweise: "teilweise", geplant: "geplant" };
 
@@ -22,7 +23,7 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
       h("span", {}, c.label), STATUS[c.status] ? h("span", { class: "set-badge " + c.status }, STATUS[c.status]) : null)));
     if (!cats.length) { pane.replaceChildren(h("p", { class: "hint" }, `Nichts gefunden für »${query}«.`)); return; }
     const c = CATEGORIES.find((x) => x.id === cat);
-    const list = (query ? found.settings : SETTINGS).filter((s) => s.cat === cat);
+    const list = (query ? found.settings : SETTINGS).filter((s) => s.cat === cat && !s.custom);
     pane.replaceChildren(...[
       h("h3", { class: "set-title" }, c.label),
       c.note ? h("p", { class: "hint" }, c.note) : null,
@@ -92,6 +93,7 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
 /** Zusatzinhalte je Kategorie, die keine einfachen Optionen sind */
 function extras(app, cat) {
   if (cat === "updates") return [updatesSection(app)];
+  if (cat === "werkzeuge") return [keymapEditor(app)];
   if (cat === "material") {
     return [h("table", { class: "grid" },
       h("thead", {}, h("tr", {}, h("th", {}, "Werkstoff"), h("th", {}, "Dichte g/cm³"))),

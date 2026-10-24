@@ -14,8 +14,8 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Modellbrowser: Umbenennen, Unterdrücken, Reihenfolge | vorhanden | `src/ui/tree.js`, `App.moveFeature` |
 | Eigenschaftenpanel | vorhanden | `src/ui/props.js` |
 | Statusleiste mit Einheiten und Modellstatus | vorhanden | `App.updateStatus` (Masse, Körper, Fehler, mm · Grad) |
-| Befehls-/Werkzeugsuche | fehlt | Stufe 3 |
-| Anpassbare Tastaturkürzel | fehlt | fest in `App.bindKeys`, Skizze in `Sketcher.key`; Stufe 3 |
+| Befehls-/Werkzeugsuche | vorhanden | Strg+K oder Knopf „Befehl suchen“, nur Befehle des aktuellen Arbeitsbereichs (Stufe 3) |
+| Anpassbare Tastaturkürzel | vorhanden | Befehlsliste `src/core/commands.js`, Editor im Einstellungscenter mit Konfliktprüfung je Arbeitsbereich; Esc, Entf, Ziffern/Komma/Tab bleiben fest (Stufe 3) |
 | Skalierbare Oberfläche | vorhanden (neu) | Einstellung „Oberflächengröße“, Desktop |
 | Protokollfenster / Fehlerdetails | teilweise | Fehlerprotokoll als Datei (`electron/log.cjs`), Ordner aus dem Center öffenbar |
 | Konfigurierbare Werkzeugleisten, gespeicherte Panelanordnung | fehlt | P3, erst nach Werkzeugsuche |
@@ -81,7 +81,7 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 | B Dokument und Modell | fehlt | gehört in die Projektdatei; erst mit Vorlagen |
 | C Skizzen | teilweise | Rasterfang, Rasterweite, Fangradius, Symbole |
 | D 3D-Ansicht | teilweise | Projektion, Darstellungsmodus, Qualität, Maus, Zoom/Drehen, Raster, ViewCube, Farben |
-| E Werkzeuge und Tastatur | fehlt | Stufe 3 |
+| E Werkzeuge und Tastatur | teilweise | Kürzel verwalten, Konflikte, Werkzeugsuche; Werkzeugleisten/Standardwerte je Werkzeug geplant |
 | F Kernel | fehlt | bewusst: keine Toleranzen ohne Absicherung |
 | G Materialien | teilweise | eingebaute Liste sichtbar; eigene Werkstoffe P2 |
 | H Blech, I Rohrlaser/Maschinen | fehlt | ADR-0002; Maschinenprofile eigenes Format (P3) |

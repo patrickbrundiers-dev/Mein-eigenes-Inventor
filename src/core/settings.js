@@ -1,3 +1,5 @@
+import { validateKeymap } from "./commands.js";
+
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
 // Reines Modul ohne DOM – die Oberfläche (src/ui/prefs.js) speichert und wendet an.
 //
@@ -16,7 +18,7 @@ export const CATEGORIES = [
   { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standardordner", "Standard-Einheit (intern immer mm/Grad)"] },
   { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["gefüllte Schnittflächen", "Beleuchtung", "gespeicherte Ansichten"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
   { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["Farben für Bestimmtheitszustand", "automatische Bemaßung", "Standardebene"] },
-  { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "geplant", planned: ["Tastenkürzel verwalten", "Werkzeugsuche", "Standardwerte je Werkzeug"] },
+  { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", planned: ["Werkzeugleisten anpassen", "Standardwerte je Werkzeug", "letzte Werkzeugparameter wiederverwenden"], note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
   { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Farbschema hell/dunkel", "Tooltip-Verzögerung"] },
   { id: "dokument", label: "Dokument und Modell", status: "geplant", planned: ["Standardvorlagen", "Namensregeln", "Standardmaterial", "Modelltoleranz"], note: "Dokumentwerte werden später in der Projektdatei gespeichert, nicht hier." },
   { id: "material", label: "Materialien", status: "teilweise", planned: ["eigene Werkstoffe", "Import/Export der Bibliothek"], note: "Die eingebaute Werkstoffliste (Dichte für Masse und Zuschnittliste) ist fest; siehe unten." },
@@ -63,6 +65,8 @@ export const SETTINGS = [
   { key: "skizze.fangradius", cat: "skizze", label: "Fangradius", unit: "px", type: "int", default: 7, min: 3, max: 30, help: "Abstand, ab dem Punkte und Mittelpunkte gefangen werden." },
   { key: "skizze.symbole", cat: "skizze", label: "Symbole der Abhängigkeiten anzeigen", type: "bool", default: true },
 
+  { key: "werkzeuge.kuerzel", cat: "werkzeuge", label: "Tastaturkürzel", type: "keymap", default: {}, custom: true, help: "Abweichungen von der Standardbelegung; Konflikte werden abgelehnt." },
+
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },
   { key: "darstellung.skalierung", cat: "darstellung", label: "Oberflächengröße", unit: "%", type: "enum", default: 100, options: [80, 90, 100, 110, 125, 150].map((v) => ({ value: v, label: v + " %" })), help: "Nur in der Desktop-Version; im Browser die Zoomfunktion des Browsers verwenden." },
 ];
@@ -93,6 +97,8 @@ export function validateValue(def, v) {
       const opt = def.options.find((o) => o.value === v || String(o.value) === String(v));
       return opt ? { ok: true, value: opt.value } : { ok: false, error: "Wert nicht erlaubt" };
     }
+    case "keymap":
+      return validateKeymap(v);
     case "color":
       return typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? { ok: true, value: v.toLowerCase() } : { ok: false, error: "Farbe als #rrggbb erwartet" };
     default:
@@ -159,7 +165,11 @@ export function loadSettings(input) {
 /** Zum Speichern/Exportieren: nur Abweichungen vom Standard, mit Format und Version */
 export function serializeSettings(values) {
   const out = {};
-  for (const s of SETTINGS) if (values[s.key] !== undefined && values[s.key] !== s.default) out[s.key] = values[s.key];
+  for (const s of SETTINGS) {
+    const v = values[s.key];
+    if (v === undefined) continue;
+    if (typeof v === "object" ? JSON.stringify(v) !== JSON.stringify(s.default) : v !== s.default) out[s.key] = v;
+  }
   return JSON.stringify({ format: SETTINGS_FORMAT, version: SETTINGS_VERSION, values: out }, null, 2);
 }
 

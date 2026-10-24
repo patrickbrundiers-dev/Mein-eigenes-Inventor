@@ -519,6 +519,42 @@ try {
     step("Ansicht: Perspektive, Modi, Schnitt, Auswahl", v.persp && Math.abs(v.ppuRatio - 1) < 0.02 && v.hit0 && v.hit1 && v.wire && !v.hitWire && v.transp && v.orthoAgain && v.clipOn && !v.hitClipped && v.clipOff && v.half1 <= v.half0 && dot > 0.999,
       JSON.stringify({ ...v, dot }));
   }
+
+  // Befehlssuche (Strg+K) und eigenes Tastaturkürzel mit Konfliktprüfung
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    const n0 = await evalApp(() => window.__werkcad.activeDoc().features.length);
+    await page.locator("#viewer canvas").click({ position: { x: 5, y: 300 } });
+    await page.keyboard.press("Control+k");
+    await page.locator(".cmd-palette input").fill("fase");
+    await shot("23-befehlssuche");
+    const first = await page.locator(".cmd-item.on .cmd-label").textContent();
+    await page.keyboard.press("Enter");
+    await idle();
+    const f1 = await evalApp(() => { const d = window.__werkcad.activeDoc(); return { n: d.features.length, type: d.features.at(-1).type }; });
+    // Kürzel G für Rundung im Einstellungscenter, E (belegt) wird abgelehnt
+    await page.keyboard.press("Control+,");
+    await page.locator(".set-search input").fill("tastatur");
+    await page.locator(".km input[type=search]").fill("rundung");
+    const row = page.locator('.km-row[data-cmd="part.fillet"] .km-key');
+    await row.click();
+    await page.keyboard.press("e");
+    const conflict = await page.locator(".km .set-err").textContent();
+    await row.click();
+    await page.keyboard.press("g");
+    const stored = await evalApp(() => window.__werkcad.prefs.get("werkzeuge.kuerzel"));
+    await page.locator(".dialog footer .btn", { hasText: "Schließen" }).click();
+    await page.locator("#viewer canvas").click({ position: { x: 5, y: 300 } });
+    await page.keyboard.press("g");
+    await idle();
+    const f2 = await evalApp(() => { const d = window.__werkcad.activeDoc(); return { n: d.features.length, type: d.features.at(-1).type }; });
+    const tip = await evalApp(() => { window.__werkcad.ribbon.tab = "modell"; window.__werkcad.ribbon.render(); return [...document.querySelectorAll("#ribbon .rb-btn")].find((b) => b.textContent === "Rundung")?.title; });
+    await evalApp(() => { const a = window.__werkcad; a.prefs.reset(["werkzeuge.kuerzel"]); a.undo(); a.undo(); });
+    await idle();
+    step("Befehlssuche und Tastaturkürzel", first === "Fase" && f1.n === n0 + 1 && f1.type === "chamfer" && /schon »Extrusion«/.test(conflict) && stored["part.fillet"] === "G" && f2.n === n0 + 2 && f2.type === "fillet" && tip === "Rundung (G)",
+      JSON.stringify({ first, n0, f1, conflict, stored, f2, tip }));
+  }
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }
