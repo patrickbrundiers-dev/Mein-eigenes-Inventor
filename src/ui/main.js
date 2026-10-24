@@ -1,0 +1,50 @@
+// Einstiegspunkt
+import { App } from "./app.js";
+import { h, toast, confirmDialog } from "./dom.js";
+
+const app = new App();
+window.__werkcad = app; // für automatische Tests
+
+const bridge = window.werkcad;
+if (bridge) {
+  // Datei per Doppelklick / zweite Instanz
+  bridge.onOpenFile?.((path) => app.files.open(path));
+  // Schließen mit ungespeicherten Änderungen
+  bridge.onCloseRequest?.(async () => {
+    if (!app.dirty) return bridge.confirmClose(true);
+    const ok = await app.files.confirmDiscard();
+    bridge.confirmClose(!!ok);
+  });
+  // Updates mit Freigabe
+  let bar = null;
+  const showBar = (...children) => {
+    bar?.remove();
+    bar = h("div", { class: "update-bar", role: "status" }, ...children);
+    document.body.append(bar);
+  };
+  bridge.onUpdateEvent?.((ev) => {
+    if (ev.type === "available") {
+      showBar(h("span", {}, `Version ${ev.version} ist verfügbar.`),
+        h("button", { class: "btn primary", onclick: () => { bridge.downloadUpdate(); showBar(h("span", {}, "Lade Update…"), h("div", { class: "progress" }, h("i", { style: { width: "0%" } }))); } }, "Herunterladen"),
+        h("button", { class: "btn", onclick: () => bar.remove() }, "Später"));
+    } else if (ev.type === "progress") {
+      const i = bar?.querySelector(".progress > i");
+      if (i) i.style.width = Math.round(ev.percent) + "%";
+    } else if (ev.type === "downloaded") {
+      showBar(h("span", {}, `Version ${ev.version} ist bereit.`),
+        h("button", { class: "btn primary", onclick: async () => {
+          if (app.dirty && !(await app.files.confirmDiscard())) return;
+          bridge.installUpdate();
+        } }, "Jetzt neu starten und installieren"),
+        h("button", { class: "btn", onclick: () => bar.remove() }, "Beim Beenden"));
+    } else if (ev.type === "error") {
+      if (ev.manual) toast("Update-Prüfung: " + ev.message, { kind: "err", timeout: 7000 });
+    }
+  });
+  const initial = bridge.initialFile?.();
+  Promise.resolve(initial).then((p) => { if (p) app.files.open(p); });
+}
+
+// Erste Hilfe beim allerersten Start
+window.addEventListener("error", (e) => console.error("Fehler:", e.message));
+export default app;

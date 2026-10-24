@@ -1,0 +1,48 @@
+name: Windows-Release
+# Manuell starten: Actions → Windows-Release → "Run workflow" → Versionsnummer eingeben.
+# Baut die Setup-Datei und veröffentlicht sie als Release – installierte Programme finden das Update dann selbst.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versionsnummer, z. B. 0.2.0 (muss höher sein als die installierte)"
+        required: true
+      veroeffentlichen:
+        description: "Als Release veröffentlichen (sonst nur Testbuild als Download)"
+        type: boolean
+        default: true
+permissions:
+  contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhängigkeiten
+        run: npm ci --no-audit --no-fund
+      - name: Version setzen
+        run: npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
+      - name: Kern-Tests
+        run: node --test test/core.test.mjs
+      - name: Setup bauen und veröffentlichen
+        if: inputs.veroeffentlichen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release
+      - name: Setup bauen (Testbuild)
+        if: ${{ !inputs.veroeffentlichen }}
+        run: npm run dist
+      - name: Setup als Download anhängen
+        uses: actions/upload-artifact@v4
+        with:
+          name: WerkCAD-Setup-${{ inputs.version }}
+          path: release/*.exe
+          retention-days: 14

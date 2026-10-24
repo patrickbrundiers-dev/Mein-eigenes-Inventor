@@ -1,0 +1,245 @@
+// Öffnen, Speichern, Import/Export – über die Electron-Brücke oder im Browser per Download
+import { toast, choiceDialog, downloadBlob, h } from "./dom.js";
+import { sketchToDxf } from "../core/dxf.js";
+import { newPart, uid } from "../core/examples.js";
+import { bomRows, cutListRows, collectCutSources } from "./props.js";
+import { MATERIALS } from "../core/sections.js";
+import { fmtNum } from "./dom.js";
+
+const PROJECT_FILTERS = [{ name: "WerkCAD-Projekt", extensions: ["wcad"] }];
+const AUTOSAVE_KEY = "werkcad.autosave";
+
+export class Files {
+  constructor(app) { this.app = app; }
+  get bridge() { return window.werkcad || null; }
+
+  // ---------- Projekt ----------
+  serialize() {
+    const prj = this.app.project;
+    prj.saved = new Date().toISOString();
+    return JSON.stringify(prj, null, 1);
+  }
+  parse(text) {
+    const prj = JSON.parse(text);
+    if (prj.format !== "werkcad" || !Array.isArray(prj.docs)) throw new Error("Keine WerkCAD-Projektdatei");
+    return prj;
+  }
+  async confirmDiscard() {
+    if (!this.app.dirty) return true;
+    const r = await choiceDialog("Ungespeicherte Änderungen", "Das aktuelle Projekt enthält ungespeicherte Änderungen.", [
+      { label: "Abbrechen", value: null }, { label: "Verwerfen", value: "discard" }, { label: "Speichern", value: "save", primary: true }]);
+    if (r === "save") return await this.save(false);
+    return r === "discard";
+  }
+  async open(path) {
+    if (!(await this.confirmDiscard())) return;
+    try {
+      let text, file;
+      if (this.bridge) {
+        const r = path ? await this.bridge.readProject(path) : await this.bridge.openProject();
+        if (!r) return;
+        text = r.text; file = r.path;
+      } else {
+        const f = await pickFile(".wcad,application/json");
+        if (!f) return;
+        text = await f.text(); file = null;
+        this.browserName = f.name;
+      }
+      const prj = this.parse(text);
+      this.app.setProject(prj, file);
+      toast("Geöffnet: " + (file ? file.split(/[\\/]/).pop() : prj.name), { kind: "ok", timeout: 2000 });
+    } catch (e) {
+      toast("Öffnen fehlgeschlagen: " + e.message, { kind: "err", timeout: 6000 });
+    }
+  }
+  async save(saveAs = false) {
+    const app = this.app;
+    const text = this.serialize();
+    const defaultName = safeName(app.project.name) + ".wcad";
+    try {
+      if (this.bridge) {
+        const r = await this.bridge.saveProject({ path: saveAs ? null : app.filePath, text, defaultName });
+        if (!r) return false;
+        app.filePath = r.path;
+      } else {
+        downloadBlob(new Blob([text], { type: "application/json" }), this.browserName || defaultName);
+      }
+      app.dirty = false;
+      app.updateTitle();
+      app.ribbon.render();
+      toast("Gespeichert", { kind: "ok", timeout: 1500 });
+      return true;
+    } catch (e) {
+      toast("Speichern fehlgeschlagen: " + e.message, { kind: "err", timeout: 6000 });
+      return false;
+    }
+  }
+  autosave() {
+    clearTimeout(this.autoTimer);
+    this.autoTimer = setTimeout(() => {
+      try {
+        const json = JSON.stringify(this.app.project);
+        if (json.length < 4.5e6) localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ time: Date.now(), path: this.app.filePath, json }));
+      } catch { /* Speicher voll oder gesperrt */ }
+    }, 1500);
+  }
+  recovery() {
+    try {
+      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return null;
+      const r = JSON.parse(raw);
+      const prj = JSON.parse(r.json);
+      return { time: r.time, path: r.path, project: prj };
+    } catch { return null; }
+  }
+
+  // ---------- Hilfen ----------
+  async saveText(text, name, mime = "text/plain", filters) {
+    if (this.bridge) {
+      const r = await this.bridge.saveFile({ defaultName: name, filters, data: text });
+      if (r) toast("Gespeichert: " + r.path.split(/[\\/]/).pop(), { kind: "ok" });
+      return r;
+    }
+    downloadBlob(new Blob([text], { type: mime }), name);
+    return { path: name };
+  }
+  async saveBinary(buf, name, filters) {
+    if (this.bridge) {
+      const r = await this.bridge.saveFile({ defaultName: name, filters, data: buf, binary: true });
+      if (r) toast("Gespeichert: " + r.path.split(/[\\/]/).pop(), { kind: "ok" });
+      return r;
+    }
+    downloadBlob(new Blob([buf]), name);
+    return { path: name };
+  }
+  exportItems() {
+    const app = this.app;
+    const d = app.activeDoc();
+    if (!d) return null;
+    if (d.kind === "part") return [{ part: d, name: d.name }];
+    if (d.kind === "assembly") return d.components.filter((c) => !c.hidden && app.doc(c.part)).map((c) => ({ part: app.doc(c.part), pos: c.pos, rot: c.rot, name: c.name }));
+    return null;
+  }
+  async withBusy(label, fn) {
+    const t = toast(label + " …", { timeout: 0 });
+    try { return await fn(); } catch (e) { toast(label + " fehlgeschlagen: " + e.message, { kind: "err", timeout: 6000 }); } finally { t.remove(); }
+  }
+
+  // ---------- Export ----------
+  async exportStep() {
+    const items = this.exportItems();
+    if (!items?.length) return toast("Nichts zu exportieren");
+    const d = this.app.activeDoc();
+    await this.withBusy("STEP-Export", async () => {
+      const text = await this.app.kernel.call("exportStep", { items });
+      await this.saveText(text, safeName(d.number || d.name) + ".step", "model/step", [{ name: "STEP", extensions: ["step", "stp"] }]);
+    });
+  }
+  async exportStl() {
+    const items = this.exportItems();
+    if (!items?.length) return toast("Nichts zu exportieren");
+    const d = this.app.activeDoc();
+    await this.withBusy("STL-Export", async () => {
+      const buf = await this.app.kernel.call("exportStl", { items });
+      await this.saveBinary(buf, safeName(d.number || d.name) + ".stl", [{ name: "STL", extensions: ["stl"] }]);
+    });
+  }
+  /** Jedes Profil/Rohr als eigene STEP-Datei – direkt für die Rohrlaser-Software */
+  async exportMembers() {
+    const app = this.app;
+    const d = app.activeDoc();
+    const parts = d.kind === "part" ? [d] : [...new Set(d.components.map((c) => c.part))].map((id) => app.doc(id)).filter(Boolean);
+    await this.withBusy("Profil-Export", async () => {
+      const files = [];
+      for (const p of parts) {
+        const list = await app.kernel.call("bodySteps", { part: p, onlyMembers: true });
+        list.forEach((x, i) => files.push({ name: `${safeName(p.number || p.name)}_${String(i + 1).padStart(2, "0")}_${safeName(x.name)}.step`, data: x.text }));
+      }
+      if (!files.length) return toast("Keine Profile (Rohr / Rahmen) vorhanden");
+      if (this.bridge) {
+        const r = await this.bridge.saveFiles({ files });
+        if (r) toast(`${files.length} STEP-Dateien gespeichert in ${r.dir}`, { kind: "ok", timeout: 5000 });
+      } else for (const f of files) downloadBlob(new Blob([f.data], { type: "model/step" }), f.name);
+    });
+  }
+  async exportCutList() {
+    const app = this.app;
+    const d = app.activeDoc();
+    const rows = cutListRows(collectCutSources(app, d));
+    if (!rows.length) return toast("Keine Profile (Rohr / Rahmen) vorhanden");
+    const head = ["Pos", "Profil", "Zuschnittlänge mm", "Menge", "Gehrung Anfang °", "Gehrung Ende °", "Ausgeklinkt", "kg/m", "kg/Stk", "kg gesamt", "Werkstoff", "Bauteil"];
+    const lines = rows.map((r) => [r.pos, r.section, num(r.length, 1), r.qty, num(r.miters[0], 1), num(r.miters[1], 1), r.coped ? "ja" : "nein", num(r.kgm, 3), num(r.mass, 3), num(r.mass * r.qty, 3), r.material, r.parts]);
+    await this.saveText(csv([head, ...lines]), safeName(d.number || d.name) + "_Zuschnitt.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
+  }
+  async exportBom() {
+    const app = this.app;
+    const d = app.activeDoc();
+    if (d.kind !== "assembly") return;
+    const rows = bomRows(app, d);
+    const head = ["Pos", "Benennung", "Teilenummer", "Menge", "Werkstoff", "Masse kg/Stk", "Masse kg gesamt"];
+    const lines = rows.map((r) => [r.pos, r.name, r.number, r.qty, r.material, num(r.mass, 3), num(r.mass * r.qty, 3)]);
+    await this.saveText(csv([head, ...lines]), safeName(d.number || d.name) + "_Stueckliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
+  }
+  async exportSketchDxf(id) {
+    const app = this.app;
+    const part = app.activeDoc();
+    if (part?.kind !== "part") return;
+    const sid = id || (app.sel?.type === "feature" && app.feature(app.sel.id)?.type === "sketch" ? app.sel.id : app.mode === "sketch" ? app.sketcher.sketchId : app.lastSketchId());
+    const sk = part.features.find((f) => f.id === sid);
+    if (!sk) return toast("Keine Skizze gewählt");
+    await this.saveText(sketchToDxf(sk), `${safeName(part.name)}_${safeName(sk.name)}.dxf`, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
+  }
+
+  // ---------- Import ----------
+  async pickStep() {
+    if (this.bridge) return await this.bridge.openFile({ filters: [{ name: "STEP / STL", extensions: ["step", "stp", "stl"] }] });
+    const f = await pickFile(".step,.stp,.stl");
+    if (!f) return null;
+    const isStl = /\.stl$/i.test(f.name);
+    return { name: f.name, data: isStl ? bytesToBase64(new Uint8Array(await f.arrayBuffer())) : await f.text(), binary: isStl };
+  }
+  async importStepAsPart() {
+    const f = await this.pickStep();
+    if (!f) return;
+    const p = newPart(f.name.replace(/\.(step|stp|stl)$/i, ""));
+    p.features.push(importFeature(f));
+    this.app.addDoc(p);
+  }
+  async importStepIntoPart() {
+    const app = this.app;
+    const f = await this.pickStep();
+    if (!f) return;
+    app.addFeature(importFeature(f));
+  }
+  async replaceImport(feat) {
+    const f = await this.pickStep();
+    if (!f) return;
+    this.app.edit("Import ersetzen", () => { Object.assign(feat, importFeature(f), { id: feat.id, name: feat.name }); });
+  }
+}
+
+function importFeature(f) {
+  const isStl = /\.stl$/i.test(f.name);
+  return { id: uid("f"), type: "import", name: "Import " + f.name, fileName: f.name, format: isStl ? "stl" : "step", data: f.data, op: "new" };
+}
+function pickFile(accept) {
+  return new Promise((res) => {
+    const inp = h("input", { type: "file", accept, style: { display: "none" } });
+    inp.addEventListener("change", () => { res(inp.files[0] || null); inp.remove(); });
+    document.body.append(inp);
+    inp.click();
+    setTimeout(() => { if (!inp.files?.length) { /* bleibt offen bis Auswahl */ } }, 0);
+  });
+}
+function bytesToBase64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+export function safeName(s) { return String(s || "Export").replace(/[\\/:*?"<>|]+/g, "_").trim() || "Export"; }
+const num = (v, d) => (Number.isFinite(v) ? fmtNum(v, d).replace(/\./g, "") : "");
+function csv(rows) {
+  const esc = (v) => { const s = String(v ?? ""); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  return "﻿" + rows.map((r) => r.map(esc).join(";")).join("\r\n") + "\r\n";
+}
+export { MATERIALS };

@@ -1,0 +1,63 @@
+name: Tests
+# Läuft auf Linux (Minuten zählen einfach). Windows-Build nur im Release-Workflow.
+on:
+  push:
+    branches: [main]
+    paths: ["src/**", "test/**", "tools/**", "build.mjs", "package.json", "package-lock.json", ".github/workflows/ci.yml"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: npm-
+      - name: Abhängigkeiten
+        run: |
+          mkdir -p ergebnis
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi 2>&1 | tail -20
+          cp package-lock.json ergebnis/ || true
+      - name: Kern-Tests (ohne Geometrie)
+        id: core
+        continue-on-error: true
+        run: set -o pipefail; node --test test/core.test.mjs 2>&1 | tee ergebnis/core.txt
+      - name: Geometrie-Tests
+        id: kernel
+        continue-on-error: true
+        run: set -o pipefail; node --stack-size=8000 --test --test-reporter=spec test/kernel.test.mjs 2>&1 | grep -v -E "^\*+|Statistics on Transfer|Transfer Mode|Transferring Shape|WorkSession|Step File Name|^\s*$" | tee ergebnis/kernel.txt
+      - name: Oberfläche bauen
+        id: build
+        continue-on-error: true
+        run: set -o pipefail; node build.mjs 2>&1 | tee ergebnis/build.txt
+      - name: Oberflächentest (Chrome)
+        id: e2e
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: set -o pipefail; node tools/e2e.mjs ergebnis/e2e 2>&1 | tee ergebnis/e2e.txt
+      - name: Ergebnisse sichern
+        if: always()
+        run: |
+          cd ergebnis
+          echo "core=${{ steps.core.outcome }} kernel=${{ steps.kernel.outcome }} build=${{ steps.build.outcome }} e2e=${{ steps.e2e.outcome }} sha=${GITHUB_SHA}" > status.txt
+          git init -q . && git config user.name ci && git config user.email ci@example.invalid
+          git add -A && git commit -qm "Testlauf $GITHUB_RUN_ID" && git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" HEAD:refs/heads/ci-ergebnisse
+      - name: Gesamtergebnis
+        if: always()
+        run: |
+          echo "Kern: ${{ steps.core.outcome }} · Geometrie: ${{ steps.kernel.outcome }} · Build: ${{ steps.build.outcome }} · Oberfläche: ${{ steps.e2e.outcome }}"
+          test "${{ steps.core.outcome }}" = success -a "${{ steps.kernel.outcome }}" = success -a "${{ steps.build.outcome }}" = success -a "${{ steps.e2e.outcome }}" = success

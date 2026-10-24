@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' app:; script-src 'self' app: 'wasm-unsafe-eval'; worker-src 'self' app: blob:; style-src 'self' app: 'unsafe-inline'; img-src 'self' app: data: blob:; connect-src 'self' app: blob: data:" />
+  <title>WerkCAD</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="ribbon"></header>
+    <div id="workspace">
+      <aside id="browser" aria-label="Modellbrowser"></aside>
+      <main id="stage">
+        <div id="viewer"></div>
+        <svg id="overlay" aria-hidden="true"></svg>
+        <div id="drawing-stage" hidden></div>
+        <div id="start" hidden></div>
+        <div id="hud"></div>
+      </main>
+      <aside id="props" aria-label="Eigenschaften"></aside>
+    </div>
+    <footer id="status"></footer>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toasts" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

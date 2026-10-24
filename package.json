@@ -1,0 +1,60 @@
+{
+  "name": "werkcad",
+  "productName": "WerkCAD",
+  "version": "0.1.0",
+  "description": "Parametrisches 3D-CAD für Bauteile, Rohr- und Rahmenkonstruktionen, Baugruppen und Zeichnungen",
+  "author": "Patrick Brundiers",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "repository": "github:patrickbrundiers-dev/Mein-eigenes-Inventor",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:dev": "node build.mjs --dev",
+    "start": "node build.mjs --dev && electron .",
+    "serve": "node tools/serve.mjs",
+    "test": "node --test test/core.test.mjs test/kernel.test.mjs",
+    "test:core": "node --test test/core.test.mjs",
+    "e2e": "node tools/e2e.mjs",
+    "dist": "node build.mjs && electron-builder --win --x64 --publish never",
+    "release": "node build.mjs && electron-builder --win --x64 --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2",
+    "playwright-core": "^1.50.0",
+    "replicad": "1.2.0",
+    "replicad-opencascadejs": "1.1.0",
+    "three": "0.186.1"
+  },
+  "build": {
+    "appId": "de.brundiers.werkcad",
+    "productName": "WerkCAD",
+    "copyright": "© Patrick Brundiers",
+    "files": ["dist/**/*", "electron/**/*", "build/icon.png", "package.json"],
+    "directories": { "output": "release", "buildResources": "build" },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "shortcutName": "WerkCAD",
+      "artifactName": "WerkCAD-Setup-${version}.${ext}"
+    },
+    "fileAssociations": [
+      { "ext": "wcad", "name": "WerkCAD.Projekt", "description": "WerkCAD-Projekt", "role": "Editor", "icon": "build/icon.png" }
+    ],
+    "publish": [
+      { "provider": "github", "owner": "patrickbrundiers-dev", "repo": "Mein-eigenes-Inventor", "private": true, "releaseType": "release" }
+    ]
+  }
+}
