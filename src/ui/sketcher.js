@@ -5,7 +5,7 @@ import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../co
 import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, v3 } from "../core/geom.js";
 import { uid } from "../core/examples.js";
-import { trimEntity, filletCorner, cornerAt } from "../core/sketchedit.js";
+import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
 import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox } from "../core/sketchshapes.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
@@ -27,6 +27,8 @@ export const SKETCH_TOOLS = {
   dimension: "Bemaßung: Linie, Kreis, zwei Punkte oder zwei Linien wählen, dann Lage klicken",
   project: "Kante des 3D-Modells anklicken, um sie in die Skizze zu übernehmen",
   trim: "Stutzen: Teil einer Linie, eines Kreises oder Bogens anklicken – wird bis zu den nächsten Schnittpunkten entfernt",
+  extend: "Verlängern: Linie oder Bogen nahe dem Ende anklicken, das bis zum nächsten Element verlängert wird",
+  split: "Teilen: Linie oder Bogen an der Stelle anklicken, an der geteilt wird (nahe einem Schnittpunkt wird dort geteilt)",
   sfillet: "Rundung: Ecke anklicken, an der zwei Linien enden, dann Radius eingeben",
   horizontal: "Horizontal: Linie oder zwei Punkte wählen",
   vertical: "Vertikal: Linie oder zwei Punkte wählen",
@@ -709,6 +711,20 @@ export class Sketcher {
       this.render();
       return;
     }
+    if (t === "extend" || t === "split") {
+      const hit = this.hitTest(sx, sy, { points: false, dims: false });
+      if (hit?.kind !== "entity") return toast("Linie oder Bogen anklicken");
+      const [ox, oy] = this.L(sx, sy), [ux, uy] = this.L(sx + 10, sy);
+      const tol = Math.hypot(ux - ox, uy - oy);
+      const run = (sk) => (t === "extend" ? extendEntity(sk, hit.id, { x: lx, y: ly }, uid) : splitEntity(sk, hit.id, { x: lx, y: ly }, uid, tol));
+      const r = run(JSON.parse(JSON.stringify(this.sk)));
+      if (!r.ok) return toast(r.message);
+      this.commit(t === "extend" ? "Verlängern" : "Teilen", run);
+      if (r.dropped?.length) toast("Entfernt, weil nicht mehr gültig: " + [...new Set(r.dropped)].map((x) => ({ length: "Längenmaß", midpoint: "Mittelpunkt", equal: "Gleich" })[x] || x).join(", "));
+      this.hover = null;
+      this.render();
+      return;
+    }
     if (t === "sfillet") {
       let best = null, bd = 14;
       for (const p of this.sk.points) {
@@ -907,7 +923,7 @@ export class Sketcher {
       this.viewer.highlight(hit ? [hit] : []);
     }
     this.hover = this.hitTest(sx, sy, { dims: this.tool === "select" });
-    if (!["select", "dimension", "project", "trim", "sfillet"].includes(this.tool) && !GLYPH[this.tool]) this.snapInfo = this.snap(sx, sy);
+    if (!["select", "dimension", "project", "trim", "extend", "split", "sfillet"].includes(this.tool) && !GLYPH[this.tool]) this.snapInfo = this.snap(sx, sy);
     else this.snapInfo = null;
     this.render();
   }

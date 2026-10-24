@@ -838,6 +838,37 @@ try {
     step("Skizze: Fensterauswahl und Strg+A", win === 4 && winPart === 2 && cross === 3 && all === 5, JSON.stringify({ win, winPart, cross, all }));
   }
 
+  // Skizze: Verlängern bis zur nächsten Linie, dann Teilen über die Werkzeugleiste
+  {
+    await evalApp(() => window.__werkcad.newPart("Verlaengern"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    await evalApp(() => window.__werkcad.sketcher.commit("Testgeometrie", (sk) => {
+      sk.points.push({ id: "eg", x: 0, y: 10 }, { id: "ei", x: 20, y: 10 }, { id: "ec", x: 50, y: -30 }, { id: "ed", x: 50, y: 30 });
+      sk.entities.push({ id: "ew", type: "line", p1: "eg", p2: "ei" }, { id: "ev", type: "line", p1: "ec", p2: "ed" });
+    }));
+    await evalApp(() => window.__werkcad.viewer.fit?.());
+    await page.waitForTimeout(300);
+    const cv = await page.locator("#viewer canvas").boundingBox();
+    const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
+    await page.locator("#ribbon .rb-btn", { hasText: /^Verlängern$/ }).click();
+    let [cx, cy] = await at(18, 10);
+    await page.mouse.click(cx, cy);
+    await page.waitForTimeout(200);
+    const ext = await evalApp(() => { const p = window.__werkcad.sketcher.sk.points.find((q) => q.id === "ei"); return { x: p.x, y: p.y }; });
+    await page.locator("#ribbon .rb-btn", { hasText: /^Teilen$/ }).click();
+    [cx, cy] = await at(35, 10);
+    await page.mouse.click(cx, cy);
+    await page.waitForTimeout(200);
+    const spl = await evalApp(() => { const s = window.__werkcad.sketcher; return { lines: s.sk.entities.filter((e) => e.type === "line").length, ok: s.solve().ok }; });
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    step("Skizze: Verlängern und Teilen", Math.abs(ext.x - 50) < 1e-6 && Math.abs(ext.y - 10) < 1e-6 && spl.lines === 3 && spl.ok, JSON.stringify({ ext, spl }));
+  }
+
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
