@@ -63,7 +63,9 @@ async function check(isManual = false) {
   } catch (e) {
     const msg = String(e && e.message || e);
     if (/\b401\b|Bad credentials/i.test(msg)) return { message: "Zugriff verweigert – Token prüfen (Berechtigung »Contents: Read-only« für das Repository)." };
-    // die Originalmeldung immer mit anzeigen, sonst ist die Ursache nicht erkennbar
+    // 404 auf die Release-Liste: GitHub antwortet so, wenn das Repository privat ist
+    if (/^404\b/.test(msg)) return { message: "Update-Quelle nicht erreichbar (404). Ist das Repository auf GitHub privat? Dann öffentlich machen oder oben einen Token eintragen." };
+    // sonst die Originalmeldung anzeigen, damit die Ursache erkennbar bleibt
     return { message: "Prüfung fehlgeschlagen: " + msg.split("\n")[0] };
   }
 }

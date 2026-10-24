@@ -1,6 +1,6 @@
 // Einstiegspunkt
 import { App } from "./app.js";
-import { h, toast, modal } from "./dom.js";
+import { h, modal } from "./dom.js";
 
 let app;
 try {
@@ -62,9 +62,8 @@ if (bridge) {
       showBar(h("span", {}, "Update konnte nicht geladen werden: " + ev.message),
         h("button", { class: "btn", onclick: startDownload }, "Erneut versuchen"),
         h("button", { class: "btn", onclick: () => bar.remove() }, "Schließen"));
-    } else if (ev.type === "error") {
-      if (ev.manual) toast("Update-Prüfung: " + ev.message, { kind: "err", timeout: 7000 });
     }
+    // Fehler der Update-Suche zeigt die Einstellungsseite selbst an (Startprüfung nur im Protokoll) – kein Toast, sonst stapeln sie sich
   });
   const initial = bridge.initialFile?.();
   Promise.resolve(initial).then((p) => { if (p) app.files.open(p); });
