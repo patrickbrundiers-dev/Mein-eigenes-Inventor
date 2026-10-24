@@ -49,15 +49,25 @@ jobs:
         if: steps.build.outcome == 'success'
         continue-on-error: true
         run: set -o pipefail; node tools/e2e.mjs ergebnis/e2e 2>&1 | tee ergebnis/e2e.txt
+      - name: Desktop-App (Electron) Rauchtest
+        id: electron
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: ""
+        run: |
+          set -o pipefail
+          node node_modules/electron/install.js
+          xvfb-run -a node tools/electron-smoke.mjs ergebnis/electron 2>&1 | tee ergebnis/electron.txt
       - name: Ergebnisse sichern
         if: always()
         run: |
           cd ergebnis
-          echo "core=${{ steps.core.outcome }} kernel=${{ steps.kernel.outcome }} build=${{ steps.build.outcome }} e2e=${{ steps.e2e.outcome }} sha=${GITHUB_SHA}" > status.txt
+          echo "core=${{ steps.core.outcome }} kernel=${{ steps.kernel.outcome }} build=${{ steps.build.outcome }} e2e=${{ steps.e2e.outcome }} electron=${{ steps.electron.outcome }} sha=${GITHUB_SHA}" > status.txt
           git init -q . && git config user.name ci && git config user.email ci@example.invalid
           git add -A && git commit -qm "Testlauf $GITHUB_RUN_ID" && git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" HEAD:refs/heads/ci-ergebnisse
       - name: Gesamtergebnis
         if: always()
         run: |
-          echo "Kern: ${{ steps.core.outcome }} · Geometrie: ${{ steps.kernel.outcome }} · Build: ${{ steps.build.outcome }} · Oberfläche: ${{ steps.e2e.outcome }}"
-          test "${{ steps.core.outcome }}" = success -a "${{ steps.kernel.outcome }}" = success -a "${{ steps.build.outcome }}" = success -a "${{ steps.e2e.outcome }}" = success
+          echo "Kern: ${{ steps.core.outcome }} · Geometrie: ${{ steps.kernel.outcome }} · Build: ${{ steps.build.outcome }} · Oberfläche: ${{ steps.e2e.outcome }} · Desktop: ${{ steps.electron.outcome }}"
+          test "${{ steps.core.outcome }}" = success -a "${{ steps.kernel.outcome }}" = success -a "${{ steps.build.outcome }}" = success -a "${{ steps.e2e.outcome }}" = success -a "${{ steps.electron.outcome }}" = success
