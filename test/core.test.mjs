@@ -494,3 +494,40 @@ test("Rechteck ohne Eingabe bleibt unbemaßt", () => {
   assert.equal(sk.entities.filter((e) => e.type === "line").length, 4);
   assert.ok(solveSketch(sk).ok);
 });
+
+import { lineLive, lineEnd, axisAngle } from "../src/core/dyninput.js";
+
+test("Maßeingabe Linie: Länge und Winkel", () => {
+  const a = { x: 10, y: 5 };
+  const live = lineLive(a, { x: 10, y: -5 });
+  near(live.len, 10);
+  near(live.ang, 270);
+  const b = lineEnd(a, 40, 30);
+  near(b.x, 10 + 40 * Math.cos(Math.PI / 6));
+  near(b.y, 5 + 20);
+  assert.deepEqual(lineEnd({ x: 0, y: 0 }, 25, 90), { x: 0, y: 25 });
+  assert.ok(axisAngle(0) && axisAngle(180) && axisAngle(-90) && !axisAngle(30));
+});
+
+test("Maßeingabe: Winkelfeld erlaubt 0 und negative Werte, Länge nicht", () => {
+  const st = createDynInput(["len", { key: "ang", signed: true }]);
+  dynKey(st, "0"); dynKey(st, "Tab"); dynKey(st, "-"); dynKey(st, "4"); dynKey(st, "5");
+  let r = dynValues(st, { len: 5, ang: 0 });
+  assert.ok(!r.ok && st.fields[0].error && !st.fields[1].error);
+  dynKey(st, "Tab"); dynKey(st, "1"); dynKey(st, "2");
+  r = dynValues(st, { len: 5, ang: 0 });
+  assert.ok(r.ok);
+  assert.deepEqual(r.values, { len: 12, ang: -45 });
+});
+
+test("Linie mit Längenmaß und Kreis mit Durchmesser sind lösbar", () => {
+  const sk = dynSketch();
+  const b = lineEnd({ x: 0, y: 0 }, 40, 30);
+  sk.points.push({ id: "q", x: b.x, y: b.y }, { id: "m", x: 100, y: 0 });
+  sk.entities.push({ id: "l1", type: "line", p1: "O", p2: "q" }, { id: "c1", type: "circle", c: "m", r: 10 });
+  sk.constraints.push({ id: "d1", type: "length", e: "l1", value: "40" }, { id: "d2", type: "diameter", e: "c1", value: "20" });
+  const r = solveSketch(sk);
+  assert.ok(r.ok);
+  near(Math.hypot(sk.points.find((p) => p.id === "q").x, sk.points.find((p) => p.id === "q").y), 40);
+  near(sk.entities.find((e) => e.id === "c1").r, 10);
+});
