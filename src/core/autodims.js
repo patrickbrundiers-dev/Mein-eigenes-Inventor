@@ -1,5 +1,6 @@
 // Automatische Hauptmaße einer Zeichnung (ohne DOM/Geometrie-Kern)
 // Regel nach DIN 406 / ISO 129-1: jedes Maß steht nur einmal in der Zeichnung.
+import { THREADS } from "./sections.js";
 
 const EPS = 1e-6;
 const key = (v) => Math.round(v * 1000);
@@ -11,6 +12,40 @@ export function viewAxes(dir, up) {
   const right = n([d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]]);
   const ax = (v) => { const i = v.findIndex((c) => Math.abs(c) > 1 - 1e-6); return i < 0 ? null : "XYZ"[i]; };
   return [ax(right), ax(u)];
+}
+
+const fmt = (v) => String(Math.round(v * 100) / 100).replace(".", ",");
+
+/**
+ * Bohrungsangaben aus den Bohrungs-Features (Gewinde, Tiefe, Senkung), damit die Zeichnung „M8“ statt „Ø6,8“ zeigt.
+ * ev(ausdruck) wertet Parameter des Bauteils aus. Rückgabe: [{ r, hole: {thread?, d, depth?, sink?} }]
+ */
+export function holeSpecs(features, ev) {
+  const out = [];
+  for (const f of features || []) {
+    if (f.type !== "hole" || f.suppressed) continue;
+    try {
+      const d = f.thread && THREADS[f.thread] ? THREADS[f.thread] : ev(f.diameter);
+      if (!(d > 0)) continue;
+      const hole = { d };
+      if (f.thread && THREADS[f.thread]) hole.thread = f.thread;
+      if (f.extent === "depth") hole.depth = ev(f.depth);
+      if (f.sink === "senkung") hole.sink = { kind: "kegel", d: ev(f.sinkDiameter), angle: ev(f.sinkAngle || "90") };
+      else if (f.sink === "flach") hole.sink = { kind: "flach", d: ev(f.sinkDiameter), depth: ev(f.sinkDepth) };
+      out.push({ r: d / 2, hole });
+    } catch { /* Ausdruck nicht auswertbar: Bohrung bekommt nur ihr Ø */ }
+  }
+  return out;
+}
+
+/** Text einer Bohrungsangabe, z. B. „5× M8“, „2× Ø11 durch“, „Ø6,6 – Senkung Ø12 × 90°“ */
+export function holeText(hole, count = 1) {
+  let t = (count > 1 ? count + "× " : "") + (hole.thread || "Ø" + fmt(hole.d));
+  if (hole.depth > 0) t += ", " + fmt(hole.depth) + " tief";
+  else if (!hole.thread) t += " durch";
+  if (hole.sink?.kind === "kegel") t += " – Senkung Ø" + fmt(hole.sink.d) + " × " + fmt(hole.sink.angle) + "°";
+  else if (hole.sink?.kind === "flach") t += " – Senkung Ø" + fmt(hole.sink.d) + ", " + fmt(hole.sink.depth) + " tief";
+  return t;
 }
 
 /** Vollkreise einer Ansicht ohne Doppelte (gleiche Mitte und gleicher Radius) */
@@ -26,7 +61,7 @@ function uniqueCircles(arcs) {
 
 /**
  * Maße für die Ansichten planen.
- * views: [{id, axes: [rechts, oben], bbox, arcs}] in Reihenfolge der Bevorzugung (Vorderansicht zuerst)
+ * views: [{id, axes: [rechts, oben], bbox, arcs, holes?}] in Reihenfolge der Bevorzugung (Vorderansicht zuerst); holes aus holeSpecs
  * used: bereits bemaßte Gesamtmaße ({axes: Set}) und Bohrungsdurchmesser ({radii: Set}), wird fortgeschrieben
  * Rückgabe: Maße ohne id
  */
@@ -49,14 +84,23 @@ export function planAutoDims(views, used = {}) {
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(c);
     }
+    // Bohrungs-Feature je Radius (nur wenn eindeutig); Senkungskreise gehören zur Bohrung und bekommen kein eigenes Maß
+    const specFor = (r) => {
+      const m = (v.holes || []).filter((h) => Math.abs(h.r - r) < 1e-3);
+      return m.length && m.every((h) => holeText(h.hole) === holeText(m[0].hole)) ? m[0].hole : null;
+    };
+    const sinkOf = (c) => circles.some((b) => b !== c && Math.abs(b.cx - c.cx) < 1e-3 && Math.abs(b.cy - c.cy) < 1e-3 && specFor(b.r)?.sink && Math.abs(specFor(b.r).sink.d / 2 - c.r) < 1e-3);
     const dimmedHere = [];
-    for (const [k, list] of groups) {
-      if (radii.has(k)) continue;
+    for (const [k, list0] of groups) {
+      const list = list0.filter((c) => !sinkOf(c));
+      if (!list.length || radii.has(k)) continue;
       radii.add(k);
       dimmedHere.push(...list);
       const c = list.reduce((m, x) => (x.cx + x.cy > m.cx + m.cy ? x : m)); // oben rechts: Hinweislinie zeigt aus der Ansicht heraus
       const dm = { view: v.id, kind: "dia", circle: { cx: c.cx, cy: c.cy, r: c.r }, angle: -Math.PI / 4 };
       if (list.length > 1) dm.count = list.length;
+      const hole = specFor(c.r);
+      if (hole) dm.hole = hole;
       out.push(dm);
     }
     // Außenkontur (Kreis berührt den Umriss) und dazu konzentrische Kreise brauchen keine Lagemaße
@@ -99,6 +143,7 @@ const overlap = (a, b) => area([Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math
 
 /** Text eines Maßes (wie in der Zeichnung) für die Breitenabschätzung */
 export function dimLabel(m) {
+  if (m.kind === "dia" && m.hole) return holeText(m.hole, m.count) + (m.suffix || "");
   const val = m.kind === "dia" ? m.circle.r * 2 : m.kind === "rad" ? m.circle.r : m.kind === "h" ? Math.abs(m.p2[0] - m.p1[0]) : Math.abs(m.p2[1] - m.p1[1]);
   return (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + String(Math.round(val * 10) / 10).replace(".", ",") + (m.suffix || "");
 }
