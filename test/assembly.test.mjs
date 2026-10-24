@@ -1,7 +1,7 @@
-// Baugruppen-Abhängigkeit »Konzentrisch« (P1-B G-2) – reine Rechnung ohne Geometrie-Kern
+// Baugruppen-Abhängigkeiten (Konzentrisch P1-B G-2, große Baugruppe) – reine Rechnung ohne Geometrie-Kern
 import test from "node:test";
 import assert from "node:assert/strict";
-import { axisRef, refreshAxis, solveAssembly } from "../src/core/asmsolve.js";
+import { axisRef, faceRef, refreshAxis, solveAssembly } from "../src/core/asmsolve.js";
 import { placementMatrix, matApply, matApplyDir, pointLineDistance, alignAxes, decomposePlacement, v3 } from "../src/core/geom.js";
 
 const near = (a, b, tol = 1e-6) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
@@ -60,4 +60,20 @@ test("Konzentrisch und Fläche an Fläche zusammen: Bolzen steckt in der Bohrung
   const M = placementMatrix(B.pos, B.rot);
   near(matApply(M, [0, 0, 0])[2], 10); // Stirnfläche liegt auf der Platte
   near(pointLineDistance(matApply(M, [25, 0, 0]), [30, 20, 0], [0, 0, 1]), 0); // und steckt weiter in der Achse
+});
+
+// Plan 5.5: große Baugruppe – 150 Platten gestapelt, jede gegen die darunter
+test("Große Baugruppe: 150 gestapelte Platten lösen schnell und exakt", () => {
+  const N = 150;
+  const faces = [{ type: "PLANE", normal: [0, 0, 1], point: [0, 0, 10] }, { type: "PLANE", normal: [0, 0, -1], point: [0, 0, 0] }];
+  const asm = { components: [], constraints: [] };
+  for (let i = 0; i < N; i++) asm.components.push({ id: "p" + i, part: "platte", pos: [i * 3, -i, 500 - i * 7], rot: [0, 0, 0], fixed: i === 0 });
+  asm.components[0].pos = [0, 0, 0];
+  for (let i = 1; i < N; i++) asm.constraints.push({ id: "g" + i, type: "gegen", gap: "0", a: faceRef("p" + (i - 1), faces[0]), b: faceRef("p" + i, faces[1]) });
+  const t = performance.now();
+  const r = solveAssembly(asm, () => faces);
+  const ms = performance.now() - t;
+  assert.deepEqual(r.errors, {});
+  for (let i = 0; i < N; i++) near(asm.components[i].pos[2], i * 10, 1e-6);
+  assert.ok(ms < 1000, `${ms} ms`);
 });

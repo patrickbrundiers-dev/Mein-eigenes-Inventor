@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { createKernel } from "../src/kernel/build.js";
 import { parseProject } from "../src/core/project.js";
 import { exampleProject, rectSketchFeature } from "../src/core/examples.js";
+import { cutListRows } from "../src/core/cutlist.js";
 
 const require = createRequire(import.meta.url);
 const R = await import("replicad");
@@ -127,4 +128,36 @@ test("Kollision: Beispiel-Baugruppe ist kollisionsfrei", async () => {
     for (const b of res.bodies) list.push({ key: c.id, shape: K.placed(b.shape, c.pos, c.rot) });
   }
   assert.deepEqual(K.collisions(list), []);
+});
+
+// ---------- Plan 5.5: große Baugruppe – Laufzeit ----------
+test("Große Baugruppe: 150 Komponenten, Kollision und Zuschnittliste in vertretbarer Zeit", async () => {
+  const prj = exampleProject();
+  const parts = prj.docs.filter((d) => d.kind === "part" && d.id !== "beispiel_knickrahmen");
+  const built = new Map();
+  for (const p of parts) built.set(p.id, await K.buildPart(p));
+  // Raster mit 4 m Abstand: kein Bauteil berührt ein anderes; dazu ein absichtlich überlappendes Paar
+  const N = 150, comps = [];
+  for (let i = 0; i < N; i++) comps.push({ id: "c" + i, part: parts[i % parts.length].id, pos: [(i % 15) * 4000, Math.floor(i / 15) * 4000, 0], rot: [0, 0, 0] });
+  comps.push({ id: "kollision", part: comps[0].part, pos: [10, 0, 0], rot: [0, 0, 0] });
+  let t = performance.now();
+  const list = [];
+  for (const c of comps) for (const b of built.get(c.part).bodies) list.push({ key: c.id, shape: K.placed(b.shape, c.pos, c.rot) });
+  const tPlace = performance.now() - t;
+  t = performance.now();
+  const res = K.collisions(list);
+  const tColl = performance.now() - t;
+  t = performance.now();
+  const counts = new Map();
+  for (const c of comps) counts.set(c.part, (counts.get(c.part) || 0) + 1);
+  const rows = cutListRows([...counts].map(([pid, qty]) => ({ part: parts.find((p) => p.id === pid), result: built.get(pid), qty })));
+  const tCut = performance.now() - t;
+  console.log(`[info] ${comps.length} Komponenten, ${list.length} Körper: platzieren ${tPlace.toFixed(0)} ms, Kollision ${tColl.toFixed(0)} ms, Zuschnittliste ${tCut.toFixed(1)} ms`);
+  assert.deepEqual(res.map((r) => [r.a, r.b].sort().join("|")), ["c0|kollision"]);
+  const members = rows.reduce((s, r) => s + r.qty, 0);
+  const expected = comps.reduce((s, c) => s + built.get(c.part).bodies.filter((b) => b.kind === "member" && b.meta).length, 0);
+  assert.equal(members, expected);
+  // Grenzen großzügig für langsame CI-Rechner; gemessen lokal deutlich darunter (siehe [info])
+  assert.ok(tColl < 20000, `Kollision ${tColl} ms`);
+  assert.ok(tPlace < 10000, `Platzieren ${tPlace} ms`);
 });
