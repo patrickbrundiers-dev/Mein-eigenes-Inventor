@@ -787,6 +787,35 @@ try {
       JSON.stringify({ selN, off, dof0, sup }));
   }
 
+  // Skizze: Fensterauswahl (nach rechts ganz innen, nach links berührend) und Strg+A
+  {
+    await evalApp(() => window.__werkcad.newPart("Fenster"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const vb = await page.locator("#viewer canvas").boundingBox();
+    const mx = vb.x + vb.width / 2, my = vb.y + vb.height / 2;
+    await evalApp(() => window.__werkcad.sketcher.setTool("rect"));
+    await page.mouse.click(mx - 200, my - 50);
+    await page.mouse.click(mx - 100, my + 50);
+    await evalApp(() => window.__werkcad.sketcher.setTool("circle"));
+    await page.mouse.click(mx + 150, my);
+    await page.mouse.click(mx + 190, my);
+    await evalApp(() => window.__werkcad.sketcher.setTool("select"));
+    const drag = async (x0, y0, x1, y1) => { await page.mouse.move(x0, y0); await page.mouse.down(); await page.mouse.move(x1, y1, { steps: 5 }); await page.mouse.up(); await page.waitForTimeout(100); return evalApp(() => [...window.__werkcad.sketcher.sel].filter((k) => k.startsWith("e:")).length); };
+    const win = await drag(mx - 230, my - 80, mx - 70, my + 80);
+    const winPart = await drag(mx - 150, my - 80, mx + 250, my + 80);
+    const cross = await drag(mx - 150, my + 80, mx - 300, my - 80);
+    await page.mouse.click(mx, my + 200);
+    await page.keyboard.press("Control+a");
+    const all = await evalApp(() => [...window.__werkcad.sketcher.sel].filter((k) => k.startsWith("e:")).length);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    step("Skizze: Fensterauswahl und Strg+A", win === 4 && winPart === 2 && cross === 3 && all === 5, JSON.stringify({ win, winPart, cross, all }));
+  }
+
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
