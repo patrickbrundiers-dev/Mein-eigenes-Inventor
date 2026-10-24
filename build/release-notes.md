@@ -1,8 +1,13 @@
-**Neu in 0.2.0**
+**Neu in 0.3.0**
 
-- **STEP + Zuschnittliste** (Export → 3D): eine STEP-Datei mit allen Körpern, jeder mit Profil-ID benannt (`RR 42,4x2`, `QR 40x40x3`, `RE 60x40x3` …), Baugruppen als Satz; die Zuschnittliste liegt mit gleichem Namen daneben. Passt direkt zum STEP-Import der Rohrlaser-Kalkulation.
-- Zuschnittliste zeigt die Profil-ID wie in der Kalkulation.
-- **Platte als DXF 1:1** (Export → 2D): Kontur und Bohrungen eines Blechteils mit echten Kreisen und Bögen; mit gewählter Fläche wird senkrecht auf diese Fläche exportiert.
-- Skizze: **Stutzen** (T) und **Rundung** (F).
-- Baugruppe: **Abhängigkeiten** „Fläche an Fläche“ und „Bündig“ bleiben gespeichert und rechnen nach, wenn sich Bauteile ändern.
-- Zeichnung: **Schnittansicht A–A** mit Schraffur.
+- **Knickrahmen** (3D-Modell → Profile): ein Rechteck-/Quadratrohr mit 1–3 Segmenten, an jedem Knick V-förmig durch drei Wände ausgeklinkt, die Außenwand wird mit Innenradius gebogen. Ansicht gefaltet (ein Bauteil, Gehrung als Linie sichtbar) oder abgewickelt (gerades Rohr mit Ausklinkungen für den Rohrlaser, STEP); eine Zeile in der Zuschnittliste in Abwicklungslänge.
+- Knickrahmen: Biegezugabe aus Innenradius und K-Faktor, Pflicht-Freistellung an der Außenwand (rund/rechteckig, Mindestmaß automatisch), Schweißspalt auf der Gehrung, optionale Positionier-Zapfen mit Spiel. *Innenradius 3 mm und K-Faktor 0,33 sind nur Startwerte – bitte Werte aus der eigenen Biegetabelle eintragen.*
+- **Maße direkt beim Zeichnen** (wie in Inventor): Nach dem ersten Klick Wert tippen, Tab wechselt das Feld, Enter übernimmt. Rechteck: Breite und Höhe, z. B. `50` Tab `25` Enter = 50 × 25. Linie: Länge und Winkel, der Linienzug läuft weiter, Esc beendet. Kreis: Durchmesser. Formeln mit Parametern gehen auch, z. B. `Breite/2`. Ohne Eingabe funktioniert Klicken wie bisher.
+- **Zoll in Maßfeldern:** `1 in`, `2 zoll`, `3/4"` (1 Zoll = 25,4 mm). Eine Einheit gilt jetzt für den ganzen Ausdruck davor: `100/2 cm` = 500 mm.
+- **Sichereres Speichern:** Die Datei wird erst vollständig geschrieben und dann ersetzt. Lässt sich ein Projekt nicht öffnen, bietet WerkCAD die automatische Sicherung (`.bak`) an.
+- **Projektprüfung beim Öffnen:** beschädigte Dateien werden mit klarer Meldung abgelehnt, das offene Projekt bleibt erhalten. Dateien aus neueren Versionen öffnen mit Hinweis.
+- **Automatische Sicherung ohne Größengrenze** – auch große Projekte mit STEP-Importen werden gesichert.
+- **Fehlerprotokoll:** Über WerkCAD → „Protokollordner öffnen“. Enthält keine Projektdaten.
+- Lizenztexte der verwendeten Bibliotheken liegen im Installationsordner unter `resources\lizenzen`.
+
+Hinweis: In Ausdrücken wie `1/2 cm` ändert sich der Wert (vorher 0,05 mm, jetzt 5 mm). Ausdrücke mit `mm` oder ohne Einheit sind nicht betroffen.
