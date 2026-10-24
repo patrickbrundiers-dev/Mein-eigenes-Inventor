@@ -170,6 +170,10 @@ export class Ribbon {
             B("dd_auto", "Hauptmaße", "dimension", { run: () => dr.autoDims() }),
             B("dd_text", "Text", "text", { on: dr.tool === "text", run: () => dr.setTool(dr.tool === "text" ? null : "text") }),
           ] },
+          { label: "Baugruppe", buttons: [
+            B("dd_pos", "Pos.-Nummern", "circle", { run: () => dr.autoBalloons() }),
+            B("dd_bom", "Stückliste", "bom", { on: !!dr.doc?.bomTable?.show, run: () => dr.toggleBomTable() }),
+          ] },
           { label: "Blatt", buttons: [B("dd_fit", "Blatt einpassen", "fit", { run: () => dr.fitSheet() })] },
         ] },
         this.exportTab("drawing"),

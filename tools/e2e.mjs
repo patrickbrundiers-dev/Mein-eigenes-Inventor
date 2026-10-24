@@ -246,6 +246,25 @@ try {
   const dw2 = await evalApp(() => window.__werkcad.drawing.doc.views.length);
   step("Grundansichten automatisch", dw2 === 4, String(dw2));
 
+  // Positionsnummern + Stückliste auf dem Blatt
+  await evalApp(() => window.__werkcad.drawing.autoBalloons());
+  await page.waitForTimeout(300);
+  const pos = await evalApp(() => {
+    const a = window.__werkcad, dr = a.drawing, d = dr.doc;
+    const svg = dr.exportSvgString();
+    const nums = [...dr.svg.querySelectorAll("[data-balloon] text")].map((t) => t.textContent).sort();
+    return { balloons: d.balloons?.length, rows: dr.bomRowsOf(d).length, nums, table: svg.includes("Sachnummer") && svg.includes("data-bom"), bomOn: !!d.bomTable?.show };
+  });
+  pos.dxf = await evalApp(async () => {
+    const a = window.__werkcad, orig = a.files.saveText;
+    let text = "";
+    a.files.saveText = async (t) => { text = t; };
+    try { await a.drawing.exportDxf(); } finally { a.files.saveText = orig; }
+    return text.includes("Sachnummer") && (text.match(/\nCIRCLE\r?\n/g) || []).length;
+  });
+  step("Positionsnummern und Stückliste", pos.balloons > 0 && pos.balloons === pos.rows && pos.nums.join() === Array.from({ length: pos.rows }, (_, i) => String(i + 1)).sort().join() && pos.table && pos.bomOn && pos.dxf >= pos.rows, JSON.stringify(pos));
+  await shot("16b-positionsnummern");
+
   // Schnittansicht A-A in der Beispielzeichnung
   await evalApp(() => window.__werkcad.openDoc("beispiel_zeichnung"));
   await idle(120000);
