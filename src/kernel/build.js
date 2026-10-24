@@ -573,12 +573,20 @@ export function createKernel(R) {
     }
     const warnings = [];
     const corner = f.corner || "gehrung";
-    // Profil m stößt mit Ende "end" gegen Profil o: an Achse von o kappen + Hüllkörper von o abziehen (Ausklinkung)
+    // Profil m stößt mit Ende "end" gegen Profil o.
+    // Rundes Gegenprofil: an der Achse kappen + Hüllkörper abziehen (Sattelschnitt / Ausklinkung).
+    // Eckiges Gegenprofil: gerader Schnitt an der zugewandten Außenfläche.
+    const roundSection = ["rohr", "rund"].includes(section.kind);
     const buttAgainst = (m, end, dInto, o) => {
       let n = o.fr.u;
-      if (v3.dot(n, dInto) > 0) n = v3.mul(n, -1);
-      m.cuts[end].push({ p: o.fr.origin, n });
-      m.envCuts.push(o);
+      if (v3.dot(n, dInto) > 0) n = v3.mul(n, -1); // zeigt von m weg
+      if (roundSection) {
+        m.cuts[end].push({ p: o.fr.origin, n });
+        m.envCuts.push(o);
+      } else {
+        m.cuts[end].push({ p: v3.sub(o.fr.origin, v3.mul(n, o.width / 2)), n });
+        m.butt = true;
+      }
     };
     for (const [, list] of nodes) {
       if (list.length === 1) {
@@ -637,6 +645,7 @@ export function createKernel(R) {
         miterStart: cutAngle(m.cuts.start, m.fr.z),
         miterEnd: cutAngle(m.cuts.end, m.fr.z),
         coped: m.envCuts.length > 0,
+        butt: !!m.butt,
         frameZ: m.fr.z,
         line: m.l.id,
       };

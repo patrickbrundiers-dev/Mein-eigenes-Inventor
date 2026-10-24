@@ -32,6 +32,8 @@ export class App {
     this.quality = "normal";
     this.fittedFor = null;
 
+    this.statusEl = document.getElementById("status");
+    this.hud = document.getElementById("hud");
     this.kernel = new KernelClient((busy, msg) => this.setBusy(busy, msg));
     this.viewer = new Viewer(document.getElementById("viewer"));
     this.sketcher = new Sketcher(this);
@@ -41,8 +43,6 @@ export class App {
     this.props = new Props(this);
     this.drawing = new DrawingEditor(this);
     this.start = new StartScreen(this);
-    this.statusEl = document.getElementById("status");
-    this.hud = document.getElementById("hud");
     this.buildViewTools();
     this.bindViewerEvents();
     this.bindKeys();
@@ -620,6 +620,7 @@ export class App {
     this.updateStatus();
   }
   updateStatus() {
+    if (!this.statusEl || !this.ribbon) return;
     const d = this.activeDoc();
     const parts = [];
     if (this.busy) parts.push(h("span", { class: "busy" }, "Berechne…"));
