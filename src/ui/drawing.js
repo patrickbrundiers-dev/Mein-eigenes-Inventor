@@ -652,7 +652,8 @@ export class DrawingEditor {
     line(x0, y0 + 10, x0 + 180, y0 + 10);
     line(x0, y0 + 20, x0 + 180, y0 + 20);
     line(x0, y0 + 36, x0 + 180, y0 + 36);
-    line(x0 + 90, y0, x0 + 90, y0 + 10);
+    line(x0 + 50, y0, x0 + 50, y0 + 10);
+    line(x0 + 120, y0, x0 + 120, y0 + 10);
     line(x0 + 60, y0 + 10, x0 + 60, y0 + 20);
     line(x0 + 90, y0 + 10, x0 + 90, y0 + 20);
     line(x0 + 130, y0 + 10, x0 + 130, y0 + 20);
@@ -676,8 +677,10 @@ export class DrawingEditor {
       const mats = [...new Set(rows.map((r) => r.material).filter(Boolean))];
       material = mats.length === 1 ? mats[0] : mats.length ? "siehe Stückliste" : "";
     }
-    label(x0, y0, "Firma"); value(x0, y0 + 8.4, t.firma);
-    label(x0 + 90, y0, "Werkstoff"); value(x0 + 90, y0 + 8.4, t.werkstoff && !autoLabels.has(t.werkstoff) ? t.werkstoff : material || t.werkstoff);
+    const halbzeug = t.halbzeug || this.profileOf(d)?.text || "";
+    label(x0, y0, "Firma"); value(x0, y0 + 8.4, t.firma, 3);
+    label(x0 + 50, y0, "Halbzeug"); value(x0 + 50, y0 + 8.4, halbzeug, halbzeug.length > 38 ? 2.5 : 3);
+    label(x0 + 120, y0, "Werkstoff"); value(x0 + 120, y0 + 8.4, t.werkstoff && !autoLabels.has(t.werkstoff) ? t.werkstoff : material || t.werkstoff, 3);
     label(x0, y0 + 10, "Allgemeintoleranz"); value(x0, y0 + 18.4, t.toleranz || "ISO 2768-m", 3);
     label(x0 + 60, y0 + 10, "Maßstab"); value(x0 + 60, y0 + 18.4, t.massstab);
     label(x0 + 90, y0 + 10, "Masse"); value(x0 + 90, y0 + 18.4, t.masse || mass, 3);
@@ -968,7 +971,7 @@ export class DrawingEditor {
     const holes = items.flatMap((it) => holeSpecs(it.part.features, ev(it.part)));
     // Einzelteil aus einem Profil: Querschnitt als Profilangabe statt Einzelmaßen
     const src = d.source && this.app.doc(d.source.id);
-    used.profile = src?.kind === "part" ? profileSpec(src.features, ev(src)) : null;
+    used.profile = this.profileOf(d);
     // Wandstärke nur bei einem einzelnen Hohlkörper, nicht bei Rahmen/Schweißbaugruppen aus mehreren Profilen
     if (src?.kind !== "part" || src.features.some((f) => !f.suppressed && ["frame", "knickrahmen", "profile"].includes(f.type))) used.wall = true;
     const views = cands.filter((v) => !keep.some((m) => m.view === v.id && m.auto)).map((v) => {
@@ -977,7 +980,7 @@ export class DrawingEditor {
     });
     const add = planAutoDims(views, used).map((m) => ({ id: uid("m"), ...m, auto: true }));
     const keepNotes = (d.notes || []).filter((n) => !(n.auto && !n.touched));
-    const notes = used.profile && !keepNotes.some((n) => n.auto) && views.length ? [{ view: views[0].id, text: used.profile.text }] : [];
+    const notes = []; // Profilangabe steht im Schriftfeld (Halbzeug)
     if (!add.length && !notes.length && keep.length === d.dims.length) return toast("Keine weiteren Hauptmaße gefunden");
     layoutAutoDims(add, this.sheetRects(d), { ...this.sheetObstacles(d, keep), notes });
     this.app.edit("Hauptmaße", () => {
@@ -985,6 +988,14 @@ export class DrawingEditor {
       d.notes = [...keepNotes, ...notes.map((n) => ({ id: uid("n"), x: n.x, y: n.y, text: n.text, size: 3.5, auto: true }))];
     }, { rebuild: false });
     this.render();
+  }
+  /** Profilangabe des Quellteils (Halbzeug), Länge wie in der Zuschnittliste */
+  profileOf(d) {
+    const src = d?.source && this.app.doc(d.source.id);
+    if (src?.kind !== "part") return null;
+    const scope = resolveParams(src.params || []).values;
+    const member = this.app.results.get(src.id)?.bodies?.find((b) => b.kind === "member" && b.meta?.length);
+    return profileSpec(src.features, (x) => evaluate(String(x), scope), member?.meta.length);
   }
   /** Ansichten als Rechtecke auf dem Blatt (für die Platzierung der Maße) */
   sheetRects(d) {
@@ -1094,7 +1105,7 @@ export class DrawingEditor {
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.chooseSource() }, "Quelle wählen"), h("button", { class: "btn", onclick: () => this.autoViews() }, "Grundansichten neu"))));
     const t = d.title;
     const T = (label, key, area) => P.text(label, t[key], (v) => app.edit(label, () => { t[key] = v; }, { rebuild: false }), { area });
-    out.push(P.section("Schriftfeld", T("Benennung", "benennung"), T("Zeichnungsnr.", "nummer"), T("Werkstoff", "werkstoff"), T("Masse", "masse"), h("p", { class: "hint" }, "Werkstoff und Masse leer lassen: sie kommen dann automatisch aus dem Modell."), T("Maßstab", "massstab"), T("Allgemeintol.", "toleranz"), T("Firma", "firma"), T("Gezeichnet", "ersteller"), T("Datum", "datum"), T("Revision", "revision"), T("Blatt", "blatt")));
+    out.push(P.section("Schriftfeld", T("Benennung", "benennung"), T("Zeichnungsnr.", "nummer"), T("Halbzeug", "halbzeug"), T("Werkstoff", "werkstoff"), T("Masse", "masse"), h("p", { class: "hint" }, "Halbzeug, Werkstoff und Masse leer lassen: sie kommen dann automatisch aus dem Modell."), T("Maßstab", "massstab"), T("Allgemeintol.", "toleranz"), T("Firma", "firma"), T("Gezeichnet", "ersteller"), T("Datum", "datum"), T("Revision", "revision"), T("Blatt", "blatt")));
     out.push(P.section("Beschriften", h("p", { class: "hint" }, "Maße ziehen zum Verschieben, Doppelklick zum Bearbeiten, Entf zum Löschen."),
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.setTool("dim") }, "Bemaßung"), h("button", { class: "btn", onclick: () => this.autoDims() }, "Hauptmaße"))));
     return out;

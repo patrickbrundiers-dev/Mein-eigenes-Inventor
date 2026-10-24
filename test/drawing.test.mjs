@@ -322,3 +322,9 @@ test("Ansichtswahl: Platte ohne Seitenansicht, Profil ohne Stirnansicht, Winkel 
   assert.ok(viewHasInfo(L));
   assert.deepEqual(chooseViews({ front: rect(50, 20), top: rect(50, 30), left: L }, axes), ["front", "left"]);
 });
+
+test("Profilangabe nennt die Zuschnittlänge (Gehrung: Außenlänge wie in der Zuschnittliste)", () => {
+  const feats = [{ type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "1000", axis: "X", miterStart: "45", miterEnd: "45" }];
+  assert.equal(profileSpec(feats, Number, 1018.83).text, "Quadratrohr 40x40x3 – L = 1018,8");
+  assert.equal(profileSpec(feats, Number).text, "Quadratrohr 40x40x3 – L = 1000", "ohne gebautes Teil: Länge des Features");
+});
