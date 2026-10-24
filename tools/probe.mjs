@@ -31,9 +31,22 @@ const OC = await init({ locateFile: () => wasmPath });
 r.setOC(OC);
 log("OC loaded");
 
+function safe(v, depth = 0) {
+  if (v === null || v === undefined || typeof v !== "object") return v;
+  if (typeof v.toTuple === "function") return v.toTuple();
+  if (Array.isArray(v)) return v.map((x) => safe(x, depth + 1));
+  if (depth > 2) return "<" + (v.constructor?.name) + ">";
+  const proto = Object.getPrototypeOf(v);
+  if (proto && proto !== Object.prototype) return "<" + v.constructor?.name + ">";
+  const o = {};
+  for (const k of Object.keys(v)) o[k] = safe(v[k], depth + 1);
+  return o;
+}
 function tryit(name, fn) {
-  try { const v = fn(); log("OK", name, typeof v === "string" ? v.slice(0, 400) : JSON.stringify(v)?.slice(0, 400)); return v; }
-  catch (e) { log("FAIL", name, e?.message || String(e), e?.stack?.split("\n").slice(0, 3).join(" | ")); }
+  let v;
+  try { v = fn(); } catch (e) { log("FAIL", name, e?.message || String(e), e?.stack?.split("\n").slice(0, 3).join(" | ")); return undefined; }
+  try { log("OK", name, typeof v === "string" ? v.slice(0, 600) : JSON.stringify(safe(v))?.slice(0, 600)); } catch (e) { log("OK", name, "<unprintable>", e.message); }
+  return v;
 }
 
 const box = tryit("makeBox", () => { const b = r.makeBaseBox(10, 20, 30); return b; });
@@ -56,7 +69,7 @@ tryit("face info", () => ({ gt: f0.geomType, n: f0.normalAt(), c: f0.center }));
 
 // Skizze + Extrusion + Bogen
 const drw = tryit("draw", () => r.draw([0, 0]).hLine(50).vLine(20).threePointsArcTo([0, 20], [25, 35]).close());
-log("drawing proto:", Object.getOwnPropertyNames(Object.getPrototypeOf(drw)).join(" "));
+log("drawing proto:", drw && Object.getOwnPropertyNames(Object.getPrototypeOf(drw)).join(" "));
 const sk = tryit("sketchOnPlane", () => drw.sketchOnPlane("XZ", 0));
 log("sketch proto:", sk && Object.getOwnPropertyNames(Object.getPrototypeOf(sk)).join(" "));
 const ext = tryit("extrude", () => sk.extrude(10));
