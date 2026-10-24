@@ -19,6 +19,8 @@ export const COMMANDS = [
 
   { id: "view.fit", label: "Alles zeigen", group: "Ansicht", scope: "3d", key: "F6", keywords: "zoom einpassen" },
   { id: "view.fitSel", label: "Auswahl zeigen", group: "Ansicht", scope: "3d", key: "Umschalt+F6", keywords: "zoom" },
+  { id: "view.saveNamed", label: "Ansicht speichern", group: "Ansicht", scope: "3d", keywords: "benannte ansicht merken kamera" },
+  { id: "view.named", label: "Gespeicherte Ansichten", group: "Ansicht", scope: "3d", keywords: "benannte ansicht kamera" },
   { id: "view.iso", label: "Ansicht Iso", group: "Ansicht", scope: "3d", keywords: "isometrisch" },
   { id: "view.front", label: "Ansicht Vorne", group: "Ansicht", scope: "3d" },
   { id: "view.back", label: "Ansicht Hinten", group: "Ansicht", scope: "3d" },

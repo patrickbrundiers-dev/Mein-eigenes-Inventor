@@ -11,7 +11,7 @@ import { StartScreen } from "./start.js";
 import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
-import { h, toast, confirmDialog, contextMenu, fmtNum } from "./dom.js";
+import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./dom.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { newSketch } from "../core/sketch.js";
 import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, alignFaces, matApply, matApplyDir } from "../core/geom.js";
@@ -823,6 +823,48 @@ export class App {
     const hit = (this.viewer.selectedHits || []).find((x) => x.kind === "face" && x.info?.type === "PLANE" && x.normal);
     if (!hit) return toast("Zuerst eine ebene Fläche anklicken");
     this.viewer.lookAlongNormal(hit.info.normal || hit.normal, hit.point);
+  }
+  // ---------- Benannte Ansichten (im Bauteil bzw. in der Baugruppe gespeichert) ----------
+  namedViewsDoc() {
+    const d = this.activeDoc();
+    return d && (d.kind === "part" || d.kind === "assembly") && !this.viewer.sketchFrame ? d : null;
+  }
+  async saveNamedView() {
+    const d = this.namedViewsDoc();
+    if (!d) return toast("Benannte Ansichten gibt es im Bauteil und in der Baugruppe (nicht beim Skizzieren)");
+    const st = this.viewer.viewState();
+    const list = d.namedViews || [];
+    const name = await promptDialog("Ansicht speichern", "Name", `Ansicht ${list.length + 1}`, { ok: "Speichern", validate: (v) => (v ? null : "Bitte einen Namen eingeben") });
+    if (!name) return;
+    this.edit("Ansicht speichern", () => {
+      const arr = d.namedViews || (d.namedViews = []);
+      const i = arr.findIndex((v) => v.name === name);
+      if (i >= 0) arr[i] = { name, ...st }; else arr.push({ name, ...st });
+    }, { rebuild: false });
+    this.ribbon.render();
+    toast(`Ansicht »${name}« gespeichert`);
+  }
+  showNamedView(name) {
+    const v = this.namedViewsDoc()?.namedViews?.find((x) => x.name === name);
+    if (v) this.viewer.applyViewState(v);
+    return !!v;
+  }
+  deleteNamedView(name) {
+    const d = this.namedViewsDoc();
+    if (!d?.namedViews) return;
+    this.edit("Ansicht löschen", () => { d.namedViews = d.namedViews.filter((v) => v.name !== name); if (!d.namedViews.length) delete d.namedViews; }, { rebuild: false });
+    this.ribbon.render();
+  }
+  namedViewsMenu(e) {
+    const d = this.namedViewsDoc();
+    const list = d?.namedViews || [];
+    const r = e?.currentTarget?.getBoundingClientRect?.() || { left: innerWidth / 2, bottom: 120 };
+    contextMenu(r.left, r.bottom + 2, [
+      ...list.map((v) => ({ label: v.name, icon: "view", run: () => this.showNamedView(v.name) })),
+      list.length ? "-" : null,
+      { label: "Aktuelle Ansicht speichern…", icon: "plus", disabled: !d, run: () => this.saveNamedView() },
+      ...list.map((v) => ({ label: `»${v.name}« löschen`, icon: "trash", run: () => this.deleteNamedView(v.name) })),
+    ]);
   }
   zoomToSelection() {
     const hits = this.viewer.selectedHits || [];

@@ -38,7 +38,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Schnittansicht/Clipping im 3D-Fenster | vorhanden | Schnitt X/Y/Z mit Schieber, Seite wechseln; nur Anzeige, Schnittflächen nicht gefüllt (Stufe 2) |
 | Darstellungsmodi (schattiert, mit Kanten, Drahtmodell, transparent) | vorhanden | Auswahl folgt dem Sichtbaren (Drahtmodell: nur Kanten wählbar) (Stufe 2) |
 | Farben für Kanten/Auswahl/Hover | vorhanden (neu) | Einstellungscenter |
-| Gespeicherte benannte Ansichten | fehlt | P3 |
+| Gespeicherte benannte Ansichten | vorhanden | Stufe 8: Ansicht → Benannt; im Bauteil bzw. in der Baugruppe gespeichert (`namedViews`), mit Rückgängig; Projektion bleibt Einstellung |
 
 ## Skizze (Masterplan 4 und 5)
 
@@ -110,4 +110,5 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 4 | Messwerkzeug: Punkt/Kante/Fläche, Radius, Koordinaten; Oberfläche und Schwerpunkt aus dem Kernel | Kernel-Test (Würfel/Zylinder bekannte Werte) |
 | 5 | Auswahlfilter, Körper ausblenden/isolieren | Oberflächentest |
 | 6 | Skizze: Langloch, Polygon, Spiegeln; Ursache bei widersprüchlichen Bedingungen | Solver-Tests |
+| 8 | Ansicht: benannte Ansichten speichern/wiederherstellen/löschen | Oberflächentest |
 | 7 | Skizze: Versatz, Bedingungen unterdrücken | Unit-Tests Versatz (Rechteck innen/außen, Langloch, Kreis, offene Kette), Oberflächentest |

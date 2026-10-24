@@ -740,6 +740,32 @@ try {
       JSON.stringify({ selN, off, dof0, sup }));
   }
 
+  // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("front", { animate: false }); v.fit(); });
+    const before = await evalApp(() => window.__werkcad.viewer.viewState());
+    await page.locator("#ribbon .rb-tab", { hasText: "Ansicht" }).click();
+    await page.locator("#ribbon .rb-btn", { hasText: "Ansicht speichern" }).click();
+    await page.locator(".dialog input").fill("Vorne nah");
+    await page.locator(".dialog footer .btn", { hasText: "Speichern" }).click();
+    await page.waitForTimeout(200);
+    await evalApp(() => window.__werkcad.viewer.setView("iso", { animate: false }));
+    await page.locator("#ribbon .rb-btn", { hasText: /^Ansichten$/ }).click();
+    await page.locator(".menu button", { hasText: "Vorne nah" }).first().click();
+    await page.waitForTimeout(500);
+    const nv = await evalApp(() => {
+      const a = window.__werkcad, st = a.viewer.viewState();
+      const saved = a.activeDoc().namedViews;
+      a.undo();
+      return { st, saved, afterUndo: a.activeDoc().namedViews };
+    });
+    const close = (a, b, t = 1e-3) => a.every((v, i) => Math.abs(v - b[i]) < t);
+    step("Benannte Ansicht speichern und wiederherstellen", nv.saved?.length === 1 && nv.saved[0].name === "Vorne nah" && close(nv.st.dir, before.dir) && close(nv.st.target, before.target, 1e-2) && Math.abs(nv.st.half - before.half) < 1e-3 * before.half && !nv.afterUndo,
+      JSON.stringify({ before, nv }));
+  }
+
   // Plan 5.5: große Baugruppe (150 Komponenten) öffnen und bedienen
   {
     const t0 = Date.now();
