@@ -35,7 +35,7 @@ jobs:
       - name: Kern-Tests (ohne Geometrie)
         id: core
         continue-on-error: true
-        run: set -o pipefail; node --test test/core.test.mjs test/project.test.mjs test/units.test.mjs test/cutlist.test.mjs 2>&1 | tee ergebnis/core.txt
+        run: set -o pipefail; node --test test/core.test.mjs test/project.test.mjs test/units.test.mjs test/cutlist.test.mjs test/drawing.test.mjs 2>&1 | tee ergebnis/core.txt
       - name: Geometrie-Tests
         id: kernel
         continue-on-error: true
