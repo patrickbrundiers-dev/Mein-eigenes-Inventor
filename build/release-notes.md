@@ -11,6 +11,7 @@
 - **Befehlssuche** mit Strg+K oder „Befehl suchen“: Befehl tippen und mit Eingabe ausführen. Die Suche zeigt auch das Tastaturkürzel.
 - **Tastaturkürzel frei belegbar** unter Einstellungen → Werkzeuge und Tastatur. Eine doppelte Belegung wird mit dem betroffenen Befehl gemeldet und nicht übernommen. Die Tooltips im Menüband zeigen das Kürzel.
 - **Messen** (Taste M oder Prüfen → Messen): Fläche, Länge, Radius/Durchmesser sowie Abstand und Winkel zwischen zwei Elementen, exakt aus dem Geometrie-Kern. Die Masse-Eigenschaften zeigen jetzt auch Oberfläche und Schwerpunkt.
+- **Zeichnung, „Hauptmaße“:** Jedes Maß steht nur noch einmal. Zuerst wird die Vorderansicht bemaßt, die Draufsicht ergänzt die Tiefe. Gleiche Bohrungen bekommen ein Maß „n× Ø“ und Lagemaße von links unten. Verdeckte Linien, die kürzer als ein Strich sind, werden ausgeblendet. Vorher entstanden dadurch kurze Striche an Rohrwänden.
 - Geprüft mit einer Baugruppe aus 150 Komponenten:
   - Öffnen und Auswählen bleiben unter einer Sekunde.
   - Die Kollisionsprüfung braucht etwa eine Sekunde.
