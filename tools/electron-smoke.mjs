@@ -44,6 +44,12 @@ try {
   await win.screenshot({ path: path.join(outDir, "electron.png") });
   const title = await win.title();
   check("Fenstertitel", /WerkCAD/.test(title), title);
+  // Fehlerprotokoll im Benutzerordner
+  const logFile = path.join(await app.evaluate(({ app: a }) => a.getPath("userData")), "protokoll", "werkcad.log");
+  await win.evaluate(() => window.werkcad.log("warn", "rauchtest", "Testeintrag"));
+  await win.waitForTimeout(300);
+  const logText = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
+  check("Fehlerprotokoll geschrieben", /\[info\] start: WerkCAD /.test(logText) && /\[warn\] rauchtest: Testeintrag/.test(logText), logFile);
   // Projektdatei: Speichern, beschädigte Datei mit Sicherung, fehlende Datei, Autosave ohne Größengrenze
   const tmp = fs.mkdtempSync(path.join((await import("node:os")).tmpdir(), "werkcad-smoke-"));
   const file = path.join(tmp, "Test.wcad");

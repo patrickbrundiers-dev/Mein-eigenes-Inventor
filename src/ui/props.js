@@ -618,8 +618,9 @@ export class Props {
     modal({ title: "Über WerkCAD", body: h("div", { style: { maxWidth: "52ch" } },
       h("p", { style: { marginTop: 0 } }, h("b", {}, "WerkCAD "), v),
       h("p", {}, "Parametrisches 3D-CAD für Bauteile, Rohr- und Profilkonstruktionen, Baugruppen und Zeichnungen."),
-      h("p", { class: "hint" }, "Geometrie-Kern: OpenCascade (über replicad). 3D-Darstellung: three.js. Bedienung angelehnt an gängige Konstruktionsprogramme.")),
-    buttons: [{ label: "OK", primary: true }] });
+      h("p", { class: "hint" }, "Geometrie-Kern: OpenCascade (über replicad). 3D-Darstellung: three.js. Bedienung angelehnt an gängige Konstruktionsprogramme."),
+      window.werkcad?.openLogFolder ? h("p", { class: "hint" }, "Bei Problemen hilft das Fehlerprotokoll (enthält keine Projektdaten).") : null),
+    buttons: [window.werkcad?.openLogFolder ? { label: "Protokollordner öffnen", run: () => window.werkcad.openLogFolder() } : null, { label: "OK", primary: true }].filter(Boolean) });
   }
 }
 
