@@ -1,5 +1,6 @@
 // Anwendungssteuerung: Projektzustand, Rückgängig, Neuaufbau, Auswahl, Modi
 import { Viewer } from "./viewer.js";
+import { invertSelection } from "../core/boxselect.js";
 import { Sketcher } from "./sketcher.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
@@ -18,6 +19,8 @@ import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlace
 import { MATERIALS } from "../core/sections.js";
 import { resolveParams, evaluate } from "../core/expr.js";
 import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
+
+const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
 
 export class App {
   constructor() {
@@ -457,9 +460,28 @@ export class App {
     let down = null;
     cv.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, b: e.button, t: performance.now() }; cv.focus(); });
     cv.addEventListener("contextmenu", (e) => e.preventDefault());
+    // Fensterauswahl im Bauteil: linke Maustaste ziehen (nach rechts ganz innen, nach links berührend)
+    const boxEl = h("div", { class: "view-box", hidden: true });
+    document.getElementById("stage").append(boxEl);
+    const boxRect = (e) => { const r = cv.getBoundingClientRect(); return { x0: down.x - r.left, y0: down.y - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, ox: r.left - boxEl.parentElement.getBoundingClientRect().left, oy: r.top - boxEl.parentElement.getBoundingClientRect().top }; };
+    const boxAllowed = () => this.mode === "part" && !this.pick && down?.b === 0;
+    cv.addEventListener("pointermove", (e) => {
+      if (!down || !boxAllowed() || Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) return;
+      const b = boxRect(e);
+      Object.assign(boxEl.style, { left: b.ox + Math.min(b.x0, b.x1) + "px", top: b.oy + Math.min(b.y0, b.y1) + "px", width: Math.abs(b.x1 - b.x0) + "px", height: Math.abs(b.y1 - b.y0) + "px" });
+      boxEl.classList.toggle("cross", b.x1 < b.x0);
+      boxEl.hidden = false;
+    });
     cv.addEventListener("pointerup", (e) => {
       if (!down) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4;
+      if (moved && !boxEl.hidden) {
+        const b = boxRect(e);
+        boxEl.hidden = true;
+        down = null;
+        return this.boxSelect(b, b.x1 < b.x0, e.ctrlKey || e.shiftKey);
+      }
+      boxEl.hidden = true;
       const b = down.b;
       down = null;
       if (moved) return;
@@ -540,6 +562,37 @@ export class App {
     this.tree.render();
     this.props.render();
     this.ribbon.render();
+  }
+  /** Wählbares im Bauteil nach Auswahlfilter (Flächen/Kanten) */
+  selectableOpts() {
+    if (this.selFilter === "flaechen") return { edges: false, faces: true };
+    if (this.selFilter === "kanten") return { edges: true, faces: false };
+    return { edges: true, faces: true };
+  }
+  setSelection(hits) {
+    this.selHits = hits;
+    this.sel = hits.length ? { type: "geometry" } : null;
+    this.viewer.setSelectionHits(this.selHits);
+    this.tree.render();
+    this.props.render();
+    this.ribbon.render();
+    this.updateStatus();
+  }
+  boxSelect(rect, crossing, add) {
+    if (this.mode !== "part") return;
+    const hits = this.viewer.boxHits(this.selectableOpts(), rect, crossing);
+    if (!add) return this.setSelection(hits);
+    const k = hitKey;
+    const have = new Set(this.selHits.map(k));
+    this.setSelection([...this.selHits, ...hits.filter((x) => !have.has(k(x)))]);
+  }
+  selectEverything() {
+    if (this.mode !== "part") return;
+    this.setSelection(this.viewer.boxHits(this.selectableOpts()));
+  }
+  invertSelection() {
+    if (this.mode !== "part") return;
+    this.setSelection(invertSelection(this.viewer.boxHits(this.selectableOpts()), this.selHits, hitKey));
   }
   viewerContextMenu(e) {
     const items = [];
@@ -775,6 +828,7 @@ export class App {
       }
     }
     if (this.viewer?.hidden.size && (this.mode === "part" || this.mode === "assembly")) parts.push(h("button", { class: "status-btn", title: "Alle einblenden", onclick: () => this.showAllBodies() }, `${this.viewer.hidden.size} ausgeblendet`));
+    if (this.mode === "part" && this.selHits?.length > 1) parts.push(h("span", {}, `${this.selHits.length} gewählt`));
     if (this.selFilter !== "alles" && this.mode === "part") parts.push(h("span", {}, "Filter: " + (this.selFilter === "flaechen" ? "nur Flächen" : "nur Kanten")));
     parts.push(h("span", {}, "mm · Grad"));
     this.statusEl.replaceChildren(...parts);

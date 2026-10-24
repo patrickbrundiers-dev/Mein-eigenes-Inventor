@@ -334,6 +334,8 @@ table.grid input.inp { padding: 2px 4px; }
 .sk-dim.off, .sk-dim-text.off { opacity: 0.45; stroke-dasharray: 3 2; }
 .sk-glyph.off { opacity: 0.4; }
 .sk-box { fill: rgba(45, 98, 196, 0.08); stroke: #2d62c4; stroke-width: 1; pointer-events: none; }
+.view-box { position: absolute; z-index: 5; background: rgba(45, 98, 196, 0.08); border: 1px solid #2d62c4; pointer-events: none; }
+.view-box.cross { background: rgba(46, 157, 74, 0.08); border: 1px dashed #2e9d4a; }
 .sk-box.cross { fill: rgba(46, 157, 74, 0.08); stroke: #2e9d4a; stroke-dasharray: 4 3; }
 .sk-glyph.err rect { stroke: var(--err); fill: var(--err-soft); stroke-width: 1.5; }
 

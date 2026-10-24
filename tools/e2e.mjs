@@ -959,6 +959,31 @@ try {
     step("Drehen um den Punkt unter dem Mauszeiger", !!probe && dPiv < 2 && turned && dCtr > 10, JSON.stringify({ probe, dPiv, dCtr, turned }));
   }
 
+  // 3D-Fensterauswahl (Auswahlfilter), Alles auswählen, Auswahl umkehren
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    await evalApp(() => { const a = window.__werkcad; a.setSelFilter("flaechen"); a.viewer.setView("front", { animate: false }); a.viewer.fit(); });
+    await page.waitForTimeout(300);
+    const vb = await page.locator("#viewer canvas").boundingBox();
+    const total = await evalApp(() => window.__werkcad.viewer.boxHits({ edges: false, faces: true }).length);
+    const drag = async (x0, y0, x1, y1) => { await page.mouse.move(x0, y0); await page.mouse.down(); await page.mouse.move(x1, y1, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(150); return evalApp(() => window.__werkcad.selHits.length); };
+    const win = await drag(vb.x + 2, vb.y + 2, vb.x + vb.width - 2, vb.y + vb.height - 2);
+    const cross = await drag(vb.x + vb.width / 2 + 20, vb.y + vb.height / 2 + 20, vb.x + vb.width / 2 - 20, vb.y + vb.height / 2 - 20);
+    const small = await drag(vb.x + vb.width / 2 - 20, vb.y + vb.height / 2 - 20, vb.x + vb.width / 2 + 20, vb.y + vb.height / 2 + 20);
+    await page.mouse.click(vb.x + 10, vb.y + vb.height - 10);
+    await page.keyboard.press("Control+a");
+    const all = await evalApp(() => window.__werkcad.selHits.length);
+    await page.keyboard.press("Control+i");
+    const inv = await evalApp(() => window.__werkcad.selHits.length);
+    await evalApp(() => window.__werkcad.setSelFilter("kanten"));
+    await page.keyboard.press("Control+a");
+    const edges = await evalApp(() => ({ n: window.__werkcad.selHits.length, onlyEdges: window.__werkcad.selHits.every((x) => x.kind === "edge") }));
+    await evalApp(() => { const a = window.__werkcad; a.setSelFilter("alles"); a.setSelection([]); });
+    step("3D-Fensterauswahl, Alles auswählen, Umkehren", total > 6 && win === total && cross > 0 && cross < total && small <= cross && all === total && inv === 0 && edges.n > 0 && edges.onlyEdges,
+      JSON.stringify({ total, win, cross, small, all, inv, edges }));
+  }
+
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));

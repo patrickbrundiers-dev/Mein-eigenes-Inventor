@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { placementMatrix, toWorld } from "../core/geom.js";
+import { segmentsInBox, trianglesInBox } from "../core/boxselect.js";
 
 const COL = {
   edge: 0x1c2733,
@@ -815,6 +816,52 @@ export class Viewer {
       return { kind: "face", key: pk.key, body: pk.body, face: fi, info, point: faceHit.point.toArray(), normal: nrm ? nrm.toArray() : null, group: pk.group, mesh };
     }
     return null;
+  }
+
+  /**
+   * Alle wählbaren Flächen/Kanten sichtbarer Körper (für Fensterauswahl, Alles auswählen, Umkehren).
+   * Mit rect: nur die im Fenster (Bildschirm-px relativ zum Container). Verdeckte Elemente zählen mit.
+   */
+  boxHits({ edges = true, faces = true } = {}, rect = null, crossing = false) {
+    const out = [];
+    const w = this.container.clientWidth, h = this.container.clientHeight;
+    const v = new THREE.Vector3();
+    if (edges) {
+      for (const { pk, scr, ranges } of this.ensureEdgeCache()) {
+        if (!pk.lines.visible) continue;
+        for (let ei = 0; ei < ranges.length; ei++) {
+          const info = pk.lines.userData.edges[ei];
+          if (this.clip && info?.mid && this.clipped(new THREE.Vector3(...info.mid).applyMatrix4(pk.lines.matrixWorld))) continue;
+          const [s0, c] = ranges[ei];
+          if (rect && !segmentsInBox(scr.subarray(s0 * 2, (s0 + c) * 2), rect, crossing)) continue;
+          out.push({ kind: "edge", key: pk.key, body: pk.body, edge: ei, info, group: pk.group });
+        }
+      }
+    }
+    if (faces) {
+      for (const pk of this.pickables) {
+        const mesh = pk.mesh;
+        if (!mesh.visible) continue;
+        mesh.updateMatrixWorld();
+        const pos = mesh.geometry.attributes.position.array, idx = mesh.geometry.index?.array;
+        const flist = mesh.userData.faces || [];
+        const scrOf = (i) => { v.set(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]).applyMatrix4(mesh.matrixWorld); const world = v.toArray(); v.project(this.camera); return { p: [((v.x + 1) / 2) * w, ((1 - v.y) / 2) * h], world }; };
+        flist.forEach((f, fi) => {
+          const tris = [];
+          let point = null;
+          for (let k = f.start; k + 2 < f.start + f.count; k += 3) {
+            const t = [0, 1, 2].map((d) => scrOf(idx ? idx[k + d] : k + d));
+            if (!point) point = t[0].world;
+            tris.push(t.map((x) => x.p));
+          }
+          if (!tris.length) return;
+          if (this.clip && f.point && this.clipped(new THREE.Vector3(...f.point))) return;
+          if (rect && !trianglesInBox(tris, rect, crossing)) return;
+          out.push({ kind: "face", key: pk.key, body: pk.body, face: fi, info: f, point: f.point || point, normal: f.normal || null, group: pk.group, mesh });
+        });
+      }
+    }
+    return out;
   }
 
   clearHover() {

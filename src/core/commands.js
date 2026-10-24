@@ -40,6 +40,8 @@ export const COMMANDS = [
   { id: "select.all", label: "Auswahlfilter: alles", group: "Auswahl", scope: "part" },
   { id: "select.faces", label: "Auswahlfilter: nur Flächen", group: "Auswahl", scope: "part" },
   { id: "select.edges", label: "Auswahlfilter: nur Kanten", group: "Auswahl", scope: "part" },
+  { id: "select.everything", label: "Alles auswählen", group: "Auswahl", scope: "part", key: "Strg+A", keywords: "markieren flächen kanten" },
+  { id: "select.invert", label: "Auswahl umkehren", group: "Auswahl", scope: "part", key: "Strg+I", keywords: "invertieren" },
   { id: "view.clipX", label: "Schnitt X ein/aus", group: "Ansicht", scope: "3d", keywords: "schnittebene clipping" },
   { id: "view.clipY", label: "Schnitt Y ein/aus", group: "Ansicht", scope: "3d", keywords: "schnittebene clipping" },
   { id: "view.clipZ", label: "Schnitt Z ein/aus", group: "Ansicht", scope: "3d", keywords: "schnittebene clipping" },
