@@ -50,6 +50,37 @@ try {
   await win.waitForTimeout(300);
   const logText = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
   check("Fehlerprotokoll geschrieben", /\[info\] start: WerkCAD /.test(logText) && /\[warn\] rauchtest: Testeintrag/.test(logText), logFile);
+  // Projektdatei: Speichern, beschädigte Datei mit Sicherung, fehlende Datei, Autosave ohne Größengrenze
+  const tmp = fs.mkdtempSync(path.join((await import("node:os")).tmpdir(), "werkcad-smoke-"));
+  const file = path.join(tmp, "Test.wcad");
+  const saved = await win.evaluate((p) => window.werkcad.saveProject({ path: p, text: window.__werkcad.files.serialize() }), file);
+  const savedPrj = JSON.parse(fs.readFileSync(file, "utf8"));
+  await win.evaluate((p) => window.werkcad.saveProject({ path: p, text: window.__werkcad.files.serialize() }), file);
+  check("Speichern atomar mit Sicherung", saved?.path === file && savedPrj.docs.length === 5 && fs.existsSync(file + ".bak") && !fs.readdirSync(tmp).some((f) => f.includes(".tmp")), fs.readdirSync(tmp).join(","));
+  fs.writeFileSync(file, "{ kaputt");
+  await win.evaluate(() => { window.__werkcad.dirty = false; window.__werkcad.newProject(); });
+  await win.evaluate(() => { window.__werkcad.dirty = false; });
+  const opening = win.evaluate((p) => window.__werkcad.files.open(p), file);
+  await win.getByRole("button", { name: "Sicherung öffnen" }).click({ timeout: 10000 });
+  await opening;
+  const fromBak = await win.evaluate(() => ({ docs: window.__werkcad.project.docs.length, path: window.__werkcad.filePath, dirty: window.__werkcad.dirty }));
+  check("Beschädigte Datei → Sicherung geöffnet", fromBak.docs === 5 && fromBak.path === null && fromBak.dirty === true, JSON.stringify(fromBak));
+  await win.evaluate(() => { window.__werkcad.dirty = false; document.getElementById("toasts").innerHTML = ""; });
+  await win.evaluate((p) => window.__werkcad.files.open(p), path.join(tmp, "fehlt.wcad"));
+  const toastText = await win.$$eval("#toasts .toast", (els) => els.map((e) => e.textContent).join(" | "));
+  check("Fehlende Datei → klare Meldung", /Datei nicht gefunden/.test(toastText), toastText);
+  const big = await win.evaluate(async () => {
+    const a = window.__werkcad;
+    a.project.docs[0].description = "x".repeat(5e6);
+    a.files.autosave();
+    await new Promise((r) => setTimeout(r, 2500));
+    const rec = await a.files.recovery();
+    a.project.docs[0].description = "";
+    a.dirty = false;
+    return rec ? rec.project.docs[0].description.length : 0;
+  });
+  check("Autosave über 4,5 MB als Datei", big === 5e6, String(big));
+  fs.rmSync(tmp, { recursive: true, force: true });
   const realErrors = errors.filter((e) => e.startsWith("[error]") || !e.startsWith("["));
   check("Keine Fehler in der Konsole", realErrors.length === 0, realErrors.slice(0, 3).join(" | "));
   // Schließen ohne ungespeicherte Änderungen
