@@ -8,8 +8,9 @@
   - Perspektive und orthogonale Ansicht umschaltbar (wird gemerkt). Beim Skizzieren ist die Ansicht immer orthogonal.
   - Darstellungsmodi: schattiert mit Kanten, schattiert, Drahtmodell, transparent.
   - Schnittebene X/Y/Z im 3D-Fenster mit Schieber und Seitenwechsel. Sie ist nur Anzeige und ändert das Modell nicht.
-- **Befehlssuche** mit Strg+K. Tastaturkürzel lassen sich im Einstellungscenter anpassen, doppelt belegte Tasten werden abgelehnt.
-- **Messwerkzeug** (Taste M): Fläche, Kante oder Bohrung anklicken. Es zeigt exakte Werte aus dem Geometrie-Kern, Abstände, Oberfläche und Schwerpunkt.
+- **Befehlssuche** mit Strg+K oder „Befehl suchen“: Befehl tippen und mit Eingabe ausführen. Die Suche zeigt auch das Tastaturkürzel.
+- **Tastaturkürzel frei belegbar** unter Einstellungen → Werkzeuge und Tastatur. Eine doppelte Belegung wird mit dem betroffenen Befehl gemeldet und nicht übernommen. Die Tooltips im Menüband zeigen das Kürzel.
+- **Messen** (Taste M oder Prüfen → Messen): Fläche, Länge, Radius/Durchmesser sowie Abstand und Winkel zwischen zwei Elementen, exakt aus dem Geometrie-Kern. Die Masse-Eigenschaften zeigen jetzt auch Oberfläche und Schwerpunkt.
 - Geprüft mit einer Baugruppe aus 150 Komponenten:
   - Öffnen und Auswählen bleiben unter einer Sekunde.
   - Die Kollisionsprüfung braucht etwa eine Sekunde.
