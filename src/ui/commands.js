@@ -39,6 +39,8 @@ export function commandRunners(app) {
     "select.all": () => app.setSelFilter("alles"),
     "select.faces": () => app.setSelFilter("flaechen"),
     "select.edges": () => app.setSelFilter("kanten"),
+    "select.everything": () => app.selectEverything(),
+    "select.invert": () => app.invertSelection(),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
     "asm.align": r("align"),

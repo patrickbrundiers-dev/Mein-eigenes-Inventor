@@ -85,3 +85,31 @@ test("Kürzel als Einstellung: Rundreise und Ablehnung von Konflikten", () => {
   assert.equal(bad.warnings.length, 1);
   assert.equal(JSON.parse(serializeSettings(defaultSettings())).values["werkzeuge.kuerzel"], undefined, "leer wird nicht gespeichert");
 });
+
+import { segmentsInBox, trianglesInBox, invertSelection } from "../src/core/boxselect.js";
+
+test("3D-Fensterauswahl: Kanten, Flächen, Umkehren, Strg+A je Bereich", () => {
+  const R = { x0: 0, y0: 0, x1: 100, y1: 100 };
+  const inner = new Float32Array([10, 10, 50, 10, 50, 10, 50, 50]);
+  const half = new Float32Array([50, 50, 150, 50]);
+  const outside = new Float32Array([150, 0, 150, 100]);
+  assert.equal(segmentsInBox(inner, R, false), true);
+  assert.equal(segmentsInBox(half, R, false), false);
+  assert.equal(segmentsInBox(half, R, true), true);
+  assert.equal(segmentsInBox(outside, R, true), false);
+  // Segment quer durch das Fenster, beide Enden außen
+  assert.equal(segmentsInBox(new Float32Array([-10, 50, 110, 50]), R, true), true);
+  // rückwärts aufgezogenes Fenster wird normalisiert
+  assert.equal(segmentsInBox(inner, { x0: 100, y0: 100, x1: 0, y1: 0 }, false), true);
+  const tri = [[[10, 10], [40, 10], [10, 40]]];
+  const big = [[[-500, -500], [500, -500], [0, 500]]];
+  assert.equal(trianglesInBox(tri, R, false), true);
+  assert.equal(trianglesInBox(big, R, false), false);
+  assert.equal(trianglesInBox(big, R, true), true, "Fenster liegt ganz in der Fläche");
+  assert.equal(trianglesInBox([[[200, 200], [300, 200], [200, 300]]], R, true), false);
+  const all = [{ k: "a" }, { k: "b" }, { k: "c" }];
+  assert.deepEqual(invertSelection(all, [{ k: "b" }], (x) => x.k).map((x) => x.k), ["a", "c"]);
+  assert.equal(commandForCombo(effectiveKeymap(), "Strg+A", "part")?.id, "select.everything");
+  assert.equal(commandForCombo(effectiveKeymap(), "Strg+A", "sketch")?.id, "sketch.selectAll");
+  assert.equal(commandForCombo(effectiveKeymap(), "Strg+I", "part")?.id, "select.invert");
+});
