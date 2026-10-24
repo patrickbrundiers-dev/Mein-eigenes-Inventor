@@ -1,12 +1,22 @@
-**Neu in 0.6.0**
+**Neu in 0.7.0**
 
-- **Update aus dem Programm repariert.** In der installierten Version fehlte die Update-Adresse, deshalb fand „Nach Updates suchen“ bisher nie ein Update. Bitte 0.6.0 einmal von Hand installieren (Setup von der Release-Seite, in den bisherigen Ordner). Danach kommen Updates wieder aus dem Programm.
-- **Auswahl:**
-  - Auswahlfilter im Ansicht-Tab: alles, nur Flächen oder nur Kanten.
-  - Körper und Komponenten lassen sich über das Kontextmenü ausblenden und isolieren. Die Statusleiste zeigt „n ausgeblendet“ zum Wiedereinblenden. Das Modell bleibt dabei unverändert.
-- **Profil-Schnelleingabe:** Im Querschnitts-Editor von Rohr/Profil, Rahmen und Knickrahmen gibt es das Feld „Profil-ID“. „40x3“ wird zu QR 40x40x3, „RE 70x50x4“ geht auch ohne Normgröße, „qr 40“ zeigt Treffer zum Anklicken.
-- **Zahlenfelder:** Das Mausrad verstellt keine fokussierten Zahlenfelder mehr.
-- **Zeichnung, Hauptmaße:**
-  - Maße überlappen nicht mehr: kurze Maße innen, lange außen. Maße weichen Nachbaransichten und dem Schriftfeld aus, enge Maße bekommen Pfeile von außen.
-  - Erneutes „Hauptmaße“ ersetzt nur automatische Maße, die du nicht verändert hast.
-  - Bohrungen werden mit ihrer Funktion bemaßt, z. B. „5× M8“, „4× Ø11 durch“, „Ø5, 12 tief“. Senkungen bekommen Ø und Winkel bzw. Tiefe.
+- **Update aus dem Programm:** Ab 0.6.0 findet „Nach Updates suchen“ dieses Release selbst. Wer noch 0.5.0 oder älter hat, installiert einmal von Hand.
+- **Skizze:**
+  - Neue Werkzeuge Langloch, Polygon (3–64 Ecken) und Spiegeln, alle parametrisch über Bedingungen.
+  - Ist eine Skizze nicht lösbar, nennt PBCAD die widersprüchlichen Bedingungen (z. B. „Länge 30“) und markiert sie rot.
+  - Versatz: Kontur anklicken, Seite wählen, Abstand eingeben. Ecken und Bögen werden sauber verbunden, ein einziges Maß steuert die ganze versetzte Kontur.
+  - Bedingungen und Maße lassen sich in den Eigenschaften unterdrücken. Sie bleiben gespeichert und werden blass gezeigt.
+  - Fensterauswahl: nach rechts gezogen werden nur ganz umschlossene Elemente gewählt, nach links gezogen auch angeschnittene. Strg+A wählt alle Skizzenelemente.
+- **Ansicht:** Benannte Ansichten unter Ansicht → Benannt speichern, wiederherstellen und löschen. Sie werden im Bauteil bzw. in der Baugruppe gespeichert.
+- **Messen:** Ecken lassen sich anklicken. Eine Ecke zeigt ihre Lage X/Y/Z, zwei Ecken zeigen Abstand und Δ X/Y/Z. Ecke zu Fläche oder Kante geht ebenfalls.
+- **Zeichnung:**
+  - Bohrungsbilder werden wie vom Konstrukteur bemaßt: symmetrische Abstände, Teilungen „2× 15 (=30)“, Lochkreise „LK Ø70, 6× 60°“, Koordinatenmaße ab vier Lagemaßen.
+  - Rohre bekommen die Profilangabe („Rohr 48,3x2,6 – L = 400“) statt Einzelmaßen, Hohlkörper die Wandstärke.
+  - Werkstoff und Masse im Schriftfeld folgen dem Modell, auch bei Baugruppen.
+  - „Grundansichten“ lässt Ansichten weg, die nichts Neues zeigen (z. B. die Seitenansicht einer Platte). Der Maßstab wird dadurch oft größer.
+  - Neuer Befehl „Schnitt Hohlprofil“ legt einen Schnitt quer durch Rohre und Hohlprofile, möglichst durch eine Bohrung.
+- **Rohr / Profil:**
+  - Konturen direkt am Rohr ohne Skizze: Bohrung, Langloch, Rechteck und Ausklinkung am Ende, mit Seite bzw. Winkel am Rundrohr, Versatz, Muster „3x25“ und „durchgehend“. Schneidweg und Einstiche stehen am Feature.
+  - Enden wahlweise im 2D-Schnitt (Strahl senkrecht) oder 3D-Schnitt (Kopf geschwenkt) mit Winkelkorrektur. Über ±45° warnt PBCAD „nicht maßhaltig“. Bohrungen gehen auch schräg.
+  - Die Konturkarten zeigen ein Maßbild, welcher Buchstabe welches Maß ist.
+- **Fertigungsprüfung Rohrlaser:** Die Zuschnittliste wird gegen die Maschinengrenzen geprüft: Stangenlänge, kürzestes Teil, Hüllkreis, Metergewicht, Knickrahmen-Schenkel und -Wand, Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende. Die Grenzen stehen unter Einstellungen → Rohrlaser und Fertigung und sollten an die eigene Maschine angepasst werden.
