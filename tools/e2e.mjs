@@ -323,6 +323,29 @@ try {
   const after = await evalApp(() => window.__werkcad.undoStack.length);
   step("Rückgängig", after === before - 1, `${before} -> ${after}`);
 
+  // Atomare Änderung: wirft die Änderung, bleibt das Modell unverändert und kein Rückgängig-Punkt entsteht
+  const atomic = await evalApp(() => {
+    const a = window.__werkcad;
+    const p = a.doc("beispiel_platte");
+    const json = JSON.stringify(a.project), undo = a.undoStack.length, redo = a.redoStack.length;
+    const ok = a.edit("Fehlertest", () => { p.params.find((x) => x.name === "Dicke").expr = "99"; p.features.length = 0; throw new Error("absichtlich"); });
+    return { ok, same: JSON.stringify(a.project) === json, undo: a.undoStack.length - undo, redo: a.redoStack.length - redo, toast: document.querySelector("#toasts")?.textContent.includes("Fehlertest nicht möglich") };
+  });
+  step("Fehlerhafte Änderung ohne halben Stand", atomic.ok === false && atomic.same && atomic.undo === 0 && atomic.redo === 0 && atomic.toast, JSON.stringify(atomic));
+
+  // Rückgängig/Wiederholen/Speichern: gespeicherte Daten = angezeigtes Modell
+  const dicke = () => window.__werkcad.doc("beispiel_platte").params.find((x) => x.name === "Dicke").expr;
+  const saved = () => JSON.parse(window.__werkcad.files.serialize()).docs.find((d) => d.id === "beispiel_platte").params.find((x) => x.name === "Dicke").expr;
+  const d0 = await evalApp(dicke);
+  await evalApp(() => { const a = window.__werkcad; a.edit("Dicke", () => { a.doc("beispiel_platte").params.find((x) => x.name === "Dicke").expr = "12"; }); });
+  const ur = [[await evalApp(dicke), await evalApp(saved)]];
+  await evalApp(() => window.__werkcad.undo());
+  ur.push([await evalApp(dicke), await evalApp(saved)]);
+  await evalApp(() => window.__werkcad.redo());
+  ur.push([await evalApp(dicke), await evalApp(saved)]);
+  await idle();
+  step("Rückgängig/Wiederholen/Speichern konsistent", JSON.stringify(ur) === JSON.stringify([["12", "12"], [d0, d0], ["12", "12"]]), JSON.stringify({ d0, ur }));
+
   // Knickrahmen: über das Menüband anlegen, Winkel im Eigenschaftsfenster ändern, Ansicht abgewickelt, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Knickrahmen"));
   await idle();

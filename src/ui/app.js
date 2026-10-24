@@ -170,11 +170,32 @@ export class App {
     this.ribbon.render();
     if (rebuild) this.rebuild();
   }
-  /** Bequeme Variante: Änderung mit Rückgängig-Punkt */
+  /**
+   * Bequeme Variante: Änderung mit Rückgängig-Punkt. Atomar: wirft fn, wird der Stand
+   * vor der Änderung wiederhergestellt (kein halb geändertes Modell). Rückgabe: true bei Erfolg.
+   */
   edit(label, fn, opts) {
+    const redo = this.redoStack;
     this.checkpoint(label);
-    fn();
+    try {
+      fn();
+    } catch (e) {
+      const st = this.undoStack.pop();
+      this.redoStack = redo;
+      this.project = JSON.parse(st.json);
+      this.activeId = this.doc(st.activeId) ? st.activeId : this.activeId;
+      if (this.sel?.type === "feature" && !this.activeDoc()?.features?.some((f) => f.id === this.sel.id)) this.sel = null;
+      window.werkcad?.log?.("error", "aenderung", `${label}: ${e?.stack || e}`);
+      toast(`${label} nicht möglich: ${e?.message || e} – Stand davor wiederhergestellt`, { kind: "err", timeout: 6000 });
+      this.tree.render();
+      this.props.render();
+      this.ribbon.render();
+      if (this.mode === "sketch") { this.sketcher.solve(); this.sketcher.render(); }
+      this.rebuild();
+      return false;
+    }
     this.changed(opts);
+    return true;
   }
   undo() { this.restore(this.undoStack, this.redoStack); }
   redo() { this.restore(this.redoStack, this.undoStack); }
