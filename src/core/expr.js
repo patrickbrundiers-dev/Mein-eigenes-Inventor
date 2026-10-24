@@ -1,5 +1,5 @@
 // Ausdrucks-Auswertung für Parameter und Maße (mm, Grad).
-// Beispiele: "Länge/2 + 5", "sqrt(B^2+H^2)", "2*pi*r", "45°", "12 mm", "1,5*t"
+// Beispiele: "Länge/2 + 5", "sqrt(B^2+H^2)", "2*pi*r", "45°", "12 mm", "1,5*t", "2 in", "3/4\""
 
 const FUNCS = {
   sin: (d) => Math.sin((d * Math.PI) / 180),
@@ -20,7 +20,8 @@ const FUNCS = {
   if: (c, a, b) => (c ? a : b),
 };
 const CONSTS = { pi: Math.PI, PI: Math.PI, e: Math.E };
-const UNITS = { mm: 1, cm: 10, m: 1000, deg: 1, grad: 1, "°": 1 };
+// Zoll exakt 25,4 mm (internationale Definition 1959)
+const UNITS = { mm: 1, cm: 10, m: 1000, in: 25.4, zoll: 25.4, '"': 25.4, deg: 1, grad: 1, "°": 1 };
 
 const IDENT_START = /[A-Za-z_À-ɏ]/;
 const IDENT_PART = /[A-Za-z0-9_À-ɏ]/;
@@ -59,7 +60,7 @@ function tokenize(src) {
       i = j;
       continue;
     }
-    if (c === "°") { toks.push({ t: "unit", v: "°" }); i++; continue; }
+    if (c === "°" || c === '"') { toks.push({ t: "unit", v: c }); i++; continue; }
     if (IDENT_START.test(c)) {
       let j = i;
       while (j < s.length && IDENT_PART.test(s[j])) j++;
