@@ -1,6 +1,6 @@
 // Einstiegspunkt
 import { App } from "./app.js";
-import { h, toast, confirmDialog } from "./dom.js";
+import { h, toast, modal } from "./dom.js";
 
 let app;
 try {
@@ -34,7 +34,9 @@ if (bridge) {
   };
   bridge.onUpdateEvent?.((ev) => {
     if (ev.type === "available") {
+      const notes = notesText(ev.notes);
       showBar(h("span", {}, `Version ${ev.version} ist verfügbar.`),
+        notes ? h("button", { class: "btn", onclick: () => modal({ title: `Neu in ${ev.version}`, body: h("div", { style: { whiteSpace: "pre-wrap", maxWidth: "70ch" } }, notes), buttons: [{ label: "OK", primary: true }] }) }, "Was ist neu?") : null,
         h("button", { class: "btn primary", onclick: () => { bridge.downloadUpdate(); showBar(h("span", {}, "Lade Update…"), h("div", { class: "progress" }, h("i", { style: { width: "0%" } }))); } }, "Herunterladen"),
         h("button", { class: "btn", onclick: () => bar.remove() }, "Später"));
     } else if (ev.type === "progress") {
@@ -53,6 +55,14 @@ if (bridge) {
   });
   const initial = bridge.initialFile?.();
   Promise.resolve(initial).then((p) => { if (p) app.files.open(p); });
+}
+
+/** Release-Notizen (HTML von GitHub) als reiner Text */
+function notesText(notes) {
+  if (!notes) return "";
+  const raw = Array.isArray(notes) ? notes.map((n) => n.note || "").join("\n") : String(notes);
+  const doc = new DOMParser().parseFromString(raw.replace(/<\/(p|li|h\d)>/gi, "\n").replace(/<br\s*\/?>/gi, "\n").replace(/<li>/gi, "• "), "text/html");
+  return (doc.body.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // Erste Hilfe beim allerersten Start
