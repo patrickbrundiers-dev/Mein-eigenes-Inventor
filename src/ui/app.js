@@ -14,6 +14,7 @@ import { newSketch } from "../core/sketch.js";
 import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, alignFaces, matApply, matApplyDir } from "../core/geom.js";
 import { MATERIALS } from "../core/sections.js";
 import { resolveParams, evaluate } from "../core/expr.js";
+import { faceRef, solveAssembly } from "../core/asmsolve.js";
 
 export class App {
   constructor() {
@@ -222,8 +223,9 @@ export class App {
         const ids = [...new Set(d.components.map((c) => c.part))];
         const results = await Promise.all(ids.map((id) => this.doc(id) ? this.buildPart(this.doc(id)) : null));
         if (this.activeId !== d.id) return;
+        void results;
+        this.solveAssemblyConstraints(d);
         this.showAssembly(d);
-        results.forEach((r) => r);
       } else if (d.kind === "drawing") {
         await this.drawing.update();
       }
@@ -543,6 +545,10 @@ export class App {
     const part = this.activeDoc();
     let hits = [];
     if (this.mode === "assembly" && this.sel?.type === "component") hits = [{ kind: "group", key: "comp:" + this.sel.id }];
+    else if (this.mode === "assembly" && this.sel?.type === "constraint") {
+      const c = (part?.constraints || []).find((x) => x.id === this.sel.id);
+      if (c) hits = [{ kind: "group", key: "comp:" + c.a.comp }, { kind: "group", key: "comp:" + c.b.comp }];
+    }
     else if (this.sel?.type === "feature") {
       const f = this.feature(this.sel.id);
       if (f?.edges?.length) hits = this.viewer.findEdgesByMid(f.edges.map((x) => x.p));
@@ -555,36 +561,57 @@ export class App {
 
   // ---------- Baugruppe: Ausrichten ----------
   beginAlign(mode = "gegen") {
-    this.align = { mode, gap: this.align?.gap || "0" };
+    this.align = { mode, gap: this.align?.gap || "0", persist: this.align?.persist };
     this.pick = { kind: "align" };
     this.setHint("Fläche am Bauteil anklicken, das bewegt werden soll");
     this.props.render();
   }
   alignPick(hit) {
     if (!hit || hit.kind !== "face" || !hit.key.startsWith("comp:")) return;
+    if (hit.info?.type !== "PLANE" || !hit.info.normal) return toast("Bitte eine ebene Fläche wählen");
     const cid = hit.key.slice(5);
-    const nrm = hit.info?.type === "PLANE" ? hit.normal : hit.normal;
     if (!this.align.first) {
-      this.align.first = { cid, point: hit.point, normal: nrm, hit };
+      this.align.first = { cid, info: hit.info, hit };
       this.refreshSelectionHits();
       this.setHint("Zielfläche an einem anderen Bauteil anklicken");
       return;
     }
     if (cid === this.align.first.cid) return toast("Bitte eine Fläche an einem anderen Bauteil wählen");
     const asm = this.activeDoc();
-    const comp = asm.components.find((c) => c.id === this.align.first.cid);
-    if (comp.fixed) { toast("Dieses Bauteil ist fixiert"); this.cancelPick(); return; }
-    const mB = placementMatrix(comp.pos, comp.rot);
-    let gap = 0;
-    try { gap = evaluate(this.align.gap || "0", {}); } catch { /* */ }
-    const m = alignFaces(mB, this.align.first.point, this.align.first.normal, hit.point, nrm, this.align.mode, gap);
-    const d = decomposePlacement(m);
-    this.edit("Ausrichten", () => { comp.pos = d.pos; comp.rot = d.rot; });
-    this.align = { mode: this.align.mode, gap: this.align.gap };
+    const B = asm.components.find((c) => c.id === this.align.first.cid);
+    const A = asm.components.find((c) => c.id === cid);
+    if (B.fixed && A.fixed) { toast("Beide Bauteile sind fixiert"); this.cancelPick(); return; }
+    const con = {
+      id: uid("ab"), type: this.align.mode === "buendig" ? "buendig" : "gegen", gap: this.align.gap || "0",
+      a: faceRef(A.id, hit.info), b: faceRef(B.id, this.align.first.info),
+      name: `${this.align.mode === "buendig" ? "Bündig" : "Fläche an Fläche"}: ${B.name || "?"} → ${A.name || "?"}`,
+    };
+    const persist = this.align.persist !== false;
+    this.edit(persist ? "Abhängigkeit" : "Ausrichten", () => {
+      asm.constraints = asm.constraints || [];
+      asm.constraints.push(con);
+      solveAssembly(asm, (pid) => this.planarFaces(pid), (g) => safeNum(g));
+      if (!persist) asm.constraints = asm.constraints.filter((c) => c.id !== con.id);
+    });
+    this.align = { mode: this.align.mode, gap: this.align.gap, persist: this.align.persist };
     this.pick = null;
     this.setHint("");
-    this.sel = { type: "component", id: comp.id };
+    this.sel = persist ? { type: "constraint", id: con.id } : { type: "component", id: B.id };
+    this.refreshSelectionHits();
+    this.tree.render();
     this.props.render();
+  }
+  /** Ebene Flächen eines Bauteils (Bauteil-Koordinaten) aus dem letzten Rechenergebnis */
+  planarFaces(partId) {
+    const r = this.results.get(partId);
+    if (!r) return [];
+    return r.bodies.flatMap((b) => (b.mesh?.faces || []).filter((f) => f.type === "PLANE" && f.normal && f.point));
+  }
+  solveAssemblyConstraints(asm) {
+    if (!asm.constraints?.length) { this.asmErrors = {}; return; }
+    const res = solveAssembly(asm, (pid) => this.planarFaces(pid), (g) => safeNum(g));
+    this.asmErrors = res.errors;
+    if (res.changed) { this.dirty = true; this.updateTitle(); }
   }
   cancelPick() {
     if (this.pick?.feature) { this._editingFeature = null; this.rebuild(); }
@@ -673,6 +700,7 @@ export class App {
       if (e.key === "Delete") {
         if (this.sel?.type === "feature") this.deleteFeature(this.sel.id);
         else if (this.sel?.type === "component") this.props.deleteComponent(this.sel.id);
+        else if (this.sel?.type === "constraint") this.props.deleteConstraint(this.sel.id);
         return;
       }
       if (this.mode === "part" && !ctrl) {
@@ -700,5 +728,6 @@ function defaultHint(mode) {
   }
 }
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
+function safeNum(g) { try { return evaluate(String(g ?? "0"), {}); } catch { return 0; } }
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 export { matApply, matApplyDir, BASE_PLANES };

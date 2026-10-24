@@ -5,6 +5,7 @@ import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../co
 import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, v3 } from "../core/geom.js";
 import { uid } from "../core/examples.js";
+import { trimEntity, filletCorner, cornerAt } from "../core/sketchedit.js";
 
 const PT_R = 7, CURVE_R = 6;
 
@@ -19,6 +20,8 @@ export const SKETCH_TOOLS = {
   point: "Punkt / Bohrungsmitte setzen",
   dimension: "Bemaßung: Linie, Kreis, zwei Punkte oder zwei Linien wählen, dann Lage klicken",
   project: "Kante des 3D-Modells anklicken, um sie in die Skizze zu übernehmen",
+  trim: "Stutzen: Teil einer Linie, eines Kreises oder Bogens anklicken – wird bis zu den nächsten Schnittpunkten entfernt",
+  sfillet: "Rundung: Ecke anklicken, an der zwei Linien enden, dann Radius eingeben",
   horizontal: "Horizontal: Linie oder zwei Punkte wählen",
   vertical: "Vertikal: Linie oder zwei Punkte wählen",
   coincident: "Koinzident: Punkt und Punkt/Linie/Kreis wählen",
@@ -620,6 +623,37 @@ export class Sketcher {
       this.render();
       return;
     }
+    if (t === "trim") {
+      const hit = this.hitTest(sx, sy, { points: false, dims: false });
+      if (hit?.kind !== "entity") return;
+      // erst an einer Kopie prüfen, damit Fehlversuche keinen Rückgängig-Schritt erzeugen
+      const test = JSON.parse(JSON.stringify(this.sk));
+      const r = trimEntity(test, hit.id, { x: lx, y: ly }, uid);
+      if (!r.ok) return toast(r.message);
+      this.commit("Stutzen", (sk) => trimEntity(sk, hit.id, { x: lx, y: ly }, uid));
+      this.hover = null;
+      this.render();
+      return;
+    }
+    if (t === "sfillet") {
+      let best = null, bd = 14;
+      for (const p of this.sk.points) {
+        if (!cornerAt(this.sk, p.id)) continue;
+        const [x, y] = this.S(p.x, p.y);
+        const d = Math.hypot(x - sx, y - sy);
+        if (d < bd) { bd = d; best = p.id; }
+      }
+      if (!best) return toast("Ecke anklicken, an der genau zwei Linien enden");
+      this.askValue(sx, sy, this.lastFillet || "5", (val) => {
+        const r = evaluate(val, this.scope());
+        const test = JSON.parse(JSON.stringify(this.sk));
+        const res = filletCorner(test, best, r, uid, val);
+        if (!res.ok) return toast(res.message, { kind: "err" });
+        this.lastFillet = val;
+        this.commit("Skizzenrundung", (sk) => filletCorner(sk, best, r, uid, val));
+      });
+      return;
+    }
     if (t === "project") {
       const hit = this.viewer.pick(e.clientX, e.clientY, { edges: true, faces: false });
       if (hit?.kind === "edge") this.projectEdge(hit);
@@ -723,7 +757,7 @@ export class Sketcher {
       this.viewer.highlight(hit ? [hit] : []);
     }
     this.hover = this.hitTest(sx, sy, { dims: this.tool === "select" });
-    if (this.tool !== "select" && this.tool !== "dimension" && this.tool !== "project" && !GLYPH[this.tool]) this.snapInfo = this.snap(sx, sy);
+    if (!["select", "dimension", "project", "trim", "sfillet"].includes(this.tool) && !GLYPH[this.tool]) this.snapInfo = this.snap(sx, sy);
     else this.snapInfo = null;
     this.render();
   }
@@ -805,7 +839,7 @@ export class Sketcher {
     }
     if (k === "Delete" || k === "Backspace") { this.deleteSelection(); return true; }
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
-    const map = { l: "line", r: "rect", c: "circle", a: "arc3", p: "point", d: "dimension", s: "select" };
+    const map = { l: "line", r: "rect", c: "circle", a: "arc3", p: "point", d: "dimension", s: "select", t: "trim", f: "sfillet" };
     if (map[k.toLowerCase()]) { this.setTool(map[k.toLowerCase()]); return true; }
     if (k.toLowerCase() === "x") { this.toggleConstruction(); return true; }
     return false;

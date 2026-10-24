@@ -57,6 +57,25 @@ export function sectionName(kind, d) {
   return kind;
 }
 
+/**
+ * Profil-ID im Format der Rohrlaser-Kalkulation (step_geometrie.profil_id_vorschlag):
+ * "RR 42,4x2", "QR 40x40x3", "RE 60x40x3", "FL 40x8", "RD 20", "VK 20", "L 40x40x4", "U 50x25x3"
+ */
+export function profileId(kind, d) {
+  const f = (x) => (Math.round(x * 10) / 10).toFixed(1).replace(/\.0$/, "").replace(".", ",");
+  switch (kind) {
+    case "rohr": return `RR ${f(d.D)}x${f(d.t)}`;
+    case "vierkant": return `QR ${f(d.B)}x${f(d.B)}x${f(d.t)}`;
+    case "rechteck": return `RE ${f(Math.max(d.B, d.H))}x${f(Math.min(d.B, d.H))}x${f(d.t)}`;
+    case "flach": return `FL ${f(Math.max(d.B, d.t))}x${f(Math.min(d.B, d.t))}`;
+    case "rund": return `RD ${f(d.D)}`;
+    case "vierkantvoll": return `VK ${f(d.B)}`;
+    case "winkel": return `L ${f(d.B)}x${f(d.H)}x${f(d.t)}`;
+    case "u": return `U ${f(d.B)}x${f(d.H)}x${f(d.t)}`;
+  }
+  return "";
+}
+
 // ---------- Konturen ----------
 function roundedRectLoop(w, h, r, cx = 0, cy = 0) {
   r = Math.max(0, Math.min(r, w / 2 - 1e-6, h / 2 - 1e-6));

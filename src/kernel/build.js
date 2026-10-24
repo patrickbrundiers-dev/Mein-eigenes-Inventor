@@ -5,7 +5,7 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { solveSketch } from "../core/solver.js";
 import { extractProfiles, holeCenters, sketchLines } from "../core/sketch.js";
 import { planeFrame, toWorld, v3 } from "../core/geom.js";
-import { sectionGeometry, sectionName, THREADS } from "../core/sections.js";
+import { sectionGeometry, sectionName, profileId, THREADS } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
 
 const BIG = 20000;
@@ -339,7 +339,7 @@ export function createKernel(R) {
             if (Math.abs(m2) > 1e-9) cuts.end.push({ p: endP, n: rotN(fr.z, f.miterSame ? m2 : -m2) });
             const { solid, geom } = makeMember(section, L, fr, cuts);
             const name = sectionName(f.section, dims);
-            const meta = { section: name, area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
+            const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
             state.tools.set(f.id, { op: f.op || "member", shapes: [{ shape: solid, kind: "member", meta, name: f.name || name }] });
             pushMember(state, solid, f, meta, f.name || name);
             break;
@@ -640,6 +640,7 @@ export function createKernel(R) {
       }
       const meta = {
         section: sectionName(section.kind, section.dims),
+        profileId: profileId(section.kind, section.dims),
         area: g.area,
         length: memberLength(solid, m.fr),
         miterStart: cutAngle(m.cuts.start, m.fr.z),
@@ -721,11 +722,7 @@ export function createKernel(R) {
    * view: {dir: Blickrichtung (vom Betrachter in die Szene), up}
    */
   function projectView(shape, view) {
-    const d = v3.norm(view.dir);
-    const up = v3.norm(view.up);
-    const right = v3.norm(v3.cross(d, up));
-    const cam = new R.ProjectionCamera([0, 0, 0], v3.mul(d, -1), right);
-    const { visible, hidden } = R.drawProjection(shape, cam);
+    const { visible, hidden } = R.drawProjection(shape, camera(view));
     const parse = (drw) => {
       const polylines = [];
       const arcs = [];
@@ -745,7 +742,93 @@ export function createKernel(R) {
     return { visible: vis.polylines, hidden: hid.polylines, arcs: vis.arcs, hiddenArcs: hid.arcs };
   }
 
-  return { buildPart, meshBody, bodyProps, placed, compound, projectView, makeMember, memberFrame, prefixCache };
+  /** Kamera aus Blickrichtung + Oben-Richtung */
+  function camera(view) {
+    const d = v3.norm(view.dir);
+    const up = v3.norm(view.up);
+    const right = v3.norm(v3.cross(d, up));
+    return new R.ProjectionCamera([0, 0, 0], v3.mul(d, -1), right);
+  }
+  /** Sichtbare Kanten als rohe SVG-Pfade (für exakte DXF-Ausgabe) */
+  function projectRaw(shape, view) {
+    const { visible } = R.drawProjection(shape, camera(view));
+    return flattenPaths(visible.toSVGPaths());
+  }
+  /** Größte ebene Fläche eines Körpers: {normal, point, area} */
+  function largestPlanarFace(shape) {
+    let best = null;
+    for (const f of shape.faces) {
+      if (f.geomType !== "PLANE") continue;
+      let a = 0;
+      try { a = R.measureArea(f); } catch { continue; }
+      if (!best || a > best.area + 1e-9) best = { area: a, normal: tuple(f.normalAt()), point: tuple(f.center) };
+    }
+    return best;
+  }
+  /**
+   * Schnittflächen (eben, Normale +n, auf Ebene n·p = c) als geschlossene Konturen in Ansichtskoordinaten.
+   * Aus der Triangulierung: Randkanten (nur einmal benutzt) werden zu Schleifen verkettet.
+   */
+  function sectionLoops(shape, n, c, view) {
+    const d = v3.norm(view.dir), up = v3.norm(view.up);
+    const right = v3.norm(v3.cross(d, up));
+    const Y = v3.cross(v3.mul(d, -1), right);
+    const sel = new Set();
+    for (const fc of shape.faces) {
+      if (fc.geomType !== "PLANE") continue;
+      try {
+        const nn = tuple(fc.normalAt()), ce = tuple(fc.center);
+        if (v3.dot(nn, n) > 0.9999 && Math.abs(v3.dot(ce, n) - c) < 1e-3) sel.add(hashOf(fc));
+      } catch { /* ignore */ }
+    }
+    if (!sel.size) return [];
+    const m = shape.mesh({ tolerance: 0.05, angularTolerance: 0.2 });
+    const V = m.vertices, loops = [];
+    for (const g of m.faceGroups) {
+      if (!sel.has(g.faceId)) continue;
+      const tri = m.triangles.slice(g.start, g.start + g.count);
+      const cnt = new Map();
+      for (let i = 0; i + 2 < tri.length; i += 3) {
+        for (const [a, b] of [[tri[i], tri[i + 1]], [tri[i + 1], tri[i + 2]], [tri[i + 2], tri[i]]]) {
+          const k = a < b ? a + "," + b : b + "," + a;
+          cnt.set(k, (cnt.get(k) || 0) + 1);
+        }
+      }
+      const adj = new Map();
+      const link = (a, b) => { if (!adj.has(a)) adj.set(a, []); adj.get(a).push(b); };
+      for (const [k, v] of cnt) if (v === 1) { const [a, b] = k.split(",").map(Number); link(a, b); link(b, a); }
+      const used = new Set();
+      for (const start of adj.keys()) {
+        if (used.has(start)) continue;
+        const loop = [];
+        let prev = -1, cur = start;
+        while (cur !== undefined && !used.has(cur)) {
+          used.add(cur);
+          loop.push(cur);
+          const nb = adj.get(cur).find((x) => x !== prev && !used.has(x));
+          prev = cur;
+          cur = nb;
+        }
+        if (loop.length > 2) loops.push(loop.map((i) => { const p = [V[3 * i], V[3 * i + 1], V[3 * i + 2]]; return [v3.dot(p, right), v3.dot(p, Y)]; }));
+      }
+    }
+    return loops;
+  }
+  /** Körper an der Ebene n·p = c kappen (alles auf der +n-Seite entfernen) */
+  function cutAtPlane(shape, n, c) {
+    const bb = shape.boundingBox;
+    const size = 4 * Math.hypot(bb.width, bb.height, bb.depth) + 100;
+    return shape.clone().cut(halfSpace(v3.mul(v3.norm(n), c), n, size));
+  }
+  /** Oben-Richtung senkrecht zur Blickrichtung: Weltachse mit kleinstem Anteil an n */
+  function upFor(n) {
+    const axes = [[0, 0, 1], [0, 1, 0], [1, 0, 0]];
+    let best = axes[0], bd = 2;
+    for (const a of axes) { const d = Math.abs(v3.dot(a, n)); if (d < bd - 1e-9) { bd = d; best = a; } }
+    return v3.norm(v3.sub(best, v3.mul(n, v3.dot(best, n))));
+  }
+
+  return { buildPart, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

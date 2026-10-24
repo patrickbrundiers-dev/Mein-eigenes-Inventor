@@ -257,3 +257,55 @@ test("API-Annahmen", () => {
   log("hashCode typ", typeof f.hashCode, "isNull typ", typeof f.isNull);
   log("revolution.length", R.revolution.length, "mirror", R.makeBaseBox(1, 1, 1).mirror.length);
 });
+
+import { svgPathSegments } from "../src/core/svgpath.js";
+import { segmentsToDxf } from "../src/core/dxf.js";
+
+test("Platte als DXF: Kontur, Eckenradien, Bohrungen als Kreise", async () => {
+  const prj = exampleProject();
+  const plate = prj.docs.find((d) => d.id === "beispiel_platte");
+  const res = await K.buildPart(plate);
+  const shape = res.bodies[0].shape;
+  const f = K.largestPlanarFace(shape);
+  log("größte Fläche", JSON.stringify(f));
+  assert.ok(Math.abs(Math.abs(f.normal[2]) - 1) < 1e-9);
+  const segs = [];
+  for (const d of K.projectRaw(shape, { dir: f.normal.map((x) => -x), up: K.upFor(f.normal) })) segs.push(...svgPathSegments(d));
+  const r = segmentsToDxf(segs);
+  log("Platten-DXF", r.circles, "Kreise", r.arcs, "Bögen", r.lines, "Linien", r.width, "x", r.height);
+  assert.equal(r.circles, 4);
+  assert.equal(r.arcs, 4);
+  assert.equal(r.lines, 4);
+  near(r.width, 300, 1e-3); near(r.height, 200, 1e-3);
+});
+
+test("Schnitt: Körper kappen und Schnittfläche finden", async () => {
+  const p = part([
+    rectSketchFeature("s1", "XY", 0, 0, 0, "60", "40"),
+    { id: "e1", type: "extrude", sketch: "s1", distance: "30" },
+    pointSketch("s2", "XZ", 0, [[30, 15]]),
+    { id: "h", type: "hole", sketch: "s2", diameter: "10", extent: "through", direction: "both" },
+  ]);
+  const res = await K.buildPart(p);
+  const shape = res.bodies[0].shape;
+  // waagerechter Schnitt in der Vorderansicht bei z = 15 (durch die Bohrung), Blick von oben
+  const view = { dir: [0, 0, -1], up: [0, 1, 0] };
+  const cut = K.cutAtPlane(shape, [0, 0, 1], 15);
+  near(R.measureVolume(cut), 60 * 40 * 15 - Math.PI * 25 * 40 / 2, 1);
+  const loops = K.sectionLoops(cut, [0, 0, 1], 15, view);
+  log("Schnittkonturen", loops.length, loops.map((l) => l.length).join(","));
+  assert.ok(loops.length >= 1);
+  const area = (l) => Math.abs(l.reduce((s, p, i) => { const q = l[(i + 1) % l.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0) / 2);
+  const total = loops.reduce((s, l) => s + area(l), 0);
+  log("Schnittfläche (Summe Konturen)", total);
+  // Schnittfläche 60x40 abzüglich Bohrungsstreifen 10x40 -> zwei Rechtecke 25x40
+  near(total, 2 * 25 * 40, 1);
+});
+
+test("Profil-ID in Zuschnitt-Daten", async () => {
+  const prj = exampleProject();
+  const res = await K.buildPart(prj.docs.find((d) => d.id === "beispiel_rahmen"));
+  assert.ok(res.bodies.every((b) => b.meta.profileId === "QR 40x40x3"), res.bodies.map((b) => b.meta.profileId).join(","));
+  const tube = await K.buildPart(prj.docs.find((d) => d.id === "beispiel_rohr"));
+  assert.equal(tube.bodies[0].meta.profileId, "RR 48,3x2,6");
+});

@@ -125,6 +125,32 @@ export class Tree {
       })));
     }
     if (!asm.components.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Mit »Platzieren« Bauteile einfügen."));
+    const cons = asm.constraints || [];
+    if (cons.length) {
+      const key = "cons:" + asm.id;
+      const open = !this.collapsed.has(key);
+      const li = h("li");
+      li.append(this.node({ label: `Abhängigkeiten (${cons.length})`, ic: "align", twist: open ? "▾" : "▸", onTwist: () => this.toggle(key), cls: "group" }));
+      if (open) {
+        const cu = h("ul");
+        for (const c of cons) {
+          const err = app.asmErrors?.[c.id];
+          const sel = app.sel?.type === "constraint" && app.sel.id === c.id;
+          cu.append(h("li", {}, this.node({
+            label: c.name || (c.type === "buendig" ? "Bündig" : "Fläche an Fläche"), ic: "align",
+            cls: (sel ? "sel" : "") + (err ? " err" : "") + (c.suppressed ? " suppressed" : ""), title: err ? "Fehler: " + err : c.name,
+            meta: c.gap && c.gap !== "0" ? c.gap + " mm" : "",
+            onClick: () => { app.sel = { type: "constraint", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
+            onMenu: (e) => contextMenu(e.clientX, e.clientY, [
+              { label: c.suppressed ? "Aktivieren" : "Unterdrücken", icon: "eyeoff", run: () => app.edit("Abhängigkeit", () => { c.suppressed = !c.suppressed; }) },
+              { label: "Löschen", icon: "trash", run: () => app.props.deleteConstraint(c.id) },
+            ]),
+          })));
+        }
+        li.append(cu);
+      }
+      ul.append(li);
+    }
     return ul;
   }
   viewList(drw) {
@@ -133,7 +159,7 @@ export class Tree {
     const names = { front: "Vorderansicht", top: "Draufsicht", left: "Seitenansicht links", right: "Seitenansicht rechts", back: "Rückansicht", bottom: "Untersicht", iso: "Isometrie" };
     for (const v of drw.views) {
       const sel = app.drawing.sel?.type === "view" && app.drawing.sel.id === v.id;
-      ul.append(h("li", {}, this.node({ label: v.label || names[v.type] || v.type, ic: "view", cls: sel ? "sel" : "", meta: `M ${scaleLabel(v.scale)}`,
+      ul.append(h("li", {}, this.node({ label: v.type === "section" ? `Schnitt ${v.letter}–${v.letter}` : v.label || names[v.type] || v.type, ic: "view", cls: sel ? "sel" : "", meta: `M ${scaleLabel(v.scale)}`,
         onClick: () => app.drawing.select({ type: "view", id: v.id }),
         onMenu: (e) => contextMenu(e.clientX, e.clientY, [{ label: "Ansicht löschen", icon: "trash", run: () => app.drawing.deleteView(v.id) }]) })));
     }

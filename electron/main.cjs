@@ -145,11 +145,14 @@ ipcMain.handle("project:save", async (_e, { path: p, text, defaultName }) => {
   addRecent(file);
   return { path: file };
 });
-ipcMain.handle("file:save", async (_e, { defaultName, filters, data, binary }) => {
+ipcMain.handle("file:save", async (_e, { defaultName, filters, data, binary, siblings }) => {
   const r = await dialog.showSaveDialog(win, { title: "Exportieren", defaultPath: path.join(lastDir("export"), defaultName || "Export"), filters: filters || [] });
   if (r.canceled || !r.filePath) return null;
   const buf = binary ? Buffer.from(new Uint8Array(data)) : Buffer.from(String(data), "utf8");
   fs.writeFileSync(r.filePath, buf);
+  // Begleitdateien mit gleichem Namen daneben (z. B. Zuschnittliste zur STEP-Datei)
+  const base = r.filePath.replace(/\.[^.\\/]+$/, "");
+  for (const s of siblings || []) fs.writeFileSync(base + s.suffix, typeof s.data === "string" ? Buffer.from(s.data, "utf8") : Buffer.from(new Uint8Array(s.data)));
   lastDir("export", r.filePath);
   return { path: r.filePath };
 });

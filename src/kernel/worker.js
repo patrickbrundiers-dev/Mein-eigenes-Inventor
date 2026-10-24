@@ -3,6 +3,8 @@ import * as R from "replicad";
 import ocInit from "replicad-opencascadejs";
 import { createKernel, hashString, errorText } from "./build.js";
 import { MATERIALS } from "../core/sections.js";
+import { svgPathSegments } from "../core/svgpath.js";
+import { segmentsToDxf } from "../core/dxf.js";
 
 let K = null;
 const ready = (async () => {
@@ -37,11 +39,21 @@ function partColor(part) {
   return part.color || MATERIALS[part.material]?.color || "#8d99a6";
 }
 
+/** Name eines Körpers im STEP: Bauteil (+ Profil-ID und laufende Nummer bei Profilen) */
+function bodyName(base, b, index, count) {
+  if (b.kind === "member" && b.meta?.profileId) return `${base} ${String(index + 1).padStart(2, "0")} ${b.meta.profileId}`;
+  if (count > 1) return `${base} ${b.name || "Körper " + (index + 1)}`;
+  return base;
+}
+
 async function placedShapes(items) {
   const out = [];
   for (const it of items) {
     const res = await getBuilt(it.part);
-    for (const b of res.bodies) out.push({ shape: K.placed(b.shape, it.pos || [0, 0, 0], it.rot || [0, 0, 0]), name: it.name || b.name, color: it.color || partColor(it.part), body: b });
+    const base = it.name || it.part.number || it.part.name || "Bauteil";
+    res.bodies.forEach((b, i) => {
+      out.push({ shape: K.placed(b.shape, it.pos || [0, 0, 0], it.rot || [0, 0, 0]), name: bodyName(base, b, i, res.bodies.length), color: it.color || partColor(it.part), body: b });
+    });
   }
   return out;
 }
@@ -89,10 +101,12 @@ const handlers = {
   async bodySteps({ part, onlyMembers = false }) {
     const res = await getBuilt(part);
     const out = [];
+    const base = part.number || part.name || "Bauteil";
     res.bodies.forEach((b, i) => {
       if (onlyMembers && b.kind !== "member") return;
-      const blob = R.exportSTEP([{ shape: b.shape.clone(), name: b.name, color: partColor(part) }]);
-      out.push({ index: i, name: b.name, blob });
+      const name = bodyName(base, b, i, res.bodies.length);
+      const blob = R.exportSTEP([{ shape: b.shape.clone(), name, color: partColor(part) }]);
+      out.push({ index: i, name, blob });
     });
     const texts = [];
     for (const o of out) texts.push({ index: o.index, name: o.name, text: await o.blob.text() });
@@ -104,7 +118,7 @@ const handlers = {
     const result = {};
     let shape = null;
     for (const v of views) {
-      const key = key0 + hashString(JSON.stringify([v.dir, v.up, v.hidden]));
+      const key = key0 + hashString(JSON.stringify([v.dir, v.up, v.hidden, v.cut || null]));
       let r = projCache.get(key);
       if (!r) {
         if (!shape) {
@@ -113,7 +127,11 @@ const handlers = {
           shape = shapes.length === 1 ? shapes[0].shape : R.makeCompound(shapes.map((x) => x.shape));
         }
         try {
-          r = K.projectView(shape, v);
+          if (v.cut) {
+            const cutShape = K.cutAtPlane(shape, v.cut.n, v.cut.c);
+            r = K.projectView(cutShape, v);
+            r.sectionLoops = K.sectionLoops(cutShape, v.cut.n, v.cut.c, v);
+          } else r = K.projectView(shape, v);
           r.bbox = bbox2(r.visible.concat(r.hidden));
         } catch (e) {
           r = { error: errorText(e, R), visible: [], hidden: [], arcs: [], hiddenArcs: [], bbox: null };
@@ -123,6 +141,39 @@ const handlers = {
       result[v.key] = r;
     }
     return result;
+  },
+
+  /**
+   * Platte/Blechteil als DXF 1:1: Blick senkrecht auf die größte ebene Fläche (oder die gewählte Normale),
+   * nur sichtbare Kanten, Linien/Bögen/Kreise exakt.
+   */
+  async plateDxf({ part, body = null, normal = null }) {
+    const res = await getBuilt(part);
+    if (!res.bodies.length) throw new Error("Bauteil hat keinen Körper");
+    let idx = body;
+    if (idx === null || idx === undefined || !res.bodies[idx]) {
+      let best = -1;
+      res.bodies.forEach((b, i) => { const v = R.measureVolume(b.shape); if (v > best) { best = v; idx = i; } });
+    }
+    const shape = res.bodies[idx].shape;
+    let n = normal;
+    let thickness = null;
+    if (!n) {
+      const f = K.largestPlanarFace(shape);
+      if (!f) throw new Error("Keine ebene Fläche gefunden");
+      n = f.normal;
+    }
+    const view = { dir: n.map((x) => -x), up: K.upFor(n) };
+    const segs = [];
+    for (const d of K.projectRaw(shape, view)) segs.push(...svgPathSegments(d, { flipY: true }));
+    // Dicke = Ausdehnung entlang der Normalen
+    const m = shape.mesh({ tolerance: 0.05, angularTolerance: 0.3 });
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < m.vertices.length; i += 3) { const t = m.vertices[i] * n[0] + m.vertices[i + 1] * n[1] + m.vertices[i + 2] * n[2]; lo = Math.min(lo, t); hi = Math.max(hi, t); }
+    thickness = hi - lo;
+    const name = res.bodies[idx].name || part.name;
+    const r = segmentsToDxf(segs, { layer: "KONTUR" });
+    return { ...r, thickness, body: idx, name };
   },
 
   async ping() { return "ok"; },

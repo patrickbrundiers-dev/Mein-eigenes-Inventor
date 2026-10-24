@@ -153,7 +153,7 @@ export class Files {
       const files = [];
       for (const p of parts) {
         const list = await app.kernel.call("bodySteps", { part: p, onlyMembers: true });
-        list.forEach((x, i) => files.push({ name: `${safeName(p.number || p.name)}_${String(i + 1).padStart(2, "0")}_${safeName(x.name)}.step`, data: x.text }));
+        list.forEach((x) => files.push({ name: `${safeName(x.name).replace(/\s+/g, "_")}.step`, data: x.text }));
       }
       if (!files.length) return toast("Keine Profile (Rohr / Rahmen) vorhanden");
       if (this.bridge) {
@@ -162,14 +162,35 @@ export class Files {
       } else for (const f of files) downloadBlob(new Blob([f.data], { type: "model/step" }), f.name);
     });
   }
+  /**
+   * STEP-Datei (alle Körper, jeder mit Profil-ID benannt; Baugruppe als Satz) und daneben die
+   * Zuschnittliste als CSV mit gleichem Namen. Passt direkt zum STEP-Import der Rohrlaser-Kalkulation.
+   */
+  async exportStepWithList() {
+    const app = this.app;
+    const d = app.activeDoc();
+    const items = this.exportItems();
+    if (!items?.length) return toast("Nichts zu exportieren");
+    const name = safeName(d.number || d.name) + ".step";
+    await this.withBusy("STEP-Export", async () => {
+      const step = await app.kernel.call("exportStep", { items });
+      const rows = cutListRows(collectCutSources(app, d));
+      const csvText = rows.length ? cutListCsv(rows) : null;
+      if (this.bridge) {
+        const r = await this.bridge.saveFile({ defaultName: name, filters: [{ name: "STEP", extensions: ["step", "stp"] }], data: step, siblings: csvText ? [{ suffix: "_Zuschnitt.csv", data: csvText }] : [] });
+        if (r) toast("Gespeichert: " + r.path.split(/[\\/]/).pop() + (csvText ? " + Zuschnittliste" : ""), { kind: "ok" });
+      } else {
+        downloadBlob(new Blob([step], { type: "model/step" }), name);
+        if (csvText) downloadBlob(new Blob([csvText], { type: "text/csv" }), name.replace(/\.step$/, "_Zuschnitt.csv"));
+      }
+    });
+  }
   async exportCutList() {
     const app = this.app;
     const d = app.activeDoc();
     const rows = cutListRows(collectCutSources(app, d));
     if (!rows.length) return toast("Keine Profile (Rohr / Rahmen) vorhanden");
-    const head = ["Pos", "Profil", "Zuschnittlänge mm", "Menge", "Gehrung Anfang °", "Gehrung Ende °", "Ausgeklinkt", "kg/m", "kg/Stk", "kg gesamt", "Werkstoff", "Bauteil"];
-    const lines = rows.map((r) => [r.pos, r.section, num(r.length, 1), r.qty, num(r.miters[0], 1), num(r.miters[1], 1), r.coped ? "ja" : "nein", num(r.kgm, 3), num(r.mass, 3), num(r.mass * r.qty, 3), r.material, r.parts]);
-    await this.saveText(csv([head, ...lines]), safeName(d.number || d.name) + "_Zuschnitt.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
+    await this.saveText(cutListCsv(rows), safeName(d.number || d.name) + "_Zuschnitt.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
   }
   async exportBom() {
     const app = this.app;
@@ -179,6 +200,20 @@ export class Files {
     const head = ["Pos", "Benennung", "Teilenummer", "Menge", "Werkstoff", "Masse kg/Stk", "Masse kg gesamt"];
     const lines = rows.map((r) => [r.pos, r.name, r.number, r.qty, r.material, num(r.mass, 3), num(r.mass * r.qty, 3)]);
     await this.saveText(csv([head, ...lines]), safeName(d.number || d.name) + "_Stueckliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
+  }
+  /** Platte/Blechteil als DXF 1:1 (Kontur und Bohrungen), z. B. für den Flachbettlaser */
+  async exportPlateDxf() {
+    const app = this.app;
+    const part = app.activeDoc();
+    if (part?.kind !== "part") return toast("Platten-DXF gibt es für Bauteile");
+    const face = app.selHits?.find((x) => x.kind === "face" && x.info?.type === "PLANE");
+    await this.withBusy("Platten-DXF", async () => {
+      const r = await app.kernel.call("plateDxf", { part, body: face ? face.body : null, normal: face ? face.info.normal : null });
+      const t = Math.round(r.thickness * 100) / 100;
+      const name = `${safeName(part.number || part.name)}${r.body ? "_" + (r.body + 1) : ""}_${String(t).replace(".", ",")}mm.dxf`.replace(/\s+/g, "_");
+      await this.saveText(r.dxf, name, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
+      toast(`Kontur ${fmtNum(r.width, 1)} × ${fmtNum(r.height, 1)} mm, Dicke ${fmtNum(r.thickness, 2)} mm, ${r.circles} Kreis(e)`, { timeout: 5000 });
+    });
   }
   async exportSketchDxf(id) {
     const app = this.app;
@@ -216,6 +251,12 @@ export class Files {
     if (!f) return;
     this.app.edit("Import ersetzen", () => { Object.assign(feat, importFeature(f), { id: feat.id, name: feat.name }); });
   }
+}
+
+export function cutListCsv(rows) {
+  const head = ["Pos", "Profil-ID", "Profil", "Zuschnittlänge mm", "Menge", "Gehrung Anfang °", "Gehrung Ende °", "Ausgeklinkt", "kg/m", "kg/Stk", "kg gesamt", "Werkstoff", "Bauteil"];
+  const lines = rows.map((r) => [r.pos, r.profileId, r.section, num(r.length, 1), r.qty, num(r.miters[0], 1), num(r.miters[1], 1), r.coped ? "ja" : "nein", num(r.kgm, 3), num(r.mass, 3), num(r.mass * r.qty, 3), r.material, r.parts]);
+  return csv([head, ...lines]);
 }
 
 function importFeature(f) {

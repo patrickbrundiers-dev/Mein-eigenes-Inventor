@@ -129,7 +129,10 @@ export class Props {
       }
     } else if (d.kind === "assembly") {
       if (app.pick?.kind === "align") { title = "Ausrichten"; body.append(...this.alignProps()); }
-      else if (app.sel?.type === "component") {
+      else if (app.sel?.type === "constraint") {
+        const c = (d.constraints || []).find((x) => x.id === app.sel.id);
+        if (c) { title = "Abhängigkeit"; body.append(...this.constraintProps(d, c)); }
+      } else if (app.sel?.type === "component") {
         const c = d.components.find((x) => x.id === app.sel.id);
         if (c) { title = c.name || "Komponente"; body.append(...this.componentProps(d, c)); }
       } else { title = "Baugruppe"; body.append(...this.assemblyProps(d)); }
@@ -409,7 +412,7 @@ export class Props {
     }
     out.push(this.section(sk.name,
       h("dl", { class: "kv" }, h("dt", {}, "Ebene"), h("dd", {}, sk.plane.ref === "face" ? "auf Fläche" : BASE_PLANES[sk.plane.ref]?.label || sk.plane.ref)),
-      h("p", { class: "hint" }, "Tasten: L Linie · R Rechteck · C Kreis · A Bogen · P Punkt · D Bemaßung · X Konstruktion · Entf löschen · Esc beenden"),
+      h("p", { class: "hint" }, "Tasten: L Linie · R Rechteck · C Kreis · A Bogen · P Punkt · D Bemaßung · T Stutzen · F Rundung · X Konstruktion · Entf löschen · Esc beenden"),
       h("p", { class: "hint" }, "Maße akzeptieren Formeln mit Parametern, z. B. »Breite/2«."),
       h("div", { class: "btn-row" }, h("button", { class: "btn primary", onclick: () => app.finishSketch() }, "Skizze fertig"), h("button", { class: "btn", onclick: () => this.paramsDialog() }, "Parameter…"))));
     return out;
@@ -453,6 +456,24 @@ export class Props {
         h("button", { class: "btn danger", onclick: () => this.deleteComponent(c.id) }, "Entfernen")),
     ];
   }
+  constraintProps(asm, c) {
+    const app = this.app;
+    const err = app.asmErrors?.[c.id];
+    const comp = (id) => asm.components.find((x) => x.id === id);
+    return [
+      err ? h("div", { class: "msg err" }, err) : null,
+      this.section(c.name || "Abhängigkeit",
+        h("dl", { class: "kv" }, h("dt", {}, "Bewegt"), h("dd", {}, comp(c.b.comp)?.name || "–"), h("dt", {}, "Ziel"), h("dd", {}, comp(c.a.comp)?.name || "–")),
+        this.seg("Art", [["gegen", "Gegeneinander"], ["buendig", "Bündig"]], c.type, (v) => app.edit("Abhängigkeit", () => { c.type = v; c.name = c.name?.replace(/^[^:]+/, v === "buendig" ? "Bündig" : "Fläche an Fläche"); })),
+        this.expr("Abstand", c.gap || "0", (v) => app.edit("Abstand", () => { c.gap = v; })),
+        this.check("Unterdrückt", c.suppressed, (v) => app.edit("Abhängigkeit", () => { c.suppressed = v; }))),
+      h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => this.deleteConstraint(c.id) }, "Löschen")),
+    ];
+  }
+  deleteConstraint(id) {
+    const asm = this.app.activeDoc();
+    this.app.edit("Abhängigkeit löschen", () => { asm.constraints = (asm.constraints || []).filter((c) => c.id !== id); this.app.sel = null; });
+  }
   alignProps() {
     const app = this.app;
     const a = app.align || {};
@@ -460,6 +481,7 @@ export class Props {
       h("p", {}, a.first ? "2. Zielfläche am anderen Bauteil anklicken." : "1. Fläche am Bauteil anklicken, das bewegt wird."),
       this.seg("Art", [["gegen", "Gegeneinander"], ["buendig", "Bündig"]], a.mode || "gegen", (v) => { app.align.mode = v; this.render(); }),
       this.expr("Abstand", a.gap || "0", (v) => { app.align.gap = v; }),
+      this.check("Als Abhängigkeit speichern (folgt Änderungen)", a.persist !== false, (v) => { app.align.persist = v; }),
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.cancelPick() }, "Abbrechen")))];
   }
   placeComponentDialog() {
@@ -496,7 +518,11 @@ export class Props {
   }
   deleteComponent(id) {
     const asm = this.app.activeDoc();
-    this.app.edit("Komponente entfernen", () => { asm.components = asm.components.filter((c) => c.id !== id); this.app.sel = null; });
+    this.app.edit("Komponente entfernen", () => {
+      asm.components = asm.components.filter((c) => c.id !== id);
+      asm.constraints = (asm.constraints || []).filter((c) => c.a.comp !== id && c.b.comp !== id);
+      this.app.sel = null;
+    });
   }
   duplicateComponent(id) {
     const asm = this.app.activeDoc();
@@ -641,22 +667,28 @@ export function cutListRows(sources) {
       const m = b.meta;
       const L = Math.round(m.length * 10) / 10;
       const ends = [m.miterStart || 0, m.miterEnd || 0].map((x) => Math.round(x * 10) / 10).sort((a, c) => a - c);
-      const key = [m.section, L, ends.join("/"), m.coped ? "A" : "", part.material].join("|");
+      const pid = m.profileId || m.section;
+      const key = [pid, L, ends.join("/"), m.coped ? "A" : "", m.butt ? "S" : "", part.material].join("|");
       const dens = MATERIALS[part.material]?.density || 7.85;
-      const row = map.get(key) || { section: m.section, length: L, miters: ends, coped: !!m.coped, material: MATERIALS[part.material]?.label || part.material, qty: 0, kgm: (m.area * dens) / 1000, mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
+      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, qty: 0, kgm: (m.area * dens) / 1000, mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
       row.qty += qty;
       row.parts.add(part.name);
       map.set(key, row);
     }
   }
-  return [...map.values()].sort((a, b) => a.section.localeCompare(b.section) || b.length - a.length).map((r, i) => ({ ...r, pos: i + 1, parts: [...r.parts].join(", ") }));
+  return [...map.values()].sort((a, b) => a.profileId.localeCompare(b.profileId) || b.length - a.length).map((r, i) => ({ ...r, pos: i + 1, parts: [...r.parts].join(", ") }));
 }
 function cutListTable(rows, compact = false) {
-  const miter = (r) => (r.miters.some((x) => x) ? r.miters.map((x) => (x ? fmtNum(x, 1) + "°" : "0°")).join(" / ") : "gerade") + (r.coped ? ", ausgeklinkt" : "");
+  const miter = (r) => endsText(r);
   return h("table", { class: "grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Profil"), h("th", {}, "Länge"), h("th", {}, "Stk"), h("th", {}, "Enden"), compact ? null : h("th", {}, "kg/m"), compact ? null : h("th", {}, "kg/Stk"), compact ? null : h("th", {}, "Werkstoff"))),
-    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, r.section), h("td", { class: "num" }, fmtNum(r.length, 1)), h("td", { class: "num" }, String(r.qty)), h("td", {}, miter(r)),
+    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", { title: r.section, style: { whiteSpace: "nowrap" } }, r.profileId), h("td", { class: "num" }, fmtNum(r.length, 1)), h("td", { class: "num" }, String(r.qty)), h("td", {}, miter(r)),
       compact ? null : h("td", { class: "num" }, fmtNum(r.kgm, 2)), compact ? null : h("td", { class: "num" }, fmtNum(r.mass, 2)), compact ? null : h("td", {}, r.material)))));
+}
+/** Enden einer Zuschnitt-Zeile als Text: "45°/45°", "gerade", "ausgeklinkt" */
+export function endsText(r) {
+  const m = r.miters.some((x) => x) ? r.miters.map((x) => fmtNum(x, 1) + "°").join("/") : "gerade";
+  return m + (r.coped ? ", ausgeklinkt" : "");
 }
 function matchCatalog(kind, dims) {
   if (!dims) return null;

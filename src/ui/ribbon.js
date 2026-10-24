@@ -122,6 +122,7 @@ export class Ribbon {
             T("line", "Linie", "line"), T("rect", "Rechteck", "rect"), T("rectc", "Rechteck Mitte", "rectc"),
             T("circle", "Kreis", "circle"), T("arc3", "Bogen", "arc"), T("arcc", "Bogen Mitte", "arcc"), T("point", "Punkt", "point"),
           ] },
+          { label: "Ändern", buttons: [T("trim", "Stutzen", "trim"), T("sfillet", "Rundung", "fillet")] },
           { label: "Übernehmen", buttons: [T("project", "Kante projizieren", "project"), B("constr", "Konstruktion", "construct", { on: !!sk.construction, run: () => sk.toggleConstruction() })] },
           { label: "Bemaßung", buttons: [T("dimension", "Bemaßung", "dimension")] },
           { label: "Abhängigkeiten", small: true, buttons: [
@@ -159,6 +160,7 @@ export class Ribbon {
           { label: "Ansicht", buttons: [
             B("dv_base", "Grundansichten", "view", { run: () => dr.autoViews() }),
             B("dv_add", "Ansicht hinzufügen", "plus", { run: () => dr.addViewDialog() }),
+            B("dv_sec", "Schnitt", "cut", { run: () => dr.addSectionDialog() }),
           ] },
           { label: "Beschriften", buttons: [
             B("dd_dim", "Bemaßung", "dimension", { on: dr.tool === "dim", run: () => dr.setTool(dr.tool === "dim" ? null : "dim") }),
@@ -178,11 +180,12 @@ export class Ribbon {
     const B = (id, label, ic, run) => ({ id, label, icon: ic, run });
     const groups = [];
     if (kind === "part") {
-      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_stl", "STL", "export", () => f.exportStl())] });
-      groups.push({ label: "Rohrlaser", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers()), B("x_cut", "Zuschnittliste (CSV)", "cut", () => f.exportCutList())] });
-      groups.push({ label: "2D", buttons: [B("x_dxf", "Skizze als DXF", "sketch", () => f.exportSketchDxf())] });
+      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_stl", "STL", "export", () => f.exportStl())] });
+      groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers()), B("x_cut", "Zuschnittliste (CSV)", "cut", () => f.exportCutList())] });
+      groups.push({ label: "2D", buttons: [B("x_plate", "Platte als DXF", "drawing", () => f.exportPlateDxf()), B("x_dxf", "Skizze als DXF", "sketch", () => f.exportSketchDxf())] });
     } else if (kind === "assembly") {
-      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_stl", "STL", "export", () => f.exportStl())] });
+      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_stl", "STL", "export", () => f.exportStl())] });
+      groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers())] });
       groups.push({ label: "Listen", buttons: [B("x_bom", "Stückliste (CSV)", "bom", () => f.exportBom()), B("x_cut", "Zuschnittliste (CSV)", "cut", () => f.exportCutList())] });
     } else if (kind === "drawing") {
       groups.push({ label: "Zeichnung", buttons: [B("x_pdf", "PDF", "pdf", () => app.drawing.exportPdf()), B("x_dxf", "DXF", "drawing", () => app.drawing.exportDxf()), B("x_svg", "SVG", "drawing", () => app.drawing.exportSvg())] });

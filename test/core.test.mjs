@@ -215,3 +215,178 @@ test("Platzierung, Zerlegung, Flächen ausrichten", () => {
   const w2 = toWorld(fx, 3, 7);
   assert.deepEqual(w2.map((x) => Math.round(x)), [3, 0, 7]);
 });
+
+import { trimEntity, filletCorner, intersections } from "../src/core/sketchedit.js";
+import { profileId } from "../src/core/sections.js";
+import { svgPathSegments } from "../src/core/svgpath.js";
+import { segmentsToDxf } from "../src/core/dxf.js";
+
+let _n = 0;
+const tid = (p) => p + "_" + _n++;
+
+test("Profil-IDs wie Rohrlaser-Kalkulation", () => {
+  assert.equal(profileId("rohr", { D: 42.4, t: 2 }), "RR 42,4x2");
+  assert.equal(profileId("vierkant", { B: 40, t: 3 }), "QR 40x40x3");
+  assert.equal(profileId("rechteck", { B: 40, H: 60, t: 3 }), "RE 60x40x3");
+  assert.equal(profileId("rohr", { D: 48.3, t: 2.6 }), "RR 48,3x2,6");
+  assert.equal(profileId("flach", { B: 40, t: 8 }), "FL 40x8");
+  assert.equal(profileId("rund", { D: 20 }), "RD 20");
+});
+
+test("Schnittpunkte Linie/Kreis/Bogen", () => {
+  const L = (ax, ay, bx, by) => ({ kind: "line", ax, ay, bx, by });
+  const K = (cx, cy, r) => ({ kind: "circle", cx, cy, r, a1: 0, sweep: Math.PI * 2 });
+  assert.equal(intersections(L(0, 0, 10, 0), L(5, -5, 5, 5)).length, 1);
+  assert.equal(intersections(L(0, 0, 10, 0), L(5, 1, 5, 5)).length, 0);
+  assert.equal(intersections(L(-10, 0, 10, 0), K(0, 0, 5)).length, 2);
+  assert.equal(intersections(K(0, 0, 5), K(8, 0, 5)).length, 2);
+  const arc = { kind: "arc", cx: 0, cy: 0, r: 5, a1: 0, sweep: Math.PI }; // obere Hälfte
+  assert.equal(intersections(L(-10, 1, 10, 1), arc).length, 2);
+  assert.equal(intersections(L(-10, -1, 10, -1), arc).length, 0);
+});
+
+function crossSketch() {
+  // waagrechte Linie von (0,0) bis (100,0), senkrechte von (50,-30) bis (50,30)
+  return {
+    points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 100, y: 0 }, { id: "c", x: 50, y: -30 }, { id: "d", x: 50, y: 30 }],
+    entities: [{ id: "h", type: "line", p1: "a", p2: "b" }, { id: "v", type: "line", p1: "c", p2: "d" }],
+    constraints: [{ id: "k1", type: "horizontal", e: "h" }, { id: "k2", type: "vertical", e: "v" }, { id: "m1", type: "length", e: "h", value: "100" }],
+  };
+}
+
+test("Stutzen: Linienende, Mitte, ganze Linie, Kreis", () => {
+  let s = crossSketch();
+  let r = trimEntity(s, "h", { x: 80, y: 0 }, tid);
+  assert.ok(r.ok);
+  const P = (sk) => new Map(sk.points.map((p) => [p.id, p]));
+  const h = s.entities.find((e) => e.id === "h");
+  near(P(s).get(h.p2).x, 50); near(P(s).get(h.p1).x, 0);
+  assert.ok(!s.constraints.some((k) => k.type === "length"), "Längenmaß entfernt");
+  assert.ok(s.constraints.some((k) => k.type === "pointOnLine" && k.e === "v"));
+  assert.ok(solveSketch(s).ok);
+
+  // Mitte herausschneiden: dritte Linie bei x=70
+  s = crossSketch();
+  s.points.push({ id: "e", x: 70, y: -30 }, { id: "f", x: 70, y: 30 });
+  s.entities.push({ id: "v2", type: "line", p1: "e", p2: "f" });
+  r = trimEntity(s, "h", { x: 60, y: 0 }, tid);
+  assert.ok(r.ok);
+  const hs = s.entities.filter((e) => e.type === "line" && e.id !== "v" && e.id !== "v2");
+  assert.equal(hs.length, 2);
+  assert.ok(s.constraints.some((k) => k.type === "collinear"));
+  assert.ok(solveSketch(s).ok);
+
+  // Linie ohne Schnitt verschwindet
+  s = crossSketch();
+  s.points.push({ id: "g", x: 0, y: 50 }, { id: "i", x: 20, y: 50 });
+  s.entities.push({ id: "frei", type: "line", p1: "g", p2: "i" });
+  r = trimEntity(s, "frei", { x: 10, y: 50 }, tid);
+  assert.ok(r.deleted);
+  assert.ok(!s.points.some((p) => p.id === "g"));
+
+  // Kreis an waagrechter Linie stutzen -> Halbkreis (Bogen)
+  s = crossSketch();
+  s.points.push({ id: "m", x: 20, y: 0 });
+  s.entities.push({ id: "k", type: "circle", c: "m", r: 10 });
+  r = trimEntity(s, "k", { x: 20, y: -10 }, tid);
+  assert.ok(r.ok, r.message);
+  const k = s.entities.find((e) => e.id === "k");
+  assert.equal(k.type, "arc");
+  const Pm = P(s);
+  const g1 = Pm.get(k.p1), g2 = Pm.get(k.p2);
+  // verbleibender Bogen muss oben liegen (Klick war unten)
+  const mid = (g1.y + g2.y) / 2;
+  near(mid, 0, 1e-6);
+  assert.ok(solveSketch(s).ok);
+});
+
+test("Skizzenrundung an Rechteckecke", () => {
+  const s = rectSketch();
+  s.constraints.push({ id: "f", type: "fix", p: "a", x: 0, y: 0 }, { id: "L1", type: "length", e: "l1", value: "40" }, { id: "L2", type: "length", e: "l2", value: "20" });
+  solveSketch(s);
+  const r = filletCorner(s, "c", 5, tid);
+  assert.ok(r.ok, r.message);
+  const res = solveSketch(s);
+  assert.ok(res.ok, JSON.stringify(res));
+  const P = new Map(s.points.map((p) => [p.id, p]));
+  const arc = s.entities.find((e) => e.id === r.arcId);
+  const C = P.get(arc.c);
+  near(C.x, 35, 1e-5); near(C.y, 15, 1e-5);
+  near(Math.hypot(P.get(arc.p1).x - C.x, P.get(arc.p1).y - C.y), 5, 1e-6);
+  const prof = extractProfiles(s);
+  assert.equal(prof.regions.length, 1, JSON.stringify(prof.errors));
+  near(prof.regions[0].area, 800 - (25 - (Math.PI * 25) / 4), 0.5);
+  assert.equal(filletCorner(s, "a", 30, tid).ok, false); // zu groß
+});
+
+test("Exakte DXF-Kontur aus SVG", () => {
+  const segs = [
+    ...svgPathSegments("M 0 0 L 100 0 L 100 -50 L 0 -50 Z"),
+    ...svgPathSegments("M 10 -10 A 5 5 0 0 1 20 -10 A 5 5 0 0 1 10 -10 Z"),
+    ...svgPathSegments("M 10 -10 A 5 5 0 0 1 20 -10 A 5 5 0 0 1 10 -10 Z"),
+  ];
+  const r = segmentsToDxf(segs);
+  assert.equal(r.circles, 1);
+  assert.equal(r.lines, 4);
+  near(r.width, 100); near(r.height, 50);
+  assert.ok(r.dxf.includes("CIRCLE"));
+});
+
+import { faceRef, solveAssembly, worldToLocal } from "../src/core/asmsolve.js";
+
+test("Baugruppen-Abhängigkeiten: gegeneinander, bündig, nach Bauteiländerung", () => {
+  // Platte 100x50x10 (z 0..10), Klotz 20x20x30 (z 0..30)
+  let plateT = 10;
+  const facesPlate = () => [
+    { type: "PLANE", normal: [0, 0, 1], point: [50, 25, plateT] }, { type: "PLANE", normal: [0, 0, -1], point: [50, 25, 0] },
+    { type: "PLANE", normal: [1, 0, 0], point: [100, 25, 5] }, { type: "PLANE", normal: [-1, 0, 0], point: [0, 25, 5] },
+  ];
+  const facesBlock = () => [
+    { type: "PLANE", normal: [0, 0, -1], point: [10, 10, 0] }, { type: "PLANE", normal: [0, 0, 1], point: [10, 10, 30] },
+    { type: "PLANE", normal: [1, 0, 0], point: [20, 10, 15] }, { type: "PLANE", normal: [-1, 0, 0], point: [0, 10, 15] },
+  ];
+  const asm = {
+    components: [
+      { id: "p", part: "plate", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true },
+      { id: "b", part: "block", pos: [37, 5, 80], rot: [0, 30, 0] },
+    ],
+    constraints: [],
+  };
+  const facesOf = (pid) => (pid === "plate" ? facesPlate() : facesBlock());
+  // Unterseite Klotz gegen Oberseite Platte
+  asm.constraints.push({ id: "c1", type: "gegen", a: faceRef("p", facesPlate()[0]), b: faceRef("b", facesBlock()[0]), gap: "0" });
+  let r = solveAssembly(asm, facesOf);
+  assert.ok(r.changed && !Object.keys(r.errors).length, JSON.stringify(r));
+  const b = asm.components[1];
+  near(b.pos[2], 10, 1e-6);
+  near(b.rot[0], 0, 1e-6); near(b.rot[1], 0, 1e-6);
+  // Linke Seite Klotz bündig mit linker Seite Platte
+  asm.constraints.push({ id: "c2", type: "buendig", a: faceRef("p", facesPlate()[3]), b: faceRef("b", facesBlock()[3]), gap: "0" });
+  r = solveAssembly(asm, facesOf);
+  near(b.pos[0], 0, 1e-6);
+  near(b.pos[2], 10, 1e-6);
+  // Platte wird dicker -> Klotz wandert mit
+  plateT = 15;
+  r = solveAssembly(asm, facesOf);
+  near(b.pos[2], 15, 1e-6);
+  near(b.pos[0], 0, 1e-6);
+  // Weltpunkt in Bauteil-Koordinaten
+  const l = worldToLocal({ pos: [100, 0, 0], rot: [0, 0, 90] }, [100, 5, 0], [0, 1, 0]);
+  near(l.p[0], 5, 1e-9); near(l.n[0], 1, 1e-9);
+});
+
+import { hatchLines } from "../src/core/hatch.js";
+
+test("Schraffur mit Loch", () => {
+  const outer = [[0, 0], [20, 0], [20, 20], [0, 20]];
+  const hole = [[5, 5], [15, 5], [15, 15], [5, 15]];
+  const lines = hatchLines([outer, hole], 2, 0);
+  assert.ok(lines.length > 10);
+  // keine Linie darf durch das Loch gehen
+  for (const [x1, y1, x2, y2] of lines) {
+    const my = (y1 + y2) / 2, mx = (x1 + x2) / 2;
+    assert.ok(!(mx > 5 && mx < 15 && my > 5 && my < 15), "Linie im Loch");
+  }
+  const l45 = hatchLines([outer], 2.5, 45);
+  assert.ok(l45.length > 5);
+});

@@ -109,6 +109,15 @@ try {
   await shot("10-skizze-bemasst");
   const dims = await evalApp(() => window.__werkcad.sketcher.sk.constraints.filter((c) => c.type === "length" || c.type === "distance").map((c) => c.value));
   step("Bemaßung per Klick", dims.includes("120"), JSON.stringify(dims));
+  // Skizzenrundung an der Ecke oben rechts
+  await page.keyboard.press("f");
+  await page.mouse.click(cx + 120, cy - 60);
+  await page.waitForTimeout(200);
+  if (await page.locator(".dim-input input").count()) { await page.locator(".dim-input input").fill("10"); await page.keyboard.press("Enter"); }
+  await page.waitForTimeout(300);
+  const fil2 = await evalApp(() => { const s = window.__werkcad.sketcher; return { arcs: s.sk.entities.filter((e) => e.type === "arc").length, ok: s.lastSolve?.ok, regions: s.profiles?.regions.length }; });
+  step("Skizzenrundung", fil2.arcs === 1 && fil2.ok && fil2.regions === 1, JSON.stringify(fil2));
+  await shot("10b-skizze-rundung");
   await page.locator("#ribbon button", { hasText: "Skizze fertig" }).click();
   await page.waitForTimeout(300);
   await page.locator("#ribbon button", { hasText: "Extrusion" }).first().click();
@@ -169,6 +178,21 @@ try {
   const dw2 = await evalApp(() => window.__werkcad.drawing.doc.views.length);
   step("Grundansichten automatisch", dw2 === 4, String(dw2));
 
+  // Schnittansicht A-A in der Beispielzeichnung
+  await evalApp(() => window.__werkcad.openDoc("beispiel_zeichnung"));
+  await idle(120000);
+  await evalApp(() => {
+    const a = window.__werkcad, d = a.activeDoc();
+    const front = d.views.find((v) => v.type === "front");
+    a.edit("Schnitt", () => d.views.push({ id: "schnitt_a", type: "section", parent: front.id, axis: "v", pos: 25, letter: "A", scale: front.scale, hidden: false, x: front.x, y: front.y + 120 }));
+  });
+  await idle(120000);
+  await page.waitForTimeout(800);
+  const sec = await evalApp(() => { const p = window.__werkcad.drawing.proj.get("schnitt_a"); return p ? { loops: p.sectionLoops?.length, vis: p.visible.length, err: p.error } : null; });
+  step("Schnittansicht mit Schraffur", sec && sec.loops > 0 && !sec.err, JSON.stringify(sec));
+  await evalApp(() => window.__werkcad.drawing.fitSheet());
+  await shot("15b-schnitt");
+
   // Exporte über den Kern
   const step3d = await evalApp(async () => { const a = window.__werkcad; const t = await a.kernel.call("exportStep", { items: [{ part: a.doc("beispiel_rahmen") }] }); return t.length; });
   step("STEP-Export", step3d > 1000, String(step3d));
@@ -182,6 +206,45 @@ try {
   await page.waitForTimeout(300);
   await shot("17-komponente");
   step("Komponente gewählt", (await page.locator("#props .section").count()) > 0);
+
+  // Dauerhafte Abhängigkeit: Rahmen-Unterseite gegen Plattenoberseite, folgt Plattendicke
+  const con = await evalApp(async () => {
+    const a = window.__werkcad;
+    const asm = a.activeDoc();
+    const faces = (pid) => a.planarFaces(pid);
+    const top = faces("beispiel_platte").find((f) => f.normal[2] > 0.99);
+    const bottoms = faces("beispiel_rahmen").filter((f) => f.normal[2] < -0.99);
+    const bottom = bottoms.sort((x, y) => x.point[2] - y.point[2])[0];
+    const { faceRef } = window.__werkcadCore || {};
+    void faceRef;
+    a.edit("Test", () => {
+      asm.constraints = [{ id: "t1", type: "gegen", gap: "0", name: "Test", a: { comp: "c2", n: [0, 0, 1], d: top.point[2] }, b: { comp: "c1", n: [0, 0, -1], d: -bottom.point[2] } }];
+    });
+    return { top: top.point[2], bottom: bottom.point[2] };
+  });
+  await idle();
+  const z1 = await evalApp(() => window.__werkcad.activeDoc().components.find((c) => c.id === "c1").pos[2]);
+  await evalApp(() => { const a = window.__werkcad; const p = a.doc("beispiel_platte"); a.edit("Dicke", () => { p.params.find((x) => x.name === "Dicke").expr = "15"; }); });
+  await idle();
+  await page.waitForTimeout(500);
+  await idle();
+  const z2 = await evalApp(() => window.__werkcad.activeDoc().components.find((c) => c.id === "c1").pos[2]);
+  step("Abhängigkeit folgt Bauteiländerung", Math.abs(z2 - z1 - 5) < 1e-6, JSON.stringify({ con, z1, z2, errors: await evalApp(() => window.__werkcad.asmErrors) }));
+  await shot("17b-abhaengigkeit");
+
+  // Exporte als Download: STEP + Zuschnittliste, Platten-DXF
+  const downloads = [];
+  page.on("download", (dl) => downloads.push(dl));
+  await evalApp(() => window.__werkcad.files.exportStepWithList());
+  await page.waitForTimeout(1500);
+  await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+  await idle();
+  await evalApp(() => window.__werkcad.files.exportPlateDxf());
+  await page.waitForTimeout(2000);
+  const names = downloads.map((d) => d.suggestedFilename());
+  let dxfOk = false;
+  for (const dl of downloads) if (dl.suggestedFilename().endsWith(".dxf")) { const p = await dl.path(); dxfOk = fs.readFileSync(p, "utf8").includes("CIRCLE"); }
+  step("Exporte STEP+Zuschnitt und Platten-DXF", names.some((n) => n.endsWith(".step")) && names.some((n) => n.endsWith("_Zuschnitt.csv")) && dxfOk, JSON.stringify(names));
 
   // Rückgängig
   const before = await evalApp(() => window.__werkcad.undoStack.length);

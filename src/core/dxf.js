@@ -96,3 +96,79 @@ export function sketchToDxf(sketch) {
   }
   return w.toString();
 }
+
+/**
+ * Segmente (aus svgPathSegments) als DXF schreiben: doppelte Kanten entfernen, Teilbögen eines Kreises
+ * zu einem echten CIRCLE zusammenfassen, Ursprung auf die linke untere Ecke legen.
+ */
+export function segmentsToDxf(segments, { layer = "KONTUR", origin = "min", text = null } = {}) {
+  const segs = dedupeSegments(segments);
+  // Kreise: Bögen mit gleichem Mittelpunkt/Radius sammeln
+  const groups = [];
+  const rest = [];
+  for (const s of segs) {
+    if (s.t !== "arc") { rest.push(s); continue; }
+    let g = groups.find((x) => Math.hypot(x.cx - s.cx, x.cy - s.cy) < 1e-4 && Math.abs(x.r - s.r) < 1e-4);
+    if (!g) { g = { cx: s.cx, cy: s.cy, r: s.r, arcs: [] }; groups.push(g); }
+    g.arcs.push(s);
+  }
+  const box = bounds(segs);
+  const ox = origin === "min" && box ? box.x0 : 0, oy = origin === "min" && box ? box.y0 : 0;
+  const w = new DxfWriter().layer(layer, 7).layer("TEXT", 3);
+  let circles = 0, arcs = 0, lines = 0;
+  for (const g of groups) {
+    const covered = coveredSweep(g.arcs);
+    if (covered >= 359.9) { w.circle(g.cx - ox, g.cy - oy, g.r, layer); circles++; }
+    else for (const a of g.arcs) { w.arc(a.cx - ox, a.cy - oy, a.r, a.a0, a.a1, layer); arcs++; }
+  }
+  for (const s of rest) {
+    if (s.t === "line") { w.line(s.a[0] - ox, s.a[1] - oy, s.b[0] - ox, s.b[1] - oy, layer); lines++; }
+    else if (s.t === "poly") { w.polyline(s.pts.map((p) => [p[0] - ox, p[1] - oy]), layer); lines++; }
+  }
+  if (text && box) w.text(0, -8, 3.5, text, "TEXT");
+  return { dxf: w.toString(), circles, arcs, lines, width: box ? box.x1 - box.x0 : 0, height: box ? box.y1 - box.y0 : 0 };
+}
+
+function coveredSweep(arcs) {
+  // Winkelüberdeckung grob über 1°-Raster
+  const hit = new Uint8Array(360);
+  for (const a of arcs) {
+    if (a.full) return 360;
+    let s = ((a.a0 % 360) + 360) % 360, e = ((a.a1 % 360) + 360) % 360;
+    if (e <= s) e += 360;
+    for (let d = Math.floor(s); d < Math.ceil(e); d++) hit[d % 360] = 1;
+  }
+  return hit.reduce((x, y) => x + y, 0);
+}
+function dedupeSegments(segs) {
+  const out = [];
+  const key = (s) => {
+    const r = (v) => Math.round(v * 1000);
+    if (s.t === "line") { const a = [r(s.a[0]), r(s.a[1])], b = [r(s.b[0]), r(s.b[1])]; return "L" + (a < b ? a.concat(b) : b.concat(a)).join(","); }
+    if (s.t === "arc") return "A" + [r(s.cx), r(s.cy), r(s.r), r(s.a0), r(s.a1)].join(",");
+    return "P" + s.pts.map((p) => r(p[0]) + "," + r(p[1])).join(";");
+  };
+  const seen = new Set();
+  for (const s of segs) { const k = key(s); if (!seen.has(k)) { seen.add(k); out.push(s); } }
+  return out;
+}
+function bounds(segs) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+  for (const s of segs) {
+    if (s.t === "line") { add(...s.a); add(...s.b); }
+    else if (s.t === "poly") s.pts.forEach((p) => add(...p));
+    else {
+      const covered = s.full ? 360 : null;
+      if (covered) { add(s.cx - s.r, s.cy - s.r); add(s.cx + s.r, s.cy + s.r); }
+      else {
+        const pa = (d) => [s.cx + s.r * Math.cos((d * Math.PI) / 180), s.cy + s.r * Math.sin((d * Math.PI) / 180)];
+        add(...pa(s.a0)); add(...pa(s.a1));
+        let a = s.a0, b = s.a1;
+        if (b <= a) b += 360;
+        for (let q = Math.ceil(a / 90) * 90; q < b; q += 90) add(...pa(q));
+      }
+    }
+  }
+  return Number.isFinite(x0) ? { x0, y0, x1, y1 } : null;
+}

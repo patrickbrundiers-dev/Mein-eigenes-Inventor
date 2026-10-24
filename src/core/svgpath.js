@@ -176,3 +176,103 @@ export function flattenPaths(p) {
 }
 
 export { NUM };
+
+/**
+ * Exakte Zerlegung eines SVG-Pfads in Linien und Kreisbögen (für DXF).
+ * Rückgabe: [{t:'line', a:[x,y], b:[x,y]} | {t:'arc', cx, cy, r, a0, a1} (Grad, gegen Uhrzeigersinn) | {t:'poly', pts}]
+ */
+export function svgPathSegments(d, { flipY = true } = {}) {
+  const toks = [];
+  const re = /([MmLlHhVvCcSsQqTtAaZz])|(-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)/g;
+  let m;
+  while ((m = re.exec(d))) toks.push(m[1] ? m[1] : Number(m[2]));
+  const fy = flipY ? -1 : 1;
+  const P = (x, y) => [x, y * fy];
+  const out = [];
+  let i = 0, cmd = "", x = 0, y = 0, sx = 0, sy = 0, lastCtrl = null, lastCmd = "";
+  const num = () => toks[i++];
+  const deg = (a) => (a * 180) / Math.PI;
+  while (i < toks.length) {
+    if (typeof toks[i] === "string") cmd = toks[i++];
+    const rel = cmd === cmd.toLowerCase();
+    const C = cmd.toUpperCase();
+    if (C === "M") {
+      let nx = num(), ny = num();
+      if (rel) { nx += x; ny += y; }
+      x = sx = nx; y = sy = ny;
+      cmd = rel ? "l" : "L";
+      lastCtrl = null;
+      continue;
+    }
+    if (C === "L" || C === "H" || C === "V") {
+      let nx = x, ny = y;
+      if (C === "L") { nx = num(); ny = num(); if (rel) { nx += x; ny += y; } }
+      else if (C === "H") { nx = num(); if (rel) nx += x; }
+      else { ny = num(); if (rel) ny += y; }
+      if (Math.hypot(nx - x, ny - y) > 1e-9) out.push({ t: "line", a: P(x, y), b: P(nx, ny) });
+      x = nx; y = ny; lastCtrl = null; lastCmd = C;
+      continue;
+    }
+    if (C === "Z") {
+      if (Math.hypot(sx - x, sy - y) > 1e-9) out.push({ t: "line", a: P(x, y), b: P(sx, sy) });
+      x = sx; y = sy; lastCtrl = null; lastCmd = C;
+      continue;
+    }
+    if (C === "A") {
+      const rx = num(), ry = num(), phi = num(), fa = num(), fs = num();
+      let ex = num(), ey = num();
+      if (rel) { ex += x; ey += y; }
+      const r = arcCenter(x, y, rx, ry, phi, fa, fs, ex, ey);
+      if (r && Math.abs(r.rx - r.ry) < 1e-6 * Math.max(1, r.rx)) {
+        // in Ausgabekoordinaten: Start, Ende, Mittelpunkt, Laufrichtung
+        const c = P(r.cx, r.cy), s = P(x, y), e = P(ex, ey);
+        const mid = P(r.cx + r.rx * Math.cos(r.t1 + r.dt / 2), r.cy + r.ry * Math.sin(r.t1 + r.dt / 2));
+        const cross = (s[0] - c[0]) * (mid[1] - c[1]) - (s[1] - c[1]) * (mid[0] - c[0]);
+        const as = deg(Math.atan2(s[1] - c[1], s[0] - c[0])), ae = deg(Math.atan2(e[1] - c[1], e[0] - c[0]));
+        const full = Math.abs(Math.abs(r.dt) - 2 * Math.PI) < 1e-6;
+        out.push({ t: "arc", cx: c[0], cy: c[1], r: r.rx, a0: cross >= 0 ? as : ae, a1: cross >= 0 ? ae : as, sweep: Math.abs(deg(r.dt)), full });
+      } else out.push({ t: "line", a: P(x, y), b: P(ex, ey) });
+      x = ex; y = ey; lastCtrl = null; lastCmd = C;
+      continue;
+    }
+    // Bézier-Kurven als Polylinie
+    let c1x, c1y, c2x = null, c2y = null, ex, ey;
+    if (C === "C") { c1x = num(); c1y = num(); c2x = num(); c2y = num(); ex = num(); ey = num(); if (rel) { c1x += x; c1y += y; c2x += x; c2y += y; ex += x; ey += y; } }
+    else if (C === "S") { c2x = num(); c2y = num(); ex = num(); ey = num(); if (rel) { c2x += x; c2y += y; ex += x; ey += y; } if (lastCtrl && "CS".includes(lastCmd)) { c1x = 2 * x - lastCtrl[0]; c1y = 2 * y - lastCtrl[1]; } else { c1x = x; c1y = y; } }
+    else if (C === "Q") { c1x = num(); c1y = num(); ex = num(); ey = num(); if (rel) { c1x += x; c1y += y; ex += x; ey += y; } }
+    else if (C === "T") { ex = num(); ey = num(); if (rel) { ex += x; ey += y; } if (lastCtrl && "QT".includes(lastCmd)) { c1x = 2 * x - lastCtrl[0]; c1y = 2 * y - lastCtrl[1]; } else { c1x = x; c1y = y; } }
+    else throw new Error("SVG-Pfad: unbekannter Befehl " + cmd);
+    const pts = [P(x, y)];
+    for (let k = 1; k <= 24; k++) {
+      const t = k / 24, u = 1 - t;
+      if (c2x === null) pts.push(P(u * u * x + 2 * u * t * c1x + t * t * ex, u * u * y + 2 * u * t * c1y + t * t * ey));
+      else pts.push(P(u * u * u * x + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * ex, u * u * u * y + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * ey));
+    }
+    out.push({ t: "poly", pts });
+    lastCtrl = c2x === null ? [c1x, c1y] : [c2x, c2y];
+    x = ex; y = ey; lastCmd = C;
+  }
+  return out;
+}
+
+function arcCenter(x1, y1, rx, ry, phiDeg, fa, fs, x2, y2) {
+  if (!rx || !ry) return null;
+  const phi = (phiDeg * Math.PI) / 180, cp = Math.cos(phi), sp = Math.sin(phi);
+  const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
+  const x1p = cp * dx + sp * dy, y1p = -sp * dx + cp * dy;
+  rx = Math.abs(rx); ry = Math.abs(ry);
+  const lam = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+  if (lam > 1) { rx *= Math.sqrt(lam); ry *= Math.sqrt(lam); }
+  const numr = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+  const den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+  let co = Math.sqrt(Math.max(0, numr / den));
+  if (fa === fs) co = -co;
+  const cxp = (co * rx * y1p) / ry, cyp = (-co * ry * x1p) / rx;
+  const cx = cp * cxp - sp * cyp + (x1 + x2) / 2, cy = sp * cxp + cp * cyp + (y1 + y2) / 2;
+  const ang = (ux, uy, vx, vy) => Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+  const t1 = ang(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+  let dt = ang((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+  if (!fs && dt > 0) dt -= 2 * Math.PI;
+  if (fs && dt < 0) dt += 2 * Math.PI;
+  return { cx, cy, rx, ry, t1, dt };
+}

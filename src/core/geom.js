@@ -163,3 +163,12 @@ export function alignFaces(mB, pB, nB, pA, nA, mode = "gegen", gap = 0) {
   const T = translation(v3.mul(nAn, d));
   return matMul(T, matMul(R, mB));
 }
+
+/** Inverse einer starren Transformation (Rotation + Verschiebung) */
+export function matInvertRigid(m) {
+  const o = matIdentity();
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) o[c * 4 + r] = m[r * 4 + c];
+  const t = [m[12], m[13], m[14]];
+  for (let r = 0; r < 3; r++) o[12 + r] = -(o[r] * t[0] + o[4 + r] * t[1] + o[8 + r] * t[2]);
+  return o;
+}
