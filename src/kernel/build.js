@@ -227,11 +227,24 @@ export function createKernel(R) {
     }
     const newCache = [];
 
+    // Folgefehler: Ursache (Bezug fehlt, steht dahinter, ist unterdrückt oder fehlerhaft) benennen
+    const missingRef = (id, label, self) => {
+      const i = feats.findIndex((g) => g.id === id);
+      const ref = feats[i];
+      if (!id || !ref) return `${label} fehlt (gelöscht?)`;
+      const name = `»${ref.name || ref.type}«`;
+      if (i > feats.indexOf(self)) return `${label} ${name} steht im Baum weiter unten – Reihenfolge ändern`;
+      if (ref.suppressed) return `hängt von ${name} ab, das unterdrückt ist`;
+      const st = state.status[id];
+      if (st && !st.ok) return `hängt von ${name} ab, das fehlerhaft ist`;
+      return `${label} ${name} fehlt oder ist fehlerhaft`;
+    };
     const getSketch = (id, label = "Skizze") => {
       const s = state.sketches.get(id);
-      if (!s) throw new Error(`${label} fehlt oder ist fehlerhaft`);
+      if (!s) throw new Error(missingRef(id, label, currentFeature));
       return s;
     };
+    let currentFeature = null;
 
     const applyOp = (op, tool, fid, label) => {
       const bodies = state.bodies;
@@ -258,6 +271,7 @@ export function createKernel(R) {
 
     for (let i = startAt; i < feats.length; i++) {
       const f = feats[i];
+      currentFeature = f;
       const st = { ok: true };
       state.status[f.id] = st;
       if (f.suppressed) { st.suppressed = true; newCache.push({ key: keys[i], state: null }); continue; }
@@ -462,7 +476,7 @@ export function createKernel(R) {
           }
           case "pattern": {
             const src = state.tools.get(f.feature);
-            if (!src) throw new Error("Bezugs-Feature fehlt");
+            if (!src) throw new Error(missingRef(f.feature, "Bezugs-Feature", f));
             const transforms = patternTransforms(f, E);
             if (transforms.length > 500) throw new Error("Zu viele Exemplare (max. 500)");
             let n = 0;
