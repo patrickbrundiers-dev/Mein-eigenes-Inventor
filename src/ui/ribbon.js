@@ -131,7 +131,7 @@ export class Ribbon {
             T("concentric", "Konzentrisch", "concentric"), T("collinear", "Kollinear", "collinear"), T("symmetric", "Symmetrisch", "symmetric"),
           ] },
           { label: "Anzeige", buttons: [
-            B("glyphs", "Abhängigkeiten zeigen", "eye", { on: sk.showGlyphs, run: () => { sk.showGlyphs = !sk.showGlyphs; sk.render(); this.render(); } }),
+            B("glyphs", "Symbole", "eye", { on: sk.showGlyphs, run: () => { sk.showGlyphs = !sk.showGlyphs; sk.render(); this.render(); } }),
             B("gridsnap", "Rasterfang", "grid", { on: sk.gridSnap, run: () => { sk.gridSnap = !sk.gridSnap; sk.render(); this.render(); } }),
             B("params", "Parameter", "params"),
           ] },

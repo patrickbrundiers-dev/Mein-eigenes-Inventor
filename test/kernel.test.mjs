@@ -121,7 +121,7 @@ test("Rahmen aus Skizze: Gehrung und Stumpf", async () => {
   log("T-Stoß Längen", res3.bodies.map((b) => b.meta.length.toFixed(2)).join(", "), "coped", res3.bodies.map((b) => b.meta.coped).join(","));
   assert.ok(res3.bodies[1].meta.coped);
   const L2 = res3.bodies[1].meta.length;
-  assert.ok(L2 < 300 && L2 > 300 - 21.3, "Abzweig " + L2);
+  assert.ok(L2 <= 300 + 1e-3 && L2 > 300 - 21.3, "Abzweig " + L2); // gleiche Rohre: Sattelspitzen reichen bis zur Achse
 });
 
 test("Muster, Spiegeln, Fase an Kante, Wandung", async () => {

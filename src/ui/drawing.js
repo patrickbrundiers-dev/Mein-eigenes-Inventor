@@ -619,7 +619,7 @@ export class DrawingEditor {
       if (!p?.bbox) continue;
       const b = p.bbox;
       if (d.dims.some((m) => m.view === v.id && m.auto)) continue;
-      add.push({ id: uid("m"), view: v.id, kind: "h", p1: [b.x0, b.y0], p2: [b.x1, b.y0], off: -8, auto: true });
+      add.push({ id: uid("m"), view: v.id, kind: "h", p1: [b.x0, b.y1], p2: [b.x1, b.y1], off: -8, auto: true });
       add.push({ id: uid("m"), view: v.id, kind: "v", p1: [b.x1, b.y0], p2: [b.x1, b.y1], off: 8, auto: true });
       for (const a of p.arcs || []) {
         if (!a.full) continue;

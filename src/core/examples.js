@@ -144,12 +144,8 @@ export function exampleProject() {
   drw.title.nummer = "BG-100-01";
   drw.title.werkstoff = "S235JR";
   drw.title.massstab = "1:2";
-  drw.views = [
-    { id: "v1", type: "front", x: 120, y: 190, scale: 0.5, hidden: true, label: "" },
-    { id: "v2", type: "top", x: 120, y: 120, scale: 0.5, hidden: true, label: "" },
-    { id: "v3", type: "left", x: 260, y: 190, scale: 0.5, hidden: true, label: "" },
-    { id: "v4", type: "iso", x: 330, y: 95, scale: 0.3, hidden: false, label: "" },
-  ];
+  drw.views = [];
+  drw.pendingAutoViews = true;
   prj.docs.push(plate, frame, tube, asm, drw);
   return prj;
 }

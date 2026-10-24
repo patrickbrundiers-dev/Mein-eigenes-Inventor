@@ -19,7 +19,7 @@
   --radius-m: 6px;
   --din: "Bahnschrift", "DIN Alternate", "DIN 2014", "Roboto Condensed", "Arial Narrow", sans-serif;
   --ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
-  --ribbon-h: 104px;
+  --ribbon-h: 112px;
   --status-h: 26px;
   color-scheme: light;
 }
@@ -119,6 +119,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .chk { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px; }
 .btn { border: 1px solid var(--steel-3); background: #fff; border-radius: var(--radius-s); padding: 4px 10px; cursor: pointer; white-space: nowrap; }
 .btn:hover { border-color: var(--dye); color: var(--dye); }
+.btn svg { width: 14px; height: 14px; vertical-align: -2px; }
 .btn.primary { background: var(--dye); border-color: var(--dye); color: #fff; }
 .btn.primary:hover { background: #18407f; color: #fff; }
 .btn.danger:hover { border-color: var(--err); color: var(--err); }

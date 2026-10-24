@@ -36,10 +36,10 @@ export class Viewer {
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(400, -400, 400);
     this.scene.add(this.camera);
-    const head = new THREE.DirectionalLight(0xffffff, 1.6);
+    const head = new THREE.DirectionalLight(0xffffff, 1.9);
     head.position.set(0.4, 0.6, 1);
     this.camera.add(head);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.95));
     this.scene.add(new THREE.HemisphereLight(0xf4f7fb, 0x5b6773, 0.55));
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -268,7 +268,7 @@ export class Viewer {
       const c = new THREE.Color(color);
       if (b.kind === "member") c.offsetHSL(0, 0, ((bi % 3) - 1) * 0.035);
       const mat = new THREE.MeshStandardMaterial({
-        color: c, metalness: 0.25, roughness: 0.55, side: THREE.DoubleSide,
+        color: c, metalness: 0.08, roughness: 0.5, side: THREE.DoubleSide,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
         transparent: opacity < 1, opacity, depthWrite: opacity >= 1,
       });
