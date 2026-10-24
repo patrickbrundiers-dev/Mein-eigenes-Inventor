@@ -24,7 +24,7 @@ export function cutListRows(sources) {
       const pid = m.profileId || m.section;
       const key = [pid, L, ends.join("/"), m.coped ? "A" : "", m.butt ? "S" : "", part.material].join("|");
       const dens = MATERIALS[part.material]?.density || 7.85;
-      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, qty: 0, kgm: (m.area * dens) / 1000, mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
+      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, knick: m.knicks ? { legs: m.legs || [], inPlane: m.inPlane, wall: m.wall } : null, qty: 0, kgm: (m.area * dens) / 1000, mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
       row.qty += qty;
       row.parts.add(part.name);
       map.set(key, row);

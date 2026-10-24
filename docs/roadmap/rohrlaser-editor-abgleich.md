@@ -112,9 +112,9 @@ Patrick; Lizenzfragen entstehen nicht. Keine neue Abhängigkeit.
 
 | Stufe | Punkt | Status |
 |---|---|---|
-| P0 | Mausrad verstellt keine Zahlenfelder (wie `mausrad.py`) | mit Etappe 1 |
-| P1 | Ü1 Profil-Schnelleingabe | Etappe 1 |
-| P1 | Ü2 Fertigungsprüfung mit Maschinengrenzen | Etappe 2 |
+| P0 | Mausrad verstellt keine Zahlenfelder (wie `mausrad.py`) | erledigt (#40) |
+| P1 | Ü1 Profil-Schnelleingabe | erledigt (#40) |
+| P1 | Ü2 Fertigungsprüfung mit Maschinengrenzen | Etappe 2 (dieser Stand) |
 | P1 | Ü3 Maßbilder Querschnitt | Etappe 3 |
 | P1 | Probleme/Prüfmeldungen: Klick wählt Feature | offen |
 | P2 | Muster-Kurzform „3x25“, Kontur-Vorlagen als Skizzenblock, DXF-Import in Skizze, Gravur-Text, Griffe am Modell, Regeln Bohrung/Steg/Rand, gemeinsamer STEP-Referenztest | zurückgestellt bis konkreter Bedarf (ADR-0004) |

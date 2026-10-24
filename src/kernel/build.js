@@ -886,6 +886,9 @@ export function createKernel(R) {
       weldGap: plan.weldGap,
       restWall: plan.restWall,
       tabs: !!plan.tab,
+      legs: input.segments.slice(), // Schenkellängen wie eingegeben (Fertigungsprüfung)
+      inPlane: plan.W, // Rohrmaß in der Knickebene
+      wall: plan.t,
       frameZ: z0,
     };
     return { folded, segments, flat, meta, name, plan };

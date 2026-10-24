@@ -321,3 +321,4 @@ table.grid input.inp { padding: 2px 4px; }
 .profile-hit { padding: 1px 8px; border-radius: 10px; border: 1px solid var(--steel-3); background: var(--steel-0); font-family: var(--din); font-size: 11.5px; cursor: pointer; }
 .profile-hit:hover { border-color: var(--dye); background: var(--dye-soft); }
 .inp.profile-quick { font-family: var(--din); }
+.dfm { margin-top: 6px; }

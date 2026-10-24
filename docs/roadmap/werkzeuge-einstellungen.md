@@ -86,7 +86,8 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 | E Werkzeuge und Tastatur | teilweise | Kürzel verwalten, Konflikte, Werkzeugsuche; Werkzeugleisten/Standardwerte je Werkzeug geplant |
 | F Kernel | fehlt | bewusst: keine Toleranzen ohne Absicherung |
 | G Materialien | teilweise | eingebaute Liste sichtbar; eigene Werkstoffe P2 |
-| H Blech, I Rohrlaser/Maschinen | fehlt | ADR-0002; Maschinenprofile eigenes Format (P3) |
+| H Blech | fehlt | ADR-0002 |
+| I Rohrlaser/Maschinen | teilweise | Grenzen einer Maschine für die Fertigungsprüfung (`src/core/dfm.js`); mehrere Maschinenprofile eigenes Format (P3) |
 | J Leistung | teilweise | Darstellungsqualität; Rest geplant |
 | K Dateien und Datensicherheit | vorhanden (Verhalten), Optionen fehlen | atomar + `.bak`, Autosave, Migration |
 | L Updates | vorhanden | jetzt im Center |
