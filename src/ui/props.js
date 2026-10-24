@@ -535,10 +535,12 @@ export class Props {
       } else if (t === "c") {
         const c = sk.constraints.find((x) => x.id === id);
         if (c) {
-          const names = { distance: "Abstand", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel", horizontal: "Horizontal", vertical: "Vertikal", parallel: "Parallel", perpendicular: "Senkrecht", equal: "Gleich", tangent: "Tangential", tangentAt: "Tangential", fix: "Fixiert", coincident: "Koinzident", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis", midpoint: "Mittelpunkt", concentric: "Konzentrisch", collinear: "Kollinear", symmetric: "Symmetrisch" };
+          const names = { distance: "Abstand", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel", horizontal: "Horizontal", vertical: "Vertikal", parallel: "Parallel", perpendicular: "Senkrecht", equal: "Gleich", tangent: "Tangential", tangentAt: "Tangential", fix: "Fixiert", coincident: "Koinzident", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis", midpoint: "Mittelpunkt", concentric: "Konzentrisch", collinear: "Kollinear", symmetric: "Symmetrisch", offset: "Versatz" };
           out.push(this.section(names[c.type] || c.type,
             c.value !== undefined && !c.driven ? this.expr("Wert", c.value, (v) => app.sketcher.commit("Maß ändern", (s) => { s.constraints.find((k) => k.id === id).value = v; }), { unit: c.type === "angle" ? "°" : "mm" }) : null,
             c.driven ? h("p", { class: "hint" }, "Getriebenes Maß (nur Anzeige). Doppelklick auf das Maß macht es steuernd.") : null,
+            c.id === "Of" ? null : this.check("Unterdrückt", !!c.disabled, (v) => app.sketcher.commit(v ? "Bedingung unterdrücken" : "Bedingung aktivieren", (s) => { const k = s.constraints.find((x) => x.id === id); if (v) k.disabled = true; else delete k.disabled; })),
+            c.disabled ? h("p", { class: "hint" }, "Unterdrückt: bleibt gespeichert, wirkt aber nicht auf die Skizze.") : null,
             h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => app.sketcher.deleteSelection() }, "Löschen"))));
         }
       }

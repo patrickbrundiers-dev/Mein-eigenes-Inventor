@@ -70,6 +70,7 @@ export const COMMANDS = [
   { id: "sketch.arcc", label: "Skizze: Bogen um Mittelpunkt", group: "Skizze", scope: "sketch" },
   { id: "sketch.slot", label: "Skizze: Langloch", group: "Skizze", scope: "sketch", keywords: "nut schlitz" },
   { id: "sketch.polygon", label: "Skizze: Polygon", group: "Skizze", scope: "sketch", keywords: "vieleck sechskant" },
+  { id: "sketch.offset", label: "Skizze: Versatz", group: "Skizze", scope: "sketch", keywords: "offset parallel abstand kontur" },
   { id: "sketch.mirror", label: "Skizze: Spiegeln", group: "Skizze", scope: "sketch", keywords: "symmetrisch kopieren" },
   { id: "sketch.point", label: "Skizze: Punkt", group: "Skizze", scope: "sketch", key: "P" },
   { id: "sketch.dimension", label: "Skizze: Bemaßung", group: "Skizze", scope: "sketch", key: "D", keywords: "maß" },

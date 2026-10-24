@@ -66,13 +66,12 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
     }
   }
 
-  const val = (c) => {
-    const v = evaluate(c.value, scope);
-    return v;
-  };
+  const byId = new Map(sketch.constraints.map((c) => [c.id, c]));
+  // tie: Wert folgt einer anderen Bedingung (z. B. versetzte Elemente folgen dem ersten Versatzmaß)
+  const val = (c) => evaluate((c.tie && byId.get(c.tie)?.value) ?? c.value, scope);
 
   for (const c of [...sketch.constraints, ...extra]) {
-    if (c.driven || c.disabled) continue;
+    if (c.driven || c.disabled || (c.tie && byId.get(c.tie)?.disabled)) continue;
     const E = (id) => {
       const e = ents.get(id);
       if (!e) throw new Error("Element fehlt: " + id);
@@ -221,6 +220,21 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
         if (c.dir === "h") add(c.id, (x) => Math.abs(x[b] - x[a]) - v);
         else if (c.dir === "v") add(c.id, (x) => Math.abs(x[b + 1] - x[a + 1]) - v);
         else add(c.id, (x) => Math.hypot(x[b] - x[a], x[b + 1] - x[a + 1]) - v);
+        break;
+      }
+      case "offset": { // e2 ist um k·v zu e1 versetzt: Linien (Abstand links von p1→p2), Bögen/Kreise (Radiusdifferenz)
+        const v = val(c), k = c.k || 1, e1 = E(c.e1), e2 = E(c.e2);
+        if (e1.type === "line") {
+          const [a, b] = lineIdx(e1);
+          for (const q of lineIdx(e2)) add(c.id, (x) => {
+            const dx = x[b] - x[a], dy = x[b + 1] - x[a + 1];
+            const L = Math.hypot(dx, dy) || 1e-12;
+            return (dx * (x[q + 1] - x[a + 1]) - dy * (x[q] - x[a])) / L - k * v;
+          });
+        } else {
+          const r1 = radiusFn(e1), r2 = radiusFn(e2);
+          add(c.id, (x) => r2(x) - r1(x) - k * v);
+        }
         break;
       }
       case "length": {
@@ -438,6 +452,15 @@ export function measureConstraint(sketch, c) {
       return Math.hypot(b.x - a.x, b.y - a.y);
     }
     case "length": { const e = ents.get(c.e); const a = P(e.p1), b = P(e.p2); return Math.hypot(b.x - a.x, b.y - a.y); }
+    case "offset": {
+      const e1 = ents.get(c.e1), e2 = ents.get(c.e2), k = c.k || 1;
+      if (e1.type === "line") {
+        const a = P(e1.p1), b = P(e1.p2), q = P(e2.p1);
+        const dx = b.x - a.x, dy = b.y - a.y;
+        return (k * (dx * (q.y - a.y) - dy * (q.x - a.x))) / (Math.hypot(dx, dy) || 1);
+      }
+      return k * (rad(e2) - rad(e1));
+    }
     case "radius": return rad(ents.get(c.e));
     case "diameter": return 2 * rad(ents.get(c.e));
     case "angle": {
@@ -450,4 +473,4 @@ export function measureConstraint(sketch, c) {
   return NaN;
 }
 
-export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle"]);
+export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset"]);

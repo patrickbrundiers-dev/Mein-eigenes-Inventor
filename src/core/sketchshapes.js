@@ -110,10 +110,188 @@ export function mirrorEntities(sk, entityIds, lineId, { uid }) {
   return { entities: created, points: [...map.values()].filter((v, i, a) => a.indexOf(v) === i) };
 }
 
+/**
+ * Versatz (Offset) von Linien, Bögen und Kreisen um den Abstand d zur Seite des Punktes pick.
+ * Zusammenhängende Elemente werden als Kette versetzt; an Ecken treffen sich die Kopien im Schnittpunkt,
+ * an tangentialen Übergängen im gemeinsamen Punkt. Bindung: Bedingung »offset« je Kopie (Abstand bzw.
+ * Radiusdifferenz); nur die erste ist ein sichtbares Maß, die übrigen folgen ihm (tie).
+ */
+export function offsetEntities(sk, entityIds, d, pick, { uid, value }) {
+  if (!(d > 1e-9)) throw new Error("Versatz braucht einen Abstand größer 0");
+  const P = new Map(sk.points.map((p) => [p.id, p]));
+  const ents = entityIds.map((id) => sk.entities.find((e) => e.id === id)).filter((e) => e && !e.origin && ["line", "arc", "circle"].includes(e.type));
+  if (!ents.length) throw new Error("Linien, Bögen oder Kreise zum Versetzen wählen");
+  const val = value ?? String(d);
+  const cons = [];
+  let master = null;
+  const offCon = (e1, e2, k) => {
+    const c = { id: uid("k"), type: "offset", e1, e2, k, value: val };
+    if (master) { c.tie = master.id; c.hidden = true; } else master = c;
+    cons.push(c);
+  };
+  const newPt = (x, y) => { const id = uid("p"); sk.points.push({ id, x, y }); P.set(id, sk.points.at(-1)); return id; };
+  const created = [];
+
+  // Kreise einzeln: Seite = innen/außen
+  for (const e of ents.filter((x) => x.type === "circle")) {
+    const c = P.get(e.c);
+    const k = Math.hypot(pick.x - c.x, pick.y - c.y) >= e.r ? 1 : -1;
+    const r = e.r + k * d;
+    if (!(r > 1e-9)) throw new Error("Versatz nach innen ist größer als der Kreisradius");
+    const id = uid("k");
+    sk.entities.push({ id, type: "circle", c: e.c, r, construction: !!e.construction });
+    offCon(e.id, id, k);
+    created.push(id);
+  }
+
+  // Ketten aus Linien und Bögen bilden
+  const open = ents.filter((x) => x.type !== "circle");
+  const ends = new Map(); // Punkt → Elemente
+  for (const e of open) for (const p of [e.p1, e.p2]) { if (!ends.has(p)) ends.set(p, []); ends.get(p).push(e); }
+  const used = new Set();
+  const chains = [];
+  const deg = (p) => (ends.get(p) || []).length;
+  const other = (x, p) => (x.p1 === p ? x.p2 : x.p1);
+  const walk = (e, from) => {
+    const chain = [];
+    while (e && !used.has(e.id)) {
+      used.add(e.id);
+      const fwd = e.p1 === from;
+      chain.push({ e, fwd });
+      const to = other(e, from);
+      if (deg(to) !== 2) break;
+      e = ends.get(to).find((x) => x !== chain.at(-1).e);
+      from = to;
+    }
+    return chain;
+  };
+  for (const e of open) {
+    if (used.has(e.id)) continue;
+    // rückwärts bis zum Kettenanfang (oder einmal herum bei geschlossener Kette)
+    let s = e, sp = e.p1;
+    const seen = new Set([e.id]);
+    while (deg(sp) === 2) {
+      const nb = ends.get(sp).find((x) => x !== s);
+      if (seen.has(nb.id) || used.has(nb.id)) break;
+      seen.add(nb.id);
+      sp = other(nb, sp);
+      s = nb;
+    }
+    const chain = walk(s, sp);
+    const last = chain.at(-1);
+    chain.closed = chain.length > 1 && (last.fwd ? last.e.p2 : last.e.p1) === sp;
+    chains.push(chain);
+  }
+
+  const xy = (id) => P.get(id);
+  for (const chain of chains) {
+    // Seite: Element, das dem Klickpunkt am nächsten liegt, bestimmt das Vorzeichen (links/rechts der Laufrichtung)
+    let best = null, bd = Infinity;
+    for (const it of chain) {
+      const g = geom(it);
+      const dist = Math.hypot(pick.x - g.mid.x, pick.y - g.mid.y);
+      if (dist < bd) { bd = dist; best = { it, g }; }
+    }
+    const side = (pick.x - best.g.mid.x) * best.g.nl[0] + (pick.y - best.g.mid.y) * best.g.nl[1] >= 0 ? 1 : -1;
+    const o = side * d;
+    // versetzte Kurven (unendlich): Linie (Punkt, Richtung) oder Kreis (Mitte, Radius)
+    const off = chain.map((it) => {
+      const a = xy(it.fwd ? it.e.p1 : it.e.p2), b = xy(it.fwd ? it.e.p2 : it.e.p1);
+      if (it.e.type === "line") {
+        const L = Math.hypot(b.x - a.x, b.y - a.y), n = [-(b.y - a.y) / L, (b.x - a.x) / L];
+        return { kind: "line", a: { x: a.x + o * n[0], y: a.y + o * n[1] }, b: { x: b.x + o * n[0], y: b.y + o * n[1] } };
+      }
+      const c = xy(it.e.c), r = Math.hypot(a.x - c.x, a.y - c.y);
+      const r2 = r + (it.fwd ? -o : o); // links der Laufrichtung gegen den Uhrzeigersinn = zur Mitte
+      if (!(r2 > 1e-9)) throw new Error("Versatz ist größer als ein Bogenradius");
+      const sc = (p) => ({ x: c.x + ((p.x - c.x) * r2) / r, y: c.y + ((p.y - c.y) * r2) / r });
+      return { kind: "circle", c, r: r2, a: sc(a), b: sc(b) };
+    });
+    // Eckpunkte: Ende von i und Anfang von i+1 zusammenführen
+    const n = chain.length;
+    const startIds = new Array(n), endIds = new Array(n);
+    const joins = chain.closed ? n : n - 1;
+    for (let i = 0; i < joins; i++) {
+      const j = (i + 1) % n;
+      const q = joinPoint(off[i], off[j]);
+      const id = newPt(q.x, q.y);
+      endIds[i] = id; startIds[j] = id;
+    }
+    if (!chain.closed) { startIds[0] = newPt(off[0].a.x, off[0].a.y); endIds[n - 1] = newPt(off[n - 1].b.x, off[n - 1].b.y); }
+    chain.forEach((it, i) => {
+      const id = uid(it.e.type === "line" ? "l" : "b");
+      const s0 = startIds[i], e0 = endIds[i];
+      const p1 = it.fwd ? s0 : e0, p2 = it.fwd ? e0 : s0; // Orientierung des Originals beibehalten
+      if (it.e.type === "line") sk.entities.push({ id, type: "line", p1, p2, construction: !!it.e.construction });
+      else sk.entities.push({ id, type: "arc", c: it.e.c, p1, p2, construction: !!it.e.construction });
+      const k = it.e.type === "line" ? (it.fwd ? side : -side) : (it.fwd ? -side : side);
+      offCon(it.e.id, id, k);
+      created.push(id);
+    });
+  }
+  sk.constraints.push(...cons);
+  return { entities: created, master: master?.id };
+
+  function geom(it) {
+    const a = xy(it.fwd ? it.e.p1 : it.e.p2), b = xy(it.fwd ? it.e.p2 : it.e.p1);
+    if (it.e.type === "line") {
+      const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      return { mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, nl: [-(b.y - a.y) / L, (b.x - a.x) / L] };
+    }
+    const c = xy(it.e.c), p1 = xy(it.e.p1), p2 = xy(it.e.p2);
+    const r = Math.hypot(p1.x - c.x, p1.y - c.y);
+    const a1 = Math.atan2(p1.y - c.y, p1.x - c.x);
+    let sw = Math.atan2(p2.y - c.y, p2.x - c.x) - a1;
+    while (sw <= 1e-12) sw += 2 * Math.PI;
+    const m = { x: c.x + r * Math.cos(a1 + sw / 2), y: c.y + r * Math.sin(a1 + sw / 2) };
+    const inward = [(c.x - m.x) / r, (c.y - m.y) / r];
+    return { mid: m, nl: it.fwd ? inward : [-inward[0], -inward[1]] };
+  }
+}
+
+/** Treffpunkt zweier versetzter Kurven nahe dem Übergang (Ende von u, Anfang von v) */
+function joinPoint(u, v) {
+  const E = u.b, S = v.a;
+  const mid = { x: (E.x + S.x) / 2, y: (E.y + S.y) / 2 };
+  if (Math.hypot(E.x - S.x, E.y - S.y) < 1e-7) return mid;
+  let cands = [];
+  if (u.kind === "line" && v.kind === "line") {
+    const r = lineLine(u.a, u.b, v.a, v.b);
+    if (r) cands = [r];
+  } else if (u.kind === "line" || v.kind === "line") {
+    const ln = u.kind === "line" ? u : v, ci = u.kind === "line" ? v : u;
+    cands = lineCircle(ln.a, ln.b, ci.c, ci.r);
+  } else cands = circleCircle(u.c, u.r, v.c, v.r);
+  if (!cands.length) return mid;
+  return cands.reduce((best, q) => (Math.hypot(q.x - mid.x, q.y - mid.y) < Math.hypot(best.x - mid.x, best.y - mid.y) ? q : best));
+}
+function lineLine(a, b, c, d) {
+  const r = [b.x - a.x, b.y - a.y], s = [d.x - c.x, d.y - c.y];
+  const den = r[0] * s[1] - r[1] * s[0];
+  if (Math.abs(den) < 1e-12) return null;
+  const t = ((c.x - a.x) * s[1] - (c.y - a.y) * s[0]) / den;
+  return { x: a.x + t * r[0], y: a.y + t * r[1] };
+}
+function lineCircle(a, b, c, r) {
+  const dx = b.x - a.x, dy = b.y - a.y, fx = a.x - c.x, fy = a.y - c.y;
+  const A = dx * dx + dy * dy, B = 2 * (fx * dx + fy * dy), C = fx * fx + fy * fy - r * r;
+  const D = B * B - 4 * A * C;
+  if (D < 0 || A < 1e-18) return [];
+  const sq = Math.sqrt(D);
+  return [(-B - sq) / (2 * A), (-B + sq) / (2 * A)].map((t) => ({ x: a.x + t * dx, y: a.y + t * dy }));
+}
+function circleCircle(c1, r1, c2, r2) {
+  const dx = c2.x - c1.x, dy = c2.y - c1.y, D = Math.hypot(dx, dy);
+  if (D < 1e-12 || D > r1 + r2 || D < Math.abs(r1 - r2)) return [];
+  const a = (r1 * r1 - r2 * r2 + D * D) / (2 * D), h = Math.sqrt(Math.max(0, r1 * r1 - a * a));
+  const mx = c1.x + (a * dx) / D, my = c1.y + (a * dy) / D;
+  return [{ x: mx + (h * dy) / D, y: my - (h * dx) / D }, { x: mx - (h * dy) / D, y: my + (h * dx) / D }];
+}
+
 const NAMES = {
   horizontal: "Horizontal", vertical: "Vertikal", coincident: "Koinzident", fix: "Fixiert", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis",
   midpoint: "Mittelpunkt", parallel: "Parallel", perpendicular: "Senkrecht", collinear: "Kollinear", equal: "Gleich", concentric: "Konzentrisch",
-  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
+  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", offset: "Versatz", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
 };
 /** Klartext einer Bedingung, z. B. »Abstand 120« oder »Parallel« */
 export function constraintLabel(c) {
