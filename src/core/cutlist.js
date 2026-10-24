@@ -6,7 +6,7 @@ import { fmt as fmtNum } from "./expr.js";
 /** Verwendete Regeln – stehen im Zuschnittlisten-Dialog und in docs/ */
 export const CUT_RULES = [
   "Zuschnittlänge = größte Ausdehnung des Profils entlang seiner Achse (Außenmaß, Spitze zu Spitze bei Gehrung), auf 0,1 mm gerundet.",
-  "Gehrung = Winkel der Schnittebene zur Senkrechten auf die Achse (0° = gerader Schnitt).",
+  "Gehrung = Winkel der Schnittebene zur Senkrechten auf die Achse (0° = gerader Schnitt); „(3D)“ = Kopf geschwenkt, sonst 2D (Strahl senkrecht zur Oberfläche).",
   "Knickrahmen: eine Zeile in Abwicklungslänge (gerades Rohr vor dem Biegen, inkl. Biegezugabe).",
   "Gleiches Profil, gleiche Länge, gleiche Enden und gleicher Werkstoff = eine Zeile mit Anzahl. Keine Verschnitt-Optimierung.",
   "Masse aus dem Volumen des Körpers (mit Ausklinkungen und Bohrungen) und der Werkstoffdichte.",
@@ -22,9 +22,9 @@ export function cutListRows(sources) {
       const L = Math.round(m.length * 10) / 10;
       const ends = [m.miterStart || 0, m.miterEnd || 0].map((x) => Math.round(x * 10) / 10).sort((a, c) => a - c);
       const pid = m.profileId || m.section;
-      const key = [pid, L, ends.join("/"), m.coped ? "A" : "", m.butt ? "S" : "", part.material].join("|");
+      const key = [pid, L, ends.join("/"), m.coped ? "A" : "", m.butt ? "S" : "", m.cutSig || "", m.endCuts ? m.endCuts.A + m.endCuts.B : "", part.material].join("|");
       const dens = MATERIALS[part.material]?.density || 7.85;
-      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, knick: m.knicks ? { legs: m.legs || [], inPlane: m.inPlane, wall: m.wall } : null, qty: 0, kgm: (m.area * dens) / 1000, mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
+      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, d3: !!m.endCuts && (m.endCuts.A === "3D" || m.endCuts.B === "3D"), knick: m.knicks ? { legs: m.legs || [], inPlane: m.inPlane, wall: m.wall } : null, qty: 0, kgm: (m.area * dens) / 1000, mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
       row.qty += qty;
       row.parts.add(part.name);
       map.set(key, row);
@@ -35,7 +35,7 @@ export function cutListRows(sources) {
 /** Enden einer Zuschnitt-Zeile als Text: "45°/45°", "gerade", "ausgeklinkt" */
 export function endsText(r) {
   const m = r.miters.some((x) => x) ? r.miters.map((x) => fmtNum(x, 1) + "°").join("/") : "gerade";
-  return m + (r.coped ? ", ausgeklinkt" : "");
+  return m + (r.d3 ? " (3D)" : "") + (r.coped ? ", ausgeklinkt" : "");
 }
 export function cutListCsv(rows) {
   const head = ["Pos", "Profil-ID", "Profil", "Zuschnittlänge mm", "Menge", "Gehrung Anfang °", "Gehrung Ende °", "Ausgeklinkt", "kg/m", "kg/Stk", "kg gesamt", "Werkstoff", "Bauteil"];
