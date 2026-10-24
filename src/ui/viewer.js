@@ -128,6 +128,7 @@ export class Viewer {
     this.cameraChanged();
   }
   cameraChanged() {
+    this.camera.updateMatrixWorld();
     this.edgeCache = null;
     this.needsRender = true;
     // Kopf-Licht und Raster an Zoom anpassen

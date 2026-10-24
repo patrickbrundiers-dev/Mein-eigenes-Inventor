@@ -161,6 +161,7 @@ export class App {
   }
   changed({ rebuild = true } = {}) {
     this.dirty = true;
+    if (rebuild && this.sel?.type === "geometry") { this.sel = null; this.selHits = []; }
     this.updateTitle();
     this.files.autosave();
     this.tree.render();
@@ -429,6 +430,7 @@ export class App {
       const b = down.b;
       down = null;
       if (moved) return;
+      if (b === 2 && this.mode === "sketch") { this.sketcher.state = null; this.sketcher.render(); return; }
       if (b === 2) return this.viewerContextMenu(e);
       if (b !== 0 || this.mode === "sketch") return;
       if (this.viewer.handleCubeClick(e.clientX, e.clientY)) return;

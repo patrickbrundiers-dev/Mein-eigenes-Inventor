@@ -233,7 +233,7 @@ export function createKernel(R) {
         touched++;
       }
       state.bodies = bodies.filter((b) => !b.empty && !isEmptyShape(b.shape));
-      if (!touched && op === "cut") state.status[fid] = { ok: true, warning: "Schnitt trifft keinen Körper" };
+      if (!touched && op === "cut" && state.status[fid]) state.status[fid].warning = "Schnitt trifft keinen Körper";
     };
 
     for (let i = startAt; i < feats.length; i++) {
