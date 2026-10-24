@@ -279,7 +279,7 @@ export class Ribbon {
       item("steel", "Beispielprojekt öffnen", () => app.openExample()),
       h("hr"),
       item("settings", "Einstellungen…", () => app.props.settingsDialog(), "Strg+,"),
-      item("info", "Über WerkCAD", () => app.props.aboutDialog()));
+      item("info", "Über PBCAD", () => app.props.aboutDialog()));
     document.body.append(m);
     setTimeout(() => document.addEventListener("mousedown", out, true), 0);
   }

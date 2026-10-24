@@ -20,7 +20,7 @@ export function serializeProject(prj, now = new Date()) {
 /** Text einer .wcad-Datei → Projekt; wirft bei unlesbarem Inhalt */
 export function parseProject(text) {
   const prj = JSON.parse(text);
-  if (prj?.format !== "werkcad" || !Array.isArray(prj.docs)) throw new Error("Keine WerkCAD-Projektdatei");
+  if (prj?.format !== "werkcad" || !Array.isArray(prj.docs)) throw new Error("Keine PBCAD-Projektdatei");
   return prj;
 }
 
@@ -40,7 +40,7 @@ export function migrateProject(prj, { migrations = MIGRATIONS, current = FORMAT_
   if (!Number.isInteger(v) || v < 1) throw new Error(`Ungültige Formatversion »${v}«`);
   if (v > current) {
     issues.push(issue("version-neuer", "warning", null,
-      `Die Datei stammt aus einer neueren WerkCAD-Version (Format ${v}, dieses Programm kennt bis ${current}). Unbekannte Inhalte bleiben erhalten, werden aber eventuell als Fehler angezeigt.`));
+      `Die Datei stammt aus einer neueren PBCAD-Version (Format ${v}, dieses Programm kennt bis ${current}). Unbekannte Inhalte bleiben erhalten, werden aber eventuell als Fehler angezeigt.`));
     return { project: prj, issues };
   }
   if (v === current && prj.version === current) return { project: prj, issues };

@@ -24,5 +24,5 @@ export function serve(p = port) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   await serve();
-  console.log(`WerkCAD läuft auf http://localhost:${port}`);
+  console.log(`PBCAD läuft auf http://localhost:${port}`);
 }

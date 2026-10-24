@@ -1,6 +1,6 @@
 {
   "name": "werkcad",
-  "productName": "WerkCAD",
+  "productName": "PBCAD",
   "version": "0.3.0",
   "description": "Parametrisches 3D-CAD für Bauteile, Rohr- und Rahmenkonstruktionen, Baugruppen und Zeichnungen",
   "author": "Patrick Brundiers",
@@ -34,7 +34,7 @@
   },
   "build": {
     "appId": "de.brundiers.werkcad",
-    "productName": "WerkCAD",
+    "productName": "PBCAD",
     "copyright": "© Patrick Brundiers",
     "files": ["dist/**/*", "!dist/**/*.map", "electron/**/*", "build/icon.png", "package.json"],
     "directories": { "output": "release", "buildResources": "build" },
@@ -48,11 +48,11 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
-      "shortcutName": "WerkCAD",
-      "artifactName": "WerkCAD-Setup-${version}.${ext}"
+      "shortcutName": "PBCAD",
+      "artifactName": "PBCAD-Setup-${version}.${ext}"
     },
     "fileAssociations": [
-      { "ext": "wcad", "name": "WerkCAD.Projekt", "description": "WerkCAD-Projekt", "role": "Editor", "icon": "build/icon.png" }
+      { "ext": "wcad", "name": "WerkCAD.Projekt", "description": "PBCAD-Projekt", "role": "Editor", "icon": "build/icon.png" }
     ],
     "publish": [
       { "provider": "github", "owner": "patrickbrundiers-dev", "repo": "Mein-eigenes-Inventor", "private": false, "releaseType": "release" }

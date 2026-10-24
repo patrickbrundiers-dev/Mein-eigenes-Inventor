@@ -43,13 +43,13 @@ try {
   check("Beispiel in der Desktop-App", info.mode === "assembly" && info.bodies.every((b) => b > 0), JSON.stringify(info));
   await win.screenshot({ path: path.join(outDir, "electron.png") });
   const title = await win.title();
-  check("Fenstertitel", /WerkCAD/.test(title), title);
+  check("Fenstertitel", /PBCAD/.test(title), title);
   // Fehlerprotokoll im Benutzerordner
   const logFile = path.join(await app.evaluate(({ app: a }) => a.getPath("userData")), "protokoll", "werkcad.log");
   await win.evaluate(() => window.werkcad.log("warn", "rauchtest", "Testeintrag"));
   await win.waitForTimeout(300);
   const logText = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
-  check("Fehlerprotokoll geschrieben", /\[info\] start: WerkCAD /.test(logText) && /\[warn\] rauchtest: Testeintrag/.test(logText), logFile);
+  check("Fehlerprotokoll geschrieben", /\[info\] start: PBCAD /.test(logText) && /\[warn\] rauchtest: Testeintrag/.test(logText), logFile);
   // Benutzereinstellungen: getrennte Datei, gültige Werte wirken, Oberflächengröße über die Brücke
   {
     const prefsFile = path.join(await app.evaluate(({ app: a }) => a.getPath("userData")), "benutzereinstellungen.json");

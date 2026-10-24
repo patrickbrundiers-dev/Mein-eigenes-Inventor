@@ -122,7 +122,7 @@ Quellen und Begründung: `/mnt/project-files/knickrahmen/recherche-ausklinken-bi
 
 Alle Zahlen sind Ausdrücke mit Parametern. Das Projektformat bleibt `version: 1`: es ist
 nur ein neuer Feature-Typ, bestehende Felder ändern ihre Bedeutung nicht. Ältere
-WerkCAD-Versionen zeigen für das Feature „Unbekanntes Feature“ und stürzen nicht ab.
+PBCAD-Versionen zeigen für das Feature „Unbekanntes Feature“ und stürzen nicht ab.
 
 ## 6. Prüfregeln
 

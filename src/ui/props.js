@@ -671,8 +671,8 @@ export class Props {
   settingsDialog(opts) { return settingsCenter(this.app, opts); }
   aboutDialog() {
     const v = window.werkcad?.version || "Entwicklerversion";
-    modal({ title: "Über WerkCAD", body: h("div", { style: { maxWidth: "52ch" } },
-      h("p", { style: { marginTop: 0 } }, h("b", {}, "WerkCAD "), v),
+    modal({ title: "Über PBCAD", body: h("div", { style: { maxWidth: "52ch" } },
+      h("p", { style: { marginTop: 0 } }, h("b", {}, "PBCAD "), v),
       h("p", {}, "Parametrisches 3D-CAD für Bauteile, Rohr- und Profilkonstruktionen, Baugruppen und Zeichnungen."),
       h("p", { class: "hint" }, "Geometrie-Kern: OpenCascade (über replicad). 3D-Darstellung: three.js. Bedienung angelehnt an gängige Konstruktionsprogramme."),
       window.werkcad?.openLogFolder ? h("p", { class: "hint" }, "Bei Problemen hilft das Fehlerprotokoll (enthält keine Projektdaten).") : null),

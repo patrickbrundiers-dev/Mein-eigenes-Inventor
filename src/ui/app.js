@@ -683,7 +683,7 @@ export class App {
   }
   updateTitle() {
     const name = this.filePath ? this.filePath.split(/[\\/]/).pop() : this.project.name;
-    document.title = `${this.dirty ? "• " : ""}${name} – WerkCAD`;
+    document.title = `${this.dirty ? "• " : ""}${name} – PBCAD`;
     window.werkcad?.setTitle?.(document.title);
     this.ribbon.renderDocLabel?.();
   }

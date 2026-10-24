@@ -9,7 +9,7 @@ eine Entscheidung, ob der vorhandene Geometrie-Kernel ausreicht oder ein anderer
 integriert werden muss. Das Audit ([current-state.md](../architecture/current-state.md))
 zeigt:
 
-- WerkCAD nutzt bereits **OpenCascade als WASM über replicad** (replicad 1.2.0,
+- PBCAD nutzt bereits **OpenCascade als WASM über replicad** (replicad 1.2.0,
   replicad-opencascadejs 1.1.0) – einen echten
   B-Rep-Kernel mit Booleschen Operationen, Rundungen, Fasen, Schalen, Sweeps, Loft,
   STEP-Import/-Export und Hidden-Line-Projektion.

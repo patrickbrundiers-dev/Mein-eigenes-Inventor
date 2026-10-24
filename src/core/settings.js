@@ -25,7 +25,7 @@ export const CATEGORIES = [
   { id: "blech", label: "Blechparameter", status: "geplant", planned: ["Biegetabellen", "K-Faktor je Material"], note: "Keine allgemeine Blechfunktion (ADR-0002); Biegewerte des Knickrahmens stehen im Feature." },
   { id: "fertigung", label: "Rohrlaser und Fertigung", status: "geplant", planned: ["Maschinenprofile mit Grenzen", "Warnungen bei Überschreitung"], note: "Maschinenprofile werden getrennt von den CAD-Einstellungen gespeichert." },
   { id: "updates", label: "Updates", status: "aktiv" },
-  { id: "datenschutz", label: "Datenschutz und Diagnose", status: "teilweise", note: "WerkCAD sendet keine Diagnosedaten. Das Fehlerprotokoll bleibt lokal und enthält keine Projektdaten." },
+  { id: "datenschutz", label: "Datenschutz und Diagnose", status: "teilweise", note: "PBCAD sendet keine Diagnosedaten. Das Fehlerprotokoll bleibt lokal und enthält keine Projektdaten." },
 ];
 
 export const DISPLAY = [
@@ -132,13 +132,13 @@ export function loadSettings(input) {
     version = 0;
     stored = raw;
   } else {
-    return { values, warnings: ["Keine WerkCAD-Einstellungsdatei – Standardwerte werden verwendet."], migratedFrom: null, corrupt: true };
+    return { values, warnings: ["Keine PBCAD-Einstellungsdatei – Standardwerte werden verwendet."], migratedFrom: null, corrupt: true };
   }
   if (!Number.isInteger(version) || version < 0) {
     return { values, warnings: ["Unbekannte Version der Einstellungsdatei – Standardwerte werden verwendet."], migratedFrom: null, corrupt: true };
   }
   if (version > SETTINGS_VERSION) {
-    warnings.push(`Einstellungen stammen aus einer neueren WerkCAD-Version (${version}); bekannte Werte werden übernommen.`);
+    warnings.push(`Einstellungen stammen aus einer neueren PBCAD-Version (${version}); bekannte Werte werden übernommen.`);
   }
   let migratedFrom = null;
   for (let v = version; v < SETTINGS_VERSION; v++) {

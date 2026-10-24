@@ -1,4 +1,4 @@
-# WerkCAD – Datenfluss
+# PBCAD – Datenfluss
 
 Stand: 24.10.2026 · Commit `cf39217`
 
