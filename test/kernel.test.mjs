@@ -309,3 +309,126 @@ test("Profil-ID in Zuschnitt-Daten", async () => {
   const tube = await K.buildPart(prj.docs.find((d) => d.id === "beispiel_rohr"));
   assert.equal(tube.bodies[0].meta.profileId, "RR 48,3x2,6");
 });
+
+// ---------- Knickrahmen ----------
+const { defaultKnickrahmen } = await import("../src/core/knickrahmen.js");
+const { catalogToDims } = await import("../src/core/sections.js");
+function knick(over = {}, lens = ["800", "600"], angles = ["30"], allowance = "0") {
+  return {
+    id: "kr", name: "KR", ...defaultKnickrahmen(catalogToDims("rechteck", "60x40x3")),
+    segments: lens.map((length) => ({ length })),
+    bends: angles.map((angle) => ({ angle, min: "", max: "", allowance })),
+    ...over,
+  };
+}
+const solidOk = (shape) => {
+  assert.equal(shape.solids.length, 1, "genau ein Körper");
+  const a = new OC.BRepCheck_Analyzer(shape.wrapped, true, false);
+  assert.ok(a.IsValid(), "Körper gültig");
+  a.delete();
+};
+const L_TOL = 0.01; // Vernetzungstoleranz der Längenmessung; Kanten an ebenen Schnitten liegen exakt
+const relNear = (a, b, rel, msg) => near(a, b, Math.abs(b) * rel, msg);
+
+test("Knickrahmen: gerades Rohr, 30/45/90°, beide Ansichten gültig", async () => {
+  // T1: ein Segment
+  let res = await K.buildPart(part([knick({}, ["1000"], [])]));
+  okAll(res);
+  const A = res.bodies[0].meta.area;
+  solidOk(res.bodies[0].shape);
+  relNear(R.measureVolume(res.bodies[0].shape), A * 1000, 1e-6, "Volumen gerade");
+  near(res.bodies[0].meta.length, 1000, 1e-9);
+  // T2: zwei Segmente
+  for (const ang of [30, 45, 90]) {
+    const T = Math.tan(((ang / 2) * Math.PI) / 180);
+    const flatL = 1400 + 2 * 27 * T;
+    res = await K.buildPart(part([knick({}, ["800", "600"], [String(ang)])]));
+    okAll(res);
+    assert.equal(res.bodies.length, 1, "ein Körper (ein Rohr)");
+    const fb = res.bodies[0];
+    solidOk(fb.shape);
+    relNear(R.measureVolume(fb.shape), A * 1400, 1e-6, `Volumen gefaltet ${ang}°`); // Gehrung symmetrisch
+    near(fb.meta.length, flatL, 1e-9, "Abwicklungslänge");
+    assert.ok(fb.meta.coped && fb.meta.knicks === 1);
+    // Ende der Mittellinie bei (800 + 600·cos, 600·sin); gerader Endschnitt → Hüllbox enthält Endpunkt ± W/2
+    const ex = 800 + 600 * Math.cos((ang * Math.PI) / 180), ey = 600 * Math.sin((ang * Math.PI) / 180);
+    const bb = fb.shape.boundingBox.bounds;
+    assert.ok(bb[1][1] >= ey - 1e-6 && bb[1][1] <= ey + 30 + 1e-6, "y-Ausdehnung");
+    near(bb[0][2], -20, 1e-6); near(bb[1][2], 20, 1e-6);
+    assert.ok(bb[1][0] >= ex - 1e-6);
+    const fl = await K.buildPart(part([knick({ view: "abgewickelt" }, ["800", "600"], [String(ang)])]));
+    okAll(fl);
+    solidOk(fl.bodies[0].shape);
+    const fbb = fl.bodies[0].shape.boundingBox.bounds;
+    near(fbb[1][0] - fbb[0][0], flatL, L_TOL, "gerades Rohr so lang wie die Abwicklung");
+    near(fbb[1][1] - fbb[0][1], 60, 1e-6);
+    assert.ok(R.measureVolume(fl.bodies[0].shape) < A * flatL, "Ausklinkung entfernt Material");
+    log("Knick", ang, "Abwicklung", flatL.toFixed(2), "Volumen", R.measureVolume(fb.shape).toFixed(0), R.measureVolume(fl.bodies[0].shape).toFixed(0));
+  }
+});
+
+test("Knickrahmen: drei Segmente, gegensinnig, Ebene, Profillage, Biegezugabe", async () => {
+  const f = knick({ plane: "XZ", orientation: "flach" }, ["500", "400", "300"], ["45", "-60"], "1.5");
+  let res = await K.buildPart(part([f]));
+  okAll(res);
+  const b = res.bodies[0];
+  solidOk(b.shape);
+  relNear(R.measureVolume(b.shape), b.meta.area * 1200, 1e-6);
+  const bb = b.shape.boundingBox.bounds;
+  near(bb[0][1], -30, 1e-6); near(bb[1][1], 30, 1e-6); // flach: B = 60 senkrecht zur XZ-Ebene
+  const t45 = Math.tan((22.5 * Math.PI) / 180), t60 = Math.tan((30 * Math.PI) / 180);
+  near(b.meta.length, 1200 + 2 * 17 * (t45 + t60) + 3, 1e-9);
+  res = await K.buildPart(part([{ ...f, view: "abgewickelt" }]));
+  okAll(res);
+  solidOk(res.bodies[0].shape);
+  const fbb = res.bodies[0].shape.boundingBox.bounds;
+  near(fbb[1][0] - fbb[0][0], b.meta.length, L_TOL);
+  // Zuschnittliste: genau ein Rohr
+  const cut = res.bodies.filter((x) => x.kind === "member");
+  assert.equal(cut.length, 1);
+});
+
+test("Knickrahmen: ungültige Eingaben ohne Teilergebnis, Parameter und Neuaufbau", async () => {
+  const other = { id: "e0", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "100", start: ["0", "500", "0"], axis: "X" };
+  for (const [over, lens, angs, re] of [
+    [{}, ["800", "-1"], ["30"], /Segment 2/],
+    [{}, ["800", "600"], ["175"], /außerhalb/],
+    [{ bends: [{ angle: "50", min: "", max: "45", allowance: "0" }] }, ["800", "600"], ["50"], /Maximum/],
+    [{}, ["20", "600"], ["90"], /zu kurz/],
+    [{ dims: { B: "60", H: "40", t: "20", r: "6" } }, ["800", "600"], ["30"], /Wandstärke/],
+    [{}, ["100", "100", "100", "100"], ["10", "10", "10"], /Segmente/],
+  ]) {
+    const res = await K.buildPart(part([other, knick(over, lens, angs)]));
+    assert.equal(res.status.kr.ok, false);
+    assert.match(res.status.kr.error, re);
+    assert.equal(res.bodies.filter((b) => b.fid === "kr").length, 0, "kein Teilergebnis");
+    assert.equal(res.status.e0.ok, true, "anderes Feature unberührt");
+  }
+  // Ausdrücke aus der Parametertabelle; Neuaufbau mit Cache = ohne Cache
+  const p = part([knick({}, ["Gesamt - 600", "600"], ["Knick"])], [{ name: "Gesamt", expr: "1400" }, { name: "Knick", expr: "45" }]);
+  const a = await K.buildPart(p);
+  okAll(a);
+  p.params[1].expr = "60";
+  const b1 = await K.buildPart(p);
+  const b2 = await K.buildPart(p, { useCache: false });
+  near(b1.bodies[0].meta.length, b2.bodies[0].meta.length, 1e-9);
+  near(R.measureVolume(b1.bodies[0].shape), R.measureVolume(b2.bodies[0].shape), 1e-6);
+  assert.notEqual(a.bodies[0].meta.length, b1.bodies[0].meta.length);
+});
+
+test("Knickrahmen: Speichern/Laden und STEP-Rückimport", async () => {
+  const prj = { format: "werkcad", version: 1, name: "KR", docs: [part([knick({}, ["500", "400", "300"], ["30", "30"], "1")])] };
+  const back = JSON.parse(JSON.stringify(prj));
+  const r1 = await K.buildPart(prj.docs[0], { useCache: false });
+  const r2 = await K.buildPart(back.docs[0], { useCache: false });
+  okAll(r2);
+  assert.deepEqual(back.docs[0].features[0], prj.docs[0].features[0]);
+  assert.deepEqual(r2.bodies[0].meta, r1.bodies[0].meta);
+  near(R.measureVolume(r2.bodies[0].shape), R.measureVolume(r1.bodies[0].shape), 1e-6);
+  for (const view of ["gefaltet", "abgewickelt"]) {
+    const res = await K.buildPart(part([knick({ view }, ["500", "400", "300"], ["30", "-30"])]));
+    const s = res.bodies[0].shape;
+    const imp = await R.importSTEP(new Blob([await R.exportSTEP([{ shape: s.clone(), name: "KR" }]).text()]));
+    relNear(R.measureVolume(imp), R.measureVolume(s), 1e-3, "STEP-Rückimport " + view);
+  }
+});

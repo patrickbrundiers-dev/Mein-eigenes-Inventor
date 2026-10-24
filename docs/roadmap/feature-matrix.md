@@ -100,7 +100,7 @@ Status: **vorhanden** · **teilweise** · **fehlt** · **unklar** · **blockiert
 
 | Anforderung | Status | Bemerkung |
 |---|---|---|
-| Funktion „Knickrahmen erstellen“ | fehlt | Stufe 1 |
+| Funktion „Knickrahmen erstellen“ | vorhanden (seit Stufe 1) | Feature `knickrahmen`, siehe `docs/knickrahmen/stufe1-plan.md` |
 | 2–3 Segmente in einer Ebene, Längen, Knickwinkel | fehlt | mit `makeMember` + Gehrungslogik direkt baubar |
 | Ein definierter Querschnitt (Rechteck-Hohlprofil) | vorhanden (Baustein) | `sectionGeometry("rechteck" / "vierkant")` |
 | Gehrung am Knick als echte Schnittfläche | vorhanden (Baustein) | Winkelhalbierende in `buildFrame` |
@@ -108,11 +108,11 @@ Status: **vorhanden** · **teilweise** · **fehlt** · **unklar** · **blockiert
 | Runde Freistellungen, Laschen, Langlöcher | fehlt | Stufe 2 |
 | Gekantetes Blech mit Abwicklung | blockiert | keine Blechfunktion, keine Biegelogik im Projekt; braucht eigenen ADR |
 | Gebogenes Rohr (Biegeradius) | fehlt | Sweep nötig, Stufe 3 |
-| Gelenke, Bewegungsgrenzen, Auf-/Zuklappen (Entwicklungsplan 5.2/5.3) | unklar | Fachlich anderes Verständnis von „Knickrahmen“, siehe Stufe-1-Plan |
+| Gelenke, Bewegungsgrenzen, Auf-/Zuklappen (Entwicklungsplan 5.2/5.3) | n. r. | Knickrahmen ist starr (Entscheidung 24.10.2026); Min/Max nur als Prüfung |
 | Stück-/Zuschnittliste | vorhanden (Baustein) | jedes Segment als `member` → automatisch in der Liste |
 | Neutrales JSON-Austauschmodell | fehlt | Stufe 4; STEP + CSV gibt es schon |
 | Kollisionsprüfung | fehlt | |
-| Referenzbilder | unklar | im Plan erwähnt, liegen nicht vor |
+| Referenzbilder | vorhanden | ein Rohr, V-Ausklinkung durch drei Wände, Außenwand gekantet |
 
 ## 7. Baugruppen und Zeichnungen
 

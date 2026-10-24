@@ -20,6 +20,7 @@ Eigenes parametrisches 3D-CAD für Windows – angelehnt an die Arbeitsweise von
 - Rundrohr, Quadrat- und Rechteckrohr (EN 10219-Radien), Flach-, Rund-, Vierkantstahl, Winkel, U-Profil mit Normgrößen-Katalog
 - Einzelprofil mit Gehrung/Schrägschnitt an beiden Enden
 - **Rahmen aus Skizze**: jede Linie wird ein Profil, Ecken mit Gehrung oder Stumpfstoß, T-Stöße werden automatisch ausgeklinkt (bei Rundrohr Sattelschnitt)
+- **Knickrahmen**: ein Rechteck-/Quadratrohr mit 1–3 Segmenten, an jedem Knick V-förmig ausgeklinkt und um die Außenwand gefaltet – Ansicht gefaltet oder abgewickelt (gerades Rohr mit Ausklinkungen für den Rohrlaser), Abwicklungslänge mit expliziter Biegezugabe
 - Zuschnittliste mit Profil-ID im Format der Rohrlaser-Kalkulation (`RR 42,4x2`, `QR 40x40x3`, `RE 60x40x3` …), Länge, Gehrungswinkeln, kg/m und Gewicht – als CSV für Excel
 - **STEP + Zuschnittliste**: eine STEP-Datei mit allen Körpern (jeder mit Profil-ID benannt, Baugruppe als Satz) und daneben die Zuschnittliste – direkt zum Hineinziehen ins Angebot der Kalkulation
 - Jedes Profil einzeln als STEP für die Rohrlaser-Software

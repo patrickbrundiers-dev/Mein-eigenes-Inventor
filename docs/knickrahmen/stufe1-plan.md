@@ -1,175 +1,151 @@
-# Knickrahmen – Spezifikation und Plan für Stufe 1 (MVP)
+# Knickrahmen – Spezifikation Stufe 1 (MVP)
 
-Stand: 24.10.2026 · Status: **wartet auf Freigabe**, nichts davon ist implementiert.
+Stand: 24.10.2026 · Status: **umgesetzt** (Feature-Typ `knickrahmen`)
 
-## 1. Fachliche Abgrenzung
+## 1. Fachliche Abgrenzung (von Patrick freigegeben)
 
-Die Planungsdokumente verstehen „Knickrahmen“ unterschiedlich:
+Ein Knickrahmen ist **ein einziges Rechteck- oder Quadratrohr**. An jedem Knick schneidet
+der Rohrlaser einen **V-förmigen Ausschnitt durch drei Wände**. Die vierte Wand
+(Außenwand auf der konvexen Seite des Knicks) bleibt stehen und wird gekantet. Danach
+wird der Rahmen verschweißt. Das entspricht den Referenzbildern (gefalteter Rahmen,
+Rohr mit mehreren Ausklinkungen, Detail des V-Ausschnitts).
 
-- **Knickrahmen-Modul-Plan:** ein *geknickter* Rahmen bzw. Ausleger – gerade Abschnitte
-  mit festem Knickwinkel, Gehrung oder Stoß am Übergang, später Freistellungen, Laschen,
-  Blechvariante. Starres Bauteil.
-- **Entwicklungsplan (5.2/5.3):** zusätzlich *Gelenke* mit Drehachse, Freiheitsgraden,
-  Min/Max-Winkel und „Auf-/Zusammenklappen visualisieren“ – also ein beweglicher,
-  klappbarer Rahmen.
+Es handelt sich um ein starres Bauteil, nicht um einen klappbaren Rahmen mit Gelenken.
+Min/Max-Grenzen je Knick gibt es nur als Eingabeprüfung.
 
-Die Referenzbilder, auf die sich der Modul-Plan bezieht, liegen nicht vor.
+Folgen für die Fertigungsdaten:
 
-**Vorschlag für Stufe 1:** das starre Verständnis aus dem Modul-Plan. Jeder Knick bekommt
-aber schon jetzt optionale Min/Max-Grenzen für den Winkel, damit die Grenzwertprüfung aus
-dem Entwicklungsplan abgedeckt ist. Echte Gelenke (beweglich, mehrere Körper mit
-Drehachse) kämen frühestens in Stufe 3 über Baugruppen. **Diese Abgrenzung braucht
-Patricks Freigabe.**
+- In der Zuschnittliste steht **eine Zeile pro Rahmen**: das gerade Rohr in
+  Abwicklungslänge, „Ausgeklinkt: ja“.
+- Für den Rohrlaser zählt das **abgewickelte** Rohr mit seinen V-Ausschnitten. Die
+  gefaltete Form ist für Baugruppe, Zeichnung und Sichtprüfung gedacht.
 
-## 2. Modellierungsvariante für Stufe 1
+## 2. Zwei Ansichten eines Features
 
-Variante **B/C aus dem Modul-Plan: Profilrahmen aus geraden Rechteck-Hohlprofil-Segmenten,
-am Knick auf Gehrung geschnitten.**
+| Ansicht | Körper | Verwendung |
+|---|---|---|
+| Gefaltet (Standard) | Segmente auf Gehrung, zu einem Körper vereinigt | Baugruppe, Zeichnung, Masse |
+| Abgewickelt | gerades Rohr mit V-Ausklinkungen | STEP für den Rohrlaser, Zuschnittliste |
 
-- Jedes Segment ist ein eigener, echter Volumenkörper (`kind: "member"`) mit Innen- und
-  Außenkontur. Dadurch erscheint jedes Segment automatisch in der Zuschnittliste mit
-  Profil-ID, Zuschnittlänge und Gehrungswinkel und wird von „STEP + Zuschnittliste“
-  und „Profile einzeln (STEP)“ ausgegeben.
-- Kein Biegen, kein Biegeradius, keine Abwicklung. Ein geknickter Profilkörper wird nicht
-  als gebogenes Rohr ausgegeben.
-- Gekantetes Blech (Variante A) ist im Projekt **blockiert**: es gibt keine Blech- oder
-  Biegelogik. Dafür braucht es einen eigenen ADR (K-Faktor, Biegetabellen) – Stufe 3.
+Gebaut werden immer beide Körper, auch geprüft werden immer beide. Angezeigt und
+exportiert wird der Körper der gewählten Ansicht.
 
 ## 3. Koordinaten- und Winkelkonvention
 
-- **Ebene:** XY, XZ oder YZ (wie Skizzen, `planeFrame` in `src/core/geom.js`), optional
-  mit Abstand. Lokale Achsen `u` (xDir) und `v` (yDir), Normale `n`.
-- **Startpunkt** `(u0, v0)` und **Startrichtung** `α` in der Ebene (0° = +u, gegen den
-  Uhrzeigersinn um `n` positiv).
-- **Bezug: Mittellinie (Systemlinie)** des Profils. Segmentlänge `Lᵢ` = Abstand der
-  Knotenpunkte auf der Mittellinie.
-- **Knickwinkel θⱼ** = Richtungsänderung zwischen Segment j und j+1.
-  0° = gerade weiter, +θ = Knick nach links (gegen den Uhrzeigersinn um `n`), −θ = nach rechts.
-  Die Oberfläche zeigt zusätzlich den **Innenwinkel 180° − |θ|**, damit es keine
-  Verwechslung gibt. Beispiel: θ = 90° ↔ Innenwinkel 90°; θ = 30° ↔ Innenwinkel 150°.
-- **Gehrung:** Schnittebene ist die Winkelhalbierende am Knoten, Gehrungswinkel je Ende
-  = |θ|/2 (wie im vorhandenen Rahmen, `buildFrame`).
-- **Profillage:** „hochkant“ (Höhe H senkrecht zur Ebene, Breite B in der Ebene) oder
-  „flach“ (um 90° gedreht). `W` = Profilbreite in der Knickebene.
-- **Einheiten:** mm und Grad, Eingaben als Ausdrücke mit Parametern wie überall.
+- **Ebene:** XY, XZ oder YZ, optional mit Abstand. Startpunkt `(X, Y)` in der Ebene,
+  **Startrichtung** α (0° = Ebenen-x-Achse, gegen den Uhrzeigersinn positiv).
+- **Segmentlänge Lᵢ:** Abstand der Knotenpunkte auf der **Mittellinie**.
+- **Knickwinkel θⱼ:** Richtungsänderung. 0° = gerade, +θ = nach links (gegen den
+  Uhrzeigersinn um die Ebenennormale), −θ = nach rechts. Im Eigenschaftsfenster steht
+  zusätzlich der **Innenwinkel 180° − |θ|**. Zulässig sind 0,5° ≤ |θ| ≤ 160°.
+- **Außenwand / Faltlinie:** die Außenwand liegt auf der konvexen Seite. Gefaltet wird um
+  die Linie auf der **Innenseite der Außenwand** (Spitze des V). Bei gegensinnigen Knicken
+  wechselt die Außenwand die Seite.
+- **Profillage:** „B in Knickebene“ (Standard) oder „H in Knickebene“. W = Profilbreite in
+  der Knickebene, t = Wandstärke.
 
-## 4. Datenmodell (Feature im Bauteil)
+## 4. Abwicklung
+
+Die Gehrungsebene am Knoten enthält die Faltlinie. Deshalb passen gefaltete und
+abgewickelte Form exakt zusammen:
+
+- Abstand der V-Spitzen auf der Rohrachse: `Lᵢ + (W/2 − t)·(tan(|θ_links|/2) + tan(|θ_rechts|/2))`
+- V-Flanken: je |θ|/2 gegen die Querschnittsebene, von der Spitze bis durch die Gegenwand.
+- **Biegezugabe bⱼ ≥ 0** je Knick, wird **nicht geschätzt**. Sie verlängert das gerade Rohr
+  um bⱼ, und das V bekommt an der Spitze eine flache Sohle der Breite bⱼ.
+- Abwicklungslänge = `ΣLᵢ + Σ 2·(W/2 − t)·tan(|θⱼ|/2) + Σ bⱼ`
+
+Beispiel RE 60×40×3, 800 + 600 mm, 90°, b = 0: 1400 + 2·27·1 = **1454 mm**.
+
+Grenzen des Modells: In der gefalteten Ansicht ist die Außenkante scharf dargestellt, der
+Biegeradius der gekanteten Wand wird nicht modelliert. Die Masse kommt aus dem gefalteten
+Körper und weicht vom abgewickelten Rohr um wenige Kubikmillimeter ab (Ecke der Außenwand).
+
+## 5. Datenmodell (Feature im Bauteil)
 
 ```json
 {
-  "id": "f…", "type": "knickrahmen", "name": "Knickrahmen", "version": 1,
+  "id": "f…", "type": "knickrahmen", "name": "Knickrahmen 1", "version": 1,
   "section": "rechteck", "dims": { "B": "60", "H": "40", "t": "3", "r": "6" },
   "plane": "XY", "offset": "0", "start": ["0", "0"], "direction": "0",
   "orientation": "hochkant",
-  "segments": [{ "length": "1000" }, { "length": "600" }],
-  "bends": [{ "angle": "30", "min": "", "max": "" }],
-  "joint": "gehrung"
+  "segments": [{ "length": "800" }, { "length": "600" }],
+  "bends": [{ "angle": "30", "min": "", "max": "", "allowance": "0" }],
+  "view": "gefaltet"
 }
 ```
 
-- `segments.length` = 1…3, `bends.length` = `segments.length − 1`.
-- `section`: in Stufe 1 nur `rechteck` und `vierkant` (beides Rechteck-Hohlprofil).
-- `version` am Feature erlaubt spätere Migration nur dieses Features.
-- Projektformat bleibt `version: 1` (neuer Feature-Typ, keine Bedeutungsänderung). Ältere
-  WerkCAD-Versionen zeigen für dieses Feature „Unbekanntes Feature“, stürzen aber nicht ab.
+Alle Zahlen sind Ausdrücke mit Parametern. Das Projektformat bleibt `version: 1`: es ist
+nur ein neuer Feature-Typ, bestehende Felder ändern ihre Bedeutung nicht. Ältere
+WerkCAD-Versionen zeigen für das Feature „Unbekanntes Feature“ und stürzen nicht ab.
 
-## 5. Prüfregeln
+## 6. Prüfregeln
 
-Vor der Geometrie, rein rechnerisch in `src/core/knickrahmen.js`:
+Rechnerisch (`src/core/knickrahmen.js`, `planKnickrahmen`):
 
-| Code | Regel | Meldung (Beispiel) |
-|---|---|---|
-| `SEG_COUNT` | 1 ≤ Segmente ≤ 3, Knicke = Segmente − 1 | „Knickrahmen: 1 bis 3 Segmente“ |
-| `SEG_LENGTH` | Lᵢ > 0 | „Segment 2: Länge muss > 0 sein“ |
-| `ANGLE_RANGE` | 0,5° ≤ \|θ\| ≤ 170° (technische Grenze der Gehrung) | „Knick 1: Winkel 175° außerhalb 0,5–170°“ |
-| `ANGLE_LIMIT` | min ≤ θ ≤ max, falls angegeben; min ≤ max | „Knick 1: 50° über Maximum 45°“ |
-| `SEG_SHORT` | Lᵢ − oₗ − oᵣ > 0 mit o = (W/2)·tan(\|θ\|/2) | „Segment 2 zu kurz für die Gehrung (mindestens 41,2 mm)“ |
-| `SECTION` | Querschnitt gültig (`sectionGeometry`: Wandstärke, Maße > 0) | „Wandstärke zu groß“ |
+| Code | Regel |
+|---|---|
+| `SECTION_KIND` | nur `rechteck` oder `vierkant` |
+| `SECTION` | Querschnitt gültig (Wandstärke, Maße > 0) |
+| `SEG_COUNT` | 1–3 Segmente, Knicke = Segmente − 1 |
+| `SEG_LENGTH` | Lᵢ > 0 |
+| `ANGLE_RANGE` | 0,5° ≤ \|θ\| ≤ 160° |
+| `ANGLE_LIMIT` | min ≤ θ ≤ max, falls angegeben; min ≤ max |
+| `ALLOWANCE` | Biegezugabe ≥ 0 |
+| `SEG_SHORT` | Lᵢ größer als (W/2)·tan(\|θ\|/2) + b/2 je Ausklinkung am Segment, sonst würde das V über das Segment hinausreichen |
 
-Nach der Geometrie, im Kernel:
+Im Geometrie-Kern (`buildKnickrahmen`, `checkSolid`): beide Körper je genau ein
+Volumenkörper, `BRepCheck_Analyzer` gültig, Volumen > 0. Schlägt etwas fehl, liefert das
+Feature **keinen** Körper (kein Teilergebnis), die Meldung nennt Segment oder Knick. Die
+eingegebenen Werte bleiben gespeichert.
 
-- jedes Segment ist genau ein Volumenkörper, Volumen > 0,
-- `BRepCheck_Analyzer(...).IsValid()` ist wahr,
-- sonst Fehler am Feature mit Segmentnummer.
+## 7. Geänderte Dateien
 
-**Atomar:** alle Segmente werden erst gebaut und geprüft, danach gemeinsam übernommen.
-Schlägt eines fehl, liefert das Feature keinen Körper und meldet den Fehler; die
-Parameter bleiben unverändert gespeichert.
+| Datei | Änderung |
+|---|---|
+| `src/core/knickrahmen.js` | neu: Vorgabewerte, Mittellinie, Abwicklung, Prüfregeln, Ausdrücke auswerten |
+| `src/kernel/build.js` | `case "knickrahmen"`, `buildKnickrahmen`, `checkSolid` |
+| `src/ui/ribbon.js` | Knopf „Knickrahmen“ in 3D-Modell → Profile |
+| `src/ui/props.js` | Eigenschaften: Ansicht, Querschnitt (nur Rechteck/Quadrat), Lage, Segmente/Knicke; `sectionEditor` mit wählbaren Profilarten |
+| `src/ui/app.js`, `tree.js`, `dom.js` | Typname, Symbol |
+| `test/core.test.mjs` | Pfad, Abwicklung, alle Prüfregeln |
+| `test/kernel.test.mjs` | 4 Geometrie-Tests (siehe 8) |
+| `tools/e2e.mjs` | Oberflächenschritt Knickrahmen |
 
-## 6. Kleinstes technisch korrektes MVP (Stufe 1)
+Nicht angefasst: `electron/`, Workflows, Update, Dateiformat-Version, vorhandene Features.
 
-Enthalten:
+## 8. Tests
 
-1. Ribbon „3D-Modell → Profile → Knickrahmen“ legt ein Feature mit Vorgabewerten an
-   (2 Segmente, 30°, RE 60×40×3 aus dem Katalog).
-2. Eigenschaften-Panel: Querschnitt (vorhandener Editor), Ebene, Startpunkt,
-   Startrichtung, Profillage, Segmentliste (hinzufügen/entfernen bis 3), Knickwinkel mit
-   Anzeige des Innenwinkels, optionale Min/Max.
-3. Körper je Segment mit Gehrung, Zuschnittliste/STEP wie oben.
-4. Prüfregeln aus Abschnitt 5 mit verständlichen Meldungen am Feature.
-5. Speichern/Laden, Undo/Redo über die vorhandenen Wege.
+Toleranzen: Abwicklungslänge rechnerisch 1·10⁻⁹ mm, am Körper gemessen ±0,01 mm
+(Vernetzungstoleranz der Messung; Kanten an ebenen Schnitten liegen exakt). Volumen
+gefaltet = A·ΣLᵢ relativ 1·10⁻⁶ (die Gehrung ist symmetrisch, Zu- und Abschnitt heben sich
+auf). STEP-Rückimport relativ 1·10⁻³.
 
-Nicht enthalten (spätere Stufen): Stumpfstoß/Überlappung, Freistellungen, Bohrungen,
-Langlöcher, Laschen, Rundrohr und andere Querschnitte, räumliche Knicke, Biegeradius,
-Blech, Gelenke/Bewegung, Kollisionsprüfung, JSON-Austauschformat, Zeichnungsanpassungen.
+| Fall (Modul-Plan) | Test |
+|---|---|
+| A gerades Rohr | 1 Segment: gültig, Volumen = A·L, Länge 1000 |
+| B 30°/45°/90° | Körper gültig in beiden Ansichten, Volumen, Abwicklungslänge, Lage des Endes, gerades Rohr so lang wie die Abwicklung |
+| C/D drei Segmente, gegensinnig | Ebene XZ, Profillage H, Biegezugabe 1,5 mm, eine Zuschnittzeile |
+| G Wandstärke | t = 20 bei H = 40 → Fehler, kein Körper |
+| I Parameteränderung | Formeln aus der Parametertabelle; Neuaufbau mit Cache = ohne Cache |
+| J ungültige Eingaben | negative Länge, 175°, über Maximum, Segment zu kurz, 4 Segmente: Fehler mit Bezug, kein Teilergebnis, anderes Feature unberührt |
+| K Speichern/Laden | JSON-Roundtrip baut identisch (Meta, Volumen) |
+| L STEP | Export und Rückimport beider Ansichten, Volumen gleich |
+| N Regression | alle bisherigen Tests grün |
+| Oberfläche | Knopf → Winkel im Eigenschaftsfenster auf 90° → Länge 1454 → Ansicht abgewickelt → zweimal Rückgängig |
 
-## 7. Dateiliste Stufe 1
-
-| Datei | Änderung | Umfang |
-|---|---|---|
-| `src/core/knickrahmen.js` | **neu**: Mittellinie berechnen, Gehrungsüberstand, Prüfregeln, Vorgabewerte | ~120 Zeilen |
-| `src/kernel/build.js` | `case "knickrahmen"` in `buildPart`, kleine Hilfsfunktion `checkSolid` (BRepCheck) | ~60 Zeilen |
-| `src/ui/ribbon.js` | Knopf in der Gruppe „Profile“, Vorgabe-Feature anlegen | ~5 Zeilen |
-| `src/ui/props.js` | `case "knickrahmen"`: Eingabefelder, Segmentliste | ~50 Zeilen |
-| `src/ui/app.js`, `src/ui/tree.js` | Typname und Symbol | je 1 Zeile |
-| `test/core.test.mjs` | Tests für Pfad und Prüfregeln | ~80 Zeilen |
-| `test/kernel.test.mjs` | Geometrie-Tests (siehe 8) | ~120 Zeilen |
-| `tools/e2e.mjs` | ein Oberflächenschritt: anlegen, Winkel ändern, Rückgängig | ~25 Zeilen |
-| `README.md`, `docs/knickrahmen/` | Bedienung und Grenzen | kurz |
-
-Nicht angefasst: `electron/`, Workflows, Update, Dateiformat-Version, vorhandene
-Feature-Typen. `buildFrame` wird nicht umgebaut; die Gehrungsrechnung wird im neuen
-Modul nachgebildet und mit `makeMember` verwendet.
-
-## 8. Testplan Stufe 1
-
-Toleranzen: Längen ±0,01 mm (Vernetzungstoleranz für `memberLength` ist 0,01 mm; Kanten an
-ebenen Schnittflächen liegen exakt), Volumen relativ 1·10⁻⁶ (OCCT-Volumenberechnung auf
-exakten Flächen), Winkel ±0,01°.
-
-| Nr. | Fall (Bezug Modul-Plan) | Prüfung |
-|---|---|---|
-| T1 | 1 Segment, gerades RE 60×40×3, L = 1000 (A) | 1 Körper, gültig, Volumen = A·L, Zuschnitt 1000 |
-| T2 | 2 Segmente, θ = 30°, 45°, 90° (B) | Endpunkt der Mittellinie analytisch; Gehrung je |θ|/2; Zuschnitt = L + (W/2)·tan(\|θ\|/2) je Gehrungsende; Volumen = A·ΣLᵢ |
-| T3 | 3 Segmente, gleiche und gegensinnige Knicke (C, D) | Mittelsegment mit Gehrung an beiden Enden; Zuschnittliste 3 Zeilen bzw. gruppiert bei gleichen Maßen |
-| T4 | Dünnwand t = 0,5 und Grenzfall 2t ≥ H (G) | gültig bzw. Fehler „Wandstärke zu groß“, kein Körper |
-| T5 | Parameter nachträglich ändern (I) | Neuaufbau mit Cache = Neuaufbau ohne Cache (Hüllbox, Volumen) |
-| T6 | Ungültige Eingaben (J) | L ≤ 0, \|θ\| > 170°, θ außerhalb Min/Max, Segment zu kurz, 4 Segmente: je Fehlercode, Feature ohne Körper, andere Features unberührt |
-| T7 | Speichern/Laden (K) | Projekt → `JSON.stringify` → `JSON.parse` → Aufbau identisch (Anzahl, Volumen, Hüllbox, Meta) |
-| T8 | STEP-Export und Rückimport (L) | Volumen und Körperanzahl nach Rückimport gleich (±1·10⁻³ relativ) |
-| T9 | Ausdrücke/Parameter | Länge `Gesamt/2`, Winkel `Knick` aus Parametertabelle |
-| T10 | Ebene XZ/YZ, Startrichtung, Profillage „flach“ | Hüllbox liegt in der richtigen Ebene, W wechselt |
-| T11 | Regression (N) | alle vorhandenen 16 + 15 Tests, 25 Oberflächenschritte, Electron-Rauchtest grün |
-| E1 | Oberfläche | Knickrahmen anlegen → Winkel ändern → Zuschnittliste zeigt Segmente → Rückgängig |
-
-Spätere Stufen: E (Freistellung), F (Bohrung/Langloch) → Stufe 2; H (Blech) → Stufe 3;
-M (JSON-Schnittstelle) → Stufe 4.
+Spätere Stufen: E runde Freistellungen an der V-Spitze, F Bohrungen/Langlöcher, Laschen
+und Biegehilfe-Schlitze in der Außenwand (Referenzbild 2), Biegeradius der Außenwand,
+weitere Querschnitte, JSON-Austausch mit der Kalkulation.
 
 ## 9. Akzeptanzkriterien Stufe 1
 
-- [ ] Knickrahmen mit 1–3 Segmenten entsteht reproduzierbar aus Parametern.
-- [ ] Alle Parameter sind nachträglich änderbar, auch als Formeln.
-- [ ] Jeder Segmentkörper ist laut `BRepCheck_Analyzer` gültig, Volumen > 0.
-- [ ] Gehrungen stimmen analytisch (T2/T3).
-- [ ] Ungültige Eingaben werden mit Feature-/Parameterbezug gemeldet; kein Teilergebnis.
-- [ ] Speichern/Wiederöffnen ergibt dieselbe Konstruktion.
-- [ ] Zuschnittliste und STEP enthalten die Segmente mit Profil-ID.
-- [ ] Alle vorhandenen Tests bleiben grün.
-- [ ] Bedienung und Grenzen sind dokumentiert.
-
-## 10. Freigabepunkte
-
-1. Fachliches Verständnis „Knickrahmen“ (Abschnitt 1): starrer, geknickter Profilrahmen
-   in Stufe 1?
-2. Querschnitt in Stufe 1: Rechteck-/Quadrat-Hohlprofil?
-3. Winkelkonvention (Abschnitt 3): Richtungsänderung als Eingabe, Innenwinkel als Anzeige?
+- [x] Knickrahmen mit 1–3 Segmenten entsteht reproduzierbar aus Parametern.
+- [x] Alle Parameter sind nachträglich änderbar, auch als Formeln.
+- [x] Beide Körper sind laut `BRepCheck_Analyzer` gültig, je ein Körper, Volumen > 0.
+- [x] Abwicklung und Volumen stimmen analytisch.
+- [x] Ungültige Eingaben werden mit Bezug gemeldet; kein Teilergebnis.
+- [x] Speichern/Wiederöffnen ergibt dieselbe Konstruktion.
+- [x] Zuschnittliste: eine Zeile, Abwicklungslänge, ausgeklinkt; STEP enthält den gewählten Zustand.
+- [x] Alle vorhandenen Tests bleiben grün.
+- [ ] Fachliche Prüfung an einem realen Teil (Biegezugabe, Lage der Ausklinkung) durch Patrick.

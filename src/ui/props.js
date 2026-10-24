@@ -4,6 +4,7 @@ import { evaluate, resolveParams, isValidName } from "../core/expr.js";
 import { SECTION_KINDS, FIELD_LABELS, CATALOG, catalogToDims, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
+import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
 
@@ -294,6 +295,41 @@ export class Props {
           h("p", { class: "hint" }, "Jede Linie der Skizze wird zum Profil. Linien, die auf anderen enden, werden ausgeklinkt (T-Stoß).")));
         out.push(this.sectionEditor(f));
         break;
+      case "knickrahmen": {
+        const segs = f.segments || [], bends = f.bends || [];
+        const setIn = (list, i, key, label) => (v) => this.set(f, (x) => { x[list][i] = { ...x[list][i], [key]: v }; }, label);
+        const inner = (j) => { try { return fmtNum(180 - Math.abs(evaluate(bends[j].angle, this.scope())), 2) + "°"; } catch { return "–"; } };
+        out.push(this.section("Knickrahmen",
+          this.seg("Ansicht", [["gefaltet", "Gefaltet"], ["abgewickelt", "Abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
+          h("p", { class: "hint" }, "Ein Rohr, an jedem Knick V-förmig durch drei Wände ausgeklinkt; die Außenwand wird gekantet. »Abgewickelt« zeigt das gerade Rohr für den Rohrlaser (STEP, Zuschnittliste).")));
+        out.push(this.sectionEditor(f, KNICK_SECTIONS));
+        out.push(this.section("Lage",
+          this.select("Ebene", ["XY", "XZ", "YZ"].map((k) => [k, BASE_PLANES[k].label]), f.plane || "XY", (v) => this.set(f, "plane", v, "Ebene")),
+          E("Ebenen-Abstand", "offset"),
+          this.expr("Start X", f.start?.[0] ?? "0", (v) => this.set(f, (x) => { x.start = [v, x.start?.[1] ?? "0"]; }, "Startpunkt")),
+          this.expr("Start Y", f.start?.[1] ?? "0", (v) => this.set(f, (x) => { x.start = [x.start?.[0] ?? "0", v]; }, "Startpunkt")),
+          E("Startrichtung", "direction", { unit: "°" }),
+          this.seg("Profillage", [["hochkant", "B in Knickebene"], ["flach", "H in Knickebene"]], f.orientation || "hochkant", (v) => this.set(f, "orientation", v, "Profillage"))));
+        const rows = [];
+        segs.forEach((s, i) => {
+          rows.push(this.expr(`Segment ${i + 1}`, s.length, setIn("segments", i, "length", `Segment ${i + 1}`), { allowNeg: false, allowZero: false }));
+          if (i < bends.length) {
+            const b = bends[i];
+            rows.push(h("div", { class: "knick" },
+              this.expr(`Knick ${i + 1}`, b.angle, setIn("bends", i, "angle", `Knick ${i + 1}`), { unit: "°" }),
+              h("div", { class: "hint" }, `Innenwinkel ${inner(i)} · + = nach links, − = nach rechts`),
+              this.text("Minimum °", b.min, setIn("bends", i, "min", "Minimum"), { placeholder: "–" }),
+              this.text("Maximum °", b.max, setIn("bends", i, "max", "Maximum"), { placeholder: "–" }),
+              this.expr("Biegezugabe", b.allowance || "0", setIn("bends", i, "allowance", "Biegezugabe"), { allowNeg: false })));
+          }
+        });
+        out.push(this.section("Segmente und Knicke", ...rows,
+          h("p", { class: "hint" }, "Längen auf der Mittellinie von Knoten zu Knoten. Die Biegezugabe wird nicht geschätzt: sie verlängert das abgewickelte Rohr je Knick um den eingegebenen Wert."),
+          h("div", { class: "btn-row" },
+            segs.length < KNICK_LIMITS.maxSegments ? h("button", { class: "btn", onclick: () => this.set(f, (x) => { x.segments.push({ length: "400" }); x.bends.push({ angle: "30", min: "", max: "", allowance: "0" }); }, "Segment hinzufügen") }, "+ Segment") : null,
+            segs.length > 1 ? h("button", { class: "btn", onclick: () => this.set(f, (x) => { x.segments.pop(); x.bends.pop(); }, "Segment entfernen") }, "− Segment") : null)));
+        break;
+      }
       case "fillet":
       case "chamfer": {
         const isF = f.type === "fillet";
@@ -356,12 +392,12 @@ export class Props {
       h("button", { class: "btn danger", onclick: () => app.deleteFeature(f.id) }, icon("trash"), " Löschen")));
     return out;
   }
-  sectionEditor(f) {
+  sectionEditor(f, kinds = Object.keys(SECTION_KINDS)) {
     const kind = f.section || "vierkant";
     const def = SECTION_KINDS[kind];
     const cat = CATALOG[kind] || [];
     return this.section("Querschnitt",
-      this.select("Profilart", Object.entries(SECTION_KINDS).map(([k, s]) => [k, s.label]), kind, (v) => this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart")),
+      this.select("Profilart", kinds.map((k) => [k, SECTION_KINDS[k].label]), kind, (v) => this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart")),
       this.select("Normgröße", [["", "– eigene Maße –"], ...cat.map((c) => [c, c.replace(/\./g, ",")])], matchCatalog(kind, f.dims) || "", (v) => v && this.set(f, (x) => { x.dims = catalogToDims(kind, v); }, "Normgröße")),
       ...def.fields.map((k) => this.expr(FIELD_LABELS[k], f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, FIELD_LABELS[k]), { allowNeg: false })));
   }

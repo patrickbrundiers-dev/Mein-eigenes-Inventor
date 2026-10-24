@@ -390,3 +390,56 @@ test("Schraffur mit Loch", () => {
   const l45 = hatchLines([outer], 2.5, 45);
   assert.ok(l45.length > 5);
 });
+
+test("Knickrahmen: Mittellinie, Abwicklung, Prüfregeln", async () => {
+  const { planKnickrahmen, KNICK_LIMITS } = await import("../src/core/knickrahmen.js");
+  const dims = { B: 60, H: 40, t: 3, r: 6 };
+  const base = (over = {}) => ({ section: "rechteck", dims, plane: "XY", offset: 0, start: [0, 0], direction: 0, orientation: "hochkant", segments: [800, 600], bends: [{ angle: 90, min: null, max: null, allowance: 0 }], ...over });
+  const codes = (p) => p.issues.map((i) => i.code);
+
+  // 90° nach links: Ende bei (800, 600); Abwicklung = ΣL + 2·(W/2 − t)·tan45° = 1400 + 54
+  let p = planKnickrahmen(base());
+  assert.deepEqual(codes(p), []);
+  near(p.nodes[2][0], 800); near(p.nodes[2][1], 600); near(p.nodes[2][2], 0);
+  near(p.flatLength, 1454);
+  assert.equal(p.knicks[0].sigma, -1); // Linksknick → Außenwand rechts (−u)
+  near(p.knicks[0].x, 800 + 27);
+
+  // 30°, Biegezugabe 2: V-Mitte um b/2 verschoben, Länge + b
+  const T = Math.tan((15 * Math.PI) / 180);
+  p = planKnickrahmen(base({ bends: [{ angle: 30, min: null, max: null, allowance: 2 }] }));
+  near(p.flatLength, 1400 + 2 * 27 * T + 2, 1e-9);
+  near(p.knicks[0].x, 800 + 27 * T + 1, 1e-9);
+
+  // drei Segmente, gegensinnig; Ebene XZ und Profillage flach (W = H = 40)
+  p = planKnickrahmen(base({ segments: [500, 400, 300], bends: [{ angle: 45, min: null, max: null, allowance: 0 }, { angle: -60, min: null, max: null, allowance: 0 }], plane: "XZ", orientation: "flach" }));
+  assert.deepEqual(codes(p), []);
+  near(p.W, 40);
+  const t45 = Math.tan((22.5 * Math.PI) / 180), t60 = Math.tan((30 * Math.PI) / 180);
+  near(p.flatLength, 1200 + 2 * 17 * (t45 + t60), 1e-9);
+  near(p.knicks[1].x - p.knicks[0].x, 400 + 17 * (t45 + t60), 1e-9);
+  assert.deepEqual(p.knicks.map((k) => k.sigma), [-1, 1]);
+  for (const n of p.nodes) near(n[1], 0); // XZ-Ebene: y = 0
+
+  // ein Segment = gerades Rohr
+  p = planKnickrahmen(base({ segments: [1000], bends: [] }));
+  near(p.flatLength, 1000);
+
+  // Prüfregeln
+  assert.deepEqual(codes(planKnickrahmen(base({ segments: [800, 0] }))), ["SEG_LENGTH"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ segments: [1, 2, 3, 4], bends: [1, 2, 3].map(() => ({ angle: 30, allowance: 0 })) }))), ["SEG_COUNT"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ bends: [] }))), ["SEG_COUNT"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ bends: [{ angle: KNICK_LIMITS.maxAngle + 1, allowance: 0 }] }))), ["ANGLE_RANGE"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ bends: [{ angle: 0, allowance: 0 }] }))), ["ANGLE_RANGE"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ bends: [{ angle: 50, max: 45, allowance: 0 }] }))), ["ANGLE_LIMIT"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ bends: [{ angle: 20, min: 30, allowance: 0 }] }))), ["ANGLE_LIMIT"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ bends: [{ angle: 30, min: 40, max: 35, allowance: 0 }] }))), ["ANGLE_LIMIT"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ bends: [{ angle: 30, allowance: -1 }] }))), ["ALLOWANCE"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ dims: { B: 60, H: 40, t: 20, r: 6 } }))), ["SECTION"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ section: "rohr", dims: { D: 40, t: 2 } }))), ["SECTION_KIND"]);
+  // Segment kürzer als W/2·tan(θ/2): 90° → mindestens 30 mm
+  assert.deepEqual(codes(planKnickrahmen(base({ segments: [30, 600] }))), ["SEG_SHORT"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ segments: [30.5, 600] }))), []);
+  const msg = planKnickrahmen(base({ segments: [800, -5] })).issues[0].message;
+  assert.match(msg, /Segment 2/);
+});
