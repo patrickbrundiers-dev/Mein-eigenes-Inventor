@@ -109,6 +109,18 @@ export function createKernel(R) {
     return { solid, geom: g };
   }
 
+  /**
+   * Mindestlänge, bei der sich Anfangs- und Endschnitt noch nicht im Stab kreuzen.
+   * Geprüft an den beiden äußersten Fasern quer zur Kippachse: z_Ende(s) − z_Anfang(s) ≥ 0.
+   */
+  function miterMinLength(section, frame, tiltAxis, cuts) {
+    const g = sectionGeometry(section.kind, section.dims);
+    const w = v3.norm(v3.cross(tiltAxis, frame.z));
+    const half = Math.abs(v3.dot(w, frame.v)) > 0.5 ? g.height / 2 : g.width / 2;
+    const slope = (c) => (c ? v3.dot(w, c.n) / v3.dot(frame.z, c.n) : 0);
+    return half * Math.abs(slope(cuts.end[0]) - slope(cuts.start[0]));
+  }
+
   /** Zuschnittlänge = Ausdehnung entlang der Stabachse */
   function memberLength(shape, frame) {
     const m = shape.mesh({ tolerance: 0.01, angularTolerance: 0.1 });
@@ -272,7 +284,11 @@ export function createKernel(R) {
             switch (f.mode) {
               case "reverse": start = -d; len = d; break;
               case "symmetric": start = -d / 2; len = d; break;
-              case "twoSided": { const d2 = E(f.distance2 || "0", "Abstand 2"); start = -d2; len = d + d2; break; }
+              case "twoSided": {
+                const d2 = E(f.distance2 || "0", "Abstand 2");
+                if (!(d + d2 > 0)) throw new Error("Abstand + Abstand 2 muss > 0 sein");
+                start = -d2; len = d + d2; break;
+              }
               case "through": start = -BIG / 2; len = BIG; break;
               default: start = 0; len = d;
             }
@@ -295,6 +311,7 @@ export function createKernel(R) {
               dir = v3.sub(toWorld(s.frame, ln.b[0], ln.b[1]), origin);
             }
             const ang = E(f.angle || "360", "Winkel");
+            if (!(ang > 0 && ang <= 360)) throw new Error("Winkel muss zwischen 0° und 360° liegen");
             let tool = null;
             for (const reg of s.prof.regions) {
               const sk = regionToDrawing(reg).sketchOnPlane(makePlane(s.frame));
@@ -313,6 +330,7 @@ export function createKernel(R) {
             if (!(dia > 0)) throw new Error("Durchmesser muss > 0 sein");
             const through = f.extent !== "depth";
             const depth = through ? BIG : E(f.depth, "Tiefe");
+            if (!(depth > 0)) throw new Error("Tiefe muss > 0 sein");
             const dirSign = f.direction === "normal" ? 1 : -1;
             let tool = null;
             for (const c of centers) {
@@ -340,11 +358,16 @@ export function createKernel(R) {
             const fr = memberFrame(origin, zDir, E(f.rotation || "0", "Drehung"));
             const cuts = { start: [], end: [] };
             const m1 = E(f.miterStart || "0", "Gehrung Anfang"), m2 = E(f.miterEnd || "0", "Gehrung Ende");
+            for (const [m, label] of [[m1, "Anfang"], [m2, "Ende"]]) {
+              if (Math.abs(m) >= 90) throw new Error(`Gehrung ${label} muss zwischen −90° und 90° liegen (ist ${round(m)}°)`);
+            }
             const tiltAxis = f.miterAxis === "u" ? fr.v : fr.u; // um welche Querachse gekippt wird
             const rotN = (n, ang) => rotateVec(n, tiltAxis, ang);
             if (Math.abs(m1) > 1e-9) cuts.start.push({ p: fr.origin, n: rotN(v3.mul(fr.z, -1), m1) });
             const endP = v3.add(fr.origin, v3.mul(fr.z, L));
             if (Math.abs(m2) > 1e-9) cuts.end.push({ p: endP, n: rotN(fr.z, f.miterSame ? m2 : -m2) });
+            const minL = miterMinLength(section, fr, tiltAxis, cuts);
+            if (L < minL - 1e-6) throw new Error(`Profil zu kurz für die Gehrungen: Länge mindestens ${round(minL)} mm, sonst kreuzen sich die Schnitte`);
             const { solid, geom } = makeMember(section, L, fr, cuts);
             const name = sectionName(f.section, dims);
             const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
@@ -428,6 +451,7 @@ export function createKernel(R) {
           }
           case "shell": {
             const t = E(f.thickness, "Wandstärke");
+            if (!(Math.abs(t) > 0)) throw new Error("Wandstärke muss ≠ 0 sein");
             const faces = f.faces || [];
             const b = state.bodies.find((x) => x.kind === "solid") || state.bodies[0];
             if (!b) throw new Error("Kein Körper vorhanden");

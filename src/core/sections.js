@@ -113,10 +113,12 @@ export function sectionGeometry(kind, d) {
     if (!Number.isFinite(v) || v <= 0) throw new Error(`${FIELD_LABELS[k] || k} muss > 0 sein`);
     return v;
   };
+  const fmtMm = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
+  const tooThick = (max) => new Error(`Wandstärke zu groß: muss kleiner als ${fmtMm(max)} mm sein`);
   switch (kind) {
     case "rohr": {
       const D = need("D"), t = need("t");
-      if (2 * t >= D) throw new Error("Wandstärke zu groß");
+      if (2 * t >= D) throw tooThick(D / 2);
       return { outer: { kind: "circle", c: [0, 0], r: D / 2 }, holes: [{ kind: "circle", c: [0, 0], r: D / 2 - t }], area: (Math.PI / 4) * (D * D - (D - 2 * t) ** 2), width: D, height: D };
     }
     case "rund": {
@@ -127,7 +129,7 @@ export function sectionGeometry(kind, d) {
     case "rechteck": {
       const B = need("B"), H = kind === "vierkant" ? B : need("H"), t = need("t");
       const r = Number.isFinite(d.r) ? Math.max(0, d.r) : 2 * t;
-      if (2 * t >= Math.min(B, H)) throw new Error("Wandstärke zu groß");
+      if (2 * t >= Math.min(B, H)) throw tooThick(Math.min(B, H) / 2);
       const ri = Math.max(0, r - t);
       const area = B * H - (4 - Math.PI) * r * r - ((B - 2 * t) * (H - 2 * t) - (4 - Math.PI) * ri * ri);
       return { outer: roundedRectLoop(B, H, r), holes: [roundedRectLoop(B - 2 * t, H - 2 * t, ri)], area, width: B, height: H };
@@ -142,14 +144,14 @@ export function sectionGeometry(kind, d) {
     }
     case "winkel": {
       const B = need("B"), H = need("H"), t = need("t");
-      if (t >= Math.min(B, H)) throw new Error("Wandstärke zu groß");
+      if (t >= Math.min(B, H)) throw tooThick(Math.min(B, H));
       const x0 = -B / 2, y0 = -H / 2;
       const pts = [[x0, y0], [x0 + B, y0], [x0 + B, y0 + t], [x0 + t, y0 + t], [x0 + t, y0 + H], [x0, y0 + H]];
       return { outer: polyLoop(pts), holes: [], area: B * t + (H - t) * t, width: B, height: H };
     }
     case "u": {
       const B = need("B"), H = need("H"), t = need("t");
-      if (2 * t >= B || t >= H) throw new Error("Wandstärke zu groß");
+      if (2 * t >= B || t >= H) throw tooThick(Math.min(B / 2, H));
       const x0 = -B / 2, y0 = -H / 2;
       const pts = [[x0, y0], [x0 + B, y0], [x0 + B, y0 + H], [x0 + B - t, y0 + H], [x0 + B - t, y0 + t], [x0 + t, y0 + t], [x0 + t, y0 + H], [x0, y0 + H]];
       return { outer: polyLoop(pts), holes: [], area: B * t + 2 * (H - t) * t, width: B, height: H };
