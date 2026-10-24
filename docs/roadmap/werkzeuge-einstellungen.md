@@ -25,8 +25,9 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Punkt | Status | Wo / Bemerkung |
 |---|---|---|
 | Auswahl Fläche/Kante, Mehrfachauswahl Strg/Umschalt | vorhanden | `App.viewerClick` |
-| Auswahlfilter, Fensterauswahl, Auswahl invertieren | fehlt | Stufe 5 |
-| Ausblenden/Isolieren | teilweise | Komponenten ausblendbar; Körper nicht |
+| Auswahlfilter (alles / nur Flächen / nur Kanten) | vorhanden | Ansicht → Auswahl, Anzeige in der Statusleiste (Stufe 5) |
+| Fensterauswahl, Auswahl invertieren | fehlt | P3 |
+| Ausblenden/Isolieren | vorhanden | Rechtsklick: Körper bzw. Komponente ausblenden/isolieren, „Alle einblenden“; nur Anzeige, keine Modelländerung (Stufe 5) |
 | Zoom auf alles | vorhanden | F6, `Viewer.fit` |
 | Zoom auf Auswahl | vorhanden | Ansicht → Zoom, Kontextmenü, Leiste unten rechts (Stufe 2) |
 | Ansichten Iso, Vorne, Oben, Rechts | vorhanden | `VIEWS` in `viewer.js` |

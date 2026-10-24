@@ -30,6 +30,12 @@ export function commandRunners(app) {
     "sketch.construction": () => app.sketcher.toggleConstruction(),
     "sketch.gridsnap": () => { app.sketcher.gridSnap = !app.sketcher.gridSnap; app.sketcher.render(); app.ribbon.render(); },
     "sketch.finish": () => app.finishSketch(),
+    "view.showAll": () => app.showAllBodies(),
+    "view.hideSel": () => { const h0 = selectedBodyHit(app); if (h0) app.hideHit(h0); else toast("Zuerst eine Fläche oder Kante des Körpers wählen"); },
+    "view.isolateSel": () => { const h0 = selectedBodyHit(app); if (h0) app.isolateHit(h0); else toast("Zuerst eine Fläche oder Kante des Körpers wählen"); },
+    "select.all": () => app.setSelFilter("alles"),
+    "select.faces": () => app.setSelFilter("flaechen"),
+    "select.edges": () => app.setSelFilter("kanten"),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
     "asm.align": r("align"),
@@ -47,6 +53,11 @@ export function commandRunners(app) {
     else if (c.id.startsWith("sketch.")) run[c.id] = tool(c.id.slice(7));
   }
   return run;
+}
+
+function selectedBodyHit(app) {
+  if (app.mode === "assembly" && app.sel?.type === "component") return { key: "comp:" + app.sel.id, body: 0 };
+  return (app.viewer.selectedHits || []).find((x) => x.kind === "face" || x.kind === "edge") || null;
 }
 
 export class CommandKeys {
