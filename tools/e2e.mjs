@@ -471,14 +471,15 @@ try {
     await page.locator("#ribbon .rb-file").click();
     await page.locator(".file-menu button", { hasText: "Einstellungen" }).click();
     await page.locator(".set-search input").fill("fang");
-    const rows = await page.locator(".set-row").count();
     const fang = page.locator('.set-row[data-key="skizze.fangradius"] input');
-    await fang.fill("99");
-    await fang.press("Tab");
+    await fang.waitFor({ state: "visible" });
+    const rows = await page.locator(".set-row").count();
+    // Wert setzen und »change« direkt auslösen: robust gegen Neuaufbau der Zeile zwischen Eingabe und Tab
+    const setField = (v) => fang.evaluate((el, val) => { el.value = val; el.dispatchEvent(new Event("change", { bubbles: true })); }, v);
+    await setField("99");
     const err = await page.locator('.set-row[data-key="skizze.fangradius"] .set-err').textContent();
     const kept = await evalApp(() => window.__werkcad.prefs.get("skizze.fangradius"));
-    await fang.fill("12");
-    await fang.press("Tab");
+    await setField("12");
     await page.locator(".set-search input").fill("");
     await page.locator(".set-cat", { hasText: "3D-Ansicht" }).click();
     await page.locator('.set-row[data-key="ansicht.kantenfarbe"] input').evaluate((el) => { el.value = "#ff0000"; el.dispatchEvent(new Event("input", { bubbles: true })); });
