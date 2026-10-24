@@ -6,15 +6,16 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, v3 } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt } from "../core/sketchedit.js";
+import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
 const PT_R = 7, CURVE_R = 6;
 
 export const SKETCH_TOOLS = {
   select: "Auswählen und ziehen",
-  line: "Linie: Startpunkt klicken, weitere Punkte klicken – Esc beendet",
-  rect: "Rechteck: erste Ecke, dann gegenüberliegende Ecke klicken",
-  rectc: "Rechteck aus Mitte: Mittelpunkt, dann Ecke klicken",
-  circle: "Kreis: Mittelpunkt, dann Radius klicken",
+  line: "Linie: Startpunkt klicken, weitere Punkte klicken – oder Länge tippen, Tab, Winkel, Enter – Esc beendet",
+  rect: "Rechteck: erste Ecke, dann gegenüberliegende Ecke klicken – oder Breite tippen, Tab, Höhe tippen, Enter",
+  rectc: "Rechteck aus Mitte: Mittelpunkt, dann Ecke klicken – oder Breite tippen, Tab, Höhe tippen, Enter",
+  circle: "Kreis: Mittelpunkt, dann Radius klicken – oder Durchmesser tippen, Enter",
   arc3: "Bogen: Anfang, Ende, dann Punkt auf dem Bogen klicken",
   arcc: "Bogen um Mittelpunkt: Mitte, Anfang, Ende (gegen Uhrzeigersinn)",
   point: "Punkt / Bohrungsmitte setzen",
@@ -266,6 +267,7 @@ export class Sketcher {
         else if (Math.abs(90 - ang) < 2.5) hv = "vertical";
         if (hv && !this.lineAlreadyHV(sk, p1, p2, hv)) cons.push({ id: uid("k"), type: hv, e: id });
       }
+      if (opts.length != null) cons.push({ id: uid("m"), type: "length", e: id, value: String(opts.length), labelOffset: 18 / this.M.scale });
       sk.constraints.push(...cons);
       this.lastLine = { p1, p2 };
     });
@@ -276,41 +278,82 @@ export class Sketcher {
     const c = { id: "tmp", type, p: p1, q: p2 };
     try { return checkNewConstraint(sk, c, this.scope()) !== "ok"; } catch { return false; }
   }
-  addRect(a, b, center = false) {
-    this.commit("Rechteck", (sk) => {
-      const cons = [];
-      let corners;
-      if (center) {
-        const dx = b.x - a.x, dy = b.y - a.y;
-        corners = [[a.x - dx, a.y - dy], [a.x + dx, a.y - dy], [a.x + dx, a.y + dy], [a.x - dx, a.y + dy]];
-      } else corners = [[a.x, a.y], [b.x, a.y], [b.x, b.y], [a.x, b.y]];
-      const ids = corners.map((c, i) => {
-        if (!center && i === 0) return this.usePoint(sk, a, cons);
-        if (!center && i === 2) return this.usePoint(sk, b, cons);
-        const id = uid("p");
-        sk.points.push({ id, x: c[0], y: c[1] });
-        return id;
-      });
-      const lines = [0, 1, 2, 3].map((i) => {
-        const id = uid("l");
-        sk.entities.push({ id, type: "line", p1: ids[i], p2: ids[(i + 1) % 4], construction: !!this.construction });
-        return id;
-      });
-      cons.push({ id: uid("k"), type: "horizontal", e: lines[0] }, { id: uid("k"), type: "horizontal", e: lines[2] }, { id: uid("k"), type: "vertical", e: lines[1] }, { id: uid("k"), type: "vertical", e: lines[3] });
-      if (center) {
-        const cid = this.usePoint(sk, a, cons);
-        const diag = uid("l");
-        sk.entities.push({ id: diag, type: "line", p1: ids[0], p2: ids[2], construction: true });
-        cons.push({ id: uid("k"), type: "midpoint", p: cid, e: diag });
-      }
-      sk.constraints.push(...cons);
-    });
+  addRect(a, b, center = false, dims = {}) {
+    this.mapping();
+    const [ox, oy] = this.S(0, 0), [xx] = this.S(1, 0), [, yy] = this.S(0, 1);
+    this.commit("Rechteck", (sk) => buildRect(sk, a, b, {
+      center, dims, construction: !!this.construction, uid,
+      usePoint: (s, sn, cons) => this.usePoint(s, sn, cons),
+      screen: { xRight: xx > ox, yUp: yy < oy }, gap: 18 / this.M.scale,
+    }));
   }
-  addCircle(c, r) {
+  /** Gegenecke des Rechtecks aus Maus und getippten Maßen; null, wenn ein getippter Wert ungültig ist */
+  rectTarget(cur) {
+    const st = this.state, center = this.tool === "rectc";
+    if (!dynTyped(st.dyn)) return { b: cur, dims: {} };
+    const r = dynValues(st.dyn, rectLive(st.start, cur, center), this.scope());
+    if (!r.ok) return null;
+    return { b: rectCorner(st.start, cur, r.values.w, r.values.h, center), dims: r.exprs };
+  }
+  /** Getippte Werte der laufenden Eingabe; null (mit Meldung), wenn ein Wert ungültig ist */
+  dynResult(live) {
+    const r = dynValues(this.state.dyn, live, this.scope());
+    if (r.ok) return r;
+    toast(this.state.dyn.fields.find((f) => f.error)?.error || "Ungültiger Wert", { kind: "err" });
+    this.render();
+    return null;
+  }
+  /** Endpunkt der Linie aus Maus und getippter Länge/Winkel */
+  lineTarget(cur) {
+    const st = this.state;
+    if (!dynTyped(st.dyn)) return { b: this.inferHV(st.start, cur), opts: {} };
+    const r = this.dynResult(lineLive(st.start, cur));
+    if (!r) return null;
+    const b = lineEnd(st.start, r.values.len, r.values.ang);
+    return { b, opts: { length: r.exprs.len, noInfer: r.exprs.ang != null && !axisAngle(r.values.ang) } };
+  }
+  finishLine(cur) {
+    const t = this.lineTarget(cur);
+    if (!t) return;
+    const a = this.state.start, b = t.b;
+    if (Math.hypot(b.x - a.x, b.y - a.y) * this.M.scale < 2) return;
+    const res = this.addLine(a, b, t.opts);
+    if (!res) { this.state = null; return; }
+    if (!this.state.firstId) this.state.firstId = res.p1;
+    if (b.pointId && b.pointId === this.state.firstId) { this.state = null; return; }
+    const np = this.pts().get(res.p2);
+    this.state.start = { x: np.x, y: np.y, pointId: res.p2 };
+    this.state.dyn = createDynInput(["len", { key: "ang", signed: true }]);
+  }
+  finishCircle(cur) {
+    const c = this.state.start;
+    const r = Math.hypot(cur.x - c.x, cur.y - c.y);
+    if (!dynTyped(this.state.dyn)) { if (r * this.M.scale < 1) return; this.state = null; this.addCircle(c, r); return; }
+    const res = this.dynResult({ d: 2 * r });
+    if (!res) return;
+    this.state = null;
+    this.addCircle(c, res.values.d / 2, res.exprs.d);
+  }
+  finishDyn(cur) {
+    if (this.tool === "line") this.finishLine(cur);
+    else if (this.tool === "circle") this.finishCircle(cur);
+    else this.finishRect(cur);
+  }
+  finishRect(cur) {
+    const t = this.rectTarget(cur);
+    if (!t) { toast(this.state.dyn.fields.find((f) => f.error)?.error || "Ungültiger Wert", { kind: "err" }); this.render(); return; }
+    const a = this.state.start;
+    if (Math.abs(t.b.x - a.x) < 1e-9 || Math.abs(t.b.y - a.y) < 1e-9) { toast("Rechteck braucht Breite und Höhe"); return; }
+    this.state = null;
+    this.addRect(a, t.b, this.tool === "rectc", t.dims);
+  }
+  addCircle(c, r, diameter = null) {
     this.commit("Kreis", (sk) => {
       const cons = [];
       const cid = this.usePoint(sk, c, cons);
-      sk.entities.push({ id: uid("k"), type: "circle", c: cid, r: Math.max(r, 1e-3), construction: !!this.construction });
+      const id = uid("k");
+      sk.entities.push({ id, type: "circle", c: cid, r: Math.max(r, 1e-3), construction: !!this.construction });
+      if (diameter != null) cons.push({ id: uid("m"), type: "diameter", e: id, value: String(diameter), labelAngle: Math.PI / 4 });
       sk.constraints.push(...cons);
     });
   }
@@ -686,26 +729,17 @@ export class Sketcher {
     }
     const sn = this.snap(sx, sy);
     switch (t) {
-      case "line": {
-        if (!this.state) { this.state = { start: sn }; break; }
-        const a = this.state.start;
-        const b = this.inferHV(a, sn);
-        if (Math.hypot(b.x - a.x, b.y - a.y) * this.M.scale < 2) break;
-        const res = this.addLine(a, b);
-        if (!res) { this.state = null; break; }
-        if (!this.state.firstId) this.state.firstId = res.p1;
-        if (b.pointId && b.pointId === this.state.firstId) { this.state = null; break; }
-        const np = this.pts().get(res.p2);
-        this.state.start = { x: np.x, y: np.y, pointId: res.p2 };
+      case "line":
+        if (!this.state) this.state = { start: sn, dyn: createDynInput(["len", { key: "ang", signed: true }]) };
+        else this.finishLine(sn);
         break;
-      }
       case "rect": case "rectc":
-        if (!this.state) this.state = { start: sn };
-        else { this.addRect(this.state.start, sn, t === "rectc"); this.state = null; }
+        if (!this.state) this.state = { start: sn, dyn: createDynInput(["w", "h"]) };
+        else this.finishRect(sn);
         break;
       case "circle":
-        if (!this.state) this.state = { start: sn };
-        else { const c = this.state.start; this.addCircle(c, Math.hypot(sn.x - c.x, sn.y - c.y)); this.state = null; }
+        if (!this.state) this.state = { start: sn, dyn: createDynInput(["d"]) };
+        else this.finishCircle(sn);
         break;
       case "arc3":
         if (!this.state) this.state = { pts: [sn] };
@@ -833,6 +867,17 @@ export class Sketcher {
   key(e) {
     if (!this.active || this.inputBox) return false;
     const k = e.key;
+    // Dynamische Maßeingabe beim Rechteck: Tippen geht ins aktive Feld, Tab wechselt, Enter erzeugt
+    if (this.state?.dyn && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const r = dynKey(this.state.dyn, k, { shift: e.shiftKey });
+      if (r === "commit") {
+        const m = this.mouse;
+        if (m) { this.mapping(); this.finishDyn(this.snapInfo || { x: m.lx, y: m.ly }); }
+        this.render();
+        return true;
+      }
+      if (r) { this.render(); return true; }
+    }
     if (k === "Escape") {
       if (this.state) { this.state = null; this.render(); return true; }
       if (this.tool !== "select") { this.setTool("select"); return true; }
@@ -1137,29 +1182,36 @@ export class Sketcher {
     const path = (d) => g.append(svgEl("path", { d, class: "sk-preview" }));
     const S = (x, y) => this.S(x, y);
     if (this.tool === "line" && st.start) {
-      const b = this.inferHV(st.start, cur);
-      const A = S(st.start.x, st.start.y), B = S(b.x, b.y);
-      path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`);
-      const L = Math.hypot(b.x - st.start.x, b.y - st.start.y);
-      const t = svgEl("text", { x: B[0] + 10, y: B[1] + 16, class: "sk-infer" });
-      t.textContent = fmtNum(L, 1) + (b.inferred ? "  " + b.inferred : "");
-      g.append(t);
-    } else if ((this.tool === "rect" || this.tool === "rectc") && st.start) {
       const a = st.start;
-      const pts = this.tool === "rect"
-        ? [[a.x, a.y], [cur.x, a.y], [cur.x, cur.y], [a.x, cur.y]]
-        : [[2 * a.x - cur.x, 2 * a.y - cur.y], [cur.x, 2 * a.y - cur.y], [cur.x, cur.y], [2 * a.x - cur.x, cur.y]];
+      const typed = dynTyped(st.dyn);
+      const live = lineLive(a, typed ? cur : this.inferHV(a, cur));
+      const vals = typed ? dynValues(st.dyn, live, this.scope()).values : live;
+      const b = typed ? lineEnd(a, vals.len, vals.ang) : this.inferHV(a, cur);
+      const A = S(a.x, a.y), B = S(b.x, b.y);
+      path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`);
+      if (b.inferred) { const t = svgEl("text", { x: B[0] + 10, y: B[1] + 16, class: "sk-infer" }); t.textContent = b.inferred; g.append(t); }
+      if (st.dyn) this.renderDynLine(g, A, B, vals);
+    } else if ((this.tool === "rect" || this.tool === "rectc") && st.start) {
+      const a = st.start, center = this.tool === "rectc";
+      const live = rectLive(a, cur, center);
+      const vals = st.dyn ? dynValues(st.dyn, live, this.scope()).values : live;
+      const b = rectCorner(a, cur, vals.w, vals.h, center);
+      const pts = !center
+        ? [[a.x, a.y], [b.x, a.y], [b.x, b.y], [a.x, b.y]]
+        : [[2 * a.x - b.x, 2 * a.y - b.y], [b.x, 2 * a.y - b.y], [b.x, b.y], [2 * a.x - b.x, b.y]];
       path("M" + pts.map((p) => S(...p).join(",")).join("L") + "Z");
-      const t = svgEl("text", { x: S(cur.x, cur.y)[0] + 10, y: S(cur.x, cur.y)[1] + 16, class: "sk-infer" });
-      t.textContent = `${fmtNum(Math.abs(pts[1][0] - pts[0][0]), 1)} × ${fmtNum(Math.abs(pts[2][1] - pts[1][1]), 1)}`;
-      g.append(t);
+      if (st.dyn) this.renderDynRect(g, pts.map((p) => S(...p)), vals);
     } else if (this.tool === "circle" && st.start) {
       const c = S(st.start.x, st.start.y);
-      const r = Math.hypot(cur.x - st.start.x, cur.y - st.start.y) * this.M.scale;
+      const live = { d: 2 * Math.hypot(cur.x - st.start.x, cur.y - st.start.y) };
+      const vals = st.dyn ? dynValues(st.dyn, live, this.scope()).values : live;
+      const r = (vals.d / 2) * this.M.scale;
       g.append(svgEl("circle", { cx: c[0], cy: c[1], r, class: "sk-preview" }));
-      const t = svgEl("text", { x: c[0] + r + 8, y: c[1], class: "sk-infer" });
-      t.textContent = "Ø" + fmtNum((2 * r) / this.M.scale, 1);
-      g.append(t);
+      if (st.dyn) {
+        const k = Math.SQRT1_2;
+        g.append(svgEl("path", { d: `M${c[0]},${c[1]}L${c[0] + r * k},${c[1] - r * k}`, class: "sk-dyn-line" }));
+        this.dynBox(g, 0, c[0] + r * k + 30, c[1] - r * k - 14, "Ø", "", vals.d);
+      }
     } else if ((this.tool === "arc3" || this.tool === "arcc") && st.pts) {
       const pts = [...st.pts, cur];
       if (this.tool === "arc3" && pts.length === 3) {
@@ -1175,6 +1227,54 @@ export class Sketcher {
       t.textContent = st.place ? (st.locked ? "Lage klicken" : "Lage klicken oder zweites Element wählen") : "zweites Element wählen";
       g.append(t);
     }
+  }
+  /** Ein Maßfeld der laufenden Eingabe als Kästchen bei (cx, cy); zeigt getippten Text oder den Mauswert */
+  dynBox(g, i, cx, cy, prefix = "", suffix = "", live) {
+    const dyn = this.state.dyn, f = dyn.fields[i];
+    const typed = f.text.trim() !== "";
+    const grp = svgEl("g", { class: "sk-dyn" + (i === dyn.active ? " active" : "") + (typed ? " typed" : "") + (f.error ? " err" : "") });
+    const text = prefix + (typed ? f.text : fmtNum(live, 2) + suffix);
+    const w = Math.max(44, text.length * 7.6 + 14);
+    grp.append(svgEl("rect", { x: cx - w / 2, y: cy - 10, width: w, height: 20, rx: 2 }));
+    const t = svgEl("text", { x: cx, y: cy + 4.5, "text-anchor": "middle" });
+    t.textContent = text + (i === dyn.active && !dyn.fresh ? "|" : "");
+    grp.append(t);
+    g.append(grp);
+  }
+  /** Maßfelder am Vorschau-Rechteck: Breite über der oberen Kante, Höhe an der rechten Kante */
+  renderDynRect(g, scr, vals) {
+    const xs = scr.map((p) => p[0]), ys = scr.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const off = 22;
+    const lines = {
+      w: { a: [x0, y0 - off], b: [x1, y0 - off], ext: [[x0, y0], [x1, y0]] },
+      h: { a: [x1 + off, y0], b: [x1 + off, y1], ext: [[x1, y0], [x1, y1]] },
+    };
+    this.state.dyn.fields.forEach((f, i) => {
+      const L = lines[f.key];
+      const ext = L.ext.map((p, j) => { const q = j ? L.b : L.a; return `M${p[0]},${p[1]}L${q[0]},${q[1]}`; }).join("");
+      g.append(svgEl("path", { d: ext + `M${L.a[0]},${L.a[1]}L${L.b[0]},${L.b[1]}`, class: "sk-dyn-line" }));
+      this.dynBox(g, i, (L.a[0] + L.b[0]) / 2, (L.a[1] + L.b[1]) / 2, "", "", vals[f.key]);
+    });
+  }
+  /** Maßfelder an der Vorschau-Linie: Länge neben der Linienmitte, Winkel am Startpunkt */
+  renderDynLine(g, A, B, vals) {
+    const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1;
+    // Normale zeigt auf dem Bildschirm nach oben bzw. rechts
+    let nx = dy / L, ny = -dx / L;
+    if (ny > 0 || (Math.abs(ny) < 1e-9 && nx < 0)) { nx = -nx; ny = -ny; }
+    const off = 22;
+    const A1 = [A[0] + nx * off, A[1] + ny * off], B1 = [B[0] + nx * off, B[1] + ny * off];
+    g.append(svgEl("path", { d: `M${A[0]},${A[1]}L${A1[0]},${A1[1]}M${B[0]},${B[1]}L${B1[0]},${B1[1]}M${A1[0]},${A1[1]}L${B1[0]},${B1[1]}`, class: "sk-dyn-line" }));
+    this.dynBox(g, 0, (A1[0] + B1[0]) / 2, (A1[1] + B1[1]) / 2, "", "", vals.len);
+    // Winkel: Bogen von der Skizzen-x-Achse bis zur Linie, Feld auf der Winkelhalbierenden
+    const a = this.state.start, R = 34 / this.M.scale, ang = (vals.ang * Math.PI) / 180;
+    const arc = [];
+    for (let k = 0; k <= 24; k++) { const t = (ang * k) / 24; arc.push(this.S(a.x + R * Math.cos(t), a.y + R * Math.sin(t))); }
+    const X = this.S(a.x + R * 1.3, a.y);
+    g.append(svgEl("path", { d: `M${A[0]},${A[1]}L${X[0]},${X[1]}M` + arc.map((p) => p.join(",")).join("L"), class: "sk-dyn-line" }));
+    const q = this.S(a.x + R * 1.9 * Math.cos(ang / 2), a.y + R * 1.9 * Math.sin(ang / 2));
+    this.dynBox(g, 1, q[0], q[1], "", "°", vals.ang);
   }
 }
 

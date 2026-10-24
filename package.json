@@ -1,7 +1,7 @@
 {
   "name": "werkcad",
   "productName": "WerkCAD",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Parametrisches 3D-CAD für Bauteile, Rohr- und Rahmenkonstruktionen, Baugruppen und Zeichnungen",
   "author": "Patrick Brundiers",
   "license": "UNLICENSED",
@@ -14,8 +14,8 @@
     "build:dev": "node build.mjs --dev",
     "start": "node build.mjs --dev && electron .",
     "serve": "node tools/serve.mjs",
-    "test": "node --test test/core.test.mjs test/kernel.test.mjs",
-    "test:core": "node --test test/core.test.mjs",
+    "test": "node --stack-size=8000 --test test/core.test.mjs test/project.test.mjs test/units.test.mjs test/kernel.test.mjs test/project-kernel.test.mjs",
+    "test:core": "node --test test/core.test.mjs test/project.test.mjs test/units.test.mjs",
     "e2e": "node tools/e2e.mjs",
     "dist": "node build.mjs && electron-builder --win --x64 --publish never",
     "release": "node build.mjs && electron-builder --win --x64 --publish always"
@@ -36,8 +36,9 @@
     "appId": "de.brundiers.werkcad",
     "productName": "WerkCAD",
     "copyright": "© Patrick Brundiers",
-    "files": ["dist/**/*", "electron/**/*", "build/icon.png", "package.json"],
+    "files": ["dist/**/*", "!dist/**/*.map", "electron/**/*", "build/icon.png", "package.json"],
     "directories": { "output": "release", "buildResources": "build" },
+    "extraResources": [{ "from": "dist/lizenzen", "to": "lizenzen" }],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon": "build/icon.png"

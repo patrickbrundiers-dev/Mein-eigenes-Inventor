@@ -2,6 +2,7 @@
 import { toast, choiceDialog, downloadBlob, h } from "./dom.js";
 import { sketchToDxf } from "../core/dxf.js";
 import { newPart, uid } from "../core/examples.js";
+import { serializeProject, loadProject, validateProject } from "../core/project.js";
 import { bomRows, cutListRows, collectCutSources } from "./props.js";
 import { MATERIALS } from "../core/sections.js";
 import { fmtNum } from "./dom.js";
@@ -14,16 +15,9 @@ export class Files {
   get bridge() { return window.werkcad || null; }
 
   // ---------- Projekt ----------
-  serialize() {
-    const prj = this.app.project;
-    prj.saved = new Date().toISOString();
-    return JSON.stringify(prj, null, 1);
-  }
-  parse(text) {
-    const prj = JSON.parse(text);
-    if (prj.format !== "werkcad" || !Array.isArray(prj.docs)) throw new Error("Keine WerkCAD-Projektdatei");
-    return prj;
-  }
+  serialize() { return serializeProject(this.app.project); }
+  /** Datei lesen, prüfen, ggf. migrieren; Hinweise (keine Fehler) kommen in `issues` */
+  parse(text) { return loadProject(text); }
   async confirmDiscard() {
     if (!this.app.dirty) return true;
     const r = await choiceDialog("Ungespeicherte Änderungen", "Das aktuelle Projekt enthält ungespeicherte Änderungen.", [
@@ -34,26 +28,51 @@ export class Files {
   async open(path) {
     if (!(await this.confirmDiscard())) return;
     try {
-      let text, file;
+      let loaded, file;
       if (this.bridge) {
         const r = path ? await this.bridge.readProject(path) : await this.bridge.openProject();
         if (!r) return;
-        text = r.text; file = r.path;
+        file = r.path;
+        try {
+          if (r.error) throw new Error(r.error);
+          loaded = this.parse(r.text);
+        } catch (e) { return await this.offerBackup(r, e.message); }
       } else {
         const f = await pickFile(".wcad,application/json");
         if (!f) return;
-        text = await f.text(); file = null;
+        loaded = this.parse(await f.text()); file = null;
         this.browserName = f.name;
       }
-      const prj = this.parse(text);
+      const { project: prj, issues } = loaded;
       this.app.setProject(prj, file);
       toast("Geöffnet: " + (file ? file.split(/[\\/]/).pop() : prj.name), { kind: "ok", timeout: 2000 });
+      showIssues(issues, "Beim Öffnen");
     } catch (e) {
       toast("Öffnen fehlgeschlagen: " + e.message, { kind: "err", timeout: 6000 });
     }
   }
+  /** Datei unlesbar: Sicherung (.bak vom letzten Speichern) anbieten, falls vorhanden */
+  async offerBackup(r, problem) {
+    const name = r.path.split(/[\\/]/).pop();
+    if (!r.backup || !this.bridge.readProjectBackup) throw new Error(problem);
+    const when = new Date(r.backup.time).toLocaleString("de-DE");
+    const choice = await choiceDialog("Projekt lässt sich nicht öffnen", `${name}: ${problem.replace(/\.$/, "")}. Es gibt eine Sicherung vom ${when} (Stand vor dem letzten Speichern). Sicherung öffnen?`, [
+      { label: "Abbrechen", value: null }, { label: "Sicherung öffnen", value: "bak", primary: true }]);
+    if (choice !== "bak") return;
+    const b = await this.bridge.readProjectBackup(r.path);
+    if (!b || b.error) throw new Error("Sicherung nicht lesbar" + (b?.error ? ": " + b.error : ""));
+    const { project: prj, issues } = this.parse(b.text);
+    // ohne Dateipfad öffnen: »Speichern« fragt nach einem Namen, damit weder Datei noch Sicherung überschrieben werden
+    this.app.setProject(prj, null);
+    this.app.dirty = true;
+    this.app.updateTitle();
+    toast(`Sicherung von ${name} geöffnet – bitte unter neuem Namen speichern.`, { kind: "ok", timeout: 8000 });
+    showIssues(issues, "Beim Öffnen");
+  }
   async save(saveAs = false) {
     const app = this.app;
+    // Speichern nie blockieren (kein Datenverlust), aber auf Strukturfehler hinweisen
+    showIssues(validateProject(app.project), "Beim Speichern");
     const text = this.serialize();
     const defaultName = safeName(app.project.name) + ".wcad";
     try {
@@ -78,19 +97,25 @@ export class Files {
     clearTimeout(this.autoTimer);
     this.autoTimer = setTimeout(() => {
       try {
-        const json = JSON.stringify(this.app.project);
-        if (json.length < 4.5e6) localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ time: Date.now(), path: this.app.filePath, json }));
+        const entry = { time: Date.now(), path: this.app.filePath, json: JSON.stringify(this.app.project) };
+        // Desktop: Datei im Benutzerordner, ohne Größengrenze; Browser: localStorage (bis ca. 5 MB)
+        if (this.bridge?.writeAutosave) this.bridge.writeAutosave(entry).catch((e) => console.warn("Autosave fehlgeschlagen", e));
+        else if (entry.json.length < 4.5e6) localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(entry));
       } catch { /* Speicher voll oder gesperrt */ }
     }, 1500);
   }
-  recovery() {
-    try {
-      const raw = localStorage.getItem(AUTOSAVE_KEY);
-      if (!raw) return null;
-      const r = JSON.parse(raw);
-      const prj = JSON.parse(r.json);
-      return { time: r.time, path: r.path, project: prj };
-    } catch { return null; }
+  /** Letzte automatische Sicherung; nur wenn sie sich gefahrlos öffnen lässt */
+  async recovery() {
+    const read = (r) => {
+      if (!r?.json) return null;
+      try { return { time: r.time, path: r.path, project: loadProject(r.json).project }; } catch { return null; }
+    };
+    let fromFile = null;
+    try { fromFile = read(await this.bridge?.readAutosave?.()); } catch { /* */ }
+    // Sicherung aus älteren Versionen (localStorage) weiter anbieten
+    let fromStorage = null;
+    try { fromStorage = read(JSON.parse(localStorage.getItem(AUTOSAVE_KEY))); } catch { /* */ }
+    return [fromFile, fromStorage].filter(Boolean).sort((a, b) => b.time - a.time)[0] || null;
   }
 
   // ---------- Hilfen ----------
@@ -286,3 +311,12 @@ function csv(rows) {
   return "﻿" + rows.map((r) => r.map(esc).join(";")).join("\r\n") + "\r\n";
 }
 export { MATERIALS };
+
+/** Prüfhinweise als Meldung zeigen; reine Info (z. B. Migration) nur in der Konsole */
+function showIssues(issues, context) {
+  for (const i of issues) console.info("[Projektprüfung]", i.code, i.message);
+  const shown = issues.filter((i) => i.severity !== "info");
+  if (!shown.length) return;
+  const more = shown.length > 1 ? ` (+${shown.length - 1} weitere Hinweise)` : "";
+  toast(`${context}: ${shown[0].message}${more}`, { kind: shown.some((i) => i.severity === "error") ? "err" : "", timeout: 8000 });
+}

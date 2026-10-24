@@ -75,6 +75,64 @@ try {
   step("Parameteränderung", Math.abs(bb[1][0] - bb[0][0] - 400) < 1e-3, JSON.stringify(bb));
   await shot("07-parameter-400");
 
+  // Dynamische Maßeingabe: Rechteck anfangen, 50 tippen, Tab, 25, Enter → bemaßtes Rechteck 50×25
+  {
+    await evalApp(() => window.__werkcad.newPart("Maßeingabe"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    await page.keyboard.press("r");
+    const vb = await page.locator("#viewer canvas").boundingBox();
+    const mx = vb.x + vb.width / 2, my = vb.y + vb.height / 2;
+    await page.mouse.click(mx - 100, my + 60);
+    await page.mouse.move(mx + 40, my - 20, { steps: 5 });
+    await page.keyboard.type("50");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("25");
+    await shot("07b-skizze-masseingabe");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    const di = await evalApp(() => {
+      const s = window.__werkcad.sketcher;
+      const pts = s.sk.points.filter((p) => p.id !== "O");
+      const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+      return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), dims: s.sk.constraints.filter((c) => c.type === "distance").map((c) => c.dir + c.value), ok: s.lastSolve?.ok, regions: s.profiles?.regions.length };
+    });
+    await shot("07c-skizze-masseingabe-fertig");
+    step("Rechteck per Maßeingabe", Math.abs(di.w - 50) < 1e-6 && Math.abs(di.h - 25) < 1e-6 && di.dims.join() === "h50,v25" && di.ok && di.regions === 1, JSON.stringify(di));
+    // Linie: Länge 40, Tab, Winkel 30°, Enter; Kreis: Durchmesser 20, Enter
+    await page.keyboard.press("l");
+    await page.mouse.click(mx + 120, my + 120);
+    await page.mouse.move(mx + 200, my + 60, { steps: 5 });
+    await page.keyboard.type("40");
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("30");
+    await shot("07d-skizze-linie-masseingabe");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("c");
+    await page.mouse.click(mx + 150, my - 150);
+    await page.mouse.move(mx + 170, my - 150, { steps: 3 });
+    await page.keyboard.type("20");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    const lc = await evalApp(() => {
+      const s = window.__werkcad.sketcher, sk = s.sk;
+      const P = new Map(sk.points.map((p) => [p.id, p]));
+      const lc = sk.constraints.find((c) => c.type === "length"), dc = sk.constraints.find((c) => c.type === "diameter");
+      const l = lc && sk.entities.find((e) => e.id === lc.e), a = l && P.get(l.p1), b = l && P.get(l.p2);
+      const circ = dc && sk.entities.find((e) => e.id === dc.e);
+      return { len: l && Math.hypot(b.x - a.x, b.y - a.y), ang: l && (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI, lval: lc?.value, d: circ && 2 * circ.r, dval: dc?.value, ok: s.lastSolve?.ok };
+    });
+    await shot("07e-skizze-linie-kreis-fertig");
+    step("Linie und Kreis per Maßeingabe", Math.abs(lc.len - 40) < 1e-6 && Math.abs(lc.ang - 30) < 1e-6 && lc.lval === "40" && Math.abs(lc.d - 20) < 1e-6 && lc.dval === "20" && lc.ok, JSON.stringify(lc));
+    await page.keyboard.press("Escape");
+    await page.locator("#ribbon button", { hasText: "Skizze fertig" }).click();
+    await page.waitForTimeout(300);
+  }
+
   // Neues Bauteil per Oberfläche: Skizze auf XY, Rechteck zeichnen, bemaßen, extrudieren
   await evalApp(() => window.__werkcad.newPart("Testteil"));
   await idle();

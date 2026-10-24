@@ -1,5 +1,5 @@
 // Ausdrucks-Auswertung für Parameter und Maße (mm, Grad).
-// Beispiele: "Länge/2 + 5", "sqrt(B^2+H^2)", "2*pi*r", "45°", "12 mm", "1,5*t"
+// Beispiele: "Länge/2 + 5", "sqrt(B^2+H^2)", "2*pi*r", "45°", "12 mm", "1,5*t", "2 in", "3/4\""
 
 const FUNCS = {
   sin: (d) => Math.sin((d * Math.PI) / 180),
@@ -20,7 +20,8 @@ const FUNCS = {
   if: (c, a, b) => (c ? a : b),
 };
 const CONSTS = { pi: Math.PI, PI: Math.PI, e: Math.E };
-const UNITS = { mm: 1, cm: 10, m: 1000, deg: 1, grad: 1, "°": 1 };
+// Zoll exakt 25,4 mm (internationale Definition 1959)
+const UNITS = { mm: 1, cm: 10, m: 1000, in: 25.4, zoll: 25.4, '"': 25.4, deg: 1, grad: 1, "°": 1 };
 
 const IDENT_START = /[A-Za-z_À-ɏ]/;
 const IDENT_PART = /[A-Za-z0-9_À-ɏ]/;
@@ -59,7 +60,7 @@ function tokenize(src) {
       i = j;
       continue;
     }
-    if (c === "°") { toks.push({ t: "unit", v: "°" }); i++; continue; }
+    if (c === "°" || c === '"') { toks.push({ t: "unit", v: c }); i++; continue; }
     if (IDENT_START.test(c)) {
       let j = i;
       while (j < s.length && IDENT_PART.test(s[j])) j++;
@@ -113,7 +114,11 @@ function parse(src) {
       if (t && t.t === "op" && (t.v === "*" || t.v === "/")) {
         p++;
         a = { k: "bin", op: t.v, a, b: unary() };
-      } else if (t && (t.t === "id" || (t.t === "op" && t.v === "(")) && !(t.t === "id" && UNITS[t.v] !== undefined)) {
+      } else if (t && (t.t === "unit" || (t.t === "id" && UNITS[t.v] !== undefined))) {
+        // Einheit gilt für den ganzen Term davor: "3/4\"" = (3/4) Zoll, "100/2 cm" = 50 cm
+        p++;
+        a = { k: "bin", op: "*", a, b: { k: "num", v: UNITS[t.v] } };
+      } else if (t && (t.t === "id" || (t.t === "op" && t.v === "("))) {
         // implizite Multiplikation: "2B", "2(a+b)"
         a = { k: "bin", op: "*", a, b: unary() };
       } else break;
@@ -130,22 +135,13 @@ function parse(src) {
     return pow();
   }
   function pow() {
-    const base = postfix();
+    const base = atom();
     const t = peek();
     if (t && t.t === "op" && t.v === "^") {
       p++;
       return { k: "bin", op: "^", a: base, b: unary() };
     }
     return base;
-  }
-  function postfix() {
-    let x = atom();
-    const t = peek();
-    if (t && (t.t === "unit" || (t.t === "id" && UNITS[t.v] !== undefined))) {
-      p++;
-      x = { k: "bin", op: "*", a: x, b: { k: "num", v: UNITS[t.v] } };
-    }
-    return x;
   }
   function atom() {
     const t = toks[p++];

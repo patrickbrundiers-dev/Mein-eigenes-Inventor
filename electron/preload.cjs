@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld("werkcad", {
   recentFiles: () => ipcRenderer.invoke("recent:list"),
   openProject: () => ipcRenderer.invoke("project:open"),
   readProject: (path) => ipcRenderer.invoke("project:read", path),
+  readProjectBackup: (path) => ipcRenderer.invoke("project:readBackup", path),
+  writeAutosave: (data) => ipcRenderer.invoke("autosave:write", data),
+  readAutosave: () => ipcRenderer.invoke("autosave:read"),
   saveProject: (opts) => ipcRenderer.invoke("project:save", opts),
   saveFile: (opts) => ipcRenderer.invoke("file:save", opts),
   saveFiles: (opts) => ipcRenderer.invoke("file:saveMany", opts),
@@ -24,4 +27,6 @@ contextBridge.exposeInMainWorld("werkcad", {
   downloadUpdate: () => ipcRenderer.invoke("update:download"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
   onUpdateEvent: (cb) => ipcRenderer.on("update:event", (_e, ev) => cb(ev)),
+  log: (level, source, message) => ipcRenderer.send("log:write", { level, source, message: String(message ?? "") }),
+  openLogFolder: () => ipcRenderer.invoke("log:openFolder"),
 });

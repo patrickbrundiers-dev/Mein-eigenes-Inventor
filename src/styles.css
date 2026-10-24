@@ -183,6 +183,12 @@ table.grid input.inp { padding: 2px 4px; }
 .sk-glyph { cursor: pointer; pointer-events: all; }
 .sk-glyph.sel rect { stroke: var(--laser); fill: var(--laser-soft); }
 .sk-infer { font: 600 11px var(--din); fill: var(--laser); }
+.sk-dyn-line { stroke: var(--laser); stroke-width: 1; fill: none; opacity: .7; }
+.sk-dyn rect { fill: #fff; stroke: var(--steel-3); stroke-width: 1; }
+.sk-dyn text { font: 13px var(--din); fill: var(--ink-soft); }
+.sk-dyn.typed text { fill: var(--ink); font-weight: 600; }
+.sk-dyn.active rect { stroke: var(--dye); stroke-width: 2; }
+.sk-dyn.err rect { stroke: var(--err); }
 .sk-grid { stroke: rgba(29, 59, 120, .08); stroke-width: 1; }
 .dim-input { position: absolute; z-index: 20; display: flex; gap: 4px; align-items: center; background: #fff; border: 1px solid var(--dye); border-radius: var(--radius-s); padding: 3px; box-shadow: 0 4px 14px rgba(28, 39, 51, .2); }
 .dim-input input { width: 130px; border: 1px solid var(--steel-3); padding: 2px 6px; font-family: var(--din); font-size: 14px; }

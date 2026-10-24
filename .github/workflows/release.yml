@@ -17,7 +17,26 @@ concurrency:
   group: release
   cancel-in-progress: false
 jobs:
+  # Vorprüfung unter Linux: ohne grüne Kern- und Geometrie-Tests wird nichts gebaut oder veröffentlicht
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhängigkeiten
+        run: npm ci --no-audit --no-fund
+      - name: Kern-Tests
+        run: node --test test/core.test.mjs test/project.test.mjs test/units.test.mjs
+      - name: Geometrie-Tests
+        run: set -o pipefail; node --stack-size=8000 --test --test-reporter=spec test/kernel.test.mjs test/project-kernel.test.mjs 2>&1 | grep -v -E "^\*+|Statistics on Transfer|Transfer Mode|Transferring Shape|WorkSession|Step File Name|^\s*$"
   windows:
+    needs: tests
     runs-on: windows-latest
     timeout-minutes: 30
     steps:

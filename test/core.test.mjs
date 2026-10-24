@@ -465,3 +465,144 @@ test("Knickrahmen: Mittellinie, Abwicklung mit K-Faktor, Prüfregeln", async () 
   const msg = planKnickrahmen(base({ segments: [800, -5] })).issues[0].message;
   assert.match(msg, /Segment 2/);
 });
+
+import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect } from "../src/core/dyninput.js";
+
+const dynSketch = () => ({
+  points: [{ id: "O", x: 0, y: 0 }],
+  entities: [{ id: "Oe", type: "point", p: "O", construction: true, origin: true }],
+  constraints: [{ id: "Of", type: "fix", p: "O", x: 0, y: 0 }],
+});
+const dynUid = () => { let n = 0; return (p) => `${p}${++n}`; };
+const dynUsePoint = (uid) => (sk, sn) => {
+  if (sn.pointId) return sn.pointId;
+  const id = uid("p");
+  sk.points.push({ id, x: sn.x, y: sn.y });
+  return id;
+};
+
+test("Maßeingabe: tippen, Tab, Backspace, Enter", () => {
+  const st = createDynInput(["w", "h"]);
+  assert.ok(!dynTyped(st));
+  for (const k of "50") assert.equal(dynKey(st, k), "handled");
+  assert.equal(dynKey(st, "Tab"), "handled");
+  assert.equal(st.active, 1);
+  for (const k of "250") dynKey(st, k);
+  assert.equal(dynKey(st, "Backspace"), "handled");
+  assert.equal(dynKey(st, "Enter"), "commit");
+  assert.deepEqual(st.fields.map((f) => f.text), ["50", "25"]);
+  // Zurück ins erste Feld: erstes Zeichen ersetzt den alten Wert
+  dynKey(st, "Tab", { shift: true });
+  assert.equal(st.active, 0);
+  dynKey(st, "6"); dynKey(st, "0");
+  assert.equal(st.fields[0].text, "60");
+  assert.equal(dynKey(st, "Escape"), false);
+  assert.equal(dynKey(st, "ArrowLeft"), false);
+});
+
+test("Maßeingabe: Werte, Ausdrücke und Fehler", () => {
+  const st = createDynInput(["w", "h"]);
+  for (const k of "B/2") dynKey(st, k);
+  let r = dynValues(st, { w: 10, h: 7 }, { B: 100 });
+  assert.ok(r.ok);
+  assert.deepEqual(r.values, { w: 50, h: 7 });
+  assert.deepEqual(r.exprs, { w: "B/2" });
+  dynKey(st, "Tab");
+  dynKey(st, "0");
+  r = dynValues(st, { w: 10, h: 7 }, { B: 100 });
+  assert.ok(!r.ok);
+  assert.ok(st.fields[1].error);
+});
+
+test("Rechteck-Ecke folgt der Mausrichtung", () => {
+  assert.deepEqual(rectCorner({ x: 10, y: 10 }, { x: 0, y: 30 }, 50, 25), { x: -40, y: 35 });
+  assert.deepEqual(rectCorner({ x: 0, y: 0 }, { x: 3, y: -3 }, 50, 25, true), { x: 25, y: -12.5 });
+  assert.deepEqual(rectLive({ x: 0, y: 0 }, { x: 3, y: -4 }, true), { w: 6, h: 8 });
+});
+
+test("Rechteck 50×25 per Maßeingabe ist bemaßt und voll bestimmt", () => {
+  const uid = dynUid();
+  const sk = dynSketch();
+  const a = { x: 0, y: 0, pointId: "O" };
+  // Maus grob irgendwo, Maße getippt
+  const b = rectCorner(a, { x: 31, y: 12 }, 50, 25);
+  const res = buildRect(sk, a, b, { uid, usePoint: dynUsePoint(uid), dims: { w: "50", h: "25" } });
+  const r = solveSketch(sk);
+  assert.ok(r.ok);
+  assert.equal(r.dof, 0);
+  const P = new Map(sk.points.map((p) => [p.id, p]));
+  const xs = res.points.map((id) => P.get(id).x), ys = res.points.map((id) => P.get(id).y);
+  near(Math.max(...xs) - Math.min(...xs), 50);
+  near(Math.max(...ys) - Math.min(...ys), 25);
+  const dims = sk.constraints.filter((c) => c.type === "distance");
+  assert.deepEqual(dims.map((c) => [c.dir, c.value]), [["h", "50"], ["v", "25"]]);
+  // Breite an der oberen Kante (y = 25), Höhe an der rechten (x = 50), Maßtext außerhalb
+  const w = dims[0], h = dims[1];
+  assert.ok(P.get(w.p).y === 25 && P.get(w.q).y === 25 && w.labelOffset > 0);
+  assert.ok(P.get(h.p).x === 50 && P.get(h.q).x === 50 && h.labelOffset > 0);
+  // Maß ändern verändert das Rechteck
+  w.value = "80";
+  solveSketch(sk);
+  near(Math.max(...res.points.map((id) => P.get(id).x)) - Math.min(...res.points.map((id) => P.get(id).x)), 80);
+});
+
+test("Rechteck nach unten links, Bildschirm-Y nach unten: Breite an der oberen Kante", () => {
+  const uid = dynUid();
+  const sk = dynSketch();
+  const a = { x: 0, y: 0, pointId: "O" };
+  const b = rectCorner(a, { x: -5, y: -5 }, 40, 20);
+  buildRect(sk, a, b, { uid, usePoint: dynUsePoint(uid), dims: { w: "40" }, screen: { xRight: true, yUp: false } });
+  assert.ok(solveSketch(sk).ok);
+  const P = new Map(sk.points.map((p) => [p.id, p]));
+  const dims = sk.constraints.filter((c) => c.type === "distance");
+  assert.equal(dims.length, 1);
+  // y wächst nach unten → obere Kante hat das kleinere y
+  assert.equal(P.get(dims[0].p).y, -20);
+  assert.ok(dims[0].labelOffset < 0);
+});
+
+test("Rechteck ohne Eingabe bleibt unbemaßt", () => {
+  const uid = dynUid();
+  const sk = dynSketch();
+  buildRect(sk, { x: 0, y: 0 }, { x: 30, y: 20 }, { uid, usePoint: dynUsePoint(uid) });
+  assert.equal(sk.constraints.filter((c) => c.type === "distance").length, 0);
+  assert.equal(sk.entities.filter((e) => e.type === "line").length, 4);
+  assert.ok(solveSketch(sk).ok);
+});
+
+import { lineLive, lineEnd, axisAngle } from "../src/core/dyninput.js";
+
+test("Maßeingabe Linie: Länge und Winkel", () => {
+  const a = { x: 10, y: 5 };
+  const live = lineLive(a, { x: 10, y: -5 });
+  near(live.len, 10);
+  near(live.ang, 270);
+  const b = lineEnd(a, 40, 30);
+  near(b.x, 10 + 40 * Math.cos(Math.PI / 6));
+  near(b.y, 5 + 20);
+  assert.deepEqual(lineEnd({ x: 0, y: 0 }, 25, 90), { x: 0, y: 25 });
+  assert.ok(axisAngle(0) && axisAngle(180) && axisAngle(-90) && !axisAngle(30));
+});
+
+test("Maßeingabe: Winkelfeld erlaubt 0 und negative Werte, Länge nicht", () => {
+  const st = createDynInput(["len", { key: "ang", signed: true }]);
+  dynKey(st, "0"); dynKey(st, "Tab"); dynKey(st, "-"); dynKey(st, "4"); dynKey(st, "5");
+  let r = dynValues(st, { len: 5, ang: 0 });
+  assert.ok(!r.ok && st.fields[0].error && !st.fields[1].error);
+  dynKey(st, "Tab"); dynKey(st, "1"); dynKey(st, "2");
+  r = dynValues(st, { len: 5, ang: 0 });
+  assert.ok(r.ok);
+  assert.deepEqual(r.values, { len: 12, ang: -45 });
+});
+
+test("Linie mit Längenmaß und Kreis mit Durchmesser sind lösbar", () => {
+  const sk = dynSketch();
+  const b = lineEnd({ x: 0, y: 0 }, 40, 30);
+  sk.points.push({ id: "q", x: b.x, y: b.y }, { id: "m", x: 100, y: 0 });
+  sk.entities.push({ id: "l1", type: "line", p1: "O", p2: "q" }, { id: "c1", type: "circle", c: "m", r: 10 });
+  sk.constraints.push({ id: "d1", type: "length", e: "l1", value: "40" }, { id: "d2", type: "diameter", e: "c1", value: "20" });
+  const r = solveSketch(sk);
+  assert.ok(r.ok);
+  near(Math.hypot(sk.points.find((p) => p.id === "q").x, sk.points.find((p) => p.id === "q").y), 40);
+  near(sk.entities.find((e) => e.id === "c1").r, 10);
+});

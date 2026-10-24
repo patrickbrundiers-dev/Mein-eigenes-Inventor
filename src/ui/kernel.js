@@ -31,6 +31,7 @@ export class KernelClient {
     this.ready = this.call("ping");
   }
   restart(msg) {
+    window.werkcad?.log?.("error", "geometrie-kern", msg);
     for (const [, p] of this.pending) p.reject(new Error(msg));
     this.pending.clear();
     this.busy = 0;

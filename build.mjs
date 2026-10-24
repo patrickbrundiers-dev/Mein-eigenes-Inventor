@@ -31,5 +31,29 @@ await esbuild.build({ ...common, entryPoints: ["src/kernel/worker.js"], outfile:
 for (const f of ["index.html", "styles.css"]) fs.copyFileSync(path.join("src", f), path.join(out, f));
 fs.copyFileSync(require.resolve("replicad-opencascadejs/wasm"), path.join(out, "replicad_single.wasm"));
 
+// Lizenztexte der mitgelieferten Bibliotheken (landen über dist/** im Installer).
+// OpenCascade steht unter LGPL-2.1: Lizenztext + Quellenangabe beilegen; die WASM-Datei bleibt austauschbar.
+const BUNDLED = [
+  { pkg: "replicad-opencascadejs", source: "https://github.com/sgenoud/replicad (packages/replicad-opencascadejs), OpenCascade: https://github.com/Open-Cascade-SAS/OCCT", note: "als separate Datei replicad_single.wasm, kann durch eine kompatible eigene Übersetzung ersetzt werden" },
+  { pkg: "replicad", source: "https://github.com/sgenoud/replicad" },
+  { pkg: "three", source: "https://github.com/mrdoob/three.js" },
+];
+const licDir = path.join(out, "lizenzen");
+fs.mkdirSync(licDir, { recursive: true });
+const notice = ["WerkCAD verwendet folgende Bibliotheken von Drittanbietern:", ""];
+for (const b of BUNDLED) {
+  const dir = path.resolve("node_modules", b.pkg);
+  const meta = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+  const lic = fs.readdirSync(dir).find((f) => /^(licen[cs]e|copying)(\.(md|txt))?$/i.test(f));
+  if (!lic) throw new Error(`Lizenztext für ${b.pkg} fehlt`);
+  fs.copyFileSync(path.join(dir, lic), path.join(licDir, `${b.pkg}-LICENSE.txt`));
+  notice.push(`${b.pkg} ${meta.version} – Lizenz ${meta.license} (lizenzen/${b.pkg}-LICENSE.txt)`, `  Quelle: ${b.source}`);
+  if (b.note) notice.push(`  Einbindung: ${b.note}`);
+  notice.push("");
+}
+const legal = fs.readdirSync(out).filter((f) => f.endsWith(".LEGAL.txt"));
+if (legal.length) notice.push("Weitere Hinweise zu gebündelten Bibliotheken: " + legal.join(", "));
+fs.writeFileSync(path.join(licDir, "DRITTANBIETER.txt"), notice.join("\r\n") + "\r\n");
+
 const size = (f) => (fs.statSync(path.join(out, f)).size / 1024 / 1024).toFixed(1) + " MB";
 console.log(`dist/ fertig: app.js ${size("app.js")}, worker.js ${size("worker.js")}, wasm ${size("replicad_single.wasm")}`);
