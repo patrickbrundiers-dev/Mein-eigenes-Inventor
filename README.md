@@ -50,6 +50,10 @@ WerkCAD prüft beim Start die Releases dieses Repositorys. Gibt es eine neue Ver
 
 Solange das Repository öffentlich ist, braucht es dafür nichts weiter. Wird es wieder privat gestellt, unter **Datei → Einstellungen und Updates** einen Lese-Token hinterlegen (GitHub → Settings → Developer settings → Fine-grained tokens → nur dieses Repository, **Contents: Read-only**). Der Token wird mit der Windows-Verschlüsselung nur auf diesem PC gespeichert.
 
+## Daten retten, ältere Version
+
+Nach einem Absturz bietet die Startseite die automatische Sicherung an; lässt sich eine Datei nicht öffnen, bietet WerkCAD die `.bak`-Sicherung an. Eine ältere Version installiert man einfach über das Setup aus den Releases. Details: [docs/betrieb/wiederherstellung.md](docs/betrieb/wiederherstellung.md).
+
 ## Neue Version veröffentlichen
 
 1. Im Repository auf **Actions → Windows-Release → Run workflow**
