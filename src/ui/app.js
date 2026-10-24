@@ -542,7 +542,10 @@ export class App {
     if (this.mode === "assembly") {
       items.push({ label: "Bauteil platzieren", icon: "place", run: () => this.props.placeComponentDialog() });
     }
-    items.push("-", { label: "Alles zeigen", icon: "fit", kbd: "F6", run: () => this.viewer.fit() }, { label: "Iso-Ansicht", run: () => this.viewer.setView("iso") });
+    items.push("-", { label: "Alles zeigen", icon: "fit", kbd: "F6", run: () => this.viewer.fit() },
+      this.viewer.selectedHits?.length ? { label: "Auswahl zeigen", icon: "fit", run: () => this.zoomToSelection() } : null,
+      this.viewer.selectedHits?.some((x) => x.kind === "face" && x.info?.type === "PLANE") ? { label: "Normal zur Fläche", icon: "plane", run: () => this.viewNormalToFace() } : null,
+      { label: "Iso-Ansicht", run: () => this.viewer.setView("iso") });
     if (this.undoStack.length) items.push("-", { label: "Rückgängig: " + this.undoStack[this.undoStack.length - 1].label, icon: "undo", kbd: "Strg+Z", run: () => this.undo() });
     contextMenu(e.clientX, e.clientY, items);
   }
@@ -667,7 +670,7 @@ export class App {
     this.sketcher.applyPrefs(p.values);
     if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);
     if (keys?.includes("ansicht.qualitaet") && this.quality !== p.get("ansicht.qualitaet")) { this.quality = p.get("ansicht.qualitaet"); this.ribbon.render(); this.rebuild(); }
-    if (keys) { this.refreshSelectionHits(); this.props.render(); this.updateStatus(); }
+    if (keys) { this.refreshSelectionHits(); this.props.render(); this.updateStatus(); this.ribbon.render(); }
   }
 
   // ---------- Oberfläche ----------
@@ -720,8 +723,51 @@ export class App {
       mk("Vorne", () => this.viewer.setView("front")),
       mk("Oben", () => this.viewer.setView("top")),
       mk("Rechts", () => this.viewer.setView("right")),
-      mk("Alles", () => this.viewer.fit(), "Alles zeigen (F6)"));
+      mk("Alles", () => this.viewer.fit(), "Alles zeigen (F6)"),
+      mk("Auswahl", () => this.zoomToSelection(), "Auswahl zeigen"),
+      this.clipBar = h("span", { class: "clip-bar", hidden: true }));
     document.getElementById("stage").append(this.viewTools);
+  }
+  // ---------- Ansicht ----------
+  /** Blick senkrecht auf die gewählte ebene Fläche */
+  viewNormalToFace() {
+    const hit = (this.viewer.selectedHits || []).find((x) => x.kind === "face" && x.info?.type === "PLANE" && x.normal);
+    if (!hit) return toast("Zuerst eine ebene Fläche anklicken");
+    this.viewer.lookAlongNormal(hit.info.normal || hit.normal, hit.point);
+  }
+  zoomToSelection() {
+    const hits = this.viewer.selectedHits || [];
+    if (!hits.length) return toast("Nichts ausgewählt – »Alles zeigen« mit F6");
+    this.viewer.fitHits(hits);
+  }
+  /** Schnittebene senkrecht zur Achse; zweiter Klick auf dieselbe Achse schaltet ab */
+  toggleClip(axis) {
+    const v = this.viewer;
+    if (v.clip?.axis === axis) { v.setClip(null); this.renderClipBar(); this.ribbon.render(); return; }
+    const bb = v.contentBox();
+    const k = { X: "x", Y: "y", Z: "z" }[axis];
+    const mid = bb.isEmpty() ? 0 : (bb.min[k] + bb.max[k]) / 2;
+    v.setClip({ axis, offset: Math.round(mid * 100) / 100, flip: false, min: bb.isEmpty() ? -100 : bb.min[k], max: bb.isEmpty() ? 100 : bb.max[k] });
+    this.renderClipBar();
+    this.ribbon.render();
+  }
+  renderClipBar() {
+    const c = this.viewer.clip;
+    this.clipBar.hidden = !c;
+    if (!c) return this.clipBar.replaceChildren();
+    const num = h("input", { class: "inp num", value: String(c.offset).replace(".", ","), title: "Lage der Schnittebene in mm", style: { width: "70px" } });
+    const range = h("input", { type: "range", min: String(c.min), max: String(c.max), step: String(Math.max(0.01, (c.max - c.min) / 500)), value: String(c.offset), title: "Schnittebene verschieben" });
+    const set = (o) => { this.viewer.setClip({ ...this.viewer.clip, offset: o }); num.value = String(Math.round(o * 100) / 100).replace(".", ","); range.value = String(o); };
+    range.addEventListener("input", () => set(Number(range.value)));
+    num.addEventListener("change", () => {
+      const o = Number(num.value.replace(",", "."));
+      if (!Number.isFinite(o)) { num.classList.add("bad"); return; }
+      num.classList.remove("bad");
+      set(o);
+    });
+    this.clipBar.replaceChildren(h("b", {}, `Schnitt ${c.axis}`), range, num, h("span", {}, "mm"),
+      h("button", { title: "Andere Seite zeigen", onclick: () => { this.viewer.setClip({ ...this.viewer.clip, flip: !this.viewer.clip.flip }); } }, "Seite"),
+      h("button", { title: "Schnitt aus", onclick: () => this.toggleClip(c.axis) }, "×"));
   }
   refreshRibbon() { this.ribbon.render(); }
 

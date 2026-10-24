@@ -2,6 +2,7 @@
 import { h, icon, toast, closeMenu } from "./dom.js";
 import { catalogToDims } from "../core/sections.js";
 import { defaultKnickrahmen } from "../core/knickrahmen.js";
+import { DISPLAY } from "../core/settings.js";
 
 export class Ribbon {
   constructor(app) {
@@ -89,14 +90,27 @@ export class Ribbon {
     const T = (tool, label, ic, extra = {}) => ({ id: "t_" + tool, label, icon: ic, on: sk.tool === tool, run: () => sk.setTool(tool), ...extra });
     const view = {
       id: "ansicht", label: "Ansicht", groups: [
-        { label: "Ausrichtung", buttons: [
+        { label: "Ausrichtung", small: true, buttons: [
           B("v_iso", "Iso", "view", { run: () => app.viewer.setView("iso") }),
           B("v_front", "Vorne", "view", { run: () => app.viewer.setView("front") }),
-          B("v_top", "Oben", "view", { run: () => app.viewer.setView("top") }),
+          B("v_back", "Hinten", "view", { run: () => app.viewer.setView("back") }),
+          B("v_left", "Links", "view", { run: () => app.viewer.setView("left") }),
           B("v_right", "Rechts", "view", { run: () => app.viewer.setView("right") }),
-          B("v_fit", "Alles zeigen", "fit", { run: () => app.viewer.fit() }),
+          B("v_top", "Oben", "view", { run: () => app.viewer.setView("top") }),
+          B("v_bottom", "Unten", "view", { run: () => app.viewer.setView("bottom") }),
+          B("v_normal", "Normal zur Fläche", "plane", { run: () => app.viewNormalToFace() }),
         ] },
-        { label: "Darstellung", buttons: [
+        { label: "Zoom", buttons: [
+          B("v_fit", "Alles zeigen", "fit", { run: () => app.viewer.fit() }),
+          B("v_fitsel", "Auswahl zeigen", "fit", { run: () => app.zoomToSelection() }),
+        ] },
+        { label: "Projektion", buttons: [
+          B("v_ortho", "Orthogonal", "view", { on: !app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "orthogonal") }),
+          B("v_persp", "Perspektive", "view", { on: app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "perspektive") }),
+        ] },
+        { label: "Modus", small: true, buttons: DISPLAY.map((d) => B("dm_" + d.value, d.label, d.value === "draht" ? "grid" : "eye", { on: app.viewer.displayMode === d.value, run: () => app.prefs.set("ansicht.darstellung", d.value) })) },
+        { label: "Schnitt", buttons: ["X", "Y", "Z"].map((a) => B("clip_" + a, "Schnitt " + a, "cut", { on: app.viewer.clip?.axis === a, run: () => app.toggleClip(a) })) },
+        { label: "Qualität", buttons: [
           B("q_grob", "Schnell", "grid", { on: app.quality === "grob", run: () => app.prefs.set("ansicht.qualitaet", "grob") }),
           B("q_normal", "Normal", "grid", { on: app.quality === "normal", run: () => app.prefs.set("ansicht.qualitaet", "normal") }),
           B("q_fein", "Fein", "grid", { on: app.quality === "fein", run: () => app.prefs.set("ansicht.qualitaet", "fein") }),

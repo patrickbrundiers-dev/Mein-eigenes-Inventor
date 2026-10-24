@@ -473,6 +473,52 @@ try {
     step("Einstellungscenter", rows === 2 && /Höchstens 30/.test(err) && kept === 7 && st.fang === 12 && st.snapR === 12 && st.stored.values?.["skizze.fangradius"] === 12 && st.edge === "ff0000" && after.fang === 7 && prj0 === prj1,
       JSON.stringify({ rows, err, kept, st, after, modelUnchanged: prj0 === prj1 }));
   }
+
+  // Ansicht: Perspektive, Darstellungsmodi, Schnitt, Zoom auf Auswahl, Normal zur Fläche
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    await page.locator("#ribbon .rb-tab", { hasText: "Ansicht" }).click();
+    const v = await evalApp(async () => {
+      const a = window.__werkcad, vw = a.viewer;
+      const cv = vw.renderer.domElement.getBoundingClientRect();
+      const cx = cv.left + cv.width / 2, cy = cv.top + cv.height / 2;
+      vw.setView("top", { animate: false }); vw.fit();
+      const ppu0 = vw.pixelsPerUnit();
+      const hit0 = vw.pick(cx, cy, { edges: false, faces: true });
+      a.prefs.set("ansicht.projektion", "perspektive");
+      const persp = vw.camera.isPerspectiveCamera, ppu1 = vw.pixelsPerUnit();
+      const hit1 = vw.pick(cx, cy, { edges: false, faces: true });
+      a.prefs.set("ansicht.darstellung", "draht");
+      const wire = vw.pickables.every((p) => !p.mesh.visible && p.lines.visible);
+      const hitWire = vw.pick(cx, cy, { edges: false, faces: true });
+      a.prefs.set("ansicht.darstellung", "transparent");
+      const transp = vw.pickables.every((p) => p.mesh.visible && p.mesh.material.opacity < 0.5);
+      a.prefs.reset(["ansicht.darstellung", "ansicht.projektion"]);
+      const orthoAgain = !vw.camera.isPerspectiveCamera;
+      a.toggleClip("Z");
+      const clipOn = vw.pickables.every((p) => p.mesh.material.clippingPlanes.length === 1) && !a.clipBar.hidden;
+      vw.setClip({ ...vw.clip, offset: -1000 });
+      const hitClipped = vw.pick(cx, cy, { edges: false, faces: true });
+      a.toggleClip("Z");
+      const clipOff = !vw.clip && vw.pickables.every((p) => p.mesh.material.clippingPlanes.length === 0);
+      // Fläche wählen → Normal zur Fläche, Zoom auf Auswahl
+      vw.setView("iso", { animate: false }); vw.fit();
+      const fh = vw.pick(cx, cy, { edges: false, faces: true });
+      a.selHits = [fh]; a.sel = { type: "geometry" }; vw.setSelectionHits(a.selHits);
+      const half0 = vw.visibleHalf();
+      a.zoomToSelection();
+      const half1 = vw.visibleHalf();
+      a.viewNormalToFace();
+      await new Promise((r) => setTimeout(r, 400));
+      const dir = vw.camera.getWorldDirection(new (vw.camera.position.constructor)()).toArray();
+      return { persp, ppuRatio: ppu1 / ppu0, hit0: !!hit0, hit1: !!hit1, wire, hitWire: !!hitWire, transp, orthoAgain, clipOn, hitClipped: !!hitClipped, clipOff, half0, half1, n: fh?.info?.normal, dir };
+    });
+    await shot("22-ansicht");
+    const dot = v.n ? -(v.n[0] * v.dir[0] + v.n[1] * v.dir[1] + v.n[2] * v.dir[2]) : 0;
+    step("Ansicht: Perspektive, Modi, Schnitt, Auswahl", v.persp && Math.abs(v.ppuRatio - 1) < 0.02 && v.hit0 && v.hit1 && v.wire && !v.hitWire && v.transp && v.orthoAgain && v.clipOn && !v.hitClipped && v.clipOff && v.half1 <= v.half0 && dot > 0.999,
+      JSON.stringify({ ...v, dot }));
+  }
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

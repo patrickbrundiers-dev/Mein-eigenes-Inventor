@@ -14,7 +14,7 @@ export const SETTINGS_VERSION = 1;
  */
 export const CATEGORIES = [
   { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standardordner", "Standard-Einheit (intern immer mm/Grad)"] },
-  { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["Schnittansicht", "Beleuchtung", "gespeicherte Ansichten"] },
+  { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["gefüllte Schnittflächen", "Beleuchtung", "gespeicherte Ansichten"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
   { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["Farben für Bestimmtheitszustand", "automatische Bemaßung", "Standardebene"] },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "geplant", planned: ["Tastenkürzel verwalten", "Werkzeugsuche", "Standardwerte je Werkzeug"] },
   { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Farbschema hell/dunkel", "Tooltip-Verzögerung"] },
@@ -28,6 +28,12 @@ export const CATEGORIES = [
   { id: "datenschutz", label: "Datenschutz und Diagnose", status: "teilweise", note: "WerkCAD sendet keine Diagnosedaten. Das Fehlerprotokoll bleibt lokal und enthält keine Projektdaten." },
 ];
 
+export const DISPLAY = [
+  { value: "kanten", label: "Schattiert mit Kanten" },
+  { value: "schattiert", label: "Schattiert" },
+  { value: "draht", label: "Drahtmodell" },
+  { value: "transparent", label: "Transparent" },
+];
 const QUAL = [{ value: "grob", label: "Schnell" }, { value: "normal", label: "Normal" }, { value: "fein", label: "Fein" }];
 
 /** Alle einstellbaren Werte. Jede Option hier wirkt tatsächlich (sonst steht sie unter planned). */
@@ -37,6 +43,8 @@ export const SETTINGS = [
   { key: "allgemein.dezimalstellen", cat: "allgemein", label: "Dezimalstellen für Messwerte", type: "int", default: 3, min: 0, max: 6, help: "Anzeige beim Messen (Abstand, Winkel). Gerechnet wird immer mit voller Genauigkeit." },
 
   { key: "ansicht.qualitaet", cat: "ansicht", label: "Darstellungsqualität beim Start", type: "enum", default: "normal", options: QUAL, help: "Feinheit der Dreiecksvernetzung. Wirkt nur auf die Anzeige, nicht auf Export oder Masse." },
+  { key: "ansicht.projektion", cat: "ansicht", label: "Projektion", type: "enum", default: "orthogonal", options: [{ value: "orthogonal", label: "Orthogonal" }, { value: "perspektive", label: "Perspektive" }], help: "Skizzieren ist immer orthogonal." },
+  { key: "ansicht.darstellung", cat: "ansicht", label: "Darstellungsmodus", type: "enum", default: "kanten", options: DISPLAY },
   { key: "ansicht.maus", cat: "ansicht", label: "Maustasten", type: "enum", default: "rechts-drehen", options: [
     { value: "rechts-drehen", label: "Rechte Taste drehen, mittlere schwenken" },
     { value: "mitte-drehen", label: "Mittlere Taste drehen, rechte schwenken" },
