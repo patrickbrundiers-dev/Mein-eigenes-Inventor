@@ -527,3 +527,45 @@ test("Knickrahmen: Freistellung über die Biegezone, Schweißspalt, Zapfen", asy
   const small = await K.buildPart(part([knick({ dims, tabs: "an", tabDia: "8" }, ["800", "600"], ["5"])]));
   assert.match(small.status.kr.error, /Gegenflanke/);
 });
+
+test("Messen: exakte Werte für Flächen, Kanten, Abstand, Winkel, Schwerpunkt", async () => {
+  // Quader 100 × 40 × 20 ab Ursprung, Bohrung Ø 10 durch bei (50|20)
+  const res = await K.buildPart(part([
+    rectSketchFeature("s1", "XY", 0, 0, 0, "100", "40"),
+    { id: "e1", type: "extrude", sketch: "s1", distance: "20" },
+    pointSketch("s2", "XY", 20, [[50, 20]]),
+    { id: "h1", type: "hole", sketch: "s2", diameter: "10", extent: "through", direction: "reverse", sink: "none" },
+  ]));
+  okAll(res);
+  const shape = res.bodies[0].shape;
+  const props = K.bodyProps(shape);
+  near(props.volume, 100 * 40 * 20 - Math.PI * 25 * 20, 1e-6, "Volumen");
+  near(props.center[0], 50, 1e-6, "Schwerpunkt x"); near(props.center[1], 20, 1e-6, "y"); near(props.center[2], 10, 1e-6, "z");
+  near(props.area, 2 * (100 * 40 + 100 * 20 + 40 * 20) - 2 * Math.PI * 25 + Math.PI * 10 * 20, 1e-6, "Oberfläche");
+  const mesh = K.meshBody(shape);
+  assert.ok(mesh.faces.every((f) => Number.isInteger(f.idx)) && mesh.edges.every((e) => Number.isInteger(e.idx)), "Lage je Fläche/Kante");
+  const faces = shape.faces, edges = shape.edges;
+  const fi = (pred) => faces.findIndex((f) => pred(f));
+  const top = fi((f) => f.geomType === "PLANE" && Math.abs(f.center.z - 20) < 1e-6);
+  const bottom = fi((f) => f.geomType === "PLANE" && Math.abs(f.center.z) < 1e-6);
+  const side = fi((f) => f.geomType === "PLANE" && Math.abs(f.center.x) < 1e-6);
+  const cyl = fi((f) => f.geomType === "CYLINDRE");
+  const r1 = K.measure([{ shape: faces[top], kind: "face" }]);
+  near(r1.items[0].area, 4000 - Math.PI * 25, 1e-6, "Deckfläche");
+  const r2 = K.measure([{ shape: faces[top], kind: "face" }, { shape: faces[bottom], kind: "face" }]);
+  near(r2.distance, 20, 1e-6, "Abstand Deck–Boden"); near(r2.angle, 0, 1e-9, "parallel");
+  const r3 = K.measure([{ shape: faces[top], kind: "face" }, { shape: faces[side], kind: "face" }]);
+  near(r3.angle, 90, 1e-9, "senkrecht"); near(r3.distance, 0, 1e-9, "berühren sich");
+  const r4 = K.measure([{ shape: faces[cyl], kind: "face" }]);
+  near(r4.items[0].radius, 5, 1e-9, "Bohrungsradius");
+  const circ = edges.findIndex((e) => e.geomType === "CIRCLE");
+  const r5 = K.measure([{ shape: edges[circ], kind: "edge" }]);
+  near(r5.items[0].radius, 5, 1e-9, "Kreiskante"); near(r5.items[0].length, Math.PI * 10, 1e-6, "Umfang");
+  near(r5.items[0].center[0], 50, 1e-9); near(r5.items[0].center[1], 20, 1e-9);
+  const long = edges.findIndex((e) => e.geomType === "LINE" && Math.abs(R.measureLength(e) - 100) < 1e-6);
+  const r6 = K.measure([{ shape: edges[long], kind: "edge" }, { shape: faces[side], kind: "face" }]);
+  near(r6.items[0].length, 100, 1e-9, "Kantenlänge"); near(r6.angle, 90, 1e-9, "Kante senkrecht zur Seitenfläche");
+  // platziert (Baugruppe): Abstand verschiebt sich mit
+  const moved = K.placed(faces[top], [0, 0, 5], [0, 0, 0]);
+  near(K.measure([{ shape: moved, kind: "face" }, { shape: faces[bottom], kind: "face" }]).distance, 25, 1e-6, "platziert");
+});

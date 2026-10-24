@@ -555,6 +555,35 @@ try {
     step("Befehlssuche und Tastaturkürzel", first === "Fase" && f1.n === n0 + 1 && f1.type === "chamfer" && /schon »Extrusion«/.test(conflict) && stored["part.fillet"] === "G" && f2.n === n0 + 2 && f2.type === "fillet" && tip === "Rundung (G)",
       JSON.stringify({ first, n0, f1, conflict, stored, f2, tip }));
   }
+
+  // Messen: Taste M, Deckfläche anklicken, dann Bohrungskante → exakte Werte aus dem Kern
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await page.locator("#viewer canvas").click({ position: { x: 5, y: 300 } });
+    await page.keyboard.press("m");
+    const box = await page.locator("#viewer canvas").boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForFunction(() => window.__werkcad.measure?.result, null, { timeout: 20000 });
+    const one = await evalApp(() => window.__werkcad.measure.result.items[0]);
+    // Kreiskante einer Bohrung über ihren Mittelpunkt auf dem Bildschirm treffen
+    const pt = await evalApp(() => {
+      const v = window.__werkcad.viewer;
+      const r = v.container.getBoundingClientRect();
+      for (const pk of v.pickables) for (const e of pk.lines.userData.edges) if (e.type === "CIRCLE" && e.mid[2] > 11 && Math.hypot(...[0, 1, 2].map((k) => e.positions[k] - e.positions[e.positions.length - 3 + k])) < 1e-6) { const [x, y] = v.worldToScreen(e.mid); return [r.left + x, r.top + y]; }
+      return null;
+    });
+    await page.mouse.click(pt[0], pt[1]);
+    await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 2 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
+    await shot("24-messen");
+    const two = await evalApp(() => ({ r: window.__werkcad.measure.result, text: document.querySelector("#props").textContent }));
+    await page.keyboard.press("Escape");
+    const off = await evalApp(() => !window.__werkcad.pick && !window.__werkcad.measure);
+    const it = two.r.items[1];
+    step("Messen", one.type === "PLANE" && one.area > 1000 && it.type === "CIRCLE" && Math.abs(it.radius * 2 - 11) < 0.6 && Math.abs(two.r.distance) < 1e-6 && /Durchmesser/.test(two.text) && off,
+      JSON.stringify({ one: { type: one.type, area: one.area }, two: { type: it.type, r: it.radius, d: two.r.distance }, off }));
+  }
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

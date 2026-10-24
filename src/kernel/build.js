@@ -923,21 +923,22 @@ export function createKernel(R) {
     const ang = quality === "fein" ? 0.1 : quality === "grob" ? 0.5 : 0.25;
     const m = shape.mesh({ tolerance: tol, angularTolerance: ang });
     const faceInfo = new Map();
-    for (const fc of shape.faces) {
+    shape.faces.forEach((fc, idx) => {
       try {
         // replicad meldet Zylinder als "CYLINDRE"; einheitlich "CYLINDER" mit Achse und Radius (für Konzentrisch)
-        const info = { type: fc.geomType === "CYLINDRE" ? "CYLINDER" : fc.geomType };
+        // idx = Lage in shape.faces, damit das Messen die exakte Fläche im Kern findet
+        const info = { type: fc.geomType === "CYLINDRE" ? "CYLINDER" : fc.geomType, idx };
         if (info.type === "PLANE") { info.normal = tuple(fc.normalAt()); info.point = tuple(fc.center); }
         else if (info.type === "CYLINDER") { info.point = tuple(fc.center); Object.assign(info, cylinderAxis(fc)); }
         faceInfo.set(hashOf(fc), info);
       } catch { /* ignore */ }
-    }
+    });
     const faces = m.faceGroups.map((g) => ({ start: g.start, count: g.count, ...(faceInfo.get(g.faceId) || {}) }));
     const em = shape.meshEdges({ tolerance: tol, angularTolerance: ang });
     const edgeInfo = new Map();
-    for (const e of shape.edges) {
-      try { edgeInfo.set(hashOf(e), { mid: edgeMid(e), type: e.geomType }); } catch { /* ignore */ }
-    }
+    shape.edges.forEach((e, idx) => {
+      try { edgeInfo.set(hashOf(e), { mid: edgeMid(e), type: e.geomType, idx }); } catch { /* ignore */ }
+    });
     const edges = em.edgeGroups.map((g) => ({
       positions: Float32Array.from(em.lines.slice(g.start * 3, (g.start + g.count) * 3)),
       ...(edgeInfo.get(g.edgeId) || {}),
@@ -952,10 +953,63 @@ export function createKernel(R) {
   }
 
   function bodyProps(shape) {
-    let volume = NaN;
-    try { volume = R.measureVolume(shape); } catch { /* ignore */ }
+    let volume = NaN, center = null, area = NaN;
+    try { const vp = R.measureShapeVolumeProperties(shape); volume = vp.volume; center = vp.centerOfMass; } catch { /* ignore */ }
+    try { area = R.measureArea(shape); } catch { /* ignore */ }
     const bb = shape.boundingBox;
-    return { volume, bbox: bb.bounds };
+    return { volume, area, center, bbox: bb.bounds };
+  }
+
+  /**
+   * Exakte Messwerte (OpenCascade GProp/BRepExtrema) für Flächen und Kanten.
+   * entries: [{shape: Fläche oder Kante, bereits platziert, kind: "face"|"edge"}]
+   * → {items: [{kind, type, area|length, radius?, center?, normal?, dir?, start?, end?}], distance?, angle?}
+   * Kein Messwert wird aus dem Anzeigenetz geschätzt.
+   */
+  function measure(entries) {
+    const items = entries.map(({ shape: s, kind }) => {
+      if (kind === "face") {
+        const type = s.geomType === "CYLINDRE" ? "CYLINDER" : s.geomType;
+        const sp = R.measureShapeSurfaceProperties(s);
+        const it = { kind, type, area: sp.area, center: sp.centerOfMass };
+        if (type === "PLANE") it.normal = tuple(s.normalAt());
+        if (type === "CYLINDER") { const ax = cylinderAxis(s); it.radius = ax.radius; it.axisD = ax.axisD; it.axisP = ax.axisP; }
+        return it;
+      }
+      const it = { kind, type: s.geomType, length: R.measureLength(s), start: tuple(s.startPoint), end: tuple(s.endPoint) };
+      if (it.type === "LINE") {
+        const d = it.end.map((v, k) => v - it.start[k]);
+        const L = Math.hypot(...d) || 1;
+        it.dir = d.map((v) => v / L);
+      }
+      if (it.type === "CIRCLE") {
+        const c = s.curve.wrapped.Circle();
+        const l = c.Location(), ax = c.Axis().Direction();
+        it.radius = c.Radius();
+        it.center = [l.X(), l.Y(), l.Z()];
+        it.axisD = [ax.X(), ax.Y(), ax.Z()];
+      }
+      return it;
+    });
+    const out = { items };
+    if (entries.length === 2) {
+      out.distance = R.measureDistanceBetween(entries[0].shape, entries[1].shape);
+      const [a, b] = items;
+      const va = a.normal || a.dir || null, vb = b.normal || b.dir || null;
+      if (va && vb) {
+        const dot = Math.abs(va[0] * vb[0] + va[1] * vb[1] + va[2] * vb[2]);
+        let ang = (Math.acos(Math.min(1, dot)) * 180) / Math.PI;
+        // Ebene zu Gerade: Winkel zwischen Gerade und Ebene = 90° − Winkel zur Normalen
+        if (!!a.normal !== !!b.normal) ang = 90 - ang;
+        out.angle = ang;
+        out.parallel = Math.abs(ang) < 1e-6 || Math.abs(ang - 180) < 1e-6;
+      }
+      if (a.axisD && b.axisD && a.center && b.center) {
+        const dot = Math.abs(a.axisD[0] * b.axisD[0] + a.axisD[1] * b.axisD[1] + a.axisD[2] * b.axisD[2]);
+        out.axisAngle = (Math.acos(Math.min(1, dot)) * 180) / Math.PI;
+      }
+    }
+    return out;
   }
 
   // ---------- Export ----------
@@ -1116,7 +1170,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { buildPart, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

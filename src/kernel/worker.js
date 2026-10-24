@@ -77,6 +77,21 @@ const handlers = {
     return { status: res.status, values: res.values, bodies, sketches, ms: performance.now() - t0 };
   },
 
+  /** Messen: items = [{part, pos, rot, body, kind: "face"|"edge", idx}] (Lage aus meshBody) */
+  async measure({ items }) {
+    const entries = [];
+    for (const it of items) {
+      const res = await getBuilt(it.part);
+      const body = res.bodies[it.body];
+      if (!body) throw new Error("Körper nicht gefunden – Modell neu berechnen");
+      const list = it.kind === "face" ? body.shape.faces : body.shape.edges;
+      const sub = list[it.idx];
+      if (!sub) throw new Error("Element nicht gefunden – Modell neu berechnen");
+      entries.push({ shape: K.placed(sub, it.pos || [0, 0, 0], it.rot || [0, 0, 0]), kind: it.kind });
+    }
+    return K.measure(entries);
+  },
+
   async exportStep({ items, merge = false }) {
     const shapes = await placedShapes(items);
     if (!shapes.length) throw new Error("Nichts zu exportieren");
