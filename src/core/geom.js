@@ -163,6 +163,27 @@ export function alignFaces(mB, pB, nB, pA, nA, mode = "gegen", gap = 0) {
   return matMul(T, matMul(R, mB));
 }
 
+/**
+ * Konzentrisch: bewegt Bauteil B so, dass seine Achse (pB, dB) auf der Achse A (pA, dA) liegt.
+ * Kleinste Drehung (Richtung wird beibehalten, wenn sie schon eher gleich- oder gegensinnig ist),
+ * dann nur quer zur Achse verschieben – Lage entlang der Achse und Drehung um sie bleiben frei.
+ */
+export function alignAxes(mB, pB, dB, pA, dA) {
+  const a = v3.norm(dA), n = v3.norm(dB);
+  const target = v3.dot(n, a) < 0 ? v3.mul(a, -1) : a;
+  const axis = v3.cross(n, target);
+  const s = v3.len(axis), c = v3.dot(n, target);
+  const R = s > 1e-9 ? rotationAbout(pB, axis, (Math.atan2(s, c) * 180) / Math.PI) : matIdentity();
+  const off = v3.sub(pA, pB);
+  const T = translation(v3.sub(off, v3.mul(a, v3.dot(off, a))));
+  return matMul(T, matMul(R, mB));
+}
+/** Abstand eines Punktes von einer Geraden (p0, d) */
+export function pointLineDistance(p, p0, d) {
+  const n = v3.norm(d), w = v3.sub(p, p0);
+  return v3.len(v3.sub(w, v3.mul(n, v3.dot(w, n))));
+}
+
 /** Inverse einer starren Transformation (Rotation + Verschiebung) */
 export function matInvertRigid(m) {
   const o = matIdentity();
