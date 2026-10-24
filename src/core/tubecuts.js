@@ -154,3 +154,102 @@ export function tubeCutLabel(it) {
   const where = it.kind === "ausklinkung" ? `Ende ${it.end}` : it.xs.length > 1 ? `${it.xs.length}× ab ${fmt(it.xs[0])}` : `bei ${fmt(it.xs[0])}`;
   return `${TUBE_CUT_KINDS[it.kind].label} ${m}${it.tilt ? ` 3D ${fmt(it.tilt)}°` : ""} ${side}${it.through ? " durchgehend" : ""}, ${where}`;
 }
+
+// ---------- Prüfregeln Bohrung, Steg, Rand (dfm.py der Rohrlaser-Kalkulation) ----------
+// Jede Kontur als Linienzug auf der Abwicklung des Rohrs: x längs, s am Umfang im Uhrzeigersinn ab der Mitte oben
+// (Außenmaß; Rechteckrohr mit Eckbögen). Durchgehende Konturen zählen auf der Gegenseite mit.
+
+/** Umfang und Lage der Flächenmitte (s) je Winkel */
+export function unrollFrame({ kind, W, H, r = 0 }) {
+  if (kind === "rohr") { const R = W / 2; return { P: 2 * Math.PI * R, s: (a) => a * DEG * R }; }
+  const a = W - 2 * r, b = H - 2 * r, k = (Math.PI * r) / 2;
+  const at = { 0: 0, 90: a / 2 + k + b / 2, 180: a + 2 * k + b, 270: (3 * (a + b)) / 2 + 3 * k };
+  return { P: 2 * (a + b) + 4 * k, s: (ang) => at[ang] ?? 0 };
+}
+
+/** Umriss einer Kontur (l längs × b quer, Eckradius r) um (x, s) als Punktliste */
+function outlinePts(x, s, l, b, r, n = 6) {
+  r = Math.max(0, Math.min(r, l / 2, b / 2));
+  const pts = [], cx = l / 2 - r, cs = b / 2 - r;
+  for (const [sx, ss, a0] of [[1, 1, 0], [-1, 1, 90], [-1, -1, 180], [1, -1, 270]])
+    for (let i = 0; i <= n; i++) { const a = (a0 + (90 * i) / n) * DEG; pts.push([x + sx * cx + r * Math.cos(a), s + ss * cs + r * Math.sin(a)]); }
+  return pts;
+}
+
+const segDist = ([px, py], [ax, ay], [bx, by]) => {
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)) : 0;
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+};
+const inside = ([px, py], poly) => {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+};
+/** Kleinster Abstand zweier geschlossener Linienzüge; 0, wenn sie sich berühren oder einer im anderen liegt */
+export function polyDistance(a, b) {
+  if (inside(a[0], b) || inside(b[0], a)) return 0;
+  let d = Infinity;
+  for (const [p, q] of [[a, b], [b, a]])
+    for (const pt of p) for (let i = 0; i < q.length; i++) d = Math.min(d, segDist(pt, q[i ? i - 1 : q.length - 1], q[i]));
+  return d; // bei gleich dichten Punkten genügt Punkt–Strecke; Kreuzungen ohne Punkt im anderen gibt es bei Rundungen nicht
+}
+
+/**
+ * Konturen eines Profils prüfen. items = planTubeCuts(...).items, prof wie dort, limits mit den Faktoren
+ * bohrungKlein, steg, rand (× Wand; 0 = aus). Ergebnis: [{ rule, text, contours: [Konturnummern ab 1] }]
+ */
+export function checkContours(items, prof, limits) {
+  const out = [], t = prof?.t;
+  if (!items?.length || !(t > 0)) return out;
+  const g = { bohrungKlein: limits.bohrungKlein || 0, steg: limits.steg || 0, rand: limits.rand || 0 };
+  const nr = (it) => it.index + 1;
+  if (g.bohrungKlein > 0) {
+    const small = items.filter((it) => it.kind === "bohrung" && it.d < g.bohrungKlein * t - 1e-9);
+    if (small.length) {
+      const n = small.reduce((k, it) => k + it.xs.length * (it.through ? 2 : 1), 0);
+      out.push({ rule: "Bohrung zu klein", contours: small.map(nr), text: `${n} Bohrung(en) ab Ø ${fmt(Math.min(...small.map((it) => it.d)))} mm unter ${fmt(g.bohrungKlein)} × Wand (${fmt(g.bohrungKlein * t)} mm), Kontur ${small.map(nr).join(", ")}` });
+    }
+  }
+  if (!(g.steg > 0) && !(g.rand > 0)) return out;
+  const U = unrollFrame(prof);
+  const parts = [];
+  for (const it of items) {
+    const faces = [[U.s(it.angle) + it.q]];
+    if (it.through) faces.push([U.s((it.angle + 180) % 360) - it.q]);
+    for (const [s] of faces)
+      for (const x of it.xs) {
+        const xc = it.kind === "ausklinkung" ? (x === 0 ? (it.l - 1) / 2 : x - (it.l - 1) / 2) : x; // offen über das Ende
+        const l = it.kind === "ausklinkung" ? it.l + 1 : it.l;
+        parts.push({ it, x0: xc - l / 2, x1: xc + l / 2, pts: outlinePts(xc, s, l, it.b, it.r) });
+      }
+  }
+  if (g.rand > 0) {
+    const lim = g.rand * t;
+    const near = parts.filter((p) => p.it.kind !== "ausklinkung").map((p) => ({ p, rest: Math.min(p.x0, prof.L - p.x1) })).filter((x) => x.rest < lim - 1e-9);
+    if (near.length) {
+      const m = near.reduce((a, b) => (b.rest < a.rest ? b : a));
+      out.push({ rule: "Kontur zu nah am Ende", contours: [...new Set(near.map((x) => nr(x.p.it)))], text: `${near.length} Kontur(en) näher als ${fmt(g.rand)} × Wand (${fmt(lim)} mm) am Ende, kleinster Abstand ${fmt(Math.max(m.rest, 0))} mm (Kontur ${nr(m.p.it)})` });
+    }
+  }
+  if (g.steg > 0) {
+    const lim = g.steg * t, pairs = [];
+    for (let i = 0; i < parts.length; i++)
+      for (let j = i + 1; j < parts.length; j++) {
+        const a = parts[i], b = parts[j];
+        if (a.x0 - b.x1 >= lim || b.x0 - a.x1 >= lim) continue;
+        // am Umfang periodisch: auch um eine Umdrehung verschoben vergleichen
+        const d = Math.min(...[-U.P, 0, U.P].map((sh) => polyDistance(a.pts, b.pts.map(([x, s]) => [x, s + sh]))));
+        if (d < lim - 1e-9) pairs.push([a, b, d]);
+      }
+    if (pairs.length) {
+      const [a, b, d] = pairs.reduce((x, y) => (y[2] < x[2] ? y : x));
+      const between = nr(a.it) === nr(b.it) ? `im Muster von Kontur ${nr(a.it)}` : `zwischen Kontur ${nr(a.it)} und ${nr(b.it)}`;
+      out.push({ rule: "Steg zu schmal", contours: [...new Set(pairs.flatMap(([p, q]) => [nr(p.it), nr(q.it)]))], text: `${pairs.length} Steg(e) unter ${fmt(g.steg)} × Wand (${fmt(lim)} mm), schmalster ${fmt(d)} mm ${between}` });
+    }
+  }
+  return out;
+}

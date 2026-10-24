@@ -334,3 +334,16 @@ table.grid input.inp { padding: 2px 4px; }
 .sk-dim.off, .sk-dim-text.off { opacity: 0.45; stroke-dasharray: 3 2; }
 .sk-glyph.off { opacity: 0.4; }
 .sk-glyph.err rect { stroke: var(--err); fill: var(--err-soft); stroke-width: 1.5; }
+
+/* Maßbild je Konturart (wie massbild.py im Rohr-Editor) */
+.massbild-wrap { display: flex; justify-content: center; }
+.massbild { display: block; margin: 0 0 6px; overflow: visible; }
+.massbild text { font: italic 600 11px var(--din, sans-serif); fill: var(--dye, #1f4fa8); }
+.massbild text.mb-note { font-style: normal; fill: var(--ink-soft, #4a5866); }
+.massbild .mb-wall { fill: var(--steel-2, #d6dee5); }
+.massbild .mb-cut-open { fill: var(--steel-0, #f6f8fa); }
+.massbild .mb-contour { fill: var(--steel-0, #f6f8fa); stroke: var(--err, #c00000); stroke-width: 1.6; }
+.massbild path.mb-contour { fill: none; }
+.massbild .mb-dim { fill: none; stroke: var(--dye, #1f4fa8); stroke-width: 1; }
+.massbild .mb-ext { fill: none; stroke: var(--ink-soft, #4a5866); stroke-width: .6; }
+.massbild .mb-dot { fill: var(--ink-soft, #4a5866); }

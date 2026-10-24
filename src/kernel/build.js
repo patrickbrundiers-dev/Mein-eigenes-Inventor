@@ -472,7 +472,7 @@ export function createKernel(R) {
             const name = sectionName(f.section, dims);
             const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
             meta.endCuts = { A: m1 ? (f.endCuts?.A === "2D" ? "2D" : "3D") : "", B: m2 ? (f.endCuts?.B === "2D" ? "2D" : "3D") : "" };
-            if (tc.items.length) Object.assign(meta, { contours: tc.items, cutLength: tc.cutLength, pierces: tc.pierces, cutSig: hashString(JSON.stringify(tc.items)) });
+            if (tc.items.length) Object.assign(meta, { tube: { kind: f.section, W: geom.width, H: geom.height, t: dims.t, r: dims.r ?? 0, L }, contours: tc.items, cutLength: tc.cutLength, pierces: tc.pierces, cutSig: hashString(JSON.stringify(tc.items)) });
             state.tools.set(f.id, { op: f.op || "member", shapes: [{ shape: solid, kind: "member", meta, name: f.name || name }] });
             pushMember(state, solid, f, meta, f.name || name);
             break;

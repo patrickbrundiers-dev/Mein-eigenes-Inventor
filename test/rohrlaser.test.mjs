@@ -155,3 +155,71 @@ test("Bohrung 3D: Neigung, Ellipse, Begrenzung", () => {
   assert.equal(e, Math.PI * 10);
   assert.ok(cutLength({ kind: "bohrung", d: 10, tilt: 45 }) > e);
 });
+
+// ---------- Maßbild je Konturart, Prüfregeln Bohrung/Steg/Rand ----------
+import { contourSketch, sketchLetters } from "../src/core/massbild.js";
+import { checkContours, unrollFrame, polyDistance } from "../src/core/tubecuts.js";
+import { TUBE_CUT_KINDS } from "../src/core/tubecuts.js";
+
+test("Maßbild: je Konturart genau die Maßbuchstaben der Eingabefelder", () => {
+  for (const [k, d] of Object.entries(TUBE_CUT_KINDS)) {
+    const svg = contourSketch(k);
+    assert.match(svg, /^<svg class="massbild"/);
+    assert.deepEqual(sketchLetters(svg), [...d.fields].sort(), k);
+  }
+  assert.equal(contourSketch("gibtsnicht"), "");
+});
+
+test("Prüfregeln: Abwicklung des Umfangs", () => {
+  const r = unrollFrame({ kind: "rohr", W: 40 });
+  assert.ok(Math.abs(r.P - 40 * Math.PI) < 1e-9 && Math.abs(r.s(90) - 10 * Math.PI) < 1e-9);
+  const q = unrollFrame({ kind: "rechteck", W: 60, H: 40, r: 5 });
+  assert.ok(Math.abs(q.P - (2 * 50 + 2 * 30 + 10 * Math.PI)) < 1e-9);
+  assert.ok(Math.abs(q.s(180) - q.P / 2) < 1e-9, "unten gegenüber oben");
+  assert.ok(Math.abs(q.s(90) + q.s(270) - q.P) < 1e-9, "vorne und hinten symmetrisch");
+  const sq = (x, s, a) => [[x - a, s - a], [x + a, s - a], [x + a, s + a], [x - a, s + a]];
+  assert.equal(polyDistance(sq(0, 0, 5), sq(13, 0, 5)), 3);
+  assert.equal(polyDistance(sq(0, 0, 5), sq(1, 0, 1)), 0, "innen");
+});
+
+test("Prüfregeln: Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende (dfm.py)", () => {
+  const prof = { kind: "vierkant", W: 40, H: 40, t: 3, r: 6, L: 500 };
+  const plan = (cuts) => planTubeCuts(cuts, prof, ev).items;
+  const rules = (cuts, lim = DFM_DEFAULTS) => checkContours(plan(cuts), prof, lim);
+  const ok = { kind: "bohrung", side: "oben", x: "100", d: "10", q: "0", pattern: "3x20" };
+  assert.deepEqual(rules([ok]), [], "Steg 10 mm über 4,5 mm");
+  // Bohrung 2 mm bei Wand 3: zu klein
+  const small = rules([{ ...ok, d: "2", pattern: "1" }]);
+  assert.equal(small.length, 1); assert.equal(small[0].rule, "Bohrung zu klein"); assert.match(small[0].text, /1 Bohrung\(en\) ab Ø 2 mm unter 1 × Wand \(3 mm\)/);
+  // Muster 3x14 bei Ø10: Steg 4 < 4,5
+  const steg = rules([{ ...ok, pattern: "3x14" }]);
+  assert.deepEqual(steg.map((x) => x.rule), ["Steg zu schmal"]);
+  assert.match(steg[0].text, /2 Steg\(e\) unter 1,5 × Wand \(4,5 mm\), schmalster 4 mm im Muster von Kontur 1/);
+  // zwei Konturen nebeneinander quer: Versatz ±7, b 10 → Steg 4
+  const quer = rules([{ ...ok, pattern: "1", q: "7" }, { ...ok, pattern: "1", q: "-7" }]);
+  assert.match(quer[0].text, /zwischen Kontur 1 und 2/);
+  // Rand: Lage 7, Ø10 → 2 mm zum Ende A
+  const rand = rules([{ ...ok, x: "7", pattern: "1" }]);
+  assert.deepEqual(rand.map((x) => x.rule), ["Kontur zu nah am Ende"]);
+  assert.match(rand[0].text, /kleinster Abstand 2 mm/);
+  // Ausklinkung zählt nicht am Rand, aber beim Steg
+  const ak = { kind: "ausklinkung", side: "oben", end: "A", l: "30", b: "20", r: "2", q: "0" };
+  assert.deepEqual(rules([ak]), []);
+  assert.deepEqual(rules([ak, { ...ok, x: "37", pattern: "1" }]).map((x) => x.rule), ["Steg zu schmal"]);
+  // Rundrohr Ø40: Bohrungen bei 345° und 15° liegen über 0° hinweg 10,47 mm auseinander → Steg 2,47 mm
+  const rr = { kind: "rohr", W: 40, H: 40, t: 3, L: 500 };
+  const rund = (a1, a2) => checkContours(planTubeCuts([{ ...ok, pattern: "1", d: "8", angle: a1 }, { ...ok, pattern: "1", d: "8", angle: a2 }], rr, ev).items, rr, DFM_DEFAULTS);
+  assert.match(rund("345", "15")[0].text, /schmalster 2,47 mm/, "am Umfang periodisch");
+  assert.deepEqual(rund("0", "90"), []);
+  // durchgehend: die Gegenseite zählt mit (unten durchgehend trifft die Bohrung oben)
+  assert.deepEqual(rules([{ ...ok, pattern: "1", q: "0" }, { ...ok, side: "unten", pattern: "1", x: "112", through: true }]).map((x) => x.rule), ["Steg zu schmal"]);
+  // durchgehend: auch die Gegenseite zählt; Regel aus mit 0
+  assert.deepEqual(rules([{ ...ok, pattern: "3x14" }], { ...DFM_DEFAULTS, steg: 0 }), []);
+});
+
+test("Prüfregeln laufen über die Zuschnittliste mit", () => {
+  const prof = { kind: "vierkant", W: 40, H: 40, t: 3, r: 6, L: 500 };
+  const items = planTubeCuts([{ kind: "bohrung", side: "oben", x: "100", d: "2", q: "0", pattern: "1" }], prof, ev).items;
+  const out = checkCutList([{ pos: 1, profileId: "vierkant 40x40x3", length: 500, kgm: 3.4, contours: { items, prof } }]);
+  assert.deepEqual(out.map((x) => [x.level, x.rule]), [[WARNUNG, "Bohrung zu klein"]]);
+});

@@ -3,18 +3,22 @@
 // Beispielmaschinen T03/T11). Rein fachlich, ändert nichts am Modell.
 import { parseProfileId } from "./profilesearch.js";
 import { fmt } from "./expr.js";
+import { checkContours } from "./tubecuts.js";
 
 export const HINWEIS = "Hinweis", WARNUNG = "Warnung", FEHLER = "Fehler";
 const RANK = { [HINWEIS]: 0, [WARNUNG]: 1, [FEHLER]: 2 };
 
 /** Startwerte (0 = Regel aus). Schlüssel = Einstellung "fertigung.<key>" */
-export const DFM_DEFAULTS = { stange: 6500, endbeschnitt: 10, greiferrest: 142, kuerzestesTeil: 0, huellkreis: 255, metergewicht: 36, knickSchenkel: 2, knickWand: 4 };
+export const DFM_DEFAULTS = { stange: 6500, endbeschnitt: 10, greiferrest: 142, kuerzestesTeil: 0, huellkreis: 255, metergewicht: 36, knickSchenkel: 2, knickWand: 4, bohrungKlein: 1, steg: 1.5, rand: 1 };
 
 export const DFM_RULES = [
   "Teil zu lang (Fehler): Zuschnittlänge > Stangenlänge − Endbeschnitt − Greiferrest.",
   "Teil zu kurz (Fehler): Zuschnittlänge < kürzestes Teil der Maschine.",
   "Profil zu groß (Fehler): Hüllkreis-Ø des Querschnitts > Grenze der Maschine.",
   "Profil zu schwer (Fehler): Metergewicht > Grenze der Maschine.",
+  "Bohrung zu klein (Warnung): Bohrungs-Ø < Faktor × Wand (Konturen am Rohr).",
+  "Steg zu schmal (Warnung): kleinster Abstand zweier Konturen auf der Abwicklung < Faktor × Wand.",
+  "Kontur zu nah am Ende (Warnung): Abstand zu Ende A oder B < Faktor × Wand (ohne Ausklinkungen).",
   "Knickrahmen, Schenkel zu kurz (Warnung): Schenkel < Faktor × Rohrmaß in der Rahmenebene.",
   "Knickrahmen, Wand zu dick (Hinweis): Wandstärke > Grenze – Knicken an der Abkantbank prüfen.",
 ];
@@ -53,6 +57,7 @@ export function checkCutList(rows, limits = DFM_DEFAULTS) {
       add(r, FEHLER, "Profil zu groß", `Hüllkreis-Ø ${n(env)} mm über ${n(L.huellkreis)} mm`);
     if (L.metergewicht > 0 && r.kgm > L.metergewicht + 1e-9)
       add(r, FEHLER, "Profil zu schwer", `${n(r.kgm, 2)} kg/m über ${n(L.metergewicht)} kg/m`);
+    if (r.contours) for (const c of checkContours(r.contours.items, r.contours.prof, L)) add(r, WARNUNG, c.rule, c.text);
     const k = r.knick;
     if (k) {
       if (L.knickSchenkel > 0 && k.inPlane > 0) {

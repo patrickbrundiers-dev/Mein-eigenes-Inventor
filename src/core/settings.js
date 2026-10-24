@@ -25,7 +25,7 @@ export const CATEGORIES = [
   { id: "kernel", label: "CAD-Kernel und Leistung", status: "geplant", planned: ["automatische Neuberechnung aus", "Berechnungsprotokoll/Debug-Modus"], note: "Kernel-Toleranzen werden nicht freigegeben, solange sie nicht abgesichert sind." },
   { id: "dateien", label: "Dateien und Datensicherheit", status: "teilweise", planned: ["Anzahl Sicherungen", "Projekt paketieren", "schreibgeschützter Modus"], note: "Speichern ist immer atomar mit einer Sicherung (.bak) der vorherigen Fassung." },
   { id: "blech", label: "Blechparameter", status: "geplant", planned: ["Biegetabellen", "K-Faktor je Material"], note: "Keine allgemeine Blechfunktion (ADR-0002); Biegewerte des Knickrahmens stehen im Feature." },
-  { id: "fertigung", label: "Rohrlaser und Fertigung", status: "teilweise", planned: ["mehrere Maschinenprofile (getrennt von den CAD-Einstellungen gespeichert)", "Prüfung Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende"], note: "Fertigungsprüfung der Zuschnittliste (Bauteil und Zuschnittliste). Startwerte aus den Beispielmaschinen der Rohrlaser-Kalkulation – bitte an die eigene Maschine anpassen. 0 = Regel aus." },
+  { id: "fertigung", label: "Rohrlaser und Fertigung", status: "teilweise", planned: ["mehrere Maschinenprofile (getrennt von den CAD-Einstellungen gespeichert)"], note: "Fertigungsprüfung der Zuschnittliste (Bauteil und Zuschnittliste). Startwerte aus den Beispielmaschinen der Rohrlaser-Kalkulation – bitte an die eigene Maschine anpassen. 0 = Regel aus." },
   { id: "updates", label: "Updates", status: "aktiv" },
   { id: "datenschutz", label: "Datenschutz und Diagnose", status: "teilweise", note: "PBCAD sendet keine Diagnosedaten. Das Fehlerprotokoll bleibt lokal und enthält keine Projektdaten." },
 ];
@@ -73,6 +73,9 @@ export const SETTINGS = [
   { key: "fertigung.kuerzestesTeil", cat: "fertigung", label: "Kürzestes Teil", unit: "mm", type: "number", default: 0, min: 0, max: 20000, help: "Kürzere Teile kann die Maschine nicht entladen. 0 = keine Grenze." },
   { key: "fertigung.huellkreis", cat: "fertigung", label: "Max. Hüllkreis-Ø", unit: "mm", type: "number", default: 255, min: 0, max: 2000, help: "Größter Querschnitt, den das Spannfutter fasst. 0 = nicht prüfen." },
   { key: "fertigung.metergewicht", cat: "fertigung", label: "Max. Metergewicht", unit: "kg/m", type: "number", default: 36, min: 0, max: 1000, help: "0 = nicht prüfen." },
+  { key: "fertigung.bohrungKlein", cat: "fertigung", label: "Bohrung mindestens", unit: "× Wand", type: "number", default: 1, min: 0, max: 10, help: "Konturen am Rohr: Bohrung kleiner als Faktor × Wandstärke gibt eine Warnung. 0 = nicht prüfen." },
+  { key: "fertigung.steg", cat: "fertigung", label: "Steg mindestens", unit: "× Wand", type: "number", default: 1.5, min: 0, max: 20, help: "Konturen am Rohr: Abstand zweier Konturen (auch über die Kante und zur Gegenseite) kleiner als Faktor × Wand gibt eine Warnung. 0 = nicht prüfen." },
+  { key: "fertigung.rand", cat: "fertigung", label: "Abstand zum Ende mindestens", unit: "× Wand", type: "number", default: 1, min: 0, max: 20, help: "Konturen am Rohr näher am Ende als Faktor × Wand geben eine Warnung (Ausklinkungen zählen nicht). 0 = nicht prüfen." },
   { key: "fertigung.knickSchenkel", cat: "fertigung", label: "Knickrahmen: Schenkel mindestens", unit: "× Rohrmaß", type: "number", default: 2, min: 0, max: 20, help: "Schenkel kürzer als Faktor × Rohrmaß in der Rahmenebene gibt eine Warnung. 0 = nicht prüfen." },
   { key: "fertigung.knickWand", cat: "fertigung", label: "Knickrahmen: Wand höchstens", unit: "mm", type: "number", default: 4, min: 0, max: 30, help: "Dickere Wände lassen sich schwer von Hand knicken (Hinweis). 0 = nicht prüfen." },
 
