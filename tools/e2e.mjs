@@ -984,6 +984,44 @@ try {
       JSON.stringify({ total, win, cross, small, all, inv, edges }));
   }
 
+  // Skizze: automatische Bedingungen beim Zeichnen (senkrecht zum Vorgänger, Strg unterdrückt)
+  {
+    await evalApp(() => window.__werkcad.newPart("Auto"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const cv = await page.locator("#viewer canvas").boundingBox();
+    const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
+    await evalApp(() => window.__werkcad.sketcher.setTool("line"));
+    const c30 = Math.cos(Math.PI / 6), s30 = Math.sin(Math.PI / 6);
+    // Maßstab: 40 mm Linie unter 30°, dann fast senkrecht weiter (Abweichung ~1°)
+    for (const [x, y] of [[0, 0], [40 * c30, 40 * s30], [40 * c30 - 25 * Math.sin(31 * Math.PI / 180), 40 * s30 + 25 * Math.cos(31 * Math.PI / 180)]]) {
+      const [px, py] = await at(x, y);
+      await page.mouse.move(px, py, { steps: 3 });
+      await page.mouse.click(px, py);
+      await page.waitForTimeout(80);
+    }
+    await page.keyboard.press("Escape");
+    const auto1 = await evalApp(() => { const s = window.__werkcad.sketcher; return { types: s.sk.constraints.map((c) => c.type), ok: s.solve().ok }; });
+    // gleiche Bewegung mit Strg: keine automatische Bedingung
+    await evalApp(() => window.__werkcad.sketcher.commit("leeren", (sk) => { sk.entities = sk.entities.filter((e) => e.origin); sk.points = sk.points.filter((p) => sk.entities.some((e) => [e.p, e.p1, e.p2, e.c].includes(p.id))); sk.constraints = sk.constraints.filter((c) => c.id === "Of"); }));
+    await evalApp(() => window.__werkcad.sketcher.setTool("line"));
+    await page.keyboard.down("Control");
+    for (const [x, y] of [[0, 0], [40 * c30, 40 * s30 + 0.4]]) {
+      const [px, py] = await at(x, y);
+      await page.mouse.move(px, py, { steps: 3 });
+      await page.mouse.click(px, py);
+      await page.waitForTimeout(80);
+    }
+    await page.keyboard.up("Control");
+    await page.keyboard.press("Escape");
+    const auto2 = await evalApp(() => window.__werkcad.sketcher.sk.constraints.filter((c) => ["horizontal", "vertical", "parallel", "perpendicular", "equal"].includes(c.type)).length);
+    await page.keyboard.press("Escape");
+    step("Skizze: automatische Bedingungen", auto1.types.includes("perpendicular") && auto1.ok && auto2 === 0, JSON.stringify({ auto1, auto2 }));
+  }
+
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));

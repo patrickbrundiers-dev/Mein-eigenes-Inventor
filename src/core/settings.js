@@ -65,6 +65,10 @@ export const SETTINGS = [
   { key: "skizze.rasterweite", cat: "skizze", label: "Rasterweite", unit: "mm", type: "number", default: 0, min: 0, max: 1000, help: "0 = automatisch passend zum Zoom." },
   { key: "skizze.fangradius", cat: "skizze", label: "Fangradius", unit: "px", type: "int", default: 7, min: 3, max: 30, help: "Abstand, ab dem Punkte und Mittelpunkte gefangen werden." },
   { key: "skizze.symbole", cat: "skizze", label: "Symbole der Abhängigkeiten anzeigen", type: "bool", default: true },
+  { key: "skizze.auto.hv", cat: "skizze", label: "Automatisch: horizontal/vertikal", type: "bool", default: true, help: "Beim Zeichnen gesetzte Bedingungen. Strg gedrückt halten unterdrückt alle für diesen Klick." },
+  { key: "skizze.auto.parallel", cat: "skizze", label: "Automatisch: parallel/senkrecht", type: "bool", default: true },
+  { key: "skizze.auto.tangential", cat: "skizze", label: "Automatisch: tangential am Bogenende", type: "bool", default: true },
+  { key: "skizze.auto.gleich", cat: "skizze", label: "Automatisch: gleich lang / gleicher Radius", type: "bool", default: true, help: "Greift, wenn Länge bzw. Radius bis auf wenige Pixel getroffen wird." },
 
   { key: "werkzeuge.kuerzel", cat: "werkzeuge", label: "Tastaturkürzel", type: "keymap", default: {}, custom: true, help: "Abweichungen von der Standardbelegung; Konflikte werden abgelehnt." },
 
