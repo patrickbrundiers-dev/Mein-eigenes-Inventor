@@ -2,6 +2,7 @@
 import { toast, choiceDialog, downloadBlob, h } from "./dom.js";
 import { sketchToDxf } from "../core/dxf.js";
 import { newPart, uid } from "../core/examples.js";
+import { serializeProject, parseProject } from "../core/project.js";
 import { bomRows, cutListRows, collectCutSources } from "./props.js";
 import { MATERIALS } from "../core/sections.js";
 import { fmtNum } from "./dom.js";
@@ -14,16 +15,8 @@ export class Files {
   get bridge() { return window.werkcad || null; }
 
   // ---------- Projekt ----------
-  serialize() {
-    const prj = this.app.project;
-    prj.saved = new Date().toISOString();
-    return JSON.stringify(prj, null, 1);
-  }
-  parse(text) {
-    const prj = JSON.parse(text);
-    if (prj.format !== "werkcad" || !Array.isArray(prj.docs)) throw new Error("Keine WerkCAD-Projektdatei");
-    return prj;
-  }
+  serialize() { return serializeProject(this.app.project); }
+  parse(text) { return parseProject(text); }
   async confirmDiscard() {
     if (!this.app.dirty) return true;
     const r = await choiceDialog("Ungespeicherte Änderungen", "Das aktuelle Projekt enthält ungespeicherte Änderungen.", [
