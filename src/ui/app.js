@@ -32,6 +32,7 @@ export class App {
     this.redoStack = [];
     this.pick = null;
     this.visibleSketches = new Set();
+    this.selFilter = "alles";
     this.prefs = new Prefs();
     this.quality = this.prefs.get("ansicht.qualitaet");
     this.fittedFor = null;
@@ -73,6 +74,7 @@ export class App {
     this.selHits = [];
     this.pick = null;
     this.viewer.clearPlanes();
+    this.viewer.setHidden([]);
     this.setMode(d.kind);
     this.fittedFor = null;
     this.refreshAll();
@@ -480,6 +482,8 @@ export class App {
     if (p?.kind === "measure") return { edges: true, faces: true };
     if (p?.kind === "faces" || p?.kind === "sketchPlane" || p?.kind === "align") return { edges: false, faces: true };
     if (this.mode === "assembly") return { edges: false, faces: true };
+    if (this.selFilter === "flaechen") return { edges: false, faces: true };
+    if (this.selFilter === "kanten") return { edges: true, faces: false };
     return { edges: true, faces: true };
   }
   viewerHover(e) {
@@ -546,6 +550,10 @@ export class App {
     if (this.mode === "assembly") {
       items.push({ label: "Bauteil platzieren", icon: "place", run: () => this.props.placeComponentDialog() });
     }
+    const bodyHit = (this.mode === "part" || this.mode === "assembly") ? this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true }) : null;
+    const what = this.mode === "assembly" ? "Komponente" : "Körper";
+    if (bodyHit) items.push("-", { label: `${what} ausblenden`, icon: "eyeoff", run: () => this.hideHit(bodyHit) }, { label: `${what} isolieren`, icon: "eye", run: () => this.isolateHit(bodyHit) });
+    if (this.viewer.hidden.size) items.push({ label: "Alle einblenden", icon: "eye", run: () => this.showAllBodies() });
     items.push("-", { label: "Alles zeigen", icon: "fit", kbd: "F6", run: () => this.viewer.fit() },
       this.viewer.selectedHits?.length ? { label: "Auswahl zeigen", icon: "fit", run: () => this.zoomToSelection() } : null,
       this.viewer.selectedHits?.some((x) => x.kind === "face" && x.info?.type === "PLANE") ? { label: "Normal zur Fläche", icon: "plane", run: () => this.viewNormalToFace() } : null,
@@ -765,6 +773,8 @@ export class App {
         if (errs) parts.push(h("span", { style: { color: "var(--err)" } }, `${errs} Fehler`));
       }
     }
+    if (this.viewer?.hidden.size && (this.mode === "part" || this.mode === "assembly")) parts.push(h("button", { class: "status-btn", title: "Alle einblenden", onclick: () => this.showAllBodies() }, `${this.viewer.hidden.size} ausgeblendet`));
+    if (this.selFilter !== "alles" && this.mode === "part") parts.push(h("span", {}, "Filter: " + (this.selFilter === "flaechen" ? "nur Flächen" : "nur Kanten")));
     parts.push(h("span", {}, "mm · Grad"));
     this.statusEl.replaceChildren(...parts);
   }
@@ -781,6 +791,32 @@ export class App {
     document.getElementById("stage").append(this.viewTools);
   }
   // ---------- Ansicht ----------
+  /** Schlüssel für Ausblenden: in Baugruppen die ganze Komponente, im Bauteil der Körper */
+  hideKey(hit) { return this.mode === "assembly" ? hit.key + "#*" : hit.key + "#" + hit.body; }
+  hideHit(hit) {
+    if (!hit) return;
+    this.viewer.setHidden([...this.viewer.hidden, this.hideKey(hit)]);
+    this.selHits = this.selHits.filter((x) => !this.viewer.isHidden(x.key, x.body));
+    this.refreshSelectionHits();
+    this.updateStatus();
+  }
+  isolateHit(hit) {
+    if (!hit) return;
+    const keep = this.hideKey(hit);
+    const all = new Set(this.viewer.pickables.map((p) => (this.mode === "assembly" ? p.key + "#*" : p.key + "#" + p.body)));
+    all.delete(keep);
+    this.viewer.setHidden(all);
+    this.updateStatus();
+  }
+  showAllBodies() { this.viewer.setHidden([]); this.updateStatus(); }
+  setSelFilter(f) {
+    this.selFilter = f;
+    if (f === "flaechen") this.selHits = this.selHits.filter((x) => x.kind === "face");
+    if (f === "kanten") this.selHits = this.selHits.filter((x) => x.kind === "edge");
+    this.refreshSelectionHits();
+    this.ribbon.render();
+    this.props.render();
+  }
   /** Blick senkrecht auf die gewählte ebene Fläche */
   viewNormalToFace() {
     const hit = (this.viewer.selectedHits || []).find((x) => x.kind === "face" && x.info?.type === "PLANE" && x.normal);

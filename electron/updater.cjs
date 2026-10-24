@@ -3,6 +3,7 @@
 const { app } = require("electron");
 const pkg = require("../package.json");
 const log = require("./log.cjs");
+const { updateSource } = require("./update-source.cjs");
 
 let autoUpdater = null;
 let win = null;
@@ -10,10 +11,6 @@ let configured = false;
 let manual = false;
 let downloading = false;
 
-function publishTarget() {
-  const p = (pkg.build && pkg.build.publish && pkg.build.publish[0]) || {};
-  return { owner: p.owner, repo: p.repo };
-}
 function send(ev) { if (win && !win.isDestroyed()) win.webContents.send("update:event", ev); }
 // alles, was electron-updater meldet, landet im Fehlerprotokoll – sonst ist ein fehlgeschlagenes Update nicht nachvollziehbar
 const text = (a) => a.map((x) => (x && x.stack) || String(x)).join(" ");
@@ -43,9 +40,10 @@ function load() {
 function configure(token) {
   if (!app.isPackaged) return false;
   const u = load();
-  const { owner, repo } = publishTarget();
-  // Öffentlich: direkt latest.yml über GitHubs Weiterleitung auf das neueste Release laden. Der GitHub-Provider
-  // braucht dafür zusätzlich releases.atom, das bei manchen Nutzern mit 404 scheitert.
+  const src = updateSource(pkg);
+  if (!src) { log.write("error", "update", "Update-Quelle fehlt in package.json (repository)"); return false; }
+  const { owner, repo } = src;
+  // Öffentlich: direkt latest.yml über GitHubs Weiterleitung auf das neueste Release laden (ohne releases.atom).
   const opts = token
     ? { provider: "github", owner, repo, private: true, token }
     : { provider: "generic", url: `https://github.com/${owner}/${repo}/releases/latest/download` };

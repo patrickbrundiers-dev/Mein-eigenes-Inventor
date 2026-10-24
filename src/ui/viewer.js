@@ -44,6 +44,7 @@ export class Viewer {
       cam.add(head);
     }
     this.perspective = false;
+    this.hidden = new Set(); // nur Anzeige: "key#body" bzw. "key#*"
     this.displayMode = "kanten";
     this.clip = null; // {plane: THREE.Plane}
     this.renderer.localClippingEnabled = true;
@@ -318,7 +319,7 @@ export class Viewer {
   }
   contentBox() {
     const box = new THREE.Box3();
-    this.root.traverse((o) => { if (o.isMesh) box.expandByObject(o); });
+    this.root.traverse((o) => { if (o.isMesh && !(o.userData.key !== undefined && this.isHidden(o.userData.key, o.userData.body))) box.expandByObject(o); });
     this.sketchGroup.traverse((o) => { if (o.isLine || o.isPoints) box.expandByObject(o); });
     return box;
   }
@@ -512,12 +513,21 @@ export class Viewer {
     m.opacity = op;
     m.depthWrite = op >= 1;
     m.needsUpdate = true;
-    mesh.visible = mode !== "draht" && base > 0;
+    const hid = this.isHidden(mesh.userData.key, mesh.userData.body);
+    mesh.visible = mode !== "draht" && base > 0 && !hid;
     const l = lines.material;
     l.transparent = op < 1;
     l.opacity = Math.max(0.35, op);
     l.needsUpdate = true;
-    lines.visible = mode !== "schattiert" && base > 0;
+    lines.visible = mode !== "schattiert" && base > 0 && !hid;
+  }
+  isHidden(key, body) { return this.hidden.has(key + "#*") || this.hidden.has(key + "#" + body); }
+  /** Körper/Komponenten nur in der Anzeige aus- oder einblenden (keine Modelländerung) */
+  setHidden(set) {
+    this.hidden = new Set(set);
+    for (const pk of this.pickables) this.applyDisplay(pk.mesh, pk.lines);
+    this.edgeCache = null;
+    this.render();
   }
 
   // ---------- Schnittebene ----------

@@ -471,14 +471,15 @@ try {
     await page.locator("#ribbon .rb-file").click();
     await page.locator(".file-menu button", { hasText: "Einstellungen" }).click();
     await page.locator(".set-search input").fill("fang");
-    const rows = await page.locator(".set-row").count();
     const fang = page.locator('.set-row[data-key="skizze.fangradius"] input');
-    await fang.fill("99");
-    await fang.press("Tab");
+    await fang.waitFor({ state: "visible" });
+    const rows = await page.locator(".set-row").count();
+    // Wert setzen und »change« direkt auslösen: robust gegen Neuaufbau der Zeile zwischen Eingabe und Tab
+    const setField = (v) => fang.evaluate((el, val) => { el.value = val; el.dispatchEvent(new Event("change", { bubbles: true })); }, v);
+    await setField("99");
     const err = await page.locator('.set-row[data-key="skizze.fangradius"] .set-err').textContent();
     const kept = await evalApp(() => window.__werkcad.prefs.get("skizze.fangradius"));
-    await fang.fill("12");
-    await fang.press("Tab");
+    await setField("12");
     await page.locator(".set-search input").fill("");
     await page.locator(".set-cat", { hasText: "3D-Ansicht" }).click();
     await page.locator('.set-row[data-key="ansicht.kantenfarbe"] input').evaluate((el) => { el.value = "#ff0000"; el.dispatchEvent(new Event("input", { bubbles: true })); });
@@ -606,6 +607,33 @@ try {
     const it = two.r.items[1];
     step("Messen", one.type === "PLANE" && one.area > 1000 && it.type === "CIRCLE" && Math.abs(it.radius * 2 - 11) < 0.6 && Math.abs(two.r.distance) < 1e-6 && /Durchmesser/.test(two.text) && off,
       JSON.stringify({ one: { type: one.type, area: one.area }, two: { type: it.type, r: it.radius, d: two.r.distance }, off }));
+  }
+
+  // Auswahlfilter und Körper ausblenden/isolieren (Rahmen hat mehrere Körper)
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    const r = await evalApp(() => {
+      const a = window.__werkcad, v = a.viewer;
+      v.setView("iso", { animate: false }); v.fit();
+      const n = v.pickables.length;
+      const cv = v.renderer.domElement.getBoundingClientRect();
+      // Fläche eines Körpers über seinen Bildschirm-Mittelpunkt finden
+      let hit = null;
+      for (let y = 0.3; y < 0.8 && !hit; y += 0.05) for (let x = 0.2; x < 0.8 && !hit; x += 0.05) hit = v.pick(cv.left + cv.width * x, cv.top + cv.height * y, { edges: false, faces: true });
+      a.setSelFilter("kanten");
+      const opt = a.pickOptions();
+      a.setSelFilter("alles");
+      a.hideHit(hit);
+      const hidden1 = v.pickables.filter((p) => !p.mesh.visible).length;
+      a.isolateHit(v.pickables.find((p) => p.mesh.visible));
+      const visibleIso = v.pickables.filter((p) => p.mesh.visible).length;
+      const status = document.querySelector("#status .status-btn")?.textContent;
+      const json0 = JSON.stringify(a.project);
+      a.showAllBodies();
+      return { n, hit: !!hit, opt, hidden1, visibleIso, status, allBack: v.pickables.every((p) => p.mesh.visible), same: json0 === JSON.stringify(a.project) };
+    });
+    step("Auswahlfilter, Ausblenden, Isolieren", r.n > 2 && r.hit && r.opt.faces === false && r.opt.edges === true && r.hidden1 === 1 && r.visibleIso === 1 && r.status === `${r.n - 1} ausgeblendet` && r.allBack && r.same, JSON.stringify(r));
   }
 
   // Plan 5.5: große Baugruppe (150 Komponenten) öffnen und bedienen
