@@ -32,13 +32,21 @@ export class Viewer {
     this.renderer.domElement.tabIndex = 0;
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.OrthographicCamera(-100, 100, 100, -100, -100000, 100000);
+    this.ortho = new THREE.OrthographicCamera(-100, 100, 100, -100, -100000, 100000);
+    this.persp = new THREE.PerspectiveCamera(35, 1, 1, 100000);
+    this.camera = this.ortho;
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(400, -400, 400);
-    this.scene.add(this.camera);
-    const head = new THREE.DirectionalLight(0xffffff, 1.9);
-    head.position.set(0.4, 0.6, 1);
-    this.camera.add(head);
+    for (const cam of [this.ortho, this.persp]) {
+      this.scene.add(cam);
+      const head = new THREE.DirectionalLight(0xffffff, 1.9);
+      head.position.set(0.4, 0.6, 1);
+      cam.add(head);
+    }
+    this.perspective = false;
+    this.displayMode = "kanten";
+    this.clip = null; // {plane: THREE.Plane}
+    this.renderer.localClippingEnabled = true;
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.95));
     this.scene.add(new THREE.HemisphereLight(0xf4f7fb, 0x5b6773, 0.55));
 
@@ -125,14 +133,23 @@ export class Viewer {
     this.renderer.domElement.style.height = h + "px";
     const aspect = w / h;
     const half = this.viewHalf || 300;
-    this.camera.left = -half * aspect;
-    this.camera.right = half * aspect;
-    this.camera.top = half;
-    this.camera.bottom = -half;
-    this.camera.updateProjectionMatrix();
+    this.ortho.left = -half * aspect;
+    this.ortho.right = half * aspect;
+    this.ortho.top = half;
+    this.ortho.bottom = -half;
+    this.ortho.updateProjectionMatrix();
+    this.persp.aspect = aspect;
+    this.persp.updateProjectionMatrix();
     this.cameraChanged();
   }
   cameraChanged() {
+    if (this.camera.isPerspectiveCamera) {
+      // Nah-/Fernebene an den Abstand anpassen (Tiefenauflösung)
+      const d = this.camera.position.distanceTo(this.controls?.target || new THREE.Vector3());
+      this.camera.near = Math.max(0.01, d / 2000);
+      this.camera.far = d * 200 + 1e5;
+      this.camera.updateProjectionMatrix();
+    }
     this.camera.updateMatrixWorld();
     this.edgeCache = null;
     this.needsRender = true;
@@ -152,8 +169,7 @@ export class Viewer {
       r.clear();
       r.setViewport(0, 0, w, h);
       // Triad-Größe konstant halten
-      const ppu = (this.camera.zoom * h) / (this.camera.top - this.camera.bottom);
-      const s = 60 / ppu;
+      const s = 60 / this.pixelsPerUnit();
       this.triad.scale.setScalar(s);
       r.render(this.scene, this.camera);
       // ViewCube
@@ -195,18 +211,56 @@ export class Viewer {
     }
     this.colors.sel = new THREE.Color(v["ansicht.auswahlfarbe"]).getHex();
     this.colors.hover = new THREE.Color(v["ansicht.hoverfarbe"]).getHex();
+    if (v["ansicht.projektion"] !== undefined) this.setPerspective(v["ansicht.projektion"] === "perspektive");
+    if (v["ansicht.darstellung"] !== undefined && v["ansicht.darstellung"] !== this.displayMode) this.setDisplayMode(v["ansicht.darstellung"]);
     this.render();
   }
 
   // ---------- Kamera ----------
+  /** Bildpunkte je mm; bei Perspektive in der Tiefe des Drehpunkts */
   pixelsPerUnit() {
     const h = this.container.clientHeight || 1;
-    return (this.camera.zoom * h) / (this.camera.top - this.camera.bottom);
+    const c = this.camera;
+    if (c.isPerspectiveCamera) {
+      const d = c.position.distanceTo(this.controls.target) || 1;
+      return h / (2 * d * Math.tan((c.fov * Math.PI) / 360));
+    }
+    return (c.zoom * h) / (c.top - c.bottom);
+  }
+  /** Sichtbare halbe Höhe in mm am Drehpunkt */
+  visibleHalf() { return (this.container.clientHeight || 1) / 2 / this.pixelsPerUnit(); }
+  /** Orthogonal ↔ perspektivisch umschalten, Ausschnitt bleibt erhalten */
+  setPerspective(on) {
+    on = !!on;
+    if (this.sketchFrame) { this.wantPerspective = on; return; }
+    if (on === this.camera.isPerspectiveCamera) { this.perspective = on; return; }
+    this.anim = null;
+    const t = this.controls.target.clone();
+    const dir = new THREE.Vector3().subVectors(this.camera.position, t).normalize();
+    const half = this.visibleHalf();
+    const from = this.camera;
+    const to = on ? this.persp : this.ortho;
+    to.up.copy(from.up);
+    if (on) {
+      const d = half / Math.tan((this.persp.fov * Math.PI) / 360);
+      to.position.copy(t.clone().add(dir.multiplyScalar(d)));
+    } else {
+      this.viewHalf = half;
+      this.ortho.zoom = 1;
+      to.position.copy(t.clone().add(dir.multiplyScalar(5000)));
+    }
+    to.lookAt(t);
+    this.camera = to;
+    this.controls.object = to;
+    this.perspective = on;
+    this.resize();
+    this.controls.update();
+    this.cameraChanged();
   }
   setViewDir(dir, up, { animate = this.animate, target } = {}) {
     const d = new THREE.Vector3(...dir).normalize();
     const t = target ? new THREE.Vector3(...target) : this.controls.target.clone();
-    const dist = 5000;
+    const dist = this.camera.isPerspectiveCamera ? this.camera.position.distanceTo(this.controls.target) : 5000;
     const pos = t.clone().sub(d.clone().multiplyScalar(dist));
     const upV = new THREE.Vector3(...up);
     if (!animate) {
@@ -246,19 +300,20 @@ export class Viewer {
     if (v) this.setViewDir(v.dir, v.up, opts);
   }
   /** Ausschnitt an Box anpassen */
-  fit(box, { keepDir = true } = {}) {
+  fit(box, { keepGrid = false } = {}) {
     box = box || this.contentBox();
     if (!box || box.isEmpty()) box = new THREE.Box3(new THREE.Vector3(-100, -100, -100), new THREE.Vector3(100, 100, 100));
     const c = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3()).length() || 100;
     const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target).normalize();
     this.controls.target.copy(c);
-    this.camera.position.copy(c.clone().add(dir.multiplyScalar(5000)));
     this.viewHalf = size * 0.62;
-    this.camera.zoom = 1;
+    const dist = this.camera.isPerspectiveCamera ? this.viewHalf / Math.tan((this.persp.fov * Math.PI) / 360) : 5000;
+    this.camera.position.copy(c.clone().add(dir.multiplyScalar(dist)));
+    this.ortho.zoom = 1;
     this.resize();
     this.controls.update();
-    this.makeGrid(Math.max(200, size * 1.6));
+    if (!keepGrid) this.makeGrid(Math.max(200, size * 1.6));
     this.cameraChanged();
   }
   contentBox() {
@@ -299,17 +354,19 @@ export class Viewer {
         color: c, metalness: 0.08, roughness: 0.5, side: THREE.DoubleSide,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
         transparent: opacity < 1, opacity, depthWrite: opacity >= 1,
+        clippingPlanes: this.clipPlanes(),
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.userData = { key, body: bi, faces: b.mesh.faces, baseColor: c.clone() };
+      mesh.userData = { key, body: bi, faces: b.mesh.faces, baseColor: c.clone(), baseOpacity: opacity };
       g.add(mesh);
       const edgeObjs = [];
       const eg = shared?.[bi]?.edgeGeo || edgeGeometry(b.mesh.edges);
-      const lines = new THREE.LineSegments(eg.geo, new THREE.LineBasicMaterial({ color: this.colors.edge, transparent: opacity < 1, opacity: Math.max(0.35, opacity) }));
+      const lines = new THREE.LineSegments(eg.geo, new THREE.LineBasicMaterial({ color: this.colors.edge, transparent: opacity < 1, opacity: Math.max(0.35, opacity), clippingPlanes: this.clipPlanes() }));
       lines.userData = { key, body: bi, edgeRanges: eg.ranges, edges: b.mesh.edges };
       g.add(lines);
       edgeObjs.push(lines);
       this.pickables.push({ mesh, lines, key, body: bi, group: g });
+      this.applyDisplay(mesh, lines);
     });
     return g;
   }
@@ -411,6 +468,9 @@ export class Viewer {
 
   // ---------- Skizzenmodus ----------
   enterSketch(frame) {
+    // Skizzieren immer orthogonal (Bildschirm ↔ Skizzenebene linear)
+    this.wantPerspective = this.camera.isPerspectiveCamera;
+    if (this.wantPerspective) this.setPerspective(false);
     this.sketchFrame = frame;
     this.controls.enableRotate = false;
     const n = frame.normal;
@@ -421,19 +481,108 @@ export class Viewer {
   exitSketch() {
     this.sketchFrame = null;
     this.controls.enableRotate = true;
+    if (this.wantPerspective) this.setPerspective(true);
+    this.wantPerspective = false;
     this.setModelOpacity(1);
     this.grid.visible = this.showGrid;
   }
   setModelOpacity(op) {
-    this.root.traverse((o) => {
-      if (o.material && !Array.isArray(o.material)) {
-        o.material.transparent = op < 1;
-        o.material.opacity = o.isMesh ? op : Math.max(0.3, op);
-        o.material.depthWrite = op >= 1;
-        o.material.needsUpdate = true;
-      }
-    });
+    for (const pk of this.pickables) {
+      pk.mesh.userData.baseOpacity = op;
+      this.applyDisplay(pk.mesh, pk.lines);
+    }
     this.render();
+  }
+  /**
+   * Darstellungsmodus: kanten (schattiert mit Kanten), schattiert, draht (nur Kanten), transparent.
+   * Wirkt nur auf die Anzeige; Auswahl richtet sich nach dem Sichtbaren.
+   */
+  setDisplayMode(mode) {
+    this.displayMode = mode;
+    for (const pk of this.pickables) this.applyDisplay(pk.mesh, pk.lines);
+    this.edgeCache = null;
+    this.render();
+  }
+  applyDisplay(mesh, lines) {
+    const mode = this.displayMode;
+    const base = mesh.userData.baseOpacity ?? 1;
+    const op = mode === "transparent" ? Math.min(base, 0.3) : base;
+    const m = mesh.material;
+    m.transparent = op < 1;
+    m.opacity = op;
+    m.depthWrite = op >= 1;
+    m.needsUpdate = true;
+    mesh.visible = mode !== "draht" && base > 0;
+    const l = lines.material;
+    l.transparent = op < 1;
+    l.opacity = Math.max(0.35, op);
+    l.needsUpdate = true;
+    lines.visible = mode !== "schattiert" && base > 0;
+  }
+
+  // ---------- Schnittebene ----------
+  clipPlanes() { return this.clip ? [this.clip.plane] : []; }
+  /**
+   * Schnitt durch das Modell: axis X/Y/Z, offset in mm, flip = andere Seite zeigen.
+   * null schaltet ab. Nur Anzeige – Geometrie und Masse bleiben unverändert.
+   */
+  setClip(c) {
+    if (!c) this.clip = null;
+    else {
+      const n = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] }[c.axis] || [0, 0, 1];
+      const v = new THREE.Vector3(...n).multiplyScalar(c.flip ? 1 : -1);
+      // sichtbar bleibt, was auf der positiven Seite liegt: n·p + d ≥ 0
+      this.clip = { ...c, plane: new THREE.Plane(v, c.flip ? -c.offset : c.offset) };
+    }
+    const planes = this.clipPlanes();
+    for (const pk of this.pickables) {
+      pk.mesh.material.clippingPlanes = planes;
+      pk.lines.material.clippingPlanes = planes;
+      pk.mesh.material.needsUpdate = true;
+      pk.lines.material.needsUpdate = true;
+    }
+    this.edgeCache = null;
+    this.render();
+  }
+  clipped(worldPoint) { return !!this.clip && this.clip.plane.distanceToPoint(worldPoint) < -1e-6; }
+
+  // ---------- Ausschnitt ----------
+  /** Box der Auswahl in Weltkoordinaten (Flächen, Kanten, Komponenten) */
+  boxOfHits(hits) {
+    const box = new THREE.Box3();
+    const v = new THREE.Vector3();
+    for (const hit of hits || []) {
+      const list = hit.kind === "group" ? this.pickables.filter((p) => p.key === hit.key) : this.pickables.filter((p) => p.key === hit.key && p.body === hit.body);
+      for (const pk of list) {
+        pk.group.updateMatrixWorld();
+        if (hit.kind === "group") { box.expandByObject(pk.mesh); continue; }
+        if (hit.kind === "edge") {
+          const [s, c] = pk.lines.userData.edgeRanges[hit.edge] || [0, 0];
+          const pos = pk.lines.geometry.attributes.position.array;
+          for (let i = s; i < s + c; i++) box.expandByPoint(v.fromArray(pos, i * 3).applyMatrix4(pk.lines.matrixWorld));
+        } else if (hit.kind === "face") {
+          const f = pk.mesh.userData.faces?.[hit.face];
+          if (!f) continue;
+          const pos = pk.mesh.geometry.attributes.position.array, idx = pk.mesh.geometry.index.array;
+          for (let i = f.start; i < f.start + f.count; i++) box.expandByPoint(v.fromArray(pos, idx[i] * 3).applyMatrix4(pk.mesh.matrixWorld));
+        }
+      }
+    }
+    return box;
+  }
+  /** Auf Auswahl zoomen; leere Auswahl → alles */
+  fitHits(hits) {
+    const box = this.boxOfHits(hits);
+    if (box.isEmpty()) return this.fit();
+    const size = box.getSize(new THREE.Vector3());
+    if (size.length() < 1) box.expandByScalar(5);
+    this.fit(box, { keepGrid: true });
+  }
+  /** Blick senkrecht auf eine Fläche (Weltnormale), Fläche bleibt in der Mitte */
+  lookAlongNormal(normal, point) {
+    const n = new THREE.Vector3(...normal).normalize();
+    const up = Math.abs(n.z) > 0.99 ? [0, n.z > 0 ? 1 : -1, 0] : [0, 0, 1];
+    this.setViewDir([-n.x, -n.y, -n.z], up, { target: point });
   }
   /** Weltpunkt -> Bildschirm (px, relativ zum Container) */
   worldToScreen(p) {
@@ -521,14 +670,17 @@ export class Viewer {
     let faceHit = null;
     if (faces || edges) {
       const rc = this.raycaster(cx, cy);
-      const meshes = this.pickables.map((p) => p.mesh);
-      const hits = rc.intersectObjects(meshes, false);
+      const meshes = this.pickables.filter((p) => p.mesh.visible).map((p) => p.mesh);
+      const hits = rc.intersectObjects(meshes, false).filter((x) => !this.clipped(x.point));
       if (hits.length) faceHit = hits[0];
     }
     if (edges) {
       let best = null, bd = 7;
       for (const { pk, scr, ranges } of this.ensureEdgeCache()) {
+        if (!pk.lines.visible) continue;
         for (let ei = 0; ei < ranges.length; ei++) {
+          const mid = this.clip && pk.lines.userData.edges[ei]?.mid;
+          if (mid && this.clipped(new THREE.Vector3(...mid).applyMatrix4(pk.lines.matrixWorld))) continue;
           const [s, c] = ranges[ei];
           for (let k = s; k < s + c - 1; k += 2) {
             const d = segDist(x, y, scr[k * 2], scr[k * 2 + 1], scr[(k + 1) * 2], scr[(k + 1) * 2 + 1]);
@@ -547,7 +699,7 @@ export class Viewer {
           const dMid = mid.clone().sub(this.camera.position).dot(camDir);
           const dHit = faceHit.point.clone().sub(this.camera.position).dot(camDir);
           const tol = 2 / this.pixelsPerUnit() + 0.5;
-          if (dMid > dHit + tol && best.pk.mesh.material.opacity >= 1) visible = false;
+          if (dMid > dHit + tol && best.pk.mesh.material.opacity >= 1 && best.pk.mesh.visible) visible = false;
         }
         if (visible) return { kind: "edge", key: best.pk.key, body: best.pk.body, edge: best.ei, info, group: best.pk.group };
       }
@@ -622,6 +774,7 @@ export class Viewer {
   }
   /** Dauerhafte Auswahl-Hervorhebung */
   setSelectionHits(hits) {
+    this.selectedHits = hits || [];
     if (!this.selGroup) { this.selGroup = new THREE.Group(); this.scene.add(this.selGroup); }
     this.highlight(hits, { group: this.selGroup, color: this.colors.sel, opacity: 0.45 });
   }

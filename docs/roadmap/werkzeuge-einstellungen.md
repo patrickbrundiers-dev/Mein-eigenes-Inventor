@@ -28,14 +28,14 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Auswahlfilter, Fensterauswahl, Auswahl invertieren | fehlt | Stufe 5 |
 | Ausblenden/Isolieren | teilweise | Komponenten ausblendbar; Körper nicht |
 | Zoom auf alles | vorhanden | F6, `Viewer.fit` |
-| Zoom auf Auswahl | fehlt | Stufe 2 |
+| Zoom auf Auswahl | vorhanden | Ansicht → Zoom, Kontextmenü, Leiste unten rechts (Stufe 2) |
 | Ansichten Iso, Vorne, Oben, Rechts | vorhanden | `VIEWS` in `viewer.js` |
-| Ansichten Hinten, Links, Unten | teilweise | in `VIEWS` definiert, nur über ViewCube erreichbar; Stufe 2 |
-| Normal zur gewählten Fläche | teilweise | nur beim Skizzieren; Stufe 2 |
+| Ansichten Hinten, Links, Unten | vorhanden | Menüband Ansicht → Ausrichtung (Stufe 2) |
+| Normal zur gewählten Fläche | vorhanden | ebene Fläche wählen → Ansicht → Normal zur Fläche (Stufe 2) |
 | Orbit, Pan, Zoom, ViewCube | vorhanden | OrbitControls, Maustasten jetzt einstellbar |
-| Perspektive | fehlt | Stufe 2 |
-| Schnittansicht/Clipping im 3D-Fenster | fehlt | Stufe 2 |
-| Darstellungsmodi (schattiert, mit Kanten, Drahtmodell, transparent) | fehlt | nur Qualität; Stufe 2 |
+| Perspektive | vorhanden | Umschalter + Einstellung; Skizzieren immer orthogonal (Stufe 2) |
+| Schnittansicht/Clipping im 3D-Fenster | vorhanden | Schnitt X/Y/Z mit Schieber, Seite wechseln; nur Anzeige, Schnittflächen nicht gefüllt (Stufe 2) |
+| Darstellungsmodi (schattiert, mit Kanten, Drahtmodell, transparent) | vorhanden | Auswahl folgt dem Sichtbaren (Drahtmodell: nur Kanten wählbar) (Stufe 2) |
 | Farben für Kanten/Auswahl/Hover | vorhanden (neu) | Einstellungscenter |
 | Gespeicherte benannte Ansichten | fehlt | P3 |
 
@@ -80,7 +80,7 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 | A Allgemein | teilweise | Autosave-Wartezeit, Lösch-Rückfrage, Dezimalstellen; Sprache/Ordner geplant |
 | B Dokument und Modell | fehlt | gehört in die Projektdatei; erst mit Vorlagen |
 | C Skizzen | teilweise | Rasterfang, Rasterweite, Fangradius, Symbole |
-| D 3D-Ansicht | teilweise | Qualität, Maus, Zoom/Drehen, Raster, ViewCube, Farben |
+| D 3D-Ansicht | teilweise | Projektion, Darstellungsmodus, Qualität, Maus, Zoom/Drehen, Raster, ViewCube, Farben |
 | E Werkzeuge und Tastatur | fehlt | Stufe 3 |
 | F Kernel | fehlt | bewusst: keine Toleranzen ohne Absicherung |
 | G Materialien | teilweise | eingebaute Liste sichtbar; eigene Werkstoffe P2 |

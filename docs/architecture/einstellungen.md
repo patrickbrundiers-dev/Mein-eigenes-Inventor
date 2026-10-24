@@ -36,7 +36,9 @@ Stand: 24.10.2026 · Masterplan Werkzeuge/Einstellungen, Abschnitte 13 und 14.
 | Allgemein | Automatische Sicherung nach | 1,5 s | Wartezeit vor dem Schreiben der Wiederherstellungsdatei (0,5–120 s) |
 | | Löschen von Dokumenten bestätigen | ja | Rückfrage bleibt immer, wenn das Dokument noch verwendet wird |
 | | Dezimalstellen für Messwerte | 3 | Messen zweier Flächen (Abstand, Winkel) |
-| 3D-Ansicht | Darstellungsqualität | Normal | auch über Menüband Ansicht → Darstellung, wird gemerkt |
+| 3D-Ansicht | Projektion | Orthogonal | Perspektive umschaltbar, Skizze immer orthogonal |
+| | Darstellungsmodus | Schattiert mit Kanten | Schattiert, Drahtmodell, Transparent |
+| | Darstellungsqualität | Normal | auch über Menüband Ansicht → Darstellung, wird gemerkt |
 | | Maustasten | rechts drehen, Mitte schwenken | alternativ Mitte drehen, rechts schwenken |
 | | Zum Mauszeiger zoomen | ja | |
 | | Zoom-/Drehgeschwindigkeit | 1,2 / 0,9 | |
