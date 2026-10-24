@@ -686,8 +686,25 @@ export function createKernel(R) {
       const q = pts.filter((p, i) => i === 0 || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 1e-9);
       let pen = R.draw(q[0]);
       for (const p of q.slice(1)) pen = pen.lineTo(p);
-      return pen.close().sketchOnPlane(new R.Plane(v3.sub(origin, v3.mul(N, Hext / 2)), xDir, N)).extrude(Hext);
+      return extr(pen.close(), origin, xDir);
     };
+    const extr = (drawing, origin, xDir) => drawing.sketchOnPlane(new R.Plane(v3.sub(origin, v3.mul(N, Hext / 2)), xDir, N)).extrude(Hext);
+    // Freistellung und Zapfen in Abwicklungs-Koordinaten (x = Rohrachse, y = σ·u); dieselben Umrisse
+    // gelten gefaltet im Rahmen von Segment A bzw. B (Ursprung so, dass x1 bzw. x2 im Tangentenpunkt liegt)
+    const reliefDrawing = (k) => {
+      const xm = (k.x1 + k.x2) / 2, y = k.sigma * plan.d, rl = plan.relief;
+      if (rl.kind === "rund") {
+        // Langloch über die Biegezone: Mittelpunkte in beiden Ecken der V-Spitze (x1 bzw. x2 auf Höhe d)
+        const rr = rl.dia / 2, sg = k.sigma, P2 = (x, u) => [x, sg * u];
+        if (k.x2 - k.x1 < 1e-6) return R.drawCircle(rr).translate(xm, y);
+        return R.draw(P2(k.x1, plan.d - rr)).lineTo(P2(k.x2, plan.d - rr)).threePointsArcTo(P2(k.x2, plan.d + rr), P2(k.x2 + rr, plan.d))
+          .lineTo(P2(k.x1, plan.d + rr)).threePointsArcTo(P2(k.x1, plan.d - rr), P2(k.x1 - rr, plan.d)).close();
+      }
+      if (rl.kind === "rechteck") return R.drawRectangle(rl.width, rl.height).translate(xm, y);
+      return null;
+    };
+    const tabDrawing = (k) => R.drawCircle(plan.tab.r).translate(k.x1 - (plan.d - plan.tab.u) * k.tanHalf, k.sigma * plan.tab.u);
+    const reliefCuts = plan.dirs.map(() => []), tabAdd = plan.dirs.map(() => []), tabCut = plan.dirs.map(() => []);
 
     // Biegung: Segmente im Bereich der Biegung ausgespart; dort wird der Außenwand-Streifen des
     // Querschnitts um den Biegemittelpunkt gedreht
@@ -720,6 +737,18 @@ export function createKernel(R) {
       const hA = R.revolution(strip.face(), C, axis, half);
       halves[j].push(hA);
       halves[j + 1].push(hA.clone().rotate(half, C, axis));
+      // Rahmen der Segmente in Abwicklungs-Koordinaten
+      const oA = v3.sub(v3.add(P, v3.mul(dA, s)), v3.mul(dA, k.x1));
+      const oB = v3.sub(v3.sub(P, v3.mul(dB, s)), v3.mul(dB, k.x2));
+      const rd = reliefDrawing(k);
+      if (rd) { reliefCuts[j].push(extr(rd, oA, dA)); reliefCuts[j + 1].push(extr(rd.clone(), oB, dB)); }
+      if (plan.tab) {
+        // Zapfen gehört zu Segment A (nur die Seitenwände), Segment B bekommt das Loch
+        const disc = extr(tabDrawing(k), oA, dA);
+        const wallsA = makeMember(section, input.segments[j] + plan.W + 50, memberFrame(plan.nodes[j], dA, rot, N)).solid;
+        tabAdd[j].push(disc.clone().intersect(wallsA));
+        tabCut[j + 1].push(disc);
+      }
     });
     // gefaltet: Segmente auf Gehrung, an der Gehrungsebene getrennt gebaut (je halbe Biegung)
     const segments = plan.dirs.map((z, i) => {
@@ -730,6 +759,8 @@ export function createKernel(R) {
       const fr = memberFrame(plan.nodes[i], z, rot, N);
       let seg = makeMember(section, input.segments[i], fr, cuts).solid;
       for (const w of sectors[i]) seg = seg.cut(w.clone());
+      for (const c of [...reliefCuts[i], ...tabCut[i]]) seg = seg.cut(c);
+      for (const a of tabAdd[i]) seg = seg.fuse(a);
       for (const hb of halves[i]) seg = seg.fuse(hb);
       checkSolid(seg, `Segment ${i + 1}`);
       return { solid: seg, length: memberLength(seg, fr), miterStart: m0, miterEnd: m1 };
@@ -750,7 +781,12 @@ export function createKernel(R) {
         ? [[k.x1, y(plan.uA)], [k.x2, y(plan.uA)], [k.x2, y(dd)], [k.x2 + (dd - uF) * k.tanHalf, y(uF)], [k.x1 - (dd - uF) * k.tanHalf, y(uF)], [k.x1, y(dd)]]
         : [[k.x1, y(plan.uA)], [k.x2, y(plan.uA)], [k.x2, y(uF)], [k.x1, y(uF)]];
       // Skizzenebene: x = Rohrachse, y = N × Achse (in der Knickebene nach links), extrudiert entlang N
-      flat = flat.cut(prism(pts, plan.nodes[0], z0));
+      let notch = prism(pts, plan.nodes[0], z0);
+      if (plan.tab) notch = notch.cut(extr(tabDrawing(k), plan.nodes[0], z0)); // Zapfen bleibt an Flanke A stehen
+      flat = flat.cut(notch);
+      const rd = reliefDrawing(k);
+      if (rd) flat = flat.cut(extr(rd, plan.nodes[0], z0));
+      if (plan.tab) flat = flat.cut(extr(R.drawCircle(plan.tab.r).translate(k.x2 + (dd - plan.tab.u) * k.tanHalf, y(plan.tab.u)), plan.nodes[0], z0));
     }
     checkSolid(flat, "abgewickelt");
 
@@ -765,6 +801,8 @@ export function createKernel(R) {
       knicks: plan.knicks.length,
       notchAngles: plan.knicks.map((k) => round(k.angle)),
       bendAllowances: plan.knicks.map((k) => k.zone),
+      relief: plan.relief.kind,
+      tabs: !!plan.tab,
       frameZ: z0,
     };
     return { folded, segments, flat, meta, name, plan };

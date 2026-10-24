@@ -451,3 +451,45 @@ test("Knickrahmen: Speichern/Laden und STEP-Rückimport", async () => {
     relNear(R.measureVolume(imp), R.measureVolume(s), 1e-3, "STEP-Rückimport " + view);
   }
 });
+
+test("Knickrahmen: Freistellung rund/rechteckig und Positionier-Zapfen", async () => {
+  // K = 0,5, Wand ohne Eckradius: gefaltet und abgewickelt bleiben volumengleich (auch mit Zapfen,
+  // der an Segment A angesetzt und aus Segment B ausgeschnitten wird)
+  const dims = { B: "60", H: "40", t: "3", r: "0" };
+  const build = async (view, extra, lens = ["800", "600"], angs = ["90"], ri = "3") => {
+    const res = await K.buildPart(part([knick({ view, dims, ...extra }, lens, angs, { bendRadius: ri, kFactor: "0.5" })]));
+    okAll(res);
+    solidOk(res.bodies[0].shape);
+    return res.bodies[0];
+  };
+  const base = R.measureVolume((await build("abgewickelt", {})).shape);
+  for (const [extra, lens, angs, ri] of [
+    [{ relief: "rund", reliefDia: "4" }],
+    [{ relief: "rechteck", reliefWidth: "10", reliefHeight: "4" }],
+    [{ relief: "rund", reliefDia: "4", tabs: "an", tabDia: "8" }],
+    [{ relief: "rechteck", reliefWidth: "6", reliefHeight: "5", tabs: "an", tabDia: "6" }, ["500", "400", "300"], ["45", "-60"], "4"],
+  ]) {
+    const fo = await build("gefaltet", extra, lens, angs, ri), fl = await build("abgewickelt", extra, lens, angs, ri);
+    relNear(R.measureVolume(fo.shape), R.measureVolume(fl.shape), 1e-6, "gefaltet = abgewickelt " + JSON.stringify(extra));
+    assert.equal(fl.meta.relief, extra.relief);
+    assert.equal(fl.meta.tabs, extra.tabs === "an");
+    if (!lens) assert.ok(R.measureVolume(fl.shape) < base - 1, "Freistellung nimmt Material weg");
+  }
+  // Zapfen: gleiche Masse, aber andere Form (Nase an Flanke A, Loch an Flanke B)
+  const plain = await build("abgewickelt", {}), tab = await build("abgewickelt", { tabs: "an", tabDia: "8" });
+  relNear(R.measureVolume(tab.shape), R.measureVolume(plain.shape), 1e-9, "Zapfen volumenneutral");
+  const nose = R.measureVolume(tab.shape.clone().cut(plain.shape.clone()));
+  near(nose, (Math.PI * 16) / 2 * 2 * 3, 1e-3, "Nase = halbe Kreisscheibe in beiden Seitenwänden");
+  // Prüfregeln
+  for (const [extra, re] of [
+    [{ relief: "rund", reliefDia: "6" }, /Freistellung zu groß/],
+    [{ tabs: "an", tabDia: "52" }, /Zapfen zu groß/],
+    [{ relief: "rechteck", reliefWidth: "5", reliefHeight: "4" }, /breiter als die Biegezone/],
+  ]) {
+    const res = await K.buildPart(part([knick({ dims, ...extra }, ["800", "600"], ["90"])]));
+    assert.match(String(res.status.kr.error), re, JSON.stringify(extra) + JSON.stringify(res.status));
+    assert.equal(res.bodies.length, 0);
+  }
+  const small = await K.buildPart(part([knick({ dims, tabs: "an", tabDia: "8" }, ["800", "600"], ["5"])]));
+  assert.match(small.status.kr.error, /Gegenflanke/);
+});

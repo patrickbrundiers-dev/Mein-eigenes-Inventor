@@ -70,6 +70,21 @@ Gefaltete Ansicht: zwischen den Tangentenpunkten ist die Außenwand ein Kreisrin
 Kontrolle: Bei k = 0,5 ist das Volumen gefaltet = abgewickelt (Guldin), im Test auf 1·10⁻⁶
 geprüft.
 
+## 4a. Freistellung und Positionier-Zapfen (optional, je Rahmen für alle Knicke)
+
+- **Freistellung** in den Seitenwänden an der V-Spitze (Höhe `u = d`):
+  - *rund*, Durchmesser D: Langloch über die Biegezone, Kreismittelpunkte in beiden Ecken der
+    V-Spitze (bei Biegezone 0 ein Kreis).
+  - *rechteckig*, Breite × Höhe: mittig auf der V-Spitze; Breite muss größer als die Biegezone sein.
+  - D bzw. Höhe < 2·rᵢ, damit die gebogene Außenwand nicht angeschnitten wird.
+- **Zapfen**, Durchmesser Dz: runde Nase auf der Gehrungslinie beider Seitenwände, mittig zwischen
+  Eckradius und Freistellung. Die Nase sitzt am Segment vor dem Knick, das Segment danach hat den
+  passenden Ausschnitt. Abgewickelt: Nase an Flanke A, Ausschnitt an Flanke B.
+  Prüfung: Zapfen passt in die Seitenwand, und in der Abwicklung stößt die Nase nicht an die
+  Gegenflanke (Abstand > Dz/2 + 0,5 mm).
+- Gefaltet und abgewickelt verwenden dieselben Umrisse (Abwicklungs-Koordinaten, im Rahmen des
+  jeweiligen Segments ab dem Tangentenpunkt). Kontrolle wie oben: bei k = 0,5 Volumen gleich.
+
 ## 5. Datenmodell (Feature im Bauteil)
 
 ```json
@@ -79,6 +94,8 @@ geprüft.
   "plane": "XY", "offset": "0", "start": ["0", "0"], "direction": "0",
   "orientation": "hochkant",
   "bendRadius": "3", "kFactor": "0.33",
+  "relief": "keine", "reliefDia": "4", "reliefWidth": "8", "reliefHeight": "4",
+  "tabs": "aus", "tabDia": "8",
   "segments": [{ "length": "800" }, { "length": "600" }],
   "bends": [{ "angle": "30", "min": "", "max": "" }],
   "view": "gefaltet"
@@ -103,6 +120,8 @@ Rechnerisch (`src/core/knickrahmen.js`, `planKnickrahmen`):
 | `ANGLE_LIMIT` | min ≤ θ ≤ max, falls angegeben; min ≤ max |
 | `BEND_RADIUS` | Innenradius ≥ 0 |
 | `K_FACTOR` | 0 ≤ k ≤ 1 |
+| `RELIEF` | Maße > 0, kleiner als 2·rᵢ, rechteckig breiter als die Biegezone |
+| `TAB` | Zapfen passt in die Seitenwand und stößt in der Abwicklung nicht an die Gegenflanke |
 | `SEG_SHORT` | Lᵢ größer als Σ tan(\|θ\|/2)·max(W/2, −d) der Ausklinkungen am Segment, sonst würde das V über das Segment hinausreichen |
 
 Im Geometrie-Kern (`buildKnickrahmen`, `checkSolid`): beide Körper je genau ein
@@ -141,10 +160,11 @@ gefaltet = abgewickelt relativ 1·10⁻⁶ bei k = 0,5; bei rᵢ = 0, k = 0 zus�
 | J ungültige Eingaben | negative Länge, 175°, über Maximum, Segment zu kurz, 4 Segmente, negativer Radius, K > 1: Fehler mit Bezug, kein Teilergebnis, anderes Feature unberührt |
 | K Speichern/Laden | JSON-Roundtrip baut identisch (Meta, Volumen) |
 | L STEP | Export und Rückimport beider Ansichten, Volumen gleich |
+| E/F Freistellung, Zapfen | rund, rechteckig, mit Zapfen, 3 Segmente gegensinnig: gefaltet = abgewickelt, Zapfen volumenneutral, Nase = halbe Kreisscheibe × 2 Wände, Prüfregeln |
 | N Regression | alle bisherigen Tests grün |
 | Oberfläche | Knopf → Winkel im Eigenschaftsfenster auf 90° → Länge 1454,27 → Ansicht abgewickelt → zweimal Rückgängig |
 
-Spätere Stufen: E runde Freistellungen an der V-Spitze, F Bohrungen/Langlöcher, Laschen
+Spätere Stufen: Bohrungen/Langlöcher, Laschen
 und Biegehilfe-Schlitze in der Außenwand (Referenzbild 2), Biegetabelle je Material/Dicke,
 weitere Querschnitte, JSON-Austausch mit der Kalkulation.
 

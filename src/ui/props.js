@@ -328,6 +328,14 @@ export class Props {
           E("Innenradius", "bendRadius", { allowNeg: false }),
           E("K-Faktor", "kFactor", { unit: "", allowNeg: false }),
           h("p", { class: "hint" }, "Biegezugabe je Knick = (Innenradius + K-Faktor · Wandstärke) · Winkel im Bogenmaß. Werte aus der Biegetabelle der Abkantung eintragen – die Vorgabe ist nur ein Startwert.")));
+        const rk = f.relief || "keine";
+        out.push(this.section("Freistellung und Zapfen",
+          this.seg("Freistellung", [["keine", "Keine"], ["rund", "Rund"], ["rechteck", "Rechteckig"]], rk, (v) => this.set(f, "relief", v, "Freistellung")),
+          rk === "rund" ? E("Durchmesser", "reliefDia", { allowNeg: false, allowZero: false }) : null,
+          rk === "rechteck" ? [E("Breite", "reliefWidth", { allowNeg: false, allowZero: false }), E("Höhe", "reliefHeight", { allowNeg: false, allowZero: false })] : null,
+          this.seg("Zapfen", [["aus", "Aus"], ["an", "An"]], f.tabs || "aus", (v) => this.set(f, "tabs", v, "Zapfen")),
+          f.tabs === "an" ? E("Zapfen-Durchmesser", "tabDia", { allowNeg: false, allowZero: false }) : null,
+          h("p", { class: "hint" }, "Freistellung mittig auf der V-Spitze in den Seitenwänden, kleiner als 2 × Innenradius. Zapfen: runde Nase auf der Gehrungslinie beider Seitenwände zum Positionieren – am Segment vor dem Knick, Gegenstück als Ausschnitt im Segment danach.")));
         out.push(this.section("Segmente und Knicke", ...rows,
           h("p", { class: "hint" }, "Längen auf der Mittellinie von Knoten zu Knoten."),
           h("div", { class: "btn-row" },
