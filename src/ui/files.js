@@ -2,7 +2,7 @@
 import { toast, choiceDialog, downloadBlob, h } from "./dom.js";
 import { sketchToDxf } from "../core/dxf.js";
 import { newPart, uid } from "../core/examples.js";
-import { serializeProject, parseProject } from "../core/project.js";
+import { serializeProject, loadProject, validateProject } from "../core/project.js";
 import { bomRows, cutListRows, collectCutSources } from "./props.js";
 import { MATERIALS } from "../core/sections.js";
 import { fmtNum } from "./dom.js";
@@ -16,7 +16,8 @@ export class Files {
 
   // ---------- Projekt ----------
   serialize() { return serializeProject(this.app.project); }
-  parse(text) { return parseProject(text); }
+  /** Datei lesen, prüfen, ggf. migrieren; Hinweise (keine Fehler) kommen in `issues` */
+  parse(text) { return loadProject(text); }
   async confirmDiscard() {
     if (!this.app.dirty) return true;
     const r = await choiceDialog("Ungespeicherte Änderungen", "Das aktuelle Projekt enthält ungespeicherte Änderungen.", [
@@ -38,15 +39,18 @@ export class Files {
         text = await f.text(); file = null;
         this.browserName = f.name;
       }
-      const prj = this.parse(text);
+      const { project: prj, issues } = this.parse(text);
       this.app.setProject(prj, file);
       toast("Geöffnet: " + (file ? file.split(/[\\/]/).pop() : prj.name), { kind: "ok", timeout: 2000 });
+      showIssues(issues, "Beim Öffnen");
     } catch (e) {
       toast("Öffnen fehlgeschlagen: " + e.message, { kind: "err", timeout: 6000 });
     }
   }
   async save(saveAs = false) {
     const app = this.app;
+    // Speichern nie blockieren (kein Datenverlust), aber auf Strukturfehler hinweisen
+    showIssues(validateProject(app.project), "Beim Speichern");
     const text = this.serialize();
     const defaultName = safeName(app.project.name) + ".wcad";
     try {
@@ -279,3 +283,12 @@ function csv(rows) {
   return "﻿" + rows.map((r) => r.map(esc).join(";")).join("\r\n") + "\r\n";
 }
 export { MATERIALS };
+
+/** Prüfhinweise als Meldung zeigen; reine Info (z. B. Migration) nur in der Konsole */
+function showIssues(issues, context) {
+  for (const i of issues) console.info("[Projektprüfung]", i.code, i.message);
+  const shown = issues.filter((i) => i.severity !== "info");
+  if (!shown.length) return;
+  const more = shown.length > 1 ? ` (+${shown.length - 1} weitere Hinweise)` : "";
+  toast(`${context}: ${shown[0].message}${more}`, { kind: shown.some((i) => i.severity === "error") ? "err" : "", timeout: 8000 });
+}
