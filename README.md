@@ -7,6 +7,7 @@ Eigenes parametrisches 3D-CAD für Windows – angelehnt an die Arbeitsweise von
 **Bauteile**
 - Skizzen auf XY/XZ/YZ oder direkt auf ebenen Flächen des Modells
 - Linie, Rechteck (auch aus Mitte), Kreis, Bogen, Punkt, Konstruktionslinien, Modellkanten projizieren
+- Stutzen (Linien, Kreise, Bögen an Schnittpunkten) und Skizzenrundung (Ecke bleibt als virtueller Punkt für Maße erhalten)
 - Abhängigkeiten: horizontal, vertikal, koinzident, parallel, senkrecht, gleich, tangential, fixiert, Mittelpunkt, konzentrisch, kollinear, symmetrisch
 - Bemaßung mit Formeln und Parametern (`Länge/2 + Rand`), Anzeige der Freiheitsgrade, getriebene Maße bei Überbestimmung
 - Extrusion (normal, umgekehrt, symmetrisch, beidseitig, durch alles), Ausschnitt, Drehung
@@ -19,16 +20,20 @@ Eigenes parametrisches 3D-CAD für Windows – angelehnt an die Arbeitsweise von
 - Rundrohr, Quadrat- und Rechteckrohr (EN 10219-Radien), Flach-, Rund-, Vierkantstahl, Winkel, U-Profil mit Normgrößen-Katalog
 - Einzelprofil mit Gehrung/Schrägschnitt an beiden Enden
 - **Rahmen aus Skizze**: jede Linie wird ein Profil, Ecken mit Gehrung oder Stumpfstoß, T-Stöße werden automatisch ausgeklinkt (bei Rundrohr Sattelschnitt)
-- Zuschnittliste mit Länge, Gehrungswinkeln, kg/m und Gewicht – als CSV für Excel
+- Zuschnittliste mit Profil-ID im Format der Rohrlaser-Kalkulation (`RR 42,4x2`, `QR 40x40x3`, `RE 60x40x3` …), Länge, Gehrungswinkeln, kg/m und Gewicht – als CSV für Excel
+- **STEP + Zuschnittliste**: eine STEP-Datei mit allen Körpern (jeder mit Profil-ID benannt, Baugruppe als Satz) und daneben die Zuschnittliste – direkt zum Hineinziehen ins Angebot der Kalkulation
 - Jedes Profil einzeln als STEP für die Rohrlaser-Software
+- **Platte als DXF 1:1**: Kontur und Bohrungen eines Blechteils senkrecht zur größten Fläche (oder zur gewählten Fläche), mit echten Kreisen und Bögen
 
 **Baugruppen**
-- Bauteile platzieren, Position/Drehung numerisch, „Fläche an Fläche“ und „Bündig“ ausrichten, fixieren, ausblenden
+- Bauteile platzieren, Position/Drehung numerisch, fixieren, ausblenden
+- Abhängigkeiten „Fläche an Fläche“ und „Bündig“ mit Abstand – bleiben gespeichert und rechnen nach, wenn sich Bauteile ändern
 - Stückliste mit Mengen und Massen, Zuschnittliste über alle Bauteile
 
 **Zeichnungen**
 - Blattformate A4–A0, Rahmen und Schriftfeld (Benennung, Nummer, Werkstoff, Maßstab, Masse …)
 - Vorder-, Drauf-, Seitenansichten in Projektionsmethode 1 (DIN), Isometrie, verdeckte Kanten, Mittellinien
+- Schnittansichten A–A (waagerecht/senkrecht) mit Schraffur, Schnittlinie und Pfeilen
 - Bemaßung mit Fangpunkten, Durchmesser/Radius, „Hauptmaße“ automatisch, Texte
 - Export als PDF, DXF (mit Layern) und SVG
 
@@ -62,7 +67,7 @@ Der Workflow „Windows-Release“ läuft nur auf Knopfdruck (Windows-Minuten z�
 | Alles zeigen | F6 |
 | Neue Skizze | S |
 | Extrusion / Bohrung | E / H |
-| Skizzenwerkzeuge | L Linie · R Rechteck · C Kreis · A Bogen · P Punkt · D Bemaßung · X Konstruktion |
+| Skizzenwerkzeuge | L Linie · R Rechteck · C Kreis · A Bogen · P Punkt · D Bemaßung · T Stutzen · F Rundung · X Konstruktion |
 | Rückgängig / Wiederholen | Strg+Z / Strg+Y |
 | Speichern | Strg+S |
 
