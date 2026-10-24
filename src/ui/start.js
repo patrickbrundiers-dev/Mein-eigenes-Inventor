@@ -8,7 +8,7 @@ export class StartScreen {
   }
   async render() {
     const app = this.app;
-    const rec = app.files.recovery();
+    const rec = await app.files.recovery();
     let recent = [];
     try { recent = (await window.werkcad?.recentFiles?.()) || []; } catch { /* */ }
     const action = (ic, title, text, run) => h("button", { class: "tb-cell tb-action", onclick: run }, icon(ic), h("div", {}, h("small", {}, text), h("b", {}, title)));
