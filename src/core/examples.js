@@ -132,7 +132,7 @@ export function exampleProject() {
   asm.id = "beispiel_bg";
   asm.number = "BG-100";
   asm.components = [
-    { id: "c1", part: "beispiel_rahmen", name: "Rahmen", pos: [0, 0, 20], rot: [0, 0, 0] },
+    { id: "c1", part: "beispiel_rahmen", name: "Rahmen", pos: [0, 0, 30], rot: [0, 0, 0] },
     { id: "c2", part: "beispiel_platte", name: "Grundplatte links", pos: [-150, -100, 0], rot: [0, 0, 0] },
     { id: "c3", part: "beispiel_platte", name: "Grundplatte rechts", pos: [850, -100, 0], rot: [0, 0, 0] },
     { id: "c4", part: "beispiel_rohr", name: "Rohr", pos: [300, -150, 400], rot: [0, 0, 0] },

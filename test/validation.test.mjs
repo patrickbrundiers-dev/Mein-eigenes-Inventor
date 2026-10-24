@@ -87,3 +87,32 @@ test("Vorabprüfung Extrusion, Rotation, Bohrung, Wandung", async () => {
   const pts = { id: "s2", type: "sketch", name: "s2", plane: { ref: "XY" }, offset: "10", points: [{ id: "h0", x: 50, y: 20 }], entities: [{ id: "pe0", type: "point", p: "h0" }], constraints: [] };
   assert.match(await errorOf([...box, pts, { id: "h", type: "hole", sketch: "s2", diameter: "5", extent: "depth", depth: "0" }], "h"), /Tiefe muss > 0/);
 });
+
+// ---------- P1-B: Kollisionsprüfung ----------
+test("Kollision: Berührung nicht, Überschneidung ja, Abstand nicht, gleiche Komponente nicht", () => {
+  const box = (x, y = 0, z = 0) => R.makeBaseBox(10, 10, 10).translate(x, y, z);
+  const list = [
+    { key: "a", shape: box(0) },
+    { key: "b", shape: box(10) }, // berührt a an der Fläche x = 5
+    { key: "c", shape: box(19) }, // überschneidet b um 1 mm → 100 mm³
+    { key: "d", shape: box(100) }, // weit weg
+    { key: "d", shape: box(105) }, // zweiter Körper derselben Komponente, überlappt den ersten – zählt nicht
+  ];
+  const res = K.collisions(list);
+  assert.equal(res.length, 1, JSON.stringify(res));
+  assert.deepEqual([res[0].a, res[0].b].sort(), ["b", "c"]);
+  assert.ok(Math.abs(res[0].volume - 100) < 1e-3, String(res[0].volume));
+  // 0,1 mm Überschneidung (10 mm³) liegt über der Toleranz 1 mm³
+  assert.equal(K.collisions([{ key: "a", shape: box(0) }, { key: "b", shape: box(9.9) }]).length, 1);
+});
+
+test("Kollision: Beispiel-Baugruppe ist kollisionsfrei", async () => {
+  const prj = exampleProject();
+  const asm = prj.docs.find((d) => d.kind === "assembly");
+  const list = [];
+  for (const c of asm.components) {
+    const res = await K.buildPart(prj.docs.find((d) => d.id === c.part));
+    for (const b of res.bodies) list.push({ key: c.id, shape: K.placed(b.shape, c.pos, c.rot) });
+  }
+  assert.deepEqual(K.collisions(list), []);
+});

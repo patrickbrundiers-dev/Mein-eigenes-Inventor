@@ -1078,7 +1078,36 @@ export function createKernel(R) {
     return v3.norm(v3.sub(best, v3.mul(n, v3.dot(best, n))));
   }
 
-  return { buildPart, buildKnickrahmen, shapeValid, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  /**
+   * Kollisionen zwischen Komponenten: Schnittvolumen je Paar. Berührung (Fläche an Fläche) ist keine Kollision.
+   * list: [{key, shape}] bereits platziert; Körper mit gleichem key (eine Komponente) werden nicht gegeneinander geprüft.
+   * tol: Mindestvolumen in mm³ – fachlich: Rundungs- und Tessellierungsfehler der Booleschen Operation liegen weit
+   * darunter, eine echte Überschneidung von 0,1 mm auf 10 × 10 mm ergibt bereits 10 mm³.
+   */
+  function collisions(list, { tol = 1 } = {}) {
+    const out = [];
+    const boxes = list.map((x) => x.shape.boundingBox);
+    for (let i = 0; i < list.length; i++)
+      for (let j = i + 1; j < list.length; j++) {
+        if (list[i].key === list[j].key) continue;
+        if (!bboxOverlap(boxes[i], boxes[j], 1e-3)) continue;
+        let vol = 0;
+        try { vol = R.measureVolume(list[i].shape.clone().intersect(list[j].shape.clone())); } catch { vol = NaN; }
+        if (!(vol <= tol)) out.push({ a: list[i].key, b: list[j].key, volume: vol });
+      }
+    // je Komponentenpaar zusammenfassen
+    const pairs = new Map();
+    for (const c of out) {
+      const k = [c.a, c.b].sort().join("|");
+      const p = pairs.get(k) || { a: c.a, b: c.b, volume: 0 };
+      p.volume += Number.isFinite(c.volume) ? c.volume : 0;
+      if (!Number.isFinite(c.volume)) p.unsure = true;
+      pairs.set(k, p);
+    }
+    return [...pairs.values()];
+  }
+
+  return { buildPart, buildKnickrahmen, shapeValid, collisions, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

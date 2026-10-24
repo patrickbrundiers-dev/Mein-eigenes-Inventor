@@ -176,6 +176,12 @@ const handlers = {
     return { ...r, thickness, body: idx, name };
   },
 
+  /** Kollisionsprüfung einer Baugruppe: items mit key (Komponenten-ID) */
+  async collisions({ items, tol = 1 }) {
+    const list = [];
+    for (const it of items) for (const s of await placedShapes([it])) list.push({ key: it.key, shape: s.shape });
+    return K.collisions(list, { tol });
+  },
   async ping() { return "ok"; },
 };
 
