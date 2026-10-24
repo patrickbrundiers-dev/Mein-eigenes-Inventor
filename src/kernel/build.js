@@ -8,7 +8,7 @@ import { planeFrame, toWorld, v3 } from "../core/geom.js";
 import { sectionGeometry, sectionName, profileId, THREADS } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
 import { planKnickrahmen, knickInput } from "../core/knickrahmen.js";
-import { planTubeCuts } from "../core/tubecuts.js";
+import { planTubeCuts, atEnd as openAtEnd } from "../core/tubecuts.js";
 import { endCutEdge, endCutSupported, SWIVEL_DEFAULT } from "../core/endcut.js";
 
 const BIG = 20000;
@@ -157,7 +157,15 @@ export function createKernel(R) {
     }
     let d;
     if (it.kind === "bohrung") d = R.drawCircle(it.d / 2);
-    else if (it.kind === "ausklinkung") {
+    else if (it.kind === "polygon") {
+      // Bögen über ihren Scheitelpunkt: Bulge + = gegen den Uhrzeiger, wölbt nach rechts der Sehne
+      const n = it.pts.length, mid = (a, b) => [(a[0] + b[0]) / 2 + ((b[1] - a[1]) * a[2]) / 2, (a[1] + b[1]) / 2 - ((b[0] - a[0]) * a[2]) / 2];
+      let pen = R.draw([it.pts[0][0], it.pts[0][1]]);
+      for (let i = 0; i < n - 1; i++) { const a = it.pts[i], b = it.pts[i + 1]; pen = a[2] ? pen.threePointsArcTo([b[0], b[1]], mid(a, b)) : pen.lineTo([b[0], b[1]]); }
+      const last = it.pts[n - 1];
+      if (last[2]) pen = pen.threePointsArcTo([it.pts[0][0], it.pts[0][1]], mid(last, it.pts[0]));
+      d = pen.close();
+    } else if (openAtEnd(it.kind)) {
       const ext = geom.width + geom.height + 10; // über das Ende hinaus, auch bei Gehrung offen
       const w = it.l + ext;
       d = R.drawRoundedRectangle(w, it.b, it.r || 0).translate(it.end === "A" ? (it.l - ext) / 2 : (ext - it.l) / 2, 0);

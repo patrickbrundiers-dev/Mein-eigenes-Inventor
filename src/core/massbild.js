@@ -20,6 +20,18 @@ const DRAW = {
     dimTop(34, 90, cy - 11, 12, "l") + dimRight(cy - 11, cy + 11, 90, 104, "b"),
   rechteck: () => wall() + `<rect class="mb-contour" x="34" y="${cy - 13}" width="56" height="26" rx="5"/>` +
     dimTop(34, 90, cy - 13, 12, "l") + dimRight(cy - 13, cy + 13, 90, 104, "b") + leader(88, cy + 11, 100, cy + 30, "r"),
+  // Schlitz: offen vom Rand (Ende A), ohne Eckradius
+  schlitz: () => `<rect class="mb-wall" x="20" y="16" width="${W - 24}" height="${H - 24}"/><path class="mb-cut-open" d="M20 ${cy - 6}H80V${cy + 6}H20Z"/>` +
+    `<path class="mb-contour" d="M20 ${cy - 6}H80V${cy + 6}H20"/>` +
+    dimTop(20, 80, cy - 6, 12, "l") + dimRight(cy - 6, cy + 6, 80, 95, "b") +
+    `<text class="mb-note" x="10" y="${cy + 4}" text-anchor="middle">A</text>`,
+  // Polygon: Eckpunkte in Reihenfolge, x längs und y quer (Bezug Hüllrechteck-Mitte)
+  polygon: () => wall() + `<path class="mb-contour" d="M40 ${cy - 14}H92V${cy + 2}L66 ${cy + 16}L40 ${cy + 2}Z"/>` +
+    [[40, cy - 14, 1, -9, 2], [92, cy - 14, 2, 4, 2], [92, cy + 2, 3, 4, 6], [66, cy + 16, 4, 4, 9], [40, cy + 2, 5, -9, 6]]
+      .map(([x, y, k, dx, dy]) => `<circle class="mb-dot" cx="${x}" cy="${y}" r="1.6"/><text class="mb-note" x="${x + dx}" y="${y + dy}">${k}</text>`).join("") +
+    // y quer = im Uhrzeigersinn: von oben gesehen nach vorne, im Bild nach unten
+    `<path class="mb-dim" d="M112 22h20M128 19.5l4 2.5l-4 2.5M112 22v20M109.5 38l2.5 4l2.5 -4"/>` +
+    `<text class="mb-note" x="134" y="26">x</text><text class="mb-note" x="116" y="48">y</text>`,
   // offen zum Ende A (links): der Wandstreifen beginnt an der Kante
   ausklinkung: () => `<rect class="mb-wall" x="20" y="16" width="${W - 24}" height="${H - 24}"/><path class="mb-cut-open" d="M20 ${cy - 13}H70a5 5 0 0 1 5 5V${cy + 8}a5 5 0 0 1 -5 5H20Z"/>` +
     `<path class="mb-contour" d="M20 ${cy - 13}H70a5 5 0 0 1 5 5V${cy + 8}a5 5 0 0 1 -5 5H20"/>` +
@@ -31,7 +43,7 @@ const DRAW = {
 export function contourSketch(kind) {
   const draw = DRAW[kind];
   if (!draw) return "";
-  const title = `Maße ${TUBE_CUT_KINDS[kind].label}: ` + TUBE_CUT_KINDS[kind].fields.join(", ");
+  const title = kind === "polygon" ? "Polygon: Eckpunkte der Reihe nach, x längs, y quer" : `Maße ${TUBE_CUT_KINDS[kind].label}: ` + TUBE_CUT_KINDS[kind].fields.join(", ");
   return `<svg class="massbild" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${title}"><title>${title}</title>${draw()}</svg>`;
 }
 

@@ -165,7 +165,7 @@ test("Maßbild: je Konturart genau die Maßbuchstaben der Eingabefelder", () => 
   for (const [k, d] of Object.entries(TUBE_CUT_KINDS)) {
     const svg = contourSketch(k);
     assert.match(svg, /^<svg class="massbild"/);
-    assert.deepEqual(sketchLetters(svg), [...d.fields].sort(), k);
+    assert.deepEqual(sketchLetters(svg), d.fields.filter((f) => f.length === 1).sort(), k); // Polygon: nur Punktnummern
   }
   assert.equal(contourSketch("gibtsnicht"), "");
 });
@@ -222,4 +222,45 @@ test("Prüfregeln laufen über die Zuschnittliste mit", () => {
   const items = planTubeCuts([{ kind: "bohrung", side: "oben", x: "100", d: "2", q: "0", pattern: "1" }], prof, ev).items;
   const out = checkCutList([{ pos: 1, profileId: "vierkant 40x40x3", length: 500, kgm: 3.4, contours: { items, prof } }]);
   assert.deepEqual(out.map((x) => [x.level, x.rule]), [[WARNUNG, "Bohrung zu klein"]]);
+});
+
+// ---------- Schlitz und Polygon (schneidweg.py) ----------
+import { parsePolygon, polygonPoints } from "../src/core/tubecuts.js";
+const near = (a, b, tol, msg = "") => assert.ok(Math.abs(a - b) <= tol, `${msg} ${a} ≠ ${b} (±${tol})`);
+
+test("Polygon: Eckpunkte wie im Rohr-Editor, Bögen als Bulge, Schnittlänge = Umfang", () => {
+  const p = parsePolygon("0,0; 30,0; 30,10; 15,20; 0,10");
+  assert.equal(p.l, 30); assert.equal(p.b, 20);
+  assert.deepEqual(p.pts[0], [-15, -10, 0], "um die Mitte des Hüllrechtecks");
+  near(cutLength({ kind: "polygon", pts: p.pts }), 30 + 10 + 2 * Math.hypot(15, 10) + 10, 1e-9);
+  // Halbkreis (Bulge 1) auf der rechten Seite: Hülle 30 × 20, Länge 3 Geraden + π·10
+  const q = parsePolygon("0 0; 20 0 1; 20 20; 0 20");
+  assert.equal(q.l, 30);
+  near(cutLength({ kind: "polygon", pts: q.pts }), 20 + 20 + 20 + Math.PI * 10, 1e-9);
+  const arc = polygonPoints(q.pts);
+  assert.ok(Math.max(...arc.map((x) => x[0])) > 14.9, "Bogen wölbt nach +x");
+  assert.throws(() => parsePolygon("0,0; 10,0"), /mindestens 3/);
+  assert.throws(() => parsePolygon("0,0; 10,0; 20,0"), /keine Fläche/);
+  assert.throws(() => parsePolygon("0,0; a,1; 2,2"), /keine Zahl/);
+});
+
+test("Schlitz und Polygon: Lage, Schneidweg, Prüfregeln", () => {
+  const prof = { kind: "vierkant", W: 40, H: 40, t: 3, r: 6, L: 500 };
+  const r = planTubeCuts([
+    { kind: "schlitz", side: "oben", end: "B", l: "40", b: "6", q: "0" },
+    { kind: "polygon", side: "vorne", x: "200", q: "0", pattern: "2x50", punkte: "0,0; 30,0; 30,10; 15,20; 0,10" },
+  ], prof, ev);
+  assert.deepEqual(r.issues, []);
+  assert.deepEqual(r.items[0].xs, [500]);
+  assert.equal(r.items[1].l, 30);
+  near(r.cutLength, 2 * 40 + 6 + 2 * (50 + 2 * Math.hypot(15, 10)), 1e-9);
+  assert.equal(r.pierces, 3);
+  assert.match(tubeCutLabel(r.items[1]), /Polygon 5 Ecken vorne, 2× ab 200/);
+  // Schlitz zählt nicht beim Rand, Polygon nah am Ende schon
+  const rand = checkContours(planTubeCuts([{ kind: "polygon", side: "oben", x: "16", q: "0", pattern: "1", punkte: "0,0; 30,0; 15,10" }], prof, ev).items, prof, DFM_DEFAULTS);
+  assert.match(rand[0].text, /kleinster Abstand 1 mm/);
+  assert.deepEqual(checkContours(r.items.slice(0, 1), prof, DFM_DEFAULTS), []);
+  // zu breit für die ebene Fläche
+  const bad = planTubeCuts([{ kind: "polygon", side: "oben", x: "100", q: "0", pattern: "1", punkte: "0,0; 10,0; 10,30" }], prof, ev);
+  assert.match(bad.issues[0].message, /ragt über die ebene Fläche/);
 });
