@@ -24,10 +24,13 @@ Folgen für die Fertigungsdaten:
 
 | Ansicht | Körper | Verwendung |
 |---|---|---|
-| Gefaltet (Standard) | Segmente auf Gehrung, Außenwand mit Innenradius gebogen, ein Körper | Baugruppe, Zeichnung, Masse |
+| Gefaltet (Standard) | ein Körper aus Segmenten auf Gehrung, Gehrung als Trennlinie sichtbar, Außenwand mit Innenradius gebogen | Baugruppe, Zeichnung, Masse |
 | Abgewickelt | gerades Rohr mit V-Ausklinkungen | STEP für den Rohrlaser, Zuschnittliste |
 
-Gebaut werden immer beide Körper, auch geprüft werden immer beide. Angezeigt und
+Gebaut werden immer beide Körper, auch geprüft werden immer beide. Die Segmente werden
+an der Gehrungsebene getrennt gebaut (jedes mit der halben Biegung) und ohne
+Flächen-Vereinigung verschmolzen, damit die Gehrung wie in der Referenz als Linie sichtbar
+bleibt (Wunsch Patrick, 24.10.2026). Angezeigt und
 exportiert wird der Körper der gewählten Ansicht.
 
 ## 3. Koordinaten- und Winkelkonvention

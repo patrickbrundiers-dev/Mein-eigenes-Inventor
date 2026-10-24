@@ -331,7 +331,7 @@ const L_TOL = 0.01; // Vernetzungstoleranz der Längenmessung; Kanten an ebenen 
 const relNear = (a, b, rel, msg) => near(a, b, Math.abs(b) * rel, msg);
 const rad = (deg) => (deg * Math.PI) / 180;
 
-test("Knickrahmen: gerades Rohr, 30/45/90°, gebogene Außenwand, beide Ansichten gültig", async () => {
+test("Knickrahmen: gerades Rohr, 30/45/90°, gebogene Außenwand, Gehrungslinie, beide Ansichten gültig", async () => {
   // gerades Rohr
   let res = await K.buildPart(part([knick({}, ["1000"], [])]));
   okAll(res);
@@ -350,6 +350,13 @@ test("Knickrahmen: gerades Rohr, 30/45/90°, gebogene Außenwand, beide Ansichte
     near(fb.meta.length, flatL, 1e-9, "Abwicklungslänge");
     assert.ok(fb.meta.coped && fb.meta.knicks === 1);
     near(fb.meta.bendAllowances[0], (3 + 0.99) * rad(ang), 1e-12);
+    // Gehrungslinie sichtbar: Kanten in der Gehrungsebene am Knoten (800, 0), Normale (d1 + d2)
+    const nM = [1 + Math.cos(rad(ang)), Math.sin(rad(ang)), 0];
+    const inMiter = (p) => Math.abs((p[0] - 800) * nM[0] + p[1] * nM[1]) / Math.hypot(nM[0], nM[1]) < 1e-6;
+    const pt = (v) => (typeof v.toTuple === "function" ? v.toTuple() : v);
+    const onTop = (e) => [pt(e.startPoint), pt(e.endPoint)].every((p) => inMiter(p) && Math.abs(Math.abs(p[2]) - 20) < 1e-6);
+    // je eine Linie quer über Ober- und Unterseite (ohne Flächen-Vereinigung beim Verschmelzen)
+    assert.ok(fb.shape.edges.filter(onTop).length >= 2, "Trennlinie auf Gehrung sichtbar");
     const bb = fb.shape.boundingBox.bounds;
     const ey = 600 * Math.sin(rad(ang));
     assert.ok(bb[1][1] >= ey - 1e-6 && bb[1][1] <= ey + 30 + 1e-6, "y-Ausdehnung");

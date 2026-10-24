@@ -302,7 +302,7 @@ export class Props {
         const inner = (j) => { try { return fmtNum(180 - Math.abs(evaluate(bends[j].angle, this.scope())), 2) + "°"; } catch { return "–"; } };
         out.push(this.section("Knickrahmen",
           this.seg("Ansicht", [["gefaltet", "Gefaltet"], ["abgewickelt", "Abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
-          h("p", { class: "hint" }, "Ein Rohr, an jedem Knick V-förmig durch drei Wände ausgeklinkt; die Außenwand wird gekantet. »Abgewickelt« zeigt das gerade Rohr für den Rohrlaser (STEP, Zuschnittliste).")));
+          h("p", { class: "hint" }, "Ein Bauteil: an jedem Knick V-förmig durch drei Wände ausgeklinkt, die Außenwand wird gebogen. »Gefaltet« zeigt die Gehrung als Trennlinie, »Abgewickelt« das gerade Rohr für den Rohrlaser (STEP, Zuschnittliste).")));
         out.push(this.sectionEditor(f, KNICK_SECTIONS));
         out.push(this.section("Lage",
           this.select("Ebene", ["XY", "XZ", "YZ"].map((k) => [k, BASE_PLANES[k].label]), f.plane || "XY", (v) => this.set(f, "plane", v, "Ebene")),

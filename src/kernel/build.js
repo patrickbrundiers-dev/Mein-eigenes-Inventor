@@ -363,9 +363,10 @@ export function createKernel(R) {
           }
           case "knickrahmen": {
             const kr = buildKnickrahmen(f, E);
-            const shown = f.view === "abgewickelt" ? kr.flat : kr.folded;
-            state.tools.set(f.id, { op: "member", shapes: [{ shape: shown, kind: "member", meta: kr.meta, name: kr.name }] });
-            pushMember(state, shown, f, kr.meta, kr.name);
+            // ein Bauteil (eine Zuschnittzeile in Abwicklungslänge); gefaltet mit sichtbarer Gehrungslinie
+            const shown = [{ shape: f.view === "abgewickelt" ? kr.flat : kr.folded, kind: "member", meta: kr.meta, name: kr.name }];
+            state.tools.set(f.id, { op: "member", shapes: shown });
+            for (const x of shown) pushMember(state, x.shape, f, x.meta, x.name);
             st.info = `Abwicklung ${round(kr.meta.length)} mm, ${kr.meta.knicks} Ausklinkung(en)` + (kr.meta.knicks ? `, Biegezugabe ${kr.meta.bendAllowances.map(round).join(" / ")} mm` : "") + (f.view === "abgewickelt" ? "" : " · für den Rohrlaser Ansicht »Abgewickelt« exportieren");
             break;
           }
@@ -688,9 +689,9 @@ export function createKernel(R) {
       return pen.close().sketchOnPlane(new R.Plane(v3.sub(origin, v3.mul(N, Hext / 2)), xDir, N)).extrude(Hext);
     };
 
-    // gefaltet: Segmente auf Gehrung (Ebene am Knoten enthält den Biegemittelpunkt), im Bereich der
-    // Biegung ausgespart; dort wird der Außenwand-Streifen des Querschnitts um den Mittelpunkt gedreht
-    const bendParts = [];
+    // Biegung: Segmente im Bereich der Biegung ausgespart; dort wird der Außenwand-Streifen des
+    // Querschnitts um den Biegemittelpunkt gedreht
+    const halves = plan.dirs.map(() => []);
     const sectors = plan.dirs.map(() => []);
     plan.knicks.forEach((k, j) => {
       const dA = plan.dirs[j], dB = plan.dirs[j + 1], P = plan.nodes[j + 1];
@@ -714,19 +715,28 @@ export function createKernel(R) {
       const c = (sgn * k.sigma * (lo + hi)) / 2;
       const clip = ax === 0 ? R.drawRectangle(hi - lo, big).translate(c, 0) : R.drawRectangle(big, hi - lo).translate(0, c);
       const strip = regionToDrawing({ outer: g.outer, holes: g.holes }).intersect(clip).sketchOnPlane(new R.Plane(fr.origin, fr.u, fr.z));
-      const ang = Math.abs(k.angle);
-      bendParts.push(R.revolution(strip.face(), C, k.angle > 0 ? N : v3.mul(N, -1), ang));
+      // je Segment die halbe Biegung: Gehrungsebene am Knoten enthält C und liegt bei |θ|/2
+      const half = Math.abs(k.angle) / 2, axis = k.angle > 0 ? N : v3.mul(N, -1);
+      const hA = R.revolution(strip.face(), C, axis, half);
+      halves[j].push(hA);
+      halves[j + 1].push(hA.clone().rotate(half, C, axis));
     });
-    let folded = null;
-    plan.dirs.forEach((z, i) => {
+    // gefaltet: Segmente auf Gehrung, an der Gehrungsebene getrennt gebaut (je halbe Biegung)
+    const segments = plan.dirs.map((z, i) => {
       const cuts = { start: [], end: [] };
+      const m0 = i > 0 ? Math.abs(plan.knicks[i - 1].angle) / 2 : 0, m1 = i < plan.knicks.length ? Math.abs(plan.knicks[i].angle) / 2 : 0;
       if (i > 0) cuts.start.push({ p: plan.nodes[i], n: v3.mul(v3.norm(v3.add(z, plan.dirs[i - 1])), -1) });
       if (i < plan.dirs.length - 1) cuts.end.push({ p: plan.nodes[i + 1], n: v3.norm(v3.add(z, plan.dirs[i + 1])) });
-      let seg = makeMember(section, input.segments[i], memberFrame(plan.nodes[i], z, rot, N), cuts).solid;
+      const fr = memberFrame(plan.nodes[i], z, rot, N);
+      let seg = makeMember(section, input.segments[i], fr, cuts).solid;
       for (const w of sectors[i]) seg = seg.cut(w.clone());
-      folded = folded ? folded.fuse(seg) : seg;
+      for (const hb of halves[i]) seg = seg.fuse(hb);
+      checkSolid(seg, `Segment ${i + 1}`);
+      return { solid: seg, length: memberLength(seg, fr), miterStart: m0, miterEnd: m1 };
     });
-    for (const b of bendParts) folded = folded.fuse(b);
+    // ohne Flächen-Vereinigung, damit die Gehrungslinie zwischen den Segmenten als Kante sichtbar bleibt
+    let folded = segments[0].solid;
+    for (const sg of segments.slice(1)) folded = folded.fuse(sg.solid, { simplify: false });
     checkSolid(folded, "gefaltet");
 
     // abgewickelt: gerades Rohr entlang Segment 1; je Knick Biegezone (nur Außenwand bleibt) und V-Flanken
@@ -757,7 +767,7 @@ export function createKernel(R) {
       bendAllowances: plan.knicks.map((k) => k.zone),
       frameZ: z0,
     };
-    return { folded, flat, meta, name, plan };
+    return { folded, segments, flat, meta, name, plan };
   }
 
   /** Körperprüfung: genau ein gültiger Volumenkörper mit Volumen > 0 */
