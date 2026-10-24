@@ -8,7 +8,7 @@ import { v3 } from "../core/geom.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
 import { clipProjection } from "../core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden } from "../core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel } from "../core/autodims.js";
 import { bomRows } from "./props.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
@@ -458,7 +458,8 @@ export class DrawingEditor {
       const ang = m.angle ?? -Math.PI / 4;
       const ux = Math.cos(ang), uy = Math.sin(ang);
       const pOn = [cx + ux * r, cy + uy * r];
-      const pOut = [cx + ux * (r + 8), cy + uy * (r + 8)];
+      const lead = m.lead ?? LEAD;
+      const pOut = [cx + ux * (r + lead), cy + uy * (r + lead)];
       const start = m.kind === "dia" ? [cx - ux * r, cy - uy * r] : [cx, cy];
       const shelf = Math.max(10, txt.length * 2.1 + 2); // Bezugslinie so lang wie der Text (z. B. „5× Ø6,8“)
       g.append(svgEl("path", { d: `M${r3(start[0])} ${r3(start[1])}L${r3(pOut[0])} ${r3(pOut[1])}h${r3(ux >= 0 ? shelf : -shelf)}` }));
@@ -480,12 +481,17 @@ export class DrawingEditor {
     };
     const dx = B1[0] - A1[0], dy = B1[1] - A1[1], L = Math.hypot(dx, dy) || 1;
     const ux = dx / L, uy = dy / L;
-    g.append(svgEl("path", { d: ext(A, A1) + ext(B, B1) + `M${r3(A1[0])} ${r3(A1[1])}L${r3(B1[0])} ${r3(B1[1])}` }));
-    g.append(arrowHead(A1[0], A1[1], -ux, -uy), arrowHead(B1[0], B1[1], ux, uy));
+    // enge Maße (DIN 406-11): Pfeile von außen, Text neben die Maßlinie
+    const tight = L < 7, tw = textWidth(txt), outside = L < tw + 7;
+    const tail = tight ? 4 : 0, far = outside ? tw + 3 : 0;
+    const P0 = [A1[0] - ux * tail, A1[1] - uy * tail], P1 = [B1[0] + ux * Math.max(tail, far), B1[1] + uy * Math.max(tail, far)];
+    g.append(svgEl("path", { d: ext(A, A1) + ext(B, B1) + `M${r3(P0[0])} ${r3(P0[1])}L${r3(P1[0])} ${r3(P1[1])}` }));
+    if (tight) g.append(arrowHead(A1[0], A1[1], ux, uy), arrowHead(B1[0], B1[1], -ux, -uy));
+    else g.append(arrowHead(A1[0], A1[1], -ux, -uy), arrowHead(B1[0], B1[1], ux, uy));
     let rot = (Math.atan2(dy, dx) * 180) / Math.PI;
     if (rot > 90) rot -= 180;
     if (rot <= -90) rot += 180;
-    const mx = (A1[0] + B1[0]) / 2, my = (A1[1] + B1[1]) / 2;
+    const mx = outside ? B1[0] + ux * (Math.max(tail, 1) + tw / 2 + 1) : (A1[0] + B1[0]) / 2, my = outside ? B1[1] + uy * (Math.max(tail, 1) + tw / 2 + 1) : (A1[1] + B1[1]) / 2;
     const nrm = [Math.sin((rot * Math.PI) / 180), -Math.cos((rot * Math.PI) / 180)];
     g.append(text(mx + nrm[0] * 1.2, my + nrm[1] * 1.2, rot));
     return g;
@@ -736,6 +742,7 @@ export class DrawingEditor {
           const xf = this.viewXf(v);
           if (m.kind === "dia" || m.kind === "rad") { const [cx, cy] = xf.to(m.circle.cx, m.circle.cy); m.angle = Math.atan2(sy - cy, sx - cx); }
           else m.off = this.offsetFor(m, xf, sx, sy);
+          if (m.auto) m.touched = true;
         } else if (drag.kind === "balloon") {
           const b = d.balloons.find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [...b.at];
@@ -853,7 +860,7 @@ export class DrawingEditor {
         { label: "OK", primary: true, run: () => {
           const dec = Number(document.getElementById("dm-dec").value);
           const suf = document.getElementById("dm-suf").value;
-          this.app.edit("Maß", () => { m.decimals = Math.max(0, Math.min(3, dec)); m.suffix = suf; }, { rebuild: false });
+          this.app.edit("Maß", () => { m.decimals = Math.max(0, Math.min(3, dec)); m.suffix = suf; if (m.auto) m.touched = true; }, { rebuild: false });
           this.render();
         } }],
     });
@@ -863,20 +870,59 @@ export class DrawingEditor {
     // Vorderansicht zuerst, damit Breite und Höhe dort stehen; jede Raumrichtung und jeder Bohrungs-Ø nur einmal
     const order = (v) => (v.type === "front" ? 0 : v.type === "section" ? 2 : 1);
     const cands = d.views.filter((v) => v.type !== "iso" && v.type !== "detail" && this.proj.get(v.id)?.bbox).sort((a, b) => order(a) - order(b));
+    // erneuter Aufruf ersetzt die eigenen, nicht angefassten Maße; verschobene oder bearbeitete bleiben
+    const ids = new Set(cands.map((v) => v.id));
+    const keep = d.dims.filter((m) => !(m.auto && !m.touched && ids.has(m.view)));
     const used = { axes: new Set(), radii: new Set() };
-    for (const m of d.dims) {
+    for (const m of keep) {
       if (!m.auto) continue;
       if (m.axis) used.axes.add(m.axis);
       if (m.kind === "dia") used.radii.add(Math.round(m.circle.r * 1000));
     }
-    const views = cands.filter((v) => !d.dims.some((m) => m.view === v.id && m.auto)).map((v) => {
+    const views = cands.filter((v) => !keep.some((m) => m.view === v.id && m.auto)).map((v) => {
       const c = this.viewCam(d, v), p = this.proj.get(v.id);
       return { id: v.id, axes: viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs };
     });
     const add = planAutoDims(views, used).map((m) => ({ id: uid("m"), ...m, auto: true }));
-    if (!add.length) return toast("Keine weiteren Hauptmaße gefunden");
-    this.app.edit("Hauptmaße", () => d.dims.push(...add), { rebuild: false });
+    if (!add.length && keep.length === d.dims.length) return toast("Keine weiteren Hauptmaße gefunden");
+    layoutAutoDims(add, this.sheetRects(d), this.sheetObstacles(d, keep));
+    this.app.edit("Hauptmaße", () => { d.dims = [...keep, ...add]; }, { rebuild: false });
     this.render();
+  }
+  /** Ansichten als Rechtecke auf dem Blatt (für die Platzierung der Maße) */
+  sheetRects(d) {
+    const out = {};
+    for (const v of d.views) {
+      const p = this.proj.get(v.id);
+      if (!p?.bbox) continue;
+      const xf = this.viewXf(v), bb = xf.bb;
+      let [x0, y0] = xf.to(bb.x0, bb.y1), [x1, y1] = xf.to(bb.x1, bb.y0);
+      if (v.type === "detail") { const r = v.r * v.scale; [x0, y0, x1, y1] = [v.x - r, v.y - r, v.x + r, v.y + r]; }
+      out[v.id] = { to: xf.to, rect: [x0, y0, x1, y1], scale: v.scale, circles: (p.arcs || []).filter((a) => a.full) };
+    }
+    return out;
+  }
+  /** Belegte Flächen: Schriftfeld, Stückliste, vorhandene Maße; dazu die nutzbare Fläche im Rahmen */
+  sheetObstacles(d, dims) {
+    const [W, H] = this.sheetSize(d);
+    const obstacles = [[W - 192, H - 58, W - 10, H - 10]]; // Schriftfeld mit 2 mm Luft
+    const rows = d.bomTable?.show ? this.bomRowsOf(d).length : 0;
+    if (rows) obstacles.push([W - 192, H - 58 - 6 * (rows + 1), W - 10, H - 58]);
+    const views = this.sheetRects(d);
+    for (const m of dims) {
+      const v = views[m.view];
+      if (!v) continue;
+      if (m.kind === "dia" || m.kind === "rad") {
+        const [cx, cy] = v.to(m.circle.cx, m.circle.cy), ang = m.angle ?? -Math.PI / 4, R = m.circle.r * v.scale + (m.lead ?? LEAD);
+        const px = cx + Math.cos(ang) * R, py = cy + Math.sin(ang) * R, w = Math.max(10, textWidth(dimLabel(m)) + 2);
+        obstacles.push(Math.cos(ang) >= 0 ? [px, py - 5, px + w, py + 0.5] : [px - w, py - 5, px, py + 0.5]);
+        continue;
+      }
+      const A = v.to(...m.p1), B = v.to(...m.p2), off = m.off ?? 10;
+      if (m.kind === "h") { const y = (off >= 0 ? Math.max(A[1], B[1]) : Math.min(A[1], B[1])) + off; obstacles.push([Math.min(A[0], B[0]), y - 4.5, Math.max(A[0], B[0]), y + 1]); }
+      else if (m.kind === "v") { const x = (off >= 0 ? Math.max(A[0], B[0]) : Math.min(A[0], B[0])) + off; obstacles.push([x - 4.5, Math.min(A[1], B[1]), x + 4.5, Math.max(A[1], B[1])]); }
+    }
+    return { obstacles, frame: [20, 10, W - 10, H - 10] };
   }
   select(sel) {
     this.sel = sel;
