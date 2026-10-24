@@ -101,11 +101,19 @@ export function commandPalette(app) {
   let items = [], idx = 0;
   const close = () => { bd.remove(); document.removeEventListener("keydown", onKey, true); };
   const exec = (c) => { close(); keys.exec(c.id); };
+  const pinned = () => app.prefs.get("werkzeuge.schnellzugriff") || [];
+  const togglePin = (id) => {
+    const cur = pinned();
+    const r = app.prefs.set("werkzeuge.schnellzugriff", cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+    if (!r.ok) toast(r.error, { kind: "err" });
+    render();
+  };
   const render = () => {
     items = searchCommands(input.value, app.mode).filter((c) => c.id !== "app.search").slice(0, 40);
     idx = Math.min(idx, Math.max(0, items.length - 1));
     list.replaceChildren(...(items.length ? items.map((c, i) => h("button", { class: "cmd-item" + (i === idx ? " on" : ""), role: "option", "aria-selected": i === idx ? "true" : "false", onmousemove: () => { if (idx !== i) { idx = i; render(); } }, onclick: () => exec(c) },
-      h("span", { class: "cmd-label" }, c.label), h("span", { class: "cmd-group" }, c.group), keys.label(c.id) ? h("span", { class: "kbd" }, keys.label(c.id)) : null))
+      h("span", { class: "cmd-label" }, c.label), h("span", { class: "cmd-group" }, c.group), keys.label(c.id) ? h("span", { class: "kbd" }, keys.label(c.id)) : h("span"),
+      h("span", { class: "cmd-pin" + (pinned().includes(c.id) ? " on" : ""), role: "button", title: pinned().includes(c.id) ? "Vom Schnellzugriff lösen" : "An den Schnellzugriff heften", onclick: (e) => { e.stopPropagation(); togglePin(c.id); } }, "📌")))
       : [h("div", { class: "hint", style: { padding: "8px" } }, "Kein passender Befehl in diesem Arbeitsbereich")]));
     list.children[idx]?.scrollIntoView?.({ block: "nearest" });
   };
@@ -122,6 +130,24 @@ export function commandPalette(app) {
   document.getElementById("modal-root").append(bd);
   render();
   setTimeout(() => input.focus(), 10);
+}
+
+/** Schnellzugriff im Einstellungscenter: Reihenfolge ändern, entfernen */
+export function quickAccessEditor(app) {
+  const prefs = app.prefs;
+  const box = h("div", { class: "qa-editor" });
+  const set = (next) => { const r = prefs.set("werkzeuge.schnellzugriff", next); if (!r.ok) toast(r.error, { kind: "err" }); render(); };
+  const render = () => {
+    const ids = prefs.get("werkzeuge.schnellzugriff") || [];
+    box.replaceChildren(h("h3", {}, "Schnellzugriff"),
+      ids.length ? h("ol", { class: "qa-list" }, ...ids.map((id, i) => h("li", {}, h("span", { class: "grow" }, commandDef(id)?.label || id),
+        h("button", { class: "icon-btn", title: "Nach oben", disabled: i === 0, onclick: () => { const n = [...ids]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; set(n); } }, "↑"),
+        h("button", { class: "icon-btn", title: "Nach unten", disabled: i === ids.length - 1, onclick: () => { const n = [...ids]; [n[i + 1], n[i]] = [n[i], n[i + 1]]; set(n); } }, "↓"),
+        h("button", { class: "icon-btn", title: "Entfernen", onclick: () => set(ids.filter((x) => x !== id)) }, "✕"))))
+        : h("p", { class: "hint" }, "Noch leer. In der Befehlssuche (Strg+K) einen Befehl über die Stecknadel anheften."));
+  };
+  render();
+  return box;
 }
 
 /** Editor für Tastaturkürzel im Einstellungscenter */

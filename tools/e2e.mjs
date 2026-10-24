@@ -1022,6 +1022,43 @@ try {
     step("Skizze: automatische Bedingungen", auto1.types.includes("perpendicular") && auto1.ok && auto2 === 0, JSON.stringify({ auto1, auto2 }));
   }
 
+  // Schnellzugriff: Befehl in der Befehlssuche anheften, Knopf erscheint und läuft; Standardwert Polygon-Ecken
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    await page.keyboard.press("Control+k");
+    await page.locator(".cmd-palette input").fill("Ansicht Oben");
+    await page.locator(".cmd-item").first().locator(".cmd-pin").click();
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(150);
+    const qaBtn = page.locator("#ribbon .rb-qa-btn[data-cmd='view.top']");
+    const shown = await qaBtn.count();
+    await evalApp(() => window.__werkcad.viewer.setView("iso", { animate: false }));
+    await qaBtn.click();
+    await page.waitForTimeout(700);
+    const dir = await evalApp(() => window.__werkcad.viewer.viewState().dir);
+    const stored = await evalApp(() => { try { return JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => k.includes("einstellungen")) || "") || "{}").values?.["werkzeuge.schnellzugriff"]; } catch { return null; } });
+    // Standardwert Polygon-Ecken aus den Einstellungen
+    await evalApp(() => { const a = window.__werkcad; a.prefs.set("werkzeuge.std.polygon", 8); a.sketcher.polySides = null; }); // in der Sitzung zuletzt eingegebener Wert hätte Vorrang
+    await evalApp(() => window.__werkcad.newPart("Std"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    await evalApp(() => window.__werkcad.sketcher.setTool("polygon"));
+    const cv = await page.locator("#viewer canvas").boundingBox();
+    await page.mouse.click(cv.x + cv.width / 2, cv.y + cv.height / 2);
+    await page.mouse.click(cv.x + cv.width / 2 + 80, cv.y + cv.height / 2);
+    const polyDefault = await page.locator(".dim-input input").inputValue();
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await evalApp(() => { const p = window.__werkcad.prefs; p.set("werkzeuge.std.polygon", 6); p.set("werkzeuge.schnellzugriff", []); });
+    step("Schnellzugriff und Werkzeug-Standardwerte", shown === 1 && Math.abs(Math.abs(dir[2]) - 1) < 1e-6 && Array.isArray(stored) && stored.includes("view.top") && polyDefault === "8",
+      JSON.stringify({ shown, dir, stored, polyDefault }));
+  }
+
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));

@@ -613,7 +613,8 @@ export class Sketcher {
   /** Dialog für Rechteck- bzw. Kreismuster; center = Fangpunkt (bestehender Punkt oder freie Lage) */
   patternDialog(mode, ids, center) {
     const scope = this.scope();
-    const last = this.lastPattern?.[mode] || (mode === "rot" ? { n: "6", total: "360" } : { nx: "3", a: "20", ny: "1", b: "20" });
+    const n0 = String(this.prefs?.["werkzeuge.std.musterAnzahl"] ?? 3), a0 = String(this.prefs?.["werkzeuge.std.musterAbstand"] ?? 20);
+    const last = this.lastPattern?.[mode] || (mode === "rot" ? { n: n0, total: "360" } : { nx: n0, a: a0, ny: "1", b: a0 });
     const fields = mode === "rot" ? [["n", "Anzahl"], ["total", "Gesamtwinkel °"]] : [["nx", "Anzahl X"], ["a", "Abstand X"], ["ny", "Anzahl Y"], ["b", "Abstand Y"]];
     const inputs = Object.fromEntries(fields.map(([k]) => [k, h("input", { class: "inp", value: last[k], spellcheck: "false", "data-k": k })]));
     const err = h("div", { class: "hint" });
@@ -793,7 +794,7 @@ export class Sketcher {
         if (d < bd) { bd = d; best = p.id; }
       }
       if (!best) return toast("Ecke anklicken, an der genau zwei Linien enden");
-      this.askValue(sx, sy, this.lastFillet || "5", (val) => {
+      this.askValue(sx, sy, this.lastFillet || String(this.prefs?.["werkzeuge.std.rundung"] ?? 5), (val) => {
         const r = evaluate(val, this.scope());
         const test = JSON.parse(JSON.stringify(this.sk));
         const res = filletCorner(test, best, r, uid, val);
@@ -838,7 +839,7 @@ export class Sketcher {
         return;
       }
       const pick = { x: lx, y: ly };
-      this.askValue(sx, sy, this.lastOffset || "5", (val) => {
+      this.askValue(sx, sy, this.lastOffset || String(this.prefs?.["werkzeuge.std.versatz"] ?? 5), (val) => {
         const d = evaluate(val, this.scope());
         try { offsetEntities(JSON.parse(JSON.stringify(this.sk)), ids, d, pick, { uid, value: val }); } catch (err) { return toast(err.message, { kind: "err" }); }
         this.lastOffset = val;
@@ -928,7 +929,7 @@ export class Sketcher {
           const c = this.state.start;
           this.state = null;
           if (Math.hypot(sn.x - c.x, sn.y - c.y) * this.M.scale < 2) break;
-          this.askValue(sx, sy, this.polySides || "6", (val) => {
+          this.askValue(sx, sy, this.polySides || String(this.prefs?.["werkzeuge.std.polygon"] ?? 6), (val) => {
             const n = Math.round(evaluate(val, this.scope()));
             this.polySides = String(n);
             this.commitShape("Polygon", (sk) => buildPolygon(sk, c, sn, n, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));

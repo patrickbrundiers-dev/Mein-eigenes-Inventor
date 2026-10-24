@@ -1,4 +1,4 @@
-import { validateKeymap } from "./commands.js";
+import { validateKeymap, commandDef } from "./commands.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
 // Reines Modul ohne DOM – die Oberfläche (src/ui/prefs.js) speichert und wendet an.
@@ -18,7 +18,7 @@ export const CATEGORIES = [
   { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standardordner", "Standard-Einheit (intern immer mm/Grad)"] },
   { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["gefüllte Schnittflächen", "Beleuchtung", "gespeicherte Ansichten"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
   { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["Farben für Bestimmtheitszustand", "automatische Bemaßung", "Standardebene"] },
-  { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", planned: ["Werkzeugleisten anpassen", "Standardwerte je Werkzeug", "letzte Werkzeugparameter wiederverwenden"], note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
+  { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", planned: ["Menüband selbst anordnen", "letzte Werkzeugparameter über die Sitzung hinaus merken"], note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
   { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Farbschema hell/dunkel", "Tooltip-Verzögerung"] },
   { id: "dokument", label: "Dokument und Modell", status: "geplant", planned: ["Standardvorlagen", "Namensregeln", "Standardmaterial", "Modelltoleranz"], note: "Dokumentwerte werden später in der Projektdatei gespeichert, nicht hier." },
   { id: "material", label: "Materialien", status: "teilweise", planned: ["eigene Werkstoffe", "Import/Export der Bibliothek"], note: "Die eingebaute Werkstoffliste (Dichte für Masse und Zuschnittliste) ist fest; siehe unten." },
@@ -70,6 +70,13 @@ export const SETTINGS = [
   { key: "skizze.auto.tangential", cat: "skizze", label: "Automatisch: tangential am Bogenende", type: "bool", default: true },
   { key: "skizze.auto.gleich", cat: "skizze", label: "Automatisch: gleich lang / gleicher Radius", type: "bool", default: true, help: "Greift, wenn Länge bzw. Radius bis auf wenige Pixel getroffen wird." },
 
+  { key: "werkzeuge.schnellzugriff", cat: "werkzeuge", label: "Schnellzugriff", type: "cmdlist", default: [], custom: true, help: "Befehle in der Leiste oben neben Rückgängig. Anheften in der Befehlssuche (Strg+K) über die Stecknadel." },
+  { key: "werkzeuge.std.rundung", cat: "werkzeuge", label: "Standardwert Skizzenrundung", unit: "mm", type: "number", default: 5, min: 0.001, max: 100000 },
+  { key: "werkzeuge.std.versatz", cat: "werkzeuge", label: "Standardwert Versatz", unit: "mm", type: "number", default: 5, min: 0.001, max: 100000 },
+  { key: "werkzeuge.std.polygon", cat: "werkzeuge", label: "Standardwert Polygon-Ecken", type: "int", default: 6, min: 3, max: 64 },
+  { key: "werkzeuge.std.musterAnzahl", cat: "werkzeuge", label: "Standardwert Musteranzahl", type: "int", default: 3, min: 2, max: 400 },
+  { key: "werkzeuge.std.musterAbstand", cat: "werkzeuge", label: "Standardwert Musterabstand", unit: "mm", type: "number", default: 20, min: -100000, max: 100000 },
+  { key: "werkzeuge.std.extrusion", cat: "werkzeuge", label: "Standardwert Extrusionstiefe", unit: "mm", type: "number", default: 10, min: 0.001, max: 100000, help: "Startwert neuer Extrusionen; die Werkzeuge merken sich während der Sitzung den zuletzt eingegebenen Wert." },
   { key: "werkzeuge.kuerzel", cat: "werkzeuge", label: "Tastaturkürzel", type: "keymap", default: {}, custom: true, help: "Abweichungen von der Standardbelegung; Konflikte werden abgelehnt." },
 
   { key: "fertigung.stange", cat: "fertigung", label: "Max. Stangenlänge", unit: "mm", type: "number", default: 6500, min: 0, max: 20000, help: "Nutzbar ist die Stange minus Endbeschnitt und Greiferrest. 0 = nicht prüfen." },
@@ -116,6 +123,14 @@ export function validateValue(def, v) {
     }
     case "keymap":
       return validateKeymap(v);
+    case "cmdlist": {
+      if (!Array.isArray(v)) return { ok: false, error: "Liste von Befehlen erwartet" };
+      if (v.length > 30) return { ok: false, error: "Höchstens 30 Befehle" };
+      const bad = v.filter((id) => typeof id !== "string" || !commandDef(id));
+      if (bad.length) return { ok: false, error: "Unbekannter Befehl: " + bad.join(", ") };
+      if (new Set(v).size !== v.length) return { ok: false, error: "Befehl doppelt" };
+      return { ok: true, value: [...v] };
+    }
     case "color":
       return typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? { ok: true, value: v.toLowerCase() } : { ok: false, error: "Farbe als #rrggbb erwartet" };
     default:

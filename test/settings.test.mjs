@@ -96,3 +96,23 @@ test("Suche findet Optionen und Kategorien, auch ohne Umlaute", () => {
   assert.equal(searchSettings("xyzxyz").settings.length, 0);
   assert.equal(searchSettings("").settings.length, SETTINGS.length);
 });
+
+test("Schnellzugriff und Werkzeug-Standardwerte", () => {
+  const def = SETTINGS.find((s) => s.key === "werkzeuge.schnellzugriff");
+  assert.deepEqual(validateValue(def, ["view.fit", "sketch.trim"]), { ok: true, value: ["view.fit", "sketch.trim"] });
+  assert.equal(validateValue(def, ["gibtsnicht"]).ok, false);
+  assert.equal(validateValue(def, ["view.fit", "view.fit"]).ok, false);
+  assert.equal(validateValue(def, "view.fit").ok, false);
+  const d = defaultSettings();
+  assert.deepEqual(d["werkzeuge.schnellzugriff"], []);
+  assert.equal(d["werkzeuge.std.rundung"], 5);
+  assert.equal(d["werkzeuge.std.polygon"], 6);
+  assert.equal(validateValue(SETTINGS.find((s) => s.key === "werkzeuge.std.polygon"), 2).ok, false);
+  // gespeichert und wieder geladen; unbekannter Befehl wird mit Warnung verworfen
+  const ok = loadSettings(JSON.stringify({ format: "werkcad-einstellungen", version: 1, values: { "werkzeuge.schnellzugriff": ["file.save"], "werkzeuge.std.extrusion": 25 } }));
+  assert.deepEqual(ok.values["werkzeuge.schnellzugriff"], ["file.save"]);
+  assert.equal(ok.values["werkzeuge.std.extrusion"], 25);
+  const bad = loadSettings(JSON.stringify({ format: "werkcad-einstellungen", version: 1, values: { "werkzeuge.schnellzugriff": ["weg.damit"] } }));
+  assert.deepEqual(bad.values["werkzeuge.schnellzugriff"], []);
+  assert.ok(bad.warnings.length > 0);
+});
