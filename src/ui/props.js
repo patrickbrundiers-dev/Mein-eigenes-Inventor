@@ -9,6 +9,7 @@ import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, endsText, CUT_RULES } from "../core/cutlist.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
+import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, defaultTubeCut, parsePattern } from "../core/tubecuts.js";
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
 
@@ -331,6 +332,7 @@ export class Props {
           this.seg("Schräg über", [["v", "Höhe"], ["u", "Breite"]], f.miterAxis || "v", (v) => this.set(f, "miterAxis", v, "Gehrungsachse")),
           this.check("Enden parallel (statt trapezförmig)", f.miterSame, (v) => this.set(f, "miterSame", v, "Gehrung")),
           h("p", { class: "hint" }, "Die Länge gilt auf der Mittellinie; die Zuschnittlänge (längste Kante) steht in der Zuschnittliste.")));
+        out.push(this.tubeCutsEditor(f));
         break;
       case "frame":
         out.push(this.section("Rahmen",
@@ -501,6 +503,54 @@ export class Props {
     });
     inp.addEventListener("blur", () => setTimeout(() => list.replaceChildren(), 0));
     return [this.field("Profil-ID", inp), list];
+  }
+
+  /** Konturen am Rohr wie im Rohr-Editor: Art, Lage ab Ende A, Seite/Winkel, Versatz, Muster „3x25“ (src/core/tubecuts.js) */
+  tubeCutsEditor(f) {
+    if (!TUBE_CUT_SECTIONS.includes(f.section || "vierkant")) return this.section("Konturen am Rohr", h("p", { class: "hint" }, "Nur für Rund-, Quadrat- und Rechteckrohr."));
+    const round = f.section === "rohr";
+    const cuts = f.cuts || [];
+    const edit = (i, fn, label) => this.set(f, (x) => { x.cuts = (x.cuts || []).map((c, k) => (k === i ? { ...c } : c)); fn(x.cuts[i]); }, label);
+    const add = (kind) => {
+      let L = 1000;
+      try { L = evaluate(String(f.length), this.scope()); } catch { /* Vorgabe */ }
+      this.set(f, (x) => { x.cuts = [...(x.cuts || []), defaultTubeCut(kind, L)]; }, TUBE_CUT_KINDS[kind].label + " hinzufügen");
+    };
+    const card = (c, i) => {
+      const E = (label, key, opts) => this.expr(label, c[key] ?? "0", (v) => edit(i, (x) => { x[key] = v; }, label), opts);
+      const kind = TUBE_CUT_KINDS[c.kind] ? c.kind : "bohrung";
+      return h("div", { class: "tube-cut" },
+        h("div", { class: "tube-cut-head" }, h("b", {}, `${i + 1}. ${TUBE_CUT_KINDS[kind].label}`),
+          h("button", { class: "btn small", title: "Duplizieren", onclick: () => this.set(f, (x) => { x.cuts = [...x.cuts.slice(0, i + 1), { ...c }, ...x.cuts.slice(i + 1)]; }, "Kontur duplizieren") }, "⧉"),
+          h("button", { class: "btn small danger", title: "Entfernen", onclick: () => this.set(f, (x) => { x.cuts = x.cuts.filter((_, k) => k !== i); }, "Kontur entfernen") }, icon("trash"))),
+        kind === "ausklinkung"
+          ? this.seg("Ende", [["A", "A (Anfang)"], ["B", "B (Ende)"]], c.end === "B" ? "B" : "A", (v) => edit(i, (x) => { x.end = v; }, "Ende"))
+          : [E("Lage ab Ende A", "x"), this.patternField(c.pattern, (v) => edit(i, (x) => { x.pattern = v; }, "Muster"))],
+        round
+          ? [E("Winkel", "angle", { unit: "°" }), this.seg("", SIDES.map(([n, a]) => [String(a), n]), String(c.angle ?? "0"), (v) => edit(i, (x) => { x.angle = v; }, "Winkel"))]
+          : this.seg("Seite", SIDES.map(([n]) => [n, n]), c.side || "oben", (v) => edit(i, (x) => { x.side = v; }, "Seite")),
+        E("Versatz quer", "q"),
+        ...TUBE_CUT_KINDS[kind].fields.map((k) => E(TUBE_CUT_FIELDS[k], k, { allowNeg: false, allowZero: k === "r" })),
+        kind === "ausklinkung" ? null : this.check("Durchgehend (auch Gegenseite)", c.through, (v) => edit(i, (x) => { x.through = v; }, "Durchgehend")));
+    };
+    return this.section("Konturen am Rohr",
+      ...cuts.map(card),
+      h("div", { class: "btn-row" }, ...Object.entries(TUBE_CUT_KINDS).map(([k, d]) => h("button", { class: "btn", onclick: () => add(k) }, "+ " + d.label.replace(" am Ende", "")))),
+      h("p", { class: "hint" }, "Wie im Rohr-Editor: Lage = Mitte der ersten Kontur ab Ende A, Muster „3x25“ = 3 Stück im Abstand 25. Seite von Ende A gesehen, Versatz + = im Uhrzeigersinn."));
+  }
+  /** Musterfeld „3x25“ mit Prüfung */
+  patternField(value, onCommit) {
+    const scope = this.scope();
+    const inp = h("input", { class: "inp", value: value ?? "1", spellcheck: "false", placeholder: "1 oder 3x25" });
+    const check = () => {
+      try { parsePattern(inp.value, (s) => evaluate(s, scope)); inp.classList.remove("bad"); inp.title = ""; return true; }
+      catch (e) { inp.classList.add("bad"); inp.title = e.message; return false; }
+    };
+    check();
+    inp.addEventListener("input", check);
+    inp.addEventListener("change", () => { if (check() && inp.value !== value) onCommit(inp.value.trim()); });
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
+    return this.field("Muster", inp);
   }
 
   // ---------- Skizzenmodus ----------

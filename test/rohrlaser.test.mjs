@@ -76,3 +76,50 @@ test("Fertigung: Grenzen kommen aus den Einstellungen, Startwerte gleich", () =>
   assert.ok(SETTINGS.filter((s) => s.cat === "fertigung").length === Object.keys(DFM_DEFAULTS).length);
   assert.equal(dfmLimits((k) => (k === "fertigung.stange" ? 3000 : undefined)).stange, 3000);
 });
+
+// ---------- Konturen am Rohr (Rohr-Editor, schneidweg.py) ----------
+import { parsePattern, cutLength, planTubeCuts, defaultTubeCut, tubeCutLabel } from "../src/core/tubecuts.js";
+
+const ev = (s) => Number(String(s).replace(",", "."));
+const QR = { kind: "vierkant", W: 40, H: 40, t: 3, r: 6, L: 1000 };
+
+test("Rohr-Konturen: Muster „3x25“ wie im Rohr-Editor", () => {
+  assert.deepEqual(parsePattern("3x25"), { count: 3, spacing: 25 });
+  assert.deepEqual(parsePattern(" 4 × 12,5", ev), { count: 4, spacing: 12.5 });
+  assert.deepEqual(parsePattern("1"), { count: 1, spacing: 0 });
+  assert.deepEqual(parsePattern(""), { count: 1, spacing: 0 });
+  assert.throws(() => parsePattern("3"), /Abstand/);
+  assert.throws(() => parsePattern("3x0"), /Abstand/);
+  assert.throws(() => parsePattern("abc"), /Anzahl × Abstand/);
+});
+test("Rohr-Konturen: Schnittlängen nach schneidweg.py", () => {
+  assert.equal(cutLength({ kind: "bohrung", d: 10 }), Math.PI * 10);
+  assert.equal(cutLength({ kind: "langloch", l: 30, b: 10 }), 40 + Math.PI * 10);
+  assert.equal(cutLength({ kind: "rechteck", l: 40, b: 20, r: 2 }), 120 - 16 + 4 * Math.PI);
+  assert.equal(cutLength({ kind: "ausklinkung", l: 30, b: 20, r: 3 }), 54 + 14 + 3 * Math.PI);
+});
+test("Rohr-Konturen: Planung mit Muster, durchgehend, Schneidweg und Einstiche", () => {
+  const p = planTubeCuts([{ ...defaultTubeCut("bohrung"), x: "100", pattern: "3x50", through: true }, defaultTubeCut("ausklinkung")], QR, ev);
+  assert.deepEqual(p.issues, []);
+  assert.deepEqual(p.items[0].xs, [100, 150, 200]);
+  assert.equal(p.pierces, 7);
+  assert.ok(Math.abs(p.cutLength - (6 * Math.PI * 10 + cutLength({ kind: "ausklinkung", l: 30, b: 20, r: 3 }))) < 1e-9);
+  assert.equal(tubeCutLabel(p.items[0]), "Bohrung Ø10 oben durchgehend, 3× ab 100");
+  assert.equal(p.items[1].halfN, 20);
+});
+test("Rohr-Konturen: Prüfungen nennen die Kontur", () => {
+  const msg = (c, prof = QR) => planTubeCuts([{ ...defaultTubeCut(c.kind || "bohrung"), ...c }], prof, ev).issues.map((x) => x.message).join();
+  assert.match(msg({ x: "3" }), /Kontur 1: liegt nicht ganz auf dem Teil/);
+  assert.match(msg({ q: "10", d: "10" }), /ragt über die ebene Fläche \(\|Versatz\| \+ b\/2 höchstens 14 mm\)/);
+  assert.match(msg({ kind: "langloch", l: "10", b: "10" }), /Länge muss größer/);
+  assert.match(msg({ kind: "rechteck", r: "15" }), /Eckradius 0 bis 10 mm/);
+  assert.match(msg({ side: "links" }), /Seite oben, vorne, unten oder hinten/);
+  assert.match(msg({ pattern: "3x5" }), /überlappen/);
+  assert.match(msg({ kind: "ausklinkung", l: "1000" }), /länger als das Teil/);
+  assert.equal(msg({ d: "40" }, { kind: "rohr", W: 42.4, H: 42.4, t: 2.6, L: 1000 }), "");
+  assert.match(planTubeCuts([defaultTubeCut()], { ...QR, kind: "winkel" }, ev).issues[0].message, /nur für Rund-, Quadrat- und Rechteckrohr/);
+  // Rechteckrohr vorne: Fläche über die Höhe H
+  const re = { kind: "rechteck", W: 60, H: 40, t: 3, r: 6, L: 1000 };
+  const it = planTubeCuts([{ ...defaultTubeCut(), side: "vorne" }], re, ev).items[0];
+  assert.deepEqual([it.halfN, it.faceHalf, it.angle], [30, 14, 90]);
+});

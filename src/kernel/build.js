@@ -8,6 +8,7 @@ import { planeFrame, toWorld, v3 } from "../core/geom.js";
 import { sectionGeometry, sectionName, profileId, THREADS } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
 import { planKnickrahmen, knickInput } from "../core/knickrahmen.js";
+import { planTubeCuts } from "../core/tubecuts.js";
 
 const BIG = 20000;
 
@@ -107,6 +108,28 @@ export function createKernel(R) {
     const size = 4 * (length + g.width + g.height + e0 + e1) + 100;
     for (const c of [...(cuts.start || []), ...(cuts.end || [])]) solid = solid.cut(halfSpace(c.p, c.n, size));
     return { solid, geom: g };
+  }
+
+  /**
+   * Werkzeugkörper einer Rohr-Kontur (src/core/tubecuts.js) an der Stelle x: Umriss auf einer Ebene außen vor der
+   * Fläche (Normale n zur Rohrachse hin), bis zur Achse bzw. durchgehend bis hinter die Gegenwand extrudiert.
+   * Seite wie im Rohr-Editor: oben = +v, vorne (90°, von Ende A gesehen rechts) = −u.
+   */
+  function tubeCutTool(it, x, fr, geom) {
+    const a = (it.angle * Math.PI) / 180;
+    const n = v3.add(v3.mul(fr.v, Math.cos(a)), v3.mul(fr.u, -Math.sin(a)));
+    const normal = v3.mul(n, -1);
+    const origin = v3.add(v3.add(fr.origin, v3.mul(fr.z, x)), v3.mul(n, it.halfN + 1));
+    const depth = it.through ? 2 * it.halfN + 2 : it.halfN + 1;
+    let d;
+    if (it.kind === "bohrung") d = R.drawCircle(it.d / 2);
+    else if (it.kind === "ausklinkung") {
+      const ext = geom.width + geom.height + 10; // über das Ende hinaus, auch bei Gehrung offen
+      const w = it.l + ext;
+      d = R.drawRoundedRectangle(w, it.b, it.r || 0).translate(it.end === "A" ? (it.l - ext) / 2 : (ext - it.l) / 2, 0);
+    } else d = R.drawRoundedRectangle(it.l, it.b, it.r || 0);
+    // y der Ebene = normal × z: auf der Oberseite nach vorne (−u) – Versatz q wie im Rohr-Editor
+    return d.translate(0, it.q).sketchOnPlane(new R.Plane(origin, fr.z, normal)).extrude(depth);
   }
 
   /**
@@ -382,9 +405,15 @@ export function createKernel(R) {
             if (Math.abs(m2) > 1e-9) cuts.end.push({ p: endP, n: rotN(fr.z, f.miterSame ? m2 : -m2) });
             const minL = miterMinLength(section, fr, tiltAxis, cuts);
             if (L < minL - 1e-6) throw new Error(`Profil zu kurz für die Gehrungen: Länge mindestens ${round(minL)} mm, sonst kreuzen sich die Schnitte`);
-            const { solid, geom } = makeMember(section, L, fr, cuts);
+            let { solid, geom } = makeMember(section, L, fr, cuts);
+            // Konturen am Rohr (Rohr-Editor): ungültige werden übersprungen und gemeldet, das Profil bleibt
+            const tc = planTubeCuts(f.cuts, { kind: f.section, W: geom.width, H: geom.height, t: dims.t, r: dims.r ?? 0, L }, E);
+            if (tc.issues.length) st.warning = tc.issues.map((x) => x.message).join("; ");
+            for (const it of tc.items) for (const x of it.xs) solid = solid.cut(tubeCutTool(it, x, fr, geom));
+            if (tc.items.length) st.info = `${tc.pierces} Kontur(en), Schneidweg Innenkonturen ${round(tc.cutLength)} mm`;
             const name = sectionName(f.section, dims);
             const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
+            if (tc.items.length) Object.assign(meta, { contours: tc.items, cutLength: tc.cutLength, pierces: tc.pierces, cutSig: hashString(JSON.stringify(tc.items)) });
             state.tools.set(f.id, { op: f.op || "member", shapes: [{ shape: solid, kind: "member", meta, name: f.name || name }] });
             pushMember(state, solid, f, meta, f.name || name);
             break;

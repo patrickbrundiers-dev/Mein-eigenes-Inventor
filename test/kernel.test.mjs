@@ -570,3 +570,46 @@ test("Messen: exakte Werte für Flächen, Kanten, Abstand, Winkel, Schwerpunkt",
   const moved = K.placed(faces[top], [0, 0, 5], [0, 0, 0]);
   near(K.measure([{ shape: moved, kind: "face" }, { shape: faces[bottom], kind: "face" }]).distance, 25, 1e-6, "platziert");
 });
+
+test("Konturen am Rohr (Rohr-Editor): Bohrung, Langloch, Ausklinkung, Seite und Muster", async () => {
+  const tube = (cuts, extra = {}) => part([{ id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "1000", start: ["0", "0", "0"], axis: "X", cuts, ...extra }]);
+  const base = await K.buildPart(tube([]));
+  const V0 = vol(base);
+  const box = (c, s) => R.makeBaseBox(s[0], s[1], s[2]).translate([c[0], c[1], c[2] - s[2] / 2]);
+  const probe = (res, c, s = [14, 4, 14]) => R.measureVolume(res.bodies[0].shape.intersect(box(c, s)));
+  // Bohrung Ø10 oben bei 500: ebene Wand 3 mm → π·5²·3 weniger, Loch liegt oben (+Z)
+  let res = await K.buildPart(tube([{ kind: "bohrung", x: "500", side: "oben", q: "0", pattern: "1", d: "10" }]));
+  okAll(res);
+  near(V0 - vol(res), Math.PI * 25 * 3, 0.5, "Bohrung oben");
+  near(probe(res, [500, 0, 20], [14, 14, 4]), probe(base, [500, 0, 20], [14, 14, 4]) - Math.PI * 25 * 2, 0.5, "Loch oben (+Z)");
+  assert.equal(res.bodies[0].meta.pierces, 1);
+  near(res.bodies[0].meta.cutLength, Math.PI * 10, 1e-9, "Schneidweg");
+  // vorne = −Y (von Ende A gesehen rechts), durchgehend → auch hinten, Muster 3x100 → 6 Löcher
+  res = await K.buildPart(tube([{ kind: "bohrung", x: "300", side: "vorne", q: "0", pattern: "3x100", d: "10", through: true }]));
+  okAll(res);
+  near(V0 - vol(res), 6 * Math.PI * 25 * 3, 2, "6 Löcher");
+  assert.ok(probe(res, [400, -20, 0]) < probe(base, [400, -20, 0]) - 100, "vorne = −Y");
+  assert.ok(probe(res, [400, 20, 0]) < probe(base, [400, 20, 0]) - 100, "durchgehend hinten");
+  assert.equal(res.bodies[0].meta.pierces, 6);
+  // Langloch 30×10 oben, Versatz 5 nach vorne: Fläche 20·10 + π·5²
+  res = await K.buildPart(tube([{ kind: "langloch", x: "200", side: "oben", q: "5", pattern: "1", l: "30", b: "10" }]));
+  okAll(res);
+  near(V0 - vol(res), (20 * 10 + Math.PI * 25) * 3, 0.5, "Langloch");
+  assert.ok(probe(res, [200, -5, 20], [20, 4, 4]) < probe(base, [200, -5, 20], [20, 4, 4]) - 50, "Versatz + = vorne (−Y)");
+  // Ausklinkung am Ende B, 30 × 20, ohne Radius: 30·20·3 weg, Zuschnittlänge bleibt
+  res = await K.buildPart(tube([{ kind: "ausklinkung", end: "B", side: "unten", q: "0", l: "30", b: "20", r: "0" }]));
+  okAll(res);
+  near(V0 - vol(res), 30 * 20 * 3, 0.5, "Ausklinkung");
+  assert.ok(probe(res, [985, 0, -20], [20, 14, 4]) < 1, "unten am Ende B frei");
+  near(res.bodies[0].meta.length, 1000, 0.05);
+  // ungültige Kontur: Profil bleibt, Warnung nennt die Kontur
+  res = await K.buildPart(tube([{ kind: "bohrung", x: "998", side: "oben", pattern: "1", d: "10" }]));
+  assert.equal(res.bodies.length, 1);
+  assert.match(res.status.pr.warning, /Kontur 1: liegt nicht ganz auf dem Teil/);
+  near(vol(res), V0, 1e-6);
+  // Rundrohr: Winkel 90° = vorne
+  res = await K.buildPart(part([{ id: "pr", type: "profile", section: "rohr", dims: { D: "42.4", t: "2.6" }, length: "500", start: ["0", "0", "0"], axis: "X", cuts: [{ kind: "bohrung", x: "250", angle: "90", pattern: "1", d: "8" }] }]));
+  okAll(res);
+  const rb = await K.buildPart(part([{ id: "pr", type: "profile", section: "rohr", dims: { D: "42.4", t: "2.6" }, length: "500", start: ["0", "0", "0"], axis: "X" }]));
+  assert.ok(probe(res, [250, -20, 0], [10, 6, 10]) < probe(rb, [250, -20, 0], [10, 6, 10]) - 20, "Rundrohr 90° = vorne");
+});
