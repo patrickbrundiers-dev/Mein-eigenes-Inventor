@@ -129,7 +129,12 @@ function updatesSection(app) {
           token.value = "";
           statusEl.textContent = "Update-Einstellungen gespeichert";
         } }, "Update-Einstellungen speichern"),
-        h("button", { class: "btn", onclick: async () => { statusEl.textContent = "Suche…"; const r = await bridge.checkForUpdates(); statusEl.textContent = r.message; } }, "Jetzt nach Updates suchen"),
+        h("button", { class: "btn", onclick: async (e) => {
+          const btn = e.currentTarget;
+          btn.disabled = true;
+          statusEl.textContent = "Suche…";
+          try { statusEl.textContent = (await bridge.checkForUpdates()).message; } finally { btn.disabled = false; }
+        } }, "Jetzt nach Updates suchen"),
         s.hasToken ? h("button", { class: "btn danger", onclick: async () => { await bridge.saveSettings({ token: "" }); statusEl.textContent = "Token entfernt"; } }, "Token entfernen") : null));
   });
   return box;
