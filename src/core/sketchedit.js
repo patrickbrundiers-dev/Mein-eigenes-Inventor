@@ -242,3 +242,110 @@ export function filletCorner(sk, pointId, r, uid, radiusExpr) {
 export function cornerAt(sk, pointId) {
   return sk.entities.filter((e) => e.type === "line" && !e.construction && (e.p1 === pointId || e.p2 === pointId)).length === 2;
 }
+
+const usesPoint = (sk, pid, exceptId) => sk.entities.some((o) => o.id !== exceptId && ["p1", "p2", "c", "p"].some((k) => o[k] === pid));
+
+/**
+ * Verlängert das Ende einer Linie oder eines Bogens (das dem Klick nähere) bis zum nächsten Element.
+ * Das Ende wird per "Punkt auf Element" am getroffenen Element gehalten. Rückgabe {ok, message?, dropped?}
+ */
+export function extendEntity(sk, entityId, click, uid) {
+  const P = pts(sk);
+  const e = sk.entities.find((x) => x.id === entityId);
+  if (!e || !["line", "arc"].includes(e.type)) return { ok: false, message: "Nur Linien und Bögen lassen sich verlängern" };
+  const g = geo(sk, e, P);
+  let atEnd;
+  if (g.kind === "line") atEnd = param(g, click.x, click.y) >= 0.5;
+  else { const p = param(g, click.x, click.y); atEnd = p <= g.sweep ? p > g.sweep / 2 : p - g.sweep < TAU - p; }
+  const pid = atEnd ? e.p2 : e.p1;
+  if (usesPoint(sk, pid, e.id)) return { ok: false, message: "Dieses Ende ist mit einem anderen Element verbunden" };
+  if (sk.constraints.some((k) => k.p === pid || k.q === pid)) return { ok: false, message: "Dieses Ende ist bemaßt oder gebunden – erst die Bedingung löschen" };
+  const end = P.get(pid);
+  let probe, rank;
+  if (g.kind === "line") {
+    const [fx, fy] = atEnd ? [g.ax, g.ay] : [g.bx, g.by];
+    const L = Math.hypot(end.x - fx, end.y - fy) || 1, ux = (end.x - fx) / L, uy = (end.y - fy) / L;
+    probe = { kind: "line", ax: end.x, ay: end.y, bx: end.x + ux * 1e7, by: end.y + uy * 1e7 };
+    rank = (ip) => Math.hypot(ip.x - end.x, ip.y - end.y);
+  } else {
+    probe = { kind: "circle", cx: g.cx, cy: g.cy, r: g.r, a1: 0, sweep: TAU };
+    // Winkelweg vom Ende nach außen: am Ende gegen den Uhrzeigersinn, am Anfang im Uhrzeigersinn
+    rank = (ip) => { const p = param(g, ip.x, ip.y); return atEnd ? p - g.sweep : TAU - p; };
+  }
+  let best = null;
+  for (const o of sk.entities) {
+    if (o.id === e.id || o.type === "point") continue;
+    const og = geo(sk, o, P);
+    if (!og) continue;
+    for (const ip of intersections(probe, og)) {
+      const d = rank(ip);
+      if (g.kind === "arc" && (d <= 1e-6 || d >= TAU - g.sweep - 1e-6)) continue;
+      if (g.kind === "line" && d <= 1e-6) continue;
+      if (!best || d < best.d) best = { d, ip, o };
+    }
+  }
+  if (!best) return { ok: false, message: "In Verlängerung liegt kein Element" };
+  end.x = best.ip.x;
+  end.y = best.ip.y;
+  sk.constraints.push({ id: uid("k"), type: best.o.type === "line" ? "pointOnLine" : "pointOnCircle", p: pid, e: best.o.id });
+  const dropped = [];
+  sk.constraints = sk.constraints.filter((k) => {
+    const drop = [k.e, k.e1, k.e2].includes(e.id) && (k.type === "length" || k.type === "midpoint" || (k.type === "equal" && g.kind === "line"));
+    if (drop) dropped.push(k.type);
+    return !drop;
+  });
+  return { ok: true, dropped };
+}
+
+/**
+ * Teilt eine Linie oder einen Bogen am Klickpunkt in zwei Elemente (gemeinsamer Punkt).
+ * Liegt ein Schnittpunkt mit einem anderen Element näher als `tol`, wird dort geteilt.
+ * Rückgabe {ok, message?, dropped?, pieceId?}
+ */
+export function splitEntity(sk, entityId, click, uid, tol = 0) {
+  const P = pts(sk);
+  const e = sk.entities.find((x) => x.id === entityId);
+  if (!e) return { ok: false, message: "Element fehlt" };
+  if (e.type === "circle") return { ok: false, message: "Kreise erst stutzen – teilen geht bei Linien und Bögen" };
+  if (!["line", "arc"].includes(e.type)) return { ok: false, message: "Nur Linien und Bögen lassen sich teilen" };
+  const g = geo(sk, e, P);
+  const span = g.kind === "line" ? 1 : g.sweep;
+  let at = null, other = null;
+  for (const o of sk.entities) {
+    if (o.id === e.id || o.type === "point") continue;
+    const og = geo(sk, o, P);
+    if (!og) continue;
+    for (const ip of intersections(g, og)) {
+      const d = Math.hypot(ip.x - click.x, ip.y - click.y);
+      if (d <= tol && (!at || d < at.d)) { at = { d, x: ip.x, y: ip.y }; other = o; }
+    }
+  }
+  let p = at ? param(g, at.x, at.y) : param(g, click.x, click.y);
+  const minP = span * 1e-4;
+  if (!(p > minP && p < span - minP)) return { ok: false, message: "Nicht am Ende teilen – weiter innen anklicken" };
+  const q = at || pointAt(g, p);
+  const np = uid("p");
+  sk.points.push({ id: np, x: q.x, y: q.y });
+  if (other) sk.constraints.push({ id: uid("k"), type: other.type === "line" ? "pointOnLine" : "pointOnCircle", p: np, e: other.id });
+  const oldEnd = e.p2;
+  e.p2 = np;
+  const nid = uid(g.kind === "line" ? "l" : "b");
+  sk.entities.push(g.kind === "line" ? { id: nid, type: "line", p1: np, p2: oldEnd, construction: !!e.construction } : { id: nid, type: "arc", c: e.c, p1: np, p2: oldEnd, construction: !!e.construction });
+  // Bedingungen am alten Ende wandern zum neuen Stück
+  for (const k of sk.constraints) {
+    if (k.type !== "tangentAt" || k.p !== oldEnd) continue;
+    if (k.e1 === e.id) k.e1 = nid;
+    if (k.e2 === e.id) k.e2 = nid;
+  }
+  if (g.kind === "line") {
+    sk.constraints.push({ id: uid("k"), type: "collinear", e1: e.id, e2: nid });
+    for (const k of sk.constraints.filter((k) => k.e === e.id && ["horizontal", "vertical"].includes(k.type))) sk.constraints.push({ ...k, id: uid("k"), e: nid });
+  }
+  const dropped = [];
+  sk.constraints = sk.constraints.filter((k) => {
+    const drop = [k.e, k.e1, k.e2].includes(e.id) && (k.type === "length" || k.type === "midpoint" || (k.type === "equal" && g.kind === "line"));
+    if (drop) dropped.push(k.type);
+    return !drop;
+  });
+  return { ok: true, dropped, pieceId: nid };
+}

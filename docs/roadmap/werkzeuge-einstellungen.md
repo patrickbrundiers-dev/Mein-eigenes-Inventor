@@ -53,7 +53,8 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Stutzen, Skizzenrundung | vorhanden | `src/core/sketchedit.js` |
 | Spiegeln | vorhanden | Stufe 6: Kopien über »symmetrisch« an Originale gebunden |
 | Versatz | vorhanden | Stufe 7: Kontur anklicken (ganze Kette), Seite klicken, Abstand; Ecken im Schnittpunkt, Bögen konzentrisch; ein sichtbares Maß steuert alle Kopien |
-| Muster, Verlängern, Teilen | fehlt | geplant |
+| Verlängern, Teilen | vorhanden | Stufe 11: Ende bis zum nächsten Element verlängern (Punkt auf Element), Linie/Bogen am Klick oder nächsten Schnittpunkt teilen (kollinear bzw. gleiche Mitte) |
+| Muster (rechteckig, kreisförmig) | fehlt | geplant |
 | Projizieren, Konstruktionslinien | vorhanden | |
 | 12 Bedingungsarten, Bemaßung mit Formeln | vorhanden | `solver.js` |
 | Automatische Bedingungen beim Zeichnen | teilweise | horizontal/vertikal, auf Linie/Kreis, Mittelpunkt |

@@ -79,6 +79,8 @@ export const COMMANDS = [
   { id: "sketch.point", label: "Skizze: Punkt", group: "Skizze", scope: "sketch", key: "P" },
   { id: "sketch.dimension", label: "Skizze: Bemaßung", group: "Skizze", scope: "sketch", key: "D", keywords: "maß" },
   { id: "sketch.trim", label: "Skizze: Stutzen", group: "Skizze", scope: "sketch", key: "T", keywords: "trimmen" },
+  { id: "sketch.extend", label: "Skizze: Verlängern", group: "Skizze", scope: "sketch", keywords: "extend bis kante" },
+  { id: "sketch.split", label: "Skizze: Teilen", group: "Skizze", scope: "sketch", keywords: "split trennen brechen" },
   { id: "sketch.sfillet", label: "Skizze: Rundung", group: "Skizze", scope: "sketch", key: "F" },
   { id: "sketch.project", label: "Skizze: Kante projizieren", group: "Skizze", scope: "sketch" },
   { id: "sketch.construction", label: "Skizze: Konstruktionslinie ein/aus", group: "Skizze", scope: "sketch", key: "X", keywords: "hilfslinie" },

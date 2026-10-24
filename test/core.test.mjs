@@ -216,7 +216,7 @@ test("Platzierung, Zerlegung, Flächen ausrichten", () => {
   assert.deepEqual(w2.map((x) => Math.round(x)), [3, 0, 7]);
 });
 
-import { trimEntity, filletCorner, intersections } from "../src/core/sketchedit.js";
+import { trimEntity, filletCorner, intersections, extendEntity, splitEntity } from "../src/core/sketchedit.js";
 import { profileId } from "../src/core/sections.js";
 import { svgPathSegments } from "../src/core/svgpath.js";
 import { segmentsToDxf } from "../src/core/dxf.js";
@@ -298,6 +298,64 @@ test("Stutzen: Linienende, Mitte, ganze Linie, Kreis", () => {
   const mid = (g1.y + g2.y) / 2;
   near(mid, 0, 1e-6);
   assert.ok(solveSketch(s).ok);
+});
+
+test("Verlängern und Teilen", () => {
+  const P = (sk) => new Map(sk.points.map((p) => [p.id, p]));
+  // kurze Linie (0,10)–(20,10) bis zur senkrechten Linie bei x=50 verlängern
+  let s = crossSketch();
+  s.points.push({ id: "g", x: 0, y: 10 }, { id: "i", x: 20, y: 10 });
+  s.entities.push({ id: "w", type: "line", p1: "g", p2: "i" });
+  s.constraints.push({ id: "L", type: "length", e: "w", value: "20" });
+  let r = extendEntity(s, "w", { x: 18, y: 10 }, tid);
+  assert.ok(r.ok, r.message);
+  near(P(s).get("i").x, 50); near(P(s).get("i").y, 10);
+  assert.ok(s.constraints.some((k) => k.type === "pointOnLine" && k.p === "i" && k.e === "v"));
+  assert.deepEqual(r.dropped, ["length"]);
+  assert.ok(solveSketch(s).ok);
+  // anderes Ende: nach links liegt nichts
+  assert.equal(extendEntity(s, "w", { x: 2, y: 10 }, tid).ok, false);
+  // verbundenes Ende wird nicht verlängert
+  s = crossSketch();
+  s.points.push({ id: "z", x: 100, y: 20 });
+  s.entities.push({ id: "n", type: "line", p1: "b", p2: "z" });
+  assert.equal(extendEntity(s, "h", { x: 99, y: 0 }, tid).ok, false);
+
+  // Bogen (Viertelkreis um 0,0 r=20 von 0° bis 90°) im Uhrzeigersinn bis zur Linie y=-10 verlängern
+  s = { points: [{ id: "m", x: 0, y: 0 }, { id: "s", x: 20, y: 0 }, { id: "t", x: 0, y: 20 }, { id: "u", x: -40, y: -10 }, { id: "o", x: 40, y: -10 }],
+    entities: [{ id: "b1", type: "arc", c: "m", p1: "s", p2: "t" }, { id: "y", type: "line", p1: "u", p2: "o" }], constraints: [] };
+  r = extendEntity(s, "b1", { x: 19, y: 3 }, tid);
+  assert.ok(r.ok, r.message);
+  const sp = P(s).get("s");
+  near(sp.y, -10); near(sp.x, Math.sqrt(300));
+  assert.ok(solveSketch(s).ok);
+
+  // Teilen: Linie in der Mitte, an Schnittpunkt
+  s = crossSketch();
+  r = splitEntity(s, "h", { x: 52, y: 1 }, tid, 5);
+  assert.ok(r.ok, r.message);
+  const h = s.entities.find((e) => e.id === "h"), piece = s.entities.find((e) => e.id === r.pieceId);
+  assert.equal(h.p2, piece.p1);
+  near(P(s).get(h.p2).x, 50);
+  assert.ok(s.constraints.some((k) => k.type === "collinear"));
+  assert.ok(s.constraints.some((k) => k.type === "pointOnLine" && k.e === "v" && k.p === h.p2));
+  assert.equal(s.constraints.filter((k) => k.type === "horizontal").length, 2);
+  assert.ok(solveSketch(s).ok);
+  // frei teilen (kein Schnitt in der Nähe) und am Ende ablehnen
+  s = crossSketch();
+  r = splitEntity(s, "h", { x: 20, y: 3 }, tid, 1);
+  assert.ok(r.ok);
+  near(P(s).get(s.entities.find((e) => e.id === "h").p2).x, 20);
+  assert.equal(splitEntity(crossSketch(), "h", { x: 0, y: 0 }, tid, 0).ok, false);
+  // Bogen teilen: beide Stücke behalten Mitte und Radius
+  s = { points: [{ id: "m", x: 0, y: 0 }, { id: "s", x: 20, y: 0 }, { id: "t", x: -20, y: 0 }], entities: [{ id: "b1", type: "arc", c: "m", p1: "s", p2: "t" }], constraints: [] };
+  r = splitEntity(s, "b1", { x: 0, y: 25 }, tid, 0);
+  assert.ok(r.ok, r.message);
+  const q = P(s).get(s.entities.find((e) => e.id === "b1").p2);
+  near(q.x, 0, 1e-6); near(q.y, 20, 1e-6);
+  assert.equal(s.entities.find((e) => e.id === r.pieceId).c, "m");
+  assert.ok(solveSketch(s).ok);
+  assert.equal(splitEntity(s, "h", { x: 0, y: 0 }, tid).ok, false);
 });
 
 test("Skizzenrundung an Rechteckecke", () => {
