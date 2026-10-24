@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { projectPoint, partCenter, balloonAnchors, placeBalloons } from "../src/core/balloons.js";
 import { clipPolylineToCircle, clipProjection } from "../src/core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, ROW_FIRST, ROW_STEP } from "../src/core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, ROW_FIRST, ROW_STEP, holeSpecs, holeText, dimLabel } from "../src/core/autodims.js";
 
 const near = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
 
@@ -190,4 +190,34 @@ test("Maßplatzierung: Durchmesser-Hinweislinie läuft nicht durch Nachbarbohrun
   const dims = [{ view: "v", kind: "dia", circle: { cx: 10, cy: 10, r: 3 }, angle: -Math.PI / 4 }];
   layoutAutoDims(dims, views, { frame: [20, 10, 410, 287] });
   assert.notEqual(dims[0].angle, -Math.PI / 4);
+});
+
+test("Bohrungsangaben aus dem Feature: Gewinde, Tiefe, Senkung", () => {
+  const ev = (x) => Number(String(x).replace("Dicke", "10"));
+  const specs = holeSpecs([
+    { type: "hole", thread: "M8", extent: "through" },
+    { type: "hole", diameter: "11", extent: "through" },
+    { type: "hole", diameter: "5", extent: "depth", depth: "12" },
+    { type: "hole", diameter: "6.6", extent: "through", sink: "senkung", sinkDiameter: "12", sinkAngle: "90" },
+    { type: "hole", diameter: "9", extent: "depth", depth: "Dicke", sink: "flach", sinkDiameter: "15", sinkDepth: "8.6" },
+    { type: "hole", diameter: "7", suppressed: true },
+    { type: "extrude" },
+  ], ev);
+  assert.deepEqual(specs.map((s) => holeText(s.hole, 2)), ["2× M8", "2× Ø11 durch", "2× Ø5, 12 tief", "2× Ø6,6 durch – Senkung Ø12 × 90°", "2× Ø9, 10 tief – Senkung Ø15, 8,6 tief"]);
+  assert.equal(specs[0].r, 3.4, "Kernloch M8 = Ø6,8");
+});
+
+test("Hauptmaße: Kernlochkreise werden als Gewinde angegeben, Senkungskreis ohne eigenes Maß", () => {
+  const holes = holeSpecs([{ type: "hole", thread: "M8" }, { type: "hole", diameter: "6.6", sink: "senkung", sinkDiameter: "12", sinkAngle: "90" }], Number);
+  const arcs = [[10, 10], [40, 10], [10, 40], [40, 40], [25, 25]].map(([cx, cy]) => ({ cx, cy, r: 3.4, full: true }));
+  arcs.push({ cx: 25, cy: 45, r: 3.3, full: true }, { cx: 25, cy: 45, r: 6, full: true });
+  const dims = planAutoDims([{ id: "oben", axes: ["X", "Y"], bbox: { x0: 0, y0: 0, x1: 50, y1: 50 }, arcs, holes }]);
+  const dia = dims.filter((m) => m.kind === "dia");
+  assert.deepEqual(dia.map(dimLabel).sort(), ["5× M8", "Ø6,6 durch – Senkung Ø12 × 90°"]);
+});
+
+test("Hauptmaße: mehrdeutige Bohrungs-Features fallen auf das reine Ø zurück", () => {
+  const holes = holeSpecs([{ type: "hole", diameter: "8", extent: "through" }, { type: "hole", diameter: "8", extent: "depth", depth: "5" }], Number);
+  const dims = planAutoDims([{ id: "v", axes: ["X", "Y"], bbox: { x0: 0, y0: 0, x1: 50, y1: 50 }, arcs: [{ cx: 20, cy: 20, r: 4, full: true }], holes }]);
+  assert.equal(dimLabel(dims.find((m) => m.kind === "dia")), "Ø8");
 });

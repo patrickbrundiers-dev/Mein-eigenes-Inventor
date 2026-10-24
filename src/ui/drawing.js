@@ -8,8 +8,9 @@ import { v3 } from "../core/geom.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
 import { clipProjection } from "../core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel } from "../core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, holeText } from "../core/autodims.js";
 import { bomRows } from "./props.js";
+import { evaluate, resolveParams } from "../core/expr.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
 export const CAMS = {
@@ -442,7 +443,8 @@ export class DrawingEditor {
     const xf = this.viewXf(v);
     const g = svgEl("g", { "data-dim": m.id, class: interactive ? "dw-dimgrp" + (this.sel?.type === "dim" && this.sel.id === m.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
     const val = this.dimValue(m);
-    const txt = (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? 1) + (m.suffix || "");
+    const txt = m.kind === "dia" && m.hole ? holeText(m.hole, m.count) + (m.suffix || "")
+      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? 1) + (m.suffix || "");
     const arrowHead = (x, y, ux, uy) => {
       const L = 3, w = 0.9;
       return svgEl("path", { d: `M${r3(x)} ${r3(y)}L${r3(x - ux * L + uy * w)} ${r3(y - uy * L - ux * w)}L${r3(x - ux * L - uy * w)} ${r3(y - uy * L + ux * w)}Z`, fill: "#111a24", stroke: "none" });
@@ -879,9 +881,13 @@ export class DrawingEditor {
       if (m.axis) used.axes.add(m.axis);
       if (m.kind === "dia") used.radii.add(Math.round(m.circle.r * 1000));
     }
+    const holes = (this.sourceItems(d) || []).flatMap((it) => {
+      const scope = resolveParams(it.part.params || []).values;
+      return holeSpecs(it.part.features, (x) => evaluate(String(x), scope));
+    });
     const views = cands.filter((v) => !keep.some((m) => m.view === v.id && m.auto)).map((v) => {
       const c = this.viewCam(d, v), p = this.proj.get(v.id);
-      return { id: v.id, axes: viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs };
+      return { id: v.id, axes: viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, holes };
     });
     const add = planAutoDims(views, used).map((m) => ({ id: uid("m"), ...m, auto: true }));
     if (!add.length && keep.length === d.dims.length) return toast("Keine weiteren Hauptmaße gefunden");
