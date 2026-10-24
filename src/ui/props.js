@@ -10,7 +10,7 @@ import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, endsText, CUT_RULES } from "../core/cutlist.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern, parsePolygon, atEnd } from "../core/tubecuts.js";
-import { END_CUT_SECTIONS } from "../core/endcut.js";
+import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
@@ -344,11 +344,7 @@ export class Props {
           E("Ende", "miterEnd", { unit: "°" }),
           this.seg("Schräg über", [["v", "Höhe"], ["u", "Breite"]], f.miterAxis || "v", (v) => this.set(f, "miterAxis", v, "Gehrungsachse")),
           this.check("Enden parallel (statt trapezförmig)", f.miterSame, (v) => this.set(f, "miterSame", v, "Gehrung")),
-          END_CUT_SECTIONS.includes(f.section || "vierkant") ? [
-            this.seg("Schnitt Ende A", [["2D", "2D"], ["3D", "3D"]], f.endCuts?.A === "2D" ? "2D" : "3D", (v) => this.set(f, (x) => { x.endCuts = { ...x.endCuts, A: v }; }, "Schnitt Ende A")),
-            this.seg("Schnitt Ende B", [["2D", "2D"], ["3D", "3D"]], f.endCuts?.B === "2D" ? "2D" : "3D", (v) => this.set(f, (x) => { x.endCuts = { ...x.endCuts, B: v }; }, "Schnitt Ende B")),
-            this.expr("Winkelkorrektur ±", f.swivel ?? "45", (v) => this.set(f, "swivel", v, "Winkelkorrektur"), { unit: "°", allowNeg: false }),
-            h("p", { class: "hint" }, "Wie im Rohr-Editor: 2D = Strahl senkrecht zur Oberfläche, die Gehrung ist innen verdreht. 3D = Kopf geschwenkt, Schnittfläche eben, höchstens bis zur Winkelkorrektur (Maschine, Vorgabe ±45°); darüber nicht maßhaltig.")] : null,
+          END_CUT_SECTIONS.includes(f.section || "vierkant") ? this.cutModeFields(f, "beide Enden dieses Profils") : null,
           h("p", { class: "hint" }, "Die Länge gilt auf der Mittellinie; die Zuschnittlänge (längste Kante) steht in der Zuschnittliste.")));
         out.push(this.tubeCutsEditor(f));
         break;
@@ -360,6 +356,7 @@ export class Props {
           E("Drehung", "rotation", { unit: "°" }),
           h("p", { class: "hint" }, "Jede Linie der Skizze wird zum Profil. Linien, die auf anderen enden, werden ausgeklinkt (T-Stoß).")));
         out.push(this.sectionEditor(f));
+        if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(f, "alle Gehrungen dieses Rahmens")));
         break;
       case "knickrahmen": {
         const segs = f.segments || [], bends = f.bends || [];
@@ -575,6 +572,14 @@ export class Props {
     inp.addEventListener("change", () => { if (check() && inp.value !== value) onCommit(inp.value.trim()); });
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
     return this.field(TUBE_CUT_FIELDS.punkte, inp);
+  }
+  /** 2D/3D und Winkelkorrektur eines Profils bzw. Rahmens (gilt für alle seine Schnitte) */
+  cutModeFields(f, scope) {
+    const cur = featureCutSettings(f);
+    return [
+      this.seg("Schnitt", [["2D", "2D"], ["3D", "3D"]], cur.mode, (v) => this.set(f, (x) => { x.cutMode = v; delete x.endCuts; }, "Schnitt 2D/3D")),
+      this.expr("Winkelkorrektur ±", cur.swivel, (v) => this.set(f, "swivel", v, "Winkelkorrektur"), { unit: "°", allowNeg: false }),
+      h("p", { class: "hint" }, `Gilt für ${scope}. Wie im Rohr-Editor: 2D = Strahl senkrecht zur Oberfläche, die Gehrung ist innen verdreht. 3D = Kopf geschwenkt, Schnittfläche eben, höchstens bis zur Winkelkorrektur (Maschine, Vorgabe ±45°); darüber nicht maßhaltig.`)];
   }
   /** Musterfeld „3x25“ mit Prüfung */
   patternField(value, onCommit) {
