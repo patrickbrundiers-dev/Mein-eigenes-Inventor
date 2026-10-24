@@ -187,7 +187,14 @@ export function createKernel(R) {
     };
   }
 
-  async function buildPart(part, { useCache = true } = {}) {
+  /** Gültigkeit eines Körpers nach OpenCascade (BRepCheck): Topologie und Geometrie konsistent */
+  function shapeValid(shape) {
+    const an = new (R.getOC().BRepCheck_Analyzer)(shape.wrapped, true, false);
+    try { return an.IsValid(); } finally { an.delete(); }
+  }
+  const INVALID_BODY = "Körper ungültig (Geometrie-Prüfung) – Export und weitere Features können fehlschlagen";
+
+  async function buildPart(part, { useCache = true, validate = true } = {}) {
     const { values, errors: paramErrors } = resolveParams(part.params || []);
     const scope = values;
     const E = (expr, label) => {
@@ -486,6 +493,19 @@ export function createKernel(R) {
       prefixCache.set(part.id, merged.slice(-8));
     }
     for (const [k, msg] of Object.entries(paramErrors)) state.status["param:" + k] = { ok: false, error: msg };
+    // Körperprüfung des Endergebnisses: nur Hinweis am erzeugenden Feature, blockiert nichts.
+    // Statusobjekt ersetzen statt ändern – es kann mit dem Zwischenspeicher geteilt sein.
+    if (validate) {
+      for (const b of state.bodies) {
+        let ok;
+        try { ok = shapeValid(b.shape); } catch { ok = false; }
+        if (ok) continue;
+        b.invalid = true;
+        const key = b.fid && state.status[b.fid] ? b.fid : "koerper";
+        const prev = state.status[key] || { ok: true };
+        if (!prev.warning?.includes(INVALID_BODY)) state.status[key] = { ...prev, warning: prev.warning ? prev.warning + "; " + INVALID_BODY : INVALID_BODY };
+      }
+    }
     return { bodies: state.bodies, status: state.status, sketches: state.sketches, values };
   }
 
@@ -1001,7 +1021,7 @@ export function createKernel(R) {
     return v3.norm(v3.sub(best, v3.mul(n, v3.dot(best, n))));
   }
 
-  return { buildPart, buildKnickrahmen, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, buildKnickrahmen, shapeValid, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen
