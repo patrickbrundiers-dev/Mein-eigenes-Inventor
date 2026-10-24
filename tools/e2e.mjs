@@ -476,10 +476,10 @@ try {
   await idle();
   await page.locator("#props .tube-cut label.chk", { hasText: "Durchgehend" }).click();
   await idle();
-  const tc = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); const b = r.bodies[0]; return { cuts: a.activeDoc().features[0].cuts, pierces: b?.meta?.pierces, st: r.status[a.activeDoc().features[0].id] }; });
+  const tc = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); const b = r.bodies[0]; return { cuts: a.activeDoc().features[0].cuts, pierces: b?.meta?.pierces, st: r.status[a.activeDoc().features[0].id], massbild: [...document.querySelectorAll("#props .tube-cut svg.massbild")].map((x) => x.getAttribute("aria-label")) }; });
   await shot("21-rohr-konturen");
-  step("Konturen am Rohr", tc.cuts.length === 1 && tc.cuts[0].pattern === "3x100" && tc.cuts[0].side === "vorne" && tc.cuts[0].through === true && tc.pierces === 6 && tc.st.ok && !tc.st.warning,
-    JSON.stringify({ cut: tc.cuts[0], pierces: tc.pierces, st: tc.st }));
+  step("Konturen am Rohr", tc.cuts.length === 1 && tc.cuts[0].pattern === "3x100" && tc.cuts[0].side === "vorne" && tc.cuts[0].through === true && tc.pierces === 6 && tc.st.ok && !tc.st.warning && tc.massbild.length === 1 && /Bohrung: d$/.test(tc.massbild[0]),
+    JSON.stringify({ cut: tc.cuts[0], pierces: tc.pierces, st: tc.st, massbild: tc.massbild }));
 
   // 2D/3D-Schnitt (Rohr-Editor): Gehrung 60° am Ende B, erst 3D (Winkelkorrektur ±45° meldet), dann 2D; Bohrung 3D +30° längs
   const endeB = page.locator("#props .section", { hasText: "Gehrung / Schrägschnitt" }).locator(".field", { hasText: /^Ende/ }).locator("input");
@@ -509,7 +509,18 @@ try {
   await evalApp(() => window.__werkcad.prefs.reset(["fertigung.stange"]));
   await page.waitForTimeout(300);
   const dfm2 = await page.locator("#props .dfm .msg").allTextContents();
-  step("Fertigungsprüfung", dfm1.length === 1 && /Teil zu lang/.test(dfm1[0]) && /keine Befunde/.test(dfm2.join()), JSON.stringify({ dfm1, dfm2 }));
+  // Steg zwischen den Bohrungen: Muster 3x40, Faktor 20 × Wand → zu schmal
+  await evalApp(() => { const a = window.__werkcad; a.selectFeature(a.activeDoc().features[0].id); });
+  await page.waitForTimeout(300);
+  await muster.fill("3x40");
+  await muster.press("Enter");
+  await idle();
+  await evalApp(() => { const a = window.__werkcad; a.sel = null; a.prefs.set("fertigung.steg", 20); });
+  await page.waitForTimeout(300);
+  const dfm3 = await page.locator("#props .dfm .msg").allTextContents();
+  await evalApp(() => window.__werkcad.prefs.reset(["fertigung.steg"]));
+  await page.waitForTimeout(300);
+  step("Fertigungsprüfung", dfm1.length === 1 && /Teil zu lang/.test(dfm1[0]) && /keine Befunde/.test(dfm2.join()) && dfm3.length === 1 && /Steg zu schmal.*im Muster von Kontur 1/.test(dfm3[0]), JSON.stringify({ dfm1, dfm2, dfm3 }));
 
   // Einstellungscenter: über das Datei-Menü öffnen, suchen, ungültig ablehnen, gültig speichern, Modell unverändert
   {

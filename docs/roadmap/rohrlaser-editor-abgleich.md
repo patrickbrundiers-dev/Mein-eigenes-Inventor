@@ -99,7 +99,7 @@ Patrick; Lizenzfragen entstehen nicht. Keine neue Abhängigkeit.
 - **Risiken:** Grenzwerte sind Startwerte → in den Einstellungen änderbar, 0 = Regel aus; Prüfung ändert nichts am Modell.
 - **Aufwand:** M. **Tests:** Unit-Tests je Regel, Oberflächentest.
 - **Nicht in dieser Etappe:** Bohrung zu klein / Steg / Randabstand (brauchen die Lage der Konturen auf dem Profil,
-  im B-Rep nicht direkt vorhanden) → P2.
+  im B-Rep nicht direkt vorhanden) → nachgezogen mit den Konturen am Rohr, siehe Abschnitt 4.
 
 ### Ü3 Maßbilder (P1, Etappe 3)
 
@@ -123,8 +123,8 @@ ihm besonders der **2D/3D-Schnitt** und bei 3D die **Winkelkorrektur ±45°**.
 | P1 | **2D/3D-Schnitt der Enden**: 2D = Strahl senkrecht zur Oberfläche (Gehrung innen verdreht), 3D = Kopf geschwenkt (ebene Fläche) | `schnittflaeche.py`, `dreid.py` | umgesetzt (`src/core/endcut.js`) |
 | P1 | **Winkelkorrektur** (Kopfschwenk, Vorgabe ±45°): darüber Kopf auf der Grenze, nicht maßhaltig, Warnung | `dreid.begrenzen`, `schwenk_min/max` | umgesetzt |
 | P1 | **Bohrung 3D** mit Neigung längs/quer, Schnellwahl ±45°/±30°/0°, Ellipse im Schneidweg | `dreid.py`, `schneidweg_dialog.py` | umgesetzt |
-| P1 | Maßbild je Konturart im Eigenschaftenfeld | `massbild.py` | nächster Schritt |
-| P1 | Prüfregeln Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende (jetzt mit Lage der Konturen möglich) | `dfm.py` | nächster Schritt |
+| P1 | Maßbild je Konturart im Eigenschaftenfeld | `massbild.py` | umgesetzt (`src/core/massbild.js`, Bild über den Feldern jeder Konturkarte) |
+| P1 | Prüfregeln Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende (jetzt mit Lage der Konturen möglich) | `dfm.py` | umgesetzt (`checkContours` in `src/core/tubecuts.js`, Abwicklung mit Eckbögen, Gegenseite bei „durchgehend“; Faktoren unter Einstellungen → Rohrlaser und Fertigung) |
 | P1 | Schlitz, Polygon/Sonderkontur, Gravur | `schneidweg.py` | offen |
 | P2 | Griffe am 3D-Modell (Ziehen mit Fang), Maße am Modell, Kontur-Vorlagen, Querschnitt an Stelle x, Gegenrohr/Durchdringung am Ende, 2D/3D auch im Rahmen aus Skizze | `editor_griffe.py`, `konturvorlagen.py`, `editor_schnitt.py`, `durchdringung.py` | zurückgestellt |
 
