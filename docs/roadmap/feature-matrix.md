@@ -94,7 +94,7 @@ Status: **vorhanden** · **teilweise** · **fehlt** · **unklar** · **blockiert
 | Benutzerdefinierte Querschnitte | fehlt | |
 | Profil entlang räumlichem Pfad | teilweise | Rahmen nur aus ebener Skizze |
 | Bohrungen/Langlöcher/Freistellungen in Profilen | teilweise | Bohrung/Ausschnitt über Skizze möglich, nicht profilbezogen |
-| Maschinenlimits / Maschinenprofile | fehlt | |
+| Maschinenlimits / Maschinenprofile | teilweise | Fertigungsprüfung der Zuschnittliste gegen Grenzen einer Maschine (`src/core/dfm.js`, Einstellungen „Rohrlaser und Fertigung“); mehrere Profile fehlen |
 
 ## 6. Knickrahmen (Modul-Plan)
 

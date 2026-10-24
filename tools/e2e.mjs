@@ -465,6 +465,16 @@ try {
   step("Profil-Schnelleingabe", pq0 === "QR 40x40x3" && pq1.join() === "rechteck,70,50,4" && hits[0] === "QR 40x40x3" && pq2.join() === "vierkant,QR 40x40x3" && pq3 === "RE 70x50x4",
     JSON.stringify({ pq0, pq1, hits, pq2, pq3 }));
 
+  // Fertigungsprüfung (aus der Rohrlaser-Kalkulation): kurze Stange einstellen → Fehler unter der Zuschnittliste
+  await evalApp(() => { const a = window.__werkcad; a.sel = null; a.prefs.set("fertigung.stange", 1000); });
+  await page.waitForTimeout(300);
+  const dfm1 = await page.locator("#props .dfm .msg").allTextContents();
+  await shot("21-fertigungspruefung");
+  await evalApp(() => window.__werkcad.prefs.reset(["fertigung.stange"]));
+  await page.waitForTimeout(300);
+  const dfm2 = await page.locator("#props .dfm .msg").allTextContents();
+  step("Fertigungsprüfung", dfm1.length === 1 && /Teil zu lang/.test(dfm1[0]) && /keine Befunde/.test(dfm2.join()), JSON.stringify({ dfm1, dfm2 }));
+
   // Einstellungscenter: über das Datei-Menü öffnen, suchen, ungültig ablehnen, gültig speichern, Modell unverändert
   {
     const prj0 = await evalApp(() => JSON.stringify(window.__werkcad.project));

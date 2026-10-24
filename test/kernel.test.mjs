@@ -349,6 +349,7 @@ test("Knickrahmen: gerades Rohr, 30/45/90°, gebogene Außenwand, Gehrungslinie,
     solidOk(fb.shape);
     near(fb.meta.length, flatL, 1e-9, "Abwicklungslänge");
     assert.ok(fb.meta.coped && fb.meta.knicks === 1);
+    assert.deepEqual([fb.meta.legs, fb.meta.inPlane, fb.meta.wall], [[800, 600], 60, 3], "Daten für die Fertigungsprüfung");
     near(fb.meta.bendAllowances[0], (3 + 0.99) * rad(ang), 1e-12);
     // Gehrungslinie sichtbar: Kanten in der Gehrungsebene am Knoten (800, 0), Normale (d1 + d2)
     const nM = [1 + Math.cos(rad(ang)), Math.sin(rad(ang)), 0];

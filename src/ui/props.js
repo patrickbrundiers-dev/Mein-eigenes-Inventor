@@ -8,6 +8,7 @@ import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, endsText, CUT_RULES } from "../core/cutlist.js";
+import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
 
@@ -174,7 +175,8 @@ export class Props {
         h("dt", {}, "Körper"), h("dd", {}, String(r.bodies.length)))));
       const members = r.bodies.filter((b) => b.kind === "member");
       if (members.length) {
-        out.push(this.section("Zuschnittliste", cutListTable(cutListRows([{ part, result: r, qty: 1 }]), true),
+        const rows = cutListRows([{ part, result: r, qty: 1 }]);
+        out.push(this.section("Zuschnittliste", cutListTable(rows, true), this.dfmList(rows),
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.exportMembers() }, "Profile als STEP"), h("button", { class: "btn", onclick: () => app.files.exportCutList() }, "CSV"))));
       }
       const errs = Object.entries(r.status).filter(([, s]) => !s.ok);
@@ -717,7 +719,18 @@ export class Props {
     const app = this.app;
     const d = app.activeDoc();
     const rows = cutListRows(collectCutSources(app, d));
-    modal({ title: `Zuschnittliste – ${d.name}`, width: "820px", body: rows.length ? h("div", {}, cutListTable(rows), h("details", { class: "hint" }, h("summary", {}, "Regeln der Zuschnittliste"), h("ul", {}, ...CUT_RULES.map((t) => h("li", {}, t))))) : h("p", {}, "Keine Profile (Rohr / Rahmen) enthalten."), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportCutList() }] });
+    modal({ title: `Zuschnittliste – ${d.name}`, width: "820px", body: rows.length ? h("div", {}, cutListTable(rows), this.dfmList(rows, true), h("details", { class: "hint" }, h("summary", {}, "Regeln der Zuschnittliste"), h("ul", {}, ...CUT_RULES.map((t) => h("li", {}, t))))) : h("p", {}, "Keine Profile (Rohr / Rahmen) enthalten."), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportCutList() }] });
+  }
+  /** Fertigungsprüfung Rohrlaser (src/core/dfm.js) unter der Zuschnittliste; Grenzen im Einstellungscenter */
+  dfmList(rows, rules = false) {
+    const found = checkCutList(rows, dfmLimits((k) => this.app.prefs.get(k)));
+    const cls = { Fehler: "err", Warnung: "warn", Hinweis: "info" };
+    return h("div", { class: "dfm" },
+      found.length
+        ? found.map((f) => h("div", { class: "msg " + cls[f.level] }, h("b", {}, `Pos ${f.pos} · ${f.rule}: `), f.text))
+        : h("div", { class: "msg info" }, "Fertigungsprüfung: keine Befunde"),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.settingsDialog({ category: "fertigung" }) }, "Maschinengrenzen…")),
+      rules ? h("details", { class: "hint" }, h("summary", {}, "Regeln der Fertigungsprüfung"), h("ul", {}, ...DFM_RULES.map((t) => h("li", {}, t)))) : null);
   }
   /** Kollisionsprüfung der Baugruppe (Schnittvolumen > 1 mm³; Berührung zählt nicht) */
   async collisionDialog() {
