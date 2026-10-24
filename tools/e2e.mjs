@@ -584,6 +584,29 @@ try {
     step("Messen", one.type === "PLANE" && one.area > 1000 && it.type === "CIRCLE" && Math.abs(it.radius * 2 - 11) < 0.6 && Math.abs(two.r.distance) < 1e-6 && /Durchmesser/.test(two.text) && off,
       JSON.stringify({ one: { type: one.type, area: one.area }, two: { type: it.type, r: it.radius, d: two.r.distance }, off }));
   }
+
+  // Plan 5.5: große Baugruppe (150 Komponenten) öffnen und bedienen
+  {
+    const t0 = Date.now();
+    await evalApp(() => {
+      const a = window.__werkcad;
+      const parts = a.parts().filter((p) => p.id !== "beispiel_knickrahmen").slice(0, 3);
+      const asm = a.newAssembly();
+      window.__bigAsm = asm.id;
+      a.edit("Große Baugruppe", () => { for (let i = 0; i < 150; i++) asm.components.push({ id: "g" + i, part: parts[i % parts.length].id, pos: [(i % 15) * 4000, Math.floor(i / 15) * 4000, 0], rot: [0, 0, 0] }); });
+    });
+    await idle(180000);
+    const tOpen = Date.now() - t0;
+    const t1 = Date.now();
+    await page.locator("#browser .node .label", { hasText: /^Rahmen/ }).last().click(); // Komponente (unterhalb der Bauteilliste)
+    await page.locator("#props .section").first().waitFor({ timeout: 5000 });
+    const tSel = Date.now() - t1;
+    const big = await evalApp(() => { const a = window.__werkcad; return { comps: a.doc(window.__bigAsm).components.length, active: a.activeDoc().id === window.__bigAsm }; });
+    await evalApp(() => window.__werkcad.viewer.fit?.());
+    await shot("25-grosse-baugruppe");
+    console.log(`[info] große Baugruppe: öffnen ${tOpen} ms, Auswahl ${tSel} ms`);
+    step("Große Baugruppe (150 Komponenten)", big.comps === 150 && big.active && tOpen < 120000 && tSel < 3000, JSON.stringify({ ...big, tOpen, tSel }));
+  }
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }
