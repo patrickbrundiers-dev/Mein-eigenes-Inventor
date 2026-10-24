@@ -1,7 +1,7 @@
 {
   "name": "werkcad",
   "productName": "WerkCAD",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Parametrisches 3D-CAD für Bauteile, Rohr- und Rahmenkonstruktionen, Baugruppen und Zeichnungen",
   "author": "Patrick Brundiers",
   "license": "UNLICENSED",
@@ -38,6 +38,7 @@
     "copyright": "© Patrick Brundiers",
     "files": ["dist/**/*", "electron/**/*", "build/icon.png", "package.json"],
     "directories": { "output": "release", "buildResources": "build" },
+    "extraResources": [{ "from": "dist/lizenzen", "to": "lizenzen" }],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon": "build/icon.png"
