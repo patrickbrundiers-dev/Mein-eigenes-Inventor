@@ -285,7 +285,9 @@ try {
   await page.keyboard.press("Control+z");
   await idle();
   const kr3 = await evalApp(() => window.__werkcad.activeDoc().features[0].bends[0].angle);
-  step("Knickrahmen", kr0.bodies === 1 && kr0.errors === 0 && Math.abs(kr1.len - 1454) < 1e-6 && Math.abs(kr2[1][0] - kr2[0][0] - 1454) < 0.05 && kr3 === "30",
+  // Vorgabe: Innenradius 3, K-Faktor 0,33, RE 60x40x3 → 1400 + 2·24 + (3 + 0,99)·π/2
+  const krL = 1448 + 3.99 * Math.PI / 2;
+  step("Knickrahmen", kr0.bodies === 1 && kr0.errors === 0 && Math.abs(kr1.len - krL) < 1e-6 && Math.abs(kr2[1][0] - kr2[0][0] - krL) < 0.05 && kr3 === "30",
     JSON.stringify({ kr0, kr1, flatX: kr2 && kr2[1][0] - kr2[0][0], undo: kr3 }));
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));

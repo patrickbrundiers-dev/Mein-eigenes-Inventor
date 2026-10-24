@@ -24,7 +24,7 @@ Folgen für die Fertigungsdaten:
 
 | Ansicht | Körper | Verwendung |
 |---|---|---|
-| Gefaltet (Standard) | Segmente auf Gehrung, zu einem Körper vereinigt | Baugruppe, Zeichnung, Masse |
+| Gefaltet (Standard) | Segmente auf Gehrung, Außenwand mit Innenradius gebogen, ein Körper | Baugruppe, Zeichnung, Masse |
 | Abgewickelt | gerades Rohr mit V-Ausklinkungen | STEP für den Rohrlaser, Zuschnittliste |
 
 Gebaut werden immer beide Körper, auch geprüft werden immer beide. Angezeigt und
@@ -38,28 +38,34 @@ exportiert wird der Körper der gewählten Ansicht.
 - **Knickwinkel θⱼ:** Richtungsänderung. 0° = gerade, +θ = nach links (gegen den
   Uhrzeigersinn um die Ebenennormale), −θ = nach rechts. Im Eigenschaftsfenster steht
   zusätzlich der **Innenwinkel 180° − |θ|**. Zulässig sind 0,5° ≤ |θ| ≤ 160°.
-- **Außenwand / Faltlinie:** die Außenwand liegt auf der konvexen Seite. Gefaltet wird um
-  die Linie auf der **Innenseite der Außenwand** (Spitze des V). Bei gegensinnigen Knicken
-  wechselt die Außenwand die Seite.
+- **Außenwand / Biegung:** die Außenwand liegt auf der konvexen Seite und wird mit dem
+  **Innenradius rᵢ** gebogen. Der Biegemittelpunkt liegt im Abstand `d = W/2 − t − rᵢ` von
+  der Mittellinie (zur Außenwand hin). Bei gegensinnigen Knicken wechselt die Außenwand die
+  Seite.
 - **Profillage:** „B in Knickebene“ (Standard) oder „H in Knickebene“. W = Profilbreite in
   der Knickebene, t = Wandstärke.
 
-## 4. Abwicklung
+## 4. Abwicklung mit Biegeradius und K-Faktor
 
-Die Gehrungsebene am Knoten enthält die Faltlinie. Deshalb passen gefaltete und
-abgewickelte Form exakt zusammen:
+Eingaben je Knickrahmen: **Innenradius rᵢ ≥ 0** und **K-Faktor k (0…1)**. Vorgabe beim
+Erstellen: rᵢ = 3 mm, k = 0,33. Das sind nur Startwerte; sie sind gegen die Biegetabelle
+der Kantbank zu ersetzen.
 
-- Abstand der V-Spitzen auf der Rohrachse: `Lᵢ + (W/2 − t)·(tan(|θ_links|/2) + tan(|θ_rechts|/2))`
-- V-Flanken: je |θ|/2 gegen die Querschnittsebene, von der Spitze bis durch die Gegenwand.
-- **Biegezugabe bⱼ ≥ 0** je Knick, wird **nicht geschätzt**. Sie verlängert das gerade Rohr
-  um bⱼ, und das V bekommt an der Spitze eine flache Sohle der Breite bⱼ.
-- Abwicklungslänge = `ΣLᵢ + Σ 2·(W/2 − t)·tan(|θⱼ|/2) + Σ bⱼ`
+- Biegezugabe je Knick (Länge der neutralen Faser): `bⱼ = (rᵢ + k·t)·|θⱼ|` (θ im Bogenmaß)
+- Gerades Rohr zwischen den Biegezonen (an der Rohrachse gemessen): `Lᵢ + d·(tan(|θ_links|/2) + tan(|θ_rechts|/2))`
+- Abwicklungslänge = `ΣLᵢ + Σ 2·d·tan(|θⱼ|/2) + Σ bⱼ` mit `d = W/2 − t − rᵢ`
+- V-Ausklinkung im abgewickelten Rohr: Sohle der Breite bⱼ in Höhe der Außenwand-Innenseite,
+  dann senkrecht bis auf Höhe des Biegemittelpunkts, von dort Flanken unter |θ|/2 durch die
+  Gegenwand. Ist rᵢ > W/2 − t (Mittelpunkt jenseits der Mittellinie), wird das V zum Rechteck.
 
-Beispiel RE 60×40×3, 800 + 600 mm, 90°, b = 0: 1400 + 2·27·1 = **1454 mm**.
+Beispiel RE 60×40×3, 800 + 600 mm, 90°, rᵢ = 3, k = 0,33:
+d = 24, b = (3 + 0,99)·π/2 = 6,267 mm, Abwicklung = 1400 + 48 + 6,267 = **1454,27 mm**.
+Mit rᵢ = 0 und k = 0 ergibt sich der scharfe Knick: 1400 + 2·27 = 1454 mm.
 
-Grenzen des Modells: In der gefalteten Ansicht ist die Außenkante scharf dargestellt, der
-Biegeradius der gekanteten Wand wird nicht modelliert. Die Masse kommt aus dem gefalteten
-Körper und weicht vom abgewickelten Rohr um wenige Kubikmillimeter ab (Ecke der Außenwand).
+Gefaltete Ansicht: zwischen den Tangentenpunkten ist die Außenwand ein Kreisring-Ausschnitt
+(Innenradius rᵢ, Außenradius rᵢ + t, Rotation des Wandquerschnitts um den Biegemittelpunkt).
+Kontrolle: Bei k = 0,5 ist das Volumen gefaltet = abgewickelt (Guldin), im Test auf 1·10⁻⁶
+geprüft.
 
 ## 5. Datenmodell (Feature im Bauteil)
 
@@ -69,8 +75,9 @@ Körper und weicht vom abgewickelten Rohr um wenige Kubikmillimeter ab (Ecke der
   "section": "rechteck", "dims": { "B": "60", "H": "40", "t": "3", "r": "6" },
   "plane": "XY", "offset": "0", "start": ["0", "0"], "direction": "0",
   "orientation": "hochkant",
+  "bendRadius": "3", "kFactor": "0.33",
   "segments": [{ "length": "800" }, { "length": "600" }],
-  "bends": [{ "angle": "30", "min": "", "max": "", "allowance": "0" }],
+  "bends": [{ "angle": "30", "min": "", "max": "" }],
   "view": "gefaltet"
 }
 ```
@@ -91,8 +98,9 @@ Rechnerisch (`src/core/knickrahmen.js`, `planKnickrahmen`):
 | `SEG_LENGTH` | Lᵢ > 0 |
 | `ANGLE_RANGE` | 0,5° ≤ \|θ\| ≤ 160° |
 | `ANGLE_LIMIT` | min ≤ θ ≤ max, falls angegeben; min ≤ max |
-| `ALLOWANCE` | Biegezugabe ≥ 0 |
-| `SEG_SHORT` | Lᵢ größer als (W/2)·tan(\|θ\|/2) + b/2 je Ausklinkung am Segment, sonst würde das V über das Segment hinausreichen |
+| `BEND_RADIUS` | Innenradius ≥ 0 |
+| `K_FACTOR` | 0 ≤ k ≤ 1 |
+| `SEG_SHORT` | Lᵢ größer als Σ tan(\|θ\|/2)·max(W/2, −d) der Ausklinkungen am Segment, sonst würde das V über das Segment hinausreichen |
 
 Im Geometrie-Kern (`buildKnickrahmen`, `checkSolid`): beide Körper je genau ein
 Volumenkörper, `BRepCheck_Analyzer` gültig, Volumen > 0. Schlägt etwas fehl, liefert das
@@ -118,24 +126,23 @@ Nicht angefasst: `electron/`, Workflows, Update, Dateiformat-Version, vorhandene
 
 Toleranzen: Abwicklungslänge rechnerisch 1·10⁻⁹ mm, am Körper gemessen ±0,01 mm
 (Vernetzungstoleranz der Messung; Kanten an ebenen Schnitten liegen exakt). Volumen
-gefaltet = A·ΣLᵢ relativ 1·10⁻⁶ (die Gehrung ist symmetrisch, Zu- und Abschnitt heben sich
-auf). STEP-Rückimport relativ 1·10⁻³.
+gefaltet = abgewickelt relativ 1·10⁻⁶ bei k = 0,5; bei rᵢ = 0, k = 0 zusätzlich = A·ΣLᵢ. STEP-Rückimport relativ 1·10⁻³.
 
 | Fall (Modul-Plan) | Test |
 |---|---|
 | A gerades Rohr | 1 Segment: gültig, Volumen = A·L, Länge 1000 |
 | B 30°/45°/90° | Körper gültig in beiden Ansichten, Volumen, Abwicklungslänge, Lage des Endes, gerades Rohr so lang wie die Abwicklung |
-| C/D drei Segmente, gegensinnig | Ebene XZ, Profillage H, Biegezugabe 1,5 mm, eine Zuschnittzeile |
+| C/D drei Segmente, gegensinnig | Ebene XZ, Profillage H, Radius und K-Faktor, eine Zuschnittzeile |
 | G Wandstärke | t = 20 bei H = 40 → Fehler, kein Körper |
 | I Parameteränderung | Formeln aus der Parametertabelle; Neuaufbau mit Cache = ohne Cache |
-| J ungültige Eingaben | negative Länge, 175°, über Maximum, Segment zu kurz, 4 Segmente: Fehler mit Bezug, kein Teilergebnis, anderes Feature unberührt |
+| J ungültige Eingaben | negative Länge, 175°, über Maximum, Segment zu kurz, 4 Segmente, negativer Radius, K > 1: Fehler mit Bezug, kein Teilergebnis, anderes Feature unberührt |
 | K Speichern/Laden | JSON-Roundtrip baut identisch (Meta, Volumen) |
 | L STEP | Export und Rückimport beider Ansichten, Volumen gleich |
 | N Regression | alle bisherigen Tests grün |
-| Oberfläche | Knopf → Winkel im Eigenschaftsfenster auf 90° → Länge 1454 → Ansicht abgewickelt → zweimal Rückgängig |
+| Oberfläche | Knopf → Winkel im Eigenschaftsfenster auf 90° → Länge 1454,27 → Ansicht abgewickelt → zweimal Rückgängig |
 
 Spätere Stufen: E runde Freistellungen an der V-Spitze, F Bohrungen/Langlöcher, Laschen
-und Biegehilfe-Schlitze in der Außenwand (Referenzbild 2), Biegeradius der Außenwand,
+und Biegehilfe-Schlitze in der Außenwand (Referenzbild 2), Biegetabelle je Material/Dicke,
 weitere Querschnitte, JSON-Austausch mit der Kalkulation.
 
 ## 9. Akzeptanzkriterien Stufe 1
@@ -148,4 +155,4 @@ weitere Querschnitte, JSON-Austausch mit der Kalkulation.
 - [x] Speichern/Wiederöffnen ergibt dieselbe Konstruktion.
 - [x] Zuschnittliste: eine Zeile, Abwicklungslänge, ausgeklinkt; STEP enthält den gewählten Zustand.
 - [x] Alle vorhandenen Tests bleiben grün.
-- [ ] Fachliche Prüfung an einem realen Teil (Biegezugabe, Lage der Ausklinkung) durch Patrick.
+- [ ] Fachliche Prüfung an einem realen Teil (Innenradius/K-Faktor aus der Biegetabelle, Lage der Ausklinkung) durch Patrick.

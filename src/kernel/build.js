@@ -366,7 +366,7 @@ export function createKernel(R) {
             const shown = f.view === "abgewickelt" ? kr.flat : kr.folded;
             state.tools.set(f.id, { op: "member", shapes: [{ shape: shown, kind: "member", meta: kr.meta, name: kr.name }] });
             pushMember(state, shown, f, kr.meta, kr.name);
-            st.info = `Abwicklung ${round(kr.meta.length)} mm, ${kr.meta.knicks} Ausklinkung(en)` + (f.view === "abgewickelt" ? "" : " · für den Rohrlaser Ansicht »Abgewickelt« exportieren");
+            st.info = `Abwicklung ${round(kr.meta.length)} mm, ${kr.meta.knicks} Ausklinkung(en)` + (kr.meta.knicks ? `, Biegezugabe ${kr.meta.bendAllowances.map(round).join(" / ")} mm` : "") + (f.view === "abgewickelt" ? "" : " · für den Rohrlaser Ansicht »Abgewickelt« exportieren");
             break;
           }
           case "fillet":
@@ -668,46 +668,79 @@ export function createKernel(R) {
 
   // ---------- Knickrahmen: ein Rohr, V-ausgeklinkt und gefaltet ----------
   /**
-   * Baut beide Zustände: gefaltet (Segmente auf Gehrung, vereinigt) und abgewickelt (gerades Rohr mit
-   * V-Ausklinkungen). Erst wenn beide gültig sind, wird etwas übernommen.
+   * Baut beide Zustände: gefaltet (gerade Abschnitte + Außenwand mit Biegeradius) und abgewickelt
+   * (gerades Rohr mit Ausklinkungen). Erst wenn beide gültig sind, wird etwas übernommen.
    */
   function buildKnickrahmen(f, E) {
     const input = knickInput(f, E);
     const plan = planKnickrahmen(input);
     if (plan.issues.length) throw new Error(plan.issues.map((x) => x.message).join("; "));
     const section = { kind: input.section, dims: input.dims };
+    const g = plan.geom;
     const N = plan.frame.normal;
     const rot = input.orientation === "flach" ? 90 : 0;
     const name = f.name || "Knickrahmen";
+    const Hext = plan.H + 10;
+    const prism = (pts, origin, xDir) => {
+      const q = pts.filter((p, i) => i === 0 || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 1e-9);
+      let pen = R.draw(q[0]);
+      for (const p of q.slice(1)) pen = pen.lineTo(p);
+      return pen.close().sketchOnPlane(new R.Plane(v3.sub(origin, v3.mul(N, Hext / 2)), xDir, N)).extrude(Hext);
+    };
 
-    // gefaltet: Gehrungsebene am Knoten enthält die Faltlinie (Innenseite der Außenwand)
+    // gefaltet: Segmente auf Gehrung (Ebene am Knoten enthält den Biegemittelpunkt), im Bereich der
+    // Biegung ausgespart; dort wird der Außenwand-Streifen des Querschnitts um den Mittelpunkt gedreht
+    const bendParts = [];
+    const sectors = plan.dirs.map(() => []);
+    plan.knicks.forEach((k, j) => {
+      const dA = plan.dirs[j], dB = plan.dirs[j + 1], P = plan.nodes[j + 1];
+      const eA = v3.cross(N, dA), eB = v3.cross(N, dB);
+      const nA = v3.mul(eA, k.sigma), nB = v3.mul(eB, k.sigma); // zur Außenwand
+      const s = plan.d * k.tanHalf;
+      const C = v3.add(v3.add(P, v3.mul(dA, s)), v3.mul(nA, plan.d));
+      // Keil zwischen den Tangentenebenen auf der Außenseite
+      const Rb = plan.ri + plan.t + plan.W + 10;
+      const loc = (v) => [v3.dot(v, dA), v3.dot(v, eA)];
+      const mid = v3.mul(v3.norm(v3.add(nA, nB)), Rb / Math.cos(((Math.abs(k.angle) / 2) * Math.PI) / 180));
+      const wedge = prism([[0, 0], loc(v3.mul(nA, Rb)), loc(mid), loc(v3.mul(nB, Rb))], C, dA);
+      sectors[j].push(wedge);
+      sectors[j + 1].push(wedge);
+      // Außenwand-Streifen (Querschnitt jenseits der Wand-Innenseite) im Tangentenpunkt von Segment A
+      const fr = memberFrame(v3.add(P, v3.mul(dA, s)), dA, rot, N);
+      const ax = Math.abs(v3.dot(fr.u, eA)) > 0.5 ? 0 : 1; // Querschnittsachse in der Knickebene
+      const sgn = (ax === 0 ? v3.dot(fr.u, eA) : v3.dot(fr.v, eA)) > 0 ? 1 : -1;
+      const big = g.width + g.height + 10;
+      const lo = plan.uA, hi = plan.W / 2 + 1;
+      const c = (sgn * k.sigma * (lo + hi)) / 2;
+      const clip = ax === 0 ? R.drawRectangle(hi - lo, big).translate(c, 0) : R.drawRectangle(big, hi - lo).translate(0, c);
+      const strip = regionToDrawing({ outer: g.outer, holes: g.holes }).intersect(clip).sketchOnPlane(new R.Plane(fr.origin, fr.u, fr.z));
+      const ang = Math.abs(k.angle);
+      bendParts.push(R.revolution(strip.face(), C, k.angle > 0 ? N : v3.mul(N, -1), ang));
+    });
     let folded = null;
     plan.dirs.forEach((z, i) => {
       const cuts = { start: [], end: [] };
       if (i > 0) cuts.start.push({ p: plan.nodes[i], n: v3.mul(v3.norm(v3.add(z, plan.dirs[i - 1])), -1) });
       if (i < plan.dirs.length - 1) cuts.end.push({ p: plan.nodes[i + 1], n: v3.norm(v3.add(z, plan.dirs[i + 1])) });
-      const seg = makeMember(section, input.segments[i], memberFrame(plan.nodes[i], z, rot, N), cuts).solid;
+      let seg = makeMember(section, input.segments[i], memberFrame(plan.nodes[i], z, rot, N), cuts).solid;
+      for (const w of sectors[i]) seg = seg.cut(w.clone());
       folded = folded ? folded.fuse(seg) : seg;
     });
+    for (const b of bendParts) folded = folded.fuse(b);
     checkSolid(folded, "gefaltet");
 
-    // abgewickelt: gerades Rohr entlang Segment 1, V-Ausklinkung durch drei Wände je Knick
+    // abgewickelt: gerades Rohr entlang Segment 1; je Knick Biegezone (nur Außenwand bleibt) und V-Flanken
     const z0 = plan.dirs[0];
-    const Hext = plan.H + 10;
     let flat = makeMember(section, plan.flatLength, memberFrame(plan.nodes[0], z0, rot, N)).solid;
+    const uF = -(plan.W / 2 + 1);
     for (const k of plan.knicks) {
-      const eA = k.sigma * plan.uA, eF = -k.sigma * (plan.W / 2 + 1);
-      const spread = Math.abs(eF - eA) * k.tanHalf;
-      const b = k.allowance / 2;
-      const pts = b > 1e-9
-        ? [[k.x - b, eA], [k.x + b, eA], [k.x + b + spread, eF], [k.x - b - spread, eF]]
-        : [[k.x, eA], [k.x + spread, eF], [k.x - spread, eF]];
-      let pen = R.draw(pts[0]);
-      for (const q of pts.slice(1)) pen = pen.lineTo(q);
-      const origin = v3.sub(plan.nodes[0], v3.mul(N, Hext / 2));
+      const y = (u) => k.sigma * u;
+      const dd = plan.d;
+      const pts = dd > uF
+        ? [[k.x1, y(plan.uA)], [k.x2, y(plan.uA)], [k.x2, y(dd)], [k.x2 + (dd - uF) * k.tanHalf, y(uF)], [k.x1 - (dd - uF) * k.tanHalf, y(uF)], [k.x1, y(dd)]]
+        : [[k.x1, y(plan.uA)], [k.x2, y(plan.uA)], [k.x2, y(uF)], [k.x1, y(uF)]];
       // Skizzenebene: x = Rohrachse, y = N × Achse (in der Knickebene nach links), extrudiert entlang N
-      const notch = pen.close().sketchOnPlane(new R.Plane(origin, z0, N)).extrude(Hext);
-      flat = flat.cut(notch);
+      flat = flat.cut(prism(pts, plan.nodes[0], z0));
     }
     checkSolid(flat, "abgewickelt");
 
@@ -721,6 +754,7 @@ export function createKernel(R) {
       coped: plan.knicks.length > 0, // V-Ausklinkung(en) – Spalte »Ausgeklinkt« der Zuschnittliste
       knicks: plan.knicks.length,
       notchAngles: plan.knicks.map((k) => round(k.angle)),
+      bendAllowances: plan.knicks.map((k) => k.zone),
       frameZ: z0,
     };
     return { folded, flat, meta, name, plan };

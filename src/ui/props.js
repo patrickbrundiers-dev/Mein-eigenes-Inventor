@@ -298,6 +298,7 @@ export class Props {
       case "knickrahmen": {
         const segs = f.segments || [], bends = f.bends || [];
         const setIn = (list, i, key, label) => (v) => this.set(f, (x) => { x[list][i] = { ...x[list][i], [key]: v }; }, label);
+        const allow = r?.bodies?.find((b) => b.fid === f.id)?.meta?.bendAllowances || [];
         const inner = (j) => { try { return fmtNum(180 - Math.abs(evaluate(bends[j].angle, this.scope())), 2) + "°"; } catch { return "–"; } };
         out.push(this.section("Knickrahmen",
           this.seg("Ansicht", [["gefaltet", "Gefaltet"], ["abgewickelt", "Abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
@@ -320,13 +321,17 @@ export class Props {
               h("div", { class: "hint" }, `Innenwinkel ${inner(i)} · + = nach links, − = nach rechts`),
               this.text("Minimum °", b.min, setIn("bends", i, "min", "Minimum"), { placeholder: "–" }),
               this.text("Maximum °", b.max, setIn("bends", i, "max", "Maximum"), { placeholder: "–" }),
-              this.expr("Biegezugabe", b.allowance || "0", setIn("bends", i, "allowance", "Biegezugabe"), { allowNeg: false })));
+              Number.isFinite(allow[i]) ? h("div", { class: "hint" }, `Biegezugabe ${fmtNum(allow[i], 2)} mm (aus Radius und K-Faktor)`) : null));
           }
         });
+        out.push(this.section("Biegung der Außenwand",
+          E("Innenradius", "bendRadius", { allowNeg: false }),
+          E("K-Faktor", "kFactor", { unit: "", allowNeg: false }),
+          h("p", { class: "hint" }, "Biegezugabe je Knick = (Innenradius + K-Faktor · Wandstärke) · Winkel im Bogenmaß. Werte aus der Biegetabelle der Abkantung eintragen – die Vorgabe ist nur ein Startwert.")));
         out.push(this.section("Segmente und Knicke", ...rows,
-          h("p", { class: "hint" }, "Längen auf der Mittellinie von Knoten zu Knoten. Die Biegezugabe wird nicht geschätzt: sie verlängert das abgewickelte Rohr je Knick um den eingegebenen Wert."),
+          h("p", { class: "hint" }, "Längen auf der Mittellinie von Knoten zu Knoten."),
           h("div", { class: "btn-row" },
-            segs.length < KNICK_LIMITS.maxSegments ? h("button", { class: "btn", onclick: () => this.set(f, (x) => { x.segments.push({ length: "400" }); x.bends.push({ angle: "30", min: "", max: "", allowance: "0" }); }, "Segment hinzufügen") }, "+ Segment") : null,
+            segs.length < KNICK_LIMITS.maxSegments ? h("button", { class: "btn", onclick: () => this.set(f, (x) => { x.segments.push({ length: "400" }); x.bends.push({ angle: "30", min: "", max: "" }); }, "Segment hinzufügen") }, "+ Segment") : null,
             segs.length > 1 ? h("button", { class: "btn", onclick: () => this.set(f, (x) => { x.segments.pop(); x.bends.pop(); }, "Segment entfernen") }, "− Segment") : null)));
         break;
       }
