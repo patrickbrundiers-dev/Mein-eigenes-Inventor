@@ -606,3 +606,15 @@ test("Linie mit Längenmaß und Kreis mit Durchmesser sind lösbar", () => {
   near(Math.hypot(sk.points.find((p) => p.id === "q").x, sk.points.find((p) => p.id === "q").y), 40);
   near(sk.entities.find((e) => e.id === "c1").r, 10);
 });
+
+test("Update-Quelle auch ohne build-Feld (wie im Installer)", async () => {
+  const { updateSource } = (await import("../electron/update-source.cjs")).default;
+  const { readFileSync } = await import("node:fs");
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const expected = { owner: pkg.build.publish[0].owner, repo: pkg.build.publish[0].repo };
+  const { build, ...packaged } = pkg;
+  assert.deepEqual(updateSource(packaged), expected);
+  assert.deepEqual(updateSource(pkg), expected);
+  assert.deepEqual(updateSource({ repository: { type: "git", url: "git+https://github.com/a/b.git" } }), { owner: "a", repo: "b" });
+  assert.equal(updateSource({}), null);
+});
