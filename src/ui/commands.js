@@ -21,6 +21,8 @@ export function commandRunners(app) {
     "view.fit": () => app.viewer.fit(),
     "view.fitSel": () => app.zoomToSelection(),
     "view.normal": () => app.viewNormalToFace(),
+    "view.saveNamed": () => app.saveNamedView(),
+    "view.named": () => app.namedViewsMenu(),
     "view.perspective": () => app.prefs.set("ansicht.projektion", app.viewer.perspective ? "orthogonal" : "perspektive"),
     "view.clipX": () => app.toggleClip("X"),
     "view.clipY": () => app.toggleClip("Y"),

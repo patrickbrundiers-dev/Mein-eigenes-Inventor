@@ -296,6 +296,24 @@ export class Viewer {
     }
     this.cameraChanged();
   }
+  /** Kamerastand für benannte Ansichten (Blickrichtung, Ausschnitt; Projektion bleibt Einstellung) */
+  viewState() {
+    const t = this.controls.target, d = new THREE.Vector3().subVectors(t, this.camera.position).normalize();
+    const r = (v) => Math.round(v * 1e6) / 1e6;
+    return { target: t.toArray().map(r), dir: d.toArray().map(r), up: this.camera.up.toArray().map(r), half: r(this.visibleHalf()) };
+  }
+  applyViewState(s, opts) {
+    if (!s || this.sketchFrame) return;
+    this.anim = null;
+    this.viewHalf = s.half;
+    this.ortho.zoom = 1;
+    if (this.camera.isPerspectiveCamera) {
+      const back = new THREE.Vector3().subVectors(this.camera.position, this.controls.target).normalize();
+      this.camera.position.copy(this.controls.target.clone().add(back.multiplyScalar(s.half / Math.tan((this.persp.fov * Math.PI) / 360))));
+    }
+    this.resize();
+    this.setViewDir(s.dir, s.up, { ...opts, target: s.target });
+  }
   setView(name, opts) {
     const v = VIEWS[name];
     if (v) this.setViewDir(v.dir, v.up, opts);

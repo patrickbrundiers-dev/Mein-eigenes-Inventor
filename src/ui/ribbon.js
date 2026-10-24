@@ -104,6 +104,10 @@ export class Ribbon {
           B("v_fit", "Alles zeigen", "fit", { run: () => app.viewer.fit() }),
           B("v_fitsel", "Auswahl zeigen", "fit", { run: () => app.zoomToSelection() }),
         ] },
+        { label: "Benannt", buttons: [
+          B("v_save", "Ansicht speichern", "view", { disabled: !app.namedViewsDoc?.(), run: () => app.saveNamedView() }),
+          B("v_named", "Ansichten", "view", { disabled: !app.namedViewsDoc?.(), run: (e) => app.namedViewsMenu(e) }),
+        ] },
         { label: "Projektion", buttons: [
           B("v_ortho", "Orthogonal", "view", { on: !app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "orthogonal") }),
           B("v_persp", "Perspektive", "view", { on: app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "perspektive") }),
