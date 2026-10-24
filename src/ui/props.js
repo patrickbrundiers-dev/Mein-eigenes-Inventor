@@ -338,10 +338,11 @@ export class Props {
             : [this.text("Breite", f.reliefWidth, (v) => this.set(f, "reliefWidth", v, "Freistellung"), { placeholder: "automatisch" }),
               this.text("Tiefe", f.reliefHeight, (v) => this.set(f, "reliefHeight", v, "Freistellung"), { placeholder: "automatisch" })],
           minText ? h("div", { class: "hint" }, minText) : null,
+          E("Reststeg", "restWall", { allowNeg: false }),
           E("Schweißspalt", "weldGap", { allowNeg: false }),
           this.seg("Zapfen", [["aus", "Aus"], ["an", "An"]], f.tabs || "aus", (v) => this.set(f, "tabs", v, "Zapfen")),
           f.tabs === "an" ? [E("Zapfen-Durchmesser", "tabDia", { allowNeg: false, allowZero: false }), E("Zapfenspiel", "tabClearance", { allowNeg: false })] : null,
-          h("p", { class: "hint" }, "Die Freistellung ist Pflicht: Sie hält die Seitenwände an der Außenwand über die ganze Biegezone frei, damit sie beim Biegen nicht eingedrückt werden. Leer = Mindestmaß. Schweißspalt typisch 0,5–1 mm. Zapfen: Nase auf der Gehrung am Segment vor dem Knick, Loch im Segment danach um das Spiel größer.")));
+          h("p", { class: "hint" }, "Die Freistellung ist Pflicht: Sie hält die Seitenwände an der Außenwand über die ganze Biegezone frei, damit sie beim Biegen nicht eingedrückt werden. Leer = Mindestmaß. Reststeg: der Schnitt endet so weit vor der Außenwand (Vorgabe 0,1 mm), der Steg wird mitgebogen. Schweißspalt typisch 0,5–1 mm. Zapfen: Nase auf der Gehrung am Segment vor dem Knick, Loch im Segment danach um das Spiel größer.")));
         out.push(this.section("Segmente und Knicke", ...rows,
           h("p", { class: "hint" }, "Längen auf der Mittellinie von Knoten zu Knoten."),
           h("div", { class: "btn-row" },

@@ -693,7 +693,8 @@ export function createKernel(R) {
       for (const p of q.slice(1)) pen = pen.lineTo(p);
       return pen.close();
     };
-    const uF = -(plan.W / 2 + 1), dd = plan.d, uA = plan.uA, ri = plan.ri;
+    // uA hier = Schnittgrenze: Außenwand-Innenseite minus Reststeg (der Steg biegt sich mit der Außenwand)
+    const uF = -(plan.W / 2 + 1), dd = plan.d, uA = plan.uB, ri = plan.ri;
     const kit = (k) => {
       const tn = k.tanHalf, y = (u) => k.sigma * u, xm = (k.x1 + k.x2) / 2;
       const flankA = (u) => k.x1 + (u - dd) * tn, flankB = (u) => k.x2 - (u - dd) * tn;
@@ -737,7 +738,7 @@ export function createKernel(R) {
       const ax = Math.abs(v3.dot(fr.u, eA)) > 0.5 ? 0 : 1; // Querschnittsachse in der Knickebene
       const sgn = (ax === 0 ? v3.dot(fr.u, eA) : v3.dot(fr.v, eA)) > 0 ? 1 : -1;
       const big = g.width + g.height + 10;
-      const lo = plan.uA, hi = plan.W / 2 + 1;
+      const lo = plan.uB, hi = plan.W / 2 + 1; // mitgebogen: Außenwand samt Reststeg
       const c = (sgn * k.sigma * (lo + hi)) / 2;
       const clip = ax === 0 ? R.drawRectangle(hi - lo, big).translate(c, 0) : R.drawRectangle(big, hi - lo).translate(0, c);
       const stripFace = regionToDrawing({ outer: g.outer, holes: g.holes }).intersect(clip).sketchOnPlane(new R.Plane(fr.origin, fr.u, fr.z));
@@ -808,6 +809,7 @@ export function createKernel(R) {
       relief: plan.reliefKind,
       reliefMin: plan.knicks.map((k) => k.relief.min), // Mindestmaße der Freistellung je Knick
       weldGap: plan.weldGap,
+      restWall: plan.restWall,
       tabs: !!plan.tab,
       frameZ: z0,
     };
