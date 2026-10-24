@@ -322,6 +322,31 @@ try {
   await page.waitForTimeout(300);
   const after = await evalApp(() => window.__werkcad.undoStack.length);
   step("Rückgängig", after === before - 1, `${before} -> ${after}`);
+
+  // Knickrahmen: über das Menüband anlegen, Winkel im Eigenschaftsfenster ändern, Ansicht abgewickelt, Rückgängig
+  await evalApp(() => window.__werkcad.newPart("Knickrahmen"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: "Knickrahmen" }).click();
+  await idle();
+  const kr0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, len: r.bodies[0]?.meta?.length, errors: Object.values(r.status).filter((s) => !s.ok).length }; });
+  const knickInput = page.locator("#props .field", { hasText: "Knick 1" }).locator("input").first();
+  await knickInput.fill("90");
+  await knickInput.press("Enter");
+  await idle();
+  const kr1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { len: r.bodies[0]?.meta?.length, angle: a.activeDoc().features[0].bends[0].angle }; });
+  await page.locator("#props button", { hasText: "Abgewickelt" }).click();
+  await idle();
+  await shot("20-knickrahmen-abgewickelt");
+  const kr2 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return r.bodies[0]?.props?.bbox; });
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await idle();
+  const kr3 = await evalApp(() => window.__werkcad.activeDoc().features[0].bends[0].angle);
+  // Vorgabe: Innenradius 3, K-Faktor 0,33, RE 60x40x3 → 1400 + 2·24 + (3 + 0,99)·π/2
+  const krL = 1448 + 3.99 * Math.PI / 2;
+  step("Knickrahmen", kr0.bodies === 1 && kr0.errors === 0 && Math.abs(kr1.len - krL) < 1e-6 && Math.abs(kr2[1][0] - kr2[0][0] - krL) < 0.05 && kr3 === "30",
+    JSON.stringify({ kr0, kr1, flatX: kr2 && kr2[1][0] - kr2[0][0], undo: kr3 }));
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

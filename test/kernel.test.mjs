@@ -309,3 +309,201 @@ test("Profil-ID in Zuschnitt-Daten", async () => {
   const tube = await K.buildPart(prj.docs.find((d) => d.id === "beispiel_rohr"));
   assert.equal(tube.bodies[0].meta.profileId, "RR 48,3x2,6");
 });
+
+// ---------- Knickrahmen ----------
+const { defaultKnickrahmen } = await import("../src/core/knickrahmen.js");
+const { catalogToDims } = await import("../src/core/sections.js");
+function knick(over = {}, lens = ["800", "600"], angles = ["30"], bend = { bendRadius: "3", kFactor: "0.33" }) {
+  return {
+    id: "kr", name: "KR", ...defaultKnickrahmen(catalogToDims("rechteck", "60x40x3")), ...bend,
+    segments: lens.map((length) => ({ length })),
+    bends: angles.map((angle) => ({ angle, min: "", max: "" })),
+    ...over,
+  };
+}
+const solidOk = (shape) => {
+  assert.equal(shape.solids.length, 1, "genau ein Körper");
+  const a = new OC.BRepCheck_Analyzer(shape.wrapped, true, false);
+  assert.ok(a.IsValid(), "Körper gültig");
+  a.delete();
+};
+const L_TOL = 0.01; // Vernetzungstoleranz der Längenmessung; Kanten an ebenen Schnitten liegen exakt
+const relNear = (a, b, rel, msg) => near(a, b, Math.abs(b) * rel, msg);
+const rad = (deg) => (deg * Math.PI) / 180;
+
+test("Knickrahmen: gerades Rohr, 30/45/90°, gebogene Außenwand, Gehrungslinie, beide Ansichten gültig", async () => {
+  // gerades Rohr
+  let res = await K.buildPart(part([knick({}, ["1000"], [])]));
+  okAll(res);
+  const A = res.bodies[0].meta.area;
+  solidOk(res.bodies[0].shape);
+  relNear(R.measureVolume(res.bodies[0].shape), A * 1000, 1e-6, "Volumen gerade");
+  near(res.bodies[0].meta.length, 1000, 1e-9);
+  // zwei Segmente, Innenradius 3, K 0,33 (d = 27 − 3 = 24)
+  for (const ang of [30, 45, 90]) {
+    const flatL = 1400 + 2 * 24 * Math.tan(rad(ang / 2)) + (3 + 0.33 * 3) * rad(ang);
+    res = await K.buildPart(part([knick({}, ["800", "600"], [String(ang)])]));
+    okAll(res);
+    assert.equal(res.bodies.length, 1, "ein Körper (ein Rohr)");
+    const fb = res.bodies[0];
+    solidOk(fb.shape);
+    near(fb.meta.length, flatL, 1e-9, "Abwicklungslänge");
+    assert.ok(fb.meta.coped && fb.meta.knicks === 1);
+    near(fb.meta.bendAllowances[0], (3 + 0.99) * rad(ang), 1e-12);
+    // Gehrungslinie sichtbar: Kanten in der Gehrungsebene am Knoten (800, 0), Normale (d1 + d2)
+    const nM = [1 + Math.cos(rad(ang)), Math.sin(rad(ang)), 0];
+    const inMiter = (p) => Math.abs((p[0] - 800) * nM[0] + p[1] * nM[1]) / Math.hypot(nM[0], nM[1]) < 1e-6;
+    const pt = (v) => (typeof v.toTuple === "function" ? v.toTuple() : v);
+    const onTop = (e) => [pt(e.startPoint), pt(e.endPoint)].every((p) => inMiter(p) && Math.abs(Math.abs(p[2]) - 20) < 1e-6);
+    // je eine Linie quer über Ober- und Unterseite (ohne Flächen-Vereinigung beim Verschmelzen)
+    assert.ok(fb.shape.edges.filter(onTop).length >= 2, "Trennlinie auf Gehrung sichtbar");
+    const bb = fb.shape.boundingBox.bounds;
+    const ey = 600 * Math.sin(rad(ang));
+    assert.ok(bb[1][1] >= ey - 1e-6 && bb[1][1] <= ey + 30 + 1e-6, "y-Ausdehnung");
+    near(bb[0][2], -20, 1e-6); near(bb[1][2], 20, 1e-6);
+    const fl = await K.buildPart(part([knick({ view: "abgewickelt" }, ["800", "600"], [String(ang)])]));
+    okAll(fl);
+    solidOk(fl.bodies[0].shape);
+    const fbb = fl.bodies[0].shape.boundingBox.bounds;
+    near(fbb[1][0] - fbb[0][0], flatL, L_TOL, "gerades Rohr so lang wie die Abwicklung");
+    near(fbb[1][1] - fbb[0][1], 60, 1e-6);
+    log("Knick", ang, "Abwicklung", flatL.toFixed(3), "Volumen", R.measureVolume(fb.shape).toFixed(0), R.measureVolume(fl.bodies[0].shape).toFixed(0));
+  }
+});
+
+test("Knickrahmen: Faltung passt zur Abwicklung (K = 0,5, Wand ohne Eckradius → gleiches Volumen)", async () => {
+  // Bei K = 0,5 liegt die neutrale Faser in Wandmitte; für einen rechteckigen Wandstreifen ist das
+  // Volumen der Biegezone dann exakt gleich dem abgewickelten Streifen (Guldin). Stimmen gefaltete
+  // und abgewickelte Form überein, sind beide Volumen gleich.
+  const dims = { B: "60", H: "40", t: "3", r: "0" };
+  for (const [lens, angs, ri] of [[["800", "600"], ["90"], "3"], [["500", "400", "300"], ["45", "-60"], "6"], [["500", "500"], ["60"], "40"]]) {
+    const vols = [];
+    for (const view of ["gefaltet", "abgewickelt"]) {
+      const res = await K.buildPart(part([knick({ view, dims }, lens, angs, { bendRadius: ri, kFactor: "0.5" })]));
+      okAll(res);
+      solidOk(res.bodies[0].shape);
+      vols.push(R.measureVolume(res.bodies[0].shape));
+    }
+    relNear(vols[0], vols[1], 1e-6, `Volumen gefaltet/abgewickelt ${angs} ri ${ri}`);
+  }
+});
+
+test("Knickrahmen: drei Segmente, gegensinnig, Ebene XZ, Profillage", async () => {
+  const f = knick({ plane: "XZ", orientation: "flach" }, ["500", "400", "300"], ["45", "-60"], { bendRadius: "2", kFactor: "0.4" });
+  let res = await K.buildPart(part([f]));
+  okAll(res);
+  const b = res.bodies[0];
+  solidOk(b.shape);
+  const bb = b.shape.boundingBox.bounds;
+  near(bb[0][1], -30, 1e-6); near(bb[1][1], 30, 1e-6); // flach: B = 60 senkrecht zur XZ-Ebene
+  const t45 = Math.tan(rad(22.5)), t60 = Math.tan(rad(30));
+  near(b.meta.length, 1200 + 2 * 15 * (t45 + t60) + 3.2 * (rad(45) + rad(60)), 1e-9);
+  res = await K.buildPart(part([{ ...f, view: "abgewickelt" }]));
+  okAll(res);
+  solidOk(res.bodies[0].shape);
+  const fbb = res.bodies[0].shape.boundingBox.bounds;
+  near(fbb[1][0] - fbb[0][0], b.meta.length, L_TOL);
+  assert.equal(res.bodies.filter((x) => x.kind === "member").length, 1, "Zuschnittliste: ein Rohr");
+});
+
+test("Knickrahmen: ungültige Eingaben ohne Teilergebnis, Parameter und Neuaufbau", async () => {
+  const other = { id: "e0", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "100", start: ["0", "500", "0"], axis: "X" };
+  for (const [over, lens, angs, re] of [
+    [{}, ["800", "-1"], ["30"], /Segment 2/],
+    [{}, ["800", "600"], ["175"], /außerhalb/],
+    [{ bends: [{ angle: "50", min: "", max: "45" }] }, ["800", "600"], ["50"], /Maximum/],
+    [{}, ["20", "600"], ["90"], /zu kurz/],
+    [{ dims: { B: "60", H: "40", t: "20", r: "6" } }, ["800", "600"], ["30"], /Wandstärke/],
+    [{ kFactor: "2" }, ["800", "600"], ["30"], /K-Faktor/],
+    [{}, ["100", "100", "100", "100"], ["10", "10", "10"], /Segmente/],
+  ]) {
+    const res = await K.buildPart(part([other, knick(over, lens, angs)]));
+    assert.equal(res.status.kr.ok, false);
+    assert.match(res.status.kr.error, re);
+    assert.equal(res.bodies.filter((b) => b.fid === "kr").length, 0, "kein Teilergebnis");
+    assert.equal(res.status.e0.ok, true, "anderes Feature unberührt");
+  }
+  // Ausdrücke aus der Parametertabelle; Neuaufbau mit Cache = ohne Cache
+  const p = part([knick({ bendRadius: "Ri", kFactor: "K" }, ["Gesamt - 600", "600"], ["Knick"])], [{ name: "Gesamt", expr: "1400" }, { name: "Knick", expr: "45" }, { name: "Ri", expr: "4" }, { name: "K", expr: "0.4" }]);
+  const a = await K.buildPart(p);
+  okAll(a);
+  p.params[1].expr = "60";
+  const b1 = await K.buildPart(p);
+  const b2 = await K.buildPart(p, { useCache: false });
+  near(b1.bodies[0].meta.length, b2.bodies[0].meta.length, 1e-9);
+  near(R.measureVolume(b1.bodies[0].shape), R.measureVolume(b2.bodies[0].shape), 1e-6);
+  assert.notEqual(a.bodies[0].meta.length, b1.bodies[0].meta.length);
+});
+
+test("Knickrahmen: Speichern/Laden und STEP-Rückimport", async () => {
+  const prj = { format: "werkcad", version: 1, name: "KR", docs: [part([knick({}, ["500", "400", "300"], ["30", "30"])])] };
+  const back = JSON.parse(JSON.stringify(prj));
+  const r1 = await K.buildPart(prj.docs[0], { useCache: false });
+  const r2 = await K.buildPart(back.docs[0], { useCache: false });
+  okAll(r2);
+  assert.deepEqual(back.docs[0].features[0], prj.docs[0].features[0]);
+  assert.deepEqual(r2.bodies[0].meta, r1.bodies[0].meta);
+  near(R.measureVolume(r2.bodies[0].shape), R.measureVolume(r1.bodies[0].shape), 1e-6);
+  for (const view of ["gefaltet", "abgewickelt"]) {
+    const res = await K.buildPart(part([knick({ view }, ["500", "400", "300"], ["30", "-30"])]));
+    const s = res.bodies[0].shape;
+    const imp = await R.importSTEP(new Blob([await R.exportSTEP([{ shape: s.clone(), name: "KR" }]).text()]));
+    relNear(R.measureVolume(imp), R.measureVolume(s), 1e-3, "STEP-Rückimport " + view);
+  }
+});
+
+test("Knickrahmen: Freistellung über die Biegezone, Schweißspalt, Zapfen", async () => {
+  // K = 0,5, Wand ohne Eckradius: gefaltet und abgewickelt sind volumengleich (Guldin), auch mit
+  // Freistellung, Spalt und Zapfen – und nur dann, wenn sich gefaltet nichts überlappt
+  const dims = { B: "60", H: "40", t: "3", r: "0" };
+  const build = async (view, extra, lens = ["800", "600"], angs = ["90"], ri = "3") => {
+    const res = await K.buildPart(part([knick({ view, dims, ...extra }, lens, angs, { bendRadius: ri, kFactor: "0.5" })]));
+    okAll(res);
+    solidOk(res.bodies[0].shape);
+    return res.bodies[0];
+  };
+  for (const [extra, lens, angs, ri] of [
+    [{}],
+    [{}, undefined, undefined, "10"],
+    [{}, undefined, undefined, "0"],
+    [{ relief: "rechteck" }, undefined, ["30"]],
+    [{ tabs: "an", tabDia: "8", weldGap: "1" }],
+    [{ relief: "rechteck", weldGap: "0.5", tabs: "an", tabDia: "6" }, ["500", "400", "300"], ["45", "-60"], "4"],
+    [{ weldGap: "0.8" }, undefined, ["150"], "5"],
+  ]) {
+    const fo = await build("gefaltet", extra, lens, angs, ri), fl = await build("abgewickelt", extra, lens, angs, ri);
+    relNear(R.measureVolume(fo.shape), R.measureVolume(fl.shape), 1e-6, `gefaltet = abgewickelt ${JSON.stringify(extra)} ${angs || 90}° ri ${ri || 3}`);
+  }
+  // Mindestmaß automatisch: 90°, rᵢ 3, t 3 → Tiefe max(rᵢ(1 − cos45°) + 0,5; t/2) = 1,5 → Ø 3
+  const auto = await build("abgewickelt", {});
+  assert.deepEqual(auto.meta.reliefMin, [{ dia: 3 }]);
+  assert.equal(auto.meta.relief, "rund");
+  // Biegezone frei: kein Seitenwand-Material knapp unter der Außenwand-Innenseite (abgewickelt,
+  // Linksknick → Außenwand bei y = −27; Biegezone x 824 … 831,07)
+  const box = (x, y, z) => R.makeBaseBox(0.2, 0.2, 0.2).translate(x, y, z - 0.1);
+  near(R.measureVolume(auto.shape.clone().intersect(box(827.5, -26.8, 18.5))), 0, 1e-9, "Biegezone frei");
+  near(R.measureVolume(auto.shape.clone().intersect(box(827.5, -28.5, 0))), 0.008, 1e-9, "Außenwand bleibt");
+  // Schweißspalt nimmt Material weg
+  const gap = await build("abgewickelt", { weldGap: "1" });
+  assert.ok(R.measureVolume(gap.shape) < R.measureVolume(auto.shape) - 10, "Spalt");
+  // Zapfen ohne Spiel volumenneutral, Nase = halbe Kreisscheibe in beiden Seitenwänden; Spiel vergrößert das Loch
+  const tab0 = await build("abgewickelt", { tabs: "an", tabDia: "8", tabClearance: "0" });
+  relNear(R.measureVolume(tab0.shape), R.measureVolume(auto.shape), 1e-9, "Zapfen volumenneutral");
+  near(R.measureVolume(tab0.shape.clone().cut(auto.shape.clone())), (Math.PI * 16) / 2 * 2 * 3, 1e-3, "Nase");
+  const tab2 = await build("abgewickelt", { tabs: "an", tabDia: "8", tabClearance: "0.2" });
+  near(R.measureVolume(tab0.shape) - R.measureVolume(tab2.shape), (Math.PI * (4.2 ** 2 - 16)) / 2 * 2 * 3, 1e-3, "Spiel");
+  // Prüfregeln
+  for (const [extra, re] of [
+    [{ reliefDia: "2" }, /Freistellung zu klein, Durchmesser mindestens 3 mm/],
+    [{ relief: "rechteck", reliefWidth: "1" }, /zu schmal/],
+    [{ tabs: "an", tabDia: "52" }, /Zapfen zu groß/],
+    [{ weldGap: "3" }, /Schweißspalt/],
+    [{ bendRadius: "60" }, /Innenradius zu groß/],
+  ]) {
+    const res = await K.buildPart(part([knick({ dims, ...extra }, ["800", "600"], ["90"])]));
+    assert.match(String(res.status.kr.error), re, JSON.stringify(extra));
+    assert.equal(res.bodies.length, 0);
+  }
+  const small = await K.buildPart(part([knick({ dims, tabs: "an", tabDia: "8" }, ["800", "600"], ["5"])]));
+  assert.match(small.status.kr.error, /Gegenflanke/);
+});

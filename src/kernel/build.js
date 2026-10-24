@@ -7,6 +7,7 @@ import { extractProfiles, holeCenters, sketchLines } from "../core/sketch.js";
 import { planeFrame, toWorld, v3 } from "../core/geom.js";
 import { sectionGeometry, sectionName, profileId, THREADS } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
+import { planKnickrahmen, knickInput } from "../core/knickrahmen.js";
 
 const BIG = 20000;
 
@@ -360,6 +361,15 @@ export function createKernel(R) {
             if (members.warnings?.length) st.warning = members.warnings.join("; ");
             break;
           }
+          case "knickrahmen": {
+            const kr = buildKnickrahmen(f, E);
+            // ein Bauteil (eine Zuschnittzeile in Abwicklungslänge); gefaltet mit sichtbarer Gehrungslinie
+            const shown = [{ shape: f.view === "abgewickelt" ? kr.flat : kr.folded, kind: "member", meta: kr.meta, name: kr.name }];
+            state.tools.set(f.id, { op: "member", shapes: shown });
+            for (const x of shown) pushMember(state, x.shape, f, x.meta, x.name);
+            st.info = `Abwicklung ${round(kr.meta.length)} mm, ${kr.meta.knicks} Ausklinkung(en)` + (kr.meta.knicks ? `, Biegezugabe ${kr.meta.bendAllowances.map(round).join(" / ")} mm` : "") + (f.view === "abgewickelt" ? "" : " · für den Rohrlaser Ansicht »Abgewickelt« exportieren");
+            break;
+          }
           case "fillet":
           case "chamfer": {
             const r = E(f.radius, f.type === "fillet" ? "Radius" : "Abstand");
@@ -657,6 +667,165 @@ export function createKernel(R) {
     return members;
   }
 
+  // ---------- Knickrahmen: ein Rohr, V-ausgeklinkt und gefaltet ----------
+  /**
+   * Baut beide Zustände: gefaltet (gerade Abschnitte + Außenwand mit Biegeradius) und abgewickelt
+   * (gerades Rohr mit Ausklinkungen). Erst wenn beide gültig sind, wird etwas übernommen.
+   */
+  function buildKnickrahmen(f, E) {
+    const input = knickInput(f, E);
+    const plan = planKnickrahmen(input);
+    if (plan.issues.length) throw new Error(plan.issues.map((x) => x.message).join("; "));
+    const section = { kind: input.section, dims: input.dims };
+    const g = plan.geom;
+    const N = plan.frame.normal;
+    const rot = input.orientation === "flach" ? 90 : 0;
+    const name = f.name || "Knickrahmen";
+    const Hext = plan.H + 10;
+    const BIG = plan.W + 100;
+    // Umrisse in Abwicklungs-Koordinaten (x = Rohrachse, y = σ·u, u zur Außenwand), extrudiert entlang N.
+    // Gefaltet gelten dieselben Umrisse im Rahmen von Segment A bzw. B (Ursprung so, dass x1 bzw. x2 im
+    // Tangentenpunkt liegt) – so passen gefaltete und abgewickelte Form exakt zusammen.
+    const extr = (drawing, origin, xDir) => drawing.sketchOnPlane(new R.Plane(v3.sub(origin, v3.mul(N, Hext / 2)), xDir, N)).extrude(Hext);
+    const poly = (pts) => {
+      const q = pts.filter((p, i) => i === 0 || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 1e-9);
+      let pen = R.draw(q[0]);
+      for (const p of q.slice(1)) pen = pen.lineTo(p);
+      return pen.close();
+    };
+    const uF = -(plan.W / 2 + 1), dd = plan.d, uA = plan.uA, ri = plan.ri;
+    const kit = (k) => {
+      const tn = k.tanHalf, y = (u) => k.sigma * u, xm = (k.x1 + k.x2) / 2;
+      const flankA = (u) => k.x1 + (u - dd) * tn, flankB = (u) => k.x2 - (u - dd) * tn;
+      const cross = flankA(uA) > flankB(uA) + 1e-9;
+      const uc = dd + k.zone / (2 * tn);
+      const clipBelow = (dr) => dr.intersect(R.drawRectangle(4 * BIG, BIG).translate(xm, y(uA - BIG / 2)));
+      const rl = k.relief;
+      const relief = clipBelow(rl.kind === "rund"
+        // Langloch auf der Außenwand-Innenseite, Kreismitten bei xm ± half
+        ? R.draw([xm - rl.half, y(uA - rl.r)]).lineTo([xm + rl.half, y(uA - rl.r)]).threePointsArcTo([xm + rl.half, y(uA + rl.r)], [xm + rl.half + rl.r, y(uA)])
+          .lineTo([xm - rl.half, y(uA + rl.r)]).threePointsArcTo([xm - rl.half, y(uA - rl.r)], [xm - rl.half - rl.r, y(uA)]).close()
+        : R.drawRectangle(rl.w, 2 * rl.h).translate(xm, y(uA)));
+      // Schweißspalt: Streifen der Breite g/2 hinter jeder Flanke (bis zur Außenwand-Innenseite)
+      const gh = plan.weldGap / 2 / Math.cos(Math.atan(tn)), eps = 1e-3;
+      const strip = (side) => {
+        if (!(plan.weldGap > 0)) return null;
+        const f = side === "A" ? flankA : flankB, s = side === "A" ? -1 : 1;
+        return poly([[f(uF) + s * gh, y(uF)], [f(uF) - s * eps, y(uF)], [f(uA) - s * eps, y(uA)], [f(uA) + s * gh, y(uA)]]);
+      };
+      const notch = dd <= uF ? null : poly(cross
+        ? [[flankA(uF), y(uF)], [xm, y(uc)], [flankB(uF), y(uF)]]
+        : [[flankA(uF), y(uF)], [flankA(uA), y(uA)], [flankB(uA), y(uA)], [flankB(uF), y(uF)]]);
+      // gefaltet: Außenwand (u ≥ uA) jenseits des Tangentenpunkts gehört zur Biegung
+      const outer = { A: R.drawRectangle(BIG, BIG).translate(k.x1 + BIG / 2, y(uA + BIG / 2)), B: R.drawRectangle(BIG, BIG).translate(k.x2 - BIG / 2, y(uA + BIG / 2)) };
+      const tab = plan.tab && {
+        nose: (r) => R.drawCircle(r).translate(flankA(plan.tab.u), y(plan.tab.u)),
+        holeB: () => R.drawCircle(plan.tab.r + plan.tab.c).translate(flankB(plan.tab.u), y(plan.tab.u)),
+      };
+      return { relief, strip, notch, outer, tab };
+    };
+
+    const cutsOf = plan.dirs.map(() => []), addsOf = plan.dirs.map(() => []), halves = plan.dirs.map(() => []);
+    plan.knicks.forEach((k, j) => {
+      const dA = plan.dirs[j], dB = plan.dirs[j + 1], P = plan.nodes[j + 1];
+      const eA = v3.cross(N, dA);
+      const nA = v3.mul(eA, k.sigma); // zur Außenwand
+      const s = plan.d * k.tanHalf;
+      const C = v3.add(v3.add(P, v3.mul(dA, s)), v3.mul(nA, plan.d));
+      // Außenwand-Streifen (Querschnitt jenseits der Wand-Innenseite) im Tangentenpunkt von Segment A
+      const fr = memberFrame(v3.add(P, v3.mul(dA, s)), dA, rot, N);
+      const ax = Math.abs(v3.dot(fr.u, eA)) > 0.5 ? 0 : 1; // Querschnittsachse in der Knickebene
+      const sgn = (ax === 0 ? v3.dot(fr.u, eA) : v3.dot(fr.v, eA)) > 0 ? 1 : -1;
+      const big = g.width + g.height + 10;
+      const lo = plan.uA, hi = plan.W / 2 + 1;
+      const c = (sgn * k.sigma * (lo + hi)) / 2;
+      const clip = ax === 0 ? R.drawRectangle(hi - lo, big).translate(c, 0) : R.drawRectangle(big, hi - lo).translate(0, c);
+      const stripFace = regionToDrawing({ outer: g.outer, holes: g.holes }).intersect(clip).sketchOnPlane(new R.Plane(fr.origin, fr.u, fr.z));
+      // je Segment die halbe Biegung: Gehrungsebene am Knoten enthält C und liegt bei |θ|/2
+      const half = Math.abs(k.angle) / 2, axis = k.angle > 0 ? N : v3.mul(N, -1);
+      const hA = R.revolution(stripFace.face(), C, axis, half);
+      halves[j].push(hA);
+      halves[j + 1].push(hA.clone().rotate(half, C, axis));
+      // Segment-Rahmen in Abwicklungs-Koordinaten
+      const oA = v3.sub(v3.add(P, v3.mul(dA, s)), v3.mul(dA, k.x1));
+      const oB = v3.sub(v3.sub(P, v3.mul(dB, s)), v3.mul(dB, k.x2));
+      const K = kit(k);
+      cutsOf[j].push(extr(K.outer.A, oA, dA), extr(K.relief, oA, dA));
+      cutsOf[j + 1].push(extr(K.outer.B, oB, dB), extr(K.relief.clone(), oB, dB));
+      if (K.strip("A")) { cutsOf[j].push(extr(K.strip("A"), oA, dA)); cutsOf[j + 1].push(extr(K.strip("B"), oB, dB)); }
+      if (K.tab) {
+        // Zapfen gehört zu Segment A (nur die Seitenwände), Segment B bekommt das Loch (mit Spiel)
+        const wallsA = makeMember(section, input.segments[j] + plan.W + 50, memberFrame(plan.nodes[j], dA, rot, N)).solid;
+        addsOf[j].push(extr(K.tab.nose(plan.tab.r), oA, dA).intersect(wallsA));
+        cutsOf[j + 1].push(extr(K.tab.holeB(), oB, dB));
+      }
+    });
+    // gefaltet: Segmente auf Gehrung, je mit der halben Biegung, ohne Flächen-Vereinigung verschmolzen
+    // (die Gehrung bleibt als Linie sichtbar)
+    const segments = plan.dirs.map((z, i) => {
+      const cuts = { start: [], end: [] };
+      const m0 = i > 0 ? Math.abs(plan.knicks[i - 1].angle) / 2 : 0, m1 = i < plan.knicks.length ? Math.abs(plan.knicks[i].angle) / 2 : 0;
+      if (i > 0) cuts.start.push({ p: plan.nodes[i], n: v3.mul(v3.norm(v3.add(z, plan.dirs[i - 1])), -1) });
+      if (i < plan.dirs.length - 1) cuts.end.push({ p: plan.nodes[i + 1], n: v3.norm(v3.add(z, plan.dirs[i + 1])) });
+      const fr = memberFrame(plan.nodes[i], z, rot, N);
+      let seg = makeMember(section, input.segments[i], fr, cuts).solid;
+      for (const c of cutsOf[i]) seg = seg.cut(c);
+      for (const a of addsOf[i]) seg = seg.fuse(a);
+      for (const hb of halves[i]) seg = seg.fuse(hb);
+      checkSolid(seg, `Segment ${i + 1}`);
+      return { solid: seg, length: memberLength(seg, fr), miterStart: m0, miterEnd: m1 };
+    });
+    let folded = segments[0].solid;
+    for (const sg of segments.slice(1)) folded = folded.fuse(sg.solid, { simplify: false });
+    checkSolid(folded, "gefaltet");
+
+    // abgewickelt: gerades Rohr entlang Segment 1; je Knick V-Ausklinkung, Freistellung, Spalt, Zapfen
+    const z0 = plan.dirs[0], o0 = plan.nodes[0];
+    const tube = makeMember(section, plan.flatLength, memberFrame(o0, z0, rot, N)).solid;
+    let flat = tube.clone();
+    const noses = [];
+    for (const k of plan.knicks) {
+      const K = kit(k), y = (u) => k.sigma * u;
+      flat = flat.cut(K.notch ? extr(K.notch, o0, z0) : extr(poly([[k.x1, y(uA)], [k.x2, y(uA)], [k.x2, y(uF)], [k.x1, y(uF)]]), o0, z0));
+      flat = flat.cut(extr(K.relief, o0, z0));
+      if (K.strip("A")) flat = flat.cut(extr(K.strip("A"), o0, z0)).cut(extr(K.strip("B"), o0, z0));
+      if (K.tab) { flat = flat.cut(extr(K.tab.holeB(), o0, z0)); noses.push(extr(K.tab.nose(plan.tab.r), o0, z0).intersect(tube.clone())); }
+    }
+    for (const n of noses) flat = flat.fuse(n);
+    checkSolid(flat, "abgewickelt");
+
+    const meta = {
+      section: sectionName(section.kind, section.dims),
+      profileId: profileId(section.kind, section.dims),
+      area: plan.area,
+      length: plan.flatLength,
+      miterStart: 0,
+      miterEnd: 0,
+      coped: plan.knicks.length > 0, // V-Ausklinkung(en) – Spalte »Ausgeklinkt« der Zuschnittliste
+      knicks: plan.knicks.length,
+      notchAngles: plan.knicks.map((k) => round(k.angle)),
+      bendAllowances: plan.knicks.map((k) => k.zone),
+      relief: plan.reliefKind,
+      reliefMin: plan.knicks.map((k) => k.relief.min), // Mindestmaße der Freistellung je Knick
+      weldGap: plan.weldGap,
+      tabs: !!plan.tab,
+      frameZ: z0,
+    };
+    return { folded, segments, flat, meta, name, plan };
+  }
+
+  /** Körperprüfung: genau ein gültiger Volumenkörper mit Volumen > 0 */
+  function checkSolid(shape, label) {
+    const n = shape.solids.length;
+    if (n !== 1) throw new Error(`Knickrahmen (${label}): ${n} statt 1 Körper – Ausklinkung trennt das Rohr`);
+    const oc = R.getOC();
+    const an = new oc.BRepCheck_Analyzer(shape.wrapped, true, false);
+    const ok = an.IsValid();
+    an.delete();
+    if (!ok) throw new Error(`Knickrahmen (${label}): Körper ungültig (Geometrie-Prüfung)`);
+    if (!(R.measureVolume(shape) > 0)) throw new Error(`Knickrahmen (${label}): Volumen ist 0`);
+  }
+
   function cutAngle(list, z) {
     if (!list.length) return 0;
     const c = Math.abs(v3.dot(v3.norm(list[0].n), z));
@@ -832,7 +1001,7 @@ export function createKernel(R) {
     return v3.norm(v3.sub(best, v3.mul(n, v3.dot(best, n))));
   }
 
-  return { buildPart, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, buildKnickrahmen, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen
