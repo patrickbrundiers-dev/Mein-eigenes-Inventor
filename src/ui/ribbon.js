@@ -164,6 +164,7 @@ export class Ribbon {
             B("dv_base", "Grundansichten", "view", { run: () => dr.autoViews() }),
             B("dv_add", "Ansicht hinzufügen", "plus", { run: () => dr.addViewDialog() }),
             B("dv_sec", "Schnitt", "cut", { run: () => dr.addSectionDialog() }),
+            B("dv_det", "Detail", "detail", { on: dr.tool === "detail", run: () => (dr.tool === "detail" ? dr.setTool(null) : dr.startDetail()) }),
           ] },
           { label: "Beschriften", buttons: [
             B("dd_dim", "Bemaßung", "dimension", { on: dr.tool === "dim", run: () => dr.setTool(dr.tool === "dim" ? null : "dim") }),

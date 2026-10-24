@@ -7,6 +7,7 @@ import { scaleLabel } from "./tree.js";
 import { v3 } from "../core/geom.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
+import { clipProjection } from "../core/clip.js";
 import { bomRows } from "./props.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
@@ -62,7 +63,7 @@ export class DrawingEditor {
     const items = this.sourceItems(d);
     if (!items || !items.length) { this.render(); return; }
     if (d.pendingAutoViews) { delete d.pendingAutoViews; await this.autoViews({ silentUndo: true }); return; }
-    const views = d.views.map((v) => { const c = this.viewCam(d, v); return { key: v.id, dir: c.dir, up: c.up, cut: c.cut, hidden: v.hidden !== false && v.type !== "iso" }; });
+    const views = d.views.filter((v) => v.type !== "detail").map((v) => { const c = this.viewCam(d, v); return { key: v.id, dir: c.dir, up: c.up, cut: c.cut, hidden: v.hidden !== false && v.type !== "iso" }; });
     if (!views.length) { this.render(); return; }
     this.loading = true;
     this.render();
@@ -70,6 +71,7 @@ export class DrawingEditor {
       const res = await this.app.kernel.call("project", { items, views });
       if (this.doc !== d) return;
       for (const [k, v] of Object.entries(res)) this.proj.set(k, v);
+      this.deriveDetails(d);
     } catch (e) {
       toast("Ansichten konnten nicht berechnet werden: " + e.message, { kind: "err" });
     }
@@ -159,7 +161,7 @@ export class DrawingEditor {
   deleteView(id) {
     const d = this.doc;
     this.app.edit("Ansicht löschen", () => {
-      const gone = new Set([id, ...d.views.filter((v) => v.type === "section" && v.parent === id).map((v) => v.id)]);
+      const gone = new Set([id, ...d.views.filter((v) => (v.type === "section" || v.type === "detail") && v.parent === id).map((v) => v.id)]);
       d.views = d.views.filter((v) => !gone.has(v.id));
       for (const v of d.views) if (gone.has(v.parent)) delete v.parent;
       d.dims = d.dims.filter((m) => m.view !== id);
@@ -170,6 +172,7 @@ export class DrawingEditor {
 
   /** Kamera einer Ansicht; Schnittansichten leiten sich von ihrer Elternansicht ab */
   viewCam(d, v, depth = 0) {
+    if (v.type === "detail") { const parent = d.views.find((x) => x.id === v.parent); return parent && depth < 4 ? this.viewCam(d, parent, depth + 1) : { dir: [0, 1, 0], up: [0, 0, 1] }; }
     if (v.type !== "section") return { dir: CAMS[v.type]?.dir || v.dir, up: CAMS[v.type]?.up || v.up };
     const parent = d.views.find((x) => x.id === v.parent);
     if (!parent || depth > 3) return { dir: [0, 1, 0], up: [0, 0, 1] };
@@ -179,6 +182,78 @@ export class DrawingEditor {
     return { dir: v3.mul(n, -1), up: v.axis === "v" ? pc.up : pc.dir, cut: { n, c: Number(v.pos) || 0 } };
   }
   sectionChildren(d, v) { return d.views.filter((x) => x.type === "section" && x.parent === v.id); }
+  // ---------- Detailansicht ----------
+  /** Detail-Projektionen aus der Elternansicht zuschneiden (kein eigener Kernel-Aufruf) */
+  deriveDetails(d = this.doc) {
+    for (const v of d?.views || []) {
+      if (v.type !== "detail") continue;
+      const p = this.proj.get(v.parent);
+      if (p) this.proj.set(v.id, clipProjection(p, v.center, v.r));
+      else this.proj.delete(v.id);
+    }
+  }
+  startDetail() {
+    const d = this.doc;
+    const parent = this.sel?.type === "view" ? d.views.find((x) => x.id === this.sel.id) : null;
+    if (!parent || parent.type === "detail" || !this.proj.get(parent.id)) return toast("Zuerst eine Ansicht anklicken, dann »Detail«");
+    this.setTool("detail");
+    this.pendingDetail = { parent: parent.id };
+    this.app.setHint("Detail: Mittelpunkt des Ausschnitts klicken, dann den Rand");
+  }
+  detailClick(sx, sy) {
+    const d = this.doc;
+    const pd = this.pendingDetail;
+    const parent = d.views.find((x) => x.id === pd?.parent);
+    if (!parent) return this.setTool(null);
+    const xf = this.viewXf(parent);
+    const q = xf.from(sx, sy);
+    if (!pd.center) { pd.center = q; this.app.setHint("Detail: Rand des Ausschnitts klicken"); return; }
+    const r = Math.hypot(q[0] - pd.center[0], q[1] - pd.center[1]);
+    if (r * parent.scale < 2) return toast("Ausschnitt zu klein");
+    const scale = [...SCALES].reverse().find((s) => s >= parent.scale * 2 - 1e-9) || SCALES[0];
+    const used = new Set(d.views.filter((x) => x.letter).map((x) => x.letter));
+    let letter = "Z";
+    for (let i = 25; i >= 0; i--) { const l = String.fromCharCode(65 + i); if (!used.has(l)) { letter = l; break; } }
+    const [px, py] = xf.to(pd.center[0], pd.center[1]);
+    const [x, y] = this.freeSpot(d, r * scale + 8, px, py);
+    const v = { id: uid("v"), type: "detail", parent: parent.id, center: pd.center.map((x) => Math.round(x * 1000) / 1000), r: Math.round(r * 1000) / 1000, scale, letter,
+      hidden: parent.hidden, x, y, dir: this.viewCam(d, parent).dir, up: this.viewCam(d, parent).up }; // dir/up: ältere Versionen zeigen das Detail als ganze Ansicht
+    this.setTool(null);
+    this.app.edit("Detailansicht", () => d.views.push(v), { rebuild: false });
+    this.deriveDetails(d);
+    this.sel = { type: "view", id: v.id };
+    this.render();
+  }
+  /** Freie Stelle auf dem Blatt für einen Kreis mit Radius `half` (Ansichten, Schriftfeld meiden), nahe (nx, ny) */
+  freeSpot(d, half, nx, ny) {
+    const [W, H] = this.sheetSize(d);
+    const rects = d.views.filter((v) => this.proj.get(v.id)?.bbox).map((v) => {
+      const xf = this.viewXf(v), bb = xf.bb;
+      const [x0, y0] = xf.to(bb.x0, bb.y1), [x1, y1] = xf.to(bb.x1, bb.y0);
+      return [x0 - 10, y0 - 10, x1 + 10, y1 + 10]; // Platz für Maße
+    });
+    rects.push([W - 190, H - 70, W, H]); // Schriftfeld
+    const free = (x, y) => rects.every(([a, b, c, e]) => x + half < a || x - half > c || y + half < b || y - half > e);
+    let best = null;
+    for (let x = 25 + half; x <= W - 15 - half; x += 5) for (let y = 15 + half; y <= H - 15 - half; y += 5) {
+      if (!free(x, y)) continue;
+      const dd = Math.hypot(x - nx, y - ny);
+      if (!best || dd < best[2]) best = [x, y, dd];
+    }
+    return best ? [best[0], best[1]] : [Math.min(W - 15 - half, nx + 2 * half), Math.min(H - 70 - half, ny)];
+  }
+  /** Kreis + Buchstabe in der Elternansicht */
+  detailMark(v, s, xf) {
+    const g = svgEl("g", { fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    const [cx, cy] = xf.to(s.center[0], s.center[1]);
+    const rr = s.r * v.scale;
+    g.append(svgEl("circle", { cx: r3(cx), cy: r3(cy), r: r3(rr) }));
+    const t = svgEl("text", { x: r3(cx + rr * 0.75 + 1), y: r3(cy - rr * 0.75 - 1), "font-size": 5, fill: "#111a24", stroke: "none" });
+    t.textContent = s.letter;
+    g.append(t);
+    return g;
+  }
+
   async addSectionDialog() {
     const d = this.doc;
     const parent = this.sel?.type === "view" ? d.views.find((x) => x.id === this.sel.id) : null;
@@ -315,10 +390,12 @@ export class DrawingEditor {
     }
     const bb = xf.bb;
     const [x0, y0] = xf.to(bb.x0, bb.y1), [x1, y1] = xf.to(bb.x1, bb.y0);
-    const lbl = v.type === "section" ? `${v.letter}–${v.letter}` : v.label;
+    if (v.type === "detail") g.append(svgEl("circle", { cx: r3(v.x), cy: r3(v.y), r: r3(v.r * v.scale), fill: "none", stroke: "#111a24", "stroke-width": LW.thin }));
+    const lbl = v.type === "section" ? `${v.letter}–${v.letter}` : v.type === "detail" ? `${v.letter} (${scaleLabel(v.scale).replace(/^M\s*/, "")})` : v.label;
     if (lbl) { const t = svgEl("text", { x: (x0 + x1) / 2, y: v.type === "section" ? y0 - 4 : y1 + 6, "text-anchor": "middle", "font-size": v.type === "section" ? 5 : 3.5, fill: "#111a24" }); t.textContent = lbl; g.append(t); }
     // Schnittverläufe der abgeleiteten Schnittansichten
     for (const s of this.sectionChildren(d, v)) g.append(this.sectionLine(v, s, xf));
+    for (const s of d.views.filter((x) => x.type === "detail" && x.parent === v.id)) g.append(this.detailMark(v, s, xf));
     if (interactive) {
       g.append(svgEl("rect", { x: x0 - 3, y: y0 - 3, width: x1 - x0 + 6, height: y1 - y0 + 6, class: "dw-view-box", fill: "none" }));
       g.append(svgEl("rect", { x: x0 - 3, y: y0 - 3, width: x1 - x0 + 6, height: y1 - y0 + 6, class: "dw-view-hit", "data-view": v.id }));
@@ -609,6 +686,7 @@ export class DrawingEditor {
       if (e.button !== 0) return;
       if (this.tool === "dim") return this.dimClick(sx, sy);
       if (this.tool === "text") return this.textClick(sx, sy);
+      if (this.tool === "detail") return this.detailClick(sx, sy);
       const dimEl = e.target.closest("[data-dim]");
       const noteEl = e.target.closest("[data-note]");
       const balloonEl = e.target.closest("[data-balloon]");
@@ -641,10 +719,10 @@ export class DrawingEditor {
           const O = new Map(drag.orig.map((o) => [o.id, o]));
           const v = drag.v;
           let mdx = dx, mdy = dy;
-          if (v.parent) { const t = v.type; if (t === "top" || t === "bottom" || (t === "section" && v.axis !== "v")) mdx = 0; else mdy = 0; }
+          if (v.parent && v.type !== "detail") { const t = v.type; if (t === "top" || t === "bottom" || (t === "section" && v.axis !== "v")) mdx = 0; else mdy = 0; }
           v.x = O.get(v.id).x + mdx;
           v.y = O.get(v.id).y + mdy;
-          for (const c of d.views) if (c.parent === v.id) {
+          for (const c of d.views) if (c.parent === v.id && c.type !== "detail") {
             const o = O.get(c.id);
             c.x = o.x + mdx;
             c.y = o.y + mdy;
@@ -782,7 +860,7 @@ export class DrawingEditor {
     const add = [];
     const seenR = new Set();
     for (const v of d.views) {
-      if (v.type === "iso") continue;
+      if (v.type === "iso" || v.type === "detail") continue;
       const p = this.proj.get(v.id);
       if (!p?.bbox) continue;
       const b = p.bbox;
@@ -847,6 +925,14 @@ export class DrawingEditor {
           h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Schnitt löschen"))));
         return out;
       }
+      if (v && v.type === "detail") {
+        out.push(P.section(`Detail ${v.letter}`,
+          P.text("Buchstabe", v.letter, (t) => app.edit("Detail", () => { v.letter = (t || "Z").slice(0, 2).toUpperCase(); }, { rebuild: false })),
+          P.select("Maßstab", SCALES.map((s) => [String(s), scaleLabel(s)]), String(v.scale), (s) => app.edit("Maßstab", () => { v.scale = Number(s); }, { rebuild: false })),
+          P.expr("Radius (mm)", String(v.r), (x) => { const r = Number(String(x).replace(",", ".")); if (r > 0) { app.edit("Detail", () => { v.r = r; }, { rebuild: false }); this.deriveDetails(d); this.render(); } }),
+          h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Detail löschen"))));
+        return out;
+      }
       if (v) {
         out.push(P.section(CAMS[v.type]?.label || "Ansicht",
           P.select("Ansicht", Object.entries(CAMS).map(([k, c]) => [k, c.label]), v.type, (t) => app.edit("Ansicht", () => { v.type = t; delete v.parent; })),
@@ -854,7 +940,7 @@ export class DrawingEditor {
           P.check("Verdeckte Kanten", v.hidden !== false, (on) => app.edit("Verdeckte Kanten", () => { v.hidden = on; })),
           P.check("Mittellinien", v.centerlines !== false, (on) => app.edit("Mittellinien", () => { v.centerlines = on; }, { rebuild: false })),
           P.text("Beschriftung", v.label || "", (t) => app.edit("Beschriftung", () => { v.label = t; }, { rebuild: false })),
-          h("div", { class: "btn-row" }, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.addSectionDialog() }, "Schnitt erzeugen") : null, h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Ansicht löschen"))));
+          h("div", { class: "btn-row" }, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.addSectionDialog() }, "Schnitt erzeugen") : null, h("button", { class: "btn", onclick: () => this.startDetail() }, "Detail erzeugen"), h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Ansicht löschen"))));
         return out;
       }
     }
@@ -932,6 +1018,17 @@ export class DrawingEditor {
           if (n.length >= 6) { const p0 = [n[0], n[1]], p1 = [p0[0] + n[2], p0[1] + n[3]], p2 = [p1[0] + n[4], p1[1] + n[5]]; w.polyline([p0, p1, p2].map((q) => [q[0], Y(q[1])]), "MASSE", true); }
         }
         for (const el of g.querySelectorAll("text")) w.text(+el.getAttribute("x"), Y(+el.getAttribute("y")), 5, el.textContent, "TEXT", { align: "center" });
+      }
+      for (const s of d.views.filter((x) => x.type === "detail" && x.parent === v.id)) {
+        const [cx, cy] = xf.to(s.center[0], s.center[1]);
+        const rr = s.r * v.scale;
+        w.circle(cx, Y(cy), rr, "MASSE");
+        w.text(cx + rr * 0.75 + 1, Y(cy - rr * 0.75 - 1), 5, s.letter, "TEXT");
+      }
+      if (v.type === "detail") {
+        const rr = v.r * v.scale;
+        w.circle(v.x, Y(v.y), rr, "MASSE");
+        w.text(v.x, Y(v.y + rr + 6), 3.5, `${v.letter} (${scaleLabel(v.scale)})`, "TEXT", { align: "center" });
       }
       if (v.type === "section") {
         const bb = xf.bb;

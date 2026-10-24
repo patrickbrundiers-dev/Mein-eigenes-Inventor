@@ -159,7 +159,7 @@ export class Tree {
     const names = { front: "Vorderansicht", top: "Draufsicht", left: "Seitenansicht links", right: "Seitenansicht rechts", back: "Rückansicht", bottom: "Untersicht", iso: "Isometrie" };
     for (const v of drw.views) {
       const sel = app.drawing.sel?.type === "view" && app.drawing.sel.id === v.id;
-      ul.append(h("li", {}, this.node({ label: v.type === "section" ? `Schnitt ${v.letter}–${v.letter}` : v.label || names[v.type] || v.type, ic: "view", cls: sel ? "sel" : "", meta: `M ${scaleLabel(v.scale)}`,
+      ul.append(h("li", {}, this.node({ label: v.type === "section" ? `Schnitt ${v.letter}–${v.letter}` : v.type === "detail" ? `Detail ${v.letter}` : v.label || names[v.type] || v.type, ic: "view", cls: sel ? "sel" : "", meta: `M ${scaleLabel(v.scale)}`,
         onClick: () => app.drawing.select({ type: "view", id: v.id }),
         onMenu: (e) => contextMenu(e.clientX, e.clientY, [{ label: "Ansicht löschen", icon: "trash", run: () => app.drawing.deleteView(v.id) }]) })));
     }
