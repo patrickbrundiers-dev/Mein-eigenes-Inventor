@@ -34,12 +34,28 @@ jobs:
         run: node --test test/core.test.mjs
       - name: Setup bauen und veröffentlichen
         if: inputs.veroeffentlichen
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run release
+        run: |
+          set -o pipefail
+          mkdir -p protokoll
+          npm run release 2>&1 | tee protokoll/release.txt
       - name: Setup bauen (Testbuild)
         if: ${{ !inputs.veroeffentlichen }}
-        run: npm run dist
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p protokoll
+          npm run dist 2>&1 | tee protokoll/release.txt
+      - name: Protokoll sichern
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p protokoll && cd protokoll
+          ls -la ../release >> dateien.txt 2>&1 || true
+          git init -q . && git config user.name ci && git config user.email ci@example.invalid
+          git add -A && git commit -qm "Release-Protokoll $GITHUB_RUN_ID" && git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" HEAD:refs/heads/release-protokoll
       - name: Setup als Download anhängen
         uses: actions/upload-artifact@v4
         with:
