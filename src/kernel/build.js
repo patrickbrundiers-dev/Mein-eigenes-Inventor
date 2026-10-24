@@ -109,6 +109,18 @@ export function createKernel(R) {
     return { solid, geom: g };
   }
 
+  /**
+   * Mindestlänge, bei der sich Anfangs- und Endschnitt noch nicht im Stab kreuzen.
+   * Geprüft an den beiden äußersten Fasern quer zur Kippachse: z_Ende(s) − z_Anfang(s) ≥ 0.
+   */
+  function miterMinLength(section, frame, tiltAxis, cuts) {
+    const g = sectionGeometry(section.kind, section.dims);
+    const w = v3.norm(v3.cross(tiltAxis, frame.z));
+    const half = Math.abs(v3.dot(w, frame.v)) > 0.5 ? g.height / 2 : g.width / 2;
+    const slope = (c) => (c ? v3.dot(w, c.n) / v3.dot(frame.z, c.n) : 0);
+    return half * Math.abs(slope(cuts.end[0]) - slope(cuts.start[0]));
+  }
+
   /** Zuschnittlänge = Ausdehnung entlang der Stabachse */
   function memberLength(shape, frame) {
     const m = shape.mesh({ tolerance: 0.01, angularTolerance: 0.1 });
@@ -272,7 +284,11 @@ export function createKernel(R) {
             switch (f.mode) {
               case "reverse": start = -d; len = d; break;
               case "symmetric": start = -d / 2; len = d; break;
-              case "twoSided": { const d2 = E(f.distance2 || "0", "Abstand 2"); start = -d2; len = d + d2; break; }
+              case "twoSided": {
+                const d2 = E(f.distance2 || "0", "Abstand 2");
+                if (!(d + d2 > 0)) throw new Error("Abstand + Abstand 2 muss > 0 sein");
+                start = -d2; len = d + d2; break;
+              }
               case "through": start = -BIG / 2; len = BIG; break;
               default: start = 0; len = d;
             }
@@ -295,6 +311,7 @@ export function createKernel(R) {
               dir = v3.sub(toWorld(s.frame, ln.b[0], ln.b[1]), origin);
             }
             const ang = E(f.angle || "360", "Winkel");
+            if (!(ang > 0 && ang <= 360)) throw new Error("Winkel muss zwischen 0° und 360° liegen");
             let tool = null;
             for (const reg of s.prof.regions) {
               const sk = regionToDrawing(reg).sketchOnPlane(makePlane(s.frame));
@@ -313,6 +330,7 @@ export function createKernel(R) {
             if (!(dia > 0)) throw new Error("Durchmesser muss > 0 sein");
             const through = f.extent !== "depth";
             const depth = through ? BIG : E(f.depth, "Tiefe");
+            if (!(depth > 0)) throw new Error("Tiefe muss > 0 sein");
             const dirSign = f.direction === "normal" ? 1 : -1;
             let tool = null;
             for (const c of centers) {
@@ -340,11 +358,16 @@ export function createKernel(R) {
             const fr = memberFrame(origin, zDir, E(f.rotation || "0", "Drehung"));
             const cuts = { start: [], end: [] };
             const m1 = E(f.miterStart || "0", "Gehrung Anfang"), m2 = E(f.miterEnd || "0", "Gehrung Ende");
+            for (const [m, label] of [[m1, "Anfang"], [m2, "Ende"]]) {
+              if (Math.abs(m) >= 90) throw new Error(`Gehrung ${label} muss zwischen −90° und 90° liegen (ist ${round(m)}°)`);
+            }
             const tiltAxis = f.miterAxis === "u" ? fr.v : fr.u; // um welche Querachse gekippt wird
             const rotN = (n, ang) => rotateVec(n, tiltAxis, ang);
             if (Math.abs(m1) > 1e-9) cuts.start.push({ p: fr.origin, n: rotN(v3.mul(fr.z, -1), m1) });
             const endP = v3.add(fr.origin, v3.mul(fr.z, L));
             if (Math.abs(m2) > 1e-9) cuts.end.push({ p: endP, n: rotN(fr.z, f.miterSame ? m2 : -m2) });
+            const minL = miterMinLength(section, fr, tiltAxis, cuts);
+            if (L < minL - 1e-6) throw new Error(`Profil zu kurz für die Gehrungen: Länge mindestens ${round(minL)} mm, sonst kreuzen sich die Schnitte`);
             const { solid, geom } = makeMember(section, L, fr, cuts);
             const name = sectionName(f.section, dims);
             const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
@@ -428,6 +451,7 @@ export function createKernel(R) {
           }
           case "shell": {
             const t = E(f.thickness, "Wandstärke");
+            if (!(Math.abs(t) > 0)) throw new Error("Wandstärke muss ≠ 0 sein");
             const faces = f.faces || [];
             const b = state.bodies.find((x) => x.kind === "solid") || state.bodies[0];
             if (!b) throw new Error("Kein Körper vorhanden");
@@ -713,7 +737,8 @@ export function createKernel(R) {
       for (const p of q.slice(1)) pen = pen.lineTo(p);
       return pen.close();
     };
-    const uF = -(plan.W / 2 + 1), dd = plan.d, uA = plan.uA, ri = plan.ri;
+    // uA hier = Schnittgrenze: Außenwand-Innenseite minus Reststeg (der Steg biegt sich mit der Außenwand)
+    const uF = -(plan.W / 2 + 1), dd = plan.d, uA = plan.uB, ri = plan.ri;
     const kit = (k) => {
       const tn = k.tanHalf, y = (u) => k.sigma * u, xm = (k.x1 + k.x2) / 2;
       const flankA = (u) => k.x1 + (u - dd) * tn, flankB = (u) => k.x2 - (u - dd) * tn;
@@ -721,7 +746,22 @@ export function createKernel(R) {
       const uc = dd + k.zone / (2 * tn);
       const clipBelow = (dr) => dr.intersect(R.drawRectangle(4 * BIG, BIG).translate(xm, y(uA - BIG / 2)));
       const rl = k.relief;
-      const relief = clipBelow(rl.kind === "rund"
+      // ohne Freistellung: V-Flanken enden am Bogen rᵢ − s um den Biegemittelpunkt (Ecke geschlossen);
+      // weggeschnitten wird je Seite, was gefaltet in die gebogene Wand ragen würde
+      const rB = ri - plan.restWall;
+      const noRelief = (side, clip) => {
+        const xa = side === "A" ? k.x1 : k.x2, sgn = side === "A" ? 1 : -1;
+        const far = clip ? Math.abs(xm - xa) : BIG;
+        let dr = R.drawRectangle(far, uA - dd).translate(xa + (sgn * far) / 2, y((uA + dd) / 2));
+        if (rB > 1e-6) dr = dr.cut(R.drawCircle(rB).translate(xa, y(dd)));
+        return dr;
+      };
+      const reliefFor = (side, clip) => {
+        if (rl.kind !== "keine") return relief.clone();
+        if (!(rB > 1e-6) || (clip && !(k.zone > 1e-6))) return null;
+        return noRelief(side, clip);
+      };
+      const relief = rl.kind === "keine" ? null : clipBelow(rl.kind === "rund"
         // Langloch auf der Außenwand-Innenseite, Kreismitten bei xm ± half
         ? R.draw([xm - rl.half, y(uA - rl.r)]).lineTo([xm + rl.half, y(uA - rl.r)]).threePointsArcTo([xm + rl.half, y(uA + rl.r)], [xm + rl.half + rl.r, y(uA)])
           .lineTo([xm - rl.half, y(uA + rl.r)]).threePointsArcTo([xm - rl.half, y(uA - rl.r)], [xm - rl.half - rl.r, y(uA)]).close()
@@ -742,7 +782,7 @@ export function createKernel(R) {
         nose: (r) => R.drawCircle(r).translate(flankA(plan.tab.u), y(plan.tab.u)),
         holeB: () => R.drawCircle(plan.tab.r + plan.tab.c).translate(flankB(plan.tab.u), y(plan.tab.u)),
       };
-      return { relief, strip, notch, outer, tab };
+      return { reliefFor, strip, notch, outer, tab };
     };
 
     const cutsOf = plan.dirs.map(() => []), addsOf = plan.dirs.map(() => []), halves = plan.dirs.map(() => []);
@@ -757,7 +797,7 @@ export function createKernel(R) {
       const ax = Math.abs(v3.dot(fr.u, eA)) > 0.5 ? 0 : 1; // Querschnittsachse in der Knickebene
       const sgn = (ax === 0 ? v3.dot(fr.u, eA) : v3.dot(fr.v, eA)) > 0 ? 1 : -1;
       const big = g.width + g.height + 10;
-      const lo = plan.uA, hi = plan.W / 2 + 1;
+      const lo = plan.uB, hi = plan.W / 2 + 1; // mitgebogen: Außenwand samt Reststeg
       const c = (sgn * k.sigma * (lo + hi)) / 2;
       const clip = ax === 0 ? R.drawRectangle(hi - lo, big).translate(c, 0) : R.drawRectangle(big, hi - lo).translate(0, c);
       const stripFace = regionToDrawing({ outer: g.outer, holes: g.holes }).intersect(clip).sketchOnPlane(new R.Plane(fr.origin, fr.u, fr.z));
@@ -770,8 +810,10 @@ export function createKernel(R) {
       const oA = v3.sub(v3.add(P, v3.mul(dA, s)), v3.mul(dA, k.x1));
       const oB = v3.sub(v3.sub(P, v3.mul(dB, s)), v3.mul(dB, k.x2));
       const K = kit(k);
-      cutsOf[j].push(extr(K.outer.A, oA, dA), extr(K.relief, oA, dA));
-      cutsOf[j + 1].push(extr(K.outer.B, oB, dB), extr(K.relief.clone(), oB, dB));
+      cutsOf[j].push(extr(K.outer.A, oA, dA));
+      cutsOf[j + 1].push(extr(K.outer.B, oB, dB));
+      const relA = K.reliefFor("A", false), relB = K.reliefFor("B", false);
+      if (relA) { cutsOf[j].push(extr(relA, oA, dA)); cutsOf[j + 1].push(extr(relB, oB, dB)); }
       if (K.strip("A")) { cutsOf[j].push(extr(K.strip("A"), oA, dA)); cutsOf[j + 1].push(extr(K.strip("B"), oB, dB)); }
       if (K.tab) {
         // Zapfen gehört zu Segment A (nur die Seitenwände), Segment B bekommt das Loch (mit Spiel)
@@ -807,7 +849,7 @@ export function createKernel(R) {
     for (const k of plan.knicks) {
       const K = kit(k), y = (u) => k.sigma * u;
       flat = flat.cut(K.notch ? extr(K.notch, o0, z0) : extr(poly([[k.x1, y(uA)], [k.x2, y(uA)], [k.x2, y(uF)], [k.x1, y(uF)]]), o0, z0));
-      flat = flat.cut(extr(K.relief, o0, z0));
+      for (const side of k.relief.kind === "keine" ? ["A", "B"] : ["A"]) { const dr = K.reliefFor(side, true); if (dr) flat = flat.cut(extr(dr, o0, z0)); }
       if (K.strip("A")) flat = flat.cut(extr(K.strip("A"), o0, z0)).cut(extr(K.strip("B"), o0, z0));
       if (K.tab) { flat = flat.cut(extr(K.tab.holeB(), o0, z0)); noses.push(extr(K.tab.nose(plan.tab.r), o0, z0).intersect(tube.clone())); }
     }
@@ -828,6 +870,7 @@ export function createKernel(R) {
       relief: plan.reliefKind,
       reliefMin: plan.knicks.map((k) => k.relief.min), // Mindestmaße der Freistellung je Knick
       weldGap: plan.weldGap,
+      restWall: plan.restWall,
       tabs: !!plan.tab,
       frameZ: z0,
     };

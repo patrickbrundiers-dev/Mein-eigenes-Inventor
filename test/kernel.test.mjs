@@ -379,7 +379,7 @@ test("Knickrahmen: Faltung passt zur Abwicklung (K = 0,5, Wand ohne Eckradius �
   for (const [lens, angs, ri] of [[["800", "600"], ["90"], "3"], [["500", "400", "300"], ["45", "-60"], "6"], [["500", "500"], ["60"], "40"]]) {
     const vols = [];
     for (const view of ["gefaltet", "abgewickelt"]) {
-      const res = await K.buildPart(part([knick({ view, dims }, lens, angs, { bendRadius: ri, kFactor: "0.5" })]));
+      const res = await K.buildPart(part([knick({ view, dims, restWall: "0" }, lens, angs, { bendRadius: ri, kFactor: "0.5" })]));
       okAll(res);
       solidOk(res.bodies[0].shape);
       vols.push(R.measureVolume(res.bodies[0].shape));
@@ -457,7 +457,7 @@ test("Knickrahmen: Freistellung über die Biegezone, Schweißspalt, Zapfen", asy
   // Freistellung, Spalt und Zapfen – und nur dann, wenn sich gefaltet nichts überlappt
   const dims = { B: "60", H: "40", t: "3", r: "0" };
   const build = async (view, extra, lens = ["800", "600"], angs = ["90"], ri = "3") => {
-    const res = await K.buildPart(part([knick({ view, dims, ...extra }, lens, angs, { bendRadius: ri, kFactor: "0.5" })]));
+    const res = await K.buildPart(part([knick({ view, dims, restWall: "0", ...extra }, lens, angs, { bendRadius: ri, kFactor: "0.5" })]));
     okAll(res);
     solidOk(res.bodies[0].shape);
     return res.bodies[0];
@@ -470,6 +470,9 @@ test("Knickrahmen: Freistellung über die Biegezone, Schweißspalt, Zapfen", asy
     [{ tabs: "an", tabDia: "8", weldGap: "1" }],
     [{ relief: "rechteck", weldGap: "0.5", tabs: "an", tabDia: "6" }, ["500", "400", "300"], ["45", "-60"], "4"],
     [{ weldGap: "0.8" }, undefined, ["150"], "5"],
+    [{ relief: "keine" }],
+    [{ relief: "keine", weldGap: "0.5", tabs: "an", tabDia: "6" }, ["500", "400", "300"], ["45", "-60"], "10"],
+    [{ relief: "keine" }, undefined, ["30"], "0"],
   ]) {
     const fo = await build("gefaltet", extra, lens, angs, ri), fl = await build("abgewickelt", extra, lens, angs, ri);
     relNear(R.measureVolume(fo.shape), R.measureVolume(fl.shape), 1e-6, `gefaltet = abgewickelt ${JSON.stringify(extra)} ${angs || 90}° ri ${ri || 3}`);
@@ -483,6 +486,22 @@ test("Knickrahmen: Freistellung über die Biegezone, Schweißspalt, Zapfen", asy
   const box = (x, y, z) => R.makeBaseBox(0.2, 0.2, 0.2).translate(x, y, z - 0.1);
   near(R.measureVolume(auto.shape.clone().intersect(box(827.5, -26.8, 18.5))), 0, 1e-9, "Biegezone frei");
   near(R.measureVolume(auto.shape.clone().intersect(box(827.5, -28.5, 0))), 0.008, 1e-9, "Außenwand bleibt");
+  // Reststeg 0,1 mm: Schnitt endet vor der Außenwand-Innenseite, der Steg biegt sich mit.
+  // Gefaltet = abgewickelt bis auf den Guldin-Unterschied des Stegs (Schwerpunkt bei rᵢ − 0,05 statt rᵢ + t/2)
+  const rw = { restWall: "0.1" };
+  const fl1 = await build("abgewickelt", rw), fo1 = await build("gefaltet", rw);
+  assert.equal(fl1.meta.restWall, 0.1);
+  const steg = (z) => R.measureVolume(fl1.shape.clone().intersect(R.makeBaseBox(0.2, 0.04, 0.2).translate(827.5, -26.95, z - 0.1)));
+  near(steg(18.5), 0.008 * 0.2, 1e-9, "Steg oben"); near(steg(-18.5), 0.008 * 0.2, 1e-9, "Steg unten");
+  near(R.measureVolume(fl1.shape.clone().intersect(box(827.5, -26.7, 18.5))), 0, 1e-9, "darunter frei");
+  const dV = 2 * 0.1 * 3 * ((3 + 1.5) - (3 - 0.05)) * (Math.PI / 2); // Steg: 2 Wände × 0,1 × t, Faser-Differenz × θ
+  near(R.measureVolume(fl1.shape) - R.measureVolume(fo1.shape), dV, 1e-3, "Guldin-Differenz Reststeg");
+  // ohne Freistellung: Ecke geschlossen – Seitenwand auf der Gehrung bis an die gebogene Wand
+  // (Linksknick, C = (824, −24), Ecke in Richtung (1, −1)/√2, Radius 2,5 < rᵢ)
+  const none = await build("gefaltet", { relief: "keine" });
+  assert.equal(none.meta.relief, "keine");
+  near(R.measureVolume(none.shape.clone().intersect(box(824 + 2.5 / Math.SQRT2, -24 - 2.5 / Math.SQRT2, 18.5))), 0.008, 1e-9, "Ecke geschlossen");
+  near(R.measureVolume(auto.shape.clone().intersect(box(827.5, -26.8, 18.5))), 0, 1e-9, "mit Freistellung frei");
   // Schweißspalt nimmt Material weg
   const gap = await build("abgewickelt", { weldGap: "1" });
   assert.ok(R.measureVolume(gap.shape) < R.measureVolume(auto.shape) - 10, "Spalt");
@@ -499,6 +518,7 @@ test("Knickrahmen: Freistellung über die Biegezone, Schweißspalt, Zapfen", asy
     [{ tabs: "an", tabDia: "52" }, /Zapfen zu groß/],
     [{ weldGap: "3" }, /Schweißspalt/],
     [{ bendRadius: "60" }, /Innenradius zu groß/],
+    [{ bendRadius: "0", restWall: "0.1" }, /mindestens so groß wie der Reststeg/],
   ]) {
     const res = await K.buildPart(part([knick({ dims, ...extra }, ["800", "600"], ["90"])]));
     assert.match(String(res.status.kr.error), re, JSON.stringify(extra));
