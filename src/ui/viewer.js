@@ -63,6 +63,10 @@ export class Viewer {
     this.makeTriad();
     this.makeViewCube();
 
+    this.colors = { ...COL };
+    this.animate = true;
+    this.showGrid = true;
+    this.showCube = true;
     this.cameraListeners = [];
     this.pickables = []; // {mesh, edges[], key}
     this.edgeCache = null;
@@ -85,6 +89,7 @@ export class Viewer {
     g.material.transparent = true;
     g.material.opacity = 0.55;
     g.material.depthWrite = false;
+    g.visible = this.grid ? this.grid.visible : true;
     this.grid = g;
     this.helpers.add(g);
     this.gridStep = step;
@@ -152,7 +157,7 @@ export class Viewer {
       this.triad.scale.setScalar(s);
       r.render(this.scene, this.camera);
       // ViewCube
-      if (!this.hideCube) {
+      if (!this.hideCube && this.showCube) {
         const cs = this.cubeSize;
         r.clearDepth();
         r.setScissorTest(true);
@@ -170,12 +175,35 @@ export class Viewer {
   }
   render() { this.needsRender = true; }
 
+  /** Benutzereinstellungen (src/core/settings.js) übernehmen */
+  applyPrefs(v) {
+    const c = this.controls;
+    c.mouseButtons = v["ansicht.maus"] === "mitte-drehen"
+      ? { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN }
+      : { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+    c.zoomToCursor = v["ansicht.zoomZumCursor"];
+    c.zoomSpeed = v["ansicht.zoomGeschwindigkeit"];
+    c.rotateSpeed = v["ansicht.drehGeschwindigkeit"];
+    this.animate = v["darstellung.animation"];
+    this.showGrid = v["ansicht.raster"];
+    if (!this.sketchFrame) this.grid.visible = this.showGrid;
+    this.showCube = v["ansicht.viewcube"];
+    const edge = new THREE.Color(v["ansicht.kantenfarbe"]).getHex();
+    if (edge !== this.colors.edge) {
+      this.colors.edge = edge;
+      this.root.traverse((o) => { if (o.isLineSegments && o.userData.edgeRanges) o.material.color.setHex(edge); });
+    }
+    this.colors.sel = new THREE.Color(v["ansicht.auswahlfarbe"]).getHex();
+    this.colors.hover = new THREE.Color(v["ansicht.hoverfarbe"]).getHex();
+    this.render();
+  }
+
   // ---------- Kamera ----------
   pixelsPerUnit() {
     const h = this.container.clientHeight || 1;
     return (this.camera.zoom * h) / (this.camera.top - this.camera.bottom);
   }
-  setViewDir(dir, up, { animate = true, target } = {}) {
+  setViewDir(dir, up, { animate = this.animate, target } = {}) {
     const d = new THREE.Vector3(...dir).normalize();
     const t = target ? new THREE.Vector3(...target) : this.controls.target.clone();
     const dist = 5000;
@@ -277,7 +305,7 @@ export class Viewer {
       g.add(mesh);
       const edgeObjs = [];
       const eg = shared?.[bi]?.edgeGeo || edgeGeometry(b.mesh.edges);
-      const lines = new THREE.LineSegments(eg.geo, new THREE.LineBasicMaterial({ color: COL.edge, transparent: opacity < 1, opacity: Math.max(0.35, opacity) }));
+      const lines = new THREE.LineSegments(eg.geo, new THREE.LineBasicMaterial({ color: this.colors.edge, transparent: opacity < 1, opacity: Math.max(0.35, opacity) }));
       lines.userData = { key, body: bi, edgeRanges: eg.ranges, edges: b.mesh.edges };
       g.add(lines);
       edgeObjs.push(lines);
@@ -394,7 +422,7 @@ export class Viewer {
     this.sketchFrame = null;
     this.controls.enableRotate = true;
     this.setModelOpacity(1);
-    this.grid.visible = true;
+    this.grid.visible = this.showGrid;
   }
   setModelOpacity(op) {
     this.root.traverse((o) => {
@@ -437,7 +465,7 @@ export class Viewer {
   }
   /** Klick auf ViewCube? -> setzt Ansicht */
   handleCubeClick(cx, cy) {
-    if (this.hideCube) return false;
+    if (this.hideCube || !this.showCube) return false;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const x = cx - rect.left, y = cy - rect.top;
     const w = rect.width, cs = this.cubeSize;
@@ -543,7 +571,7 @@ export class Viewer {
     this.render();
   }
   /** Hervorhebung (Hover oder Auswahl) eines Pick-Ergebnisses */
-  highlight(hits, { color = COL.hover, group = this.hoverGroup, opacity = 0.55 } = {}) {
+  highlight(hits, { color = this.colors.hover, group = this.hoverGroup, opacity = 0.55 } = {}) {
     disposeTree(group);
     group.clear();
     for (const hit of hits) {
@@ -595,7 +623,7 @@ export class Viewer {
   /** Dauerhafte Auswahl-Hervorhebung */
   setSelectionHits(hits) {
     if (!this.selGroup) { this.selGroup = new THREE.Group(); this.scene.add(this.selGroup); }
-    this.highlight(hits, { group: this.selGroup, color: 0xd9600c, opacity: 0.45 });
+    this.highlight(hits, { group: this.selGroup, color: this.colors.sel, opacity: 0.45 });
   }
   /** Kanten anhand gespeicherter Mittelpunkte finden (für Rundung/Fase) */
   findEdgesByMid(points, key = "part") {

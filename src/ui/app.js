@@ -8,6 +8,7 @@ import { Props } from "./props.js";
 import { DrawingEditor } from "./drawing.js";
 import { Files } from "./files.js";
 import { StartScreen } from "./start.js";
+import { Prefs } from "./prefs.js";
 import { h, toast, confirmDialog, contextMenu, fmtNum } from "./dom.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { newSketch } from "../core/sketch.js";
@@ -30,7 +31,8 @@ export class App {
     this.redoStack = [];
     this.pick = null;
     this.visibleSketches = new Set();
-    this.quality = "normal";
+    this.prefs = new Prefs();
+    this.quality = this.prefs.get("ansicht.qualitaet");
     this.fittedFor = null;
 
     this.statusEl = document.getElementById("status");
@@ -44,6 +46,9 @@ export class App {
     this.props = new Props(this);
     this.drawing = new DrawingEditor(this);
     this.start = new StartScreen(this);
+    this.applyPrefs();
+    this.prefs.onChange((keys) => this.applyPrefs(keys));
+    if (this.prefs.warnings.length) setTimeout(() => toast("Einstellungen: " + this.prefs.warnings[0] + (this.prefs.warnings.length > 1 ? ` (+${this.prefs.warnings.length - 1} weitere)` : ""), { kind: "err", timeout: 8000 }), 300);
     this.buildViewTools();
     this.bindViewerEvents();
     this.bindKeys();
@@ -116,7 +121,7 @@ export class App {
     if (!d) return;
     const users = this.project.docs.filter((x) => (x.kind === "assembly" && x.components.some((c) => c.part === id)) || (x.kind === "drawing" && x.source?.id === id));
     const extra = users.length ? ` Es wird verwendet in: ${users.map((u) => u.name).join(", ")}.` : "";
-    if (!(await confirmDialog("Dokument löschen", `»${d.name}« wirklich löschen?${extra}`, { ok: "Löschen", danger: true }))) return;
+    if ((this.prefs.get("allgemein.loeschenBestaetigen") || users.length) && !(await confirmDialog("Dokument löschen", `»${d.name}« wirklich löschen?${extra}`, { ok: "Löschen", danger: true }))) return;
     this.checkpoint("Löschen");
     this.project.docs = this.project.docs.filter((x) => x.id !== id);
     for (const a of this.project.docs) if (a.kind === "assembly") a.components = a.components.filter((c) => c.part !== id);
@@ -654,6 +659,17 @@ export class App {
     this.props.render();
   }
 
+  // ---------- Einstellungen ----------
+  /** Benutzereinstellungen anwenden. Ändert nie das Modell, nur Anzeige und Bedienung. */
+  applyPrefs(keys) {
+    const p = this.prefs;
+    this.viewer.applyPrefs(p.values);
+    this.sketcher.applyPrefs(p.values);
+    if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);
+    if (keys?.includes("ansicht.qualitaet") && this.quality !== p.get("ansicht.qualitaet")) { this.quality = p.get("ansicht.qualitaet"); this.ribbon.render(); this.rebuild(); }
+    if (keys) { this.refreshSelectionHits(); this.props.render(); this.updateStatus(); }
+  }
+
   // ---------- Oberfläche ----------
   refreshAll() {
     this.ribbon.render();
@@ -682,7 +698,7 @@ export class App {
     const d = this.activeDoc();
     const parts = [];
     if (this.busy) parts.push(h("span", { class: "busy" }, "Berechne…"));
-    parts.push(h("span", { class: "grow" }, this.hint || defaultHint(this.mode)));
+    parts.push(h("span", { class: "grow" }, this.hint || defaultHint(this.mode, this.prefs.get("ansicht.maus"))));
     if (d?.kind === "part") {
       const r = this.results.get(d.id);
       if (r) {
@@ -717,6 +733,7 @@ export class App {
       if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); this.files.save(e.shiftKey); return; }
       if (ctrl && e.key.toLowerCase() === "o") { e.preventDefault(); this.files.open(); return; }
       if (ctrl && e.key.toLowerCase() === "n") { e.preventDefault(); this.newProject(); return; }
+      if (ctrl && e.key === ",") { e.preventDefault(); this.props.settingsDialog(); return; }
       if (typing) return;
       if (ctrl && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); return; }
       if (ctrl && e.key.toLowerCase() === "y") { e.preventDefault(); this.redo(); return; }
@@ -750,9 +767,11 @@ export const FEATURE_NAMES = {
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
 };
 
-function defaultHint(mode) {
+function defaultHint(mode, mouse) {
   switch (mode) {
-    case "part": return "Mittlere Taste: schwenken · Umschalt+Mitte oder rechte Taste: drehen · Rad: zoomen · Klick: Fläche/Kante wählen";
+    case "part": return mouse === "mitte-drehen"
+      ? "Mittlere Taste: drehen · rechte Taste: schwenken · Rad: zoomen · Klick: Fläche/Kante wählen"
+      : "Mittlere Taste: schwenken · Umschalt+Mitte oder rechte Taste: drehen · Rad: zoomen · Klick: Fläche/Kante wählen";
     case "assembly": return "Bauteil anklicken zum Auswählen · Rechtsklick: Bauteil platzieren";
     case "sketch": return "Werkzeug wählen · Esc beendet Werkzeug bzw. Skizze";
     case "drawing": return "Ansicht ziehen zum Verschieben · Mausrad: zoomen · mittlere Taste: schwenken";

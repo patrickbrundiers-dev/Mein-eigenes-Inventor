@@ -1,5 +1,5 @@
 // Sichere Brücke zwischen Oberfläche und Hauptprozess
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 const version = ipcRenderer.sendSync("app:version-sync");
 
@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld("werkcad", {
   downloadUpdate: () => ipcRenderer.invoke("update:download"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
   onUpdateEvent: (cb) => ipcRenderer.on("update:event", (_e, ev) => cb(ev)),
+  readPrefs: () => ipcRenderer.sendSync("prefs:read-sync"),
+  writePrefs: (text) => ipcRenderer.invoke("prefs:write", text),
+  setZoom: (factor) => { if (typeof factor === "number" && factor >= 0.5 && factor <= 2) webFrame.setZoomFactor(factor); },
   log: (level, source, message) => ipcRenderer.send("log:write", { level, source, message: String(message ?? "") }),
   openLogFolder: () => ipcRenderer.invoke("log:openFolder"),
 });

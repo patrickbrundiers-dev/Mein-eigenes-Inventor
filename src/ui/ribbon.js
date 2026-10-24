@@ -97,9 +97,9 @@ export class Ribbon {
           B("v_fit", "Alles zeigen", "fit", { run: () => app.viewer.fit() }),
         ] },
         { label: "Darstellung", buttons: [
-          B("q_grob", "Schnell", "grid", { on: app.quality === "grob", run: () => { app.quality = "grob"; app.rebuild(); this.render(); } }),
-          B("q_normal", "Normal", "grid", { on: app.quality === "normal", run: () => { app.quality = "normal"; app.rebuild(); this.render(); } }),
-          B("q_fein", "Fein", "grid", { on: app.quality === "fein", run: () => { app.quality = "fein"; app.rebuild(); this.render(); } }),
+          B("q_grob", "Schnell", "grid", { on: app.quality === "grob", run: () => app.prefs.set("ansicht.qualitaet", "grob") }),
+          B("q_normal", "Normal", "grid", { on: app.quality === "normal", run: () => app.prefs.set("ansicht.qualitaet", "normal") }),
+          B("q_fein", "Fein", "grid", { on: app.quality === "fein", run: () => app.prefs.set("ansicht.qualitaet", "fein") }),
         ] },
       ],
     };
@@ -264,7 +264,7 @@ export class Ribbon {
       item("import", "STEP als Bauteil importieren…", () => f.importStepAsPart()),
       item("steel", "Beispielprojekt öffnen", () => app.openExample()),
       h("hr"),
-      item("settings", "Einstellungen und Updates…", () => app.props.settingsDialog()),
+      item("settings", "Einstellungen…", () => app.props.settingsDialog(), "Strg+,"),
       item("info", "Über WerkCAD", () => app.props.aboutDialog()));
     document.body.append(m);
     setTimeout(() => document.addEventListener("mousedown", out, true), 0);

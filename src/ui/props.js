@@ -1,4 +1,5 @@
 // Eigenschaften-Fenster und Dialoge (Parameter, Stückliste, Zuschnittliste, Einstellungen)
+import { settingsCenter } from "./settings.js";
 import { h, icon, toast, modal, fmtNum, confirmDialog } from "./dom.js";
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
 import { SECTION_KINDS, FIELD_LABELS, CATALOG, catalogToDims, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
@@ -203,8 +204,8 @@ export class Props {
       const [a, b] = faces;
       const n = a.info.normal, p = a.info.point, q = b.info.point;
       const dot = Math.abs(n[0] * b.info.normal[0] + n[1] * b.info.normal[1] + n[2] * b.info.normal[2]);
-      if (dot > 0.9999) out.push(this.section("Messen", h("dl", { class: "kv" }, h("dt", {}, "Abstand der Flächen"), h("dd", {}, fmtNum(Math.abs((q[0] - p[0]) * n[0] + (q[1] - p[1]) * n[1] + (q[2] - p[2]) * n[2]), 3) + " mm"))));
-      else out.push(this.section("Messen", h("dl", { class: "kv" }, h("dt", {}, "Winkel"), h("dd", {}, fmtNum((Math.acos(Math.min(1, dot)) * 180) / Math.PI, 2) + "°"))));
+      if (dot > 0.9999) out.push(this.section("Messen", h("dl", { class: "kv" }, h("dt", {}, "Abstand der Flächen"), h("dd", {}, fmtNum(Math.abs((q[0] - p[0]) * n[0] + (q[1] - p[1]) * n[1] + (q[2] - p[2]) * n[2]), app.prefs.get("allgemein.dezimalstellen")) + " mm"))));
+      else out.push(this.section("Messen", h("dl", { class: "kv" }, h("dt", {}, "Winkel"), h("dd", {}, fmtNum((Math.acos(Math.min(1, dot)) * 180) / Math.PI, app.prefs.get("allgemein.dezimalstellen")) + "°"))));
     }
     out.push(h("p", { class: "hint" }, "Strg/Umschalt+Klick wählt mehrere Elemente."));
     return out;
@@ -666,36 +667,8 @@ export class Props {
     modal({ title: `Kollisionsprüfung – ${asm.name}`, width: "620px", body, buttons: [{ label: "Schließen", primary: true, run: () => app.refreshSelectionHits() }] });
     return res;
   }
-  settingsDialog() {
-    const app = this.app;
-    const bridge = window.werkcad;
-    if (!bridge) {
-      modal({ title: "Einstellungen", body: h("p", {}, "Updates sind nur in der installierten Windows-Version verfügbar."), buttons: [{ label: "OK", primary: true }] });
-      return;
-    }
-    bridge.getSettings().then((s) => {
-      const token = h("input", { class: "inp", type: "password", placeholder: s.hasToken ? "•••••••• (gespeichert)" : "github_pat_…", autocomplete: "off" });
-      const auto = h("input", { type: "checkbox", checked: s.autoCheck !== false });
-      const statusEl = h("div", { class: "hint" }, `Installierte Version: ${s.version}`);
-      modal({
-        title: "Einstellungen und Updates", width: "560px",
-        body: h("div", {},
-          this.section("Online-Updates",
-            h("p", { style: { marginTop: 0 } }, "Updates kommen aus den Releases auf GitHub. Vor dem Herunterladen und vor dem Installieren wirst du jedes Mal gefragt."),
-            this.field("GitHub-Token", token),
-            h("p", { class: "hint" }, "Nur nötig, wenn das Repository privat ist: GitHub → Settings → Developer settings → Fine-grained tokens, nur dieses Repository, »Contents: Read-only«. Wird verschlüsselt auf diesem PC gespeichert."),
-            h("label", { class: "chk" }, auto, "Beim Start nach Updates suchen (Installation erst nach Freigabe)"),
-            statusEl,
-            h("div", { class: "btn-row" },
-              h("button", { class: "btn", onclick: async () => { statusEl.textContent = "Suche…"; const r = await bridge.checkForUpdates(); statusEl.textContent = r.message; } }, "Jetzt nach Updates suchen"),
-              s.hasToken ? h("button", { class: "btn danger", onclick: async () => { await bridge.saveSettings({ token: "" }); statusEl.textContent = "Token entfernt"; } }, "Token entfernen") : null))),
-        buttons: [{ label: "Abbrechen" }, { label: "Speichern", primary: true, run: async () => {
-          await bridge.saveSettings({ token: token.value.trim() || undefined, autoCheck: auto.checked });
-          toast("Einstellungen gespeichert", { kind: "ok" });
-        } }],
-      });
-    });
-  }
+  /** Einstellungscenter (src/ui/settings.js); Updates sind dort eine eigene Kategorie */
+  settingsDialog(opts) { return settingsCenter(this.app, opts); }
   aboutDialog() {
     const v = window.werkcad?.version || "Entwicklerversion";
     modal({ title: "Über WerkCAD", body: h("div", { style: { maxWidth: "52ch" } },

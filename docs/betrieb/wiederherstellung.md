@@ -17,7 +17,7 @@ Fehlerprotokoll: WerkCAD → „Protokollordner öffnen“ (`%APPDATA%\WerkCAD\p
 ## Version zurückrollen
 
 1. Unter **Releases** das Setup der gewünschten älteren Version (`WerkCAD-Setup-x.y.z.exe`) herunterladen und ausführen. Es installiert über die aktuelle Version; Einstellungen, Token und Sicherungen im `%APPDATA%\WerkCAD`-Ordner bleiben erhalten.
-2. Automatische Updates bieten danach wieder die neueste Version an. Wer dauerhaft bei der älteren bleiben will, schaltet unter **Datei → Einstellungen und Updates** die automatische Prüfung aus.
+2. Automatische Updates bieten danach wieder die neueste Version an. Wer dauerhaft bei der älteren bleiben will, schaltet unter **Datei → Einstellungen → Updates** die automatische Prüfung aus.
 3. Projektdateien: Das Format ist seit 0.1 unverändert `version: 1`. Ältere Versionen öffnen Dateien der neueren, solange keine neuen Feature-Typen (z. B. Knickrahmen ab 0.3.0) enthalten sind; diese Features zeigen dann einen Fehler, die übrigen Daten bleiben erhalten.
 
 ## Upgrade-Nachweis

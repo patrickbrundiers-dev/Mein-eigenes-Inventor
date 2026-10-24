@@ -441,6 +441,38 @@ try {
   const krL = 1448 + 3.99 * Math.PI / 2;
   step("Knickrahmen", kr0.bodies === 1 && kr0.errors === 0 && Math.abs(kr1.len - krL) < 1e-6 && Math.abs(kr2[1][0] - kr2[0][0] - krL) < 0.05 && kr3 === "30",
     JSON.stringify({ kr0, kr1, flatX: kr2 && kr2[1][0] - kr2[0][0], undo: kr3 }));
+
+  // Einstellungscenter: über das Datei-Menü öffnen, suchen, ungültig ablehnen, gültig speichern, Modell unverändert
+  {
+    const prj0 = await evalApp(() => JSON.stringify(window.__werkcad.project));
+    await page.locator("#ribbon .rb-file").click();
+    await page.locator(".file-menu button", { hasText: "Einstellungen" }).click();
+    await page.locator(".set-search input").fill("fang");
+    const rows = await page.locator(".set-row").count();
+    const fang = page.locator('.set-row[data-key="skizze.fangradius"] input');
+    await fang.fill("99");
+    await fang.press("Tab");
+    const err = await page.locator('.set-row[data-key="skizze.fangradius"] .set-err').textContent();
+    const kept = await evalApp(() => window.__werkcad.prefs.get("skizze.fangradius"));
+    await fang.fill("12");
+    await fang.press("Tab");
+    await page.locator(".set-search input").fill("");
+    await page.locator(".set-cat", { hasText: "3D-Ansicht" }).click();
+    await page.locator('.set-row[data-key="ansicht.kantenfarbe"] input').evaluate((el) => { el.value = "#ff0000"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+    await shot("21-einstellungen");
+    const st = await evalApp(() => {
+      const a = window.__werkcad;
+      let edge = null;
+      a.viewer.root.traverse((o) => { if (o.isLineSegments && o.userData.edgeRanges) edge = o.material.color.getHexString(); });
+      return { fang: a.prefs.get("skizze.fangradius"), snapR: a.sketcher.snapR, stored: JSON.parse(localStorage.getItem("werkcad.einstellungen") || "{}"), edge };
+    });
+    await page.locator(".dialog footer .btn", { hasText: "Alles auf Standard" }).click();
+    await page.locator(".dialog footer .btn", { hasText: "Schließen" }).click();
+    const after = await evalApp(() => ({ fang: window.__werkcad.prefs.get("skizze.fangradius") }));
+    const prj1 = await evalApp(() => JSON.stringify(window.__werkcad.project));
+    step("Einstellungscenter", rows === 2 && /Höchstens 30/.test(err) && kept === 7 && st.fang === 12 && st.snapR === 12 && st.stored.values?.["skizze.fangradius"] === 12 && st.edge === "ff0000" && after.fang === 7 && prj0 === prj1,
+      JSON.stringify({ rows, err, kept, st, after, modelUnchanged: prj0 === prj1 }));
+  }
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }
