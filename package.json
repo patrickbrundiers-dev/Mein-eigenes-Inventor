@@ -36,7 +36,7 @@
     "appId": "de.brundiers.werkcad",
     "productName": "WerkCAD",
     "copyright": "© Patrick Brundiers",
-    "files": ["dist/**/*", "electron/**/*", "build/icon.png", "package.json"],
+    "files": ["dist/**/*", "!dist/**/*.map", "electron/**/*", "build/icon.png", "package.json"],
     "directories": { "output": "release", "buildResources": "build" },
     "extraResources": [{ "from": "dist/lizenzen", "to": "lizenzen" }],
     "win": {
