@@ -118,7 +118,7 @@ export function segmentsToDxf(segments, { layer = "KONTUR", origin = "min", text
   let circles = 0, arcs = 0, lines = 0;
   for (const g of groups) {
     const covered = coveredSweep(g.arcs);
-    if (covered >= 359.9) { w.circle(g.cx - ox, g.cy - oy, g.r, layer); circles++; }
+    if (covered >= 360) { w.circle(g.cx - ox, g.cy - oy, g.r, layer); circles++; }
     else for (const a of g.arcs) { w.arc(a.cx - ox, a.cy - oy, a.r, a.a0, a.a1, layer); arcs++; }
   }
   for (const s of rest) {
@@ -130,15 +130,24 @@ export function segmentsToDxf(segments, { layer = "KONTUR", origin = "min", text
 }
 
 function coveredSweep(arcs) {
-  // Winkelüberdeckung grob über 1°-Raster
-  const hit = new Uint8Array(360);
+  // exakte Vereinigung der Winkelintervalle (Grad), damit schmale Schlitze nicht verloren gehen
+  const iv = [];
   for (const a of arcs) {
     if (a.full) return 360;
-    let s = ((a.a0 % 360) + 360) % 360, e = ((a.a1 % 360) + 360) % 360;
-    if (e <= s) e += 360;
-    for (let d = Math.floor(s); d < Math.ceil(e); d++) hit[d % 360] = 1;
+    const s = ((a.a0 % 360) + 360) % 360;
+    let e = ((a.a1 % 360) + 360) % 360;
+    if (e <= s + 1e-9) e += 360;
+    if (e > 360) { iv.push([s, 360], [0, e - 360]); } else iv.push([s, e]);
   }
-  return hit.reduce((x, y) => x + y, 0);
+  iv.sort((p, q) => p[0] - q[0]);
+  let total = 0, cs = null, ce = null;
+  for (const [s, e] of iv) {
+    if (cs === null) { cs = s; ce = e; continue; }
+    if (s <= ce + 1e-6) ce = Math.max(ce, e);
+    else { total += ce - cs; cs = s; ce = e; }
+  }
+  if (cs !== null) total += ce - cs;
+  return total >= 360 - 1e-6 ? 360 : total;
 }
 function dedupeSegments(segs) {
   const out = [];

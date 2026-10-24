@@ -102,10 +102,13 @@ export function trimEntity(sk, entityId, click, uid) {
       cuts.push({ p, x: ip.x, y: ip.y, other: o });
     }
   }
-  const tolP = g.kind === "line" ? 1e-6 : 1e-6;
+  const tolP = 1e-6;
+  // Kreis: Winkel knapp unter 2π gehören zu 0
+  if (g.kind === "circle") for (const c of cuts) if (c.p > TAU - 1e-6) c.p = 0;
   let inner = cuts.filter((c) => (g.kind === "circle" ? true : c.p > tolP && c.p < span - tolP));
   inner.sort((a, b) => a.p - b.p);
   inner = inner.filter((c, i) => i === 0 || Math.abs(c.p - inner[i - 1].p) > 1e-6);
+  if (g.kind === "circle" && inner.length > 1 && TAU - inner[inner.length - 1].p + inner[0].p < 1e-6) inner.pop();
   const pc = param(g, click.x, click.y);
 
   // Neuer Punkt am Schnitt, gehalten durch "Punkt auf Element" des schneidenden Elements
@@ -117,8 +120,16 @@ export function trimEntity(sk, entityId, click, uid) {
     return id;
   };
   const dropDims = () => {
-    // Maße, die sich auf die Länge des gestutzten Elements beziehen, entfallen
-    sk.constraints = sk.constraints.filter((k) => !(k.e === e.id && ["length", "distance"].includes(k.type)));
+    // Bedingungen, die sich auf die Länge/Lage der Strecke beziehen, entfallen (die unendliche Gerade bleibt):
+    // Länge, Mittelpunkt, "gleich" (bei Linien). Abstände zur Geraden, parallel usw. bleiben gültig.
+    const dropped = [];
+    sk.constraints = sk.constraints.filter((k) => {
+      const refs = [k.e, k.e1, k.e2].includes(e.id);
+      const drop = refs && (k.type === "length" || k.type === "midpoint" || (k.type === "equal" && g.kind === "line"));
+      if (drop) dropped.push(k.type);
+      return !drop;
+    });
+    return dropped;
   };
 
   if (g.kind === "circle") {
@@ -142,7 +153,7 @@ export function trimEntity(sk, entityId, click, uid) {
     deleteEntities(sk, [e.id]);
     return { ok: true, deleted: true };
   }
-  dropDims();
+  const dropped = dropDims();
   if (!prev) {
     // Anfang bis zum nächsten Schnitt entfernen
     e.p1 = makePoint(next);
@@ -160,10 +171,13 @@ export function trimEntity(sk, entityId, click, uid) {
       // Richtung/Lage der Teile bleibt gekoppelt
       sk.constraints.push({ id: uid("k"), type: "collinear", e1: e.id, e2: nid });
       for (const k of sk.constraints.filter((k) => k.e === e.id && ["horizontal", "vertical"].includes(k.type))) sk.constraints.push({ ...k, id: uid("k"), e: nid });
+    } else {
+      // beide Bogenstücke behalten denselben Radius
+      sk.constraints.push({ id: uid("k"), type: "equal", e1: e.id, e2: nid });
     }
   }
   deleteEntities(sk, []);
-  return { ok: true };
+  return { ok: true, dropped };
 }
 
 /**
@@ -194,10 +208,20 @@ export function filletCorner(sk, pointId, r, uid, radiusExpr) {
   // Virtuelle Ecke bleibt als Konstruktionspunkt auf beiden Linien; Längenmaße zeigen weiter auf sie
   if (!sk.entities.some((e) => e.type === "point" && e.p === pointId)) sk.entities.push({ id: uid("pt"), type: "point", p: pointId, construction: true, virtual: true });
   sk.constraints.push({ id: uid("k"), type: "pointOnLine", p: pointId, e: lines[0].id }, { id: uid("k"), type: "pointOnLine", p: pointId, e: lines[1].id });
+  const startsAtCorner = lines.map((l) => l.p1 === tid[lines.indexOf(l)]);
   for (const k of sk.constraints) {
     const i = lines.findIndex((l) => l.id === k.e);
-    if (k.type === "length" && i >= 0) { k.type = "distance"; k.p = farIds[i]; k.q = pointId; delete k.e; }
+    if (k.type === "length" && i >= 0) {
+      // Richtung wie die ursprüngliche Linie, damit die Maßzahl auf derselben Seite bleibt
+      k.type = "distance";
+      if (startsAtCorner[i]) { k.p = pointId; k.q = farIds[i]; } else { k.p = farIds[i]; k.q = pointId; }
+      delete k.e;
+    }
   }
+  // "gleich" und "Mittelpunkt" beziehen sich auf die alte Streckenlänge – entfallen
+  const lineIds = new Set(lines.map((l) => l.id));
+  const dropped = sk.constraints.filter((k) => (k.type === "equal" || k.type === "midpoint") && [k.e, k.e1, k.e2].some((x) => lineIds.has(x))).map((k) => k.type);
+  sk.constraints = sk.constraints.filter((k) => !((k.type === "equal" || k.type === "midpoint") && [k.e, k.e1, k.e2].some((x) => lineIds.has(x))));
   const cid = uid("p");
   sk.points.push({ id: cid, x: C.x, y: C.y });
   // Bogen gegen den Uhrzeigersinn: Startpunkt so wählen, dass der kurze Weg CCW läuft
@@ -205,12 +229,13 @@ export function filletCorner(sk, pointId, r, uid, radiusExpr) {
   const [s, en] = cross > 0 ? [tid[0], tid[1]] : [tid[1], tid[0]];
   const aid = uid("b");
   sk.entities.push({ id: aid, type: "arc", c: cid, p1: s, p2: en, construction: false });
+  // Tangential am Berührpunkt: (T − C) ⟂ Linie (nicht singulär, anders als Abstand Mitte–Gerade = r)
   sk.constraints.push(
-    { id: uid("k"), type: "tangent", e1: aid, e2: lines[0].id },
-    { id: uid("k"), type: "tangent", e1: aid, e2: lines[1].id },
+    { id: uid("k"), type: "tangentAt", e1: aid, e2: lines[0].id, p: tid[0] },
+    { id: uid("k"), type: "tangentAt", e1: aid, e2: lines[1].id, p: tid[1] },
     { id: uid("m"), type: "radius", e: aid, value: radiusExpr || String(Math.round(r * 1e4) / 1e4), labelAngle: Math.atan2(-(bis.y / bl), -(bis.x / bl)) },
   );
-  return { ok: true, arcId: aid };
+  return { ok: true, arcId: aid, dropped };
 }
 
 /** Ecke unter dem Punkt finden: Punkt, an dem genau zwei Linien enden */

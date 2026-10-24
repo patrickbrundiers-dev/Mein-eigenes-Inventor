@@ -68,6 +68,12 @@ export function solveAssembly(asm, facesOf, evalGap = (g) => Number(g) || 0) {
     }
     if (!moved) break;
   }
+  // Abschlussprüfung: alle Abhängigkeiten erfüllt? Sonst widersprechen sie sich
+  for (const c of list) {
+    if (errors[c.id]) continue;
+    const A = comps.get(c.a.comp), B = comps.get(c.b.comp);
+    if (!planesSatisfied(A, c.a, B, c.b, c.type, evalGap(c.gap))) errors[c.id] = "Nicht erfüllbar – widerspricht einer anderen Abhängigkeit";
+  }
   return { changed, errors };
 }
 

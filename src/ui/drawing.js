@@ -183,7 +183,9 @@ export class DrawingEditor {
     if (!parent || parent.type === "iso") return toast("Zuerst eine Ansicht (nicht Isometrie) anklicken, dann »Schnitt«");
     const p = this.proj.get(parent.id);
     const bb = p?.bbox || { x0: -50, y0: -50, x1: 50, y1: 50 };
-    const letter = String.fromCharCode(65 + d.views.filter((x) => x.type === "section").length);
+    const used = new Set(d.views.filter((x) => x.type === "section").map((x) => x.letter));
+    let letter = "A";
+    for (let i = 0; i < 26; i++) { const l = String.fromCharCode(65 + i); if (!used.has(l)) { letter = l; break; } }
     let axis = "h";
     const seg = h("div", { class: "seg" });
     const pos = h("input", { class: "inp", value: String(Math.round(((bb.y0 + bb.y1) / 2) * 100) / 100).replace(".", ",") });
@@ -832,7 +834,16 @@ export class DrawingEditor {
       }
       for (const s of this.sectionChildren(d, v)) {
         const g = this.sectionLine(v, s, xf);
-        for (const el of g.querySelectorAll("line")) w.line(+el.getAttribute("x1"), Y(+el.getAttribute("y1")), +el.getAttribute("x2"), Y(+el.getAttribute("y2")), "MITTELLINIE");
+        for (const el of g.querySelectorAll("line")) {
+          const sw = +el.getAttribute("stroke-width");
+          const layer = el.getAttribute("stroke-dasharray") ? "MITTELLINIE" : sw >= 0.5 ? "KONTUR" : "MASSE";
+          w.line(+el.getAttribute("x1"), Y(+el.getAttribute("y1")), +el.getAttribute("x2"), Y(+el.getAttribute("y2")), layer);
+        }
+        for (const el of g.querySelectorAll("path")) {
+          // Pfeilspitze: M x y l dx dy l dx dy Z
+          const n = (el.getAttribute("d") || "").match(/-?[\d.]+/g)?.map(Number) || [];
+          if (n.length >= 6) { const p0 = [n[0], n[1]], p1 = [p0[0] + n[2], p0[1] + n[3]], p2 = [p1[0] + n[4], p1[1] + n[5]]; w.polyline([p0, p1, p2].map((q) => [q[0], Y(q[1])]), "MASSE", true); }
+        }
         for (const el of g.querySelectorAll("text")) w.text(+el.getAttribute("x"), Y(+el.getAttribute("y")), 5, el.textContent, "TEXT", { align: "center" });
       }
       if (v.type === "section") {

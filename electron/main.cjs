@@ -152,9 +152,17 @@ ipcMain.handle("file:save", async (_e, { defaultName, filters, data, binary, sib
   fs.writeFileSync(r.filePath, buf);
   // Begleitdateien mit gleichem Namen daneben (z. B. Zuschnittliste zur STEP-Datei)
   const base = r.filePath.replace(/\.[^.\\/]+$/, "");
-  for (const s of siblings || []) fs.writeFileSync(base + s.suffix, typeof s.data === "string" ? Buffer.from(s.data, "utf8") : Buffer.from(new Uint8Array(s.data)));
+  const siblingErrors = [];
+  for (const s of siblings || []) {
+    if (typeof s.suffix !== "string" || /[\\/]|\.\./.test(s.suffix)) { siblingErrors.push("ungültiger Dateiname"); continue; }
+    try {
+      fs.writeFileSync(base + s.suffix, typeof s.data === "string" ? Buffer.from(s.data, "utf8") : Buffer.from(new Uint8Array(s.data)));
+    } catch (e) {
+      siblingErrors.push(path.basename(base + s.suffix) + ": " + (e.code || e.message));
+    }
+  }
   lastDir("export", r.filePath);
-  return { path: r.filePath };
+  return { path: r.filePath, siblingErrors };
 });
 ipcMain.handle("file:saveMany", async (_e, { files }) => {
   const r = await dialog.showOpenDialog(win, { title: "Zielordner wählen", defaultPath: lastDir("export"), properties: ["openDirectory", "createDirectory"] });

@@ -117,7 +117,8 @@ export class Files {
     const d = app.activeDoc();
     if (!d) return null;
     if (d.kind === "part") return [{ part: d, name: d.name }];
-    if (d.kind === "assembly") return d.components.filter((c) => !c.hidden && app.doc(c.part)).map((c) => ({ part: app.doc(c.part), pos: c.pos, rot: c.rot, name: c.name }));
+    // alle Komponenten, auch ausgeblendete – passend zu Stück- und Zuschnittliste
+    if (d.kind === "assembly") return d.components.filter((c) => app.doc(c.part)).map((c) => ({ part: app.doc(c.part), pos: c.pos, rot: c.rot, name: c.name }));
     return null;
   }
   async withBusy(label, fn) {
@@ -178,7 +179,8 @@ export class Files {
       const csvText = rows.length ? cutListCsv(rows) : null;
       if (this.bridge) {
         const r = await this.bridge.saveFile({ defaultName: name, filters: [{ name: "STEP", extensions: ["step", "stp"] }], data: step, siblings: csvText ? [{ suffix: "_Zuschnitt.csv", data: csvText }] : [] });
-        if (r) toast("Gespeichert: " + r.path.split(/[\\/]/).pop() + (csvText ? " + Zuschnittliste" : ""), { kind: "ok" });
+        if (r?.siblingErrors?.length) toast("STEP gespeichert, Zuschnittliste nicht: " + r.siblingErrors.join("; ") + " (Datei evtl. in Excel geöffnet?)", { kind: "err", timeout: 8000 });
+        else if (r) toast("Gespeichert: " + r.path.split(/[\\/]/).pop() + (csvText ? " + Zuschnittliste" : ""), { kind: "ok" });
       } else {
         downloadBlob(new Blob([step], { type: "model/step" }), name);
         if (csvText) downloadBlob(new Blob([csvText], { type: "text/csv" }), name.replace(/\.step$/, "_Zuschnitt.csv"));

@@ -106,13 +106,12 @@ export function matApplyDir(m, d) {
 export function decomposePlacement(m) {
   const R = (r, c) => m[c * 4 + r];
   let rx, ry, rz;
-  const sy = -R(2, 0);
-  if (Math.abs(sy) < 0.999999) {
-    ry = Math.asin(sy);
+  const cy = Math.hypot(R(0, 0), R(1, 0));
+  ry = Math.atan2(-R(2, 0), cy);
+  if (cy > 1e-9) {
     rx = Math.atan2(R(2, 1), R(2, 2));
     rz = Math.atan2(R(1, 0), R(0, 0));
   } else {
-    ry = sy > 0 ? Math.PI / 2 : -Math.PI / 2;
     rx = Math.atan2(-R(1, 2), R(1, 1));
     rz = 0;
   }

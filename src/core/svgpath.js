@@ -122,7 +122,7 @@ export function parseSvgPath(d, { flipY = true, tol = 0.05 } = {}) {
 
 // SVG-Endpunkt-Parametrisierung -> Mittelpunkt (W3C Implementation Notes F.6.5)
 function arcToPoints(x1, y1, rx, ry, phiDeg, fa, fs, x2, y2, tol) {
-  if (rx === 0 || ry === 0) return { points: [[x2, y2]] };
+  if (rx === 0 || ry === 0 || (x1 === x2 && y1 === y2)) return { points: [[x2, y2]] };
   const phi = (phiDeg * Math.PI) / 180, cp = Math.cos(phi), sp = Math.sin(phi);
   const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
   const x1p = cp * dx + sp * dy, y1p = -sp * dx + cp * dy;
@@ -222,11 +222,13 @@ export function svgPathSegments(d, { flipY = true } = {}) {
       const rx = num(), ry = num(), phi = num(), fa = num(), fs = num();
       let ex = num(), ey = num();
       if (rel) { ex += x; ey += y; }
+      if (Math.hypot(ex - x, ey - y) < 1e-12) { x = ex; y = ey; lastCtrl = null; lastCmd = C; continue; } // Null-Bogen
       const r = arcCenter(x, y, rx, ry, phi, fa, fs, ex, ey);
       if (r && Math.abs(r.rx - r.ry) < 1e-6 * Math.max(1, r.rx)) {
         // in Ausgabekoordinaten: Start, Ende, Mittelpunkt, Laufrichtung
         const c = P(r.cx, r.cy), s = P(x, y), e = P(ex, ey);
-        const mid = P(r.cx + r.rx * Math.cos(r.t1 + r.dt / 2), r.cy + r.ry * Math.sin(r.t1 + r.dt / 2));
+        const tm = r.t1 + r.dt / 2, cph = Math.cos((phi * Math.PI) / 180), sph = Math.sin((phi * Math.PI) / 180);
+        const mid = P(r.cx + cph * r.rx * Math.cos(tm) - sph * r.ry * Math.sin(tm), r.cy + sph * r.rx * Math.cos(tm) + cph * r.ry * Math.sin(tm));
         const cross = (s[0] - c[0]) * (mid[1] - c[1]) - (s[1] - c[1]) * (mid[0] - c[0]);
         const as = deg(Math.atan2(s[1] - c[1], s[0] - c[0])), ae = deg(Math.atan2(e[1] - c[1], e[0] - c[0]));
         const full = Math.abs(Math.abs(r.dt) - 2 * Math.PI) < 1e-6;
@@ -256,7 +258,7 @@ export function svgPathSegments(d, { flipY = true } = {}) {
 }
 
 function arcCenter(x1, y1, rx, ry, phiDeg, fa, fs, x2, y2) {
-  if (!rx || !ry) return null;
+  if (!rx || !ry || (x1 === x2 && y1 === y2)) return null;
   const phi = (phiDeg * Math.PI) / 180, cp = Math.cos(phi), sp = Math.sin(phi);
   const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
   const x1p = cp * dx + sp * dy, y1p = -sp * dx + cp * dy;

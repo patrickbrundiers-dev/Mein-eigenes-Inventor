@@ -818,7 +818,11 @@ export function createKernel(R) {
   function cutAtPlane(shape, n, c) {
     const bb = shape.boundingBox;
     const size = 4 * Math.hypot(bb.width, bb.height, bb.depth) + 100;
-    return shape.clone().cut(halfSpace(v3.mul(v3.norm(n), c), n, size));
+    n = v3.norm(n);
+    // Quader um die Projektion der Bauteilmitte auf die Schnittebene (nicht um den Weltursprung)
+    const center = tuple(bb.center);
+    const q = v3.sub(center, v3.mul(n, v3.dot(n, center) - c));
+    return shape.clone().cut(halfSpace(q, n, size));
   }
   /** Oben-Richtung senkrecht zur Blickrichtung: Weltachse mit kleinstem Anteil an n */
   function upFor(n) {

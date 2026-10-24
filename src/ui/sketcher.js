@@ -36,7 +36,7 @@ export const SKETCH_TOOLS = {
   symmetric: "Symmetrisch: zwei Punkte, dann Symmetrielinie wählen",
 };
 
-const GLYPH = { horizontal: "H", vertical: "V", parallel: "∥", perpendicular: "⊥", equal: "=", tangent: "T", fix: "Fix", coincident: "•", pointOnLine: "∈", pointOnCircle: "∈", midpoint: "M", concentric: "◎", collinear: "K", symmetric: "S" };
+const GLYPH = { horizontal: "H", vertical: "V", parallel: "∥", perpendicular: "⊥", equal: "=", tangent: "T", tangentAt: "T", fix: "Fix", coincident: "•", pointOnLine: "∈", pointOnCircle: "∈", midpoint: "M", concentric: "◎", collinear: "K", symmetric: "S" };
 
 export class Sketcher {
   constructor(app) {
@@ -631,6 +631,7 @@ export class Sketcher {
       const r = trimEntity(test, hit.id, { x: lx, y: ly }, uid);
       if (!r.ok) return toast(r.message);
       this.commit("Stutzen", (sk) => trimEntity(sk, hit.id, { x: lx, y: ly }, uid));
+      if (r.dropped?.length) toast("Entfernt, weil nicht mehr gültig: " + [...new Set(r.dropped)].map((t) => ({ length: "Längenmaß", midpoint: "Mittelpunkt", equal: "Gleich" })[t] || t).join(", "));
       this.hover = null;
       this.render();
       return;
@@ -651,6 +652,7 @@ export class Sketcher {
         if (!res.ok) return toast(res.message, { kind: "err" });
         this.lastFillet = val;
         this.commit("Skizzenrundung", (sk) => filletCorner(sk, best, r, uid, val));
+        if (res.dropped?.length) toast("Entfernt, weil nicht mehr gültig: " + [...new Set(res.dropped)].map((t) => ({ midpoint: "Mittelpunkt", equal: "Gleich" })[t] || t).join(", "));
       });
       return;
     }

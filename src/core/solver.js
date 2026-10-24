@@ -181,6 +181,15 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
         }
         break;
       }
+      case "tangentAt": { // Bogen e1 berührt Linie e2 im Punkt p (Punkt liegt auf beiden)
+        const arc = E(c.e1), [a, b] = lineIdx(E(c.e2)), ce = centerIdx(arc), p = P(c.p);
+        add(c.id, (x) => {
+          const dx = x[b] - x[a], dy = x[b + 1] - x[a + 1];
+          const L = Math.hypot(dx, dy) || 1e-12;
+          return ((x[p] - x[ce]) * dx + (x[p + 1] - x[ce + 1]) * dy) / L;
+        });
+        break;
+      }
       case "symmetric": { // p und q symmetrisch zur Linie e
         const p = P(c.p), q = P(c.q), [a, b] = lineIdx(E(c.e));
         add(c.id, (x) => { // Mittelpunkt auf Linie
