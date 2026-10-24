@@ -111,7 +111,17 @@ try {
   step("Bemaßung per Klick", dims.includes("120"), JSON.stringify(dims));
   // Skizzenrundung an der Ecke oben rechts
   await page.keyboard.press("f");
-  await page.mouse.click(cx + 120, cy - 60);
+  // Ecke oben rechts aus den Skizzenpunkten bestimmen (nach der Bemaßung hat sich das Rechteck verändert)
+  const corner = await evalApp(() => {
+    const s = window.__werkcad.sketcher;
+    s.mapping();
+    const pts = s.sk.points.filter((p) => p.id !== "O");
+    const c = pts.reduce((b, p) => (p.x + p.y > b.x + b.y ? p : b), pts[0]);
+    const [x, y] = s.S(c.x, c.y);
+    const r = s.canvas.getBoundingClientRect();
+    return { x: r.left + x, y: r.top + y };
+  });
+  await page.mouse.click(corner.x, corner.y);
   await page.waitForTimeout(200);
   if (await page.locator(".dim-input input").count()) { await page.locator(".dim-input input").fill("10"); await page.keyboard.press("Enter"); }
   await page.waitForTimeout(300);
@@ -202,12 +212,14 @@ try {
   // Baugruppe: Ausrichten-Ablauf (Programmatisch über Flächen-Pick)
   await evalApp(() => window.__werkcad.openDoc("beispiel_bg"));
   await idle();
-  await page.locator("#browser .node", { hasText: "Rohr" }).first().click();
+  await page.locator("#browser .node .label", { hasText: /^Rohr$/ }).first().click();
   await page.waitForTimeout(300);
   await shot("17-komponente");
   step("Komponente gewählt", (await page.locator("#props .section").count()) > 0);
 
   // Dauerhafte Abhängigkeit: Rahmen-Unterseite gegen Plattenoberseite, folgt Plattendicke
+  await evalApp(() => window.__werkcad.openDoc("beispiel_bg"));
+  await idle();
   const con = await evalApp(async () => {
     const a = window.__werkcad;
     const asm = a.activeDoc();
