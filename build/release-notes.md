@@ -7,6 +7,13 @@
 - **Abhängigkeit „Konzentrisch“:** richtet zwei Zylinderflächen auf eine gemeinsame Achse aus, z. B. Rohr in Bohrung.
 - **Verständlichere Fehler im Feature-Baum:** Ein Feature, dessen Skizze oder Bezug fehlerhaft, unterdrückt oder gelöscht ist, sagt jetzt, wovon es abhängt und was zu tun ist.
 - **Updates:** Der Ablauf wird im Fehlerprotokoll mitgeschrieben. Ein fehlgeschlagener Download zeigt eine Meldung mit „Erneut versuchen“. „Jetzt neu starten und installieren“ installiert still in den bisherigen Ordner und startet WerkCAD neu. Die Update-Prüfung zeigt bei Fehlern die genaue Meldung.
+- **Einstellungscenter** unter Datei → Einstellungen… (Strg+,): Kategorien mit Suche, Import/Export und „auf Standard“. Optionen, die noch nicht verfügbar sind, sind als „geplant“ gekennzeichnet.
+- Einstellbar sind unter anderem:
+  - Maus: Drehen mit rechter oder mittlerer Taste, Zoom- und Drehgeschwindigkeit, Zoom zum Mauszeiger.
+  - Ansicht: Bodenraster, ViewCube, Kanten- und Auswahlfarben, Animation der Ansichtswechsel, Darstellungsqualität (wird gemerkt), Oberflächengröße.
+  - Skizzen: Rasterfang, Rasterweite, Fangradius.
+  - Sonstiges: Wartezeit der automatischen Sicherung, Dezimalstellen beim Messen.
+- Die Update-Einstellungen (Token, Prüfung beim Start) sind jetzt eine Kategorie im Einstellungscenter.
 - Anleitung „Daten retten und ältere Version installieren“ im README.
 
 Hinweis: Projekte mit der Abhängigkeit „Konzentrisch“ lassen sich in 0.3.0 öffnen, diese Abhängigkeit wird dort aber nicht gelöst. Detailansichten zeigt 0.3.0 als ganze Ansicht ohne Ausschnitt.
