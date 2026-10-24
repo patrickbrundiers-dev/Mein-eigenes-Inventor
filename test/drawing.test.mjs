@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { projectPoint, partCenter, balloonAnchors, placeBalloons } from "../src/core/balloons.js";
 import { clipPolylineToCircle, clipProjection } from "../src/core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, ROW_FIRST, ROW_STEP, holeSpecs, holeText, dimLabel } from "../src/core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, ROW_FIRST, ROW_STEP, holeSpecs, holeText, dimLabel, profileSpec, wallThickness, circlesFromLines } from "../src/core/autodims.js";
 
 const near = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
 
@@ -99,13 +99,14 @@ test("Hauptmaße: jedes Maß nur einmal, Bohrungen mit Anzahl und Lagemaßen", (
   assert.equal(dia.length, 1);
   assert.equal(dia[0].count, 5);
   const pos = dims.filter((m) => !m.axis && m.kind !== "dia");
-  const xs = pos.filter((m) => m.kind === "h").map((m) => m.p2[0]);
-  const ys = pos.filter((m) => m.kind === "v").map((m) => m.p2[1]);
-  assert.deepEqual(xs, [8, 15, 25, 38]);
-  assert.deepEqual(ys, [10, 25, 40]);
   assert.ok(pos.every((m) => m.view === "oben"));
-  // gestaffelt, damit sich die Maßlinien nicht überdecken
-  assert.equal(new Set(pos.filter((m) => m.kind === "h").map((m) => m.off)).size, 4);
+  // vier Lagemaße in X: Koordinatenbemaßung mit Nullpunkt an der linken Kante
+  const xs = pos.filter((m) => m.kind === "h");
+  assert.ok(xs.every((m) => m.ord));
+  assert.deepEqual(xs.map((m) => m.p2[0]), [0, 8, 15, 25, 38]);
+  // Y 10 / 25 / 40: gleiche Teilung, mittig -> „2× 15 (=30)“
+  const ys = pos.filter((m) => m.kind === "v");
+  assert.deepEqual(ys.map(dimLabel), ["2× 15 (=30)"]); // mittig: kein Randmaß
   // zweiter Aufruf mit den belegten Maßen ergänzt nichts Doppeltes
   const used = { axes: new Set(["X", "Y", "Z"]), radii: new Set([3400]) };
   assert.equal(planAutoDims([views[2]], used).length, 0);
@@ -149,7 +150,7 @@ test("Maßplatzierung: kurze Maße innen, lange außen, feste Reihenabstände", 
     const lin = dims.filter((m) => m.kind === kind);
     const c = kind === "h" ? 1 : 0;
     const bySide = new Map();
-    for (const m of lin) {
+    for (const m of lin.filter((x) => !x.ord)) {
       const r = dimRect(m, views.oben);
       const line = kind === "h" ? r[3] - 1 : (r[0] + r[2]) / 2;
       const dist = line > R[c + 2] ? line - R[c + 2] : R[c] - line;
@@ -159,7 +160,7 @@ test("Maßplatzierung: kurze Maße innen, lange außen, feste Reihenabstände", 
     }
     for (const list of bySide.values()) {
       list.sort((a, b) => a.dist - b.dist);
-      list.forEach((it, i) => assert.ok(Math.abs(it.dist - (ROW_FIRST + ROW_STEP * i)) < 1e-6, `Reihe ${i}: ${it.dist}`));
+      list.forEach((it, i) => assert.ok(Math.abs(it.dist - (list[0].dist + ROW_STEP * i)) < 1e-6 && list[0].dist >= ROW_FIRST, `Reihe ${i}: ${it.dist}`));
       for (let i = 1; i < list.length; i++) assert.ok(list[i].len >= list[i - 1].len, "längeres Maß liegt außen");
     }
   }
@@ -220,4 +221,86 @@ test("Hauptmaße: mehrdeutige Bohrungs-Features fallen auf das reine Ø zurück"
   const holes = holeSpecs([{ type: "hole", diameter: "8", extent: "through" }, { type: "hole", diameter: "8", extent: "depth", depth: "5" }], Number);
   const dims = planAutoDims([{ id: "v", axes: ["X", "Y"], bbox: { x0: 0, y0: 0, x1: 50, y1: 50 }, arcs: [{ cx: 20, cy: 20, r: 4, full: true }], holes }]);
   assert.equal(dimLabel(dims.find((m) => m.kind === "dia")), "Ø8");
+});
+
+test("Bohrungsbilder: symmetrisch, Lochkreis, Koordinatenmaße", () => {
+  const bb = { x0: 0, y0: 0, x1: 300, y1: 200 };
+  // Grundplatte: vier Bohrungen symmetrisch -> Abstände 250 und 150 statt Lagemaße vom Rand
+  const plate = [[25, 25], [275, 25], [25, 175], [275, 175]].map(([cx, cy]) => ({ cx, cy, r: 5.5, full: true }));
+  const d1 = planAutoDims([{ id: "v", axes: [null, null], bbox: bb, arcs: plate }]);
+  assert.deepEqual(d1.filter((m) => m.kind !== "dia").map(dimLabel), ["250", "150"]);
+  // Flansch Ø100 mit 6 Bohrungen auf Lochkreis Ø70
+  const fl = [{ cx: 0, cy: 0, r: 50, full: true }, { cx: 0, cy: 0, r: 20, full: true }];
+  for (let i = 0; i < 6; i++) fl.push({ cx: 35 * Math.cos((i * Math.PI) / 3), cy: 35 * Math.sin((i * Math.PI) / 3), r: 4.5, full: true });
+  const d2 = planAutoDims([{ id: "v", axes: [null, null], bbox: { x0: -50, y0: -50, x1: 50, y1: 50 }, arcs: fl }]);
+  assert.deepEqual(d2.map(dimLabel).sort(), ["6× Ø9", "LK Ø70, 6× 60°", "Ø100", "Ø40"]);
+  // vier Bohrungen im Quadrat bleiben ein Raster
+  const sq = [[10, 10], [40, 10], [10, 40], [40, 40]].map(([cx, cy]) => ({ cx, cy, r: 3, full: true }));
+  const d3 = planAutoDims([{ id: "v", axes: [null, null], bbox: { x0: 0, y0: 0, x1: 50, y1: 50 }, arcs: sq }]);
+  assert.ok(!d3.some((m) => m.pcd));
+  assert.deepEqual(d3.filter((m) => m.kind !== "dia").map(dimLabel), ["30", "30"]);
+});
+
+test("Koordinatenmaße teilen sich eine Reihe, weitere Maße liegen dahinter", () => {
+  const arcs = [5, 12, 20, 33, 41].map((x) => ({ cx: x, cy: 10, r: 1, full: true }));
+  const bbox = { x0: 0, y0: 0, x1: 60, y1: 30 };
+  const views = { v: sheetView(bbox, 150, 100, 2, arcs) };
+  const dims = planAutoDims([{ id: "v", axes: ["X", "Y"], bbox, arcs }]);
+  layoutAutoDims(dims, views, { frame: [20, 10, 410, 287] });
+  const ord = dims.filter((m) => m.ord);
+  assert.equal(ord.length, 6);
+  const lines = ord.map((m) => dimRect(m, views.v)[3]);
+  assert.ok(lines.every((y) => Math.abs(y - lines[0]) < 1e-6), "eine gemeinsame Reihe");
+});
+
+test("Profilteil: Profilangabe statt Querschnittsmaßen, nur die Länge wird bemaßt", () => {
+  const feats = [{ type: "profile", section: "rechteck", dims: { B: "50", H: "20", t: "2", r: "4" }, length: "L", axis: "Y" }, { type: "hole", thread: "M8" }];
+  const prof = profileSpec(feats, (x) => (x === "L" ? 50 : Number(x)));
+  assert.deepEqual(prof, { text: "Rechteckrohr 50x20x2 – L = 50", axis: "Y", cross: ["X", "Z"] });
+  assert.equal(profileSpec([...feats, { type: "extrude" }], Number), null, "weiterer Körper: kein reines Profilteil");
+  const rr = [{ cx: 0, cy: 0, r: 24.15, full: true }, { cx: 0, cy: 0, r: 21.55, full: true }];
+  const views = [
+    { id: "stirn", axes: ["X", "Z"], bbox: { x0: -24.15, y0: -24.15, x1: 24.15, y1: 24.15 }, arcs: rr },
+    { id: "laenge", axes: ["Y", "Z"], bbox: { x0: 0, y0: -24.15, x1: 400, y1: 24.15 }, arcs: [] },
+  ];
+  const dims = planAutoDims(views, { profile: { text: "Rohr 48,3x2,6 – L = 400", axis: "Y", cross: ["X", "Z"] } });
+  assert.deepEqual(dims.map((m) => [m.view, m.axis || m.kind]), [["laenge", "Y"]]);
+});
+
+test("Wandstärke eines Hohlprofils aus den Kanten, nicht bei gerundeten Außenkanten", () => {
+  const b = { x0: 0, y0: 0, x1: 50, y1: 20 };
+  const inner = [[[2, 2], [48, 2]], [[48, 2], [48, 18]], [[48, 18], [2, 18]], [[2, 18], [2, 2]]];
+  const outer = [[[0, 0], [50, 0], [50, 20], [0, 20], [0, 0]]];
+  assert.equal(wallThickness(b, [...outer, ...inner]), 2);
+  assert.equal(wallThickness(b, [...outer, [[3, 2], [3, 18]], ...inner]), 2, "nächste Innenkante zählt");
+  assert.equal(wallThickness(b, [...outer, ...inner], [{ cx: 2, cy: 2, r: 2, full: false }]), null, "Rundung R2 an der Ecke");
+  assert.equal(wallThickness(b, outer), null);
+  const dims = planAutoDims([{ id: "v", axes: ["X", "Z"], bbox: b, arcs: [], lines: [...outer, ...inner] }]);
+  assert.deepEqual(dims.filter((m) => m.wall).map(dimLabel), ["2"]);
+});
+
+test("Profilangabe als Hinweis frei neben der Ansicht", () => {
+  const bbox = { x0: 0, y0: 0, x1: 50, y1: 20 };
+  const views = { v: sheetView(bbox, 100, 60, 2), u: sheetView(bbox, 100, 125, 2) };
+  const notes = [{ view: "v", text: "Rechteckrohr 50x20x2 – L = 50" }];
+  layoutAutoDims([], views, { frame: [20, 10, 410, 287], notes });
+  const n = notes[0];
+  const box = [n.x, n.y - 4.5, n.x + n.text.length * 2.1, n.y + 1];
+  for (const v of Object.values(views)) assert.ok(!hits(box, v.rect));
+});
+
+test("Bohrung auf der Mittellinie bekommt kein Lagemaß quer zur Achse", () => {
+  const dims = planAutoDims([{ id: "v", axes: [null, null], bbox: { x0: -13.9, y0: -24, x1: 400, y1: 24 }, arcs: [{ cx: 200, cy: 0, r: 6.5, full: true }] }]);
+  assert.deepEqual(dims.filter((m) => m.kind !== "dia").map((m) => m.kind), ["h"]);
+});
+
+test("Kreis aus vielen kurzen Kantenstücken erkennen (Bohrung im Rundrohr)", () => {
+  const pieces = [];
+  for (let i = 0; i < 40; i++) {
+    const a0 = (i / 40) * 2 * Math.PI, a1 = ((i + 1.1) / 40) * 2 * Math.PI; // Stücke überlappen leicht, Endpunkte passen nicht genau
+    pieces.push([0, 0.5, 1].map((t) => [200 + 6.5 * Math.cos(a0 + t * (a1 - a0)), 6.5 * Math.sin(a0 + t * (a1 - a0))]));
+  }
+  pieces.push([[0, -24], [400, -24]], [[0, 24], [400, 24]]);
+  assert.deepEqual(circlesFromLines(pieces, 200), [{ cx: 200, cy: 0, r: 6.5, full: true }]);
+  assert.deepEqual(circlesFromLines(pieces.slice(0, 20), 200), [], "Halbkreis ist keine Bohrung");
 });
