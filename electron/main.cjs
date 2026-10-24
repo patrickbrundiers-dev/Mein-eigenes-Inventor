@@ -5,6 +5,9 @@ const fs = require("node:fs");
 const os = require("node:os");
 const updater = require("./updater.cjs");
 
+// Falls die Grafikkarte nicht nutzbar ist (Remotedesktop, alte Treiber): Software-WebGL erlauben
+app.commandLine.appendSwitch("enable-unsafe-swiftshader");
+
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);

@@ -10,7 +10,7 @@ const log = [];
 let ok = true;
 const check = (name, cond, info = "") => { log.push(`${cond ? "✔" : "✘"} ${name} ${info}`); if (!cond) ok = false; console.log(log[log.length - 1]); };
 
-const app = await electron.launch({ args: [".", "--no-sandbox"], env: { ...process.env, ELECTRON_ENABLE_LOGGING: "1" }, timeout: 60000 });
+const app = await electron.launch({ args: [".", "--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader"], env: { ...process.env, ELECTRON_ENABLE_LOGGING: "1" }, timeout: 60000 });
 const errors = [];
 const mainLog = [];
 app.process().stdout?.on("data", (d) => mainLog.push(String(d)));

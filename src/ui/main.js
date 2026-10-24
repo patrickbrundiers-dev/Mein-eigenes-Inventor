@@ -2,7 +2,17 @@
 import { App } from "./app.js";
 import { h, toast, confirmDialog } from "./dom.js";
 
-const app = new App();
+let app;
+try {
+  app = new App();
+} catch (e) {
+  const gl = /WebGL/i.test(String(e && e.message));
+  document.body.replaceChildren(h("div", { style: { padding: "40px", maxWidth: "70ch", font: "15px/1.5 var(--ui)" } },
+    h("h2", { style: { fontFamily: "var(--din)" } }, gl ? "3D-Grafik konnte nicht gestartet werden" : "WerkCAD konnte nicht gestartet werden"),
+    h("p", {}, gl ? "Der Grafiktreiber stellt kein WebGL bereit. Bitte den Grafiktreiber aktualisieren oder WerkCAD direkt am PC statt über Remotedesktop starten." : "Beim Start ist ein Fehler aufgetreten."),
+    h("pre", { style: { whiteSpace: "pre-wrap", background: "#fff", padding: "10px", border: "1px solid #ccc" } }, String(e && (e.stack || e.message) || e))));
+  throw e;
+}
 window.__werkcad = app; // für automatische Tests
 
 const bridge = window.werkcad;
