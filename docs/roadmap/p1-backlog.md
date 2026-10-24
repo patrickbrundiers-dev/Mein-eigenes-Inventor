@@ -1,4 +1,4 @@
-# WerkCAD – Backlog nach P0 (Rest P0-E, P1, Entscheidung P2)
+# PBCAD – Backlog nach P0 (Rest P0-E, P1, Entscheidung P2)
 
 Stand: 24.10.2026 · Basis: `main` nach Release 0.3.0 · Patrick: „weiter mit dem Plan komplett abarbeiten“, „alles selber prüfen und entscheiden“.
 

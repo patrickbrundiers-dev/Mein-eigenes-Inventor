@@ -1,4 +1,6 @@
-# WerkCAD
+# PBCAD
+
+_Bis Version 0.4.0 hieß das Programm **WerkCAD**. Ein Update aus WerkCAD heraus installiert PBCAD in den bisherigen Ordner; Einstellungen, Sicherungen und `.wcad`-Dateien bleiben unverändert nutzbar._
 
 Eigenes parametrisches 3D-CAD für Windows – angelehnt an die Arbeitsweise von Inventor, mit Schwerpunkt auf Rohr- und Profilteilen für den Rohrlaser.
 
@@ -42,17 +44,17 @@ Eigenes parametrisches 3D-CAD für Windows – angelehnt an die Arbeitsweise von
 
 ## Installation
 
-Unter **Releases** die Datei `WerkCAD-Setup-x.y.z.exe` herunterladen und ausführen. Da die Datei nicht signiert ist, zeigt Windows beim ersten Start eventuell „Der Computer wurde durch Windows geschützt“ – dann „Weitere Informationen → Trotzdem ausführen“.
+Unter **Releases** die Datei `PBCAD-Setup-x.y.z.exe` herunterladen und ausführen. Da die Datei nicht signiert ist, zeigt Windows beim ersten Start eventuell „Der Computer wurde durch Windows geschützt“ – dann „Weitere Informationen → Trotzdem ausführen“.
 
 ## Online-Updates
 
-WerkCAD prüft beim Start die Releases dieses Repositorys. Gibt es eine neue Version, erscheint oben ein Hinweis: erst nach deinem Klick wird heruntergeladen, und installiert wird erst nach einer zweiten Freigabe (oder beim Beenden).
+PBCAD prüft beim Start die Releases dieses Repositorys. Gibt es eine neue Version, erscheint oben ein Hinweis: erst nach deinem Klick wird heruntergeladen, und installiert wird erst nach einer zweiten Freigabe (oder beim Beenden).
 
 Solange das Repository öffentlich ist, braucht es dafür nichts weiter. Wird es wieder privat gestellt, unter **Datei → Einstellungen → Updates** einen Lese-Token hinterlegen (GitHub → Settings → Developer settings → Fine-grained tokens → nur dieses Repository, **Contents: Read-only**). Der Token wird mit der Windows-Verschlüsselung nur auf diesem PC gespeichert.
 
 ## Daten retten, ältere Version
 
-Nach einem Absturz bietet die Startseite die automatische Sicherung an; lässt sich eine Datei nicht öffnen, bietet WerkCAD die `.bak`-Sicherung an. Eine ältere Version installiert man einfach über das Setup aus den Releases. Details: [docs/betrieb/wiederherstellung.md](docs/betrieb/wiederherstellung.md).
+Nach einem Absturz bietet die Startseite die automatische Sicherung an; lässt sich eine Datei nicht öffnen, bietet PBCAD die `.bak`-Sicherung an. Eine ältere Version installiert man einfach über das Setup aus den Releases. Details: [docs/betrieb/wiederherstellung.md](docs/betrieb/wiederherstellung.md).
 
 ## Neue Version veröffentlichen
 

@@ -1,4 +1,4 @@
-# WerkCAD – Entwicklungsdokumentation
+# PBCAD – Entwicklungsdokumentation
 
 Ergebnis des Audits vom 24.10.2026 (Phase 0 / Etappe P0-A). Nur Dokumentation,
 kein Programmcode geändert.

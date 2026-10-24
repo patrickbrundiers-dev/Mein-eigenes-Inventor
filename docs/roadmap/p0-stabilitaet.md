@@ -1,4 +1,4 @@
-# WerkCAD – P0-Backlog (Auftrag 2)
+# PBCAD – P0-Backlog (Auftrag 2)
 
 Freigegeben von Patrick am 24.10.2026 (inkl. Release-Workflow) · Basis: `main` @ `cf39217` · Analyse aus PR #1 (Audit Phase 0) übernommen, nicht neu gemacht.
 

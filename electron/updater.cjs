@@ -86,7 +86,7 @@ async function download() {
   downloading = true;
   try { await load().downloadUpdate(); } catch { /* Meldung kommt über das error-Ereignis */ } finally { downloading = false; }
 }
-// still installieren (gleicher Ordner wie bisher, ohne erneuten Installationsassistenten) und danach WerkCAD neu starten
+// still installieren (gleicher Ordner wie bisher, ohne erneuten Installationsassistenten) und danach PBCAD neu starten
 function install() {
   log.write("info", "update", "Installation gestartet");
   load().quitAndInstall(true, true);

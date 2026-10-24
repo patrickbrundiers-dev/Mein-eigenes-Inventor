@@ -1,10 +1,10 @@
-# WerkCAD – Ist-Zustand (Audit Phase 0)
+# PBCAD – Ist-Zustand (Audit Phase 0)
 
 Stand: 24.10.2026 · Commit `cf39217` (main) · nur Analyse, keine Produktdatei geändert
 
 ## Kurzfassung
 
-WerkCAD ist eine Electron-Desktop-App (Windows) mit einem echten B-Rep-Kernel:
+PBCAD ist eine Electron-Desktop-App (Windows) mit einem echten B-Rep-Kernel:
 OpenCascade (WASM) über **replicad**, das in einem Web-Worker läuft. Die Oberfläche ist
 reines JavaScript ohne UI-Framework, die 3D-Ansicht ist three.js. Das Modell ist ein
 JSON-Dokument mit Featureliste; Geometrie wird bei jeder Änderung deterministisch aus

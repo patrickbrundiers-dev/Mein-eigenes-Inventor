@@ -81,7 +81,7 @@ jobs:
           V="v${{ inputs.version }}"
           ASSETS=$(gh release view "$V" --json assets --jq '.assets[].name')
           echo "$ASSETS"
-          for f in latest.yml "WerkCAD-Setup-${{ inputs.version }}.exe"; do
+          for f in latest.yml "PBCAD-Setup-${{ inputs.version }}.exe"; do
             echo "$ASSETS" | grep -qxF "$f" || { echo "::error::$f fehlt im Release $V"; exit 1; }
           done
           gh release edit "$V" --draft=false --latest
@@ -103,6 +103,6 @@ jobs:
       - name: Setup als Download anhängen
         uses: actions/upload-artifact@v4
         with:
-          name: WerkCAD-Setup-${{ inputs.version }}
+          name: PBCAD-Setup-${{ inputs.version }}
           path: release/*.exe
           retention-days: 14

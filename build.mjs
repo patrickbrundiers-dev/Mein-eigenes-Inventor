@@ -40,7 +40,7 @@ const BUNDLED = [
 ];
 const licDir = path.join(out, "lizenzen");
 fs.mkdirSync(licDir, { recursive: true });
-const notice = ["WerkCAD verwendet folgende Bibliotheken von Drittanbietern:", ""];
+const notice = ["PBCAD verwendet folgende Bibliotheken von Drittanbietern:", ""];
 for (const b of BUNDLED) {
   const dir = path.resolve("node_modules", b.pkg);
   const meta = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));

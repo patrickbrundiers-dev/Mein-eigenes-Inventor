@@ -65,7 +65,7 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
       err);
   };
 
-  const exportPrefs = () => app.files.saveText(prefs.exportText(), "WerkCAD-Einstellungen.json", "application/json", [{ name: "WerkCAD-Einstellungen", extensions: ["json"] }]);
+  const exportPrefs = () => app.files.saveText(prefs.exportText(), "PBCAD-Einstellungen.json", "application/json", [{ name: "PBCAD-Einstellungen", extensions: ["json"] }]);
   const importPrefs = async () => {
     const text = await pickText(app);
     if (text === null) return;
@@ -145,7 +145,7 @@ function updatesSection(app) {
 async function pickText(app) {
   const bridge = window.werkcad;
   if (bridge?.openFile) {
-    const r = await bridge.openFile({ filters: [{ name: "WerkCAD-Einstellungen", extensions: ["json"] }] });
+    const r = await bridge.openFile({ filters: [{ name: "PBCAD-Einstellungen", extensions: ["json"] }] });
     return r ? (r.data ?? null) : null;
   }
   return new Promise((res) => {

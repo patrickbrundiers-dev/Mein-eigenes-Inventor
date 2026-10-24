@@ -290,7 +290,7 @@ export class Ribbon {
       h("hr"),
       item("search", "Befehl suchen…", () => app.commands.exec("app.search"), this.kbd("app.search")),
       item("settings", "Einstellungen…", () => app.props.settingsDialog(), this.kbd("app.settings")),
-      item("info", "Über WerkCAD", () => app.props.aboutDialog()));
+      item("info", "Über PBCAD", () => app.props.aboutDialog()));
     document.body.append(m);
     setTimeout(() => document.addEventListener("mousedown", out, true), 0);
   }

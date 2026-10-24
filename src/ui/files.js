@@ -8,7 +8,7 @@ import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { MATERIALS } from "../core/sections.js";
 import { fmtNum } from "./dom.js";
 
-const PROJECT_FILTERS = [{ name: "WerkCAD-Projekt", extensions: ["wcad"] }];
+const PROJECT_FILTERS = [{ name: "PBCAD-Projekt", extensions: ["wcad"] }];
 const AUTOSAVE_KEY = "werkcad.autosave";
 
 export class Files {

@@ -17,11 +17,11 @@ test("Projektdatei: gültige Datei wird gelesen", () => {
 test("Projektdatei: unlesbare Inhalte werden abgelehnt", () => {
   assert.throws(() => parseProject(""), SyntaxError);
   assert.throws(() => parseProject("{ kaputt"), SyntaxError);
-  assert.throws(() => parseProject("null"), /Keine WerkCAD-Projektdatei/);
-  assert.throws(() => parseProject("[]"), /Keine WerkCAD-Projektdatei/);
-  assert.throws(() => parseProject(JSON.stringify({ format: "anders", docs: [] })), /Keine WerkCAD-Projektdatei/);
-  assert.throws(() => parseProject(JSON.stringify({ format: "werkcad" })), /Keine WerkCAD-Projektdatei/);
-  assert.throws(() => parseProject(JSON.stringify({ format: "werkcad", docs: {} })), /Keine WerkCAD-Projektdatei/);
+  assert.throws(() => parseProject("null"), /Keine PBCAD-Projektdatei/);
+  assert.throws(() => parseProject("[]"), /Keine PBCAD-Projektdatei/);
+  assert.throws(() => parseProject(JSON.stringify({ format: "anders", docs: [] })), /Keine PBCAD-Projektdatei/);
+  assert.throws(() => parseProject(JSON.stringify({ format: "werkcad" })), /Keine PBCAD-Projektdatei/);
+  assert.throws(() => parseProject(JSON.stringify({ format: "werkcad", docs: {} })), /Keine PBCAD-Projektdatei/);
 });
 
 test("Projektdatei: Speichern setzt den Zeitpunkt und behält alles andere", () => {
@@ -75,7 +75,7 @@ test("Version: neuere Datei öffnet mit Warnung, Inhalt bleibt erhalten", () => 
   assert.equal(project.version, 7);
   assert.deepEqual(project.zukunft, [1, 2]);
   assert.deepEqual(issues.map((i) => [i.code, i.severity]), [["version-neuer", "warning"]]);
-  assert.match(issues[0].message, /neueren WerkCAD-Version \(Format 7/);
+  assert.match(issues[0].message, /neueren PBCAD-Version \(Format 7/);
 });
 
 test("Version: ungültige Angaben werden abgelehnt", () => {

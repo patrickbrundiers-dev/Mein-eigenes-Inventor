@@ -1,10 +1,14 @@
-// WerkCAD – Electron-Hauptprozess
+// PBCAD – Electron-Hauptprozess
 const { app, BrowserWindow, protocol, ipcMain, dialog, shell, Menu, safeStorage } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const updater = require("./updater.cjs");
 const log = require("./log.cjs");
+
+// Benutzerdaten bleiben nach der Umbenennung WerkCAD → PBCAD im bisherigen Ordner %APPDATA%\WerkCAD
+// (Einstellungen, Token, automatische Sicherung, Fehlerprotokoll). Muss vor allem anderen gesetzt werden.
+app.setPath("userData", path.join(app.getPath("appData"), "WerkCAD"));
 
 // Falls die Grafikkarte nicht nutzbar ist (Remotedesktop, alte Treiber): Software-WebGL erlauben
 app.commandLine.appendSwitch("enable-unsafe-swiftshader");
@@ -51,7 +55,7 @@ function findProjectArg(argv) {
 function createWindow() {
   win = new BrowserWindow({
     width: 1480, height: 920, minWidth: 1000, minHeight: 640, show: false,
-    backgroundColor: "#e8edf1", title: "WerkCAD",
+    backgroundColor: "#e8edf1", title: "PBCAD",
     icon: path.join(__dirname, "..", "build", "icon.png"),
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
   });
@@ -90,7 +94,7 @@ else {
   });
   app.whenReady().then(() => {
     log.init(path.join(app.getPath("userData"), "protokoll"));
-    log.write("info", "start", `WerkCAD ${app.getVersion()} · Electron ${process.versions.electron} · ${os.platform()} ${os.release()} ${os.arch()}`);
+    log.write("info", "start", `PBCAD ${app.getVersion()} · Electron ${process.versions.electron} · ${os.platform()} ${os.release()} ${os.arch()}`);
     protocol.handle("app", async (req) => {
       const url = new URL(req.url);
       let rel = decodeURIComponent(url.pathname).replace(/^\/+/, "") || "index.html";
@@ -171,7 +175,7 @@ ipcMain.on("app:title", (_e, t) => win && win.setTitle(String(t)));
 ipcMain.handle("recent:list", () => (readSettings().recent || []).filter((p) => fs.existsSync(p)));
 
 ipcMain.handle("project:open", async () => {
-  const r = await dialog.showOpenDialog(win, { title: "Projekt öffnen", defaultPath: lastDir("project"), filters: [{ name: "WerkCAD-Projekt", extensions: ["wcad"] }], properties: ["openFile"] });
+  const r = await dialog.showOpenDialog(win, { title: "Projekt öffnen", defaultPath: lastDir("project"), filters: [{ name: "PBCAD-Projekt", extensions: ["wcad"] }], properties: ["openFile"] });
   if (r.canceled || !r.filePaths[0]) return null;
   const p = r.filePaths[0];
   lastDir("project", p);
@@ -199,7 +203,7 @@ ipcMain.handle("autosave:read", async () => {
 ipcMain.handle("project:save", async (_e, { path: p, text, defaultName }) => {
   let file = p;
   if (!file) {
-    const r = await dialog.showSaveDialog(win, { title: "Projekt speichern", defaultPath: path.join(lastDir("project"), defaultName || "Projekt.wcad"), filters: [{ name: "WerkCAD-Projekt", extensions: ["wcad"] }] });
+    const r = await dialog.showSaveDialog(win, { title: "Projekt speichern", defaultPath: path.join(lastDir("project"), defaultName || "Projekt.wcad"), filters: [{ name: "PBCAD-Projekt", extensions: ["wcad"] }] });
     if (r.canceled || !r.filePath) return null;
     file = r.filePath;
   }

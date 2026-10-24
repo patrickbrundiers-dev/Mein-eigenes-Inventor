@@ -19,7 +19,7 @@ export class StartScreen {
         h("p", {}, "Bauteile skizzieren und bemaßen, Rohre und Rahmen mit Gehrung erzeugen, Baugruppen zusammenstellen und Zeichnungen ableiten.")),
       action("part", "Neues Bauteil", "Skizze, Extrusion, Bohrung", async () => { if (await app.files.confirmDiscard()) { app.setProject(freshProject()); app.newPart("Bauteil 1"); } }),
       action("frame", "Neuer Rahmen", "Profile entlang einer Skizze", async () => { if (await app.files.confirmDiscard()) { app.setProject(freshProject()); const p = app.newPart("Rahmen"); app.beginSketchCreation(); return p; } }),
-      action("open", "Projekt öffnen", "WerkCAD-Datei (.wcad)", () => app.files.open()),
+      action("open", "Projekt öffnen", "PBCAD-Datei (.wcad)", () => app.files.open()),
       action("steel", "Beispiel ansehen", "Schweißrahmen mit Zeichnung", () => app.openExample()),
     ];
     if (rec && rec.project?.docs?.length) {
