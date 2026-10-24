@@ -692,7 +692,7 @@ export class Viewer {
    * opts: {edges, faces}
    * -> {kind:'edge', key, body, edge, info} | {kind:'face', key, body, face, info, point, normal}
    */
-  pick(cx, cy, { edges = true, faces = true } = {}) {
+  pick(cx, cy, { edges = true, faces = true, vertices = false } = {}) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const x = cx - rect.left, y = cy - rect.top;
     let faceHit = null;
@@ -703,18 +703,40 @@ export class Viewer {
       if (hits.length) faceHit = hits[0];
     }
     if (edges) {
-      let best = null, bd = 7;
+      let best = null, bd = 7, bestV = null, bdV = 9;
       for (const { pk, scr, ranges } of this.ensureEdgeCache()) {
         if (!pk.lines.visible) continue;
         for (let ei = 0; ei < ranges.length; ei++) {
           const mid = this.clip && pk.lines.userData.edges[ei]?.mid;
           if (mid && this.clipped(new THREE.Vector3(...mid).applyMatrix4(pk.lines.matrixWorld))) continue;
           const [s, c] = ranges[ei];
+          if (vertices && c >= 2) {
+            // Ecken = Enden offener Kanten (geschlossene Kreise haben keine)
+            const pos = pk.lines.geometry.attributes.position.array;
+            const closed = Math.hypot(pos[s * 3] - pos[(s + c - 1) * 3], pos[s * 3 + 1] - pos[(s + c - 1) * 3 + 1], pos[s * 3 + 2] - pos[(s + c - 1) * 3 + 2]) < 1e-6;
+            if (!closed) for (const [end, k] of [[0, s], [1, s + c - 1]]) {
+              const d = Math.hypot(x - scr[k * 2], y - scr[k * 2 + 1]);
+              if (d < bdV) { bdV = d; bestV = { pk, ei, end, k }; }
+            }
+          }
           for (let k = s; k < s + c - 1; k += 2) {
             const d = segDist(x, y, scr[k * 2], scr[k * 2 + 1], scr[(k + 1) * 2], scr[(k + 1) * 2 + 1]);
             if (d < bd) { bd = d; best = { pk, ei }; }
           }
         }
+      }
+      if (bestV) {
+        const { pk, ei, end, k } = bestV;
+        const pos = pk.lines.geometry.attributes.position.array;
+        const pt = new THREE.Vector3(pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]).applyMatrix4(pk.lines.matrixWorld);
+        let visible = true;
+        if (faceHit) {
+          const camDir = new THREE.Vector3();
+          this.camera.getWorldDirection(camDir);
+          const tol = 2 / this.pixelsPerUnit() + 0.5;
+          if (pt.clone().sub(this.camera.position).dot(camDir) > faceHit.point.clone().sub(this.camera.position).dot(camDir) + tol && pk.mesh.material.opacity >= 1) visible = false;
+        }
+        if (visible) return { kind: "vertex", key: pk.key, body: pk.body, edge: ei, end, info: pk.lines.userData.edges[ei], point: pt.toArray(), group: pk.group };
       }
       if (best) {
         // verdeckte Kanten nicht wählen: Tiefe gegen Flächentreffer prüfen
@@ -759,7 +781,13 @@ export class Viewer {
       const pk = this.pickables.find((p) => p.key === hit.key && p.body === hit.body);
       if (!pk) continue;
       pk.group.updateMatrixWorld();
-      if (hit.kind === "edge") {
+      if (hit.kind === "vertex") {
+        const r = 4 / this.pixelsPerUnit();
+        const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 8), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+        m.position.set(...hit.point);
+        m.renderOrder = 21;
+        group.add(m);
+      } else if (hit.kind === "edge") {
         const [s, c] = pk.lines.userData.edgeRanges[hit.edge];
         const src = pk.lines.geometry.attributes.position.array.slice(s * 3, (s + c) * 3);
         const geo = new THREE.BufferGeometry();

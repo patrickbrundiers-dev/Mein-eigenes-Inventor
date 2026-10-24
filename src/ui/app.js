@@ -480,7 +480,7 @@ export class App {
   pickOptions() {
     const p = this.pick;
     if (p?.kind === "edges") return { edges: true, faces: false };
-    if (p?.kind === "measure") return { edges: true, faces: true };
+    if (p?.kind === "measure") return { edges: true, faces: true, vertices: true };
     if (p?.kind === "faces" || p?.kind === "sketchPlane" || p?.kind === "align") return { edges: false, faces: true };
     if (this.mode === "assembly") return { edges: false, faces: true };
     if (this.selFilter === "flaechen") return { edges: false, faces: true };
@@ -529,7 +529,7 @@ export class App {
     // Bauteil: Kanten/Flächen sammeln (Strg/Umschalt = mehrfach)
     if (!hit) { this.selHits = []; this.sel = null; }
     else {
-      const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face);
+      const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face) && a.end === hit.end;
       if (e.ctrlKey || e.shiftKey) {
         const i = this.selHits.findIndex(same);
         if (i >= 0) this.selHits.splice(i, 1); else this.selHits.push(hit);
@@ -671,7 +671,7 @@ export class App {
     this.pick = { kind: "measure" };
     this.measure = { hits: [] };
     this.viewer.setSelectionHits([]);
-    this.setHint("Messen: Fläche oder Kante anklicken, dann optional eine zweite – Esc beendet");
+    this.setHint("Messen: Fläche, Kante oder Ecke anklicken, dann optional ein zweites Element – Esc beendet");
     this.props.render();
     this.ribbon.render();
   }
@@ -679,7 +679,7 @@ export class App {
     const m = this.measure;
     if (!hit || hit.info?.idx === undefined) { m.hits = []; m.result = null; m.error = hit ? "Dieses Element lässt sich nicht messen" : null; }
     else {
-      const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face);
+      const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face) && a.end === hit.end;
       if (m.hits.length >= 2 || m.hits.some(same)) m.hits = [];
       m.hits.push(hit);
     }
@@ -704,7 +704,7 @@ export class App {
   /** Pick-Treffer → Messauftrag für den Kern (Bauteil oder platzierte Komponente) */
   measureItem(hit) {
     const d = this.activeDoc();
-    const base = { body: hit.body, kind: hit.kind, idx: hit.info.idx };
+    const base = { body: hit.body, kind: hit.kind, idx: hit.info.idx, end: hit.end };
     if (d.kind === "part") return { ...base, part: d };
     const c = d.components.find((x) => "comp:" + x.id === hit.key);
     const p = c && this.doc(c.part);
