@@ -50,9 +50,9 @@ export function holeText(hole, count = 1) {
 
 /**
  * Profil-Feature des Bauteils (genau eines, achsparallel, keine weiteren Körper) -> Angabe „Rechteckrohr 50x20x2 – L = 50“
- * ev(ausdruck) wertet Parameter aus. Rückgabe: { text, axis, cross: [Achse, Achse] } oder null
+ * ev(ausdruck) wertet Parameter aus; cutLength: Zuschnittlänge aus dem gebauten Stab (meta.length). Rückgabe: { text, axis, cross: [Achse, Achse] } oder null
  */
-export function profileSpec(features, ev) {
+export function profileSpec(features, ev, cutLength = null) {
   const act = (features || []).filter((f) => !f.suppressed);
   const prof = act.filter((f) => f.type === "profile");
   if (prof.length !== 1 || act.some((f) => ["extrude", "revolve", "frame", "knickrahmen", "import"].includes(f.type) && (f.op || "join") !== "cut")) return null;
@@ -63,7 +63,9 @@ export function profileSpec(features, ev) {
     const dims = {};
     for (const [k, x] of Object.entries(f.dims || {})) dims[k] = ev(x);
     const L = ev(f.length);
-    return { text: sectionName(f.section, dims) + " – L = " + fmt(L), axis, cross: [..."XYZ"].filter((a) => a !== axis) };
+    // Länge = Zuschnittlänge wie in der Zuschnittliste (bei Gehrungen die Außenlänge), sonst die Länge des Features
+    const len = cutLength > 0 ? cutLength : L;
+    return { text: sectionName(f.section, dims) + " – L = " + fmt(Math.round(len * 10) / 10), axis, cross: [..."XYZ"].filter((a) => a !== axis) };
   } catch { return null; }
 }
 
