@@ -187,7 +187,8 @@ export class Props {
       const f = faces[0];
       out.push(this.section(`${faces.length} Fläche(n)`,
         h("dl", { class: "kv" }, h("dt", {}, "Typ"), h("dd", {}, typeName[f.info?.type] || f.info?.type || "–"),
-          f.info?.normal ? [h("dt", {}, "Normale"), h("dd", {}, f.info.normal.map((x) => fmtNum(x, 3)).join(" / "))] : null),
+          f.info?.normal ? [h("dt", {}, "Normale"), h("dd", {}, f.info.normal.map((x) => fmtNum(x, 3)).join(" / "))] : null,
+          f.info?.radius ? [h("dt", {}, "Durchmesser"), h("dd", {}, "Ø " + fmtNum(2 * f.info.radius, 2) + " mm")] : null),
         f.info?.type === "PLANE" ? h("div", { class: "btn-row" }, h("button", { class: "btn primary", onclick: () => app.createSketch(planeFromFace(f.info.point, f.info.normal)) }, "Skizze auf Fläche")) : null,
         h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.ribbon.run("shell") }, "Wandung (Fläche offen)"))));
     }
@@ -534,10 +535,11 @@ export class Props {
   alignProps() {
     const app = this.app;
     const a = app.align || {};
-    return [this.section(a.mode === "buendig" ? "Bündig ausrichten" : "Fläche an Fläche",
-      h("p", {}, a.first ? "2. Zielfläche am anderen Bauteil anklicken." : "1. Fläche am Bauteil anklicken, das bewegt wird."),
-      this.seg("Art", [["gegen", "Gegeneinander"], ["buendig", "Bündig"]], a.mode || "gegen", (v) => { app.align.mode = v; this.render(); }),
-      this.expr("Abstand", a.gap || "0", (v) => { app.align.gap = v; }),
+    const conc = a.mode === "konzentrisch";
+    return [this.section(conc ? "Konzentrisch ausrichten" : a.mode === "buendig" ? "Bündig ausrichten" : "Fläche an Fläche",
+      h("p", {}, conc ? (a.first ? "2. Zylinderfläche (Bohrung, Rohr) am anderen Bauteil anklicken." : "1. Zylinderfläche am Bauteil anklicken, das bewegt wird.") : a.first ? "2. Zielfläche am anderen Bauteil anklicken." : "1. Fläche am Bauteil anklicken, das bewegt wird."),
+      this.seg("Art", [["gegen", "Gegeneinander"], ["buendig", "Bündig"], ["konzentrisch", "Konzentrisch"]], a.mode || "gegen", (v) => { app.align.mode = v; app.align.first = null; app.refreshSelectionHits(); this.render(); }),
+      conc ? h("p", { class: "hint" }, "Achsen fluchten; Lage entlang der Achse und Drehung um sie bleiben frei – mit »Fläche an Fläche« festlegen.") : this.expr("Abstand", a.gap || "0", (v) => { app.align.gap = v; }),
       this.check("Als Abhängigkeit speichern (folgt Änderungen)", a.persist !== false, (v) => { app.align.persist = v; }),
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.cancelPick() }, "Abbrechen")))];
   }

@@ -137,7 +137,7 @@ export class Tree {
           const err = app.asmErrors?.[c.id];
           const sel = app.sel?.type === "constraint" && app.sel.id === c.id;
           cu.append(h("li", {}, this.node({
-            label: c.name || (c.type === "buendig" ? "Bündig" : "Fläche an Fläche"), ic: "align",
+            label: c.name || (c.type === "buendig" ? "Bündig" : c.type === "konzentrisch" ? "Konzentrisch" : "Fläche an Fläche"), ic: c.type === "konzentrisch" ? "concentric" : "align",
             cls: (sel ? "sel" : "") + (err ? " err" : "") + (c.suppressed ? " suppressed" : ""), title: err ? "Fehler: " + err : c.name,
             meta: c.gap && c.gap !== "0" ? c.gap + " mm" : "",
             onClick: () => { app.sel = { type: "constraint", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },

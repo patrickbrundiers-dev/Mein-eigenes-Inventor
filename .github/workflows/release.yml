@@ -32,7 +32,7 @@ jobs:
       - name: Abhängigkeiten
         run: npm ci --no-audit --no-fund
       - name: Kern-Tests
-        run: node --test test/core.test.mjs test/project.test.mjs test/units.test.mjs test/cutlist.test.mjs test/drawing.test.mjs
+        run: node --test test/core.test.mjs test/project.test.mjs test/units.test.mjs test/cutlist.test.mjs test/drawing.test.mjs test/assembly.test.mjs
       - name: Geometrie-Tests
         run: set -o pipefail; node --stack-size=8000 --test --test-reporter=spec test/kernel.test.mjs test/project-kernel.test.mjs test/validation.test.mjs test/parametric.test.mjs 2>&1 | grep -v -E "^\*+|Statistics on Transfer|Transfer Mode|Transferring Shape|WorkSession|Step File Name|^\s*$"
   windows:
