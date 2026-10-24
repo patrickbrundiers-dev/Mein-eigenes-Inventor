@@ -280,6 +280,28 @@ try {
   await evalApp(() => window.__werkcad.drawing.fitSheet());
   await shot("15b-schnitt");
 
+  // Detailansicht: Ausschnitt aus der Vorderansicht über das Werkzeug (zwei Klicks)
+  const det = await evalApp(async () => {
+    const a = window.__werkcad, dr = a.drawing, d = a.activeDoc();
+    const front = d.views.find((v) => v.type === "front");
+    dr.sel = { type: "view", id: front.id };
+    dr.startDetail();
+    const xf = dr.viewXf(front), bb = xf.bb;
+    const c = xf.to(bb.x0 + (bb.x1 - bb.x0) * 0.2, bb.y0 + (bb.y1 - bb.y0) * 0.2);
+    dr.detailClick(c[0], c[1]);
+    dr.detailClick(c[0] + 10, c[1]);
+    const v = d.views.find((x) => x.type === "detail");
+    const p = v && dr.proj.get(v.id);
+    const orig = a.files.saveText;
+    let text = "";
+    a.files.saveText = async (t) => { text = t; };
+    try { await dr.exportDxf(); } finally { a.files.saveText = orig; }
+    const svg = dr.svg.outerHTML;
+    return v ? { letter: v.letter, scale: v.scale, parentScale: front.scale, lines: p ? p.visible.length + p.hidden.length : -1, svg: svg.includes(`${v.letter} (`), dxf: text.includes(`${v.letter} (`), tool: dr.tool } : null;
+  });
+  step("Detailansicht", det && det.letter === "Z" && det.scale >= det.parentScale * 2 - 1e-9 && det.lines > 0 && det.svg && det.dxf && !det.tool, JSON.stringify(det));
+  await shot("15c-detail");
+
   // Exporte über den Kern
   const step3d = await evalApp(async () => { const a = window.__werkcad; const t = await a.kernel.call("exportStep", { items: [{ part: a.doc("beispiel_rahmen") }] }); return t.length; });
   step("STEP-Export", step3d > 1000, String(step3d));

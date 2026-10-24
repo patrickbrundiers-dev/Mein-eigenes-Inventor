@@ -79,6 +79,7 @@ const P = {
   align: '<rect x="4" y="13" width="16" height="6"/><rect x="7" y="4" width="10" height="6"/><path d="M12 10v3"/>',
   move: '<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>',
   bom: '<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  detail: '<circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L21 21"/>',
   cut: '<path d="M4 20l7-7M20 20l-7-7"/><circle cx="7" cy="6" r="3"/><circle cx="17" cy="6" r="3"/><path d="M9 8l3 5 3-5"/>',
   view: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M7 15l4-4 3 3 3-3"/>',
   text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>',
