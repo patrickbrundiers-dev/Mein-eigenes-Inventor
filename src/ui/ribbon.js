@@ -39,6 +39,10 @@ export class Ribbon {
         const sk = needSketch((s) => s.entities.some((e) => (e.type === "point" && !e.construction) || e.type === "circle"));
         if (sk) app.addFeature({ type: "hole", sketch: sk, diameter: "8", extent: "through", depth: "10", direction: "reverse", sink: "none" });
       },
+      emboss: () => {
+        const sk = needSketch((s) => s.entities.some((e) => !e.construction && e.type !== "point"));
+        if (sk) app.addFeature({ type: "emboss", sketch: sk, mode: "gravieren", depth: "0.5", direction: "auto", wrap: true });
+      },
       profile: () => app.addFeature({ type: "profile", section: "vierkant", dims: catalogToDims("vierkant", "40x3"), length: "1000", start: ["0", "0", "0"], axis: "X", rotation: "0", miterStart: "0", miterEnd: "0", miterAxis: "v", endCuts: { A: "2D", B: "2D" }, swivel: "45" }),
       frame: () => {
         const sk = needSketch((s) => s.entities.some((e) => e.type === "line" && !e.construction));
@@ -76,7 +80,7 @@ export class Ribbon {
   lastPatternSource() {
     const part = this.app.activeDoc();
     const sel = this.app.sel?.type === "feature" ? this.app.feature(this.app.sel.id) : null;
-    const ok = (f) => ["extrude", "revolve", "hole", "profile", "frame", "import"].includes(f.type);
+    const ok = (f) => ["extrude", "revolve", "hole", "emboss", "profile", "frame", "import"].includes(f.type);
     if (sel && ok(sel)) return sel.id;
     const list = part.features.filter(ok);
     return list.length ? list[list.length - 1].id : null;
@@ -131,7 +135,7 @@ export class Ribbon {
       return [
         { id: "modell", label: "3D-Modell", groups: [
           { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch")] },
-          { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole")] },
+          { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss")] },
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("knickrahmen", "Knickrahmen", "knick")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
           { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("mirror", "Spiegeln", "mirror")] },

@@ -667,3 +667,56 @@ test("Bohrung in 3D (Rohr-Editor): Neigung längs/quer, Winkelkorrektur", async 
   assert.match(t60.status.pr.warning, /Kontur 1: Bohrung 3D braucht 60° Kopfschwenk, Winkelkorrektur auf ±45° – nicht maßhaltig/);
   near(vol(straight) - vol(t60), (Math.PI * 25 * 3) / Math.cos(Math.PI / 4), 1.5, "auf 45° begrenzt");
 });
+
+test("Prägen / Gravieren: Skizze auf Rundrohr abgewickelt, auf Vierkant eben, über Kante gemeldet", async () => {
+  const tubeR = { id: "pr", type: "profile", section: "rohr", dims: { D: "40", t: "3" }, length: "500", start: ["0", "0", "0"], axis: "X" };
+  const tubeQ = { id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "500", start: ["0", "0", "0"], axis: "X" };
+  const sk = (y = -10) => rectSketchFeature("s1", "XY", 50, 200, y, 40, 20); // 40 längs × 20 quer, 50 über der Achse
+  const emb = (extra = {}) => ({ id: "e1", type: "emboss", sketch: "s1", depth: "0.5", mode: "gravieren", direction: "auto", ...extra });
+  const dV = async (tube, s, e) => { const b = await K.buildPart(part([tube])); const r = await K.buildPart(part([tube, s, e])); return { r, d: vol(r) - vol(b) }; };
+  // Rundrohr abgewickelt: 40 × 20 auf dem Umfang, 0,5 tief → 400 · (R − d/2)/R
+  let { r, d } = await dV(tubeR, sk(), emb());
+  okAll(r);
+  near(d, -400 * (19.75 / 20), 1, "abgewickelt");
+  assert.match(r.status.e1.info, /1 auf dem Rohr abgewickelt/);
+  // liegt oben bei x 200…240 und reicht um den Umfang 20 mm (= 57,3° → |y| bis 20·sin 28,6° = 9,6)
+  const bb = r.bodies[0].shape.intersect(R.makeBaseBox(60, 30, 10).translate([220, 0, 15])).boundingBox;
+  assert.ok(bb.bounds[1][2] > 19.9, "Rohr oben unversehrt außerhalb");
+  const cut = R.makeBaseBox(40, 40, 0.4).translate([220, 0, 19.65]); // Schicht direkt unter der Oberfläche
+  const left = R.measureVolume(r.bodies[0].shape.intersect(cut));
+  const base0 = await K.buildPart(part([tubeR]));
+  const base = R.measureVolume(base0.bodies[0].shape.intersect(cut));
+  assert.ok(base - left > 50, "Gravur oben (+Z)");
+  // nicht gespiegelt: Kontur nur auf +Y (y 2…14) landet auf der +Y-Seite des Rohrs
+  ({ r } = await dV(tubeR, rectSketchFeature("s1", "XY", 50, 200, 2, 40, 12), emb({ depth: "1" })));
+  const side = (y) => R.measureVolume(base0.bodies[0].shape.intersect(R.makeBaseBox(40, 8, 30).translate([220, y, 0]))) - R.measureVolume(r.bodies[0].shape.intersect(R.makeBaseBox(40, 8, 30).translate([220, y, 0])));
+  assert.ok(side(8) > 100 && side(-8) < 1, `Seite ${side(8)} / ${side(-8)}`);
+  // ohne Abwickeln: senkrecht projiziert, Querschnitt = Ringstück 19,5…20 mit |y| ≤ 10
+  ({ r, d } = await dV(tubeR, sk(), emb({ wrap: false })));
+  okAll(r);
+  const A = (q) => 10 * Math.sqrt(q * q - 100) + q * q * Math.asin(10 / q);
+  near(d, -40 * (A(20) - A(19.5)), 0.5, "projiziert");
+  // Prägen erhaben: kommt dazu, verbunden mit dem Rohr (ein Körper)
+  ({ r, d } = await dV(tubeR, sk(), emb({ mode: "praegen" })));
+  okAll(r);
+  near(d, 400 * (20.25 / 20), 1.5, "geprägt");
+  assert.equal(r.bodies.length, 1);
+  // Vierkant: ebene Fläche oben, genau 40 · 20 · 0,5
+  ({ r, d } = await dV(tubeQ, sk(), emb()));
+  okAll(r);
+  near(d, -400, 0.5, "eben");
+  assert.ok(!r.status.e1.warning);
+  // über die Kante der ebenen Fläche (y −25…−5, eben nur bis −14): Warnung
+  ({ r } = await dV(tubeQ, sk(-25), emb()));
+  assert.match(r.status.e1.warning || "", /Gravur über Kante/);
+  // Blickrichtung „Normale“ (von hinten): Gravur unten (−Z)
+  ({ r, d } = await dV(tubeR, sk(), emb({ direction: "normal" })));
+  okAll(r);
+  near(d, -400 * (19.75 / 20), 1, "von hinten");
+  const low = R.makeBaseBox(40, 40, 0.4).translate([220, 0, -20]);
+  assert.ok(R.measureVolume(base0.bodies[0].shape.intersect(low)) - R.measureVolume(r.bodies[0].shape.intersect(low)) > 50, "unten");
+  // Skizze neben dem Rohr → Fehler
+  ({ r } = await dV(tubeR, rectSketchFeature("s1", "XY", 50, 200, 60, 40, 20), emb()));
+  assert.equal(r.status.e1.ok, false);
+  assert.match(r.status.e1.error, /trifft keine Oberfläche/);
+});

@@ -57,7 +57,7 @@ der Rohrlaser-Kalkulation (`cutlist.js`), Einstellungscenter, Befehlssuche, Mess
 | Durchdringung Rohr/Rohr | analytische Kurve | echte Boolesche Operation (Sattelschnitt im Rahmen) | PBCAD besser | beibehalten |
 | Knickrahmen | Formeln, Prüfregeln | 3D-Feature, Abwicklung, Freistellung | beide, PBCAD als 3D besser | Prüfregeln (Schenkel, Wand) übernehmen → Etappe 2 |
 | Kontur-Vorlagen (Bohrbild speichern/einsetzen) | vorhanden | fehlt | Editor besser | P2: als Skizzenblock |
-| Gravur-Text | vorhanden | fehlt | Editor besser | P2 |
+| Gravur-Text | vorhanden | Feature „Prägen“: beliebige Skizze, auf Rundrohr abgewickelt | gleichwertig (Skizze statt Text) | umgesetzt |
 | DXF-Export | R12 mit Layern (Blech) | R12 (`dxf.js`), Platten und Skizzen | beide | beibehalten |
 | DXF-Import | vorhanden (ohne Bibliothek) | fehlt | Editor besser | P2: in Skizze, Leser ist klar abgegrenzt |
 | Mausrad verstellt keine Zahlenfelder | global (`mausrad.py`) | 2 Zahlenfelder (`type=number`) reagieren auf das Rad | Editor besser | **P0, mit Etappe 1 erledigt** |
@@ -125,7 +125,8 @@ ihm besonders der **2D/3D-Schnitt** und bei 3D die **Winkelkorrektur ±45°**.
 | P1 | **Bohrung 3D** mit Neigung längs/quer, Schnellwahl ±45°/±30°/0°, Ellipse im Schneidweg | `dreid.py`, `schneidweg_dialog.py` | umgesetzt |
 | P1 | Maßbild je Konturart im Eigenschaftenfeld | `massbild.py` | umgesetzt (`src/core/massbild.js`, Bild über den Feldern jeder Konturkarte) |
 | P1 | Prüfregeln Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende (jetzt mit Lage der Konturen möglich) | `dfm.py` | umgesetzt (`checkContours` in `src/core/tubecuts.js`, Abwicklung mit Eckbögen, Gegenseite bei „durchgehend“; Faktoren unter Einstellungen → Rohrlaser und Fertigung) |
-| P1 | Schlitz, Polygon/Sonderkontur, Gravur | `schneidweg.py` | offen |
+| P1 | Gravur: Feature „Prägen“ (Skizze wählen, vertieft oder erhaben, auf Rundrohr abgewickelt, Warnung „Gravur über Kante“) | `schneidweg.py`, `dfm.py` | umgesetzt |
+| P1 | Schlitz, Polygon/Sonderkontur | `schneidweg.py` | offen |
 | P2 | Griffe am 3D-Modell (Ziehen mit Fang), Maße am Modell, Kontur-Vorlagen, Querschnitt an Stelle x, Gegenrohr/Durchdringung am Ende, 2D/3D auch im Rahmen aus Skizze | `editor_griffe.py`, `konturvorlagen.py`, `editor_schnitt.py`, `durchdringung.py` | zurückgestellt |
 
 Datenformat: neue Felder am Feature Rohr/Profil (`cuts`, `endCuts`, `swivel`) sind optional. Ältere Dateien ohne
