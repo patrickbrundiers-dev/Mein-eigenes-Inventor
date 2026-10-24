@@ -16,12 +16,18 @@ test("Zoll: in, zoll und \" ergeben exakt 25,4 mm", () => {
   near(evaluate("D in", { D: 2 }), 50.8);
 });
 
-test("Zoll: Brüche brauchen Klammern, weil die Einheit nur am letzten Wert hängt (wie bei cm/m)", () => {
+test("Einheit gilt für den ganzen Term davor (Entscheidung 24.10.2026)", () => {
+  near(evaluate('3/4"'), 19.05);
   near(evaluate('(3/4)"'), 19.05);
-  near(evaluate("3/4 * 1 in"), 19.05);
-  // unverändertes, bestehendes Verhalten: Einheit bindet stärker als die Division
-  near(evaluate('3/4"'), 3 / (4 * 25.4));
-  near(evaluate("1/2 cm"), 1 / 20);
+  near(evaluate("1/2 cm"), 5);
+  near(evaluate("100/2 cm"), 500);
+  near(evaluate("2 m * 3"), 6000);
+  near(evaluate("2(1+1) cm"), 40);
+  near(evaluate("-2 in"), -50.8);
+  // Summen: jede Einheit gilt nur für ihren Summanden
+  near(evaluate("1 in + 5 mm"), 30.4);
+  near(evaluate("L/2 + 5 mm", { L: 100 }), 55);
+  near(evaluate("sin(30°)"), 0.5);
 });
 
 test("Zoll: Umrechnung hin und zurück ohne Rundungsfehler", () => {
