@@ -1,19 +1,17 @@
-**Neu in 0.4.0**
+**Neu in 0.5.0**
 
-- **Zuschnittliste mit Regeln:** Der Dialog und die CSV-Datei erklären, wie Längen, Gehrungen und Knickrahmen-Abwicklungen gezählt werden. Gleiche Profile mit gleicher Länge werden mit Anzahl zusammengefasst.
-- **Positionsnummern und Stückliste auf dem Blatt:** In Baugruppen-Zeichnungen setzt „Pos.-Nummern“ die Nummern automatisch an die Bauteile (verschiebbar, mit Entf löschbar). „Stückliste“ setzt eine Tabelle über das Schriftfeld. Beides geht mit in PDF, SVG und DXF.
-- **Detailansicht:** Ansicht anklicken, „Detail“ wählen, dann Mittelpunkt und Rand des Ausschnitts klicken. WerkCAD setzt den Ausschnitt vergrößert (mindestens doppelter Maßstab) an eine freie Stelle und markiert ihn in der Ursprungsansicht mit Kreis und Buchstabe.
-- **Kollisionsprüfung** (Baugruppe → Prüfen): listet Bauteile, die sich überschneiden, mit Schnittvolumen. Reine Berührung zählt nicht.
-- **Abhängigkeit „Konzentrisch“:** richtet zwei Zylinderflächen auf eine gemeinsame Achse aus, z. B. Rohr in Bohrung.
-- **Verständlichere Fehler im Feature-Baum:** Ein Feature, dessen Skizze oder Bezug fehlerhaft, unterdrückt oder gelöscht ist, sagt jetzt, wovon es abhängt und was zu tun ist.
-- **Updates:** Der Ablauf wird im Fehlerprotokoll mitgeschrieben. Ein fehlgeschlagener Download zeigt eine Meldung mit „Erneut versuchen“. „Jetzt neu starten und installieren“ installiert still in den bisherigen Ordner und startet WerkCAD neu. Die Update-Prüfung zeigt bei Fehlern die genaue Meldung.
-- **Einstellungscenter** unter Datei → Einstellungen… (Strg+,): Kategorien mit Suche, Import/Export und „auf Standard“. Optionen, die noch nicht verfügbar sind, sind als „geplant“ gekennzeichnet.
-- Einstellbar sind unter anderem:
-  - Maus: Drehen mit rechter oder mittlerer Taste, Zoom- und Drehgeschwindigkeit, Zoom zum Mauszeiger.
-  - Ansicht: Bodenraster, ViewCube, Kanten- und Auswahlfarben, Animation der Ansichtswechsel, Darstellungsqualität (wird gemerkt), Oberflächengröße.
-  - Skizzen: Rasterfang, Rasterweite, Fangradius.
-  - Sonstiges: Wartezeit der automatischen Sicherung, Dezimalstellen beim Messen.
-- Die Update-Einstellungen (Token, Prüfung beim Start) sind jetzt eine Kategorie im Einstellungscenter.
-- Anleitung „Daten retten und ältere Version installieren“ im README.
+- **WerkCAD heißt jetzt PBCAD.** Das Update installiert in den bisherigen Ordner, Einstellungen, Projekte (`.wcad`) und Benutzerdaten bleiben erhalten. Die Setup-Datei heißt ab jetzt `PBCAD-Setup-<Version>.exe`.
+- **Update-Suche robuster:** lädt die Update-Information direkt vom neuesten Release. Fehler erscheinen nur noch einmal in den Einstellungen statt als gestapelte rote Meldungen, ein privates Repository wird als Ursache benannt.
+- **Ansicht:**
+  - Alle sieben Richtungen (Iso, Vorne, Hinten, Links, Rechts, Oben, Unten).
+  - „Normal zur Fläche“ für eine gewählte ebene Fläche und „Auswahl zeigen“ (Zoom auf die Auswahl).
+  - Perspektive und orthogonale Ansicht umschaltbar (wird gemerkt). Beim Skizzieren ist die Ansicht immer orthogonal.
+  - Darstellungsmodi: schattiert mit Kanten, schattiert, Drahtmodell, transparent.
+  - Schnittebene X/Y/Z im 3D-Fenster mit Schieber und Seitenwechsel. Sie ist nur Anzeige und ändert das Modell nicht.
+- **Befehlssuche** mit Strg+K. Tastaturkürzel lassen sich im Einstellungscenter anpassen, doppelt belegte Tasten werden abgelehnt.
+- **Messwerkzeug** (Taste M): Fläche, Kante oder Bohrung anklicken. Es zeigt exakte Werte aus dem Geometrie-Kern, Abstände, Oberfläche und Schwerpunkt.
+- Geprüft mit einer Baugruppe aus 150 Komponenten:
+  - Öffnen und Auswählen bleiben unter einer Sekunde.
+  - Die Kollisionsprüfung braucht etwa eine Sekunde.
 
-Hinweis: Projekte mit der Abhängigkeit „Konzentrisch“ lassen sich in 0.3.0 öffnen, diese Abhängigkeit wird dort aber nicht gelöst. Detailansichten zeigt 0.3.0 als ganze Ansicht ohne Ausschnitt.
+Hinweis: Wenn die Update-Suche in 0.3.0 oder 0.4.0 „404“ meldet, bitte 0.5.0 einmal von Hand installieren (Setup von der Release-Seite, in den bisherigen Ordner). Ab 0.5.0 sucht PBCAD auf dem neuen Weg.
