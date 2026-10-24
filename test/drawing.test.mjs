@@ -99,13 +99,14 @@ test("Hauptmaße: jedes Maß nur einmal, Bohrungen mit Anzahl und Lagemaßen", (
   assert.equal(dia.length, 1);
   assert.equal(dia[0].count, 5);
   const pos = dims.filter((m) => !m.axis && m.kind !== "dia");
-  const xs = pos.filter((m) => m.kind === "h").map((m) => m.p2[0]);
-  const ys = pos.filter((m) => m.kind === "v").map((m) => m.p2[1]);
-  assert.deepEqual(xs, [8, 15, 25, 38]);
-  assert.deepEqual(ys, [10, 25, 40]);
   assert.ok(pos.every((m) => m.view === "oben"));
-  // gestaffelt, damit sich die Maßlinien nicht überdecken
-  assert.equal(new Set(pos.filter((m) => m.kind === "h").map((m) => m.off)).size, 4);
+  // vier Lagemaße in X: Koordinatenbemaßung mit Nullpunkt an der linken Kante
+  const xs = pos.filter((m) => m.kind === "h");
+  assert.ok(xs.every((m) => m.ord));
+  assert.deepEqual(xs.map((m) => m.p2[0]), [0, 8, 15, 25, 38]);
+  // Y 10 / 25 / 40: gleiche Teilung, mittig -> „2× 15 (=30)“
+  const ys = pos.filter((m) => m.kind === "v");
+  assert.deepEqual(ys.map(dimLabel), ["2× 15 (=30)"]); // mittig: kein Randmaß
   // zweiter Aufruf mit den belegten Maßen ergänzt nichts Doppeltes
   const used = { axes: new Set(["X", "Y", "Z"]), radii: new Set([3400]) };
   assert.equal(planAutoDims([views[2]], used).length, 0);
@@ -149,7 +150,7 @@ test("Maßplatzierung: kurze Maße innen, lange außen, feste Reihenabstände", 
     const lin = dims.filter((m) => m.kind === kind);
     const c = kind === "h" ? 1 : 0;
     const bySide = new Map();
-    for (const m of lin) {
+    for (const m of lin.filter((x) => !x.ord)) {
       const r = dimRect(m, views.oben);
       const line = kind === "h" ? r[3] - 1 : (r[0] + r[2]) / 2;
       const dist = line > R[c + 2] ? line - R[c + 2] : R[c] - line;
@@ -159,7 +160,7 @@ test("Maßplatzierung: kurze Maße innen, lange außen, feste Reihenabstände", 
     }
     for (const list of bySide.values()) {
       list.sort((a, b) => a.dist - b.dist);
-      list.forEach((it, i) => assert.ok(Math.abs(it.dist - (ROW_FIRST + ROW_STEP * i)) < 1e-6, `Reihe ${i}: ${it.dist}`));
+      list.forEach((it, i) => assert.ok(Math.abs(it.dist - (list[0].dist + ROW_STEP * i)) < 1e-6 && list[0].dist >= ROW_FIRST, `Reihe ${i}: ${it.dist}`));
       for (let i = 1; i < list.length; i++) assert.ok(list[i].len >= list[i - 1].len, "längeres Maß liegt außen");
     }
   }
@@ -220,4 +221,34 @@ test("Hauptmaße: mehrdeutige Bohrungs-Features fallen auf das reine Ø zurück"
   const holes = holeSpecs([{ type: "hole", diameter: "8", extent: "through" }, { type: "hole", diameter: "8", extent: "depth", depth: "5" }], Number);
   const dims = planAutoDims([{ id: "v", axes: ["X", "Y"], bbox: { x0: 0, y0: 0, x1: 50, y1: 50 }, arcs: [{ cx: 20, cy: 20, r: 4, full: true }], holes }]);
   assert.equal(dimLabel(dims.find((m) => m.kind === "dia")), "Ø8");
+});
+
+test("Bohrungsbilder: symmetrisch, Lochkreis, Koordinatenmaße", () => {
+  const bb = { x0: 0, y0: 0, x1: 300, y1: 200 };
+  // Grundplatte: vier Bohrungen symmetrisch -> Abstände 250 und 150 statt Lagemaße vom Rand
+  const plate = [[25, 25], [275, 25], [25, 175], [275, 175]].map(([cx, cy]) => ({ cx, cy, r: 5.5, full: true }));
+  const d1 = planAutoDims([{ id: "v", axes: [null, null], bbox: bb, arcs: plate }]);
+  assert.deepEqual(d1.filter((m) => m.kind !== "dia").map(dimLabel), ["250", "150"]);
+  // Flansch Ø100 mit 6 Bohrungen auf Lochkreis Ø70
+  const fl = [{ cx: 0, cy: 0, r: 50, full: true }, { cx: 0, cy: 0, r: 20, full: true }];
+  for (let i = 0; i < 6; i++) fl.push({ cx: 35 * Math.cos((i * Math.PI) / 3), cy: 35 * Math.sin((i * Math.PI) / 3), r: 4.5, full: true });
+  const d2 = planAutoDims([{ id: "v", axes: [null, null], bbox: { x0: -50, y0: -50, x1: 50, y1: 50 }, arcs: fl }]);
+  assert.deepEqual(d2.map(dimLabel).sort(), ["6× Ø9", "LK Ø70, 6× 60°", "Ø100", "Ø40"]);
+  // vier Bohrungen im Quadrat bleiben ein Raster
+  const sq = [[10, 10], [40, 10], [10, 40], [40, 40]].map(([cx, cy]) => ({ cx, cy, r: 3, full: true }));
+  const d3 = planAutoDims([{ id: "v", axes: [null, null], bbox: { x0: 0, y0: 0, x1: 50, y1: 50 }, arcs: sq }]);
+  assert.ok(!d3.some((m) => m.pcd));
+  assert.deepEqual(d3.filter((m) => m.kind !== "dia").map(dimLabel), ["30", "30"]);
+});
+
+test("Koordinatenmaße teilen sich eine Reihe, weitere Maße liegen dahinter", () => {
+  const arcs = [5, 12, 20, 33, 41].map((x) => ({ cx: x, cy: 10, r: 1, full: true }));
+  const bbox = { x0: 0, y0: 0, x1: 60, y1: 30 };
+  const views = { v: sheetView(bbox, 150, 100, 2, arcs) };
+  const dims = planAutoDims([{ id: "v", axes: ["X", "Y"], bbox, arcs }]);
+  layoutAutoDims(dims, views, { frame: [20, 10, 410, 287] });
+  const ord = dims.filter((m) => m.ord);
+  assert.equal(ord.length, 6);
+  const lines = ord.map((m) => dimRect(m, views.v)[3]);
+  assert.ok(lines.every((y) => Math.abs(y - lines[0]) < 1e-6), "eine gemeinsame Reihe");
 });

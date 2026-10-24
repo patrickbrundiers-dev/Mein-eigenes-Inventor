@@ -8,7 +8,7 @@ import { v3 } from "../core/geom.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
 import { clipProjection } from "../core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, holeText } from "../core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs } from "../core/autodims.js";
 import { bomRows } from "./props.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 
@@ -443,7 +443,7 @@ export class DrawingEditor {
     const xf = this.viewXf(v);
     const g = svgEl("g", { "data-dim": m.id, class: interactive ? "dw-dimgrp" + (this.sel?.type === "dim" && this.sel.id === m.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
     const val = this.dimValue(m);
-    const txt = m.kind === "dia" && m.hole ? holeText(m.hole, m.count) + (m.suffix || "")
+    const txt = (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m)
       : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? 1) + (m.suffix || "");
     const arrowHead = (x, y, ux, uy) => {
       const L = 3, w = 0.9;
@@ -460,6 +460,7 @@ export class DrawingEditor {
       const ang = m.angle ?? -Math.PI / 4;
       const ux = Math.cos(ang), uy = Math.sin(ang);
       const pOn = [cx + ux * r, cy + uy * r];
+      if (m.pcd) g.append(svgEl("circle", { cx: r3(cx), cy: r3(cy), r: r3(r), "stroke-dasharray": "6 1.5 0.5 1.5", "stroke-width": LW.thin }));
       const lead = m.lead ?? LEAD;
       const pOut = [cx + ux * (r + lead), cy + uy * (r + lead)];
       const start = m.kind === "dia" ? [cx - ux * r, cy - uy * r] : [cx, cy];
@@ -476,6 +477,16 @@ export class DrawingEditor {
     if (m.kind === "h") { const y = (off >= 0 ? Math.max(A[1], B[1]) : Math.min(A[1], B[1])) + off; A1 = [A[0], y]; B1 = [B[0], y]; }
     else if (m.kind === "v") { const x = (off >= 0 ? Math.max(A[0], B[0]) : Math.min(A[0], B[0])) + off; A1 = [x, A[1]]; B1 = [x, B[1]]; }
     else { const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1; const n = [-dy / L, dx / L]; A1 = [A[0] + n[0] * off, A[1] + n[1] * off]; B1 = [B[0] + n[0] * off, B[1] + n[1] * off]; }
+    if (m.ord) {
+      // Koordinatenmaß: nur Hilfslinie bis zur Maßreihe, Wert am Ende (Nullpunkt „0“)
+      const sg = Math.sign(off) || 1, tw = textWidth(txt);
+      const P = m.kind === "h" ? [B[0], B1[1]] : [B1[0], B[1]];
+      const d0 = Math.hypot(P[0] - B[0], P[1] - B[1]);
+      if (d0 > 0.5) { const ex = (P[0] - B[0]) / d0, ey = (P[1] - B[1]) / d0; g.append(svgEl("path", { d: `M${r3(B[0] + ex)} ${r3(B[1] + ey)}L${r3(P[0])} ${r3(P[1])}` })); }
+      if (m.kind === "h") g.append(text(P[0] + 1.2, P[1] + sg * (tw / 2 + 1), -90));
+      else g.append(text(P[0] + sg * (tw / 2 + 1), P[1] + 1.2, 0));
+      return g;
+    }
     const ext = (p, q) => {
       const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy);
       if (L < 0.5) return "";
@@ -879,7 +890,7 @@ export class DrawingEditor {
     for (const m of keep) {
       if (!m.auto) continue;
       if (m.axis) used.axes.add(m.axis);
-      if (m.kind === "dia") used.radii.add(Math.round(m.circle.r * 1000));
+      if (m.kind === "dia" && !m.pcd) used.radii.add(Math.round(m.circle.r * 1000));
     }
     const holes = (this.sourceItems(d) || []).flatMap((it) => {
       const scope = resolveParams(it.part.params || []).values;

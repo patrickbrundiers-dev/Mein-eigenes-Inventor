@@ -48,6 +48,20 @@ export function holeText(hole, count = 1) {
   return t;
 }
 
+/** Gleich große Bohrungen gleichmäßig auf einem Kreis (mind. 3)? -> Teilkreis {cx, cy, r} */
+export function boltCircle(list) {
+  if (list.length < 3) return null;
+  const cx = list.reduce((s, c) => s + c.cx, 0) / list.length, cy = list.reduce((s, c) => s + c.cy, 0) / list.length;
+  const r = Math.hypot(list[0].cx - cx, list[0].cy - cy);
+  if (r < 1e-3 || list.some((c) => Math.abs(Math.hypot(c.cx - cx, c.cy - cy) - r) > 1e-2)) return null;
+  const ang = list.map((c) => Math.atan2(c.cy - cy, c.cx - cx)).sort((a, b) => a - b);
+  const step = (2 * Math.PI) / list.length;
+  if (ang.some((a, i) => Math.abs(((i + 1 < ang.length ? ang[i + 1] : ang[0] + 2 * Math.PI) - a) - step) > 1e-3)) return null;
+  // vier Bohrungen im Quadrat sind meist ein Raster, kein Lochkreis
+  if (list.length === 4 && ang.some((a) => Math.abs(Math.cos(2 * a)) < 1e-3)) return null;
+  return { cx, cy, r };
+}
+
 /** Vollkreise einer Ansicht ohne Doppelte (gleiche Mitte und gleicher Radius) */
 function uniqueCircles(arcs) {
   const out = [];
@@ -90,12 +104,17 @@ export function planAutoDims(views, used = {}) {
       return m.length && m.every((h) => holeText(h.hole) === holeText(m[0].hole)) ? m[0].hole : null;
     };
     const sinkOf = (c) => circles.some((b) => b !== c && Math.abs(b.cx - c.cx) < 1e-3 && Math.abs(b.cy - c.cy) < 1e-3 && specFor(b.r)?.sink && Math.abs(specFor(b.r).sink.d / 2 - c.r) < 1e-3);
-    const dimmedHere = [];
+    const dimmedHere = [], centers = [];
     for (const [k, list0] of groups) {
       const list = list0.filter((c) => !sinkOf(c));
       if (!list.length || radii.has(k)) continue;
       radii.add(k);
-      dimmedHere.push(...list);
+      const lk = boltCircle(list);
+      if (lk) {
+        // Lochkreis: Ø des Teilkreises mit Teilung, Lage nur für seine Mitte
+        out.push({ view: v.id, kind: "dia", circle: { cx: lk.cx, cy: lk.cy, r: lk.r }, angle: -3 * Math.PI / 4, pcd: { n: list.length } });
+        centers.push({ cx: lk.cx, cy: lk.cy, r: 0 });
+      } else dimmedHere.push(...list);
       const c = list.reduce((m, x) => (x.cx + x.cy > m.cx + m.cy ? x : m)); // oben rechts: Hinweislinie zeigt aus der Ansicht heraus
       const dm = { view: v.id, kind: "dia", circle: { cx: c.cx, cy: c.cy, r: c.r }, angle: -Math.PI / 4 };
       if (list.length > 1) dm.count = list.length;
@@ -106,17 +125,41 @@ export function planAutoDims(views, used = {}) {
     // Außenkontur (Kreis berührt den Umriss) und dazu konzentrische Kreise brauchen keine Lagemaße
     const touches = (c) => c.cx - c.r <= b.x0 + 1e-3 || c.cx + c.r >= b.x1 - 1e-3 || c.cy - c.r <= b.y0 + 1e-3 || c.cy + c.r >= b.y1 - 1e-3;
     const outer = circles.filter(touches);
-    const placed = dimmedHere.filter((c) => !outer.some((o) => Math.abs(o.cx - c.cx) < 1e-3 && Math.abs(o.cy - c.cy) < 1e-3));
+    const inOuter = (c) => outer.some((o) => Math.abs(o.cx - c.cx) < 1e-3 && Math.abs(o.cy - c.cy) < 1e-3);
+    const placed = dimmedHere.filter((c) => !inOuter(c));
+    for (let i = centers.length - 1; i >= 0; i--) if (inOuter(centers[i])) centers.splice(i, 1);
     // je Koordinate ein Maß; Hilfslinie vom Kreis, der der Maßlinie am nächsten liegt
     const pick = (coord, nearer) => {
       const m = new Map();
-      for (const c of placed) { const k = key(c[coord]); if (!m.has(k) || nearer(c, m.get(k))) m.set(k, c); }
+      for (const c of placed.concat(centers)) { const k = key(c[coord]); if (!m.has(k) || nearer(c, m.get(k))) m.set(k, c); }
       return [...m.values()].sort((a, c) => a[coord] - c[coord]);
     };
-    pick("cx", (c, o) => c.cy < o.cy).filter((c) => c.cx - b.x0 > EPS)
-      .forEach((c, i) => out.push({ view: v.id, kind: "h", p1: [b.x0, b.y0], p2: [c.cx, c.cy], off: 8 + 7 * i }));
-    pick("cy", (c, o) => c.cx < o.cx).filter((c) => c.cy - b.y0 > EPS)
-      .forEach((c, i) => out.push({ view: v.id, kind: "v", p1: [b.x0, b.y0], p2: [c.cx, c.cy], off: -8 - 7 * i }));
+    const axisDims = (coord, kind, list, lo, hi, sgn) => {
+      const pt = (c) => [c.cx, c.cy];
+      const at = (x) => (kind === "h" ? [x, b.y0] : [b.x0, x]);
+      const vals = list.map((c) => c[coord]);
+      const n = vals.length;
+      if (!n) return;
+      const mid = (lo + hi) / 2;
+      const sym = vals.every((x, i) => Math.abs(x - mid - (mid - vals[n - 1 - i])) < 1e-3);
+      const step = n >= 3 ? (vals[n - 1] - vals[0]) / (n - 1) : 0;
+      const even = n >= 3 && vals.every((x, i) => Math.abs(x - vals[0] - i * step) < 1e-3);
+      if (even) {
+        // Lochreihe mit gleicher Teilung (DIN 406-11): „n× Teilung (=Gesamt)“, bei Mittellage ohne Randmaß
+        if (!sym && vals[0] - lo > EPS) out.push({ view: v.id, kind, p1: at(lo), p2: pt(list[0]), off: sgn * 8 });
+        out.push({ view: v.id, kind, p1: pt(list[0]), p2: pt(list[n - 1]), off: sgn * 15, pitch: { n: n - 1, p: step } });
+      } else if (sym && n >= 2) {
+        // symmetrisch zur Mitte: Abstände der Paare statt Lagemaße vom Rand
+        for (let i = 0; i < Math.floor(n / 2); i++) out.push({ view: v.id, kind, p1: pt(list[i]), p2: pt(list[n - 1 - i]), off: sgn * (8 + 7 * i) });
+      } else {
+        const rest = list.filter((c) => c[coord] - lo > EPS);
+        const ord = rest.length >= 4; // viele Lagemaße: Koordinatenbemaßung mit Nullpunkt statt gestaffelter Maßlinien
+        if (ord) out.push({ view: v.id, kind, p1: at(lo), p2: at(lo), off: sgn * 8, ord: true });
+        rest.forEach((c, i) => out.push({ view: v.id, kind, p1: at(lo), p2: pt(c), off: sgn * (8 + (ord ? 0 : 7 * i)), ...(ord ? { ord: true } : {}) }));
+      }
+    };
+    axisDims("cx", "h", pick("cx", (c, o) => c.cy < o.cy), b.x0, b.x1, 1);
+    axisDims("cy", "v", pick("cy", (c, o) => c.cx < o.cx), b.y0, b.y1, -1);
   }
   return out;
 }
@@ -144,6 +187,8 @@ const overlap = (a, b) => area([Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math
 /** Text eines Maßes (wie in der Zeichnung) für die Breitenabschätzung */
 export function dimLabel(m) {
   if (m.kind === "dia" && m.hole) return holeText(m.hole, m.count) + (m.suffix || "");
+  if (m.kind === "dia" && m.pcd) return "LK Ø" + fmt(m.circle.r * 2) + ", " + m.pcd.n + "× " + fmt(360 / m.pcd.n) + "°" + (m.suffix || "");
+  if (m.pitch) return m.pitch.n + "× " + fmt(m.pitch.p) + " (=" + fmt(m.pitch.n * m.pitch.p) + ")" + (m.suffix || "");
   const val = m.kind === "dia" ? m.circle.r * 2 : m.kind === "rad" ? m.circle.r : m.kind === "h" ? Math.abs(m.p2[0] - m.p1[0]) : Math.abs(m.p2[1] - m.p1[1]);
   return (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + String(Math.round(val * 10) / 10).replace(".", ",") + (m.suffix || "");
 }
@@ -172,10 +217,14 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null } = {
         return { m, A, B, len: Math.abs(B[1 - c] - A[1 - c]), side: line > (R[c] + R[c + 2]) / 2 ? "max" : "min" };
       });
       if (!items.length) continue;
+      // Koordinatenmaße teilen sich eine Reihe; ihr senkrechter Text braucht Platz wie zwei Reihen
+      const ordW = Math.max(0, ...items.filter((it) => it.m.ord).map((it) => textWidth(dimLabel(it.m))));
+      const ordRows = ordW ? Math.ceil((ordW + (kind === "h" ? 2 : 2 - TEXT_H)) / ROW_STEP) + 1 : 0;
+      const rowsOf = (list) => (list.some((it) => it.m.ord) ? ordRows : 0) + list.filter((it) => !it.m.ord).length;
       const band = (list, side) => {
         const lo = Math.min(...list.map((it) => Math.min(it.A[1 - c], it.B[1 - c])));
         const hi = Math.max(...list.map((it) => Math.max(it.A[1 - c], it.B[1 - c])));
-        const depth = ROW_FIRST + ROW_STEP * (list.length - 1) + TEXT_H;
+        const depth = ROW_FIRST + ROW_STEP * (rowsOf(list) - 1) + TEXT_H;
         const q = side === "max" ? [R[c + 2], R[c + 2] + depth] : [R[c] - depth, R[c]];
         return kind === "h" ? [lo, q[0], hi, q[1]] : [q[0], lo, q[1], hi];
       };
@@ -189,9 +238,11 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null } = {
         if (there + 1 < here) { sides[o].push(...grp); sides[s] = []; } // kleine Eckberührungen zählen nicht
       }
       for (const s of ["min", "max"]) {
-        const grp = sides[s].sort((a, b) => a.len - b.len);
-        grp.forEach((it, i) => {
-          const dist = ROW_FIRST + ROW_STEP * i;
+        const grp = sides[s].sort((a, b) => (b.m.ord ? 1 : 0) - (a.m.ord ? 1 : 0) || a.len - b.len);
+        const first = grp.some((it) => it.m.ord) ? ordRows : 0;
+        let k = 0;
+        grp.forEach((it) => {
+          const dist = it.m.ord ? ROW_FIRST : ROW_FIRST + ROW_STEP * (first + k++);
           it.m.off = s === "max" ? R[c + 2] + dist - Math.max(it.A[c], it.B[c]) : R[c] - dist - Math.min(it.A[c], it.B[c]);
         });
         if (grp.length) placed.push(band(grp, s));
