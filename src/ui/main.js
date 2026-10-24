@@ -15,6 +15,9 @@ try {
 }
 window.__werkcad = app; // für automatische Tests
 
+// Mausrad verstellt keine Zahlenfelder (wie in der Rohrlaser-Kalkulation): Fokus weg, die Seite rollt weiter
+document.addEventListener("wheel", (e) => { if (e.target instanceof HTMLInputElement && e.target.type === "number" && document.activeElement === e.target) e.target.blur(); }, { passive: true, capture: true });
+
 const bridge = window.werkcad;
 if (bridge?.log) {
   // Fehler der Oberfläche ins Protokoll (nur Meldung und Stack, keine Projektdaten)

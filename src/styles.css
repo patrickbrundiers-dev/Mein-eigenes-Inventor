@@ -315,3 +315,9 @@ table.grid input.inp { padding: 2px 4px; }
 .km-row { display: grid; grid-template-columns: 1fr 150px 64px 64px; gap: 6px; align-items: center; padding: 2px 8px; border-bottom: 1px solid var(--steel-1); }
 .km-key { padding: 1px 6px; font-family: var(--din); font-size: 12px; }
 .km-key.on { border-color: var(--dye); color: var(--dye); }
+/* Profil-Schnelleingabe (Treffer unter dem Feld) */
+.profile-hits { display: flex; flex-wrap: wrap; gap: 4px; margin: -2px 0 6px 118px; }
+.profile-hits:empty { display: none; }
+.profile-hit { padding: 1px 8px; border-radius: 10px; border: 1px solid var(--steel-3); background: var(--steel-0); font-family: var(--din); font-size: 11.5px; cursor: pointer; }
+.profile-hit:hover { border-color: var(--dye); background: var(--dye-soft); }
+.inp.profile-quick { font-family: var(--din); }

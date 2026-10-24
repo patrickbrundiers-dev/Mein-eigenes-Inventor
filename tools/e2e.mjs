@@ -442,6 +442,29 @@ try {
   step("Knickrahmen", kr0.bodies === 1 && kr0.errors === 0 && Math.abs(kr1.len - krL) < 1e-6 && Math.abs(kr2[1][0] - kr2[0][0] - krL) < 0.05 && kr3 === "30",
     JSON.stringify({ kr0, kr1, flatX: kr2 && kr2[1][0] - kr2[0][0], undo: kr3 }));
 
+  // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
+  await evalApp(() => window.__werkcad.newPart("Profil-ID"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: "Rohr / Profil" }).click();
+  await idle();
+  const pq = () => page.locator("#props input.profile-quick");
+  const pq0 = await pq().inputValue();
+  await pq().fill("RE 70x50x4");
+  await pq().press("Enter");
+  await idle();
+  const pq1 = await evalApp(() => { const f = window.__werkcad.activeDoc().features[0]; return [f.section, f.dims.B, f.dims.H, f.dims.t]; });
+  await pq().fill("40x3");
+  const hits = await page.locator("#props .profile-hit").allTextContents();
+  await page.locator("#props .profile-hit", { hasText: "QR 40x40x3" }).click();
+  await idle();
+  const pq2 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return [a.activeDoc().features[0].section, r.bodies[0]?.meta?.profileId]; });
+  await page.keyboard.press("Control+z");
+  await idle();
+  const pq3 = await pq().inputValue();
+  step("Profil-Schnelleingabe", pq0 === "QR 40x40x3" && pq1.join() === "rechteck,70,50,4" && hits[0] === "QR 40x40x3" && pq2.join() === "vierkant,QR 40x40x3" && pq3 === "RE 70x50x4",
+    JSON.stringify({ pq0, pq1, hits, pq2, pq3 }));
+
   // Einstellungscenter: über das Datei-Menü öffnen, suchen, ungültig ablehnen, gültig speichern, Modell unverändert
   {
     const prj0 = await evalApp(() => JSON.stringify(window.__werkcad.project));
