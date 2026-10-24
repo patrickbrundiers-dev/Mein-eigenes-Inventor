@@ -2,7 +2,8 @@
 import { settingsCenter } from "./settings.js";
 import { h, icon, toast, modal, fmtNum, confirmDialog } from "./dom.js";
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
-import { SECTION_KINDS, FIELD_LABELS, CATALOG, catalogToDims, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
+import { SECTION_KINDS, FIELD_LABELS, CATALOG, catalogToDims, profileId, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
+import { profileMatches, resolveProfile } from "../core/profilesearch.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
@@ -460,9 +461,44 @@ export class Props {
     const def = SECTION_KINDS[kind];
     const cat = CATALOG[kind] || [];
     return this.section("Querschnitt",
+      this.profileQuick(f, kinds),
       this.select("Profilart", kinds.map((k) => [k, SECTION_KINDS[k].label]), kind, (v) => this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart")),
       this.select("Normgröße", [["", "– eigene Maße –"], ...cat.map((c) => [c, c.replace(/\./g, ",")])], matchCatalog(kind, f.dims) || "", (v) => v && this.set(f, (x) => { x.dims = catalogToDims(kind, v); }, "Normgröße")),
       ...def.fields.map((k) => this.expr(FIELD_LABELS[k], f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, FIELD_LABELS[k]), { allowNeg: false })));
+  }
+
+  /** Profil-Schnelleingabe: Profil-ID oder Kurzform tippen ("40x3", "RE 70x50x4"), Treffer darunter zum Anklicken */
+  profileQuick(f, kinds) {
+    let current = "";
+    try {
+      const scope = this.scope();
+      const d = Object.fromEntries(Object.entries(f.dims || {}).map(([k, v]) => [k, evaluate(String(v), scope)]));
+      current = profileId(f.section || "vierkant", d);
+    } catch { /* Maß mit Fehler: Feld bleibt leer */ }
+    const inp = h("input", { class: "inp profile-quick", value: current, spellcheck: "false", placeholder: "z. B. 40x3, RE 60x40x3", title: "Profil-ID oder Maße tippen, Enter übernimmt" });
+    const list = h("div", { class: "profile-hits" });
+    const apply = (hit) => {
+      list.replaceChildren();
+      if (hit.kind === f.section && Object.keys(hit.dims).every((k) => String(f.dims?.[k]) === String(hit.dims[k]))) { inp.value = current; return; }
+      this.set(f, (x) => { x.section = hit.kind; x.dims = { ...hit.dims }; }, "Profil " + hit.id);
+    };
+    const commit = () => {
+      if (!inp.value.trim() || inp.value === current) { inp.classList.remove("bad"); list.replaceChildren(); return; }
+      const r = resolveProfile(inp.value, kinds);
+      if (r.error) { inp.classList.add("bad"); inp.title = r.error; toast(r.error, { kind: "err" }); return; }
+      apply(r);
+    };
+    inp.addEventListener("input", () => {
+      inp.classList.remove("bad");
+      list.replaceChildren(...profileMatches(inp.value, kinds).map((e) =>
+        h("button", { class: "profile-hit", onmousedown: (ev) => { ev.preventDefault(); apply(e); } }, e.id)));
+    });
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); commit(); }
+      if (e.key === "Escape") { inp.value = current; inp.classList.remove("bad"); list.replaceChildren(); }
+    });
+    inp.addEventListener("blur", () => setTimeout(() => list.replaceChildren(), 0));
+    return [this.field("Profil-ID", inp), list];
   }
 
   // ---------- Skizzenmodus ----------
