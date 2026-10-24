@@ -37,12 +37,16 @@ if (bridge) {
     bar = h("div", { class: "update-bar", role: "status" }, ...children);
     document.body.append(bar);
   };
+  const startDownload = () => {
+    bridge.downloadUpdate();
+    showBar(h("span", {}, "Lade Update…"), h("div", { class: "progress" }, h("i", { style: { width: "0%" } })));
+  };
   bridge.onUpdateEvent?.((ev) => {
     if (ev.type === "available") {
       const notes = notesText(ev.notes);
       showBar(h("span", {}, `Version ${ev.version} ist verfügbar.`),
         notes ? h("button", { class: "btn", onclick: () => modal({ title: `Neu in ${ev.version}`, body: h("div", { style: { whiteSpace: "pre-wrap", maxWidth: "70ch" } }, notes), buttons: [{ label: "OK", primary: true }] }) }, "Was ist neu?") : null,
-        h("button", { class: "btn primary", onclick: () => { bridge.downloadUpdate(); showBar(h("span", {}, "Lade Update…"), h("div", { class: "progress" }, h("i", { style: { width: "0%" } }))); } }, "Herunterladen"),
+        h("button", { class: "btn primary", onclick: startDownload }, "Herunterladen"),
         h("button", { class: "btn", onclick: () => bar.remove() }, "Später"));
     } else if (ev.type === "progress") {
       const i = bar?.querySelector(".progress > i");
@@ -54,6 +58,10 @@ if (bridge) {
           bridge.installUpdate();
         } }, "Jetzt neu starten und installieren"),
         h("button", { class: "btn", onclick: () => bar.remove() }, "Beim Beenden"));
+    } else if (ev.type === "error" && ev.stage === "download") {
+      showBar(h("span", {}, "Update konnte nicht geladen werden: " + ev.message),
+        h("button", { class: "btn", onclick: startDownload }, "Erneut versuchen"),
+        h("button", { class: "btn", onclick: () => bar.remove() }, "Schließen"));
     } else if (ev.type === "error") {
       if (ev.manual) toast("Update-Prüfung: " + ev.message, { kind: "err", timeout: 7000 });
     }
