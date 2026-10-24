@@ -107,12 +107,28 @@ const lastDir = (key, p) => {
   if (p) { s.dirs = { ...(s.dirs || {}), [key]: path.dirname(p) }; writeSettings(s); return; }
   return s.dirs?.[key] || app.getPath("documents");
 };
-function atomicWrite(file, data) {
+function atomicWrite(file, data, { backup = true } = {}) {
   const tmp = file + ".tmp" + process.pid;
-  fs.writeFileSync(tmp, data);
-  if (fs.existsSync(file)) { try { fs.copyFileSync(file, file + ".bak"); } catch { /* */ } }
-  fs.renameSync(tmp, file);
+  // erst vollständig auf die Platte, dann umbenennen – ein Absturz hinterlässt nie eine halbe Datei
+  const fd = fs.openSync(tmp, "w");
+  try { fs.writeSync(fd, data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  if (backup && fs.existsSync(file)) { try { fs.copyFileSync(file, file + ".bak"); } catch { /* */ } }
+  try { fs.renameSync(tmp, file); } catch (e) { try { fs.unlinkSync(tmp); } catch { /* */ } throw e; }
 }
+// Projektdatei lesen; Fehler als Text zurück, damit die Oberfläche eine verständliche Meldung zeigen kann
+function readProjectFile(p) {
+  const bak = p + ".bak";
+  const backup = fs.existsSync(bak) ? { time: fs.statSync(bak).mtimeMs } : null;
+  try {
+    return { path: p, text: fs.readFileSync(p, "utf8"), backup };
+  } catch (e) {
+    const why = e.code === "ENOENT" ? "Datei nicht gefunden" : e.code === "EACCES" || e.code === "EPERM" ? "Kein Zugriff (gesperrt oder schreibgeschützt)" : e.message;
+    return { path: p, error: why, backup };
+  }
+}
+const isProjectPath = (p) => typeof p === "string" && /\.wcad$/i.test(p);
+// Automatische Sicherung als Datei im Benutzerordner (keine Größengrenze wie localStorage)
+const autosaveFile = () => path.join(app.getPath("userData"), "wiederherstellung", "autosave.json");
 
 ipcMain.handle("app:version", () => app.getVersion());
 ipcMain.on("app:version-sync", (e) => { e.returnValue = app.getVersion(); });
@@ -127,11 +143,25 @@ ipcMain.handle("project:open", async () => {
   const p = r.filePaths[0];
   lastDir("project", p);
   addRecent(p);
-  return { path: p, text: fs.readFileSync(p, "utf8") };
+  return readProjectFile(p);
 });
 ipcMain.handle("project:read", async (_e, p) => {
-  addRecent(p);
-  return { path: p, text: fs.readFileSync(p, "utf8") };
+  const r = readProjectFile(p);
+  if (!r.error) addRecent(p);
+  return r;
+});
+ipcMain.handle("project:readBackup", async (_e, p) => {
+  if (!isProjectPath(p)) return null;
+  try { return { path: p, text: fs.readFileSync(p + ".bak", "utf8") }; } catch (e) { return { path: p, error: e.message }; }
+});
+ipcMain.handle("autosave:write", async (_e, { time, path: p, json }) => {
+  const file = autosaveFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  atomicWrite(file, JSON.stringify({ time, path: p || null, json }), { backup: false });
+  return true;
+});
+ipcMain.handle("autosave:read", async () => {
+  try { return JSON.parse(fs.readFileSync(autosaveFile(), "utf8")); } catch { return null; }
 });
 ipcMain.handle("project:save", async (_e, { path: p, text, defaultName }) => {
   let file = p;
