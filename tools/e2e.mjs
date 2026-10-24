@@ -869,6 +869,58 @@ try {
     step("Skizze: Verlängern und Teilen", Math.abs(ext.x - 50) < 1e-6 && Math.abs(ext.y - 10) < 1e-6 && spl.lines === 3 && spl.ok, JSON.stringify({ ext, spl }));
   }
 
+  // Skizze: Rechteck- und Kreismuster über die Werkzeugleiste, Abstand nachträglich ändern
+  {
+    await evalApp(() => window.__werkcad.newPart("Muster"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    await evalApp(() => window.__werkcad.sketcher.commit("Testgeometrie", (sk) => {
+      sk.points.push({ id: "mm", x: 40, y: 0 });
+      sk.entities.push({ id: "mk", type: "circle", c: "mm", r: 4 });
+      sk.constraints.push({ id: "mf", type: "fix", p: "mm", x: 40, y: 0 });
+    }));
+    const cv = await page.locator("#viewer canvas").boundingBox();
+    const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
+    const selectOrig = () => evalApp(() => { const s = window.__werkcad.sketcher; s.sel.clear(); s.sel.add("e:mk"); window.__werkcad.selectSketchItems(["e:mk"]); });
+    await selectOrig();
+    await page.locator("#ribbon .rb-btn", { hasText: /^Rechteckmuster$/ }).click();
+    let [cx, cy] = await at(0, 60);
+    await page.mouse.click(cx, cy);
+    await page.locator(".dialog input[data-k=nx]").fill("3");
+    await page.locator(".dialog input[data-k=a]").fill("20");
+    await page.locator(".dialog input[data-k=ny]").fill("2");
+    await page.locator(".dialog input[data-k=b]").fill("15");
+    await page.locator(".dialog footer .btn", { hasText: "Muster erzeugen" }).click();
+    await page.waitForTimeout(300);
+    const rect = await evalApp(() => window.__werkcad.sketcher.sk.entities.filter((e) => e.type === "circle").length);
+    await selectOrig();
+    await page.locator("#ribbon .rb-btn", { hasText: /^Kreismuster$/ }).click();
+    [cx, cy] = await at(0, 0);
+    await page.mouse.click(cx, cy);
+    await page.locator(".dialog input[data-k=n]").fill("4");
+    await page.locator(".dialog footer .btn", { hasText: "Muster erzeugen" }).click();
+    await page.waitForTimeout(300);
+    const circ = await evalApp(() => {
+      const s = window.__werkcad.sketcher, P = new Map(s.sk.points.map((p) => [p.id, p]));
+      const cs = s.sk.entities.filter((e) => e.type === "circle").map((e) => P.get(e.c));
+      return { n: cs.length, onTop: cs.some((p) => Math.abs(p.x) < 0.5 && Math.abs(p.y - 40) < 0.5), ok: s.solve().ok };
+    });
+    // Abstand X über die Eigenschaften einer Kopie ändern
+    const copy = await evalApp(() => { const s = window.__werkcad.sketcher; const k = s.sk.constraints.find((c) => c.type === "pattern" && c.mode === "lin" && c.i === 2 && c.j === 0); const e = s.sk.entities.find((x) => x.c === k.q); s.sel.clear(); s.sel.add("e:" + e.id); window.__werkcad.selectSketchItems(["e:" + e.id]); return e.id; });
+    await page.waitForTimeout(200);
+    const fld = page.locator("#props .field", { hasText: "Abstand X" }).locator("input");
+    await fld.fill("30");
+    await fld.dispatchEvent("change");
+    await page.waitForTimeout(300);
+    const moved = await evalApp((id) => { const s = window.__werkcad.sketcher; const e = s.sk.entities.find((x) => x.id === id); const p = s.sk.points.find((q) => q.id === e.c); return { x: p.x, y: p.y }; }, copy);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    step("Skizze: Rechteck- und Kreismuster", rect === 6 && circ.n === 9 && circ.onTop && circ.ok && Math.abs(moved.x - 100) < 1e-6 && Math.abs(moved.y) < 1e-6, JSON.stringify({ rect, circ, moved }));
+  }
+
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));

@@ -155,6 +155,7 @@ export class Ribbon {
             T("circle", "Kreis", "circle"), T("arc3", "Bogen", "arc"), T("arcc", "Bogen Mitte", "arcc"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"), T("point", "Punkt", "point"),
           ] },
           { label: "Ändern", buttons: [T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"), T("sfillet", "Rundung", "fillet"), T("offset", "Versatz", "offset"), T("mirror", "Spiegeln", "mirror")] },
+          { label: "Muster", buttons: [T("pattern", "Rechteckmuster", "pattern"), T("cpattern", "Kreismuster", "cpattern")] },
           { label: "Übernehmen", buttons: [T("project", "Kante projizieren", "project"), B("constr", "Konstruktion", "construct", { on: !!sk.construction, run: () => sk.toggleConstruction() })] },
           { label: "Bemaßung", buttons: [T("dimension", "Bemaßung", "dimension")] },
           { label: "Abhängigkeiten", small: true, buttons: [

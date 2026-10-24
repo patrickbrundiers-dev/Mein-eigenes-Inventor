@@ -27,7 +27,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Auswahl Fläche/Kante, Mehrfachauswahl Strg/Umschalt | vorhanden | `App.viewerClick` |
 | Auswahlfilter (alles / nur Flächen / nur Kanten) | vorhanden | Ansicht → Auswahl, Anzeige in der Statusleiste (Stufe 5) |
 | Fensterauswahl in der Skizze, Alles auswählen | vorhanden | Stufe 9: im Leeren ziehen – nach rechts ganz innen, nach links berührend; Strg+A in der Skizze |
-| Fensterauswahl im 3D-Fenster, Auswahl invertieren | fehlt | P3 |
+| Fensterauswahl im 3D-Fenster, Auswahl invertieren | fehlt | geplant als Stufe 13 |
 | Ausblenden/Isolieren | vorhanden | Rechtsklick: Körper bzw. Komponente ausblenden/isolieren, „Alle einblenden“; nur Anzeige, keine Modelländerung (Stufe 5) |
 | Zoom auf alles | vorhanden | F6, `Viewer.fit` |
 | Zoom auf Auswahl | vorhanden | Ansicht → Zoom, Kontextmenü, Leiste unten rechts (Stufe 2) |
@@ -54,7 +54,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Spiegeln | vorhanden | Stufe 6: Kopien über »symmetrisch« an Originale gebunden |
 | Versatz | vorhanden | Stufe 7: Kontur anklicken (ganze Kette), Seite klicken, Abstand; Ecken im Schnittpunkt, Bögen konzentrisch; ein sichtbares Maß steuert alle Kopien |
 | Verlängern, Teilen | vorhanden | Stufe 11: Ende bis zum nächsten Element verlängern (Punkt auf Element), Linie/Bogen am Klick oder nächsten Schnittpunkt teilen (kollinear bzw. gleiche Mitte) |
-| Muster (rechteckig, kreisförmig) | fehlt | geplant |
+| Muster (rechteckig, kreisförmig) | vorhanden | Stufe 12: Kopien über Bedingung »pattern« an die Originale gebunden; Abstände/Winkelschritt in den Eigenschaften einer Kopie änderbar, »Muster auflösen« |
 | Projizieren, Konstruktionslinien | vorhanden | |
 | 12 Bedingungsarten, Bemaßung mit Formeln | vorhanden | `solver.js` |
 | Automatische Bedingungen beim Zeichnen | teilweise | horizontal/vertikal, auf Linie/Kreis, Mittelpunkt |
@@ -112,6 +112,12 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 4 | Messwerkzeug: Punkt/Kante/Fläche, Radius, Koordinaten; Oberfläche und Schwerpunkt aus dem Kernel | Kernel-Test (Würfel/Zylinder bekannte Werte) |
 | 5 | Auswahlfilter, Körper ausblenden/isolieren | Oberflächentest |
 | 6 | Skizze: Langloch, Polygon, Spiegeln; Ursache bei widersprüchlichen Bedingungen | Solver-Tests |
-| 9 | Skizze: Fensterauswahl, Strg+A | Unit-Test `entitiesInBox`, Oberflächentest |
-| 8 | Ansicht: benannte Ansichten speichern/wiederherstellen/löschen | Oberflächentest |
 | 7 | Skizze: Versatz, Bedingungen unterdrücken | Unit-Tests Versatz (Rechteck innen/außen, Langloch, Kreis, offene Kette), Oberflächentest |
+| 8 | Ansicht: benannte Ansichten speichern/wiederherstellen/löschen | Oberflächentest |
+| 9 | Skizze: Fensterauswahl, Strg+A | Unit-Test `entitiesInBox`, Oberflächentest |
+| 10 | Messen: Ecken anklicken, Lage und Δ X/Y/Z | Kernel-Test Ecke–Ecke/Ecke–Fläche, Oberflächentest |
+| 11 | Skizze: Verlängern, Teilen | Unit-Test `extendEntity`/`splitEntity`, Oberflächentest |
+| 12 | Skizze: Rechteck- und Kreismuster, Abstände nachträglich änderbar | Unit-Test `patternEntities` (Lage, Freiheitsgrade, Werte ändern), Oberflächentest |
+| 13 (geplant) | 3D-Fensterauswahl nach Auswahlfilter, Auswahl umkehren (Strg+I), Alles auswählen im Modell | Unit-Test Box-Logik, Oberflächentest |
+| 14 (geplant) | Automatische Skizzenbedingungen: parallel, senkrecht, tangential, konzentrisch, gleich; Strg unterdrückt; je Art abschaltbar | Unit-Tests Erkennung, Oberflächentest |
+| 15 (geplant) | Schnellzugriffsleiste (Befehle anheften) und Standardwerte je Werkzeug | Unit-Test Schema/Migration, Oberflächentest |

@@ -12,6 +12,7 @@ import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern } from "../core/tubecuts.js";
 import { END_CUT_SECTIONS } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
+import { patternOf } from "../core/sketchshapes.js";
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
 
@@ -597,6 +598,19 @@ export class Props {
           out.push(this.section(label, h("dl", { class: "kv" }, ...info),
             e.origin ? null : this.check("Konstruktionslinie", e.construction, () => app.sketcher.toggleConstruction()),
             h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => app.sketcher.deleteSelection() }, "Löschen"))));
+          const own = new Set([e.p1, e.p2, e.c, e.p].filter(Boolean));
+          const pc = sk.constraints.find((c) => c.type === "pattern" && (own.has(c.q) || own.has(c.p)));
+          const pat = pc && patternOf(sk, pc.pat);
+          if (pat) {
+            const setAll = (key, label) => (v) => app.sketcher.commit(label, (s) => { for (const k of s.constraints) if (k.pat === pat.pat && k.type === "pattern") k[key] = v; });
+            out.push(this.section(pat.mode === "rot" ? "Kreismuster" : "Rechteckmuster",
+              h("dl", { class: "kv" }, h("dt", {}, "Anzahl"), h("dd", {}, pat.mode === "rot" ? String(pat.n) : `${pat.nx} × ${pat.ny}`)),
+              pat.mode === "rot"
+                ? this.expr("Winkelschritt", pat.value, setAll("value", "Muster ändern"), { unit: "°" })
+                : [this.expr("Abstand X", pat.value, setAll("value", "Muster ändern")), this.expr("Abstand Y", pat.value2, setAll("value2", "Muster ändern"))],
+              h("p", { class: "hint" }, "Die Kopien folgen dem Original. Andere Anzahl: Kopien löschen und das Muster neu anlegen."),
+              h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.sketcher.commit("Muster auflösen", (s) => { s.constraints = s.constraints.filter((k) => k.pat !== pat.pat); }) }, "Muster auflösen"))));
+          }
         }
       } else if (t === "p") {
         const p = P.get(id);
@@ -608,7 +622,7 @@ export class Props {
       } else if (t === "c") {
         const c = sk.constraints.find((x) => x.id === id);
         if (c) {
-          const names = { distance: "Abstand", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel", horizontal: "Horizontal", vertical: "Vertikal", parallel: "Parallel", perpendicular: "Senkrecht", equal: "Gleich", tangent: "Tangential", tangentAt: "Tangential", fix: "Fixiert", coincident: "Koinzident", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis", midpoint: "Mittelpunkt", concentric: "Konzentrisch", collinear: "Kollinear", symmetric: "Symmetrisch", offset: "Versatz" };
+          const names = { distance: "Abstand", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel", horizontal: "Horizontal", vertical: "Vertikal", parallel: "Parallel", perpendicular: "Senkrecht", equal: "Gleich", tangent: "Tangential", tangentAt: "Tangential", fix: "Fixiert", coincident: "Koinzident", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis", midpoint: "Mittelpunkt", concentric: "Konzentrisch", collinear: "Kollinear", symmetric: "Symmetrisch", offset: "Versatz", pattern: "Muster" };
           out.push(this.section(names[c.type] || c.type,
             c.value !== undefined && !c.driven ? this.expr("Wert", c.value, (v) => app.sketcher.commit("Maß ändern", (s) => { s.constraints.find((k) => k.id === id).value = v; }), { unit: c.type === "angle" ? "°" : "mm" }) : null,
             c.driven ? h("p", { class: "hint" }, "Getriebenes Maß (nur Anzeige). Doppelklick auf das Maß macht es steuernd.") : null,

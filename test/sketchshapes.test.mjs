@@ -1,7 +1,7 @@
 // Langloch, Polygon, Spiegeln: Form, Freiheitsgrade, Kontur, Folgen von Maßänderungen
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, constraintLabel } from "../src/core/sketchshapes.js";
+import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, constraintLabel, patternEntities, patternOf } from "../src/core/sketchshapes.js";
 import { solveSketch } from "../src/core/solver.js";
 import { newSketch, extractProfiles } from "../src/core/sketch.js";
 
@@ -160,4 +160,45 @@ test("Klartext für Bedingungen", () => {
   assert.equal(constraintLabel({ type: "distance", value: "120" }), "Abstand 120");
   assert.equal(constraintLabel({ type: "angle", value: "45" }), "Winkel 45°");
   assert.equal(constraintLabel({ type: "parallel" }), "Parallel");
+});
+
+test("Muster: rechteckig und kreisförmig, Werte änderbar", () => {
+  const sk = sketch();
+  sk.points.push({ id: "m", x: 10, y: 10 });
+  sk.entities.push({ id: "k", type: "circle", c: "m", r: 3 });
+  sk.constraints.push({ id: "f", type: "fix", p: "m", x: 10, y: 10 }, { id: "r", type: "radius", e: "k", value: "3" });
+  const dof0 = solveSketch(sk).dof;
+  const r = patternEntities(sk, ["k"], { mode: "lin", nx: 3, ny: 2, a: "20", b: "15" }, { uid });
+  assert.equal(r.entities.length, 5);
+  let res = solveSketch(sk);
+  assert.ok(res.ok, JSON.stringify(res));
+  assert.equal(res.dof, dof0, "Kopien vollständig bestimmt");
+  const P = () => new Map(sk.points.map((p) => [p.id, p]));
+  const centers = () => sk.entities.filter((e) => e.type === "circle").map((e) => P().get(e.c)).map((p) => [Math.round(p.x * 1e6) / 1e6, Math.round(p.y * 1e6) / 1e6]);
+  assert.deepEqual(centers().sort((a, b) => a[0] - b[0] || a[1] - b[1]), [[10, 10], [10, 25], [30, 10], [30, 25], [50, 10], [50, 25]]);
+  for (const c of sk.constraints) if (c.pat === r.pat && c.type === "pattern") c.value = "30";
+  sk.constraints.find((c) => c.id === "r").value = "4";
+  assert.ok(solveSketch(sk).ok);
+  assert.ok(centers().some(([x, y]) => Math.abs(x - 70) < 1e-6 && Math.abs(y - 25) < 1e-6));
+  assert.ok(sk.entities.filter((e) => e.type === "circle").every((e) => Math.abs(e.r - 4) < 1e-6), "Radius folgt dem Original");
+  const info = patternOf(sk, r.pat);
+  assert.equal(info.nx, 3); assert.equal(info.ny, 2); assert.equal(info.value, "30");
+
+  // kreisförmig: Linie (20,0)–(30,0) 6× um den Ursprung (60°)
+  const s2 = sketch();
+  s2.points.push({ id: "c", x: 0, y: 0 }, { id: "a", x: 20, y: 0 }, { id: "b", x: 30, y: 0 });
+  s2.entities.push({ id: "pc", type: "point", p: "c" }, { id: "l", type: "line", p1: "a", p2: "b" });
+  const r2 = patternEntities(s2, ["l"], { mode: "rot", center: "c", n: 6, step: "60" }, { uid });
+  assert.equal(r2.entities.length, 5);
+  assert.ok(solveSketch(s2).ok);
+  const Q = new Map(s2.points.map((p) => [p.id, p]));
+  const l3 = s2.entities.find((e) => e.id === r2.entities[2]); // 180°
+  near(Q.get(l3.p1).x, -20, 1e-6); near(Q.get(l3.p1).y, 0, 1e-6);
+  // Original drehen/verschieben: Kopien folgen
+  s2.constraints.push({ id: "L", type: "length", e: "l", value: "15" });
+  assert.ok(solveSketch(s2).ok);
+  const Q2 = new Map(s2.points.map((p) => [p.id, p]));
+  const l1 = s2.entities.find((e) => e.id === r2.entities[0]);
+  near(Math.hypot(Q2.get(l1.p2).x - Q2.get(l1.p1).x, Q2.get(l1.p2).y - Q2.get(l1.p1).y), 15, 1e-6);
+  assert.throws(() => patternEntities(s2, ["l"], { mode: "lin", nx: 1, ny: 1, a: "5", b: "5" }, { uid }));
 });

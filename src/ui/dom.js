@@ -106,6 +106,8 @@ const P = {
   steel: '<path d="M3 17h18M5 17V9l7-4 7 4v8"/><path d="M9 17v-5h6v5"/>',
   grid: '<path d="M4 4h16v16H4zM4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16"/>',
   trim: '<path d="M4 20L20 4"/><path d="M4 4l16 16" stroke-dasharray="2 2"/>',
+  pattern: '<rect x="3" y="3" width="5" height="5"/><rect x="16" y="3" width="5" height="5" stroke-dasharray="2 1.5"/><rect x="3" y="16" width="5" height="5" stroke-dasharray="2 1.5"/><rect x="16" y="16" width="5" height="5" stroke-dasharray="2 1.5"/>',
+  cpattern: '<circle cx="12" cy="12" r="8" stroke-dasharray="2 2"/><circle cx="12" cy="4" r="2"/><circle cx="19" cy="16" r="2"/><circle cx="5" cy="16" r="2"/>',
   extend: '<path d="M3 12h10"/><path d="M13 12h6" stroke-dasharray="2 2"/><path d="M20 5v14"/>',
   split: '<path d="M3 18L10 11"/><path d="M14 7l7-4"/><circle cx="12" cy="9" r="1.6"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="1"/><path d="M4 16V4h12"/>',

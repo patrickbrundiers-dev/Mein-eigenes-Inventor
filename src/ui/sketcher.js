@@ -1,12 +1,12 @@
 // 2D-Skizzierer über der 3D-Ansicht (SVG-Overlay, eigene Trefferprüfung im Bildschirmraum)
-import { svgEl, h, toast, fmtNum, choiceDialog } from "./dom.js";
+import { svgEl, h, toast, fmtNum, choiceDialog, modal } from "./dom.js";
 import { solveSketch, checkNewConstraint, measureConstraint, DIMENSION_TYPES } from "../core/solver.js";
 import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../core/sketch.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, v3 } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
-import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox } from "../core/sketchshapes.js";
+import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities } from "../core/sketchshapes.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
 const PT_R = 7, CURVE_R = 6;
@@ -23,6 +23,8 @@ export const SKETCH_TOOLS = {
   slot: "Langloch: erster Mittelpunkt, zweiter Mittelpunkt, dann Breite klicken",
   polygon: "Polygon: Mittelpunkt, dann eine Ecke klicken – danach Anzahl der Ecken eingeben",
   offset: "Versatz: Kontur anklicken (oder vorher Elemente wählen), dann die Seite klicken und den Abstand eingeben",
+  pattern: "Rechteckmuster: vorher Elemente wählen, dann ins Bild klicken und Anzahl/Abstände in X und Y eingeben",
+  cpattern: "Kreismuster: vorher Elemente wählen, dann den Mittelpunkt klicken und Anzahl/Winkel eingeben",
   mirror: "Spiegeln: vorher Elemente wählen (Auswählen, Umschalt für mehrere), dann die Spiegellinie anklicken",
   dimension: "Bemaßung: Linie, Kreis, zwei Punkte oder zwei Linien wählen, dann Lage klicken",
   project: "Kante des 3D-Modells anklicken, um sie in die Skizze zu übernehmen",
@@ -592,6 +594,46 @@ export class Sketcher {
     this.inputBox = box;
     setTimeout(() => { inp.focus(); inp.select(); }, 10);
   }
+  /** Dialog für Rechteck- bzw. Kreismuster; center = Fangpunkt (bestehender Punkt oder freie Lage) */
+  patternDialog(mode, ids, center) {
+    const scope = this.scope();
+    const last = this.lastPattern?.[mode] || (mode === "rot" ? { n: "6", total: "360" } : { nx: "3", a: "20", ny: "1", b: "20" });
+    const fields = mode === "rot" ? [["n", "Anzahl"], ["total", "Gesamtwinkel °"]] : [["nx", "Anzahl X"], ["a", "Abstand X"], ["ny", "Anzahl Y"], ["b", "Abstand Y"]];
+    const inputs = Object.fromEntries(fields.map(([k]) => [k, h("input", { class: "inp", value: last[k], spellcheck: "false", "data-k": k })]));
+    const err = h("div", { class: "hint" });
+    const cid = center?.pointId || uid("p");
+    const build = (v) => {
+      if (mode === "rot") {
+        const n = Math.round(evaluate(v.n, scope)), total = evaluate(v.total, scope);
+        // voller Kreis: n gleiche Teilungen, sonst Anfang und Ende besetzt
+        const step = Math.abs(Math.abs(total) - 360) < 1e-9 ? `(${v.total})/${n}` : `(${v.total})/${Math.max(1, n - 1)}`;
+        return { mode, center: cid, n, step };
+      }
+      return { mode, nx: Math.round(evaluate(v.nx, scope)), ny: Math.round(evaluate(v.ny, scope)), a: v.a, b: v.b };
+    };
+    const apply = (sk, opts) => {
+      if (mode === "rot" && !center?.pointId && !sk.points.some((p) => p.id === cid)) {
+        sk.points.push({ id: cid, x: center.x, y: center.y });
+        sk.entities.push({ id: uid("pt"), type: "point", p: cid, construction: true });
+      }
+      return patternEntities(sk, ids, opts, { uid, scopeEval: (x) => evaluate(String(x), scope) });
+    };
+    modal({
+      title: mode === "rot" ? "Kreismuster" : "Rechteckmuster",
+      body: h("div", { class: "pattern-dlg" }, ...fields.map(([k, label]) => h("div", { class: "field" }, h("label", {}, label), inputs[k])), err),
+      buttons: [{ label: "Abbrechen", value: null }, { label: "Muster erzeugen", primary: true, run: () => {
+        const v = Object.fromEntries(fields.map(([k]) => [k, inputs[k].value.trim()]));
+        let opts;
+        try { opts = build(v); apply(JSON.parse(JSON.stringify(this.sk)), opts); } catch (e) { err.textContent = e.message; return false; }
+        this.lastPattern = { ...this.lastPattern, [mode]: v };
+        this.commit(mode === "rot" ? "Kreismuster" : "Rechteckmuster", (sk) => apply(sk, opts));
+        this.sel.clear();
+        this.app.selectSketchItems([]);
+        this.render();
+        return true;
+      } }],
+    });
+  }
   cancelInput() { if (this.inputBox) { this.inputBox.remove(); this.inputBox = null; } }
   editDimension(id, sx, sy) {
     const c = this.sk.constraints.find((k) => k.id === id);
@@ -790,6 +832,13 @@ export class Sketcher {
       });
       return;
     }
+    if (t === "pattern" || t === "cpattern") {
+      const ids = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => k.slice(2));
+      if (!ids.length) return toast("Zuerst die Elemente für das Muster wählen (Auswählen, Umschalt oder Fenster), dann hier klicken");
+      const sn = t === "cpattern" ? this.snap(sx, sy) : null;
+      this.patternDialog(t === "cpattern" ? "rot" : "lin", ids, sn);
+      return;
+    }
     if (t === "mirror") {
       const hit = this.hitTest(sx, sy, { points: false, dims: false });
       const line = hit?.kind === "entity" && this.entity(hit.id)?.type === "line" ? hit.id : null;
@@ -923,7 +972,7 @@ export class Sketcher {
       this.viewer.highlight(hit ? [hit] : []);
     }
     this.hover = this.hitTest(sx, sy, { dims: this.tool === "select" });
-    if (!["select", "dimension", "project", "trim", "extend", "split", "sfillet"].includes(this.tool) && !GLYPH[this.tool]) this.snapInfo = this.snap(sx, sy);
+    if (!["select", "dimension", "project", "trim", "extend", "split", "sfillet", "pattern"].includes(this.tool) && !GLYPH[this.tool]) this.snapInfo = this.snap(sx, sy);
     else this.snapInfo = null;
     this.render();
   }
