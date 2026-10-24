@@ -12,18 +12,21 @@ for (const p of ["replicad", "replicad-opencascadejs", "three", "esbuild", "elec
     log("VERSION", p, pj.version, "main:", pj.main, "module:", pj.module, "exports:", JSON.stringify(pj.exports)?.slice(0, 300), "deps:", JSON.stringify(pj.dependencies));
   } catch (e) { log("VERSION", p, "missing", e.message); }
 }
-log("OC files:", fs.readdirSync("node_modules/replicad-opencascadejs/src").join(", "));
+log("OC files:", fs.readdirSync("node_modules/replicad-opencascadejs/dist").join(", "));
+log("OC exports full:", JSON.stringify(JSON.parse(fs.readFileSync("node_modules/replicad-opencascadejs/package.json","utf8")).exports));
+log("replicad exports full:", JSON.stringify(JSON.parse(fs.readFileSync("node_modules/replicad/package.json","utf8")).exports));
 log("replicad dist:", fs.readdirSync("node_modules/replicad/dist").join(", "));
 
 const r = await import("replicad");
+try { const sf = await import("replicad/shape-functions"); log("SHAPE-FUNCTIONS", Object.keys(sf).sort().join(" ")); } catch (e) { log("no shape-functions", e.message); }
 log("EXPORTS", Object.keys(r).sort().join(" "));
 
-const ocFile = fs.existsSync("node_modules/replicad-opencascadejs/src/replicad_with_exceptions.js")
+const ocFile = fs.existsSync("node_modules/replicad-opencascadejs/dist/replicad_with_exceptions.js")
   ? "replicad_with_exceptions" : "replicad_single";
 log("using", ocFile);
-const ocMod = await import(`replicad-opencascadejs/src/${ocFile}.js`);
+const ocMod = await import(path.resolve(`node_modules/replicad-opencascadejs/dist/${ocFile}.js`));
 const init = ocMod.default;
-const wasmPath = path.resolve(`node_modules/replicad-opencascadejs/src/${ocFile}.wasm`);
+const wasmPath = path.resolve(`node_modules/replicad-opencascadejs/dist/${ocFile}.wasm`);
 const OC = await init({ locateFile: () => wasmPath });
 r.setOC(OC);
 log("OC loaded");
