@@ -4,6 +4,7 @@ import { evaluate, resolveParams, isValidName } from "../core/expr.js";
 import { SECTION_KINDS, FIELD_LABELS, CATALOG, catalogToDims, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
+import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
 
@@ -294,6 +295,60 @@ export class Props {
           h("p", { class: "hint" }, "Jede Linie der Skizze wird zum Profil. Linien, die auf anderen enden, werden ausgeklinkt (T-Stoß).")));
         out.push(this.sectionEditor(f));
         break;
+      case "knickrahmen": {
+        const segs = f.segments || [], bends = f.bends || [];
+        const setIn = (list, i, key, label) => (v) => this.set(f, (x) => { x[list][i] = { ...x[list][i], [key]: v }; }, label);
+        const allow = r?.bodies?.find((b) => b.fid === f.id)?.meta?.bendAllowances || [];
+        const inner = (j) => { try { return fmtNum(180 - Math.abs(evaluate(bends[j].angle, this.scope())), 2) + "°"; } catch { return "–"; } };
+        out.push(this.section("Knickrahmen",
+          this.seg("Ansicht", [["gefaltet", "Gefaltet"], ["abgewickelt", "Abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
+          h("p", { class: "hint" }, "Ein Bauteil: an jedem Knick V-förmig durch drei Wände ausgeklinkt, die Außenwand wird gebogen. »Gefaltet« zeigt die Gehrung als Trennlinie, »Abgewickelt« das gerade Rohr für den Rohrlaser (STEP, Zuschnittliste).")));
+        out.push(this.sectionEditor(f, KNICK_SECTIONS));
+        out.push(this.section("Lage",
+          this.select("Ebene", ["XY", "XZ", "YZ"].map((k) => [k, BASE_PLANES[k].label]), f.plane || "XY", (v) => this.set(f, "plane", v, "Ebene")),
+          E("Ebenen-Abstand", "offset"),
+          this.expr("Start X", f.start?.[0] ?? "0", (v) => this.set(f, (x) => { x.start = [v, x.start?.[1] ?? "0"]; }, "Startpunkt")),
+          this.expr("Start Y", f.start?.[1] ?? "0", (v) => this.set(f, (x) => { x.start = [x.start?.[0] ?? "0", v]; }, "Startpunkt")),
+          E("Startrichtung", "direction", { unit: "°" }),
+          this.seg("Profillage", [["hochkant", "B in Knickebene"], ["flach", "H in Knickebene"]], f.orientation || "hochkant", (v) => this.set(f, "orientation", v, "Profillage"))));
+        const rows = [];
+        segs.forEach((s, i) => {
+          rows.push(this.expr(`Segment ${i + 1}`, s.length, setIn("segments", i, "length", `Segment ${i + 1}`), { allowNeg: false, allowZero: false }));
+          if (i < bends.length) {
+            const b = bends[i];
+            rows.push(h("div", { class: "knick" },
+              this.expr(`Knick ${i + 1}`, b.angle, setIn("bends", i, "angle", `Knick ${i + 1}`), { unit: "°" }),
+              h("div", { class: "hint" }, `Innenwinkel ${inner(i)} · + = nach links, − = nach rechts`),
+              this.text("Minimum °", b.min, setIn("bends", i, "min", "Minimum"), { placeholder: "–" }),
+              this.text("Maximum °", b.max, setIn("bends", i, "max", "Maximum"), { placeholder: "–" }),
+              Number.isFinite(allow[i]) ? h("div", { class: "hint" }, `Biegezugabe ${fmtNum(allow[i], 2)} mm (aus Radius und K-Faktor)`) : null));
+          }
+        });
+        out.push(this.section("Biegung der Außenwand",
+          E("Innenradius", "bendRadius", { allowNeg: false }),
+          E("K-Faktor", "kFactor", { unit: "", allowNeg: false }),
+          h("p", { class: "hint" }, "Biegezugabe je Knick = (Innenradius + K-Faktor · Wandstärke) · Winkel im Bogenmaß. Werte aus der Biegetabelle der Abkantung eintragen – die Vorgabe ist nur ein Startwert.")));
+        const rk = f.relief === "rechteck" ? "rechteck" : "rund";
+        const kmeta = r?.bodies?.find((b) => b.fid === f.id)?.meta;
+        const mins = kmeta?.reliefMin || [];
+        const minText = mins.length ? "Mindestmaß: " + mins.map((m, j) => `Knick ${j + 1}: ` + (m.dia ? `Ø ${fmtNum(m.dia, 1)}` : `${fmtNum(m.width, 1)} × ${fmtNum(m.height, 1)}`)).join(", ") + " mm" : "";
+        out.push(this.section("Freistellung, Spalt, Zapfen",
+          this.seg("Freistellung", [["rund", "Rund (Langloch)"], ["rechteck", "Rechteckig"]], rk, (v) => this.set(f, "relief", v, "Freistellung")),
+          rk === "rund" ? this.text("Durchmesser", f.reliefDia, (v) => this.set(f, "reliefDia", v, "Freistellung"), { placeholder: "automatisch" })
+            : [this.text("Breite", f.reliefWidth, (v) => this.set(f, "reliefWidth", v, "Freistellung"), { placeholder: "automatisch" }),
+              this.text("Tiefe", f.reliefHeight, (v) => this.set(f, "reliefHeight", v, "Freistellung"), { placeholder: "automatisch" })],
+          minText ? h("div", { class: "hint" }, minText) : null,
+          E("Schweißspalt", "weldGap", { allowNeg: false }),
+          this.seg("Zapfen", [["aus", "Aus"], ["an", "An"]], f.tabs || "aus", (v) => this.set(f, "tabs", v, "Zapfen")),
+          f.tabs === "an" ? [E("Zapfen-Durchmesser", "tabDia", { allowNeg: false, allowZero: false }), E("Zapfenspiel", "tabClearance", { allowNeg: false })] : null,
+          h("p", { class: "hint" }, "Die Freistellung ist Pflicht: Sie hält die Seitenwände an der Außenwand über die ganze Biegezone frei, damit sie beim Biegen nicht eingedrückt werden. Leer = Mindestmaß. Schweißspalt typisch 0,5–1 mm. Zapfen: Nase auf der Gehrung am Segment vor dem Knick, Loch im Segment danach um das Spiel größer.")));
+        out.push(this.section("Segmente und Knicke", ...rows,
+          h("p", { class: "hint" }, "Längen auf der Mittellinie von Knoten zu Knoten."),
+          h("div", { class: "btn-row" },
+            segs.length < KNICK_LIMITS.maxSegments ? h("button", { class: "btn", onclick: () => this.set(f, (x) => { x.segments.push({ length: "400" }); x.bends.push({ angle: "30", min: "", max: "" }); }, "Segment hinzufügen") }, "+ Segment") : null,
+            segs.length > 1 ? h("button", { class: "btn", onclick: () => this.set(f, (x) => { x.segments.pop(); x.bends.pop(); }, "Segment entfernen") }, "− Segment") : null)));
+        break;
+      }
       case "fillet":
       case "chamfer": {
         const isF = f.type === "fillet";
@@ -356,12 +411,12 @@ export class Props {
       h("button", { class: "btn danger", onclick: () => app.deleteFeature(f.id) }, icon("trash"), " Löschen")));
     return out;
   }
-  sectionEditor(f) {
+  sectionEditor(f, kinds = Object.keys(SECTION_KINDS)) {
     const kind = f.section || "vierkant";
     const def = SECTION_KINDS[kind];
     const cat = CATALOG[kind] || [];
     return this.section("Querschnitt",
-      this.select("Profilart", Object.entries(SECTION_KINDS).map(([k, s]) => [k, s.label]), kind, (v) => this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart")),
+      this.select("Profilart", kinds.map((k) => [k, SECTION_KINDS[k].label]), kind, (v) => this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart")),
       this.select("Normgröße", [["", "– eigene Maße –"], ...cat.map((c) => [c, c.replace(/\./g, ",")])], matchCatalog(kind, f.dims) || "", (v) => v && this.set(f, (x) => { x.dims = catalogToDims(kind, v); }, "Normgröße")),
       ...def.fields.map((k) => this.expr(FIELD_LABELS[k], f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, FIELD_LABELS[k]), { allowNeg: false })));
   }
