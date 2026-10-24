@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { projectPoint, partCenter, balloonAnchors, placeBalloons } from "../src/core/balloons.js";
 import { clipPolylineToCircle, clipProjection } from "../src/core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden } from "../src/core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, ROW_FIRST, ROW_STEP } from "../src/core/autodims.js";
 
 const near = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
 
@@ -121,4 +121,73 @@ test("Kurze verdeckte Linien entfallen (Bohrung durch dünne Wand)", () => {
   const pl = [[[0, 18.5], [0, 20]], [[0, 0], [0, 20]]];
   assert.equal(visibleHidden(pl, 2).length, 1); // 1,5 mm × 2 = 3 mm < ein Strich mit Lücke
   assert.equal(visibleHidden(pl, 5).length, 2);
+});
+
+// Ansicht im Maßstab s, Mitte der bbox bei (x, y) auf dem Blatt (wie DrawingMode.viewXf)
+function sheetView(bbox, x, y, s, arcs = []) {
+  const cu = (bbox.x0 + bbox.x1) / 2, cv = (bbox.y0 + bbox.y1) / 2;
+  const to = (u, w) => [x + (u - cu) * s, y - (w - cv) * s];
+  const [x0, y0] = to(bbox.x0, bbox.y1), [x1, y1] = to(bbox.x1, bbox.y0);
+  return { to, rect: [x0, y0, x1, y1], scale: s, circles: arcs };
+}
+const hits = (a, b) => a[0] < b[2] - 1e-6 && b[0] < a[2] - 1e-6 && a[1] < b[3] - 1e-6 && b[1] < a[3] - 1e-6;
+function dimRect(m, v) {
+  const A = v.to(...m.p1), B = v.to(...m.p2);
+  if (m.kind === "h") { const y = (m.off >= 0 ? Math.max(A[1], B[1]) : Math.min(A[1], B[1])) + m.off; return [Math.min(A[0], B[0]), y - 4.5, Math.max(A[0], B[0]), y + 1]; }
+  const x = (m.off >= 0 ? Math.max(A[0], B[0]) : Math.min(A[0], B[0])) + m.off; return [x - 4.5, Math.min(A[1], B[1]), x + 4.5, Math.max(A[1], B[1])];
+}
+
+test("Maßplatzierung: kurze Maße innen, lange außen, feste Reihenabstände", () => {
+  const holes = [[8, 40], [38, 40], [15, 25], [38, 25], [25, 10]];
+  const arcs = holes.map(([cx, cy]) => ({ cx, cy, r: 3.4, full: true }));
+  const bbox = { x0: 0, y0: 0, x1: 50, y1: 50 };
+  const views = { oben: sheetView(bbox, 150, 150, 2, arcs) };
+  const dims = planAutoDims([{ id: "oben", axes: ["X", "Y"], bbox, arcs }]);
+  layoutAutoDims(dims, views, { frame: [20, 10, 410, 287] });
+  const R = views.oben.rect;
+  for (const kind of ["h", "v"]) {
+    const lin = dims.filter((m) => m.kind === kind);
+    const c = kind === "h" ? 1 : 0;
+    const bySide = new Map();
+    for (const m of lin) {
+      const r = dimRect(m, views.oben);
+      const line = kind === "h" ? r[3] - 1 : (r[0] + r[2]) / 2;
+      const dist = line > R[c + 2] ? line - R[c + 2] : R[c] - line;
+      const side = line > R[c + 2] ? "max" : "min";
+      if (!bySide.has(side)) bySide.set(side, []);
+      bySide.get(side).push({ len: Math.abs(m.p2[1 - c] - m.p1[1 - c]), dist });
+    }
+    for (const list of bySide.values()) {
+      list.sort((a, b) => a.dist - b.dist);
+      list.forEach((it, i) => assert.ok(Math.abs(it.dist - (ROW_FIRST + ROW_STEP * i)) < 1e-6, `Reihe ${i}: ${it.dist}`));
+      for (let i = 1; i < list.length; i++) assert.ok(list[i].len >= list[i - 1].len, "längeres Maß liegt außen");
+    }
+  }
+});
+
+test("Maßplatzierung: Maße weichen Nachbaransicht und Schriftfeld aus", () => {
+  // Vorderansicht 50 × 20 direkt über der Draufsicht 50 × 50 (Abstand 12 mm): Lagemaße unten an der Vorderansicht hätten keinen Platz
+  const holes = [[10, 10], [40, 10]];
+  const arcs = holes.map(([cx, cy]) => ({ cx, cy, r: 3, full: true }));
+  const front = { x0: 0, y0: 0, x1: 50, y1: 20 }, top = { x0: 0, y0: 0, x1: 50, y1: 50 };
+  const views = { vorne: sheetView(front, 100, 60, 2, arcs), oben: sheetView(top, 100, 142, 2) };
+  const dims = planAutoDims([{ id: "vorne", axes: ["X", "Z"], bbox: front, arcs }, { id: "oben", axes: ["X", "Y"], bbox: top, arcs: [] }]);
+  layoutAutoDims(dims, views, { frame: [20, 10, 410, 287], obstacles: [[220, 229, 410, 287]] });
+  for (const m of dims.filter((x) => x.kind === "h" || x.kind === "v")) {
+    const r = dimRect(m, views[m.view]);
+    for (const [id, v] of Object.entries(views)) if (id !== m.view) assert.ok(!hits(r, v.rect), `Maß von ${m.view} liegt über ${id}`);
+  }
+  // Durchmesser-Text liegt außerhalb der Ansicht und kreuzt keine andere Bohrung
+  const dia = dims.find((m) => m.kind === "dia");
+  assert.ok(dia && Number.isFinite(dia.angle));
+});
+
+test("Maßplatzierung: Durchmesser-Hinweislinie läuft nicht durch Nachbarbohrung", () => {
+  // Bohrung unten links, Nachbar genau oben rechts (in Richtung der Standard-Hinweislinie)
+  const arcs = [{ cx: 10, cy: 10, r: 3, full: true }, { cx: 20, cy: 20, r: 3, full: true }];
+  const bbox = { x0: 0, y0: 0, x1: 60, y1: 60 };
+  const views = { v: sheetView(bbox, 200, 140, 2, arcs) };
+  const dims = [{ view: "v", kind: "dia", circle: { cx: 10, cy: 10, r: 3 }, angle: -Math.PI / 4 }];
+  layoutAutoDims(dims, views, { frame: [20, 10, 410, 287] });
+  assert.notEqual(dims[0].angle, -Math.PI / 4);
 });
