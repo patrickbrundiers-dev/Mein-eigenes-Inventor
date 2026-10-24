@@ -288,6 +288,49 @@ function circleCircle(c1, r1, c2, r2) {
   return [{ x: mx + (h * dy) / D, y: my - (h * dx) / D }, { x: mx - (h * dy) / D, y: my + (h * dx) / D }];
 }
 
+/**
+ * Fensterauswahl: Elemente in einem Bildschirm-Rechteck {x0,y0,x1,y1}. toScreen(x,y) → [sx,sy].
+ * Fenster (crossing=false): Element liegt ganz innen. Kreuzen (crossing=true): Element berührt das Rechteck.
+ */
+export function entitiesInBox(sk, toScreen, rect, crossing) {
+  const x0 = Math.min(rect.x0, rect.x1), x1 = Math.max(rect.x0, rect.x1), y0 = Math.min(rect.y0, rect.y1), y1 = Math.max(rect.y0, rect.y1);
+  const inside = ([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  const P = new Map(sk.points.map((p) => [p.id, p]));
+  const S = (p) => toScreen(p.x, p.y);
+  const segHits = (a, b) => {
+    if (inside(a) || inside(b)) return true;
+    const edges = [[[x0, y0], [x1, y0]], [[x1, y0], [x1, y1]], [[x1, y1], [x0, y1]], [[x0, y1], [x0, y0]]];
+    return edges.some(([c, d]) => segSeg(a, b, c, d));
+  };
+  const out = [];
+  for (const e of sk.entities) {
+    if (e.origin) continue;
+    let poly;
+    if (e.type === "line") poly = [S(P.get(e.p1)), S(P.get(e.p2))];
+    else if (e.type === "point") poly = [S(P.get(e.p))];
+    else if (e.type === "circle" || e.type === "arc") {
+      const c = P.get(e.c);
+      let a1 = 0, sw = 2 * Math.PI, r = e.r;
+      if (e.type === "arc") {
+        const p1 = P.get(e.p1), p2 = P.get(e.p2);
+        r = Math.hypot(p1.x - c.x, p1.y - c.y);
+        a1 = Math.atan2(p1.y - c.y, p1.x - c.x);
+        sw = Math.atan2(p2.y - c.y, p2.x - c.x) - a1;
+        while (sw <= 1e-12) sw += 2 * Math.PI;
+      }
+      poly = [];
+      for (let i = 0; i <= 48; i++) { const t = a1 + (sw * i) / 48; poly.push(toScreen(c.x + r * Math.cos(t), c.y + r * Math.sin(t))); }
+    } else continue;
+    const hit = crossing ? (poly.length === 1 ? inside(poly[0]) : poly.some((q, i) => i > 0 && segHits(poly[i - 1], q))) : poly.every(inside);
+    if (hit) out.push(e.id);
+  }
+  return out;
+}
+function segSeg(a, b, c, d) {
+  const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+}
+
 const NAMES = {
   horizontal: "Horizontal", vertical: "Vertikal", coincident: "Koinzident", fix: "Fixiert", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis",
   midpoint: "Mittelpunkt", parallel: "Parallel", perpendicular: "Senkrecht", collinear: "Kollinear", equal: "Gleich", concentric: "Konzentrisch",

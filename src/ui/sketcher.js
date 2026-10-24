@@ -6,13 +6,13 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, v3 } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt } from "../core/sketchedit.js";
-import { buildSlot, buildPolygon, mirrorEntities, offsetEntities } from "../core/sketchshapes.js";
+import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox } from "../core/sketchshapes.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
 const PT_R = 7, CURVE_R = 6;
 
 export const SKETCH_TOOLS = {
-  select: "Auswählen und ziehen",
+  select: "Auswählen und ziehen; im Leeren ziehen = Fenster (nach rechts: ganz innen, nach links: berührend), Strg+A wählt alles",
   line: "Linie: Startpunkt klicken, weitere Punkte klicken – oder Länge tippen, Tab, Winkel, Enter – Esc beendet",
   rect: "Rechteck: erste Ecke, dann gegenüberliegende Ecke klicken – oder Breite tippen, Tab, Höhe tippen, Enter",
   rectc: "Rechteck aus Mitte: Mittelpunkt, dann Ecke klicken – oder Breite tippen, Tab, Höhe tippen, Enter",
@@ -675,7 +675,15 @@ export class Sketcher {
     const t = this.tool;
     if (t === "select") {
       const hit = this.hitTest(sx, sy);
-      if (!hit) { if (!e.shiftKey) this.sel.clear(); this.app.selectSketchItems([...this.sel]); this.render(); return; }
+      if (!hit) {
+        if (!e.shiftKey) this.sel.clear();
+        this.app.selectSketchItems([...this.sel]);
+        // Fensterauswahl: nach rechts ziehen = ganz innen, nach links = berührend
+        this.box = { x0: sx, y0: sy, x1: sx, y1: sy };
+        this.canvas.setPointerCapture?.(e.pointerId);
+        this.render();
+        return;
+      }
       const key = hit.kind === "point" ? "p:" + hit.id : hit.kind === "entity" ? "e:" + hit.id : "c:" + hit.id;
       if (e.shiftKey) { if (this.sel.has(key)) this.sel.delete(key); else this.sel.add(key); }
       else if (!this.sel.has(key)) { this.sel.clear(); this.sel.add(key); }
@@ -848,6 +856,12 @@ export class Sketcher {
     }
     this.render();
   }
+  selectAll() {
+    if (!this.sk) return;
+    this.sel = new Set(this.sk.entities.filter((e) => !e.origin).map((e) => "e:" + e.id));
+    this.app.selectSketchItems([...this.sel]);
+    this.render();
+  }
   /** zusammenhängende Linien/Bögen über gemeinsame Punkte (Kreis: nur er selbst) */
   connectedChain(id) {
     const start = this.entity(id);
@@ -875,6 +889,11 @@ export class Sketcher {
     const [sx, sy] = this.eventPos(e);
     const [lx, ly] = this.L(sx, sy);
     this.mouse = { sx, sy, lx, ly };
+    if (this.box) {
+      this.box.x1 = sx; this.box.y1 = sy;
+      this.render();
+      return;
+    }
     if (this.drag) {
       const d = this.drag;
       if (!d.moved && Math.hypot(lx - d.start[0], ly - d.start[1]) * this.M.scale < 3) return;
@@ -941,6 +960,16 @@ export class Sketcher {
   }
   pointerUp(e) {
     if (!this.active) return;
+    if (this.box) {
+      const b = this.box;
+      this.box = null;
+      if (Math.abs(b.x1 - b.x0) > 4 || Math.abs(b.y1 - b.y0) > 4) {
+        for (const id of entitiesInBox(this.sk, (x, y) => this.S(x, y), b, b.x1 < b.x0)) this.sel.add("e:" + id);
+        this.app.selectSketchItems([...this.sel]);
+      }
+      this.render();
+      return;
+    }
     if (this.drag) {
       const d = this.drag;
       this.drag = null;
@@ -1046,6 +1075,10 @@ export class Sketcher {
     ax.append(svgEl("line", { x1: ox - (dirY[0] / ly) * 4000, y1: oy - (dirY[1] / ly) * 4000, x2: ox + (dirY[0] / ly) * 4000, y2: oy + (dirY[1] / ly) * 4000, stroke: "#2e9d4a", "stroke-width": 0.8, "stroke-dasharray": "8 4" }));
     g.append(ax);
     if (this.gridSnap) this.renderGrid(g);
+    if (this.box) {
+      const b = this.box;
+      svg.append(svgEl("rect", { class: "sk-box" + (b.x1 < b.x0 ? " cross" : ""), x: Math.min(b.x0, b.x1), y: Math.min(b.y0, b.y1), width: Math.abs(b.x1 - b.x0), height: Math.abs(b.y1 - b.y0) }));
+    }
     const openPts = new Set(this.profiles?.openPoints || []);
     // Elemente
     for (const e of sk.entities) {

@@ -1,7 +1,7 @@
 // Langloch, Polygon, Spiegeln: Form, Freiheitsgrade, Kontur, Folgen von Maßänderungen
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, constraintLabel } from "../src/core/sketchshapes.js";
+import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, constraintLabel } from "../src/core/sketchshapes.js";
 import { solveSketch } from "../src/core/solver.js";
 import { newSketch, extractProfiles } from "../src/core/sketch.js";
 
@@ -141,6 +141,19 @@ test("Versatz: Langloch bleibt tangential, Kreis innen/außen, offene Kette", ()
   assert.equal(l1.p2, l2.p2, "gemeinsame Ecke");
   near(P(sk3, l1.p2).x, 19); near(P(sk3, l1.p2).y, 1);
   assert.throws(() => offsetEntities(sk3, ["u"], 0, { x: 0, y: 1 }, { uid }), /größer 0/);
+});
+
+test("Fensterauswahl: ganz innen bzw. berührend", () => {
+  const sk = sketch();
+  sk.points.push({ id: "a", x: 0, y: 0 }, { id: "b", x: 10, y: 0 }, { id: "c", x: 30, y: 0 }, { id: "m", x: 50, y: 50 });
+  sk.entities.push({ id: "l1", type: "line", p1: "a", p2: "b" }, { id: "l2", type: "line", p1: "b", p2: "c" }, { id: "k", type: "circle", c: "m", r: 5 });
+  const id = (x, y) => [x, y];
+  assert.deepEqual(entitiesInBox(sk, id, { x0: -1, y0: -1, x1: 15, y1: 1 }, false), ["l1"]);
+  assert.deepEqual(entitiesInBox(sk, id, { x0: -1, y0: -1, x1: 15, y1: 1 }, true), ["l1", "l2"]);
+  assert.deepEqual(entitiesInBox(sk, id, { x0: 20, y0: -5, x1: 25, y1: 5 }, true), ["l2"], "Rechteck schneidet die Linie, ohne Endpunkt innen");
+  assert.deepEqual(entitiesInBox(sk, id, { x0: 44, y0: 44, x1: 56, y1: 56 }, false), ["k"]);
+  assert.deepEqual(entitiesInBox(sk, id, { x0: 50, y0: 50, x1: 60, y1: 60 }, false), [], "Kreis nicht ganz innen");
+  assert.deepEqual(entitiesInBox(sk, id, { x0: 50, y0: 50, x1: 60, y1: 60 }, true), ["k"]);
 });
 
 test("Klartext für Bedingungen", () => {

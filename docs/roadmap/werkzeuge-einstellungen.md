@@ -26,7 +26,8 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 |---|---|---|
 | Auswahl Fläche/Kante, Mehrfachauswahl Strg/Umschalt | vorhanden | `App.viewerClick` |
 | Auswahlfilter (alles / nur Flächen / nur Kanten) | vorhanden | Ansicht → Auswahl, Anzeige in der Statusleiste (Stufe 5) |
-| Fensterauswahl, Auswahl invertieren | fehlt | P3 |
+| Fensterauswahl in der Skizze, Alles auswählen | vorhanden | Stufe 9: im Leeren ziehen – nach rechts ganz innen, nach links berührend; Strg+A in der Skizze |
+| Fensterauswahl im 3D-Fenster, Auswahl invertieren | fehlt | P3 |
 | Ausblenden/Isolieren | vorhanden | Rechtsklick: Körper bzw. Komponente ausblenden/isolieren, „Alle einblenden“; nur Anzeige, keine Modelländerung (Stufe 5) |
 | Zoom auf alles | vorhanden | F6, `Viewer.fit` |
 | Zoom auf Auswahl | vorhanden | Ansicht → Zoom, Kontextmenü, Leiste unten rechts (Stufe 2) |
@@ -110,5 +111,6 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 4 | Messwerkzeug: Punkt/Kante/Fläche, Radius, Koordinaten; Oberfläche und Schwerpunkt aus dem Kernel | Kernel-Test (Würfel/Zylinder bekannte Werte) |
 | 5 | Auswahlfilter, Körper ausblenden/isolieren | Oberflächentest |
 | 6 | Skizze: Langloch, Polygon, Spiegeln; Ursache bei widersprüchlichen Bedingungen | Solver-Tests |
+| 9 | Skizze: Fensterauswahl, Strg+A | Unit-Test `entitiesInBox`, Oberflächentest |
 | 8 | Ansicht: benannte Ansichten speichern/wiederherstellen/löschen | Oberflächentest |
 | 7 | Skizze: Versatz, Bedingungen unterdrücken | Unit-Tests Versatz (Rechteck innen/außen, Langloch, Kreis, offene Kette), Oberflächentest |

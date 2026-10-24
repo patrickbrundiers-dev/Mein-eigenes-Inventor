@@ -32,6 +32,7 @@ export function commandRunners(app) {
     "sketch.construction": () => app.sketcher.toggleConstruction(),
     "sketch.gridsnap": () => { app.sketcher.gridSnap = !app.sketcher.gridSnap; app.sketcher.render(); app.ribbon.render(); },
     "sketch.finish": () => app.finishSketch(),
+    "sketch.selectAll": () => app.sketcher.selectAll(),
     "view.showAll": () => app.showAllBodies(),
     "view.hideSel": () => { const h0 = selectedBodyHit(app); if (h0) app.hideHit(h0); else toast("Zuerst eine Fläche oder Kante des Körpers wählen"); },
     "view.isolateSel": () => { const h0 = selectedBodyHit(app); if (h0) app.isolateHit(h0); else toast("Zuerst eine Fläche oder Kante des Körpers wählen"); },
