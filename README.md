@@ -68,6 +68,7 @@ Der Workflow „Windows-Release“ läuft nur auf Knopfdruck (Windows-Minuten z�
 | Neue Skizze | S |
 | Extrusion / Bohrung | E / H |
 | Skizzenwerkzeuge | L Linie · R Rechteck · C Kreis · A Bogen · P Punkt · D Bemaßung · T Stutzen · F Rundung · X Konstruktion |
+| Maße beim Zeichnen | Nach dem ersten Klick Wert tippen, Tab wechselt das Feld, Enter übernimmt: Rechteck Breite/Höhe, Linie Länge/Winkel, Kreis Durchmesser |
 | Rückgängig / Wiederholen | Strg+Z / Strg+Y |
 | Speichern | Strg+S |
 

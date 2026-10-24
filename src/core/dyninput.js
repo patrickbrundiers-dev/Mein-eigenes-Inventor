@@ -1,9 +1,13 @@
 // Dynamische Maßeingabe beim Zeichnen (wie Inventor): Werte direkt tippen, Tab wechselt das Feld, Enter bestätigt
 import { evaluate } from "./expr.js";
 
-/** Neuer Eingabezustand mit den genannten Feldern (z. B. ["w", "h"] fürs Rechteck) */
+/**
+ * Neuer Eingabezustand mit den genannten Feldern (z. B. ["w", "h"] fürs Rechteck).
+ * Ein Feld kann auch { key, signed: true } sein: dann sind 0 und negative Werte erlaubt (Winkel).
+ */
 export function createDynInput(keys) {
-  return { fields: keys.map((key) => ({ key, text: "", error: null })), active: 0, fresh: true };
+  const fields = keys.map((k) => (typeof k === "string" ? { key: k } : { ...k })).map((f) => ({ ...f, text: "", error: null }));
+  return { fields, active: 0, fresh: true };
 }
 
 /**
@@ -49,7 +53,7 @@ export function dynValues(st, live, scope = {}) {
     if (!t) { values[f.key] = live[f.key]; continue; }
     try {
       const v = evaluate(t, scope);
-      if (!(v > 0)) throw new Error("Wert muss > 0 sein");
+      if (!Number.isFinite(v) || (!f.signed && !(v > 0))) throw new Error("Wert muss > 0 sein");
       values[f.key] = v;
       exprs[f.key] = t;
       f.error = null;
@@ -121,3 +125,19 @@ export function buildRect(sk, a, b, { center = false, construction = false, uid,
   sk.constraints.push(...cons);
   return { points: ids, lines };
 }
+
+/** Linie: gezogene Länge und Winkel (Grad, gegen Uhrzeigersinn ab der Skizzen-x-Achse, 0 … <360) */
+export function lineLive(a, cur) {
+  const ang = (Math.atan2(cur.y - a.y, cur.x - a.x) * 180) / Math.PI;
+  return { len: Math.hypot(cur.x - a.x, cur.y - a.y), ang: ang < 0 ? ang + 360 : ang };
+}
+
+/** Endpunkt einer Linie aus Länge und Winkel (Grad) */
+export function lineEnd(a, len, angDeg) {
+  const t = (angDeg * Math.PI) / 180;
+  const r = (v) => (Math.abs(v) < 1e-12 ? 0 : v);
+  return { x: a.x + r(len * Math.cos(t)), y: a.y + r(len * Math.sin(t)) };
+}
+
+/** Liegt der Winkel auf einer Achse (0/90/180/270°)? Dann darf H/V gesetzt werden. */
+export const axisAngle = (deg) => Math.abs(((deg % 90) + 90) % 90) < 1e-9;
