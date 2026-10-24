@@ -137,6 +137,28 @@ const isProjectPath = (p) => typeof p === "string" && /\.wcad$/i.test(p);
 // Automatische Sicherung als Datei im Benutzerordner (keine Größengrenze wie localStorage)
 const autosaveFile = () => path.join(app.getPath("userData"), "wiederherstellung", "autosave.json");
 
+// Benutzereinstellungen (Ansicht, Skizze …) getrennt von Token/Update-Daten. Inhalt prüft die Oberfläche (src/core/settings.js).
+const prefsFile = () => path.join(app.getPath("userData"), "benutzereinstellungen.json");
+ipcMain.on("prefs:read-sync", (e) => {
+  let text = null;
+  try { text = fs.readFileSync(prefsFile(), "utf8"); } catch { /* noch keine */ }
+  if (text !== null) {
+    try { JSON.parse(text); } catch {
+      // beschädigt: aufbewahren, damit nichts verloren geht; Oberfläche nimmt Standardwerte
+      try { fs.copyFileSync(prefsFile(), prefsFile().replace(/\.json$/, `.defekt-${Date.now()}.json`)); } catch { /* */ }
+      log.write("warn", "einstellungen", "Einstellungsdatei beschädigt, Standardwerte verwendet");
+    }
+  }
+  e.returnValue = text;
+});
+ipcMain.handle("prefs:write", (_e, text) => {
+  if (typeof text !== "string" || text.length > 1e6) throw new Error("Ungültige Einstellungen");
+  JSON.parse(text);
+  fs.mkdirSync(path.dirname(prefsFile()), { recursive: true });
+  atomicWrite(prefsFile(), text);
+  return true;
+});
+
 ipcMain.handle("app:version", () => app.getVersion());
 ipcMain.on("log:write", (_e, { level, source, message } = {}) => {
   log.write(["error", "warn", "info"].includes(level) ? level : "info", String(source || "oberflaeche").slice(0, 40), message);

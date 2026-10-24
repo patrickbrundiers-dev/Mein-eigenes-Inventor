@@ -141,14 +141,7 @@ Status: **vorhanden** · **teilweise** · **fehlt** · **unklar** · **blockiert
 
 ## 9. Einstellungen (Masterplan 13)
 
-| Kategorie | Status | Bemerkung |
-|---|---|---|
-| L Updates | vorhanden | Token, automatische Prüfung (`props.js:586`) |
-| A Allgemein (Ordner, zuletzt geöffnet) | teilweise | letzte Ordner und Dateien automatisch, nicht einstellbar |
-| D 3D-Ansicht (Qualität) | teilweise | umschaltbar, nicht gespeichert |
-| B, C, E, F, G, H, I, J, K, M, N | fehlt | kein Einstellungscenter |
-| Trennung Benutzer/Dokument/Maschine | fehlt | |
-| Lizenzierung | n. r. | kein Lizenzsystem vorhanden |
+Seit dem Einstellungscenter (Stufe 1, Masterplan Werkzeuge) siehe [werkzeuge-einstellungen.md](werkzeuge-einstellungen.md).
 
 ## 10. Infrastruktur
 

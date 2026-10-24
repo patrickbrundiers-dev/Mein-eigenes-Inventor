@@ -103,7 +103,7 @@ export class Files {
         if (this.bridge?.writeAutosave) this.bridge.writeAutosave(entry).catch((e) => console.warn("Autosave fehlgeschlagen", e));
         else if (entry.json.length < 4.5e6) localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(entry));
       } catch { /* Speicher voll oder gesperrt */ }
-    }, 1500);
+    }, (this.app.prefs?.get("allgemein.autosaveSekunden") ?? 1.5) * 1000);
   }
   /** Letzte automatische Sicherung; nur wenn sie sich gefahrlos öffnen lässt */
   async recovery() {

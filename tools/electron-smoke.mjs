@@ -50,6 +50,16 @@ try {
   await win.waitForTimeout(300);
   const logText = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
   check("Fehlerprotokoll geschrieben", /\[info\] start: WerkCAD /.test(logText) && /\[warn\] rauchtest: Testeintrag/.test(logText), logFile);
+  // Benutzereinstellungen: getrennte Datei, gültige Werte wirken, Oberflächengröße über die Brücke
+  {
+    const prefsFile = path.join(await app.evaluate(({ app: a }) => a.getPath("userData")), "benutzereinstellungen.json");
+    const r = await win.evaluate(() => { const p = window.__werkcad.prefs; const bad = p.set("skizze.fangradius", 0); p.set("skizze.fangradius", 11); p.set("darstellung.skalierung", 110); return { bad: bad.ok, zoom: window.devicePixelRatio }; });
+    await win.waitForTimeout(400);
+    const text = fs.existsSync(prefsFile) ? fs.readFileSync(prefsFile, "utf8") : "";
+    const stored = text ? JSON.parse(text).values : {};
+    await win.evaluate(() => window.__werkcad.prefs.reset());
+    check("Benutzereinstellungen gespeichert", r.bad === false && stored["skizze.fangradius"] === 11 && stored["darstellung.skalierung"] === 110 && !/token/i.test(text), JSON.stringify({ r, stored }));
+  }
   // Projektdatei: Speichern, beschädigte Datei mit Sicherung, fehlende Datei, Autosave ohne Größengrenze
   const tmp = fs.mkdtempSync(path.join((await import("node:os")).tmpdir(), "werkcad-smoke-"));
   const file = path.join(tmp, "Test.wcad");

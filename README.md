@@ -48,7 +48,7 @@ Unter **Releases** die Datei `WerkCAD-Setup-x.y.z.exe` herunterladen und ausfüh
 
 WerkCAD prüft beim Start die Releases dieses Repositorys. Gibt es eine neue Version, erscheint oben ein Hinweis: erst nach deinem Klick wird heruntergeladen, und installiert wird erst nach einer zweiten Freigabe (oder beim Beenden).
 
-Solange das Repository öffentlich ist, braucht es dafür nichts weiter. Wird es wieder privat gestellt, unter **Datei → Einstellungen und Updates** einen Lese-Token hinterlegen (GitHub → Settings → Developer settings → Fine-grained tokens → nur dieses Repository, **Contents: Read-only**). Der Token wird mit der Windows-Verschlüsselung nur auf diesem PC gespeichert.
+Solange das Repository öffentlich ist, braucht es dafür nichts weiter. Wird es wieder privat gestellt, unter **Datei → Einstellungen → Updates** einen Lese-Token hinterlegen (GitHub → Settings → Developer settings → Fine-grained tokens → nur dieses Repository, **Contents: Read-only**). Der Token wird mit der Windows-Verschlüsselung nur auf diesem PC gespeichert.
 
 ## Daten retten, ältere Version
 

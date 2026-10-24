@@ -53,11 +53,21 @@ export class Sketcher {
     this.state = null;
     this.showGlyphs = true;
     this.gridSnap = false;
+    this.snapR = PT_R;
+    this.gridFixed = 0;
     this.onDown = (e) => this.pointerDown(e);
     this.onMove = (e) => this.pointerMove(e);
     this.onUp = (e) => this.pointerUp(e);
     this.onDbl = (e) => this.dblClick(e);
     this.viewer.onCamera(() => { if (this.active) this.render(); });
+  }
+
+  /** Benutzereinstellungen; Rasterfang/Symbole gelten ab dem nächsten Öffnen einer Skizze */
+  applyPrefs(v) {
+    this.prefs = v;
+    this.snapR = v["skizze.fangradius"];
+    this.gridFixed = v["skizze.rasterweite"] || 0;
+    if (this.active) this.render();
   }
 
   // ---------- Lebenszyklus ----------
@@ -75,6 +85,8 @@ export class Sketcher {
     this.tool = "select";
     this.state = null;
     this.sel.clear();
+    this.gridSnap = !!this.prefs?.["skizze.rasterfang"];
+    this.showGlyphs = this.prefs ? !!this.prefs["skizze.symbole"] : true;
     this.canvas.addEventListener("pointerdown", this.onDown);
     window.addEventListener("pointermove", this.onMove);
     window.addEventListener("pointerup", this.onUp);
@@ -162,7 +174,7 @@ export class Sketcher {
       for (const b of this.glyphBoxes) if (sx >= b.x0 && sx <= b.x1 && sy >= b.y0 && sy <= b.y1) return { kind: "con", id: b.id };
     }
     if (points) {
-      let best = null, bd = PT_R;
+      let best = null, bd = this.snapR;
       for (const p of sk.points) {
         if (exclude.has(p.id)) continue;
         const [x, y] = this.S(p.x, p.y);
@@ -210,14 +222,14 @@ export class Sketcher {
       const a = P.get(e.p1), b = P.get(e.p2);
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       const [x, y] = this.S(mx, my);
-      if (Math.hypot(x - sx, y - sy) < PT_R) return { x: mx, y: my, mid: e.id, label: "Mitte" };
+      if (Math.hypot(x - sx, y - sy) < this.snapR) return { x: mx, y: my, mid: e.id, label: "Mitte" };
       if (e.type === "circle") continue;
     }
     for (const e of this.sk.entities) {
       if (e.type !== "circle" && e.type !== "arc") continue;
       const c = P.get(e.c);
       const [x, y] = this.S(c.x, c.y);
-      if (Math.hypot(x - sx, y - sy) < PT_R) return { x: c.x, y: c.y, pointId: c.id, label: "Mitte" };
+      if (Math.hypot(x - sx, y - sy) < this.snapR) return { x: c.x, y: c.y, pointId: c.id, label: "Mitte" };
     }
     let [lx, ly] = this.L(sx, sy);
     if (hit?.kind === "entity") {
@@ -234,7 +246,7 @@ export class Sketcher {
       return { x: c.x + r * Math.cos(ang), y: c.y + r * Math.sin(ang), on: e.id, onType: "circle", label: "Auf Kreis" };
     }
     if (this.gridSnap) {
-      const step = gridStep(this.M.scale);
+      const step = this.gridFixed || gridStep(this.M.scale);
       lx = Math.round(lx / step) * step;
       ly = Math.round(ly / step) * step;
     }
@@ -1011,7 +1023,8 @@ export class Sketcher {
     this.renderPreview(g, P);
   }
   renderGrid(g) {
-    const step = gridStep(this.M.scale);
+    // feste Rasterweite: bei kleinem Zoom nur jede n-te Linie zeichnen (Fang bleibt auf der Rasterweite)
+    const step = this.gridFixed ? this.gridFixed * Math.max(1, Math.ceil(8 / (this.gridFixed * this.M.scale))) : gridStep(this.M.scale);
     const w = this.canvas.clientWidth, hgt = this.canvas.clientHeight;
     const [x0, y0] = this.L(0, hgt), [x1, y1] = this.L(w, 0);
     const gx = svgEl("g", { class: "sk-grid" });

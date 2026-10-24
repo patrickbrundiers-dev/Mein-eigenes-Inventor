@@ -16,4 +16,6 @@ kein Programmcode geändert.
 | [decisions/ADR-0002-blech.md](decisions/ADR-0002-blech.md) | Keine allgemeine Blechfunktion |
 | [decisions/ADR-0003-erweiterbarkeit.md](decisions/ADR-0003-erweiterbarkeit.md) | Noch keine Plugin-API |
 | [decisions/ADR-0004-p2-zurueckgestellt.md](decisions/ADR-0004-p2-zurueckgestellt.md) | P2-Themen zurückgestellt |
+| [roadmap/werkzeuge-einstellungen.md](roadmap/werkzeuge-einstellungen.md) | Werkzeug-/Einstellungsmatrix und Stufen (Masterplan Werkzeuge) |
+| [architecture/einstellungen.md](architecture/einstellungen.md) | Einstellungscenter: Ablage, Regeln, Standardwerte |
 | [testing/baseline-2026-10-24.md](testing/baseline-2026-10-24.md) | Testergebnisse vor jeder Änderung |
