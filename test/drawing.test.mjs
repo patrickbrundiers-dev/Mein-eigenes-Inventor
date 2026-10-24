@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { projectPoint, partCenter, balloonAnchors, placeBalloons } from "../src/core/balloons.js";
 import { clipPolylineToCircle, clipProjection } from "../src/core/clip.js";
+import { planAutoDims, viewAxes, visibleHidden } from "../src/core/autodims.js";
 
 const near = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
 
@@ -72,4 +73,52 @@ test("Detail: Projektion zuschneiden, nur ganz innen liegende Kreise bleiben", (
   assert.equal(d.hidden.length, 1);
   assert.equal(d.arcs.length, 1);
   assert.deepEqual(d.bbox, { x0: -10, y0: -10, x1: 10, y1: 10 });
+});
+
+test("Ansichtsachsen der Normalansichten", () => {
+  assert.deepEqual(viewAxes([0, 1, 0], [0, 0, 1]), ["X", "Z"]); // vorne
+  assert.deepEqual(viewAxes([0, 0, -1], [0, 1, 0]), ["X", "Y"]); // oben
+  assert.deepEqual(viewAxes([1, 0, 0], [0, 0, 1]), ["Y", "Z"]); // links
+  assert.deepEqual(viewAxes([-1, 1, -1], [0, 0, 1]), [null, "Z"]); // schräg: nur senkrecht eindeutig
+});
+
+test("Hauptmaße: jedes Maß nur einmal, Bohrungen mit Anzahl und Lagemaßen", () => {
+  // Rechteckrohr 50 × 50 × 20 mit fünf Bohrungen Ø6,8 oben (wie im Fehlerbild)
+  const holes = [[8, 40], [38, 40], [15, 25], [38, 25], [25, 10]];
+  const arc = ([cx, cy]) => ({ cx, cy, r: 3.4, full: true });
+  const views = [
+    { id: "vorne", axes: ["X", "Z"], bbox: { x0: 0, y0: 0, x1: 50, y1: 20 }, arcs: [] },
+    { id: "oben", axes: ["X", "Y"], bbox: { x0: 0, y0: 0, x1: 50, y1: 50 }, arcs: [...holes.map(arc), ...holes.map(arc)] }, // doppelt: Ober- und Unterkante
+    { id: "links", axes: ["Y", "Z"], bbox: { x0: -50, y0: 0, x1: 0, y1: 20 }, arcs: [] },
+  ];
+  const dims = planAutoDims(views);
+  const total = dims.filter((m) => m.axis);
+  assert.deepEqual(total.map((m) => [m.view, m.axis]), [["vorne", "X"], ["vorne", "Z"], ["oben", "Y"]]);
+  assert.equal(dims.filter((m) => m.view === "links").length, 0, "Seitenansicht wiederholt nichts");
+  const dia = dims.filter((m) => m.kind === "dia");
+  assert.equal(dia.length, 1);
+  assert.equal(dia[0].count, 5);
+  const pos = dims.filter((m) => !m.axis && m.kind !== "dia");
+  const xs = pos.filter((m) => m.kind === "h").map((m) => m.p2[0]);
+  const ys = pos.filter((m) => m.kind === "v").map((m) => m.p2[1]);
+  assert.deepEqual(xs, [8, 15, 25, 38]);
+  assert.deepEqual(ys, [10, 25, 40]);
+  assert.ok(pos.every((m) => m.view === "oben"));
+  // gestaffelt, damit sich die Maßlinien nicht überdecken
+  assert.equal(new Set(pos.filter((m) => m.kind === "h").map((m) => m.off)).size, 4);
+  // zweiter Aufruf mit den belegten Maßen ergänzt nichts Doppeltes
+  const used = { axes: new Set(["X", "Y", "Z"]), radii: new Set([3400]) };
+  assert.equal(planAutoDims([views[2]], used).length, 0);
+});
+
+test("Hauptmaße: Rundrohr von vorne ohne Lagemaße", () => {
+  const dims = planAutoDims([{ id: "v", axes: ["Y", "Z"], bbox: { x0: -20, y0: -20, x1: 20, y1: 20 }, arcs: [{ cx: 0, cy: 0, r: 20, full: true }, { cx: 0, cy: 0, r: 17, full: true }] }]);
+  assert.equal(dims.filter((m) => m.kind === "dia").length, 2);
+  assert.equal(dims.filter((m) => !m.axis && m.kind !== "dia").length, 0);
+});
+
+test("Kurze verdeckte Linien entfallen (Bohrung durch dünne Wand)", () => {
+  const pl = [[[0, 18.5], [0, 20]], [[0, 0], [0, 20]]];
+  assert.equal(visibleHidden(pl, 2).length, 1); // 1,5 mm × 2 = 3 mm < ein Strich mit Lücke
+  assert.equal(visibleHidden(pl, 5).length, 2);
 });

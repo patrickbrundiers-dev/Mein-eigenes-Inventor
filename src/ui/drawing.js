@@ -8,6 +8,7 @@ import { v3 } from "../core/geom.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
 import { clipProjection } from "../core/clip.js";
+import { planAutoDims, viewAxes, visibleHidden } from "../core/autodims.js";
 import { bomRows } from "./props.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
@@ -372,7 +373,8 @@ export class DrawingEditor {
     }
     const pathOf = (pl) => "M" + pl.map((q) => xf.to(q[0], q[1]).map(r3).join(" ")).join("L");
     if (p.sectionLoops?.length) g.append(svgEl("path", { d: p.sectionLoops.map((l) => pathOf(l) + "Z").join(""), fill: "url(#werkcad-schraffur)", "fill-rule": "evenodd", stroke: "none" }));
-    if (p.hidden?.length && v.hidden !== false) g.append(svgEl("path", { d: p.hidden.map(pathOf).join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.hid, "stroke-dasharray": "2.5 1.2" }));
+    const hid = v.hidden !== false ? visibleHidden(p.hidden, v.scale) : [];
+    if (hid.length) g.append(svgEl("path", { d: hid.map(pathOf).join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.hid, "stroke-dasharray": "2.5 1.2" }));
     g.append(svgEl("path", { d: p.visible.map(pathOf).join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.vis, "stroke-linecap": "round", "stroke-linejoin": "round" }));
     // Mittellinien für Kreise
     if (v.centerlines !== false && v.type !== "iso") {
@@ -440,7 +442,7 @@ export class DrawingEditor {
     const xf = this.viewXf(v);
     const g = svgEl("g", { "data-dim": m.id, class: interactive ? "dw-dimgrp" + (this.sel?.type === "dim" && this.sel.id === m.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
     const val = this.dimValue(m);
-    const txt = (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? 1) + (m.suffix || "");
+    const txt = (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? 1) + (m.suffix || "");
     const arrowHead = (x, y, ux, uy) => {
       const L = 3, w = 0.9;
       return svgEl("path", { d: `M${r3(x)} ${r3(y)}L${r3(x - ux * L + uy * w)} ${r3(y - uy * L - ux * w)}L${r3(x - ux * L - uy * w)} ${r3(y - uy * L + ux * w)}Z`, fill: "#111a24", stroke: "none" });
@@ -458,10 +460,11 @@ export class DrawingEditor {
       const pOn = [cx + ux * r, cy + uy * r];
       const pOut = [cx + ux * (r + 8), cy + uy * (r + 8)];
       const start = m.kind === "dia" ? [cx - ux * r, cy - uy * r] : [cx, cy];
-      g.append(svgEl("path", { d: `M${r3(start[0])} ${r3(start[1])}L${r3(pOut[0])} ${r3(pOut[1])}h${ux >= 0 ? 10 : -10}` }));
+      const shelf = Math.max(10, txt.length * 2.1 + 2); // Bezugslinie so lang wie der Text (z. B. „5× Ø6,8“)
+      g.append(svgEl("path", { d: `M${r3(start[0])} ${r3(start[1])}L${r3(pOut[0])} ${r3(pOut[1])}h${r3(ux >= 0 ? shelf : -shelf)}` }));
       g.append(arrowHead(pOn[0], pOn[1], ux, uy));
       if (m.kind === "dia") g.append(arrowHead(start[0], start[1], -ux, -uy));
-      g.append(text(pOut[0] + (ux >= 0 ? 5 : -5), pOut[1] - 1, 0));
+      g.append(text(pOut[0] + (ux >= 0 ? shelf / 2 : -shelf / 2), pOut[1] - 1, 0));
       return g;
     }
     const A = xf.to(...m.p1), B = xf.to(...m.p2);
@@ -857,24 +860,20 @@ export class DrawingEditor {
   }
   autoDims() {
     const d = this.doc;
-    const add = [];
-    const seenR = new Set();
-    for (const v of d.views) {
-      if (v.type === "iso" || v.type === "detail") continue;
-      const p = this.proj.get(v.id);
-      if (!p?.bbox) continue;
-      const b = p.bbox;
-      if (d.dims.some((m) => m.view === v.id && m.auto)) continue;
-      add.push({ id: uid("m"), view: v.id, kind: "h", p1: [b.x0, b.y1], p2: [b.x1, b.y1], off: -8, auto: true });
-      add.push({ id: uid("m"), view: v.id, kind: "v", p1: [b.x1, b.y0], p2: [b.x1, b.y1], off: 8, auto: true });
-      for (const a of p.arcs || []) {
-        if (!a.full) continue;
-        const key = Math.round(a.r * 1000);
-        if (seenR.has(key)) continue;
-        seenR.add(key);
-        add.push({ id: uid("m"), view: v.id, kind: "dia", circle: { cx: a.cx, cy: a.cy, r: a.r }, angle: -Math.PI / 4, auto: true });
-      }
+    // Vorderansicht zuerst, damit Breite und Höhe dort stehen; jede Raumrichtung und jeder Bohrungs-Ø nur einmal
+    const order = (v) => (v.type === "front" ? 0 : v.type === "section" ? 2 : 1);
+    const cands = d.views.filter((v) => v.type !== "iso" && v.type !== "detail" && this.proj.get(v.id)?.bbox).sort((a, b) => order(a) - order(b));
+    const used = { axes: new Set(), radii: new Set() };
+    for (const m of d.dims) {
+      if (!m.auto) continue;
+      if (m.axis) used.axes.add(m.axis);
+      if (m.kind === "dia") used.radii.add(Math.round(m.circle.r * 1000));
     }
+    const views = cands.filter((v) => !d.dims.some((m) => m.view === v.id && m.auto)).map((v) => {
+      const c = this.viewCam(d, v), p = this.proj.get(v.id);
+      return { id: v.id, axes: viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs };
+    });
+    const add = planAutoDims(views, used).map((m) => ({ id: uid("m"), ...m, auto: true }));
     if (!add.length) return toast("Keine weiteren Hauptmaße gefunden");
     this.app.edit("Hauptmaße", () => d.dims.push(...add), { rebuild: false });
     this.render();
@@ -1000,7 +999,7 @@ export class DrawingEditor {
       const isCirclePoly = (pl) => circles.some((c) => pl.every((q) => Math.abs(Math.hypot(q[0] - c.cx, q[1] - c.cy) - c.r) < 1e-3));
       for (const c of circles) { const [x, y] = xf.to(c.cx, c.cy); w.circle(x, Y(y), c.r * v.scale, "KONTUR"); }
       for (const pl of p.visible) { if (circles.length && isCirclePoly(pl)) continue; w.polyline(pl.map((q) => { const [x, y] = xf.to(q[0], q[1]); return [x, Y(y)]; }), "KONTUR"); }
-      if (v.hidden !== false) for (const pl of p.hidden || []) w.polyline(pl.map((q) => { const [x, y] = xf.to(q[0], q[1]); return [x, Y(y)]; }), "VERDECKT");
+      if (v.hidden !== false) for (const pl of visibleHidden(p.hidden, v.scale)) w.polyline(pl.map((q) => { const [x, y] = xf.to(q[0], q[1]); return [x, Y(y)]; }), "VERDECKT");
       if (p.sectionLoops?.length) {
         const loops = p.sectionLoops.map((l) => l.map((q) => { const [x, y] = xf.to(q[0], q[1]); return [x, Y(y)]; }));
         for (const [x1, y1, x2, y2] of hatchLines(loops, 2.5, 45)) w.line(x1, y1, x2, y2, "SCHRAFFUR");
