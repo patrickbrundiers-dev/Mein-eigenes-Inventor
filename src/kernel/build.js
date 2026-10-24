@@ -737,7 +737,8 @@ export function createKernel(R) {
       for (const p of q.slice(1)) pen = pen.lineTo(p);
       return pen.close();
     };
-    const uF = -(plan.W / 2 + 1), dd = plan.d, uA = plan.uA, ri = plan.ri;
+    // uA hier = Schnittgrenze: Außenwand-Innenseite minus Reststeg (der Steg biegt sich mit der Außenwand)
+    const uF = -(plan.W / 2 + 1), dd = plan.d, uA = plan.uB, ri = plan.ri;
     const kit = (k) => {
       const tn = k.tanHalf, y = (u) => k.sigma * u, xm = (k.x1 + k.x2) / 2;
       const flankA = (u) => k.x1 + (u - dd) * tn, flankB = (u) => k.x2 - (u - dd) * tn;
@@ -745,7 +746,22 @@ export function createKernel(R) {
       const uc = dd + k.zone / (2 * tn);
       const clipBelow = (dr) => dr.intersect(R.drawRectangle(4 * BIG, BIG).translate(xm, y(uA - BIG / 2)));
       const rl = k.relief;
-      const relief = clipBelow(rl.kind === "rund"
+      // ohne Freistellung: V-Flanken enden am Bogen rᵢ − s um den Biegemittelpunkt (Ecke geschlossen);
+      // weggeschnitten wird je Seite, was gefaltet in die gebogene Wand ragen würde
+      const rB = ri - plan.restWall;
+      const noRelief = (side, clip) => {
+        const xa = side === "A" ? k.x1 : k.x2, sgn = side === "A" ? 1 : -1;
+        const far = clip ? Math.abs(xm - xa) : BIG;
+        let dr = R.drawRectangle(far, uA - dd).translate(xa + (sgn * far) / 2, y((uA + dd) / 2));
+        if (rB > 1e-6) dr = dr.cut(R.drawCircle(rB).translate(xa, y(dd)));
+        return dr;
+      };
+      const reliefFor = (side, clip) => {
+        if (rl.kind !== "keine") return relief.clone();
+        if (!(rB > 1e-6) || (clip && !(k.zone > 1e-6))) return null;
+        return noRelief(side, clip);
+      };
+      const relief = rl.kind === "keine" ? null : clipBelow(rl.kind === "rund"
         // Langloch auf der Außenwand-Innenseite, Kreismitten bei xm ± half
         ? R.draw([xm - rl.half, y(uA - rl.r)]).lineTo([xm + rl.half, y(uA - rl.r)]).threePointsArcTo([xm + rl.half, y(uA + rl.r)], [xm + rl.half + rl.r, y(uA)])
           .lineTo([xm - rl.half, y(uA + rl.r)]).threePointsArcTo([xm - rl.half, y(uA - rl.r)], [xm - rl.half - rl.r, y(uA)]).close()
@@ -766,7 +782,7 @@ export function createKernel(R) {
         nose: (r) => R.drawCircle(r).translate(flankA(plan.tab.u), y(plan.tab.u)),
         holeB: () => R.drawCircle(plan.tab.r + plan.tab.c).translate(flankB(plan.tab.u), y(plan.tab.u)),
       };
-      return { relief, strip, notch, outer, tab };
+      return { reliefFor, strip, notch, outer, tab };
     };
 
     const cutsOf = plan.dirs.map(() => []), addsOf = plan.dirs.map(() => []), halves = plan.dirs.map(() => []);
@@ -781,7 +797,7 @@ export function createKernel(R) {
       const ax = Math.abs(v3.dot(fr.u, eA)) > 0.5 ? 0 : 1; // Querschnittsachse in der Knickebene
       const sgn = (ax === 0 ? v3.dot(fr.u, eA) : v3.dot(fr.v, eA)) > 0 ? 1 : -1;
       const big = g.width + g.height + 10;
-      const lo = plan.uA, hi = plan.W / 2 + 1;
+      const lo = plan.uB, hi = plan.W / 2 + 1; // mitgebogen: Außenwand samt Reststeg
       const c = (sgn * k.sigma * (lo + hi)) / 2;
       const clip = ax === 0 ? R.drawRectangle(hi - lo, big).translate(c, 0) : R.drawRectangle(big, hi - lo).translate(0, c);
       const stripFace = regionToDrawing({ outer: g.outer, holes: g.holes }).intersect(clip).sketchOnPlane(new R.Plane(fr.origin, fr.u, fr.z));
@@ -794,8 +810,10 @@ export function createKernel(R) {
       const oA = v3.sub(v3.add(P, v3.mul(dA, s)), v3.mul(dA, k.x1));
       const oB = v3.sub(v3.sub(P, v3.mul(dB, s)), v3.mul(dB, k.x2));
       const K = kit(k);
-      cutsOf[j].push(extr(K.outer.A, oA, dA), extr(K.relief, oA, dA));
-      cutsOf[j + 1].push(extr(K.outer.B, oB, dB), extr(K.relief.clone(), oB, dB));
+      cutsOf[j].push(extr(K.outer.A, oA, dA));
+      cutsOf[j + 1].push(extr(K.outer.B, oB, dB));
+      const relA = K.reliefFor("A", false), relB = K.reliefFor("B", false);
+      if (relA) { cutsOf[j].push(extr(relA, oA, dA)); cutsOf[j + 1].push(extr(relB, oB, dB)); }
       if (K.strip("A")) { cutsOf[j].push(extr(K.strip("A"), oA, dA)); cutsOf[j + 1].push(extr(K.strip("B"), oB, dB)); }
       if (K.tab) {
         // Zapfen gehört zu Segment A (nur die Seitenwände), Segment B bekommt das Loch (mit Spiel)
@@ -831,7 +849,7 @@ export function createKernel(R) {
     for (const k of plan.knicks) {
       const K = kit(k), y = (u) => k.sigma * u;
       flat = flat.cut(K.notch ? extr(K.notch, o0, z0) : extr(poly([[k.x1, y(uA)], [k.x2, y(uA)], [k.x2, y(uF)], [k.x1, y(uF)]]), o0, z0));
-      flat = flat.cut(extr(K.relief, o0, z0));
+      for (const side of k.relief.kind === "keine" ? ["A", "B"] : ["A"]) { const dr = K.reliefFor(side, true); if (dr) flat = flat.cut(extr(dr, o0, z0)); }
       if (K.strip("A")) flat = flat.cut(extr(K.strip("A"), o0, z0)).cut(extr(K.strip("B"), o0, z0));
       if (K.tab) { flat = flat.cut(extr(K.tab.holeB(), o0, z0)); noses.push(extr(K.tab.nose(plan.tab.r), o0, z0).intersect(tube.clone())); }
     }
@@ -852,6 +870,7 @@ export function createKernel(R) {
       relief: plan.reliefKind,
       reliefMin: plan.knicks.map((k) => k.relief.min), // Mindestmaße der Freistellung je Knick
       weldGap: plan.weldGap,
+      restWall: plan.restWall,
       tabs: !!plan.tab,
       frameZ: z0,
     };

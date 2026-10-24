@@ -76,15 +76,23 @@ geprüft.
 
 Quellen und Begründung: `/mnt/project-files/knickrahmen/recherche-ausklinken-biegen.md`.
 
-- **Freistellung (Pflicht)** an der Außenwand-Innenseite, symmetrisch zur Biegezone, nur in den
+- **Freistellung (optional, Vorgabe rund)** an der Außenwand-Innenseite, symmetrisch zur Biegezone, nur in den
   Seitenwänden – die Außenwand bleibt ganz. Sie hält die Seitenwände über die ganze Biegezone frei
   (sonst würden sie beim Biegen eingedrückt) und entfernt alles, was gefaltet in die gebogene Wand
   ragen würde. Mindestmaße je Knick (Rand m = 0,5 mm):
   - halbe Breite `w = max(b/2, rᵢ·tan(θ/2) − b/2) + m`
   - Tiefe `h = max(rᵢ·(1 − cos(θ/2)) + m, [Flanken kreuzen:] rᵢ − b/(2·tan(θ/2)) + m, t/2)`
   - *rund*: Langloch mit Radius ≥ h, Kreismitten bei ±w; *rechteckig*: Breite ≥ 2w, Tiefe ≥ h.
-  Leere Felder = Mindestmaß; kleinere Eingaben werden abgelehnt. Das Mindestmaß steht im
+  Leere Felder = Mindestmaß; kleinere Eingaben werden abgelehnt.
+  - *keine* (Patrick 24.10.2026: es gibt auch Knickrahmen ohne Freistellung): die V-Flanken enden
+    an einem Bogen mit rᵢ − s um den Biegemittelpunkt; gefaltet ist die Ecke geschlossen, die
+    Seitenwand liegt auf der Gehrung bis an die gebogene Wand. Das Mindestmaß steht im
   Eigenschaftsfenster.
+- **Reststeg s** (Vorgabe 0,1 mm, Vorgabe Patrick 24.10.2026): V-Ausschnitt und Freistellung enden
+  s vor der Außenwand-Innenseite, der Laser berührt die stehende Wand nie. Der Steg wird mit der
+  Außenwand gebogen (Innenradius des Stegs rᵢ − s); deshalb muss rᵢ ≥ s sein. Alle Maße oben gelten
+  mit `uA − s` statt `uA` und `rᵢ − s` statt `rᵢ`. Durch den Steg weicht das Volumen gefaltet/abgewickelt
+  um `2·s·t·(k·t + s/2)·θ` ab (im Test geprüft).
 - **Schweißspalt g** (Vorgabe 0, typisch 0,5–1 mm): hinter jeder Flanke ein Streifen g/2, gefaltet
   ergibt das den Spalt g auf der Gehrung. g < t.
 - **Zapfen**, Durchmesser Dz, **Spiel** c (Vorgabe 0,2 mm): Nase auf der Gehrungslinie beider
@@ -105,7 +113,7 @@ Quellen und Begründung: `/mnt/project-files/knickrahmen/recherche-ausklinken-bi
   "orientation": "hochkant",
   "bendRadius": "3", "kFactor": "0.33",
   "relief": "rund", "reliefDia": "", "reliefWidth": "", "reliefHeight": "",
-  "weldGap": "0", "tabs": "aus", "tabDia": "8", "tabClearance": "0.2",
+  "weldGap": "0", "restWall": "0.1", "tabs": "aus", "tabDia": "8", "tabClearance": "0.2",
   "segments": [{ "length": "800" }, { "length": "600" }],
   "bends": [{ "angle": "30", "min": "", "max": "" }],
   "view": "gefaltet"
@@ -132,6 +140,7 @@ Rechnerisch (`src/core/knickrahmen.js`, `planKnickrahmen`):
 | `K_FACTOR` | 0 ≤ k ≤ 1 |
 | `RELIEF` | Maße > 0 und ≥ Mindestmaß |
 | `WELD_GAP` | 0 ≤ g < t |
+| `REST_WALL` | s ≥ 0, rᵢ ≥ s |
 | `TAB` | Zapfen passt in die Seitenwand und stößt in der Abwicklung nicht an die Gegenflanke |
 | `SEG_SHORT` | Lᵢ größer als Σ tan(\|θ\|/2)·max(W/2, −d) der Ausklinkungen am Segment, sonst würde das V über das Segment hinausreichen |
 

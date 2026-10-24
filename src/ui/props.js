@@ -328,20 +328,21 @@ export class Props {
           E("Innenradius", "bendRadius", { allowNeg: false }),
           E("K-Faktor", "kFactor", { unit: "", allowNeg: false }),
           h("p", { class: "hint" }, "Biegezugabe je Knick = (Innenradius + K-Faktor · Wandstärke) · Winkel im Bogenmaß. Werte aus der Biegetabelle der Abkantung eintragen – die Vorgabe ist nur ein Startwert.")));
-        const rk = f.relief === "rechteck" ? "rechteck" : "rund";
+        const rk = f.relief === "rechteck" || f.relief === "keine" ? f.relief : "rund";
         const kmeta = r?.bodies?.find((b) => b.fid === f.id)?.meta;
         const mins = kmeta?.reliefMin || [];
-        const minText = mins.length ? "Mindestmaß: " + mins.map((m, j) => `Knick ${j + 1}: ` + (m.dia ? `Ø ${fmtNum(m.dia, 1)}` : `${fmtNum(m.width, 1)} × ${fmtNum(m.height, 1)}`)).join(", ") + " mm" : "";
+        const minText = rk !== "keine" && mins.some(Boolean) ? "Mindestmaß: " + mins.map((m, j) => !m ? "" : `Knick ${j + 1}: ` + (m.dia ? `Ø ${fmtNum(m.dia, 1)}` : `${fmtNum(m.width, 1)} × ${fmtNum(m.height, 1)}`)).join(", ") + " mm" : "";
         out.push(this.section("Freistellung, Spalt, Zapfen",
-          this.seg("Freistellung", [["rund", "Rund (Langloch)"], ["rechteck", "Rechteckig"]], rk, (v) => this.set(f, "relief", v, "Freistellung")),
-          rk === "rund" ? this.text("Durchmesser", f.reliefDia, (v) => this.set(f, "reliefDia", v, "Freistellung"), { placeholder: "automatisch" })
+          this.seg("Freistellung", [["keine", "Keine"], ["rund", "Rund (Langloch)"], ["rechteck", "Rechteckig"]], rk, (v) => this.set(f, "relief", v, "Freistellung")),
+          rk === "keine" ? null : rk === "rund" ? this.text("Durchmesser", f.reliefDia, (v) => this.set(f, "reliefDia", v, "Freistellung"), { placeholder: "automatisch" })
             : [this.text("Breite", f.reliefWidth, (v) => this.set(f, "reliefWidth", v, "Freistellung"), { placeholder: "automatisch" }),
               this.text("Tiefe", f.reliefHeight, (v) => this.set(f, "reliefHeight", v, "Freistellung"), { placeholder: "automatisch" })],
           minText ? h("div", { class: "hint" }, minText) : null,
+          E("Reststeg", "restWall", { allowNeg: false }),
           E("Schweißspalt", "weldGap", { allowNeg: false }),
           this.seg("Zapfen", [["aus", "Aus"], ["an", "An"]], f.tabs || "aus", (v) => this.set(f, "tabs", v, "Zapfen")),
           f.tabs === "an" ? [E("Zapfen-Durchmesser", "tabDia", { allowNeg: false, allowZero: false }), E("Zapfenspiel", "tabClearance", { allowNeg: false })] : null,
-          h("p", { class: "hint" }, "Die Freistellung ist Pflicht: Sie hält die Seitenwände an der Außenwand über die ganze Biegezone frei, damit sie beim Biegen nicht eingedrückt werden. Leer = Mindestmaß. Schweißspalt typisch 0,5–1 mm. Zapfen: Nase auf der Gehrung am Segment vor dem Knick, Loch im Segment danach um das Spiel größer.")));
+          h("p", { class: "hint" }, "Freistellung (empfohlen): hält die Seitenwände an der Außenwand über die ganze Biegezone frei, damit sie beim Biegen nicht eingedrückt werden; leer = Mindestmaß. „Keine“: die Flanken enden an einem Bogen um den Biegemittelpunkt, die Ecke bleibt geschlossen. Reststeg: der Schnitt endet so weit vor der Außenwand (Vorgabe 0,1 mm), der Steg wird mitgebogen. Schweißspalt typisch 0,5–1 mm. Zapfen: Nase auf der Gehrung am Segment vor dem Knick, Loch im Segment danach um das Spiel größer.")));
         out.push(this.section("Segmente und Knicke", ...rows,
           h("p", { class: "hint" }, "Längen auf der Mittellinie von Knoten zu Knoten."),
           h("div", { class: "btn-row" },
