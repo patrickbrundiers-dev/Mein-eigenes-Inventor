@@ -226,6 +226,7 @@ export class Ribbon {
       h("button", { class: "rb-file", onclick: (e) => this.fileMenu(e) }, "Datei"),
       ...tabs.map((t) => h("button", { class: "rb-tab" + (t.id === this.tab ? " active" : "") + (t.context ? " context" : ""), onclick: () => { this.tab = t.id; this.render(); } }, t.label)),
       h("div", { class: "rb-spacer" }),
+      h("button", { class: "rb-search", title: `Befehl suchen (${this.kbd("app.search") || "Strg+K"})`, onclick: () => app.commands.exec("app.search") }, icon("search"), h("span", {}, "Befehl suchen"), this.kbd("app.search") ? h("span", { class: "kbd" }, this.kbd("app.search")) : null),
       h("button", { class: "icon-btn", title: "Rückgängig (Strg+Z)", disabled: !app.undoStack.length, onclick: () => app.undo() }, icon("undo")),
       h("button", { class: "icon-btn", title: "Wiederholen (Strg+Y)", disabled: !app.redoStack.length, onclick: () => app.redo() }, icon("redo")),
       this.docLabel = h("div", { class: "rb-doc" }));
@@ -239,10 +240,10 @@ export class Ribbon {
           // Kleine Knöpfe in Spalten zu je 3
           for (let i = 0; i < g.buttons.length; i += 3) {
             btns.append(h("div", { class: "rb-stack" }, ...g.buttons.slice(i, i + 3).map((b) =>
-              h("button", { class: "rb-small" + (b.on ? " on" : ""), title: b.label, onclick: b.run, disabled: b.disabled }, icon(b.icon), b.label))));
+              h("button", { class: "rb-small" + (b.on ? " on" : ""), title: this.tip(b), onclick: b.run, disabled: b.disabled }, icon(b.icon), b.label))));
           }
         } else {
-          for (const b of g.buttons) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, title: b.label }, icon(b.icon), h("span", {}, b.label)));
+          for (const b of g.buttons) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, title: this.tip(b) }, icon(b.icon), h("span", {}, b.label)));
         }
         panel.append(h("div", { class: "rb-group" }, btns, h("div", { class: "rb-group-label" }, g.label)));
       }
@@ -250,6 +251,14 @@ export class Ribbon {
       panel.append(h("div", { class: "hint", style: { alignSelf: "center", padding: "0 8px" } }, "Neues Projekt anlegen oder vorhandenes öffnen."));
     }
     this.el.replaceChildren(tabBar, panel);
+  }
+  kbd(id) { return this.app.commands?.label(id) || ""; }
+  /** Tooltip mit Tastaturkürzel, falls der Knopf einem Befehl entspricht */
+  tip(b) {
+    const special = { finishSketch: "sketch.finish", constr: "sketch.construction", gridsnap: "sketch.gridsnap", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
+    const id = special[b.id] || (b.id.startsWith("t_") ? "sketch." + b.id.slice(2) : b.id.startsWith("v_") ? "view." + b.id.slice(2) : b.id.startsWith("dm_") ? "view.mode." + b.id.slice(3) : "part." + b.id);
+    const k = this.kbd(id);
+    return k ? `${b.label} (${k})` : b.label;
   }
   renderDocLabel() {
     if (!this.docLabel) return;
@@ -266,10 +275,10 @@ export class Ribbon {
     const out = (ev) => { if (!m.contains(ev.target) && ev.target !== e.target) close(); };
     const item = (ic, label, run, kbd, disabled) => h("button", { disabled, onclick: () => { close(); run(); } }, icon(ic), h("span", {}, label), kbd ? h("span", { class: "kbd" }, kbd) : null);
     const m = h("div", { class: "file-menu", role: "menu" },
-      item("new", "Neues Projekt", () => app.newProject(), "Strg+N"),
-      item("open", "Projekt öffnen…", () => f.open(), "Strg+O"),
-      item("save", "Speichern", () => f.save(false), "Strg+S"),
-      item("save", "Speichern unter…", () => f.save(true), "Strg+Umschalt+S"),
+      item("new", "Neues Projekt", () => app.newProject(), this.kbd("file.new")),
+      item("open", "Projekt öffnen…", () => f.open(), this.kbd("file.open")),
+      item("save", "Speichern", () => f.save(false), this.kbd("file.save")),
+      item("save", "Speichern unter…", () => f.save(true), this.kbd("file.saveAs")),
       h("hr"),
       item("part", "Neues Bauteil", () => app.newPart()),
       item("assembly", "Neue Baugruppe", () => app.newAssembly()),
@@ -278,7 +287,8 @@ export class Ribbon {
       item("import", "STEP als Bauteil importieren…", () => f.importStepAsPart()),
       item("steel", "Beispielprojekt öffnen", () => app.openExample()),
       h("hr"),
-      item("settings", "Einstellungen…", () => app.props.settingsDialog(), "Strg+,"),
+      item("search", "Befehl suchen…", () => app.commands.exec("app.search"), this.kbd("app.search")),
+      item("settings", "Einstellungen…", () => app.props.settingsDialog(), this.kbd("app.settings")),
       item("info", "Über WerkCAD", () => app.props.aboutDialog()));
     document.body.append(m);
     setTimeout(() => document.addEventListener("mousedown", out, true), 0);
