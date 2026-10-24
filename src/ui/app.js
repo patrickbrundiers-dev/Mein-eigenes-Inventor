@@ -10,6 +10,7 @@ import { Files } from "./files.js";
 import { StartScreen } from "./start.js";
 import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
+import { constraintLabel } from "../core/sketchshapes.js";
 import { h, toast, confirmDialog, contextMenu, fmtNum } from "./dom.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { newSketch } from "../core/sketch.js";
@@ -115,7 +116,7 @@ export class App {
       const sd = this.doc(src.id);
       d.title.benennung = sd.name;
       d.title.nummer = sd.number || "";
-      d.title.werkstoff = sd.kind === "part" ? MATERIALS[sd.material]?.label || "" : "";
+      // Werkstoff bleibt leer: das Schriftfeld zeigt dann den aktuellen Werkstoff des Modells
       d.pendingAutoViews = true;
     }
     return this.addDoc(d);
@@ -384,7 +385,7 @@ export class App {
       h("span", {}, "  ·  "),
       h("span", {}, regions ? `${regions} geschlossene Kontur${regions > 1 ? "en" : ""}` : "keine geschlossene Kontur"),
       errs.length ? h("div", { style: { color: "var(--err)" } }, errs[0]) : null,
-      r && !r.ok ? h("div", { style: { color: "var(--err)" } }, "Bemaßung widersprüchlich – zuletzt geänderte Maße prüfen") : null));
+      r && !r.ok ? h("div", { style: { color: "var(--err)" } }, conflictText(this.sketcher.sk, r)) : null));
   }
   selectSketchItems(list) {
     this.sketchSel = list;
@@ -890,6 +891,13 @@ export const FEATURE_NAMES = {
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
 };
 
+/** Welche Bedingungen nicht erfüllbar sind, in Klartext (rot markiert in der Skizze) */
+function conflictText(sk, r) {
+  const names = (r.failed || []).map((id) => sk?.constraints.find((c) => c.id === id)).filter(Boolean).map(constraintLabel);
+  if (!names.length) return "Skizze nicht lösbar – zuletzt geänderte Maße prüfen";
+  const uniq = [...new Set(names)];
+  return `Widerspruch – nicht erfüllbar: ${uniq.slice(0, 4).join(", ")}${uniq.length > 4 ? ` (+${uniq.length - 4})` : ""}. Rot markierte Bedingung löschen oder Maß ändern.`;
+}
 function defaultHint(mode, mouse) {
   switch (mode) {
     case "part": return mouse === "mitte-drehen"

@@ -47,16 +47,17 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Linie, Rechteck, Kreis, Bogen (3 Punkte, Mitte), Punkt | vorhanden | `src/ui/sketcher.js` |
 | Maße direkt beim Zeichnen | vorhanden | Rechteck/Linie/Kreis, `src/core/dyninput.js` |
 | Polylinie (Linienkette) | vorhanden | Linienwerkzeug setzt am Endpunkt fort |
-| Langloch, Polygon | fehlt | Stufe 6, aus Linien/Bögen + Bedingungen baubar |
+| Langloch, Polygon | vorhanden | Stufe 6: aus Bögen/Linien mit tangentAt/gleich bzw. Konstruktionskreis + gleiche Seiten; bleibt parametrisch |
 | Ellipse, Spline | blockiert | Solver (`src/core/solver.js`) und Profilbildung kennen nur Linie/Kreis/Bogen |
 | Stutzen, Skizzenrundung | vorhanden | `src/core/sketchedit.js` |
-| Versatz, Spiegeln, Muster, Verlängern, Teilen | fehlt | Stufe 6 (Spiegeln/Versatz zuerst) |
+| Spiegeln | vorhanden | Stufe 6: Kopien über »symmetrisch« an Originale gebunden |
+| Versatz, Muster, Verlängern, Teilen | fehlt | geplant; Versatz braucht Bogenverbindung an Ecken |
 | Projizieren, Konstruktionslinien | vorhanden | |
 | 12 Bedingungsarten, Bemaßung mit Formeln | vorhanden | `solver.js` |
 | Automatische Bedingungen beim Zeichnen | teilweise | horizontal/vertikal, auf Linie/Kreis, Mittelpunkt |
 | Raster, Rasterfang, Fangradius | vorhanden | Rasterweite und Fangradius jetzt einstellbar |
 | Status unter-/vollständig bestimmt | vorhanden | Freiheitsgrade im HUD |
-| Überbestimmt / widersprüchlich mit Ursache | teilweise | nur „Bemaßung widersprüchlich“; welche Bedingung, fehlt (Stufe 6) |
+| Überbestimmt / widersprüchlich mit Ursache | vorhanden | Stufe 6: HUD nennt die nicht erfüllbaren Bedingungen, Maße/Symbole rot |
 | Offene Konturen erkennen | vorhanden | `extractProfiles` |
 | Bedingungen unterdrücken | fehlt | |
 
@@ -107,4 +108,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 3 | Befehlssuche und anpassbare Tastaturkürzel mit Konfliktanzeige | Unit-Test Kürzel-Tabelle, Oberflächentest |
 | 4 | Messwerkzeug: Punkt/Kante/Fläche, Radius, Koordinaten; Oberfläche und Schwerpunkt aus dem Kernel | Kernel-Test (Würfel/Zylinder bekannte Werte) |
 | 5 | Auswahlfilter, Körper ausblenden/isolieren | Oberflächentest |
-| 6 | Skizze: Langloch, Polygon, Spiegeln, Versatz; Ursache bei widersprüchlichen Bedingungen | Solver-Tests |
+| 6 | Skizze: Langloch, Polygon, Spiegeln (Versatz offen); Ursache bei widersprüchlichen Bedingungen | Solver-Tests |

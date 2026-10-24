@@ -682,6 +682,47 @@ try {
     step("Auswahlfilter, Ausblenden, Isolieren", r.n > 2 && r.hit && r.opt.faces === false && r.opt.edges === true && r.hidden1 === 1 && r.visibleIso === 1 && r.status === `${r.n - 1} ausgeblendet` && r.allBack && r.same, JSON.stringify(r));
   }
 
+  // Skizze: Langloch und Polygon zeichnen, Kontur geschlossen; Widerspruch wird benannt und rot markiert
+  {
+    await evalApp(() => window.__werkcad.newPart("Langloch"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const vb = await page.locator("#viewer canvas").boundingBox();
+    const mx = vb.x + vb.width / 2, my = vb.y + vb.height / 2;
+    await evalApp(() => window.__werkcad.sketcher.setTool("slot"));
+    await page.mouse.click(mx - 200, my);
+    await page.mouse.click(mx - 60, my);
+    await page.mouse.move(mx - 60, my - 30, { steps: 3 });
+    await page.mouse.click(mx - 60, my - 30);
+    await evalApp(() => window.__werkcad.sketcher.setTool("polygon"));
+    await page.mouse.click(mx + 150, my);
+    await page.mouse.move(mx + 230, my, { steps: 3 });
+    await page.mouse.click(mx + 230, my);
+    await page.locator(".dim-input input").fill("6");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    await shot("25-langloch-polygon");
+    const sk1 = await evalApp(() => { const s = window.__werkcad.sketcher; const r = s.solve(); return { arcs: s.sk.entities.filter((e) => e.type === "arc").length, lines: s.sk.entities.filter((e) => e.type === "line" && !e.construction).length, regions: s.profiles.regions.length, ok: r.ok, dof: r.dof }; });
+    // Widerspruch: Polygon-Seite 30 und zugleich Umkreis Ø 20 → nicht erfüllbar
+    const conflict = await evalApp(() => {
+      const a = window.__werkcad, s = a.sketcher;
+      const circ = s.sk.entities.find((e) => e.type === "circle" && e.construction);
+      const side = s.sk.entities.find((e) => e.type === "line" && !e.construction && s.sk.constraints.some((c) => c.type === "equal" && c.e1 === e.id));
+      s.commit("Test", (sk) => { sk.constraints.push({ id: "t1", type: "length", e: side.id, value: "30" }, { id: "t2", type: "diameter", e: circ.id, value: "20" }); });
+      const hud = document.querySelector("#hud").textContent;
+      const red = document.querySelectorAll("#overlay .sk-dim-text.err").length;
+      a.undo();
+      return { hud, red, after: s.solve().ok };
+    });
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    step("Skizze: Langloch, Polygon, Widerspruch", sk1.arcs === 2 && sk1.lines === 8 && sk1.regions === 2 && sk1.ok && /nicht erfüllbar: .*(Länge 30|Durchmesser 20)/.test(conflict.hud) && conflict.red >= 1 && conflict.after,
+      JSON.stringify({ sk1, conflict }));
+  }
+
   // Plan 5.5: große Baugruppe (150 Komponenten) öffnen und bedienen
   {
     const t0 = Date.now();
