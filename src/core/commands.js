@@ -36,6 +36,7 @@ export const COMMANDS = [
   { id: "view.clipY", label: "Schnitt Y ein/aus", group: "Ansicht", scope: "3d", keywords: "schnittebene clipping" },
   { id: "view.clipZ", label: "Schnitt Z ein/aus", group: "Ansicht", scope: "3d", keywords: "schnittebene clipping" },
 
+  { id: "tools.measure", label: "Messen", group: "Prüfen", scope: "3d", key: "M", keywords: "abstand winkel radius durchmesser länge fläche" },
   { id: "part.sketch", label: "Skizze erstellen", group: "3D-Modell", scope: "part", key: "S" },
   { id: "part.extrude", label: "Extrusion", group: "3D-Modell", scope: "part", key: "E", keywords: "aufsatz extrudieren" },
   { id: "part.cutExtrude", label: "Ausschnitt", group: "3D-Modell", scope: "part", keywords: "tasche" },
