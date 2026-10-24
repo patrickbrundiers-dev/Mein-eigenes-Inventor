@@ -8,7 +8,7 @@ import { v3 } from "../core/geom.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
 import { clipProjection } from "../core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec } from "../core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
 import { bomRows } from "./props.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 
@@ -92,12 +92,18 @@ export class DrawingEditor {
     const W = (b) => b.x1 - b.x0, H = (b) => b.y1 - b.y0;
     const [sw, sh] = this.sheetSize(d);
     const availW = sw - 30 - 20, availH = sh - 20 - 50;
-    const fw = bb("front"), tp = bb("top"), lf = bb("left"), iso = bb("iso");
+    // nur die nötigen Ansichten: was eine Ansicht nicht zusätzlich zeigt, entfällt (z. B. Seitenansicht einer Platte)
+    const src = d.source && this.app.doc(d.source.id);
+    const profile = src?.kind === "part" ? profileSpec(src.features, (x) => evaluate(String(x), resolveParams(src.params || []).values)) : null;
+    const camAxes = Object.fromEntries(["front", "top", "left"].map((t) => [t, viewAxes(CAMS[t].dir, CAMS[t].up)]));
+    const keep = new Set(chooseViews({ front: res.auto_front, top: res.auto_top, left: res.auto_left }, camAxes, profile));
+    const none = { x0: 0, y0: 0, x1: 0, y1: 0 };
+    const fw = bb("front"), tp = keep.has("top") ? bb("top") : none, lf = keep.has("left") ? bb("left") : none, iso = bb("iso");
     const gap = 22;
     let scale = SCALES[SCALES.length - 1];
     for (const s of SCALES) {
-      const needW = (W(fw) + W(lf)) * s + gap * 3 + W(iso) * s * 0.6;
-      const needH = (H(fw) + H(tp)) * s + gap * 3;
+      const needW = (W(fw) + W(lf)) * s + gap * (keep.has("left") ? 3 : 2) + W(iso) * s * 0.6;
+      const needH = (H(fw) + H(tp)) * s + gap * (keep.has("top") ? 3 : 2);
       if (needW <= availW && needH <= availH) { scale = s; break; }
     }
     const x0 = 20 + 10, y0 = 10 + 10;
@@ -108,7 +114,7 @@ export class DrawingEditor {
       { id: fid, type: "front", x: fx, y: fy, scale, hidden: true },
       { id: uid("v"), type: "top", x: fx, y: fy + (H(fw) * scale) / 2 + gap + (H(tp) * scale) / 2, scale, hidden: true, parent: fid },
       { id: uid("v"), type: "left", x: fx + (W(fw) * scale) / 2 + gap + (W(lf) * scale) / 2, y: fy, scale, hidden: true, parent: fid },
-    ];
+    ].filter((v) => keep.has(v.type));
     const isoScale = scale * 0.6;
     nv.push({ id: uid("v"), type: "iso", x: sw - 10 - 15 - (W(iso) * isoScale) / 2, y: y0 + 15 + (H(iso) * isoScale) / 2, scale: isoScale, hidden: false });
     for (const v of nv) {
@@ -292,6 +298,60 @@ export class DrawingEditor {
         this.sel = { type: "view", id: v.id };
       } }],
     });
+  }
+
+  /**
+   * Hohlprofil im Schnitt statt mit verdeckten Kanten (DIN ISO 128-40): Schnitt A–A quer zur Profilachse durch die
+   * Vorderansicht, möglichst durch eine Bohrung; ersetzt die Seiten- bzw. Draufsicht, die nur den Querschnitt zeigt.
+   */
+  async hollowSection() {
+    const d = this.doc;
+    const front = d?.views.find((v) => v.type === "front");
+    const fp = front && this.proj.get(front.id);
+    if (!fp?.bbox) return toast("Zuerst Grundansichten erzeugen");
+    const src = d.source && this.app.doc(d.source.id);
+    if (src?.kind !== "part") return toast("Schnitt durch Hohlprofil gibt es für Einzelteile");
+    const scope = resolveParams(src.params || []).values;
+    const prof = profileSpec(src.features, (x) => evaluate(String(x), scope));
+    const pf = src.features.find((f) => f.type === "profile" && !f.suppressed);
+    let along = prof && ["rohr", "vierkant", "rechteck"].includes(pf?.section) ? prof.axis : null;
+    let res = null;
+    if (!along) {
+      // ohne Profil-Feature: Wandstärke in der Seiten- oder Draufsicht suchen
+      const items = this.sourceItems(d);
+      const views = ["left", "top"].map((t) => ({ key: "hs_" + t, dir: CAMS[t].dir, up: CAMS[t].up, hidden: true }));
+      try { res = await this.app.kernel.call("project", { items, views }); } catch (e) { return toast("Ansichten konnten nicht berechnet werden: " + e.message, { kind: "err" }); }
+      if (wallThickness(res.hs_left?.bbox, res.hs_left?.visible, res.hs_left?.arcs)) along = "X";
+      else if (wallThickness(res.hs_top?.bbox, res.hs_top?.visible, res.hs_top?.arcs)) along = "Z";
+    }
+    if (!along) return toast("Kein Hohlprofil gefunden (gleiche Wandstärke ringsum)");
+    if (along === "Y") return toast("Der Hohlraum ist in der Vorderansicht schon zu sehen");
+    const axis = along === "X" ? "v" : "h";
+    const bb = fp.bbox;
+    const mid = axis === "v" ? (bb.x0 + bb.x1) / 2 : (bb.y0 + bb.y1) / 2;
+    // durch die Bohrung, die der Mitte am nächsten liegt (Bohrungen erscheinen in Draufsicht bzw. Seitenansicht als Kreis)
+    const other = d.views.find((v) => v.type === (axis === "v" ? "top" : "left"));
+    const op = (other && this.proj.get(other.id)) || res?.[axis === "v" ? "hs_top" : "hs_left"];
+    const circles = (op?.arcs || []).filter((a) => a.full).concat(op ? circlesFromLines(op.visible, 0.5 * Math.max(op.bbox.x1 - op.bbox.x0, op.bbox.y1 - op.bbox.y0)) : []);
+    const coord = axis === "v" ? "cx" : "cy";
+    const near = circles.sort((a, b) => Math.abs(a[coord] - mid) - Math.abs(b[coord] - mid))[0];
+    const pos = Math.round((near ? near[coord] : mid) * 100) / 100;
+    const used = new Set(d.views.filter((x) => x.type === "section").map((x) => x.letter));
+    let letter = "A";
+    for (let i = 0; i < 26; i++) { const l = String.fromCharCode(65 + i); if (!used.has(l)) { letter = l; break; } }
+    const w = (bb.x1 - bb.x0) * front.scale, hh = (bb.y1 - bb.y0) * front.scale;
+    const endType = axis === "v" ? "left" : "top"; // zeigt nur den Querschnitt, den jetzt der Schnitt zeigt
+    const end = d.views.find((v) => v.type === endType && v.parent === front.id);
+    // an die Stelle der ersetzten Ansicht, sonst an die nächste freie Stelle neben der Vorderansicht
+    const half = (axis === "v" ? hh : w) / 2 + 10;
+    const want = axis === "v" ? [front.x + w / 2 + 22 + half, front.y] : [front.x, front.y + hh / 2 + 22 + half];
+    const [x, y] = end ? [end.x, end.y] : this.freeSpot(d, half, ...want);
+    const v = { id: uid("v"), type: "section", parent: front.id, axis, pos, letter, scale: front.scale, hidden: false, x, y };
+    this.app.edit("Schnitt Hohlprofil", () => {
+      if (end) { d.views = d.views.filter((x) => x !== end); d.dims = d.dims.filter((m) => m.view !== end.id); }
+      d.views.push(v);
+    });
+    this.sel = { type: "view", id: v.id };
   }
 
   // ---------- Koordinaten ----------
@@ -909,6 +969,8 @@ export class DrawingEditor {
     // Einzelteil aus einem Profil: Querschnitt als Profilangabe statt Einzelmaßen
     const src = d.source && this.app.doc(d.source.id);
     used.profile = src?.kind === "part" ? profileSpec(src.features, ev(src)) : null;
+    // Wandstärke nur bei einem einzelnen Hohlkörper, nicht bei Rahmen/Schweißbaugruppen aus mehreren Profilen
+    if (src?.kind !== "part" || src.features.some((f) => !f.suppressed && ["frame", "knickrahmen", "profile"].includes(f.type))) used.wall = true;
     const views = cands.filter((v) => !keep.some((m) => m.view === v.id && m.auto)).map((v) => {
       const c = this.viewCam(d, v), p = this.proj.get(v.id);
       return { id: v.id, axes: viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, lines: p.visible, holes };

@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { projectPoint, partCenter, balloonAnchors, placeBalloons } from "../src/core/balloons.js";
 import { clipPolylineToCircle, clipProjection } from "../src/core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, ROW_FIRST, ROW_STEP, holeSpecs, holeText, dimLabel, profileSpec, wallThickness, circlesFromLines } from "../src/core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, ROW_FIRST, ROW_STEP, holeSpecs, holeText, dimLabel, profileSpec, wallThickness, circlesFromLines, chooseViews, viewHasInfo } from "../src/core/autodims.js";
 
 const near = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
 
@@ -303,4 +303,22 @@ test("Kreis aus vielen kurzen Kantenstücken erkennen (Bohrung im Rundrohr)", ()
   pieces.push([[0, -24], [400, -24]], [[0, 24], [400, 24]]);
   assert.deepEqual(circlesFromLines(pieces, 200), [{ cx: 200, cy: 0, r: 6.5, full: true }]);
   assert.deepEqual(circlesFromLines(pieces.slice(0, 20), 200), [], "Halbkreis ist keine Bohrung");
+});
+
+test("Ansichtswahl: Platte ohne Seitenansicht, Profil ohne Stirnansicht, Winkel mit allen nötigen", () => {
+  const rect = (w, h) => ({ bbox: { x0: 0, y0: 0, x1: w, y1: h }, visible: [[[0, 0], [w, 0], [w, h], [0, h], [0, 0]]], arcs: [] });
+  const axes = { front: ["X", "Z"], top: ["X", "Y"], left: ["Y", "Z"] };
+  // Platte 300 × 200 × 10 mit Bohrungen: Draufsicht zeigt die Bohrungen, Seitenansicht nur ein Rechteck
+  const top = rect(300, 200); top.arcs = [{ cx: 25, cy: 25, r: 5.5, full: true }];
+  assert.deepEqual(chooseViews({ front: rect(300, 10), top, left: rect(200, 10) }, axes), ["front", "top"]);
+  // Klotz ohne Merkmale: Breite/Höhe vorne, Tiefe braucht eine zweite Ansicht
+  assert.deepEqual(chooseViews({ front: rect(50, 20), top: rect(50, 30), left: rect(30, 20) }, axes), ["front", "top"]);
+  // Rohrprofil entlang X: Stirnansicht zeigt nur den Querschnitt aus der Profilangabe
+  const end = { bbox: { x0: -24, y0: -24, x1: 24, y1: 24 }, visible: [], arcs: [{ cx: 0, cy: 0, r: 24, full: true }, { cx: 0, cy: 0, r: 21.4, full: true }] };
+  const prof = { axis: "X", cross: ["Y", "Z"] };
+  assert.deepEqual(chooseViews({ front: rect(400, 48), top: rect(400, 48), left: end }, axes, prof), ["front"]);
+  // Stufe in der Seitenansicht (L-Kontur) ist eigene Information
+  const L = { bbox: { x0: 0, y0: 0, x1: 30, y1: 20 }, visible: [[[0, 0], [30, 0], [30, 5], [5, 5], [5, 20], [0, 20], [0, 0]]], arcs: [] };
+  assert.ok(viewHasInfo(L));
+  assert.deepEqual(chooseViews({ front: rect(50, 20), top: rect(50, 30), left: L }, axes), ["front", "left"]);
 });
