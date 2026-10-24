@@ -452,9 +452,9 @@ test("Knickrahmen: Speichern/Laden und STEP-Rückimport", async () => {
   }
 });
 
-test("Knickrahmen: Freistellung rund/rechteckig und Positionier-Zapfen", async () => {
-  // K = 0,5, Wand ohne Eckradius: gefaltet und abgewickelt bleiben volumengleich (auch mit Zapfen,
-  // der an Segment A angesetzt und aus Segment B ausgeschnitten wird)
+test("Knickrahmen: Freistellung über die Biegezone, Schweißspalt, Zapfen", async () => {
+  // K = 0,5, Wand ohne Eckradius: gefaltet und abgewickelt sind volumengleich (Guldin), auch mit
+  // Freistellung, Spalt und Zapfen – und nur dann, wenn sich gefaltet nichts überlappt
   const dims = { B: "60", H: "40", t: "3", r: "0" };
   const build = async (view, extra, lens = ["800", "600"], angs = ["90"], ri = "3") => {
     const res = await K.buildPart(part([knick({ view, dims, ...extra }, lens, angs, { bendRadius: ri, kFactor: "0.5" })]));
@@ -462,38 +462,46 @@ test("Knickrahmen: Freistellung rund/rechteckig und Positionier-Zapfen", async (
     solidOk(res.bodies[0].shape);
     return res.bodies[0];
   };
-  const base = R.measureVolume((await build("abgewickelt", {})).shape);
   for (const [extra, lens, angs, ri] of [
-    [{ relief: "rund", reliefDia: "4" }],
-    [{ relief: "rechteck", reliefWidth: "6", reliefHeight: "6" }],
-    [{ relief: "rund", reliefDia: "4", tabs: "an", tabDia: "8" }],
-    [{ relief: "rechteck", reliefWidth: "6", reliefHeight: "5", tabs: "an", tabDia: "6" }, ["500", "400", "300"], ["45", "-60"], "4"],
+    [{}],
+    [{}, undefined, undefined, "10"],
+    [{}, undefined, undefined, "0"],
+    [{ relief: "rechteck" }, undefined, ["30"]],
+    [{ tabs: "an", tabDia: "8", weldGap: "1" }],
+    [{ relief: "rechteck", weldGap: "0.5", tabs: "an", tabDia: "6" }, ["500", "400", "300"], ["45", "-60"], "4"],
+    [{ weldGap: "0.8" }, undefined, ["150"], "5"],
   ]) {
     const fo = await build("gefaltet", extra, lens, angs, ri), fl = await build("abgewickelt", extra, lens, angs, ri);
-    relNear(R.measureVolume(fo.shape), R.measureVolume(fl.shape), 1e-6, "gefaltet = abgewickelt " + JSON.stringify(extra));
-    assert.equal(fl.meta.relief, extra.relief);
-    assert.equal(fl.meta.tabs, extra.tabs === "an");
-    if (!lens) assert.ok(R.measureVolume(fl.shape) < base - 1, "Freistellung nimmt Material weg");
+    relNear(R.measureVolume(fo.shape), R.measureVolume(fl.shape), 1e-6, `gefaltet = abgewickelt ${JSON.stringify(extra)} ${angs || 90}° ri ${ri || 3}`);
   }
-  // Ecke geschlossen: Seitenwand reicht auf der Gehrung bis an die gebogene Außenwand.
-  // Knoten (800, 0), Linksknick 90°: Außenwand rechts (−y), C = (824, −24), Ecke M = C + rᵢ·(1, −1)/√2
-  const closed = (await build("gefaltet", {})).shape;
-  const probe = (r) => { const p = [824 + r / Math.SQRT2, -24 - r / Math.SQRT2, 18.5]; return R.measureVolume(closed.clone().intersect(R.makeBaseBox(0.2, 0.2, 0.2).translate(p[0], p[1], p[2] - 0.1))); };
-  near(probe(2.5), 0.008, 1e-9, "Seitenwand innerhalb rᵢ vorhanden");
-  const relieved = (await build("gefaltet", { relief: "rund", reliefDia: "3" })).shape;
-  near(R.measureVolume(relieved.clone().intersect(R.makeBaseBox(0.2, 0.2, 0.2).translate(824 + 2.5 / Math.SQRT2, -24 - 2.5 / Math.SQRT2, 18.4))), 0, 1e-9, "Freistellung in der Ecke");
-  // Zapfen: gleiche Masse, aber andere Form (Nase an Flanke A, Loch an Flanke B)
-  const plain = await build("abgewickelt", {}), tab = await build("abgewickelt", { tabs: "an", tabDia: "8" });
-  relNear(R.measureVolume(tab.shape), R.measureVolume(plain.shape), 1e-9, "Zapfen volumenneutral");
-  const nose = R.measureVolume(tab.shape.clone().cut(plain.shape.clone()));
-  near(nose, (Math.PI * 16) / 2 * 2 * 3, 1e-3, "Nase = halbe Kreisscheibe in beiden Seitenwänden");
+  // Mindestmaß automatisch: 90°, rᵢ 3, t 3 → Tiefe max(rᵢ(1 − cos45°) + 0,5; t/2) = 1,5 → Ø 3
+  const auto = await build("abgewickelt", {});
+  assert.deepEqual(auto.meta.reliefMin, [{ dia: 3 }]);
+  assert.equal(auto.meta.relief, "rund");
+  // Biegezone frei: kein Seitenwand-Material knapp unter der Außenwand-Innenseite (abgewickelt,
+  // Linksknick → Außenwand bei y = −27; Biegezone x 824 … 831,07)
+  const box = (x, y, z) => R.makeBaseBox(0.2, 0.2, 0.2).translate(x, y, z - 0.1);
+  near(R.measureVolume(auto.shape.clone().intersect(box(827.5, -26.8, 18.5))), 0, 1e-9, "Biegezone frei");
+  near(R.measureVolume(auto.shape.clone().intersect(box(827.5, -28.5, 0))), 0.008, 1e-9, "Außenwand bleibt");
+  // Schweißspalt nimmt Material weg
+  const gap = await build("abgewickelt", { weldGap: "1" });
+  assert.ok(R.measureVolume(gap.shape) < R.measureVolume(auto.shape) - 10, "Spalt");
+  // Zapfen ohne Spiel volumenneutral, Nase = halbe Kreisscheibe in beiden Seitenwänden; Spiel vergrößert das Loch
+  const tab0 = await build("abgewickelt", { tabs: "an", tabDia: "8", tabClearance: "0" });
+  relNear(R.measureVolume(tab0.shape), R.measureVolume(auto.shape), 1e-9, "Zapfen volumenneutral");
+  near(R.measureVolume(tab0.shape.clone().cut(auto.shape.clone())), (Math.PI * 16) / 2 * 2 * 3, 1e-3, "Nase");
+  const tab2 = await build("abgewickelt", { tabs: "an", tabDia: "8", tabClearance: "0.2" });
+  near(R.measureVolume(tab0.shape) - R.measureVolume(tab2.shape), (Math.PI * (4.2 ** 2 - 16)) / 2 * 2 * 3, 1e-3, "Spiel");
   // Prüfregeln
   for (const [extra, re] of [
-    [{ relief: "rund", reliefDia: "0" }, /Durchmesser muss > 0/],
+    [{ reliefDia: "2" }, /Freistellung zu klein, Durchmesser mindestens 3 mm/],
+    [{ relief: "rechteck", reliefWidth: "1" }, /zu schmal/],
     [{ tabs: "an", tabDia: "52" }, /Zapfen zu groß/],
+    [{ weldGap: "3" }, /Schweißspalt/],
+    [{ bendRadius: "60" }, /Innenradius zu groß/],
   ]) {
     const res = await K.buildPart(part([knick({ dims, ...extra }, ["800", "600"], ["90"])]));
-    assert.match(String(res.status.kr.error), re, JSON.stringify(extra) + JSON.stringify(res.status));
+    assert.match(String(res.status.kr.error), re, JSON.stringify(extra));
     assert.equal(res.bodies.length, 0);
   }
   const small = await K.buildPart(part([knick({ dims, tabs: "an", tabDia: "8" }, ["800", "600"], ["5"])]));

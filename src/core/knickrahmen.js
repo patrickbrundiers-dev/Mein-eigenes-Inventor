@@ -8,8 +8,8 @@
 // - Außenwand liegt auf der konvexen Seite des Knicks und wird mit Innenradius ri gebogen
 // - Abwicklung: gerade Abschnitte bis zu den Tangentenpunkten der Biegung + Biegezone der Länge
 //   (ri + k·t)·θ (neutrale Faser, K-Faktor k) je Knick
-// - V-Flanken laufen bis an die Außenwand (Ecke geschlossen); optional Freistellung (rund/rechteckig)
-//   genau in der Ecke Gehrung/Außenwand, Positionier-Zapfen auf der
+// - V-Flanken gerade bis an die Außenwand; Freistellung (Pflicht, rund = Langloch / rechteckig) an der
+//   Außenwand über die ganze Biegezone; optional Schweißspalt auf der Gehrung, Positionier-Zapfen auf der
 //   Gehrungslinie der Seitenwände (am Segment vor dem Knick, Gegenstück als Loch im Segment danach)
 
 import { sectionGeometry } from "./sections.js";
@@ -17,6 +17,7 @@ import { planeFrame, toWorld, v3 } from "./geom.js";
 
 export const KNICK_LIMITS = { maxSegments: 3, minAngle: 0.5, maxAngle: 160 };
 export const KNICK_SECTIONS = ["rechteck", "vierkant"];
+const RELIEF_MARGIN = 0.5; // Mindest-Stegbreite/Überschnitt in mm (Fertigungsrichtlinien Ausklinken)
 
 const DEG = Math.PI / 180;
 const fmt = (x, d = 1) => String(Math.round(x * 10 ** d) / 10 ** d).replace(".", ",");
@@ -29,8 +30,9 @@ export function defaultKnickrahmen(dims) {
     plane: "XY", offset: "0", start: ["0", "0"], direction: "0",
     orientation: "hochkant",
     bendRadius: "3", kFactor: "0.33",
-    relief: "keine", reliefDia: "4", reliefWidth: "8", reliefHeight: "4",
-    tabs: "aus", tabDia: "8",
+    relief: "rund", reliefDia: "", reliefWidth: "", reliefHeight: "", // leer = Mindestmaß automatisch
+    weldGap: "0",
+    tabs: "aus", tabDia: "8", tabClearance: "0.2",
     segments: [{ length: "800" }, { length: "600" }],
     bends: [{ angle: "30", min: "", max: "" }],
     view: "gefaltet",
@@ -40,7 +42,8 @@ export function defaultKnickrahmen(dims) {
 /**
  * Knickrahmen aus Zahlenwerten planen.
  * input: {section, dims{B,H,t,r}, plane, offset, start[u,v], direction°, orientation, bendRadius, kFactor,
- *         relief{kind: keine|rund|rechteck, dia, width, height}, tabDia (0 = keine Zapfen), segments[L], bends[{angle, min, max}]}
+ *         relief{kind: rund|rechteck, dia, width, height (null = Mindestmaß)}, weldGap, tabDia (0 = keine Zapfen), tabClearance,
+ *         segments[L], bends[{angle, min, max}]}
  * min/max: Zahl oder null. Rückgabe {issues[{code, ref, message}], …Geometriedaten wenn ohne Fehler}
  */
 export function planKnickrahmen(input) {
@@ -67,12 +70,14 @@ export function planKnickrahmen(input) {
   const ri = input.bendRadius, k = input.kFactor;
   if (bends.length && !(ri >= 0)) err("BEND_RADIUS", "bendRadius", "Innenradius der Biegung muss ≥ 0 sein");
   if (bends.length && !(k >= 0 && k <= 1)) err("K_FACTOR", "kFactor", "K-Faktor muss zwischen 0 und 1 liegen");
-  const rel = input.relief || { kind: "keine" };
-  const relHalf = rel.kind === "rund" ? rel.dia / 2 : rel.kind === "rechteck" ? Math.hypot(rel.width, rel.height) / 2 : 0;
-  if (rel.kind === "rund" && !(rel.dia > 0)) err("RELIEF", "relief", "Freistellung: Durchmesser muss > 0 sein");
-  if (rel.kind === "rechteck" && !(rel.width > 0 && rel.height > 0)) err("RELIEF", "relief", "Freistellung: Breite und Höhe müssen > 0 sein");
-  const tabR = (input.tabDia || 0) / 2;
+  const rel = input.relief?.kind === "rechteck" ? input.relief : { kind: "rund", dia: input.relief?.dia ?? null };
+  for (const [v, name] of [[rel.dia, "Durchmesser"], [rel.width, "Breite"], [rel.height, "Höhe"]])
+    if (v !== null && v !== undefined && !(v > 0)) err("RELIEF", "relief", `Freistellung: ${name} muss > 0 sein`);
+  const gap = input.weldGap || 0;
+  if (!(gap >= 0)) err("WELD_GAP", "weldGap", "Schweißspalt muss ≥ 0 sein");
+  const tabR = (input.tabDia || 0) / 2, tabC = input.tabClearance || 0;
   if (!(tabR >= 0)) err("TAB", "tabs", "Zapfen: Durchmesser muss > 0 sein");
+  if (!(tabC >= 0)) err("TAB", "tabs", "Zapfenspiel muss ≥ 0 sein");
   if (issues.length) return { issues };
 
   const W = input.orientation === "flach" ? g.height : g.width; // Breite in der Knickebene
@@ -82,24 +87,14 @@ export function planKnickrahmen(input) {
 
   const uA = W / 2 - t; // Innenseite der Außenwand, gemessen von der Mittellinie
   const d = uA - (ri || 0); // Abstand Biegemittelpunkt ↔ Mittellinie (zur Außenwand hin positiv)
+  if (bends.length && d <= -W / 2 + t) err("BEND_RADIUS", "bendRadius", `Innenradius zu groß: höchstens ${fmt(W - 2 * t - 0.1)} mm`);
+  if (bends.length && gap >= t) err("WELD_GAP", "weldGap", `Schweißspalt muss kleiner als die Wandstärke (${fmt(t)} mm) sein`);
   // Segment zu kurz: gerade Wandreste bis zur Ausklinkung müssen an Innen- und Außenseite > 0 bleiben
   segs.forEach((L, i) => {
     const tt = (i > 0 ? tanHalf[i - 1] : 0) + (i < bends.length ? tanHalf[i] : 0);
     const need = tt * Math.max(W / 2, -d);
     if (need > 0 && L - need <= 1e-6) err("SEG_SHORT", `segment:${i}`, `Segment ${i + 1} zu kurz für die Ausklinkung (mehr als ${fmt(need)} mm nötig)`);
   });
-  // Zapfen: auf der Gehrungslinie in der Mitte der Seitenwand, zwischen Eckradius und Freistellung
-  const rc = Math.max(input.dims.r || 0, t);
-  const tabU = (d - relHalf + (-W / 2 + rc)) / 2; // Freistellung liegt oberhalb von d (Ecke an der Außenwand)
-  if (bends.length && tabR > 0) {
-    if (tabU + tabR > d - relHalf - 0.5 || tabU - tabR < -W / 2 + rc + 0.5)
-      err("TAB", "tabs", `Zapfen zu groß: Durchmesser höchstens ${fmt(Math.max(0, d - relHalf - (-W / 2 + rc) - 1))} mm`);
-    bends.forEach((b, j) => {
-      const th = Math.abs(b.angle) * DEG;
-      const gap = ((ri || 0) + k * t) * th + 2 * (d - tabU) * tanHalf[j];
-      if (!(gap * Math.cos(th / 2) > tabR + 0.5)) err("TAB", `bend:${j}`, `Knick ${j + 1}: Zapfen stößt in der Abwicklung an die Gegenflanke (Winkel zu klein oder Zapfen zu groß)`);
-    });
-  }
   if (issues.length) return { issues };
 
   // Mittellinie in der Ebene
@@ -127,15 +122,46 @@ export function planKnickrahmen(input) {
       const theta = Math.abs(b.angle) * DEG;
       const zone = (ri + k * t) * theta; // Biegezugabe (Länge der neutralen Faser in der Biegezone)
       // σ: Seite der Außenwand in Profil-u-Richtung (u zeigt nach links); Linksknick → Außenwand rechts
-      knicks.push({ index: i, angle: b.angle, sigma: b.angle > 0 ? -1 : 1, x1: x, x2: x + zone, zone, tanHalf: tanHalf[i] });
+      const kn = { index: i, angle: b.angle, sigma: b.angle > 0 ? -1 : 1, x1: x, x2: x + zone, zone, tanHalf: tanHalf[i] };
+      // Freistellung (Pflicht): Seitenwände an der Außenwand über die ganze Biegezone frei, und dort,
+      // wo sie gefaltet die gebogene Wand (Radius rᵢ um C) schneiden würden; Rand 0,5 mm
+      const tn = tanHalf[i], ch = Math.cos(theta / 2), r0 = ri || 0;
+      const cross = 2 * r0 * tn > zone; // Flanken treffen sich unterhalb der Außenwand
+      const hMin = Math.max(r0 * (1 - ch) + RELIEF_MARGIN, cross ? r0 - zone / (2 * tn) + RELIEF_MARGIN : 0, t / 2); // Breite ≥ t
+      const wMin = Math.max(zone / 2, r0 * tn - zone / 2) + RELIEF_MARGIN;
+      const up = (v) => Math.ceil(v * 10 - 1e-9) / 10;
+      if (rel.kind === "rund") {
+        const r = rel.dia ? rel.dia / 2 : up(hMin);
+        if (r < hMin - 1e-9) err("RELIEF", `bend:${i}`, `Knick ${i + 1}: Freistellung zu klein, Durchmesser mindestens ${fmt(up(2 * hMin))} mm`);
+        kn.relief = { kind: "rund", r, half: wMin, depth: r, min: { dia: up(2 * hMin) } };
+      } else {
+        const w = rel.width || up(2 * wMin), h = rel.height || up(hMin);
+        if (w < 2 * wMin - 1e-9) err("RELIEF", `bend:${i}`, `Knick ${i + 1}: Freistellung zu schmal, Breite mindestens ${fmt(up(2 * wMin))} mm`);
+        if (h < hMin - 1e-9) err("RELIEF", `bend:${i}`, `Knick ${i + 1}: Freistellung zu flach, Höhe mindestens ${fmt(up(hMin))} mm`);
+        kn.relief = { kind: "rechteck", w, h, depth: h, min: { width: up(2 * wMin), height: up(hMin) } };
+      }
+      knicks.push(kn);
       x += zone + segs[i + 1] + d * tanHalf[i] + (i + 1 < bends.length ? d * tanHalf[i + 1] : 0);
     }
   });
   const flatLength = x;
+  // Zapfen: auf der Gehrungslinie mittig zwischen Eckradius (Innenwand) und Freistellung
+  const rc = Math.max(input.dims.r || 0, t);
+  const relDepth = Math.max(0, ...knicks.map((kn) => kn.relief.depth));
+  const tabU = (uA - relDepth + (-W / 2 + rc)) / 2;
+  if (bends.length && tabR > 0) {
+    if (tabU + tabR + tabC > uA - relDepth - 0.5 || tabU - tabR - tabC < -W / 2 + rc + 0.5)
+      err("TAB", "tabs", `Zapfen zu groß: Durchmesser höchstens ${fmt(Math.max(0, uA - relDepth - (-W / 2 + rc) - 1 - 2 * tabC))} mm`);
+    knicks.forEach((kn) => {
+      const th = Math.abs(kn.angle) * DEG;
+      const free = (kn.zone + 2 * (d - tabU) * kn.tanHalf) * Math.cos(th / 2); // Abstand Zapfenmitte ↔ Gegenflanke (abgewickelt)
+      if (!(free > tabR + tabC + 0.5)) err("TAB", `bend:${kn.index}`, `Knick ${kn.index + 1}: Zapfen stößt in der Abwicklung an die Gegenflanke (Winkel zu klein oder Zapfen zu groß)`);
+    });
+  }
   if (issues.length) return { issues };
 
   return { issues, frame, nodes, dirs, W, H: Hp, t, uA, d, ri: ri || 0, k: k ?? 0, knicks, flatLength, area: g.area, geom: g,
-    relief: { ...rel, half: relHalf }, tab: tabR > 0 && bends.length ? { r: tabR, u: tabU } : null };
+    reliefKind: rel.kind, weldGap: gap, tab: tabR > 0 && bends.length ? { r: tabR, u: tabU, c: tabC } : null };
 }
 
 /** Feature-Ausdrücke auswerten (E = (ausdruck, bezeichnung) => Zahl) */
@@ -148,10 +174,12 @@ export function knickInput(f, E) {
     start: (f.start || ["0", "0"]).map((v, k) => E(v, "Startpunkt " + "UV"[k])),
     direction: E(f.direction || "0", "Startrichtung"), orientation: f.orientation || "hochkant",
     bendRadius: E(f.bendRadius ?? "0", "Innenradius Biegung"), kFactor: E(f.kFactor ?? "0.5", "K-Faktor"),
-    relief: f.relief === "rund" ? { kind: "rund", dia: E(f.reliefDia ?? "4", "Freistellung Durchmesser") }
-      : f.relief === "rechteck" ? { kind: "rechteck", width: E(f.reliefWidth ?? "8", "Freistellung Breite"), height: E(f.reliefHeight ?? "4", "Freistellung Höhe") }
-      : { kind: "keine" },
+    relief: f.relief === "rechteck"
+      ? { kind: "rechteck", width: opt(f.reliefWidth, "Freistellung Breite"), height: opt(f.reliefHeight, "Freistellung Höhe") }
+      : { kind: "rund", dia: opt(f.reliefDia, "Freistellung Durchmesser") },
+    weldGap: E(f.weldGap || "0", "Schweißspalt"),
     tabDia: f.tabs === "an" ? E(f.tabDia ?? "8", "Zapfen Durchmesser") : 0,
+    tabClearance: E(f.tabClearance ?? "0", "Zapfenspiel"),
     segments: (f.segments || []).map((s, i) => E(s.length, `Segment ${i + 1} Länge`)),
     bends: (f.bends || []).map((b, j) => ({
       angle: E(b.angle, `Knick ${j + 1} Winkel`),

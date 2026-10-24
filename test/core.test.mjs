@@ -452,10 +452,16 @@ test("Knickrahmen: Mittellinie, Abwicklung mit K-Faktor, Prüfregeln", async () 
   assert.deepEqual(codes(planKnickrahmen(base({ kFactor: 1.2 }))), ["K_FACTOR"]);
   assert.deepEqual(codes(planKnickrahmen(base({ dims: { B: 60, H: 40, t: 20, r: 6 } }))), ["SECTION"]);
   assert.deepEqual(codes(planKnickrahmen(base({ section: "rohr", dims: { D: 40, t: 2 } }))), ["SECTION_KIND"]);
-  // Segment kürzer als W/2·tan(θ/2): 90° → mindestens 30 mm; großer Radius verlangt mehr (|d|·tan)
+  // Segment kürzer als W/2·tan(θ/2): 90° → mindestens 30 mm
   assert.deepEqual(codes(planKnickrahmen(base({ segments: [30, 600] }))), ["SEG_SHORT"]);
   assert.deepEqual(codes(planKnickrahmen(base({ segments: [30.5, 600] }))), []);
-  assert.deepEqual(codes(planKnickrahmen(base({ segments: [40, 600], bendRadius: 70 }))), ["SEG_SHORT"]);
+  // Innenradius höchstens W − 2t (Biegemittelpunkt noch innerhalb der Innenwand)
+  assert.deepEqual(codes(planKnickrahmen(base({ bendRadius: 70 }))), ["BEND_RADIUS"]);
+  // Freistellung: Mindestmaß automatisch, zu kleine Eingabe abgelehnt; Schweißspalt < t
+  p = planKnickrahmen(base({ bendRadius: 3, kFactor: 0.5 }));
+  assert.deepEqual(p.knicks[0].relief.min, { dia: 3 });
+  assert.deepEqual(codes(planKnickrahmen(base({ bendRadius: 3, kFactor: 0.5, relief: { kind: "rund", dia: 2 } }))), ["RELIEF"]);
+  assert.deepEqual(codes(planKnickrahmen(base({ weldGap: 3 }))), ["WELD_GAP"]);
   const msg = planKnickrahmen(base({ segments: [800, -5] })).issues[0].message;
   assert.match(msg, /Segment 2/);
 });

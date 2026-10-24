@@ -105,7 +105,7 @@ Status: **vorhanden** · **teilweise** · **fehlt** · **unklar** · **blockiert
 | Ein definierter Querschnitt (Rechteck-Hohlprofil) | vorhanden (Baustein) | `sectionGeometry("rechteck" / "vierkant")` |
 | Gehrung am Knick als echte Schnittfläche | vorhanden (Baustein) | Winkelhalbierende in `buildFrame` |
 | Stumpfstoß / überlappend | teilweise | Stumpf existiert im Rahmen; überlappend fehlt |
-| Runde Freistellungen, Laschen, Langlöcher | teilweise | Freistellung rund/rechteckig und Positionier-Zapfen vorhanden; Laschen, Langlöcher fehlen |
+| Runde Freistellungen, Laschen, Langlöcher | teilweise | Freistellung (Pflicht, Mindestmaß), Schweißspalt, Positionier-Zapfen mit Spiel vorhanden; Laschen, Langlöcher fehlen |
 | Gekantetes Blech mit Abwicklung | blockiert | keine Blechfunktion, keine Biegelogik im Projekt; braucht eigenen ADR |
 | Gebogenes Rohr (Biegeradius) | teilweise | Außenwand am Knick mit Innenradius + K-Faktor (Stufe 1); voll gebogenes Rohr braucht Sweep, Stufe 3 |
 | Gelenke, Bewegungsgrenzen, Auf-/Zuklappen (Entwicklungsplan 5.2/5.3) | n. r. | Knickrahmen ist starr (Entscheidung 24.10.2026); Min/Max nur als Prüfung |

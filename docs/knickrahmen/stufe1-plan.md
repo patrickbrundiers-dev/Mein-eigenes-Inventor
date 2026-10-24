@@ -58,10 +58,10 @@ der Kantbank zu ersetzen.
 - Gerades Rohr zwischen den Biegezonen (an der Rohrachse gemessen): `Lᵢ + d·(tan(|θ_links|/2) + tan(|θ_rechts|/2))`
 - Abwicklungslänge = `ΣLᵢ + Σ 2·d·tan(|θⱼ|/2) + Σ bⱼ` mit `d = W/2 − t − rᵢ`
 - V-Ausklinkung im abgewickelten Rohr: die Flanken (je |θ|/2 gegen die Querschnittsebene) laufen
-  gerade bis kurz vor die Außenwand-Innenseite und enden dort in einem Bogen mit rᵢ um den
-  Biegemittelpunkt; dazwischen liegt die Biegezone der Breite bⱼ. Gefaltet stoßen die Seitenwände
-  damit auf der Gehrung **bis an die gebogene Außenwand** – die Ecke ist geschlossen (Wunsch
-  Patrick, 24.10.2026). Ist rᵢ > W/2 − t, wird das V zum Rechteck.
+  **gerade bis zur Außenwand-Innenseite** (Vogel-Ausklinkwerkzeug, Rohrlaser-Praxis). Treffen sich
+  die Flanken schon vorher, endet das V dort in einer Spitze.
+- Gefaltet liegen die Seitenwände auf der Gehrung aneinander; die Außenwand ist zwischen den
+  Tangentenpunkten mit rᵢ gebogen. Ist rᵢ ≥ W − 2t, wird das mit einer Meldung abgelehnt.
 
 Beispiel RE 60×40×3, 800 + 600 mm, 90°, rᵢ = 3, k = 0,33:
 d = 24, b = (3 + 0,99)·π/2 = 6,267 mm, Abwicklung = 1400 + 48 + 6,267 = **1454,27 mm**.
@@ -72,20 +72,28 @@ Gefaltete Ansicht: zwischen den Tangentenpunkten ist die Außenwand ein Kreisrin
 Kontrolle: Bei k = 0,5 ist das Volumen gefaltet = abgewickelt (Guldin), im Test auf 1·10⁻⁶
 geprüft.
 
-## 4a. Freistellung und Positionier-Zapfen (optional, je Rahmen für alle Knicke)
+## 4a. Freistellung, Schweißspalt, Zapfen (nach Recherche, freigegeben 24.10.2026)
 
-- **Freistellung** genau in der Ecke Gehrung/Außenwand-Innenseite (Punkt im Abstand rᵢ vom
-  Biegemittelpunkt auf der Gehrungslinie), nur in den Seitenwänden, die Außenwand bleibt ganz:
-  - *rund*, Durchmesser D: Kreis um die Ecke.
-  - *rechteckig*, Breite × Höhe: symmetrisch zur Gehrungslinie, Höhe entlang der Gehrung.
-  - Abgewickelt erscheint sie als zwei Ausschnitte an den Flankenenden an der Außenwand.
-- **Zapfen**, Durchmesser Dz: runde Nase auf der Gehrungslinie beider Seitenwände, mittig zwischen
-  Eckradius und Freistellung. Die Nase sitzt am Segment vor dem Knick, das Segment danach hat den
-  passenden Ausschnitt. Abgewickelt: Nase an Flanke A, Ausschnitt an Flanke B.
-  Prüfung: Zapfen passt in die Seitenwand, und in der Abwicklung stößt die Nase nicht an die
-  Gegenflanke (Abstand > Dz/2 + 0,5 mm).
-- Gefaltet und abgewickelt verwenden dieselben Umrisse (Abwicklungs-Koordinaten, im Rahmen des
-  jeweiligen Segments ab dem Tangentenpunkt). Kontrolle wie oben: bei k = 0,5 Volumen gleich.
+Quellen und Begründung: `/mnt/project-files/knickrahmen/recherche-ausklinken-biegen.md`.
+
+- **Freistellung (Pflicht)** an der Außenwand-Innenseite, symmetrisch zur Biegezone, nur in den
+  Seitenwänden – die Außenwand bleibt ganz. Sie hält die Seitenwände über die ganze Biegezone frei
+  (sonst würden sie beim Biegen eingedrückt) und entfernt alles, was gefaltet in die gebogene Wand
+  ragen würde. Mindestmaße je Knick (Rand m = 0,5 mm):
+  - halbe Breite `w = max(b/2, rᵢ·tan(θ/2) − b/2) + m`
+  - Tiefe `h = max(rᵢ·(1 − cos(θ/2)) + m, [Flanken kreuzen:] rᵢ − b/(2·tan(θ/2)) + m, t/2)`
+  - *rund*: Langloch mit Radius ≥ h, Kreismitten bei ±w; *rechteckig*: Breite ≥ 2w, Tiefe ≥ h.
+  Leere Felder = Mindestmaß; kleinere Eingaben werden abgelehnt. Das Mindestmaß steht im
+  Eigenschaftsfenster.
+- **Schweißspalt g** (Vorgabe 0, typisch 0,5–1 mm): hinter jeder Flanke ein Streifen g/2, gefaltet
+  ergibt das den Spalt g auf der Gehrung. g < t.
+- **Zapfen**, Durchmesser Dz, **Spiel** c (Vorgabe 0,2 mm): Nase auf der Gehrungslinie beider
+  Seitenwände am Segment vor dem Knick, mittig zwischen Eckradius und Freistellung; Loch im Segment
+  danach mit Radius Dz/2 + c. Prüfung: passt in die Seitenwand, stößt abgewickelt nicht an die
+  Gegenflanke.
+- Gefaltet und abgewickelt verwenden dieselben Umrisse (Abwicklungs-Koordinaten im Rahmen des
+  jeweiligen Segments ab dem Tangentenpunkt). Kontrolle: bei k = 0,5 Volumen gleich – das schlägt
+  auch fehl, sobald sich gefaltet etwas überlappt.
 
 ## 5. Datenmodell (Feature im Bauteil)
 
@@ -96,8 +104,8 @@ geprüft.
   "plane": "XY", "offset": "0", "start": ["0", "0"], "direction": "0",
   "orientation": "hochkant",
   "bendRadius": "3", "kFactor": "0.33",
-  "relief": "keine", "reliefDia": "4", "reliefWidth": "8", "reliefHeight": "4",
-  "tabs": "aus", "tabDia": "8",
+  "relief": "rund", "reliefDia": "", "reliefWidth": "", "reliefHeight": "",
+  "weldGap": "0", "tabs": "aus", "tabDia": "8", "tabClearance": "0.2",
   "segments": [{ "length": "800" }, { "length": "600" }],
   "bends": [{ "angle": "30", "min": "", "max": "" }],
   "view": "gefaltet"
@@ -120,9 +128,10 @@ Rechnerisch (`src/core/knickrahmen.js`, `planKnickrahmen`):
 | `SEG_LENGTH` | Lᵢ > 0 |
 | `ANGLE_RANGE` | 0,5° ≤ \|θ\| ≤ 160° |
 | `ANGLE_LIMIT` | min ≤ θ ≤ max, falls angegeben; min ≤ max |
-| `BEND_RADIUS` | Innenradius ≥ 0 |
+| `BEND_RADIUS` | 0 ≤ rᵢ < W − 2t |
 | `K_FACTOR` | 0 ≤ k ≤ 1 |
-| `RELIEF` | Maße > 0 |
+| `RELIEF` | Maße > 0 und ≥ Mindestmaß |
+| `WELD_GAP` | 0 ≤ g < t |
 | `TAB` | Zapfen passt in die Seitenwand und stößt in der Abwicklung nicht an die Gegenflanke |
 | `SEG_SHORT` | Lᵢ größer als Σ tan(\|θ\|/2)·max(W/2, −d) der Ausklinkungen am Segment, sonst würde das V über das Segment hinausreichen |
 
@@ -162,7 +171,7 @@ gefaltet = abgewickelt relativ 1·10⁻⁶ bei k = 0,5; bei rᵢ = 0, k = 0 zus�
 | J ungültige Eingaben | negative Länge, 175°, über Maximum, Segment zu kurz, 4 Segmente, negativer Radius, K > 1: Fehler mit Bezug, kein Teilergebnis, anderes Feature unberührt |
 | K Speichern/Laden | JSON-Roundtrip baut identisch (Meta, Volumen) |
 | L STEP | Export und Rückimport beider Ansichten, Volumen gleich |
-| E/F Ecke, Freistellung, Zapfen | Ecke geschlossen (Material innerhalb rᵢ), Freistellung in der Ecke; rund, rechteckig, mit Zapfen, 3 Segmente gegensinnig: gefaltet = abgewickelt, Zapfen volumenneutral, Nase = halbe Kreisscheibe × 2 Wände, Prüfregeln |
+| E/F Freistellung, Spalt, Zapfen | sieben Varianten gefaltet = abgewickelt, Mindestmaß, Biegezone frei, Außenwand ganz, Spalt, Zapfen volumenneutral, Spiel, Prüfregeln |
 | N Regression | alle bisherigen Tests grün |
 | Oberfläche | Knopf → Winkel im Eigenschaftsfenster auf 90° → Länge 1454,27 → Ansicht abgewickelt → zweimal Rückgängig |
 
