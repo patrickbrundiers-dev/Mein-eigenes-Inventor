@@ -86,7 +86,7 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 |---|---|---|
 | A Allgemein | teilweise | Autosave-Wartezeit, Lösch-Rückfrage, Dezimalstellen; Sprache/Ordner geplant |
 | B Dokument und Modell | fehlt | gehört in die Projektdatei; erst mit Vorlagen |
-| C Skizzen | teilweise | Rasterfang, Rasterweite, Fangradius, Symbole, automatische Bedingungen je Art |
+| C Skizzen | teilweise | Rasterfang, Rasterweite, Fangradius, Symbole, automatische Bedingungen je Art, Bestimmtheit farbig (Stufe 16) |
 | D 3D-Ansicht | teilweise | Projektion, Darstellungsmodus, Qualität, Maus, Zoom/Drehen, Raster, ViewCube, Farben |
 | E Werkzeuge und Tastatur | teilweise | Kürzel verwalten, Konflikte, Werkzeugsuche, Schnellzugriff, Standardwerte je Werkzeug (Stufe 15); Menüband anordnen geplant |
 | F Kernel | fehlt | bewusst: keine Toleranzen ohne Absicherung |
@@ -121,7 +121,7 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 13 | 3D-Fensterauswahl nach Auswahlfilter, Auswahl umkehren (Strg+I), Alles auswählen im Modell | Unit-Test Box-Logik, Oberflächentest |
 | 14 | Automatische Skizzenbedingungen: parallel, senkrecht, tangential, konzentrisch, gleich; Strg unterdrückt; je Art abschaltbar | Unit-Tests Erkennung, Oberflächentest |
 | 15 | Schnellzugriffsleiste (Befehle anheften) und Standardwerte je Werkzeug | Unit-Test Schema/Migration, Oberflächentest |
-| 16 (geplant) | Bestimmtheit der Skizze farbig (frei/bestimmt/Widerspruch) | Solver-Tests Nullraum, Oberflächentest |
+| 16 | Bestimmtheit der Skizze farbig (frei/bestimmt/Widerspruch) | Solver-Tests Nullraum, Oberflächentest |
 | 17 (geplant) | Trägheitsmomente aus dem Dreiecksnetz | Kernel-Test Quader/Zylinder/Rohr |
 | 18 (geplant) | Gefüllte Schnittflächen im 3D-Schnitt | Oberflächentest (Pixel) |
 | 19 (geplant) | Ellipse in der Skizze (Solver, Profil, DXF) | Solver-/Kernel-/Oberflächentest |

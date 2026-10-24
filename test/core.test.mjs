@@ -676,3 +676,36 @@ test("Update-Quelle auch ohne build-Feld (wie im Installer)", async () => {
   assert.deepEqual(updateSource({ repository: { type: "git", url: "git+https://github.com/a/b.git" } }), { owner: "a", repo: "b" });
   assert.equal(updateSource({}), null);
 });
+
+import { entityFree } from "../src/core/solver.js";
+test("Bestimmtheit je Element: frei, teilbemaßt, vollständig", () => {
+  const rect = () => ({
+    points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 40, y: 0 }, { id: "c", x: 40, y: 20 }, { id: "d", x: 0, y: 20 }, { id: "z", x: 100, y: 100 }, { id: "y", x: 120, y: 100 }],
+    entities: [{ id: "l1", type: "line", p1: "a", p2: "b" }, { id: "l2", type: "line", p1: "b", p2: "c" }, { id: "l3", type: "line", p1: "c", p2: "d" }, { id: "l4", type: "line", p1: "d", p2: "a" }, { id: "lz", type: "line", p1: "z", p2: "y" }],
+    constraints: [{ id: "h1", type: "horizontal", e: "l1" }, { id: "h3", type: "horizontal", e: "l3" }, { id: "v2", type: "vertical", e: "l2" }, { id: "v4", type: "vertical", e: "l4" }],
+  });
+  let s = rect();
+  let r = solveSketch(s, {}, { free: true });
+  assert.ok(r.ok);
+  assert.ok(s.entities.every((e) => entityFree(e, r.free)), "ohne Maße alles frei");
+  // Rechteck festlegen: Ecke fix, Breite, Höhe → Rechteck bestimmt, freie Linie lz bleibt frei
+  s = rect();
+  s.constraints.push({ id: "f", type: "fix", p: "a", x: 0, y: 0 }, { id: "w", type: "length", e: "l1", value: "40" }, { id: "hh", type: "length", e: "l2", value: "20" });
+  r = solveSketch(s, {}, { free: true });
+  assert.ok(r.ok);
+  assert.deepEqual(s.entities.filter((e) => entityFree(e, r.free)).map((e) => e.id), ["lz"]);
+  assert.equal(r.free.points.has("c"), false);
+  // nur Breite: l1 hat feste Länge, aber Höhe offen → obere Ecken frei
+  s = rect();
+  s.constraints.push({ id: "f", type: "fix", p: "a", x: 0, y: 0 }, { id: "w", type: "length", e: "l1", value: "40" });
+  r = solveSketch(s, {}, { free: true });
+  assert.equal(entityFree(s.entities[0], r.free), false, "Unterkante bestimmt");
+  assert.equal(entityFree(s.entities[2], r.free), true, "Oberkante frei");
+  // Kreis: Mitte fix, Radius offen → frei; mit Radius → bestimmt
+  s = { points: [{ id: "m", x: 0, y: 0 }], entities: [{ id: "k", type: "circle", c: "m", r: 5 }], constraints: [{ id: "f", type: "fix", p: "m", x: 0, y: 0 }] };
+  r = solveSketch(s, {}, { free: true });
+  assert.equal(entityFree(s.entities[0], r.free), true);
+  s.constraints.push({ id: "r", type: "radius", e: "k", value: "5" });
+  r = solveSketch(s, {}, { free: true });
+  assert.equal(entityFree(s.entities[0], r.free), false);
+});

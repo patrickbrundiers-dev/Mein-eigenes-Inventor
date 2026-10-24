@@ -357,6 +357,55 @@ export function matrixRank(J, tol = 1e-7) {
 const norm = (f) => Math.sqrt(f.reduce((s, v) => s + v * v, 0));
 
 /**
+ * Welche Variablen lassen sich bewegen, ohne eine Bedingung zu verletzen? Variable i ist bestimmt,
+ * wenn der Einheitsvektor e_i im Zeilenraum von J liegt (orthonormale Basis per Gram-Schmidt).
+ */
+export function freeVariables(J, n, tol = 1e-5) {
+  const basis = [];
+  for (const row of J) {
+    let rn = 0;
+    for (let j = 0; j < n; j++) rn = Math.max(rn, Math.abs(row[j]));
+    if (!(rn > 0)) continue;
+    const v = Float64Array.from(row, (a) => a / rn);
+    for (let pass = 0; pass < 2; pass++) {
+      for (const q of basis) {
+        let d = 0;
+        for (let j = 0; j < n; j++) d += q[j] * v[j];
+        if (d) for (let j = 0; j < n; j++) v[j] -= d * q[j];
+      }
+    }
+    let nv = 0;
+    for (let j = 0; j < n; j++) nv += v[j] * v[j];
+    nv = Math.sqrt(nv);
+    if (nv > 1e-7) { for (let j = 0; j < n; j++) v[j] /= nv; basis.push(v); }
+  }
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    for (const q of basis) s += q[i] * q[i];
+    out[i] = 1 - s > tol ? 1 : 0;
+  }
+  return out;
+}
+
+/** freie Variablen → {points: Set(Punkt-IDs), radii: Set(Kreis-IDs)} */
+function freeOf(vars, fv) {
+  const points = new Set(), radii = new Set();
+  for (const [k, i] of vars.idx) {
+    if (k.startsWith("p:") && (fv[i] || fv[i + 1])) points.add(k.slice(2));
+    else if (k.startsWith("r:") && fv[i]) radii.add(k.slice(2));
+  }
+  return { points, radii };
+}
+
+/** Ist ein Element noch frei beweglich? (ein Punkt oder der Radius frei) */
+export function entityFree(e, free) {
+  if (!free) return false;
+  if (e.type === "circle") return free.points.has(e.c) || free.radii.has(e.id);
+  return [e.p1, e.p2, e.c, e.p].some((p) => p && free.points.has(p));
+}
+
+/**
  * Löst die Skizze. Ändert Punktkoordinaten/Radien in-place.
  * @returns {ok, residual, iterations, dof, failed:[cid]}
  */
@@ -420,13 +469,14 @@ export function solveSketch(sketch, scope = {}, opts = {}) {
   res.forEach((r, i) => { if (Math.abs(f[i]) > tol && !failed.includes(r.cid)) failed.push(r.cid); });
   const ok = failed.length === 0;
   if (ok || opts.writeOnFail) writeBack(sketch, vars, x);
-  let dof = NaN;
+  let dof = NaN, free;
   if (opts.computeDof !== false) {
     const real = res.filter((r) => !String(r.cid).startsWith("drag"));
     const { J } = jacobian(real, x);
     dof = x.length - matrixRank(J);
+    if (opts.free) free = freeOf(vars, freeVariables(J, x.length));
   }
-  return { ok, residual: fn, iterations: it, dof, failed };
+  return { ok, residual: fn, iterations: it, dof, failed, free };
 }
 
 /**

@@ -161,12 +161,14 @@ table.grid input.inp { padding: 2px 4px; }
 .sk-line { stroke: #1d3b78; stroke-width: 1.6; fill: none; }
 .sk-line.constr { stroke: #6f86b3; stroke-dasharray: 6 4; stroke-width: 1.1; }
 .sk-line.full { stroke: #142236; }
+.sk-line.free { stroke: #2a7fe6; }
 .sk-line.hover { stroke: var(--laser); stroke-width: 2.6; }
 .sk-line.sel { stroke: var(--laser); stroke-width: 2.6; }
 .sk-line.err { stroke: var(--err); }
 .sk-hit { stroke: transparent; stroke-width: 12; fill: none; pointer-events: stroke; cursor: pointer; }
 .sk-pt { fill: #fff; stroke: #1d3b78; stroke-width: 1.4; }
 .sk-pt.fixed { fill: #1d3b78; }
+.sk-pt.free { stroke: #2a7fe6; }
 .sk-pt.hole { fill: none; stroke: #1d3b78; }
 .sk-pt.hover, .sk-pt.sel { stroke: var(--laser); fill: var(--laser); }
 .sk-pt.open { stroke: var(--err); fill: var(--err); }
