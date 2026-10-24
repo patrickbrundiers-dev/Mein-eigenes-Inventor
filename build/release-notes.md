@@ -1,8 +1,11 @@
-**Neu in 0.2.0**
+**Neu in 0.3.0**
 
-- **STEP + Zuschnittliste** (Export → 3D): eine STEP-Datei mit allen Körpern, jeder mit Profil-ID benannt (`RR 42,4x2`, `QR 40x40x3`, `RE 60x40x3` …), Baugruppen als Satz; die Zuschnittliste liegt mit gleichem Namen daneben. Passt direkt zum STEP-Import der Rohrlaser-Kalkulation.
-- Zuschnittliste zeigt die Profil-ID wie in der Kalkulation.
-- **Platte als DXF 1:1** (Export → 2D): Kontur und Bohrungen eines Blechteils mit echten Kreisen und Bögen; mit gewählter Fläche wird senkrecht auf diese Fläche exportiert.
-- Skizze: **Stutzen** (T) und **Rundung** (F).
-- Baugruppe: **Abhängigkeiten** „Fläche an Fläche“ und „Bündig“ bleiben gespeichert und rechnen nach, wenn sich Bauteile ändern.
-- Zeichnung: **Schnittansicht A–A** mit Schraffur.
+- **Maße direkt beim Zeichnen** (wie in Inventor): Nach dem ersten Klick Wert tippen, **Tab** wechselt das Feld, **Enter** übernimmt.
+  - Rechteck: Breite (oben) und Höhe (rechts) → bemaßtes Rechteck, z. B. `50` Tab `25` Enter = 50 × 25.
+  - Linie: Länge und Winkel, der Linienzug läuft weiter, Esc beendet.
+  - Kreis: Durchmesser.
+  - Formeln mit Parametern gehen auch, z. B. `Breite/2`. Ohne Eingabe funktioniert Klicken wie bisher.
+- **Zoll** als Einheit in allen Maßfeldern: `2 in`, `2 zoll` oder `2"`.
+- **Projektdatei robuster**: Formatversion mit automatischer Umstellung älterer Dateien, Prüfung beim Öffnen, sicheres Speichern, automatische Sicherung als Datei, die sich beim Start öffnen lässt.
+- **Fehlerprotokoll** im Benutzerordner, damit Probleme nachvollziehbar sind.
+- Installer enthält die Lizenztexte; Releases werden nur nach bestandenen Tests gebaut.
