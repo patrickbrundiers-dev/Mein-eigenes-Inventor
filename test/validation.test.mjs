@@ -87,3 +87,15 @@ test("Vorabprüfung Extrusion, Rotation, Bohrung, Wandung", async () => {
   const pts = { id: "s2", type: "sketch", name: "s2", plane: { ref: "XY" }, offset: "10", points: [{ id: "h0", x: 50, y: 20 }], entities: [{ id: "pe0", type: "point", p: "h0" }], constraints: [] };
   assert.match(await errorOf([...box, pts, { id: "h", type: "hole", sketch: "s2", diameter: "5", extent: "depth", depth: "0" }], "h"), /Tiefe muss > 0/);
 });
+
+// ---------- P1-B: Zylinderachsen für »Konzentrisch« ----------
+test("Zylinderflächen tragen Achse und Radius (Bohrungen der Beispielplatte)", async () => {
+  const plate = exampleProject().docs.find((d) => d.id === "beispiel_platte");
+  const res = await K.buildPart(plate);
+  const cyl = res.bodies.flatMap((b) => K.meshBody(b.shape).faces).filter((f) => f.type === "CYLINDER");
+  assert.ok(cyl.length >= 4, String(cyl.length));
+  for (const f of cyl) {
+    assert.ok(Math.abs(Math.abs(f.axisD[2]) - 1) < 1e-9, "Bohrungsachse senkrecht");
+    assert.ok(f.radius > 0);
+  }
+});

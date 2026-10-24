@@ -14,7 +14,7 @@ import { newSketch } from "../core/sketch.js";
 import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, alignFaces, matApply, matApplyDir } from "../core/geom.js";
 import { MATERIALS } from "../core/sections.js";
 import { resolveParams, evaluate } from "../core/expr.js";
-import { faceRef, solveAssembly } from "../core/asmsolve.js";
+import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
 
 export class App {
   constructor() {
@@ -589,7 +589,9 @@ export class App {
   }
   alignPick(hit) {
     if (!hit || hit.kind !== "face" || !hit.key.startsWith("comp:")) return;
-    if (hit.info?.type !== "PLANE" || !hit.info.normal) return toast("Bitte eine ebene Fläche wählen");
+    const conc = this.align.mode === "konzentrisch";
+    if (conc && (hit.info?.type !== "CYLINDER" || !hit.info.axisD)) return toast("Bitte eine zylindrische Fläche wählen (Bohrung, Rohr, Bolzen)");
+    if (!conc && (hit.info?.type !== "PLANE" || !hit.info.normal)) return toast("Bitte eine ebene Fläche wählen");
     const cid = hit.key.slice(5);
     if (!this.align.first) {
       this.align.first = { cid, info: hit.info, hit };
@@ -602,16 +604,18 @@ export class App {
     const B = asm.components.find((c) => c.id === this.align.first.cid);
     const A = asm.components.find((c) => c.id === cid);
     if (B.fixed && A.fixed) { toast("Beide Bauteile sind fixiert"); this.cancelPick(); return; }
+    const kind = conc ? "konzentrisch" : this.align.mode === "buendig" ? "buendig" : "gegen";
+    const ref = conc ? axisRef : faceRef;
     const con = {
-      id: uid("ab"), type: this.align.mode === "buendig" ? "buendig" : "gegen", gap: this.align.gap || "0",
-      a: faceRef(A.id, hit.info), b: faceRef(B.id, this.align.first.info),
-      name: `${this.align.mode === "buendig" ? "Bündig" : "Fläche an Fläche"}: ${B.name || "?"} → ${A.name || "?"}`,
+      id: uid("ab"), type: kind, gap: conc ? "0" : this.align.gap || "0",
+      a: ref(A.id, hit.info), b: ref(B.id, this.align.first.info),
+      name: `${CONSTRAINT_NAMES[kind]}: ${B.name || "?"} → ${A.name || "?"}`,
     };
     const persist = this.align.persist !== false;
     this.edit(persist ? "Abhängigkeit" : "Ausrichten", () => {
       asm.constraints = asm.constraints || [];
       asm.constraints.push(con);
-      solveAssembly(asm, (pid) => this.planarFaces(pid), (g) => safeNum(g));
+      solveAssembly(asm, (pid) => this.assemblyFaces(pid), (g) => safeNum(g));
       if (!persist) asm.constraints = asm.constraints.filter((c) => c.id !== con.id);
     });
     this.align = { mode: this.align.mode, gap: this.align.gap, persist: this.align.persist };
@@ -628,9 +632,15 @@ export class App {
     if (!r) return [];
     return r.bodies.flatMap((b) => (b.mesh?.faces || []).filter((f) => f.type === "PLANE" && f.normal && f.point));
   }
+  /** Ebene und zylindrische Flächen (mit Achse) für Abhängigkeiten */
+  assemblyFaces(partId) {
+    const r = this.results.get(partId);
+    if (!r) return [];
+    return r.bodies.flatMap((b) => (b.mesh?.faces || []).filter((f) => (f.type === "PLANE" && f.normal && f.point) || (f.type === "CYLINDER" && f.axisD)));
+  }
   solveAssemblyConstraints(asm) {
     if (!asm.constraints?.length) { this.asmErrors = {}; return; }
-    const res = solveAssembly(asm, (pid) => this.planarFaces(pid), (g) => safeNum(g));
+    const res = solveAssembly(asm, (pid) => this.assemblyFaces(pid), (g) => safeNum(g));
     this.asmErrors = res.errors;
     if (res.changed) { this.dirty = true; this.updateTitle(); }
   }
@@ -734,6 +744,7 @@ export class App {
   }
 }
 
+export const CONSTRAINT_NAMES = { gegen: "Fläche an Fläche", buendig: "Bündig", konzentrisch: "Konzentrisch" };
 export const FEATURE_NAMES = {
   sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",

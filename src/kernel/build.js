@@ -910,6 +910,14 @@ export function createKernel(R) {
   }
 
   // ---------- Ausgabe für die Anzeige ----------
+  /** Achse und Radius einer Zylinderfläche: {axisP, axisD, radius} */
+  function cylinderAxis(face) {
+    const ad = new (R.getOC().BRepAdaptor_Surface)(face.wrapped, true);
+    try {
+      const c = ad.Cylinder(), ax = c.Axis(), l = ax.Location(), d = ax.Direction();
+      return { axisP: [l.X(), l.Y(), l.Z()], axisD: [d.X(), d.Y(), d.Z()], radius: c.Radius() };
+    } finally { ad.delete(); }
+  }
   function meshBody(shape, quality = "normal") {
     const tol = quality === "fein" ? 0.02 : quality === "grob" ? 0.3 : 0.08;
     const ang = quality === "fein" ? 0.1 : quality === "grob" ? 0.5 : 0.25;
@@ -917,9 +925,10 @@ export function createKernel(R) {
     const faceInfo = new Map();
     for (const fc of shape.faces) {
       try {
-        const info = { type: fc.geomType };
+        // replicad meldet Zylinder als "CYLINDRE"; einheitlich "CYLINDER" mit Achse und Radius (für Konzentrisch)
+        const info = { type: fc.geomType === "CYLINDRE" ? "CYLINDER" : fc.geomType };
         if (info.type === "PLANE") { info.normal = tuple(fc.normalAt()); info.point = tuple(fc.center); }
-        else if (info.type === "CYLINDER") { info.point = tuple(fc.center); }
+        else if (info.type === "CYLINDER") { info.point = tuple(fc.center); Object.assign(info, cylinderAxis(fc)); }
         faceInfo.set(hashOf(fc), info);
       } catch { /* ignore */ }
     }
@@ -1078,7 +1087,7 @@ export function createKernel(R) {
     return v3.norm(v3.sub(best, v3.mul(n, v3.dot(best, n))));
   }
 
-  return { buildPart, buildKnickrahmen, shapeValid, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, buildKnickrahmen, shapeValid, cylinderAxis, meshBody, bodyProps, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

@@ -319,6 +319,25 @@ try {
   await idle();
   const z2 = await evalApp(() => window.__werkcad.activeDoc().components.find((c) => c.id === "c1").pos[2]);
   step("Abhängigkeit folgt Bauteiländerung", Math.abs(z2 - z1 - 5) < 1e-6, JSON.stringify({ con, z1, z2, errors: await evalApp(() => window.__werkcad.asmErrors) }));
+
+  // Konzentrisch: Rohr-Achse auf eine Bohrungsachse der linken Platte, danach Rückgängig
+  const conc = await evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc();
+    const hole = a.assemblyFaces("beispiel_platte").find((f) => f.type === "CYLINDER");
+    const tube = a.assemblyFaces("beispiel_rohr").find((f) => f.type === "CYLINDER");
+    if (!hole || !tube) return { hole: !!hole, tube: !!tube };
+    const before = JSON.stringify(asm.components.find((c) => c.id === "c4").pos);
+    a.align = { mode: "konzentrisch" };
+    a.alignPick({ kind: "face", key: "comp:c4", info: tube });
+    a.alignPick({ kind: "face", key: "comp:c2", info: hole });
+    const con = (asm.constraints || []).find((c) => c.type === "konzentrisch");
+    a.solveAssemblyConstraints(asm);
+    const res = { hole: true, tube: true, con: !!con, err: con ? a.asmErrors?.[con.id] || null : "fehlt", moved: JSON.stringify(asm.components.find((c) => c.id === "c4").pos) !== before };
+    a.undo();
+    res.undone = !(a.activeDoc().constraints || []).some((c) => c.type === "konzentrisch");
+    return res;
+  });
+  step("Abhängigkeit Konzentrisch", conc.con && conc.err === null && conc.moved && conc.undone, JSON.stringify(conc));
   await shot("17b-abhaengigkeit");
 
   // Exporte als Download: STEP + Zuschnittliste, Platten-DXF
