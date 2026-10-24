@@ -921,6 +921,44 @@ try {
     step("Skizze: Rechteck- und Kreismuster", rect === 6 && circ.n === 9 && circ.onTop && circ.ok && Math.abs(moved.x - 100) < 1e-6 && Math.abs(moved.y) < 1e-6, JSON.stringify({ rect, circ, moved }));
   }
 
+  // Drehen mit der Maus um den Modellpunkt unter dem Mauszeiger (Einstellung abschaltbar)
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await page.waitForTimeout(300);
+    const vb = await page.locator("#viewer canvas").boundingBox();
+    // Modellpunkt abseits der Bildmitte suchen
+    const probe = await evalApp(([x0, y0, w, h]) => {
+      const v = window.__werkcad.viewer;
+      for (const fx of [0.3, 0.7, 0.35, 0.65, 0.4, 0.6]) for (const fy of [0.35, 0.65, 0.45, 0.55]) {
+        const cx = x0 + w * fx, cy = y0 + h * fy;
+        const hit = v.pick(cx, cy, { edges: false, faces: true });
+        if (hit) return { cx, cy, p: hit.point };
+      }
+      return null;
+    }, [vb.x, vb.y, vb.width, vb.height]);
+    const rdrag = async () => {
+      await page.mouse.move(probe.cx, probe.cy);
+      await page.mouse.down({ button: "right" });
+      await page.mouse.move(probe.cx + 60, probe.cy + 25, { steps: 6 });
+      await page.mouse.up({ button: "right" });
+      await page.waitForTimeout(150);
+      return evalApp(([p, x0, y0]) => { const v = window.__werkcad.viewer; const s = v.worldToScreen(p); return { sx: s[0] + x0, sy: s[1] + y0, dir: v.viewState().dir }; }, [probe.p, vb.x, vb.y]);
+    };
+    const before = await evalApp(() => window.__werkcad.viewer.viewState().dir);
+    const piv = await rdrag();
+    await page.keyboard.press("Escape");
+    await evalApp(() => { const a = window.__werkcad; a.prefs.set("ansicht.drehpunktCursor", false); a.viewer.setView("iso", { animate: false }); a.viewer.fit(); });
+    await page.waitForTimeout(200);
+    const ctr = await rdrag();
+    await page.keyboard.press("Escape");
+    await evalApp(() => { const a = window.__werkcad; a.prefs.set("ansicht.drehpunktCursor", true); });
+    const dPiv = probe && Math.hypot(piv.sx - probe.cx, piv.sy - probe.cy), dCtr = probe && Math.hypot(ctr.sx - probe.cx, ctr.sy - probe.cy);
+    const turned = Math.hypot(...piv.dir.map((x, i) => x - before[i])) > 0.05;
+    step("Drehen um den Punkt unter dem Mauszeiger", !!probe && dPiv < 2 && turned && dCtr > 10, JSON.stringify({ probe, dPiv, dCtr, turned }));
+  }
+
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));

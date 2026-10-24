@@ -51,6 +51,7 @@ export const SETTINGS = [
     { value: "rechts-drehen", label: "Rechte Taste drehen, mittlere schwenken" },
     { value: "mitte-drehen", label: "Mittlere Taste drehen, rechte schwenken" },
   ] },
+  { key: "ansicht.drehpunktCursor", cat: "ansicht", label: "Um den Punkt unter dem Mauszeiger drehen", type: "bool", default: true, help: "Drehpunkt ist der Modellpunkt, auf den die Maus beim Drücken zeigt; im Leeren die Bildmitte." },
   { key: "ansicht.zoomZumCursor", cat: "ansicht", label: "Zum Mauszeiger zoomen", type: "bool", default: true },
   { key: "ansicht.zoomGeschwindigkeit", cat: "ansicht", label: "Zoomgeschwindigkeit", type: "number", default: 1.2, min: 0.2, max: 5 },
   { key: "ansicht.drehGeschwindigkeit", cat: "ansicht", label: "Drehgeschwindigkeit", type: "number", default: 0.9, min: 0.1, max: 5 },

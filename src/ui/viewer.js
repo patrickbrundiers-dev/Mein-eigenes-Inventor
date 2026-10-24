@@ -52,13 +52,16 @@ export class Viewer {
     this.scene.add(new THREE.HemisphereLight(0xf4f7fb, 0x5b6773, 0.55));
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+    this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: null }; // Drehen: bindPivotOrbit bzw. applyPrefs
     this.controls.zoomToCursor = true;
     this.controls.enableDamping = false;
     this.controls.screenSpacePanning = true;
     this.controls.rotateSpeed = 0.9;
     this.controls.zoomSpeed = 1.2;
     this.controls.addEventListener("change", () => this.cameraChanged());
+    this.pivotOrbit = true;
+    this.rotateButton = 2;
+    this.bindPivotOrbit();
 
     this.root = new THREE.Group();
     this.scene.add(this.root);
@@ -192,12 +195,59 @@ export class Viewer {
   }
   render() { this.needsRender = true; }
 
+  // ---------- Drehen um den Punkt unter dem Mauszeiger ----------
+  bindPivotOrbit() {
+    const el = this.renderer.domElement;
+    let st = null;
+    el.addEventListener("pointerdown", (e) => {
+      if (!this.pivotOrbit || e.button !== this.rotateButton || !this.controls.enabled || !this.controls.enableRotate || this.sketchFrame) return;
+      st = { x: e.clientX, y: e.clientY, id: e.pointerId, pivot: this.pivotAt(e.clientX, e.clientY) };
+      el.setPointerCapture?.(e.pointerId);
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!st) return;
+      const dx = e.clientX - st.x, dy = e.clientY - st.y;
+      st.x = e.clientX; st.y = e.clientY;
+      if (dx || dy) this.orbitAround(st.pivot, dx, dy);
+    });
+    const end = () => { if (st) { el.releasePointerCapture?.(st.id); st = null; } };
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+  /** Drehpunkt: sichtbarer Modellpunkt unter dem Mauszeiger, sonst die Bildmitte */
+  pivotAt(cx, cy) {
+    const meshes = this.pickables.filter((p) => p.mesh.visible).map((p) => p.mesh);
+    const hit = this.raycaster(cx, cy).intersectObjects(meshes, false).find((x) => !this.clipped(x.point));
+    return hit ? hit.point.clone() : this.controls.target.clone();
+  }
+  /** Kamera um pivot drehen (dx/dy in px, wie OrbitControls: waagrecht um die Hochachse, senkrecht um die Bildquerachse) */
+  orbitAround(pivot, dx, dy) {
+    const h = this.renderer.domElement.clientHeight || 1, sp = this.controls.rotateSpeed;
+    const cam = this.camera, tgt = this.controls.target, up = cam.up.clone().normalize();
+    let q = new THREE.Quaternion().setFromAxisAngle(up, (-2 * Math.PI * dx * sp) / h);
+    const dir = tgt.clone().sub(cam.position).normalize();
+    const right = dir.clone().cross(up);
+    if (right.lengthSq() > 1e-12) {
+      const qp = new THREE.Quaternion().setFromAxisAngle(right.normalize(), (-2 * Math.PI * dy * sp) / h);
+      // nicht über die Pole kippen
+      if (Math.abs(dir.clone().applyQuaternion(qp).dot(up)) < 0.999) q = q.multiply(qp);
+    }
+    for (const v of [cam.position, tgt]) v.sub(pivot).applyQuaternion(q).add(pivot);
+    cam.lookAt(tgt);
+    this.controls.update();
+    this.cameraChanged();
+  }
+
   /** Benutzereinstellungen (src/core/settings.js) übernehmen */
   applyPrefs(v) {
     const c = this.controls;
+    // Drehen um den Punkt unter dem Mauszeiger übernimmt bindPivotOrbit; OrbitControls dreht dann nicht selbst
+    this.pivotOrbit = v["ansicht.drehpunktCursor"] !== false;
+    const rot = this.pivotOrbit ? null : THREE.MOUSE.ROTATE;
+    this.rotateButton = v["ansicht.maus"] === "mitte-drehen" ? 1 : 2;
     c.mouseButtons = v["ansicht.maus"] === "mitte-drehen"
-      ? { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN }
-      : { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+      ? { LEFT: null, MIDDLE: rot, RIGHT: THREE.MOUSE.PAN }
+      : { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: rot };
     c.zoomToCursor = v["ansicht.zoomZumCursor"];
     c.zoomSpeed = v["ansicht.zoomGeschwindigkeit"];
     c.rotateSpeed = v["ansicht.drehGeschwindigkeit"];
