@@ -113,7 +113,7 @@ export class App {
       const sd = this.doc(src.id);
       d.title.benennung = sd.name;
       d.title.nummer = sd.number || "";
-      d.title.werkstoff = sd.kind === "part" ? MATERIALS[sd.material]?.label || "" : "";
+      // Werkstoff bleibt leer: das Schriftfeld zeigt dann den aktuellen Werkstoff des Modells
       d.pendingAutoViews = true;
     }
     return this.addDoc(d);

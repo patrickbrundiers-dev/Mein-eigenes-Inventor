@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { projectPoint, partCenter, balloonAnchors, placeBalloons } from "../src/core/balloons.js";
 import { clipPolylineToCircle, clipProjection } from "../src/core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, ROW_FIRST, ROW_STEP, holeSpecs, holeText, dimLabel } from "../src/core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, ROW_FIRST, ROW_STEP, holeSpecs, holeText, dimLabel, profileSpec, wallThickness, circlesFromLines } from "../src/core/autodims.js";
 
 const near = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
 
@@ -251,4 +251,56 @@ test("Koordinatenmaße teilen sich eine Reihe, weitere Maße liegen dahinter", (
   assert.equal(ord.length, 6);
   const lines = ord.map((m) => dimRect(m, views.v)[3]);
   assert.ok(lines.every((y) => Math.abs(y - lines[0]) < 1e-6), "eine gemeinsame Reihe");
+});
+
+test("Profilteil: Profilangabe statt Querschnittsmaßen, nur die Länge wird bemaßt", () => {
+  const feats = [{ type: "profile", section: "rechteck", dims: { B: "50", H: "20", t: "2", r: "4" }, length: "L", axis: "Y" }, { type: "hole", thread: "M8" }];
+  const prof = profileSpec(feats, (x) => (x === "L" ? 50 : Number(x)));
+  assert.deepEqual(prof, { text: "Rechteckrohr 50x20x2 – L = 50", axis: "Y", cross: ["X", "Z"] });
+  assert.equal(profileSpec([...feats, { type: "extrude" }], Number), null, "weiterer Körper: kein reines Profilteil");
+  const rr = [{ cx: 0, cy: 0, r: 24.15, full: true }, { cx: 0, cy: 0, r: 21.55, full: true }];
+  const views = [
+    { id: "stirn", axes: ["X", "Z"], bbox: { x0: -24.15, y0: -24.15, x1: 24.15, y1: 24.15 }, arcs: rr },
+    { id: "laenge", axes: ["Y", "Z"], bbox: { x0: 0, y0: -24.15, x1: 400, y1: 24.15 }, arcs: [] },
+  ];
+  const dims = planAutoDims(views, { profile: { text: "Rohr 48,3x2,6 – L = 400", axis: "Y", cross: ["X", "Z"] } });
+  assert.deepEqual(dims.map((m) => [m.view, m.axis || m.kind]), [["laenge", "Y"]]);
+});
+
+test("Wandstärke eines Hohlprofils aus den Kanten, nicht bei gerundeten Außenkanten", () => {
+  const b = { x0: 0, y0: 0, x1: 50, y1: 20 };
+  const inner = [[[2, 2], [48, 2]], [[48, 2], [48, 18]], [[48, 18], [2, 18]], [[2, 18], [2, 2]]];
+  const outer = [[[0, 0], [50, 0], [50, 20], [0, 20], [0, 0]]];
+  assert.equal(wallThickness(b, [...outer, ...inner]), 2);
+  assert.equal(wallThickness(b, [...outer, [[3, 2], [3, 18]], ...inner]), 2, "nächste Innenkante zählt");
+  assert.equal(wallThickness(b, [...outer, ...inner], [{ cx: 2, cy: 2, r: 2, full: false }]), null, "Rundung R2 an der Ecke");
+  assert.equal(wallThickness(b, outer), null);
+  const dims = planAutoDims([{ id: "v", axes: ["X", "Z"], bbox: b, arcs: [], lines: [...outer, ...inner] }]);
+  assert.deepEqual(dims.filter((m) => m.wall).map(dimLabel), ["2"]);
+});
+
+test("Profilangabe als Hinweis frei neben der Ansicht", () => {
+  const bbox = { x0: 0, y0: 0, x1: 50, y1: 20 };
+  const views = { v: sheetView(bbox, 100, 60, 2), u: sheetView(bbox, 100, 125, 2) };
+  const notes = [{ view: "v", text: "Rechteckrohr 50x20x2 – L = 50" }];
+  layoutAutoDims([], views, { frame: [20, 10, 410, 287], notes });
+  const n = notes[0];
+  const box = [n.x, n.y - 4.5, n.x + n.text.length * 2.1, n.y + 1];
+  for (const v of Object.values(views)) assert.ok(!hits(box, v.rect));
+});
+
+test("Bohrung auf der Mittellinie bekommt kein Lagemaß quer zur Achse", () => {
+  const dims = planAutoDims([{ id: "v", axes: [null, null], bbox: { x0: -13.9, y0: -24, x1: 400, y1: 24 }, arcs: [{ cx: 200, cy: 0, r: 6.5, full: true }] }]);
+  assert.deepEqual(dims.filter((m) => m.kind !== "dia").map((m) => m.kind), ["h"]);
+});
+
+test("Kreis aus vielen kurzen Kantenstücken erkennen (Bohrung im Rundrohr)", () => {
+  const pieces = [];
+  for (let i = 0; i < 40; i++) {
+    const a0 = (i / 40) * 2 * Math.PI, a1 = ((i + 1.1) / 40) * 2 * Math.PI; // Stücke überlappen leicht, Endpunkte passen nicht genau
+    pieces.push([0, 0.5, 1].map((t) => [200 + 6.5 * Math.cos(a0 + t * (a1 - a0)), 6.5 * Math.sin(a0 + t * (a1 - a0))]));
+  }
+  pieces.push([[0, -24], [400, -24]], [[0, 24], [400, 24]]);
+  assert.deepEqual(circlesFromLines(pieces, 200), [{ cx: 200, cy: 0, r: 6.5, full: true }]);
+  assert.deepEqual(circlesFromLines(pieces.slice(0, 20), 200), [], "Halbkreis ist keine Bohrung");
 });

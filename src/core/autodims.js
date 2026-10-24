@@ -1,6 +1,6 @@
 // Automatische Hauptmaße einer Zeichnung (ohne DOM/Geometrie-Kern)
 // Regel nach DIN 406 / ISO 129-1: jedes Maß steht nur einmal in der Zeichnung.
-import { THREADS } from "./sections.js";
+import { THREADS, sectionName } from "./sections.js";
 
 const EPS = 1e-6;
 const key = (v) => Math.round(v * 1000);
@@ -48,6 +48,51 @@ export function holeText(hole, count = 1) {
   return t;
 }
 
+/**
+ * Profil-Feature des Bauteils (genau eines, achsparallel, keine weiteren Körper) -> Angabe „Rechteckrohr 50x20x2 – L = 50“
+ * ev(ausdruck) wertet Parameter aus. Rückgabe: { text, axis, cross: [Achse, Achse] } oder null
+ */
+export function profileSpec(features, ev) {
+  const act = (features || []).filter((f) => !f.suppressed);
+  const prof = act.filter((f) => f.type === "profile");
+  if (prof.length !== 1 || act.some((f) => ["extrude", "revolve", "frame", "knickrahmen", "import"].includes(f.type) && (f.op || "join") !== "cut")) return null;
+  const f = prof[0];
+  const axis = String(f.axis || "X").replace("-", "");
+  if (!"XYZ".includes(axis) || axis.length !== 1) return null;
+  try {
+    const dims = {};
+    for (const [k, x] of Object.entries(f.dims || {})) dims[k] = ev(x);
+    const L = ev(f.length);
+    return { text: sectionName(f.section, dims) + " – L = " + fmt(L), axis, cross: [..."XYZ"].filter((a) => a !== axis) };
+  } catch { return null; }
+}
+
+/** Wandstärke eines Hohlprofils aus den sichtbaren Kanten: innere Kanten ringsum im gleichen Abstand zum Umriss */
+export function wallThickness(b, lines, arcs = []) {
+  const w = b.x1 - b.x0, h = b.y1 - b.y0;
+  if (!(w > EPS && h > EPS) || !lines?.length) return null;
+  const off = { l: Infinity, r: Infinity, b: Infinity, t: Infinity };
+  for (const pl of lines) for (let i = 0; i + 1 < pl.length; i++) {
+    const [p, q] = [pl[i], pl[i + 1]];
+    if (Math.abs(p[0] - q[0]) < 1e-6 && Math.abs(q[1] - p[1]) > 0.5 * h) {
+      const dl = p[0] - b.x0, dr = b.x1 - p[0];
+      if (dl > 1e-3 && dl < w / 4) off.l = Math.min(off.l, dl);
+      if (dr > 1e-3 && dr < w / 4) off.r = Math.min(off.r, dr);
+    }
+    if (Math.abs(p[1] - q[1]) < 1e-6 && Math.abs(q[0] - p[0]) > 0.5 * w) {
+      const db = p[1] - b.y0, dt = b.y1 - p[1];
+      if (db > 1e-3 && db < h / 4) off.b = Math.min(off.b, db);
+      if (dt > 1e-3 && dt < h / 4) off.t = Math.min(off.t, dt);
+    }
+  }
+  const t = off.l;
+  if (!Number.isFinite(t) || ![off.r, off.b, off.t].every((x) => Math.abs(x - t) < 1e-2)) return null;
+  // Tangentenkanten einer gerundeten Außenkante sehen genauso aus: Rundung mit Radius t am Umriss -> keine Wand
+  const touches = (c) => c.cx - c.r <= b.x0 + 1e-3 || c.cx + c.r >= b.x1 - 1e-3 || c.cy - c.r <= b.y0 + 1e-3 || c.cy + c.r >= b.y1 - 1e-3;
+  if ((arcs || []).some((a) => Math.abs(a.r - t) < 1e-2 && touches(a))) return null;
+  return Math.round(t * 1000) / 1000;
+}
+
 /** Gleich große Bohrungen gleichmäßig auf einem Kreis (mind. 3)? -> Teilkreis {cx, cy, r} */
 export function boltCircle(list) {
   if (list.length < 3) return null;
@@ -60,6 +105,37 @@ export function boltCircle(list) {
   // vier Bohrungen im Quadrat sind meist ein Raster, kein Lochkreis
   if (list.length === 4 && ang.some((a) => Math.abs(Math.cos(2 * a)) < 1e-3)) return null;
   return { cx, cy, r };
+}
+
+/**
+ * Kanten, die zusammen als Kreis erscheinen (z. B. Bohrung in einem Rundrohr: Raumkurve, kommt in vielen kurzen Stücken).
+ * Stücke mit sich berührenden Hüllrechtecken werden gruppiert; eine Gruppe ist ein Kreis, wenn alle Punkte auf einem
+ * Kreis um die Mitte liegen und ihn fast ganz umrunden. maxSize: größere Stücke (Umriss) bleiben außen vor.
+ */
+export function circlesFromLines(lines, maxSize = Infinity) {
+  const box = (pl) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const [x, y] of pl) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } return [x0, y0, x1, y1]; };
+  const items = (lines || []).filter((pl) => pl.length >= 2).map((pl) => ({ pl, b: box(pl) })).filter((it) => Math.max(it.b[2] - it.b[0], it.b[3] - it.b[1]) < maxSize);
+  const parent = items.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const g = 0.3;
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const A = items[i].b, B = items[j].b;
+    if (A[0] - g <= B[2] && B[0] - g <= A[2] && A[1] - g <= B[3] && B[1] - g <= A[3]) parent[find(i)] = find(j);
+  }
+  const groups = new Map();
+  items.forEach((it, i) => { const k = find(i); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(...it.pl); });
+  const out = [];
+  for (const pts of groups.values()) {
+    if (pts.length < 12) continue;
+    const [x0, y0, x1, y1] = box(pts);
+    const w = x1 - x0, h = y1 - y0, r = (w + h) / 4, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    if (r < 0.1 || Math.abs(w - h) > 0.02 * Math.max(w, h)) continue;
+    if (!pts.every(([x, y]) => Math.abs(Math.hypot(x - cx, y - cy) - r) < Math.max(0.02 * r, 0.05))) continue;
+    const bins = new Set(pts.map(([x, y]) => Math.floor(((Math.atan2(y - cy, x - cx) + Math.PI) / (2 * Math.PI)) * 36) % 36));
+    if (bins.size < 33) continue;
+    out.push({ cx: Math.round(cx * 100) / 100, cy: Math.round(cy * 100) / 100, r: Math.round(r * 100) / 100, full: true });
+  }
+  return out;
 }
 
 /** Vollkreise einer Ansicht ohne Doppelte (gleiche Mitte und gleicher Radius) */
@@ -82,16 +158,30 @@ function uniqueCircles(arcs) {
 export function planAutoDims(views, used = {}) {
   const axes = used.axes || new Set();
   const radii = used.radii || new Set();
+  const prof = used.profile || null;
+  // Profilteil: der Querschnitt steht in der Profilangabe, nur die Länge wird bemaßt
+  if (prof) for (const a of prof.cross) axes.add(a);
   const out = [];
   for (const v of views) {
     const b = v.bbox;
     if (!b) continue;
     const [ax, ay] = v.axes || [null, null];
+    const endView = prof && ax && ay && prof.cross.includes(ax) && prof.cross.includes(ay);
     // Gesamtmaße: jede Raumrichtung nur einmal (schräge Ansichten bekommen keine)
     if (ax && !axes.has(ax) && b.x1 - b.x0 > EPS) { axes.add(ax); out.push({ view: v.id, kind: "h", p1: [b.x0, b.y1], p2: [b.x1, b.y1], off: -8, axis: ax }); }
     if (ay && !axes.has(ay) && b.y1 - b.y0 > EPS) { axes.add(ay); out.push({ view: v.id, kind: "v", p1: [b.x1, b.y0], p2: [b.x1, b.y1], off: 8, axis: ay }); }
     // Bohrungen: je Durchmesser ein Maß mit Anzahl, Lage von der linken unteren Ecke aus (Bezugsmaße)
-    const circles = uniqueCircles(v.arcs);
+    let circles = uniqueCircles([...(v.arcs || []), ...circlesFromLines(v.lines, 0.5 * Math.max(b.x1 - b.x0, b.y1 - b.y0))]);
+    if (endView) {
+      // Stirnansicht eines Rund-/Rohrprofils: Außen- und Innenkreis gehören zur Profilangabe
+      const rim = circles.filter((c) => c.cx - c.r <= b.x0 + 1e-3 || c.cx + c.r >= b.x1 - 1e-3 || c.cy - c.r <= b.y0 + 1e-3 || c.cy + c.r >= b.y1 - 1e-3);
+      circles = circles.filter((c) => !rim.some((o) => Math.abs(o.cx - c.cx) < 1e-3 && Math.abs(o.cy - c.cy) < 1e-3));
+    }
+    // Hohlprofil ohne Profil-Feature: Wandstärke einmal in der Ansicht, in der sie ringsum gleich ist
+    if (!prof && !used.wall) {
+      const t = wallThickness(b, v.lines, v.arcs);
+      if (t) { used.wall = true; out.push({ view: v.id, kind: "h", p1: [b.x0, b.y1], p2: [b.x0 + t, b.y1], off: -8, wall: true }); }
+    }
     const groups = new Map();
     for (const c of circles) {
       const k = key(c.r);
@@ -100,7 +190,7 @@ export function planAutoDims(views, used = {}) {
     }
     // Bohrungs-Feature je Radius (nur wenn eindeutig); Senkungskreise gehören zur Bohrung und bekommen kein eigenes Maß
     const specFor = (r) => {
-      const m = (v.holes || []).filter((h) => Math.abs(h.r - r) < 1e-3);
+      const m = (v.holes || []).filter((h) => Math.abs(h.r - r) < 0.02);
       return m.length && m.every((h) => holeText(h.hole) === holeText(m[0].hole)) ? m[0].hole : null;
     };
     const sinkOf = (c) => circles.some((b) => b !== c && Math.abs(b.cx - c.cx) < 1e-3 && Math.abs(b.cy - c.cy) < 1e-3 && specFor(b.r)?.sink && Math.abs(specFor(b.r).sink.d / 2 - c.r) < 1e-3);
@@ -144,6 +234,7 @@ export function planAutoDims(views, used = {}) {
       const sym = vals.every((x, i) => Math.abs(x - mid - (mid - vals[n - 1 - i])) < 1e-3);
       const step = n >= 3 ? (vals[n - 1] - vals[0]) / (n - 1) : 0;
       const even = n >= 3 && vals.every((x, i) => Math.abs(x - vals[0] - i * step) < 1e-3);
+      if (n === 1 && Math.abs(vals[0] - mid) < 1e-3) return; // auf der Mittellinie: Lage ist durch die Symmetrie bestimmt
       if (even) {
         // Lochreihe mit gleicher Teilung (DIN 406-11): „n× Teilung (=Gesamt)“, bei Mittellage ohne Randmaß
         if (!sym && vals[0] - lo > EPS) out.push({ view: v.id, kind, p1: at(lo), p2: pt(list[0]), off: sgn * 8 });
@@ -200,7 +291,7 @@ export function dimLabel(m) {
  * views: { [id]: { to(u, w) -> [x, y], rect: [x0, y0, x1, y1], scale, circles? } } – alle Ansichten des Blatts
  * obstacles: weitere belegte Rechtecke (Schriftfeld, Stückliste, feste Maße); frame: nutzbare Fläche
  */
-export function layoutAutoDims(dims, views, { obstacles = [], frame = null } = {}) {
+export function layoutAutoDims(dims, views, { obstacles = [], frame = null, notes = [] } = {}) {
   const placed = [...obstacles];
   const outside = (r) => (frame ? area(r) - overlap(r, frame) : 0);
   const blockersFor = (id) => Object.entries(views).filter(([k]) => k !== id).map(([, v]) => v.rect).concat(placed);
@@ -274,6 +365,23 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null } = {
       if (best.lead !== LEAD) m.lead = best.lead; else delete m.lead;
       placed.push(best.box);
     }
+  }
+  // Hinweise (z. B. Profilangabe) unter, sonst über der Ansicht an die erste freie Stelle
+  for (const n of notes) {
+    const v = views[n.view];
+    if (!v) continue;
+    const w = textWidth(n.text), R = v.rect;
+    let spot = null;
+    for (let k = 0; k < 40 && !spot; k++) {
+      for (const y of [R[3] + 7 + 3 * k, R[1] - 3 - 3 * k]) {
+        const box = [R[0], y - TEXT_H, R[0] + w, y + 1];
+        if (cost(box, n.view) + overlap(box, R) < 1e-6) { spot = box; break; }
+      }
+    }
+    if (!spot) spot = [R[0], R[3] + 7 - TEXT_H, R[0] + w, R[3] + 8];
+    n.x = spot[0];
+    n.y = spot[1] + TEXT_H;
+    placed.push(spot);
   }
   return dims;
 }

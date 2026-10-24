@@ -8,7 +8,7 @@ import { v3 } from "../core/geom.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
 import { clipProjection } from "../core/clip.js";
-import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs } from "../core/autodims.js";
+import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec } from "../core/autodims.js";
 import { bomRows } from "./props.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 
@@ -602,13 +602,22 @@ export class DrawingEditor {
     const label = (x, y, s) => { const e = svgEl("text", { x: x + 1.2, y: y + 2.6, "font-size": 1.8, fill: "#4a5866", stroke: "none" }); e.textContent = s; g.append(e); };
     const value = (x, y, s, size = 3.5) => { const e = svgEl("text", { x: x + 1.5, y, "font-size": size, fill: "#111a24", stroke: "none" }); e.textContent = s || ""; g.append(e); };
     const src = d.source && this.app.doc(d.source.id);
-    let mass = "";
+    // Werkstoff und Masse folgen dem Modell, solange im Schriftfeld nichts eingetragen ist
+    // (ältere Zeichnungen haben die Werkstoff-Bezeichnung beim Anlegen kopiert: die gilt ebenfalls als automatisch)
+    const autoLabels = new Set(Object.values(MATERIALS).map((m) => m.label));
+    let mass = "", material = "";
     if (src?.kind === "part") {
       const r = this.app.results.get(src.id);
       if (r) mass = fmtNum((r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0) * (MATERIALS[src.material]?.density || 7.85)) / 1e6, 2) + " kg";
+      material = MATERIALS[src.material]?.label || src.material || "";
+    } else if (src?.kind === "assembly") {
+      const rows = this.bomRowsOf(d);
+      if (rows.length) mass = fmtNum(rows.reduce((s, r) => s + r.mass * r.qty, 0), 2) + " kg";
+      const mats = [...new Set(rows.map((r) => r.material).filter(Boolean))];
+      material = mats.length === 1 ? mats[0] : mats.length ? "siehe Stückliste" : "";
     }
     label(x0, y0, "Firma"); value(x0, y0 + 8.4, t.firma);
-    label(x0 + 90, y0, "Werkstoff"); value(x0 + 90, y0 + 8.4, t.werkstoff);
+    label(x0 + 90, y0, "Werkstoff"); value(x0 + 90, y0 + 8.4, t.werkstoff && !autoLabels.has(t.werkstoff) ? t.werkstoff : material || t.werkstoff);
     label(x0, y0 + 10, "Allgemeintoleranz"); value(x0, y0 + 18.4, t.toleranz || "ISO 2768-m", 3);
     label(x0 + 60, y0 + 10, "Maßstab"); value(x0 + 60, y0 + 18.4, t.massstab);
     label(x0 + 90, y0 + 10, "Masse"); value(x0 + 90, y0 + 18.4, t.masse || mass, 3);
@@ -764,6 +773,7 @@ export class DrawingEditor {
           const n = d.notes.find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [n.x, n.y];
           n.x = drag.o[0] + dx; n.y = drag.o[1] + dy;
+          if (n.auto) n.touched = true;
         }
         this.render();
         return;
@@ -856,7 +866,7 @@ export class DrawingEditor {
     const n = d.notes.find((x) => x.id === id);
     const text = await promptDialog("Text ändern", "Hinweistext", n.text);
     if (text === null) return;
-    this.app.edit("Text", () => { n.text = text; }, { rebuild: false });
+    this.app.edit("Text", () => { n.text = text; if (n.auto) n.touched = true; }, { rebuild: false });
     this.render();
   }
   async editDimText(id) {
@@ -890,20 +900,28 @@ export class DrawingEditor {
     for (const m of keep) {
       if (!m.auto) continue;
       if (m.axis) used.axes.add(m.axis);
+      if (m.wall) used.wall = true;
       if (m.kind === "dia" && !m.pcd) used.radii.add(Math.round(m.circle.r * 1000));
     }
-    const holes = (this.sourceItems(d) || []).flatMap((it) => {
-      const scope = resolveParams(it.part.params || []).values;
-      return holeSpecs(it.part.features, (x) => evaluate(String(x), scope));
-    });
+    const items = this.sourceItems(d) || [];
+    const ev = (part) => { const scope = resolveParams(part.params || []).values; return (x) => evaluate(String(x), scope); };
+    const holes = items.flatMap((it) => holeSpecs(it.part.features, ev(it.part)));
+    // Einzelteil aus einem Profil: Querschnitt als Profilangabe statt Einzelmaßen
+    const src = d.source && this.app.doc(d.source.id);
+    used.profile = src?.kind === "part" ? profileSpec(src.features, ev(src)) : null;
     const views = cands.filter((v) => !keep.some((m) => m.view === v.id && m.auto)).map((v) => {
       const c = this.viewCam(d, v), p = this.proj.get(v.id);
-      return { id: v.id, axes: viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, holes };
+      return { id: v.id, axes: viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, lines: p.visible, holes };
     });
     const add = planAutoDims(views, used).map((m) => ({ id: uid("m"), ...m, auto: true }));
-    if (!add.length && keep.length === d.dims.length) return toast("Keine weiteren Hauptmaße gefunden");
-    layoutAutoDims(add, this.sheetRects(d), this.sheetObstacles(d, keep));
-    this.app.edit("Hauptmaße", () => { d.dims = [...keep, ...add]; }, { rebuild: false });
+    const keepNotes = (d.notes || []).filter((n) => !(n.auto && !n.touched));
+    const notes = used.profile && !keepNotes.some((n) => n.auto) && views.length ? [{ view: views[0].id, text: used.profile.text }] : [];
+    if (!add.length && !notes.length && keep.length === d.dims.length) return toast("Keine weiteren Hauptmaße gefunden");
+    layoutAutoDims(add, this.sheetRects(d), { ...this.sheetObstacles(d, keep), notes });
+    this.app.edit("Hauptmaße", () => {
+      d.dims = [...keep, ...add];
+      d.notes = [...keepNotes, ...notes.map((n) => ({ id: uid("n"), x: n.x, y: n.y, text: n.text, size: 3.5, auto: true }))];
+    }, { rebuild: false });
     this.render();
   }
   /** Ansichten als Rechtecke auf dem Blatt (für die Platzierung der Maße) */
@@ -1014,7 +1032,7 @@ export class DrawingEditor {
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.chooseSource() }, "Quelle wählen"), h("button", { class: "btn", onclick: () => this.autoViews() }, "Grundansichten neu"))));
     const t = d.title;
     const T = (label, key, area) => P.text(label, t[key], (v) => app.edit(label, () => { t[key] = v; }, { rebuild: false }), { area });
-    out.push(P.section("Schriftfeld", T("Benennung", "benennung"), T("Zeichnungsnr.", "nummer"), T("Werkstoff", "werkstoff"), T("Maßstab", "massstab"), T("Allgemeintol.", "toleranz"), T("Firma", "firma"), T("Gezeichnet", "ersteller"), T("Datum", "datum"), T("Revision", "revision"), T("Blatt", "blatt")));
+    out.push(P.section("Schriftfeld", T("Benennung", "benennung"), T("Zeichnungsnr.", "nummer"), T("Werkstoff", "werkstoff"), T("Masse", "masse"), h("p", { class: "hint" }, "Werkstoff und Masse leer lassen: sie kommen dann automatisch aus dem Modell."), T("Maßstab", "massstab"), T("Allgemeintol.", "toleranz"), T("Firma", "firma"), T("Gezeichnet", "ersteller"), T("Datum", "datum"), T("Revision", "revision"), T("Blatt", "blatt")));
     out.push(P.section("Beschriften", h("p", { class: "hint" }, "Maße ziehen zum Verschieben, Doppelklick zum Bearbeiten, Entf zum Löschen."),
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.setTool("dim") }, "Bemaßung"), h("button", { class: "btn", onclick: () => this.autoDims() }, "Hauptmaße"))));
     return out;
