@@ -481,11 +481,31 @@ try {
   step("Konturen am Rohr", tc.cuts.length === 1 && tc.cuts[0].pattern === "3x100" && tc.cuts[0].side === "vorne" && tc.cuts[0].through === true && tc.pierces === 6 && tc.st.ok && !tc.st.warning,
     JSON.stringify({ cut: tc.cuts[0], pierces: tc.pierces, st: tc.st }));
 
+  // 2D/3D-Schnitt (Rohr-Editor): Gehrung 60° am Ende B, erst 3D (Winkelkorrektur ±45° meldet), dann 2D; Bohrung 3D +30° längs
+  const endeB = page.locator("#props .section", { hasText: "Gehrung / Schrägschnitt" }).locator(".field", { hasText: /^Ende/ }).locator("input");
+  await endeB.fill("60");
+  await endeB.press("Enter");
+  await idle();
+  await page.locator("#props .field", { hasText: "Schnitt Ende B" }).locator("button", { hasText: "3D" }).click(); // neue Profile starten mit 2D
+  await idle();
+  const fid = await evalApp(() => window.__werkcad.activeDoc().features[0].id);
+  const w3 = await evalApp((id) => { const a = window.__werkcad; return a.results.get(a.activeId).status[id]; }, fid);
+  await page.locator("#props .field", { hasText: "Schnitt Ende B" }).locator("button", { hasText: "2D" }).click();
+  await idle();
+  await page.locator("#props .tube-cut label.chk", { hasText: "3D (schräg" }).click();
+  await idle();
+  await page.locator("#props .tube-cut .seg button", { hasText: "+30°" }).first().click();
+  await idle();
+  const w2 = await evalApp((id) => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { st: r.status[id], ends: r.bodies[0]?.meta?.endCuts, cut: a.activeDoc().features[0].cuts[0] }; }, fid);
+  await shot("22-rohr-2d-3d");
+  step("2D/3D-Schnitt und Bohrung 3D", /Winkelkorrektur auf ±45°/.test(w3.warning || "") && w2.st.ok && !w2.st.warning && w2.ends.B === "2D" && w2.cut.d3 === true && w2.cut.tiltL === "30",
+    JSON.stringify({ w3, w2 }));
+
   // Fertigungsprüfung (aus der Rohrlaser-Kalkulation): kurze Stange einstellen → Fehler unter der Zuschnittliste
   await evalApp(() => { const a = window.__werkcad; a.sel = null; a.prefs.set("fertigung.stange", 1000); });
   await page.waitForTimeout(300);
   const dfm1 = await page.locator("#props .dfm .msg").allTextContents();
-  await shot("22-fertigungspruefung");
+  await shot("23-fertigungspruefung");
   await evalApp(() => window.__werkcad.prefs.reset(["fertigung.stange"]));
   await page.waitForTimeout(300);
   const dfm2 = await page.locator("#props .dfm .msg").allTextContents();

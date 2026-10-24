@@ -123,3 +123,35 @@ test("Rohr-Konturen: Prüfungen nennen die Kontur", () => {
   const it = planTubeCuts([{ ...defaultTubeCut(), side: "vorne" }], re, ev).items[0];
   assert.deepEqual([it.halfN, it.faceHalf, it.angle], [30, 14, 90]);
 });
+
+// ---------- Schnitt der Enden in 2D/3D (schnittflaeche.py, dreid.py) ----------
+import { endCutEdge, outline, endCutSupported } from "../src/core/endcut.js";
+
+test("2D/3D: 2D Innenkante unter der Außenkante, 3D eben, Winkelkorrektur begrenzt", () => {
+  const dims = { W: 40, H: 40, r: 6 };
+  const plane = { z0: 500, cu: 0, cv: 1 }; // 45° über die Höhe
+  const e2 = endCutEdge("vierkant", dims, plane, "2D", 45, { t: 3 });
+  assert.ok(e2.outer.every((o, i) => Math.abs(o[2] - e2.inner[i][2]) < 1e-9), "2D: gleiche Lage längs");
+  assert.ok(Math.abs(e2.need - 45) < 1e-9 && !e2.clamped);
+  const e3 = endCutEdge("vierkant", dims, plane, "3D", 45, { t: 3 });
+  for (const q of [...e3.outer, ...e3.inner]) assert.ok(Math.abs(q[2] - (500 + q[1])) < 1e-9, "3D: alle Punkte in der Ebene");
+  const steep = endCutEdge("vierkant", dims, { z0: 500, cu: 0, cv: Math.tan(Math.PI / 3) }, "3D", 45, { t: 3 });
+  assert.ok(steep.clamped && Math.abs(steep.need - 60) < 1e-9);
+  const top = steep.outer.findIndex((q) => q[1] > 20.49); // Punkt auf der Oberseite (Normale = +v)
+  assert.ok(Math.abs((steep.outer[top][2] - steep.inner[top][2]) / (steep.outer[top][1] - steep.inner[top][1]) - 1) < 1e-9, "Schwenk auf tan 45° = 1 begrenzt");
+  assert.equal(outline("rohr", { W: 42.4 }).length, 96);
+  assert.equal(outline("rechteck", { W: 60, H: 40, r: 6 }).length, 36);
+  assert.equal(endCutSupported("rechteck", { t: 3, r: 6 }), true);
+  assert.equal(endCutSupported("rechteck", { t: 3, r: 3 }), false);
+  assert.equal(endCutSupported("flach", { t: 8 }), false);
+});
+test("Bohrung 3D: Neigung, Ellipse, Begrenzung", () => {
+  const p = planTubeCuts([{ ...defaultTubeCut(), d3: true, tiltL: "30", tiltQ: "40" }], { ...QR, swivel: 45 }, ev);
+  const it = p.items[0];
+  assert.ok(it.clampedFrom > 45 && Math.abs(it.tilt - 45) < 1e-9);
+  assert.match(p.issues[0].message, /Winkelkorrektur auf ±45°/);
+  assert.ok(Math.abs(it.tanL / it.tanQ - Math.tan(Math.PI / 6) / Math.tan((40 * Math.PI) / 180)) < 1e-9, "Richtung bleibt");
+  const e = cutLength({ kind: "bohrung", d: 10, tilt: 0 });
+  assert.equal(e, Math.PI * 10);
+  assert.ok(cutLength({ kind: "bohrung", d: 10, tilt: 45 }) > e);
+});

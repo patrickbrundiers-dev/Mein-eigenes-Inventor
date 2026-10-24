@@ -16,6 +16,8 @@ export const TUBE_CUT_SECTIONS = ["rohr", "vierkant", "rechteck"];
 export const SIDES = [["oben", 0], ["vorne", 90], ["unten", 180], ["hinten", 270]];
 
 const fmt = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
+const DEG = Math.PI / 180;
+export const TILT_QUICK = [-45, -30, 0, 30, 45]; // Schnellwahl der Neigung wie im Rohr-Editor
 
 /** Vorgabe für eine neue Kontur */
 export function defaultTubeCut(kind = "bohrung", L = 1000) {
@@ -45,10 +47,13 @@ export function parsePattern(text, ev = Number) {
   return { count: 1, spacing: 0 };
 }
 
-/** Schnittlänge einer Kontur (Formeln aus schneidweg.py) */
+/** Umfang einer Ellipse mit den Halbachsen a, b (Ramanujan, wie schneidweg.py) */
+const ellipse = (a, b) => Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+
+/** Schnittlänge einer Kontur (Formeln aus schneidweg.py; schräge Bohrung = Ellipse d/2 und d/(2 cos γ), dreid.py) */
 export function cutLength(c) {
   switch (c.kind) {
-    case "bohrung": return Math.PI * c.d;
+    case "bohrung": return c.tilt ? ellipse(c.d / 2, c.d / (2 * Math.cos(c.tilt * DEG))) : Math.PI * c.d;
     case "langloch": return 2 * (c.l - c.b) + Math.PI * c.b;
     case "rechteck": return 2 * (c.l + c.b) - 8 * c.r + 2 * Math.PI * c.r;
     case "ausklinkung": return 2 * (c.l - c.r) + (c.b - 2 * c.r) + Math.PI * c.r; // offen zum Ende, Endschnitt nicht gekürzt
@@ -81,9 +86,24 @@ export function planTubeCuts(cuts, prof, ev) {
       const num = (k, label) => ev(c[k] ?? "0", `${name} ${label}`);
       const it = { index, kind, through: !!c.through, end: c.end === "B" ? "B" : "A" };
       for (const k of TUBE_CUT_KINDS[kind].fields) it[k] = num(k, TUBE_CUT_FIELDS[k]);
-      if (kind === "bohrung") { it.l = it.b = it.d; it.r = it.d / 2; }
+      if (kind === "bohrung") {
+        it.l = it.b = it.d; it.r = it.d / 2;
+        // Bohrung in 3D (dreid.py): Neigung längs (+ = Richtung Ende B) und quer (+ = im Uhrzeigersinn) gegen die
+        // Wandnormale; Gesamtwinkel tan²γ = tan²l + tan²q, über der Winkelkorrektur auf die Grenze gesetzt
+        if (c.d3) {
+          let tl = Math.tan(num("tiltL", "Neigung längs") * DEG), tq = Math.tan(num("tiltQ", "Neigung quer") * DEG);
+          const lim = Math.min(prof.swivel ?? 45, 89), tg = Math.hypot(tl, tq);
+          if (tg > Math.tan(lim * DEG) + 1e-12) {
+            it.clampedFrom = Math.atan(tg) / DEG;
+            const k = Math.tan(lim * DEG) / tg; tl *= k; tq *= k;
+          }
+          it.tanL = tl; it.tanQ = tq; it.tilt = Math.atan(Math.hypot(tl, tq)) / DEG;
+          it.l = it.d / Math.cos(Math.atan(Math.abs(tl))); // Länge der Ellipse längs (für Lage und Muster)
+        }
+      }
       if (kind === "langloch") it.r = it.b / 2;
       it.q = num("q", "Versatz");
+      it.wall = prof.t;
       // Seite: Rechteckrohre nur die vier Flächen, Rundrohr beliebiger Winkel
       if (round) it.angle = ((num("angle", "Winkel") % 360) + 360) % 360;
       else {
@@ -112,6 +132,7 @@ export function planTubeCuts(cuts, prof, ev) {
         if (lo < -1e-6 || hi > prof.L + 1e-6) return err(`liegt nicht ganz auf dem Teil (${fmt(lo)} bis ${fmt(hi)} mm, Teil 0 bis ${fmt(prof.L)} mm)`);
         if (count > 1 && spacing < it.l - 1e-6) return err("Konturen im Muster überlappen (Abstand kleiner als die Länge)");
       }
+      if (it.clampedFrom) issues.push({ index, warning: true, message: `${name}: Bohrung 3D braucht ${fmt(it.clampedFrom)}° Kopfschwenk, Winkelkorrektur auf ±${fmt(Math.min(prof.swivel ?? 45, 89))}° – nicht maßhaltig` });
       items.push(it);
     } catch (e) {
       err(e.message.replace(`${name} `, ""));
@@ -131,5 +152,5 @@ export function tubeCutLabel(it) {
   const m = it.kind === "bohrung" ? `Ø${fmt(it.d)}` : `${fmt(it.l)}×${fmt(it.b)}`;
   const side = SIDES.find(([, a]) => a === it.angle)?.[0] || `${fmt(it.angle)}°`;
   const where = it.kind === "ausklinkung" ? `Ende ${it.end}` : it.xs.length > 1 ? `${it.xs.length}× ab ${fmt(it.xs[0])}` : `bei ${fmt(it.xs[0])}`;
-  return `${TUBE_CUT_KINDS[it.kind].label} ${m} ${side}${it.through ? " durchgehend" : ""}, ${where}`;
+  return `${TUBE_CUT_KINDS[it.kind].label} ${m}${it.tilt ? ` 3D ${fmt(it.tilt)}°` : ""} ${side}${it.through ? " durchgehend" : ""}, ${where}`;
 }

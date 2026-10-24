@@ -9,6 +9,7 @@ import { sectionGeometry, sectionName, profileId, THREADS } from "../core/sectio
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
 import { planKnickrahmen, knickInput } from "../core/knickrahmen.js";
 import { planTubeCuts } from "../core/tubecuts.js";
+import { endCutEdge, endCutSupported, SWIVEL_DEFAULT } from "../core/endcut.js";
 
 const BIG = 20000;
 
@@ -84,7 +85,7 @@ export function createKernel(R) {
    * frame: {origin (Startpunkt Achse), z (Achsrichtung), u (Breite), v (Höhe)}
    * cuts: {start: [{p, n}], end: [{p, n}]}  n zeigt in den zu entfernenden Bereich
    */
-  function makeMember(section, length, frame, cuts = { start: [], end: [] }, { envelope = false } = {}) {
+  function makeMember(section, length, frame, cuts = { start: [], end: [] }, { envelope = false, extStart = 0, extEnd = 0 } = {}) {
     const g = sectionGeometry(section.kind, section.dims);
     const halfDiag = Math.hypot(g.width, g.height) / 2;
     // nötige Verlängerung, damit die Schnittebene den ganzen Querschnitt erfasst
@@ -100,7 +101,7 @@ export function createKernel(R) {
       }
       return Math.max(0, ext);
     };
-    const e0 = extFor(cuts.start || [], false), e1 = extFor(cuts.end || [], true);
+    const e0 = Math.max(extFor(cuts.start || [], false), extStart), e1 = Math.max(extFor(cuts.end || [], true), extEnd);
     const yDir = frame.v;
     const fr = { origin: v3.sub(frame.origin, v3.mul(frame.z, e0)), xDir: frame.u, normal: frame.z, yDir };
     const outer = envelope ? { outer: g.outer, holes: [] } : { outer: g.outer, holes: g.holes };
@@ -108,6 +109,28 @@ export function createKernel(R) {
     const size = 4 * (length + g.width + g.height + e0 + e1) + 100;
     for (const c of [...(cuts.start || []), ...(cuts.end || [])]) solid = solid.cut(halfSpace(c.p, c.n, size));
     return { solid, geom: g };
+  }
+
+  /**
+   * Werkzeugkörper eines Endes in 2D/3D (src/core/endcut.js): Band zwischen Außen- und Innenkante der Schnittkante,
+   * von dort bis hinter das Rohrende gezogen. Alle Flächen eben (Dreiecke bzw. senkrechte Vierecke).
+   */
+  function endCutTool(edge, fr, atEnd) {
+    const W = (q) => v3.add(v3.add(v3.add(fr.origin, v3.mul(fr.u, q[0])), v3.mul(fr.v, q[1])), v3.mul(fr.z, q[2]));
+    const all = edge.outer.concat(edge.inner).map((q) => q[2]);
+    const zf = atEnd ? Math.max(...all) + 5 : Math.min(...all) - 5;
+    const O = edge.outer.map(W), I = edge.inner.map(W);
+    const Of = edge.outer.map((q) => W([q[0], q[1], zf])), If = edge.inner.map((q) => W([q[0], q[1], zf]));
+    const faces = [];
+    const n = O.length;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      faces.push(R.makePolygon([O[i], O[j], I[j]]), R.makePolygon([O[i], I[j], I[i]])); // Schnittfläche
+      faces.push(R.makePolygon([O[i], Of[i], Of[j], O[j]])); // außen
+      faces.push(R.makePolygon([I[i], I[j], If[j], If[i]])); // innen
+      faces.push(R.makePolygon([Of[i], If[i], If[j], Of[j]])); // Deckel hinter dem Ende
+    }
+    return R.makeSolid(faces);
   }
 
   /**
@@ -121,6 +144,17 @@ export function createKernel(R) {
     const normal = v3.mul(n, -1);
     const origin = v3.add(v3.add(fr.origin, v3.mul(fr.z, x)), v3.mul(n, it.halfN + 1));
     const depth = it.through ? 2 * it.halfN + 2 : it.halfN + 1;
+    if (it.tilt) {
+      // schräge Bohrung: Zylinder entlang der geneigten Achse durch die Mitte auf der Außenfläche
+      const w = v3.cross(normal, fr.z);
+      const S = v3.add(v3.add(v3.add(fr.origin, v3.mul(fr.z, x)), v3.mul(n, it.halfN)), v3.mul(w, it.q));
+      const ax = v3.norm(v3.add(v3.add(normal, v3.mul(fr.z, it.tanL)), v3.mul(w, it.tanQ)));
+      const cosG = Math.cos((it.tilt * Math.PI) / 180), out = 2 + it.d;
+      // nur durch die eigene Wand (bzw. durchgehend bis hinter die Gegenwand), nicht in die Seitenwände
+      const tanG = Math.tan((it.tilt * Math.PI) / 180);
+      const len = it.through ? (2 * it.halfN + 2) / cosG : (it.wall + 1) / cosG + (it.d / 2) * tanG;
+      return R.makeCylinder(it.d / 2, out + len, v3.sub(S, v3.mul(ax, out)), ax);
+    }
     let d;
     if (it.kind === "bohrung") d = R.drawCircle(it.d / 2);
     else if (it.kind === "ausklinkung") {
@@ -405,14 +439,39 @@ export function createKernel(R) {
             if (Math.abs(m2) > 1e-9) cuts.end.push({ p: endP, n: rotN(fr.z, f.miterSame ? m2 : -m2) });
             const minL = miterMinLength(section, fr, tiltAxis, cuts);
             if (L < minL - 1e-6) throw new Error(`Profil zu kurz für die Gehrungen: Länge mindestens ${round(minL)} mm, sonst kreuzen sich die Schnitte`);
-            let { solid, geom } = makeMember(section, L, fr, cuts);
+            // Enden in 2D oder 3D (Rohr-Editor): 2D und 3D über der Winkelkorrektur als eigener Werkzeugkörper,
+            // 3D innerhalb der Grenze bleibt der ebene Schnitt. Ohne Angabe (ältere Dateien): 3D, Winkelkorrektur ±45°.
+            const g0 = sectionGeometry(section.kind, section.dims);
+            const swivel = f.swivel === undefined || f.swivel === "" ? SWIVEL_DEFAULT : E(f.swivel, "Winkelkorrektur");
+            if (!(swivel >= 0 && swivel <= 89)) throw new Error("Winkelkorrektur 0 bis 89°");
+            const special = [], notes = [];
+            for (const [key, list, label] of [["A", "start", "Ende A"], ["B", "end", "Ende B"]]) {
+              const c = cuts[list][0];
+              if (!c) continue;
+              const mode = f.endCuts?.[key] === "2D" ? "2D" : "3D";
+              if (!endCutSupported(section.kind, { t: dims.t, r: dims.r ?? 0 })) {
+                if (mode === "2D") notes.push(`${label}: 2D-Schnitt nur für Rund-, Quadrat- und Rechteckrohr mit Eckradius ≥ Wand + 0,6 mm – eben geschnitten`);
+                continue;
+              }
+              const zn = v3.dot(fr.z, c.n);
+              const plane = { z0: v3.dot(v3.sub(c.p, fr.origin), c.n) / zn, cu: -v3.dot(fr.u, c.n) / zn, cv: -v3.dot(fr.v, c.n) / zn };
+              const edge = endCutEdge(section.kind, { W: g0.width, H: g0.height, r: dims.r ?? 0 }, plane, mode, swivel, { t: dims.t });
+              if (edge.clamped) notes.push(`${label}: Gehrung braucht ${round(edge.need)}° Kopfschwenk, Winkelkorrektur auf ±${round(swivel)}° – Schnitt nicht maßhaltig`);
+              if (mode === "2D" || edge.clamped) { special.push({ key, edge }); cuts[list] = []; }
+            }
+            const zs = (e) => e.outer.concat(e.inner).map((q) => q[2]);
+            const extOf = (key) => { const e = special.find((x) => x.key === key)?.edge; return !e ? 0 : key === "A" ? Math.max(0, -Math.min(...zs(e))) + 2 : Math.max(0, Math.max(...zs(e)) - L) + 2; };
+            let { solid, geom } = makeMember(section, L, fr, cuts, { extStart: extOf("A"), extEnd: extOf("B") });
+            for (const { key, edge } of special) solid = solid.cut(endCutTool(edge, fr, key === "B"));
+            if (notes.length) st.warning = notes.join("; ");
             // Konturen am Rohr (Rohr-Editor): ungültige werden übersprungen und gemeldet, das Profil bleibt
-            const tc = planTubeCuts(f.cuts, { kind: f.section, W: geom.width, H: geom.height, t: dims.t, r: dims.r ?? 0, L }, E);
-            if (tc.issues.length) st.warning = tc.issues.map((x) => x.message).join("; ");
+            const tc = planTubeCuts(f.cuts, { kind: f.section, W: geom.width, H: geom.height, t: dims.t, r: dims.r ?? 0, L, swivel }, E);
+            if (tc.issues.length) st.warning = [st.warning, ...tc.issues.map((x) => x.message)].filter(Boolean).join("; ");
             for (const it of tc.items) for (const x of it.xs) solid = solid.cut(tubeCutTool(it, x, fr, geom));
             if (tc.items.length) st.info = `${tc.pierces} Kontur(en), Schneidweg Innenkonturen ${round(tc.cutLength)} mm`;
             const name = sectionName(f.section, dims);
             const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
+            meta.endCuts = { A: m1 ? (f.endCuts?.A === "2D" ? "2D" : "3D") : "", B: m2 ? (f.endCuts?.B === "2D" ? "2D" : "3D") : "" };
             if (tc.items.length) Object.assign(meta, { contours: tc.items, cutLength: tc.cutLength, pierces: tc.pierces, cutSig: hashString(JSON.stringify(tc.items)) });
             state.tools.set(f.id, { op: f.op || "member", shapes: [{ shape: solid, kind: "member", meta, name: f.name || name }] });
             pushMember(state, solid, f, meta, f.name || name);

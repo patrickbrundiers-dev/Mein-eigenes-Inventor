@@ -613,3 +613,49 @@ test("Konturen am Rohr (Rohr-Editor): Bohrung, Langloch, Ausklinkung, Seite und 
   const rb = await K.buildPart(part([{ id: "pr", type: "profile", section: "rohr", dims: { D: "42.4", t: "2.6" }, length: "500", start: ["0", "0", "0"], axis: "X" }]));
   assert.ok(probe(res, [250, -20, 0], [10, 6, 10]) < probe(rb, [250, -20, 0], [10, 6, 10]) - 20, "Rundrohr 90° = vorne");
 });
+
+test("Enden in 2D und 3D (Rohr-Editor) mit Winkelkorrektur", async () => {
+  const tube = (extra, section = "vierkant", dims = { B: "40", t: "3", r: "6" }) => part([{ id: "pr", type: "profile", section, dims, length: "500", start: ["0", "0", "0"], axis: "X", miterEnd: "45", ...extra }]);
+  const legacy = await K.buildPart(tube({})); // ältere Datei ohne Angaben: 3D, ±45°
+  const d3 = await K.buildPart(tube({ endCuts: { B: "3D" }, swivel: "45" }));
+  const d2 = await K.buildPart(tube({ endCuts: { B: "2D" }, swivel: "45" }));
+  for (const r of [legacy, d3, d2]) { okAll(r); assert.equal(r.status.pr.warning, undefined); solidOk(r.bodies[0].shape); }
+  near(vol(d3), vol(legacy), 1e-6, "3D innerhalb der Grenze = ebener Schnitt");
+  near(d2.bodies[0].meta.length, d3.bodies[0].meta.length, 0.05, "Außenkante gleich, Zuschnittlänge gleich");
+  const diff = R.measureVolume(d3.bodies[0].shape.cut(d2.bodies[0].shape)) + R.measureVolume(d2.bodies[0].shape.cut(d3.bodies[0].shape));
+  // 2D: Innenkante unter der Außenkante → oben und unten je ein Keil ½·t²·tan45·(Wandbreite) anders
+  assert.ok(diff > 2 * 0.5 * 9 * 28 * 0.8 && diff < 2 * 0.5 * 9 * 40 * 1.2, `Keile 2D/3D: ${diff}`);
+  assert.deepEqual(d2.bodies[0].meta.endCuts, { A: "", B: "2D" });
+  // Winkelkorrektur: 60° Gehrung, Kopf höchstens 45° → gemeldet, Körper gültig, Außenkante wie eben
+  const c = await K.buildPart(tube({ miterEnd: "60", endCuts: { B: "3D" }, swivel: "45" }));
+  okAll(c);
+  solidOk(c.bodies[0].shape);
+  assert.match(c.status.pr.warning, /Ende B: Gehrung braucht 60° Kopfschwenk, Winkelkorrektur auf ±45° – Schnitt nicht maßhaltig/);
+  const flat = await K.buildPart(tube({ miterEnd: "60", swivel: "89" }));
+  near(c.bodies[0].meta.length, flat.bodies[0].meta.length, 0.05);
+  const dc = R.measureVolume(c.bodies[0].shape.cut(flat.bodies[0].shape)) + R.measureVolume(flat.bodies[0].shape.cut(c.bodies[0].shape));
+  assert.ok(dc > 10, `begrenzter Schwenk ändert die Schnittfläche: ${dc}`);
+  // Rundrohr 2D gültig
+  const rr = await K.buildPart(tube({ endCuts: { B: "2D" }, swivel: "45" }, "rohr", { D: "42.4", t: "2.6" }));
+  okAll(rr);
+  solidOk(rr.bodies[0].shape);
+  // Flachstahl: 2D nicht möglich → eben mit Hinweis
+  const fl = await K.buildPart(tube({ endCuts: { B: "2D" } }, "flach", { B: "40", t: "8" }));
+  okAll(fl);
+  assert.match(fl.status.pr.warning, /2D-Schnitt nur für/);
+});
+
+test("Bohrung in 3D (Rohr-Editor): Neigung längs/quer, Winkelkorrektur", async () => {
+  const tube = (cut, extra = {}) => part([{ id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "1000", start: ["0", "0", "0"], axis: "X", cuts: [{ kind: "bohrung", x: "500", side: "oben", pattern: "1", d: "10", ...cut }], ...extra }]);
+  const straight = await K.buildPart(part([{ id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "1000", start: ["0", "0", "0"], axis: "X" }])); // ohne Bohrung
+  const t30 = await K.buildPart(tube({ d3: true, tiltL: "30", tiltQ: "0" }));
+  okAll(t30);
+  solidOk(t30.bodies[0].shape);
+  // schräg durch 3 mm Wand: Querschnitt senkrecht zur Achse π·25, Volumen = π·25·3/cos30
+  near(vol(straight) - vol(t30), (Math.PI * 25 * 3) / Math.cos(Math.PI / 6), 1, "schräge Bohrung");
+  assert.ok(t30.bodies[0].meta.cutLength > Math.PI * 10, "Ellipse länger als Kreis");
+  // 60° quer bei ±45°: begrenzt und gemeldet
+  const t60 = await K.buildPart(tube({ d3: true, tiltL: "0", tiltQ: "60" }));
+  assert.match(t60.status.pr.warning, /Kontur 1: Bohrung 3D braucht 60° Kopfschwenk, Winkelkorrektur auf ±45° – nicht maßhaltig/);
+  near(vol(straight) - vol(t60), (Math.PI * 25 * 3) / Math.cos(Math.PI / 4), 1.5, "auf 45° begrenzt");
+});

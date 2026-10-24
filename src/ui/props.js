@@ -9,7 +9,8 @@ import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, endsText, CUT_RULES } from "../core/cutlist.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
-import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, defaultTubeCut, parsePattern } from "../core/tubecuts.js";
+import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern } from "../core/tubecuts.js";
+import { END_CUT_SECTIONS } from "../core/endcut.js";
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
 
@@ -331,6 +332,11 @@ export class Props {
           E("Ende", "miterEnd", { unit: "°" }),
           this.seg("Schräg über", [["v", "Höhe"], ["u", "Breite"]], f.miterAxis || "v", (v) => this.set(f, "miterAxis", v, "Gehrungsachse")),
           this.check("Enden parallel (statt trapezförmig)", f.miterSame, (v) => this.set(f, "miterSame", v, "Gehrung")),
+          END_CUT_SECTIONS.includes(f.section || "vierkant") ? [
+            this.seg("Schnitt Ende A", [["2D", "2D"], ["3D", "3D"]], f.endCuts?.A === "2D" ? "2D" : "3D", (v) => this.set(f, (x) => { x.endCuts = { ...x.endCuts, A: v }; }, "Schnitt Ende A")),
+            this.seg("Schnitt Ende B", [["2D", "2D"], ["3D", "3D"]], f.endCuts?.B === "2D" ? "2D" : "3D", (v) => this.set(f, (x) => { x.endCuts = { ...x.endCuts, B: v }; }, "Schnitt Ende B")),
+            this.expr("Winkelkorrektur ±", f.swivel ?? "45", (v) => this.set(f, "swivel", v, "Winkelkorrektur"), { unit: "°", allowNeg: false }),
+            h("p", { class: "hint" }, "Wie im Rohr-Editor: 2D = Strahl senkrecht zur Oberfläche, die Gehrung ist innen verdreht. 3D = Kopf geschwenkt, Schnittfläche eben, höchstens bis zur Winkelkorrektur (Maschine, Vorgabe ±45°); darüber nicht maßhaltig.")] : null,
           h("p", { class: "hint" }, "Die Länge gilt auf der Mittellinie; die Zuschnittlänge (längste Kante) steht in der Zuschnittliste.")));
         out.push(this.tubeCutsEditor(f));
         break;
@@ -531,7 +537,11 @@ export class Props {
           : this.seg("Seite", SIDES.map(([n]) => [n, n]), c.side || "oben", (v) => edit(i, (x) => { x.side = v; }, "Seite")),
         E("Versatz quer", "q"),
         ...TUBE_CUT_KINDS[kind].fields.map((k) => E(TUBE_CUT_FIELDS[k], k, { allowNeg: false, allowZero: k === "r" })),
-        kind === "ausklinkung" ? null : this.check("Durchgehend (auch Gegenseite)", c.through, (v) => edit(i, (x) => { x.through = v; }, "Durchgehend")));
+        kind === "ausklinkung" ? null : this.check("Durchgehend (auch Gegenseite)", c.through, (v) => edit(i, (x) => { x.through = v; }, "Durchgehend")),
+        kind === "bohrung" ? this.check("3D (schräg gebohrt, Kopf geschwenkt)", c.d3, (v) => edit(i, (x) => { x.d3 = v; x.tiltL = x.tiltL || "0"; x.tiltQ = x.tiltQ || "0"; }, "Bohrung 3D")) : null,
+        kind === "bohrung" && c.d3 ? [["Neigung längs", "tiltL"], ["Neigung quer", "tiltQ"]].map(([label, key]) => [
+          E(label, key, { unit: "°" }),
+          this.seg("", TILT_QUICK.map((a) => [String(a), (a > 0 ? "+" : a < 0 ? "−" : "") + Math.abs(a) + "°"]), String(c[key] ?? "0"), (v) => edit(i, (x) => { x[key] = v; }, label))]) : null);
     };
     return this.section("Konturen am Rohr",
       ...cuts.map(card),
