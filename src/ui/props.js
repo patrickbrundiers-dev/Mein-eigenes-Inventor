@@ -119,6 +119,9 @@ export class Props {
         h("p", { class: "hint" }, "Eine Hauptebene oder eine ebene Fläche im 3D-Fenster anklicken."),
         h("div", { class: "btn-row" }, ...Object.entries(BASE_PLANES).map(([k, p]) => h("button", { class: "btn", onclick: () => app.createSketch({ ref: k }) }, p.label))),
         h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.cancelPick() }, "Abbrechen"))));
+    } else if (app.pick?.kind === "measure") {
+      title = "Messen";
+      body.append(...this.measureProps());
     } else if (d.kind === "part") {
       if (app.sel?.type === "feature") {
         const f = app.feature(app.sel.id);
@@ -164,6 +167,8 @@ export class Props {
         h("dt", {}, "Volumen"), h("dd", {}, fmtNum(vol / 1000, 2) + " cm³"),
         h("dt", {}, "Masse"), h("dd", {}, fmtNum((vol * dens) / 1e6, 3) + " kg"),
         h("dt", {}, "Dichte"), h("dd", {}, fmtNum(dens, 2) + " g/cm³"),
+        h("dt", {}, "Oberfläche"), h("dd", {}, fmtNum(r.bodies.reduce((s, b) => s + (b.props?.area || 0), 0) / 100, 2) + " cm²"),
+        centerOf(r.bodies) ? [h("dt", {}, "Schwerpunkt"), h("dd", {}, centerOf(r.bodies).map((v) => fmtNum(v, 1)).join(" / ") + " mm")] : null,
         bb ? [h("dt", {}, "Abmessungen"), h("dd", {}, `${fmtNum(bb[1][0] - bb[0][0], 1)} × ${fmtNum(bb[1][1] - bb[0][1], 1)} × ${fmtNum(bb[1][2] - bb[0][2], 1)}`)] : null,
         h("dt", {}, "Körper"), h("dd", {}, String(r.bodies.length)))));
       const members = r.bodies.filter((b) => b.kind === "member");
@@ -208,6 +213,41 @@ export class Props {
       else out.push(this.section("Messen", h("dl", { class: "kv" }, h("dt", {}, "Winkel"), h("dd", {}, fmtNum((Math.acos(Math.min(1, dot)) * 180) / Math.PI, app.prefs.get("allgemein.dezimalstellen")) + "°"))));
     }
     out.push(h("p", { class: "hint" }, "Strg/Umschalt+Klick wählt mehrere Elemente."));
+    return out;
+  }
+
+  /** Ergebnis des Messwerkzeugs (exakte Kernwerte, siehe Kernel measure) */
+  measureProps() {
+    const app = this.app;
+    const m = app.measure || {};
+    const dec = app.prefs.get("allgemein.dezimalstellen");
+    const L = (v) => fmtNum(v, dec) + " mm";
+    const P = (p) => p.map((v) => fmtNum(v, dec)).join(" / ");
+    const T = { PLANE: "Ebene Fläche", CYLINDER: "Zylinderfläche", CONE: "Kegelfläche", SPHERE: "Kugelfläche", TORUS: "Torusfläche", BSPLINE: "Freiformfläche", LINE: "Gerade Kante", CIRCLE: "Kreiskante", ELLIPSE: "Ellipsenkante", BSPLINE_CURVE: "Freiformkante" };
+    const out = [h("p", { class: "hint" }, "Eine oder zwei Flächen/Kanten anklicken. Ein dritter Klick beginnt neu. Esc beendet.")];
+    if (m.busy) out.push(h("p", { class: "hint" }, "Messe …"));
+    if (m.error) out.push(h("div", { class: "msg err" }, m.error));
+    const r = m.result;
+    if (r) {
+      r.items.forEach((it, i) => {
+        const rows = [h("dt", {}, "Art"), h("dd", {}, T[it.type] || it.type)];
+        if (it.area !== undefined) rows.push(h("dt", {}, "Fläche"), h("dd", {}, fmtNum(it.area, dec) + " mm²"));
+        if (it.length !== undefined) rows.push(h("dt", {}, "Länge"), h("dd", {}, L(it.length)));
+        if (it.radius !== undefined) rows.push(h("dt", {}, "Radius"), h("dd", {}, L(it.radius)), h("dt", {}, "Durchmesser"), h("dd", {}, "Ø " + L(2 * it.radius)));
+        if (it.center && it.kind === "edge") rows.push(h("dt", {}, "Mittelpunkt"), h("dd", {}, P(it.center)));
+        if (it.kind === "edge" && it.type === "LINE") rows.push(h("dt", {}, "Start"), h("dd", {}, P(it.start)), h("dt", {}, "Ende"), h("dd", {}, P(it.end)));
+        if (it.normal) rows.push(h("dt", {}, "Normale"), h("dd", {}, it.normal.map((v) => fmtNum(v, 3)).join(" / ")));
+        out.push(this.section(`Element ${i + 1}`, h("dl", { class: "kv" }, ...rows)));
+      });
+      if (r.items.length === 2) {
+        const rows = [h("dt", {}, "Kürzester Abstand"), h("dd", {}, L(r.distance))];
+        if (r.angle !== undefined) rows.push(h("dt", {}, "Winkel"), h("dd", {}, fmtNum(r.angle, dec) + "°"));
+        const cc = centerDistance(r.items);
+        if (cc !== null) rows.push(h("dt", {}, "Mittenabstand"), h("dd", {}, L(cc)));
+        out.push(this.section("Zwischen beiden", h("dl", { class: "kv" }, ...rows)));
+      }
+    }
+    out.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.cancelPick() }, "Messen beenden")));
     return out;
   }
 
@@ -678,6 +718,35 @@ export class Props {
       window.werkcad?.openLogFolder ? h("p", { class: "hint" }, "Bei Problemen hilft das Fehlerprotokoll (enthält keine Projektdaten).") : null),
     buttons: [window.werkcad?.openLogFolder ? { label: "Protokollordner öffnen", run: () => window.werkcad.openLogFolder() } : null, { label: "OK", primary: true }].filter(Boolean) });
   }
+}
+
+/** Mittenabstand: zwei Kreiskanten → Abstand der Mittelpunkte; zwei parallele Zylinder → Achsabstand */
+export function centerDistance(items) {
+  const [a, b] = items;
+  const sub = (p, q) => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+  const len = (v) => Math.hypot(v[0], v[1], v[2]);
+  const pa = a.kind === "edge" ? a.center : a.axisP, pb = b.kind === "edge" ? b.center : b.axisP;
+  if (!pa || !pb || !a.axisD || !b.axisD) return null;
+  const dot = a.axisD[0] * b.axisD[0] + a.axisD[1] * b.axisD[1] + a.axisD[2] * b.axisD[2];
+  if (Math.abs(Math.abs(dot) - 1) > 1e-9) return null;
+  const d = sub(pb, pa);
+  if (a.kind === "edge" && b.kind === "edge") return len(d);
+  // Abstand paralleler Achsen: Anteil senkrecht zur Achse
+  const t = d[0] * a.axisD[0] + d[1] * a.axisD[1] + d[2] * a.axisD[2];
+  return len([d[0] - t * a.axisD[0], d[1] - t * a.axisD[1], d[2] - t * a.axisD[2]]);
+}
+
+/** Volumengewichteter Schwerpunkt mehrerer Körper (gleicher Werkstoff) */
+function centerOf(bodies) {
+  let V = 0;
+  const c = [0, 0, 0];
+  for (const b of bodies) {
+    const v = b.props?.volume, p = b.props?.center;
+    if (!(v > 0) || !p) return null;
+    V += v;
+    for (let k = 0; k < 3; k++) c[k] += p[k] * v;
+  }
+  return V > 0 ? c.map((x) => x / V) : null;
 }
 
 // ---------- Listen ----------

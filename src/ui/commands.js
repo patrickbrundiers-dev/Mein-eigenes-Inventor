@@ -30,6 +30,7 @@ export function commandRunners(app) {
     "sketch.construction": () => app.sketcher.toggleConstruction(),
     "sketch.gridsnap": () => { app.sketcher.gridSnap = !app.sketcher.gridSnap; app.sketcher.render(); app.ribbon.render(); },
     "sketch.finish": () => app.finishSketch(),
+    "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
     "asm.align": r("align"),
     "asm.alignFlush": r("alignFlush"),

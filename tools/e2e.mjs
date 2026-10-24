@@ -556,6 +556,35 @@ try {
       JSON.stringify({ first, n0, f1, conflict, stored, f2, tip }));
   }
 
+  // Messen: Taste M, Deckfläche anklicken, dann Bohrungskante → exakte Werte aus dem Kern
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await page.locator("#viewer canvas").click({ position: { x: 5, y: 300 } });
+    await page.keyboard.press("m");
+    const box = await page.locator("#viewer canvas").boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForFunction(() => window.__werkcad.measure?.result, null, { timeout: 20000 });
+    const one = await evalApp(() => window.__werkcad.measure.result.items[0]);
+    // Kreiskante einer Bohrung über ihren Mittelpunkt auf dem Bildschirm treffen
+    const pt = await evalApp(() => {
+      const v = window.__werkcad.viewer;
+      const r = v.container.getBoundingClientRect();
+      for (const pk of v.pickables) for (const e of pk.lines.userData.edges) if (e.type === "CIRCLE" && e.mid[2] > 11 && Math.hypot(...[0, 1, 2].map((k) => e.positions[k] - e.positions[e.positions.length - 3 + k])) < 1e-6) { const [x, y] = v.worldToScreen(e.mid); return [r.left + x, r.top + y]; }
+      return null;
+    });
+    await page.mouse.click(pt[0], pt[1]);
+    await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 2 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
+    await shot("24-messen");
+    const two = await evalApp(() => ({ r: window.__werkcad.measure.result, text: document.querySelector("#props").textContent }));
+    await page.keyboard.press("Escape");
+    const off = await evalApp(() => !window.__werkcad.pick && !window.__werkcad.measure);
+    const it = two.r.items[1];
+    step("Messen", one.type === "PLANE" && one.area > 1000 && it.type === "CIRCLE" && Math.abs(it.radius * 2 - 11) < 0.6 && Math.abs(two.r.distance) < 1e-6 && /Durchmesser/.test(two.text) && off,
+      JSON.stringify({ one: { type: one.type, area: one.area }, two: { type: it.type, r: it.radius, d: two.r.distance }, off }));
+  }
+
   // Plan 5.5: große Baugruppe (150 Komponenten) öffnen und bedienen
   {
     const t0 = Date.now();
@@ -574,7 +603,7 @@ try {
     const tSel = Date.now() - t1;
     const big = await evalApp(() => { const a = window.__werkcad; return { comps: a.doc(window.__bigAsm).components.length, active: a.activeDoc().id === window.__bigAsm }; });
     await evalApp(() => window.__werkcad.viewer.fit?.());
-    await shot("24-grosse-baugruppe");
+    await shot("25-grosse-baugruppe");
     console.log(`[info] große Baugruppe: öffnen ${tOpen} ms, Auswahl ${tSel} ms`);
     step("Große Baugruppe (150 Komponenten)", big.comps === 150 && big.active && tOpen < 120000 && tSel < 3000, JSON.stringify({ ...big, tOpen, tSel }));
   }

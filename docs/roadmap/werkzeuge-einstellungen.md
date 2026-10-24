@@ -64,9 +64,11 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Punkt | Status | Wo / Bemerkung |
 |---|---|---|
 | Abstand/Winkel zweier ebener Flächen | vorhanden | Eigenschaftenpanel bei zwei gewählten Flächen |
-| Abstand Punkt/Kante/Fläche, Radius/Durchmesser, Koordinaten | teilweise | Durchmesser bei Zylinderfläche angezeigt; eigenes Messwerkzeug fehlt (Stufe 4) |
+| Messwerkzeug: Fläche, Kantenlänge, Radius/Ø, Mittelpunkt, kürzester Abstand, Winkel, Mittenabstand | vorhanden | Taste M / „Messen“, Bauteil und Baugruppe; Werte exakt aus OpenCascade (GProp, BRepExtrema), nicht aus dem Anzeigenetz (Stufe 4) |
+| Punkte (Ecken) einzeln anklicken | fehlt | Ecken sind im 3D-Fenster nicht wählbar; Start/Ende gerader Kanten werden angezeigt |
 | Bounding Box, Volumen, Masse | vorhanden | `bodyProps` (Volumen, Box), Masse mit Werkstoffdichte |
-| Oberfläche, Schwerpunkt, Trägheit | fehlt | OCCT liefert es (`GProp`), Stufe 4 |
+| Oberfläche, Schwerpunkt | vorhanden | Masse-Eigenschaften im Bauteil (Stufe 4) |
+| Trägheitsmomente | blockiert | `GProp_GProps.MatrixOfInertia` ist in der eingebauten OpenCascade-Fassung (replicad-opencascadejs 1.1.0) nicht verfügbar |
 | Kollisionsprüfung | vorhanden | Baugruppe (Entwicklungsplan G-1) |
 | Ungültige Körper erkennen | vorhanden | Körperprüfung aus P0 |
 | Messwerte mit konfigurierbarer Genauigkeit | vorhanden (neu) | Einstellung „Dezimalstellen“ |

@@ -477,6 +477,7 @@ export class App {
   pickOptions() {
     const p = this.pick;
     if (p?.kind === "edges") return { edges: true, faces: false };
+    if (p?.kind === "measure") return { edges: true, faces: true };
     if (p?.kind === "faces" || p?.kind === "sketchPlane" || p?.kind === "align") return { edges: false, faces: true };
     if (this.mode === "assembly") return { edges: false, faces: true };
     return { edges: true, faces: true };
@@ -492,7 +493,7 @@ export class App {
     }
     const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
     if (!hit) return this.viewer.clearHover();
-    if (this.mode === "assembly" && this.pick?.kind !== "align") this.viewer.highlight([{ kind: "group", key: hit.key }]);
+    if (this.mode === "assembly" && this.pick?.kind !== "align" && this.pick?.kind !== "measure") this.viewer.highlight([{ kind: "group", key: hit.key }]);
     else this.viewer.highlight([hit]);
   }
   viewerClick(e) {
@@ -508,6 +509,7 @@ export class App {
       return;
     }
     const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
+    if (p?.kind === "measure") return this.measurePick(hit);
     if (p?.kind === "edges") return this.toggleFeatureEdge(p.feature, hit);
     if (p?.kind === "faces") return this.toggleFeatureFace(p.feature, hit);
     if (p?.kind === "align") return this.alignPick(hit);
@@ -654,7 +656,54 @@ export class App {
     this.asmErrors = res.errors;
     if (res.changed) { this.dirty = true; this.updateTitle(); }
   }
+  // ---------- Messen ----------
+  beginMeasure() {
+    if (this.mode !== "part" && this.mode !== "assembly") return;
+    this.pick = { kind: "measure" };
+    this.measure = { hits: [] };
+    this.viewer.setSelectionHits([]);
+    this.setHint("Messen: Fläche oder Kante anklicken, dann optional eine zweite – Esc beendet");
+    this.props.render();
+    this.ribbon.render();
+  }
+  async measurePick(hit) {
+    const m = this.measure;
+    if (!hit || hit.info?.idx === undefined) { m.hits = []; m.result = null; m.error = hit ? "Dieses Element lässt sich nicht messen" : null; }
+    else {
+      const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face);
+      if (m.hits.length >= 2 || m.hits.some(same)) m.hits = [];
+      m.hits.push(hit);
+    }
+    this.viewer.setSelectionHits(m.hits);
+    if (!m.hits.length) { this.props.render(); return; }
+    const items = m.hits.map((x) => this.measureItem(x)).filter(Boolean);
+    m.busy = true; m.error = null;
+    this.props.render();
+    const ticket = (m.ticket = (m.ticket || 0) + 1);
+    try {
+      const r = await this.kernel.call("measure", { items });
+      if (this.measure !== m || m.ticket !== ticket) return;
+      m.result = r;
+    } catch (e) {
+      if (this.measure !== m || m.ticket !== ticket) return;
+      m.result = null;
+      m.error = "Messen fehlgeschlagen: " + e.message;
+    }
+    m.busy = false;
+    this.props.render();
+  }
+  /** Pick-Treffer → Messauftrag für den Kern (Bauteil oder platzierte Komponente) */
+  measureItem(hit) {
+    const d = this.activeDoc();
+    const base = { body: hit.body, kind: hit.kind, idx: hit.info.idx };
+    if (d.kind === "part") return { ...base, part: d };
+    const c = d.components.find((x) => "comp:" + x.id === hit.key);
+    const p = c && this.doc(c.part);
+    return p ? { ...base, part: p, pos: c.pos, rot: c.rot } : null;
+  }
+
   cancelPick() {
+    if (this.pick?.kind === "measure") { this.measure = null; this.ribbon.render(); }
     if (this.pick?.feature) { this._editingFeature = null; this.rebuild(); }
     this.pick = null;
     this.align = this.align ? { mode: this.align.mode, gap: this.align.gap } : null;
