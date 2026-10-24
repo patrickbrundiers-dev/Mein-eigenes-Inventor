@@ -111,6 +111,68 @@ export function mirrorEntities(sk, entityIds, lineId, { uid }) {
 }
 
 /**
+ * Muster: Kopien der Elemente rechteckig (nx × ny, Abstände a/b entlang Skizzen-X/Y) oder kreisförmig
+ * (n Stück um den Punkt center, Winkelschritt step in °). Jede Kopie ist über Bedingungen »pattern«
+ * an ihr Original gebunden; alle Bedingungen eines Musters tragen dieselbe Kennung `pat` und dieselben Werte.
+ */
+export function patternEntities(sk, entityIds, opts, { uid, scopeEval = Number }) {
+  const P = new Map(sk.points.map((p) => [p.id, p]));
+  const ents = entityIds.map((id) => sk.entities.find((e) => e.id === id)).filter((e) => e && !e.origin && ["line", "arc", "circle", "point"].includes(e.type));
+  if (!ents.length) throw new Error("Nichts für das Muster gewählt");
+  const rot = opts.mode === "rot";
+  const C = rot ? P.get(opts.center) : null;
+  if (rot && !C) throw new Error("Mittelpunkt für das Kreismuster fehlt");
+  const nx = Math.round(opts.nx ?? opts.n), ny = rot ? 1 : Math.round(opts.ny ?? 1);
+  if (!(nx >= 1 && ny >= 1) || nx * ny < 2) throw new Error("Mindestens zwei Exemplare nötig");
+  if (nx * ny > 400) throw new Error("Höchstens 400 Exemplare");
+  const a = scopeEval(opts.a ?? opts.step), b = rot ? 0 : scopeEval(opts.b ?? "0");
+  if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error("Abstand ungültig");
+  const pat = uid("pm");
+  const cons = [];
+  const created = [];
+  const cells = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (i || j) cells.push([i, j]);
+  for (const [i, j] of cells) {
+    const map = new Map();
+    const th = rot ? (a * i * Math.PI) / 180 : 0, co = Math.cos(th), si = Math.sin(th);
+    const copy = (pid) => {
+      if (map.has(pid)) return map.get(pid);
+      if (rot && pid === opts.center) { map.set(pid, pid); return pid; }
+      const p = P.get(pid);
+      const id = uid("p");
+      if (rot) sk.points.push({ id, x: C.x + co * (p.x - C.x) - si * (p.y - C.y), y: C.y + si * (p.x - C.x) + co * (p.y - C.y) });
+      else sk.points.push({ id, x: p.x + i * a, y: p.y + j * b });
+      const k = { id: uid("k"), type: "pattern", pat, mode: rot ? "rot" : "lin", p: pid, q: id, i, value: String(opts.a ?? opts.step) };
+      if (rot) k.c = opts.center; else { k.j = j; k.value2 = String(opts.b ?? "0"); }
+      cons.push(k);
+      map.set(pid, id);
+      return id;
+    };
+    for (const e of ents) {
+      const id = uid(e.type === "line" ? "l" : e.type === "arc" ? "b" : e.type === "circle" ? "k" : "pt");
+      if (e.type === "line") sk.entities.push({ id, type: "line", p1: copy(e.p1), p2: copy(e.p2), construction: !!e.construction });
+      else if (e.type === "arc") sk.entities.push({ id, type: "arc", c: copy(e.c), p1: copy(e.p1), p2: copy(e.p2), construction: !!e.construction });
+      else if (e.type === "circle") { sk.entities.push({ id, type: "circle", c: copy(e.c), r: e.r, construction: !!e.construction }); cons.push({ id: uid("k"), type: "equal", e1: e.id, e2: id, pat }); }
+      else sk.entities.push({ id, type: "point", p: copy(e.p), construction: !!e.construction });
+      created.push(id);
+    }
+  }
+  sk.constraints.push(...cons);
+  return { pat, entities: created };
+}
+
+/** Bedingungen eines Musters (alle mit derselben Kennung) */
+export function patternOf(sk, pat) {
+  const cons = sk.constraints.filter((c) => c.pat === pat);
+  const first = cons.find((c) => c.type === "pattern");
+  if (!first) return null;
+  const n = first.mode === "rot" ? Math.max(...cons.filter((c) => c.type === "pattern").map((c) => c.i)) + 1 : null;
+  const nx = first.mode === "rot" ? null : Math.max(...cons.filter((c) => c.type === "pattern").map((c) => c.i)) + 1;
+  const ny = first.mode === "rot" ? null : Math.max(...cons.filter((c) => c.type === "pattern").map((c) => c.j)) + 1;
+  return { pat, mode: first.mode, value: first.value, value2: first.value2, center: first.c, n, nx, ny, constraints: cons };
+}
+
+/**
  * Versatz (Offset) von Linien, Bögen und Kreisen um den Abstand d zur Seite des Punktes pick.
  * Zusammenhängende Elemente werden als Kette versetzt; an Ecken treffen sich die Kopien im Schnittpunkt,
  * an tangentialen Übergängen im gemeinsamen Punkt. Bindung: Bedingung »offset« je Kopie (Abstand bzw.
@@ -334,7 +396,7 @@ function segSeg(a, b, c, d) {
 const NAMES = {
   horizontal: "Horizontal", vertical: "Vertikal", coincident: "Koinzident", fix: "Fixiert", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis",
   midpoint: "Mittelpunkt", parallel: "Parallel", perpendicular: "Senkrecht", collinear: "Kollinear", equal: "Gleich", concentric: "Konzentrisch",
-  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", offset: "Versatz", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
+  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", offset: "Versatz", pattern: "Muster", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
 };
 /** Klartext einer Bedingung, z. B. »Abstand 120« oder »Parallel« */
 export function constraintLabel(c) {

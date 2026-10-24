@@ -75,6 +75,8 @@ export const COMMANDS = [
   { id: "sketch.polygon", label: "Skizze: Polygon", group: "Skizze", scope: "sketch", keywords: "vieleck sechskant" },
   { id: "sketch.selectAll", label: "Skizze: Alles auswählen", group: "Skizze", scope: "sketch", key: "Strg+A", keywords: "markieren" },
   { id: "sketch.offset", label: "Skizze: Versatz", group: "Skizze", scope: "sketch", keywords: "offset parallel abstand kontur" },
+  { id: "sketch.pattern", label: "Skizze: Rechteckmuster", group: "Skizze", scope: "sketch", keywords: "muster reihe feld array kopieren" },
+  { id: "sketch.cpattern", label: "Skizze: Kreismuster", group: "Skizze", scope: "sketch", keywords: "muster lochkreis polar rund array" },
   { id: "sketch.mirror", label: "Skizze: Spiegeln", group: "Skizze", scope: "sketch", keywords: "symmetrisch kopieren" },
   { id: "sketch.point", label: "Skizze: Punkt", group: "Skizze", scope: "sketch", key: "P" },
   { id: "sketch.dimension", label: "Skizze: Bemaßung", group: "Skizze", scope: "sketch", key: "D", keywords: "maß" },

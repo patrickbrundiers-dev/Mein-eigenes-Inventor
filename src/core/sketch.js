@@ -233,6 +233,7 @@ export function deleteEntities(sketch, ids) {
   sketch.constraints = sketch.constraints.filter((c) => {
     for (const k of ["e", "e1", "e2"]) if (c[k] && del.has(c[k])) return false;
     for (const k of ["p", "q"]) if (c[k] && delPts.has(c[k])) return false;
+    if (c.type === "pattern" && c.c && delPts.has(c.c)) return false;
     if (del.has(c.id)) return false;
     return true;
   });

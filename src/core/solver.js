@@ -71,7 +71,7 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
   const val = (c) => evaluate((c.tie && byId.get(c.tie)?.value) ?? c.value, scope);
 
   for (const c of [...sketch.constraints, ...extra]) {
-    if (c.driven || c.disabled || (c.tie && byId.get(c.tie)?.disabled)) continue;
+    if (c.driven || c.disabled || (c.tie && byId.get(c.tie)?.disabled) || (c.pat && byId.get(c.pat)?.disabled)) continue;
     const E = (id) => {
       const e = ents.get(id);
       if (!e) throw new Error("Element fehlt: " + id);
@@ -202,6 +202,19 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
           const L = Math.hypot(dx, dy) || 1e-12;
           return (dx * (x[q] - x[p]) + dy * (x[q + 1] - x[p + 1])) / L;
         });
+        break;
+      }
+      case "pattern": { // Musterkopie: q = p verschoben um (i·a, j·b) bzw. um c gedreht um i·Winkel
+        const p = P(c.p), q = P(c.q);
+        if (c.mode === "rot") {
+          const ce = P(c.c), th = (evaluate(c.value, scope) * (c.i || 0) * Math.PI) / 180, co = Math.cos(th), si = Math.sin(th);
+          add(c.id, (x) => x[q] - (x[ce] + co * (x[p] - x[ce]) - si * (x[p + 1] - x[ce + 1])));
+          add(c.id, (x) => x[q + 1] - (x[ce + 1] + si * (x[p] - x[ce]) + co * (x[p + 1] - x[ce + 1])));
+        } else {
+          const a = evaluate(c.value, scope) * (c.i || 0), b = evaluate(c.value2 ?? "0", scope) * (c.j || 0);
+          add(c.id, (x) => x[q] - x[p] - a);
+          add(c.id, (x) => x[q + 1] - x[p + 1] - b);
+        }
         break;
       }
       // ---- Bemaßungen ----
