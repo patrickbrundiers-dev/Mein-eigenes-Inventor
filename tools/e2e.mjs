@@ -864,6 +864,27 @@ try {
     console.log(`[info] große Baugruppe: öffnen ${tOpen} ms, Auswahl ${tSel} ms`);
     step("Große Baugruppe (150 Komponenten)", big.comps === 150 && big.active && tOpen < 120000 && tSel < 3000, JSON.stringify({ ...big, tOpen, tSel }));
   }
+  // Prägen / Gravieren: Skizze auf ein Rundrohr abgewickelt, dann erhaben
+  await evalApp(() => {
+    const a = window.__werkcad;
+    a.newPart("Gravur");
+    a.addFeature({ type: "profile", section: "rohr", dims: { D: "40", t: "3" }, length: "500", start: ["0", "0", "0"], axis: "X", rotation: "0", miterStart: "0", miterEnd: "0", endCuts: { A: "2D", B: "2D" }, swivel: "45" });
+    const P = (id, x, y) => ({ id, x, y });
+    a.addFeature({ type: "sketch", plane: { ref: "XY" }, offset: "50", points: [P("g1", 200, -10), P("g2", 240, -10), P("g3", 240, 10), P("g4", 200, 10)],
+      entities: [["l1", "g1", "g2"], ["l2", "g2", "g3"], ["l3", "g3", "g4"], ["l4", "g4", "g1"]].map(([id, p1, p2]) => ({ id, type: "line", p1, p2 })), constraints: [] });
+  });
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: "Prägen" }).click();
+  await idle();
+  const gst = () => evalApp(() => { const a = window.__werkcad; const f = a.activeDoc().features.at(-1); const r = a.results.get(a.activeId); return { type: f.type, st: r.status[f.id], bodies: r.bodies.length }; });
+  const g1 = await gst();
+  await shot("27-gravur-rohr");
+  await page.locator("#props .seg button", { hasText: /^Prägen$/ }).click();
+  await idle();
+  const g2 = await gst();
+  step("Prägen auf Rundrohr", g1.type === "emboss" && g1.st.ok && /graviert, 0.5 mm, 1 auf dem Rohr abgewickelt/.test(g1.st.info) && g2.st.ok && /geprägt/.test(g2.st.info) && g2.bodies === 1, JSON.stringify({ g1, g2 }));
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

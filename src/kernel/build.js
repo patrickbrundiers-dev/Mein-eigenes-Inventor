@@ -418,6 +418,36 @@ export function createKernel(R) {
             st.info = `${centers.length} Bohrung(en) Ø${round(dia)}${f.thread ? " (" + f.thread + ")" : ""}`;
             break;
           }
+          case "emboss": {
+            // Prägen wie in Inventor: Skizze auf die Oberfläche bringen und vertieft (Gravieren) oder erhaben (Prägen)
+            const s = getSketch(f.sketch);
+            if (!s.prof.regions.length) throw new Error(s.prof.errors[0] || "Keine geschlossene Kontur in der Skizze");
+            const raised = f.mode === "praegen";
+            const d = E(f.depth || "0.5", raised ? "Höhe" : "Tiefe");
+            if (!(d > 0)) throw new Error((raised ? "Höhe" : "Tiefe") + " muss > 0 sein");
+            if (!state.bodies.length) throw new Error("Kein Körper vorhanden, auf den geprägt werden kann");
+            const dirs = f.direction === "normal" ? [s.frame.normal] : f.direction === "reverse" ? [v3.mul(s.frame.normal, -1)] : [v3.mul(s.frame.normal, -1), s.frame.normal];
+            let tool = null, missed = 0, over = 0, wrapped = 0, projected = 0;
+            for (const reg of s.prof.regions) {
+              let r = null;
+              for (const dir of dirs) { r = embossTool(reg, s.frame, v3.norm(dir), state.bodies, d, raised, f.wrap !== false); if (r) break; }
+              if (!r) { missed++; continue; }
+              if (r.overEdge) over++;
+              if (r.face === "CYLINDER") r.wrapped ? wrapped++ : projected++;
+              tool = tool ? tool.fuse(r.tool) : r.tool;
+              // erhaben: mit dem getroffenen Körper verbinden (auch Profile), vertieft: aus ihm entfernen
+              r.body.shape = raised ? r.body.shape.fuse(r.tool) : r.body.shape.cut(r.tool);
+            }
+            if (!tool) throw new Error("Die Skizze trifft keine Oberfläche (Richtung prüfen)");
+            state.tools.set(f.id, { op: raised ? "join" : "cut", shapes: [{ shape: tool, kind: "tool" }] });
+            const n = s.prof.regions.length - missed;
+            st.info = `${n} Kontur(en) ${raised ? "geprägt" : "graviert"}, ${round(d)} mm` + (wrapped ? `, ${wrapped} auf dem Rohr abgewickelt` : "") + (projected ? `, ${projected} projiziert` : "");
+            const warn = [];
+            if (missed) warn.push(`${missed} Kontur(en) treffen keine Fläche`);
+            if (over) warn.push(`${over} Kontur(en) über die Kante der Fläche (Gravur über Kante)`);
+            if (warn.length) st.warning = warn.join("; ");
+            break;
+          }
           case "profile": {
             const dims = {};
             for (const [k, v] of Object.entries(f.dims || {})) dims[k] = E(v, k);
@@ -637,6 +667,122 @@ export function createKernel(R) {
 
   function pushMember(state, solid, f, meta, name) {
     state.bodies.push({ shape: solid, kind: "member", name, fid: f.id, meta });
+  }
+
+  // ---------- Prägen / Gravieren (Skizze auf die Oberfläche) ----------
+  const EMB_EPS = 0.02; // Überstand des Werkzeugs aus der Oberfläche
+  /** 2D-Schwerpunkt (Mitte des Hüllrechtecks) einer Region */
+  const regionCenter = (reg) => { const b = regionToDrawing(reg).boundingBox; return [(b.bounds[0][0] + b.bounds[1][0]) / 2, (b.bounds[0][1] + b.bounds[1][1]) / 2]; };
+  /** Region mit einer längentreuen 2D-Abbildung (Drehung/Spiegelung + Verschiebung) umrechnen; Bögen bleiben Bögen */
+  function mapRegion(reg, T) {
+    const loop = (l) => (l.kind === "circle" ? { ...l, c: T(l.c) } : { ...l, start: T(l.start), segs: l.segs.map((sg) => ({ ...sg, to: T(sg.to), mid: sg.mid && T(sg.mid) })) });
+    return { ...reg, outer: loop(reg.outer), holes: reg.holes.map(loop) };
+  }
+  /** Erster Treffer eines Strahls auf einem Körper: { body, face, H, t } oder null */
+  function rayHit(bodies, P0, dir) {
+    let best = null;
+    for (const b of bodies) {
+      const needle = R.makeCylinder(0.02, BIG, P0, dir);
+      if (!bboxOverlap(b.shape.boundingBox, needle.boundingBox)) continue;
+      let common;
+      try { common = b.shape.intersect(needle); } catch { continue; }
+      if (isEmptyShape(common)) continue;
+      const [lo, hi] = common.boundingBox.bounds;
+      let t = Infinity;
+      for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) t = Math.min(t, v3.dot(v3.sub([x, y, z], P0), dir));
+      if (best && t >= best.t) continue;
+      best = { body: b, t: Math.max(t, 0) };
+    }
+    if (!best) return null;
+    const H = v3.add(P0, v3.mul(dir, best.t));
+    const vx = R.makeVertex(H);
+    let face = null, dmin = Infinity;
+    for (const fc of best.body.shape.faces) {
+      const d = R.measureDistanceBetween(vx, fc);
+      if (d < dmin) { dmin = d; face = fc; }
+    }
+    return { ...best, H, face };
+  }
+  /** Fläche aus Fläche aufdicken (d < 0 = nach innen); Volumen immer positiv */
+  function thicken(face, d) {
+    const oc = R.getOC();
+    const m = new oc.BRepOffsetAPI_MakeThickSolid();
+    m.MakeThickSolidBySimple(face.wrapped, d);
+    m.Build(new oc.Message_ProgressRange());
+    let solid = R.cast(m.Shape());
+    m.delete();
+    if (R.measureVolume(solid) < 0) solid = R.cast(solid.wrapped.Reversed());
+    return solid;
+  }
+  /**
+   * Werkzeug einer Region: Skizze in Richtung dir auf die erste getroffene Fläche, d tief (Gravieren) bzw. hoch (Prägen).
+   * Ebene Fläche: Prisma der Region begrenzt auf eine Schicht parallel zur Fläche. Zylinder (Rohr): auf der Fläche
+   * abgewickelt (Längen bleiben auf dem Umfang erhalten) und radial aufgedickt; ohne Abwickeln projiziert.
+   * Ergebnis: { tool, face: "PLANE"|"CYLINDER", wrapped, overEdge } oder null (kein Treffer)
+   */
+  const outlinePoints = (reg) => (reg.outer.kind === "circle"
+    ? [0, 1, 2, 3].map((k) => [reg.outer.c[0] + reg.outer.r * Math.cos((k * Math.PI) / 2), reg.outer.c[1] + reg.outer.r * Math.sin((k * Math.PI) / 2)])
+    : [reg.outer.start, ...reg.outer.segs.flatMap((sg) => (sg.mid ? [sg.mid, sg.to] : [sg.to]))]);
+  // Rohrmantel (mind. halber Umfang), keine Eckrundung eines Rechteckrohrs
+  const tubeFace = (fc) => fc.geomType === "CYLINDRE" && fc.UVBounds.uMax - fc.UVBounds.uMin > Math.PI - 0.01;
+  function embossTool(reg, frame, dir, bodies, d, raised, wrap) {
+    const ray = (q) => rayHit(bodies, v3.sub(toWorld(frame, q[0], q[1]), v3.mul(dir, BIG / 4)), dir);
+    let hit = ray(regionCenter(reg));
+    if (!hit) return null;
+    // Mitte auf einer Eckrundung (Rechteckrohr über die Kante): die ebene Fläche nehmen, die der Umriss trifft
+    if (hit.face.geomType === "CYLINDRE" && !tubeFace(hit.face)) {
+      for (const q of outlinePoints(reg)) { const h2 = ray(q); if (h2 && h2.face.geomType === "PLANE") { hit = h2; break; } }
+    }
+    const { face, H } = hit;
+    const lo = raised ? -EMB_EPS : -d, hi = raised ? d : EMB_EPS; // Schicht entlang der Außennormale
+    const prism = () => extrudeRegions([reg], frame, -BIG / 2, BIG);
+    if (face.geomType === "CYLINDRE") {
+      const { axisP, axisD, radius: Rc } = cylinderAxis(face);
+      const a = v3.norm(axisD);
+      const foot = v3.add(axisP, v3.mul(a, v3.dot(v3.sub(H, axisP), a)));
+      const rh = v3.norm(v3.sub(H, foot));
+      const convex = v3.dot(rh, dir) < 0; // Außenfläche zum Betrachter
+      if (!convex) return null;
+      const start = v3.sub(axisP, v3.mul(a, BIG / 2));
+      if (wrap && tubeFace(face) && Math.abs(v3.dot(a, frame.normal)) < 0.02) {
+        const Rr = raised ? Rc - EMB_EPS : Rc + EMB_EPS;
+        // Zylinder so drehen, dass der Treffpunkt bei u = π liegt (fern der Naht)
+        let cyl = R.makeCylinder(Rr, BIG, start, a);
+        let lat = cyl.faces.find((x) => x.geomType === "CYLINDRE");
+        const Hr = v3.add(foot, v3.mul(rh, Rr));
+        const u0 = lat.uvCoordinates(Hr)[0];
+        cyl = cyl.rotate(((Math.PI - u0) * 180) / Math.PI, axisP, a);
+        lat = cyl.faces.find((x) => x.geomType === "CYLINDRE");
+        let [uH, vH] = lat.uvCoordinates(Hr);
+        if (Math.abs(uH - Math.PI) > 0.1) { cyl = cyl.rotate(((2 * (u0 - Math.PI)) * 180) / Math.PI, axisP, a); lat = cyl.faces.find((x) => x.geomType === "CYLINDRE"); [uH, vH] = lat.uvCoordinates(Hr); }
+        // Umfangsrichtung (u wachsend) in der Skizzenebene; Skizze (x, y) → abgewickelt (Bogen, Achse)
+        let t = v3.cross(a, rh);
+        t = v3.norm(v3.sub(t, v3.mul(frame.normal, v3.dot(t, frame.normal))));
+        const hx = v3.dot(v3.sub(H, frame.origin), frame.xDir), hy = v3.dot(v3.sub(H, frame.origin), frame.yDir);
+        const m = [v3.dot(frame.xDir, t), v3.dot(frame.yDir, t), v3.dot(frame.xDir, a), v3.dot(frame.yDir, a)];
+        const T = ([x, y]) => [Rr * uH + (x - hx) * m[0] + (y - hy) * m[1], vH + (x - hx) * m[2] + (y - hy) * m[3]];
+        const fc = regionToDrawing(mapRegion(reg, T)).sketchOnFace(lat, "original").face();
+        const tool = thicken(fc, raised ? d + EMB_EPS : -(d + EMB_EPS));
+        return { tool, face: "CYLINDER", wrapped: true, body: hit.body };
+      }
+      // projiziert: nur die zugewandte Hälfte des Mantels
+      const ring = R.makeCylinder(Rc + hi, BIG, start, a).cut(R.makeCylinder(Rc + lo, BIG, start, a)).intersect(halfSpace(foot, rh, BIG));
+      return { tool: prism().intersect(ring), face: "CYLINDER", wrapped: false, body: hit.body };
+    }
+    if (face.geomType !== "PLANE") throw new Error("Prägen geht auf ebene Flächen und Zylinder (Rohre)");
+    let n = v3.norm(tuple(face.normalAt(H)));
+    if (v3.dot(n, dir) > 0) n = v3.mul(n, -1);
+    const slab = halfSpace(v3.add(H, v3.mul(n, lo)), n, BIG).intersect(halfSpace(v3.add(H, v3.mul(n, hi)), v3.mul(n, -1), BIG));
+    const tool = prism().intersect(slab);
+    // Gravur über Kante (dfm.py): Punkte des Umrisses, längs dir auf die Flächenebene gebracht, liegen neben der Fläche
+    const pts = outlinePoints(reg);
+    const dn = v3.dot(dir, n);
+    const overEdge = Math.abs(dn) > 1e-6 && pts.some((q) => {
+      const Q = toWorld(frame, q[0], q[1]);
+      const onPlane = v3.add(Q, v3.mul(dir, v3.dot(v3.sub(H, Q), n) / dn));
+      return R.measureDistanceBetween(R.makeVertex(onPlane), face) > 0.01;
+    });
+    return { tool, face: "PLANE", wrapped: false, overEdge, body: hit.body };
   }
 
   function holeTool(p, a, r, depth, f, E, through) {

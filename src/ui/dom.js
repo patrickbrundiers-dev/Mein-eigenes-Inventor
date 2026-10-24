@@ -35,6 +35,7 @@ const P = {
   revolve: '<ellipse cx="12" cy="12" rx="8" ry="3.5"/><path d="M12 3v18" stroke-dasharray="2 2"/><path d="M18 7.5a8 3.5 0 0 1 2 4.5"/><path d="M20 9l0 3-3 -1"/>',
   hole: '<ellipse cx="12" cy="7" rx="7" ry="2.5"/><path d="M5 7v10c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V7"/><ellipse cx="12" cy="7" rx="3" ry="1"/><path d="M9 7v9M15 7v9"/>',
   profile: '<rect x="3" y="9" width="18" height="6" rx="1"/><path d="M3 9l3-3h18l-3 3M21 15l3-3V6"/>',
+  emboss: '<path d="M3 17c3-2 6-2 9 0s6 2 9 0"/><path d="M7 6h10M12 6v8"/><path d="M9 14h6"/>',
   knick: '<path d="M3 20l7-7h11"/><path d="M3 14l5-5h13"/><path d="M9 10l2 7"/>',
   frame: '<path d="M4 4h16v16H4z"/><path d="M7 7h10v10H7z"/><path d="M4 4l3 3M20 4l-3 3M4 20l3-3M20 20l-3-3"/>',
   fillet: '<path d="M4 20V10a6 6 0 0 1 6-6h10"/><path d="M4 4h4M4 4v4" opacity=".4"/>',

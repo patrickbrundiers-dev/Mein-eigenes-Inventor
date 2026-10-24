@@ -50,6 +50,7 @@ export const COMMANDS = [
   { id: "part.cutExtrude", label: "Ausschnitt", group: "3D-Modell", scope: "part", keywords: "tasche" },
   { id: "part.revolve", label: "Drehung", group: "3D-Modell", scope: "part", keywords: "rotation" },
   { id: "part.hole", label: "Bohrung", group: "3D-Modell", scope: "part", key: "H", keywords: "gewinde senkung" },
+  { id: "part.emboss", label: "Prägen / Gravieren", group: "3D-Modell", scope: "part", keywords: "gravur beschriftung text logo abwickeln rohr" },
   { id: "part.profile", label: "Rohr / Profil", group: "3D-Modell", scope: "part" },
   { id: "part.frame", label: "Rahmen aus Skizze", group: "3D-Modell", scope: "part" },
   { id: "part.knickrahmen", label: "Knickrahmen", group: "3D-Modell", scope: "part" },

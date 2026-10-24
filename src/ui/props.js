@@ -320,6 +320,15 @@ export class Props {
           f.sink === "senkung" ? E("Senkwinkel", "sinkAngle", { unit: "°" }) : null,
           f.sink === "flach" ? E("Senktiefe", "sinkDepth") : null));
         break;
+      case "emboss":
+        out.push(this.section("Prägen / Gravieren",
+          this.sketchList(part, f.sketch, (v) => this.set(f, "sketch", v, "Skizze")),
+          this.seg("Art", [["gravieren", "Gravieren"], ["praegen", "Prägen"]], f.mode || "gravieren", (v) => this.set(f, "mode", v, "Art")),
+          E(f.mode === "praegen" ? "Höhe" : "Tiefe", "depth", { allowNeg: false, allowZero: false }),
+          this.seg("Blickrichtung", [["auto", "Auto"], ["reverse", "Vorne"], ["normal", "Hinten"]], f.direction || "auto", (v) => this.set(f, "direction", v, "Richtung")),
+          this.check("Auf Rohr abwickeln (Längen bleiben auf dem Umfang gleich)", f.wrap !== false, (v) => this.set(f, "wrap", v, "Abwickeln")),
+          h("p", { class: "hint" }, "Gravieren = vertieft, Prägen = erhaben. Jede geschlossene Kontur der Skizze kommt auf die erste Fläche, die sie in Blickrichtung trifft (vorne = auf die Skizze geschaut, hinten = durch sie hindurch, Auto = erst vorne, dann hinten): ebene Flächen senkrecht, Rundrohre abgewickelt um den Umfang (Skizzenebene parallel zur Rohrachse). Über eine Kante gibt eine Warnung (Gravur über Kante).")));
+        break;
       case "profile":
         out.push(this.sectionEditor(f));
         out.push(this.section("Lage",
