@@ -76,14 +76,17 @@ geprüft.
 
 Quellen und Begründung: `/mnt/project-files/knickrahmen/recherche-ausklinken-biegen.md`.
 
-- **Freistellung (Pflicht)** an der Außenwand-Innenseite, symmetrisch zur Biegezone, nur in den
+- **Freistellung (optional, Vorgabe rund)** an der Außenwand-Innenseite, symmetrisch zur Biegezone, nur in den
   Seitenwänden – die Außenwand bleibt ganz. Sie hält die Seitenwände über die ganze Biegezone frei
   (sonst würden sie beim Biegen eingedrückt) und entfernt alles, was gefaltet in die gebogene Wand
   ragen würde. Mindestmaße je Knick (Rand m = 0,5 mm):
   - halbe Breite `w = max(b/2, rᵢ·tan(θ/2) − b/2) + m`
   - Tiefe `h = max(rᵢ·(1 − cos(θ/2)) + m, [Flanken kreuzen:] rᵢ − b/(2·tan(θ/2)) + m, t/2)`
   - *rund*: Langloch mit Radius ≥ h, Kreismitten bei ±w; *rechteckig*: Breite ≥ 2w, Tiefe ≥ h.
-  Leere Felder = Mindestmaß; kleinere Eingaben werden abgelehnt. Das Mindestmaß steht im
+  Leere Felder = Mindestmaß; kleinere Eingaben werden abgelehnt.
+  - *keine* (Patrick 24.10.2026: es gibt auch Knickrahmen ohne Freistellung): die V-Flanken enden
+    an einem Bogen mit rᵢ − s um den Biegemittelpunkt; gefaltet ist die Ecke geschlossen, die
+    Seitenwand liegt auf der Gehrung bis an die gebogene Wand. Das Mindestmaß steht im
   Eigenschaftsfenster.
 - **Reststeg s** (Vorgabe 0,1 mm, Vorgabe Patrick 24.10.2026): V-Ausschnitt und Freistellung enden
   s vor der Außenwand-Innenseite, der Laser berührt die stehende Wand nie. Der Steg wird mit der

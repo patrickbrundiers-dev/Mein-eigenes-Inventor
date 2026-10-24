@@ -9,7 +9,7 @@
 // - Abwicklung: gerade Abschnitte bis zu den Tangentenpunkten der Biegung + Biegezone der Länge
 //   (ri + k·t)·θ (neutrale Faser, K-Faktor k) je Knick
 // - V-Flanken gerade bis an die Außenwand; Freistellung (Pflicht, rund = Langloch / rechteckig) an der
-//   Außenwand über die ganze Biegezone; Reststeg (Schnitt endet kurz vor der Außenwand, der Steg wird
+//   Außenwand über die ganze Biegezone (optional, ohne: Flanken enden am Bogen um C); Reststeg (Schnitt endet kurz vor der Außenwand, der Steg wird
 //   mitgebogen); optional Schweißspalt auf der Gehrung, Positionier-Zapfen auf der
 //   Gehrungslinie der Seitenwände (am Segment vor dem Knick, Gegenstück als Loch im Segment danach)
 
@@ -71,7 +71,7 @@ export function planKnickrahmen(input) {
   const ri = input.bendRadius, k = input.kFactor;
   if (bends.length && !(ri >= 0)) err("BEND_RADIUS", "bendRadius", "Innenradius der Biegung muss ≥ 0 sein");
   if (bends.length && !(k >= 0 && k <= 1)) err("K_FACTOR", "kFactor", "K-Faktor muss zwischen 0 und 1 liegen");
-  const rel = input.relief?.kind === "rechteck" ? input.relief : { kind: "rund", dia: input.relief?.dia ?? null };
+  const rel = input.relief?.kind === "rechteck" || input.relief?.kind === "keine" ? input.relief : { kind: "rund", dia: input.relief?.dia ?? null };
   for (const [v, name] of [[rel.dia, "Durchmesser"], [rel.width, "Breite"], [rel.height, "Höhe"]])
     if (v !== null && v !== undefined && !(v > 0)) err("RELIEF", "relief", `Freistellung: ${name} muss > 0 sein`);
   const gap = input.weldGap || 0;
@@ -135,7 +135,10 @@ export function planKnickrahmen(input) {
       const hMin = Math.max(r0 * (1 - ch) + RELIEF_MARGIN, cross ? r0 - zone / (2 * tn) + RELIEF_MARGIN : 0, t / 2); // Breite ≥ t
       const wMin = Math.max(zone / 2, r0 * tn - zone / 2) + RELIEF_MARGIN;
       const up = (v) => Math.ceil(v * 10 - 1e-9) / 10;
-      if (rel.kind === "rund") {
+      if (rel.kind === "keine") {
+        // ohne Freistellung: Flanken enden am Bogen um den Biegemittelpunkt, Ecke geschlossen
+        kn.relief = { kind: "keine", depth: 0, min: null };
+      } else if (rel.kind === "rund") {
         const r = rel.dia ? rel.dia / 2 : up(hMin);
         if (r < hMin - 1e-9) err("RELIEF", `bend:${i}`, `Knick ${i + 1}: Freistellung zu klein, Durchmesser mindestens ${fmt(up(2 * hMin))} mm`);
         kn.relief = { kind: "rund", r, half: wMin, depth: r, min: { dia: up(2 * hMin) } };
@@ -179,7 +182,7 @@ export function knickInput(f, E) {
     start: (f.start || ["0", "0"]).map((v, k) => E(v, "Startpunkt " + "UV"[k])),
     direction: E(f.direction || "0", "Startrichtung"), orientation: f.orientation || "hochkant",
     bendRadius: E(f.bendRadius ?? "0", "Innenradius Biegung"), kFactor: E(f.kFactor ?? "0.5", "K-Faktor"),
-    relief: f.relief === "rechteck"
+    relief: f.relief === "keine" ? { kind: "keine" } : f.relief === "rechteck"
       ? { kind: "rechteck", width: opt(f.reliefWidth, "Freistellung Breite"), height: opt(f.reliefHeight, "Freistellung Höhe") }
       : { kind: "rund", dia: opt(f.reliefDia, "Freistellung Durchmesser") },
     weldGap: E(f.weldGap || "0", "Schweißspalt"),
