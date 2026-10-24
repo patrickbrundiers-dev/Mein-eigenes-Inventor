@@ -92,6 +92,7 @@ const P = {
   up: '<path d="M6 15l6-6 6 6"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>',
   fit: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
   origin: '<path d="M12 12h9M12 12V3M12 12l-7 7"/><circle cx="12" cy="12" r="1.5"/>',
   plane: '<path d="M3 16l6-9h12l-6 9z"/>',

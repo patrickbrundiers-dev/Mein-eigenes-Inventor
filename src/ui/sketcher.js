@@ -897,10 +897,7 @@ export class Sketcher {
       return true;
     }
     if (k === "Delete" || k === "Backspace") { this.deleteSelection(); return true; }
-    if (e.ctrlKey || e.metaKey || e.altKey) return false;
-    const map = { l: "line", r: "rect", c: "circle", a: "arc3", p: "point", d: "dimension", s: "select", t: "trim", f: "sfillet" };
-    if (map[k.toLowerCase()]) { this.setTool(map[k.toLowerCase()]); return true; }
-    if (k.toLowerCase() === "x") { this.toggleConstruction(); return true; }
+    // Werkzeug-Tasten (L, R, C …) kommen aus der Befehlsliste (src/core/commands.js), anpassbar
     return false;
   }
   deleteSelection() {
