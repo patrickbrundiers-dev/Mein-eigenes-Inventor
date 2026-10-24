@@ -12,11 +12,24 @@ const check = (name, cond, info = "") => { log.push(`${cond ? "✔" : "✘"} ${n
 
 const app = await electron.launch({ args: [".", "--no-sandbox"], env: { ...process.env, ELECTRON_ENABLE_LOGGING: "1" }, timeout: 60000 });
 const errors = [];
+const mainLog = [];
+app.process().stdout?.on("data", (d) => mainLog.push(String(d)));
+app.process().stderr?.on("data", (d) => mainLog.push(String(d)));
+let win = null;
 try {
-  const win = await app.firstWindow({ timeout: 60000 });
+  win = await app.firstWindow({ timeout: 60000 });
   win.on("pageerror", (e) => errors.push(String(e)));
-  win.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-  await win.waitForFunction(() => window.__werkcad && window.werkcad, null, { timeout: 60000 });
+  win.on("console", (m) => { errors.push(`[${m.type()}] ${m.text()}`); });
+  try {
+    await win.waitForFunction(() => window.__werkcad && window.werkcad, null, { timeout: 30000 });
+  } catch (e) {
+    const diag = await win.evaluate(() => ({ url: location.href, app: !!window.__werkcad, bridge: !!window.werkcad, body: document.body ? document.body.innerHTML.slice(0, 300) : null, ready: document.readyState })).catch((x) => String(x));
+    check("Diagnose", false, JSON.stringify(diag));
+    check("Konsole", false, errors.join(" | ").slice(0, 3000));
+    await win.screenshot({ path: path.join(outDir, "electron-fehler.png") }).catch(() => {});
+    throw e;
+  }
+  errors.length = 0;
   const version = await win.evaluate(() => window.werkcad.version);
   check("Brücke zum Hauptprozess", version === pkg.version, version);
   const settings = await win.evaluate(() => window.werkcad.getSettings());
@@ -31,7 +44,8 @@ try {
   await win.screenshot({ path: path.join(outDir, "electron.png") });
   const title = await win.title();
   check("Fenstertitel", /WerkCAD/.test(title), title);
-  check("Keine Fehler in der Konsole", errors.length === 0, errors.slice(0, 3).join(" | "));
+  const realErrors = errors.filter((e) => e.startsWith("[error]") || !e.startsWith("["));
+  check("Keine Fehler in der Konsole", realErrors.length === 0, realErrors.slice(0, 3).join(" | "));
   // Schließen ohne ungespeicherte Änderungen
   await win.evaluate(() => { window.__werkcad.dirty = false; });
 } catch (e) {
@@ -40,5 +54,6 @@ try {
 const closer = app.close().catch(() => {});
 await Promise.race([closer, new Promise((r) => setTimeout(r, 8000))]);
 try { app.process().kill("SIGKILL"); } catch { /* schon beendet */ }
-fs.writeFileSync(path.join(outDir, "bericht.txt"), log.join("\n") + "\n");
+fs.writeFileSync(path.join(outDir, "bericht.txt"), log.join("\n") + "\n\n--- Hauptprozess ---\n" + mainLog.join("").slice(-6000));
+console.log("--- Hauptprozess ---\n" + mainLog.join("").slice(-4000));
 process.exit(ok ? 0 : 1);
