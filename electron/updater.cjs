@@ -1,4 +1,5 @@
-// Online-Updates aus dem privaten GitHub-Repository – Download und Installation nur nach Freigabe
+// Online-Updates aus den GitHub-Releases – Download und Installation nur nach Freigabe.
+// Öffentliches Repository: ohne Token. Privates Repository: Lese-Token aus den Einstellungen.
 const { app } = require("electron");
 const pkg = require("../package.json");
 
@@ -31,8 +32,9 @@ function configure(token) {
   if (!app.isPackaged) return false;
   const u = load();
   const { owner, repo } = publishTarget();
-  if (!token) { configured = false; return false; }
-  u.setFeedURL({ provider: "github", owner, repo, private: true, token });
+  const opts = { provider: "github", owner, repo };
+  if (token) Object.assign(opts, { private: true, token });
+  u.setFeedURL(opts);
   configured = true;
   return true;
 }
@@ -40,7 +42,7 @@ function configure(token) {
 async function check(isManual = false) {
   manual = isManual;
   if (!app.isPackaged) return { message: "Updates gibt es nur in der installierten Version." };
-  if (!configured) return { message: "Kein GitHub-Token hinterlegt – bitte in den Einstellungen eintragen." };
+  if (!configured) return { message: "Update-Quelle nicht eingerichtet." };
   try {
     const r = await load().checkForUpdates();
     const latest = r && r.updateInfo && r.updateInfo.version;
@@ -49,7 +51,7 @@ async function check(isManual = false) {
   } catch (e) {
     const msg = String(e && e.message || e);
     if (/401|403|Bad credentials/i.test(msg)) return { message: "Zugriff verweigert – Token prüfen (Berechtigung »Contents: Read-only« für das Repository)." };
-    if (/404/.test(msg)) return { message: "Noch kein Release gefunden oder Token ohne Zugriff auf das Repository." };
+    if (/404/.test(msg)) return { message: "Noch kein Release gefunden (oder Repository ist privat und es fehlt ein Token)." };
     return { message: "Prüfung fehlgeschlagen: " + msg.split("\n")[0] };
   }
 }

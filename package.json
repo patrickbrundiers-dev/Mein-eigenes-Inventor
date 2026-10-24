@@ -54,7 +54,7 @@
       { "ext": "wcad", "name": "WerkCAD.Projekt", "description": "WerkCAD-Projekt", "role": "Editor", "icon": "build/icon.png" }
     ],
     "publish": [
-      { "provider": "github", "owner": "patrickbrundiers-dev", "repo": "Mein-eigenes-Inventor", "private": true, "releaseType": "release" }
+      { "provider": "github", "owner": "patrickbrundiers-dev", "repo": "Mein-eigenes-Inventor", "private": false, "releaseType": "release" }
     ]
   }
 }

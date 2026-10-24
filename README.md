@@ -38,16 +38,11 @@ Eigenes parametrisches 3D-CAD für Windows – angelehnt an die Arbeitsweise von
 
 Unter **Releases** die Datei `WerkCAD-Setup-x.y.z.exe` herunterladen und ausführen. Da die Datei nicht signiert ist, zeigt Windows beim ersten Start eventuell „Der Computer wurde durch Windows geschützt“ – dann „Weitere Informationen → Trotzdem ausführen“.
 
-## Online-Updates (privates Repository)
+## Online-Updates
 
-Das Programm holt Updates aus den Releases dieses privaten Repositorys. Dafür einmalig einen Lese-Token hinterlegen:
+WerkCAD prüft beim Start die Releases dieses Repositorys. Gibt es eine neue Version, erscheint oben ein Hinweis: erst nach deinem Klick wird heruntergeladen, und installiert wird erst nach einer zweiten Freigabe (oder beim Beenden).
 
-1. GitHub → Settings → Developer settings → **Fine-grained personal access tokens** → *Generate new token*
-2. Repository access: *Only select repositories* → `Mein-eigenes-Inventor`
-3. Permissions: **Contents: Read-only** (Metadata wird automatisch gesetzt)
-4. In WerkCAD: **Datei → Einstellungen und Updates** → Token einfügen → Speichern
-
-Der Token wird mit der Windows-Verschlüsselung (DPAPI) nur auf diesem PC gespeichert. Beim Start prüft WerkCAD auf neue Versionen; Herunterladen und Installieren passieren erst nach deiner Freigabe.
+Solange das Repository öffentlich ist, braucht es dafür nichts weiter. Wird es wieder privat gestellt, unter **Datei → Einstellungen und Updates** einen Lese-Token hinterlegen (GitHub → Settings → Developer settings → Fine-grained tokens → nur dieses Repository, **Contents: Read-only**). Der Token wird mit der Windows-Verschlüsselung nur auf diesem PC gespeichert.
 
 ## Neue Version veröffentlichen
 
