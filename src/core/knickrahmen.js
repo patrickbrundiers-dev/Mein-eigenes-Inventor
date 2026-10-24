@@ -8,7 +8,8 @@
 // - Außenwand liegt auf der konvexen Seite des Knicks und wird mit Innenradius ri gebogen
 // - Abwicklung: gerade Abschnitte bis zu den Tangentenpunkten der Biegung + Biegezone der Länge
 //   (ri + k·t)·θ (neutrale Faser, K-Faktor k) je Knick
-// - optional: Freistellung auf der V-Spitze (rund = Langloch über die Biegezone, rechteckig mittig), Positionier-Zapfen auf der
+// - V-Flanken laufen bis an die Außenwand (Ecke geschlossen); optional Freistellung (rund/rechteckig)
+//   genau in der Ecke Gehrung/Außenwand, Positionier-Zapfen auf der
 //   Gehrungslinie der Seitenwände (am Segment vor dem Knick, Gegenstück als Loch im Segment danach)
 
 import { sectionGeometry } from "./sections.js";
@@ -67,7 +68,7 @@ export function planKnickrahmen(input) {
   if (bends.length && !(ri >= 0)) err("BEND_RADIUS", "bendRadius", "Innenradius der Biegung muss ≥ 0 sein");
   if (bends.length && !(k >= 0 && k <= 1)) err("K_FACTOR", "kFactor", "K-Faktor muss zwischen 0 und 1 liegen");
   const rel = input.relief || { kind: "keine" };
-  const relHalf = rel.kind === "rund" ? rel.dia / 2 : rel.kind === "rechteck" ? rel.height / 2 : 0;
+  const relHalf = rel.kind === "rund" ? rel.dia / 2 : rel.kind === "rechteck" ? Math.hypot(rel.width, rel.height) / 2 : 0;
   if (rel.kind === "rund" && !(rel.dia > 0)) err("RELIEF", "relief", "Freistellung: Durchmesser muss > 0 sein");
   if (rel.kind === "rechteck" && !(rel.width > 0 && rel.height > 0)) err("RELIEF", "relief", "Freistellung: Breite und Höhe müssen > 0 sein");
   const tabR = (input.tabDia || 0) / 2;
@@ -87,12 +88,9 @@ export function planKnickrahmen(input) {
     const need = tt * Math.max(W / 2, -d);
     if (need > 0 && L - need <= 1e-6) err("SEG_SHORT", `segment:${i}`, `Segment ${i + 1} zu kurz für die Ausklinkung (mehr als ${fmt(need)} mm nötig)`);
   });
-  // Freistellung mittig auf der V-Spitze: darf nicht in die gebogene Außenwand schneiden
-  if (bends.length && relHalf > 0 && !(relHalf < (ri || 0)))
-    err("RELIEF", "relief", `Freistellung zu groß: ${rel.kind === "rund" ? "Durchmesser" : "Höhe"} muss kleiner als 2 × Innenradius (${fmt(2 * (ri || 0))} mm) sein`);
   // Zapfen: auf der Gehrungslinie in der Mitte der Seitenwand, zwischen Eckradius und Freistellung
   const rc = Math.max(input.dims.r || 0, t);
-  const tabU = (d - relHalf + (-W / 2 + rc)) / 2;
+  const tabU = (d - relHalf + (-W / 2 + rc)) / 2; // Freistellung liegt oberhalb von d (Ecke an der Außenwand)
   if (bends.length && tabR > 0) {
     if (tabU + tabR > d - relHalf - 0.5 || tabU - tabR < -W / 2 + rc + 0.5)
       err("TAB", "tabs", `Zapfen zu groß: Durchmesser höchstens ${fmt(Math.max(0, d - relHalf - (-W / 2 + rc) - 1))} mm`);
@@ -130,7 +128,6 @@ export function planKnickrahmen(input) {
       const zone = (ri + k * t) * theta; // Biegezugabe (Länge der neutralen Faser in der Biegezone)
       // σ: Seite der Außenwand in Profil-u-Richtung (u zeigt nach links); Linksknick → Außenwand rechts
       knicks.push({ index: i, angle: b.angle, sigma: b.angle > 0 ? -1 : 1, x1: x, x2: x + zone, zone, tanHalf: tanHalf[i] });
-      if (rel.kind === "rechteck" && !(rel.width > zone + 1e-6)) err("RELIEF", `bend:${i}`, `Knick ${i + 1}: Freistellung muss breiter als die Biegezone (${fmt(zone, 2)} mm) sein`);
       x += zone + segs[i + 1] + d * tanHalf[i] + (i + 1 < bends.length ? d * tanHalf[i + 1] : 0);
     }
   });

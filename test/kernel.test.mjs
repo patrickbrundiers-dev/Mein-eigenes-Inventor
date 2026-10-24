@@ -465,7 +465,7 @@ test("Knickrahmen: Freistellung rund/rechteckig und Positionier-Zapfen", async (
   const base = R.measureVolume((await build("abgewickelt", {})).shape);
   for (const [extra, lens, angs, ri] of [
     [{ relief: "rund", reliefDia: "4" }],
-    [{ relief: "rechteck", reliefWidth: "10", reliefHeight: "4" }],
+    [{ relief: "rechteck", reliefWidth: "6", reliefHeight: "6" }],
     [{ relief: "rund", reliefDia: "4", tabs: "an", tabDia: "8" }],
     [{ relief: "rechteck", reliefWidth: "6", reliefHeight: "5", tabs: "an", tabDia: "6" }, ["500", "400", "300"], ["45", "-60"], "4"],
   ]) {
@@ -475,6 +475,13 @@ test("Knickrahmen: Freistellung rund/rechteckig und Positionier-Zapfen", async (
     assert.equal(fl.meta.tabs, extra.tabs === "an");
     if (!lens) assert.ok(R.measureVolume(fl.shape) < base - 1, "Freistellung nimmt Material weg");
   }
+  // Ecke geschlossen: Seitenwand reicht auf der Gehrung bis an die gebogene Außenwand.
+  // Knoten (800, 0), Linksknick 90°: Außenwand rechts (−y), C = (824, −24), Ecke M = C + rᵢ·(1, −1)/√2
+  const closed = (await build("gefaltet", {})).shape;
+  const probe = (r) => { const p = [824 + r / Math.SQRT2, -24 - r / Math.SQRT2, 18.5]; return R.measureVolume(closed.clone().intersect(R.makeBaseBox(0.2, 0.2, 0.2).translate(p[0], p[1], p[2] - 0.1))); };
+  near(probe(2.5), 0.008, 1e-9, "Seitenwand innerhalb rᵢ vorhanden");
+  const relieved = (await build("gefaltet", { relief: "rund", reliefDia: "3" })).shape;
+  near(R.measureVolume(relieved.clone().intersect(R.makeBaseBox(0.2, 0.2, 0.2).translate(824 + 2.5 / Math.SQRT2, -24 - 2.5 / Math.SQRT2, 18.4))), 0, 1e-9, "Freistellung in der Ecke");
   // Zapfen: gleiche Masse, aber andere Form (Nase an Flanke A, Loch an Flanke B)
   const plain = await build("abgewickelt", {}), tab = await build("abgewickelt", { tabs: "an", tabDia: "8" });
   relNear(R.measureVolume(tab.shape), R.measureVolume(plain.shape), 1e-9, "Zapfen volumenneutral");
@@ -482,9 +489,8 @@ test("Knickrahmen: Freistellung rund/rechteckig und Positionier-Zapfen", async (
   near(nose, (Math.PI * 16) / 2 * 2 * 3, 1e-3, "Nase = halbe Kreisscheibe in beiden Seitenwänden");
   // Prüfregeln
   for (const [extra, re] of [
-    [{ relief: "rund", reliefDia: "6" }, /Freistellung zu groß/],
+    [{ relief: "rund", reliefDia: "0" }, /Durchmesser muss > 0/],
     [{ tabs: "an", tabDia: "52" }, /Zapfen zu groß/],
-    [{ relief: "rechteck", reliefWidth: "5", reliefHeight: "4" }, /breiter als die Biegezone/],
   ]) {
     const res = await K.buildPart(part([knick({ dims, ...extra }, ["800", "600"], ["90"])]));
     assert.match(String(res.status.kr.error), re, JSON.stringify(extra) + JSON.stringify(res.status));

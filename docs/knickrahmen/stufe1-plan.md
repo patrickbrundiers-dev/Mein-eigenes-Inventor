@@ -57,9 +57,11 @@ der Kantbank zu ersetzen.
 - Biegezugabe je Knick (Länge der neutralen Faser): `bⱼ = (rᵢ + k·t)·|θⱼ|` (θ im Bogenmaß)
 - Gerades Rohr zwischen den Biegezonen (an der Rohrachse gemessen): `Lᵢ + d·(tan(|θ_links|/2) + tan(|θ_rechts|/2))`
 - Abwicklungslänge = `ΣLᵢ + Σ 2·d·tan(|θⱼ|/2) + Σ bⱼ` mit `d = W/2 − t − rᵢ`
-- V-Ausklinkung im abgewickelten Rohr: Sohle der Breite bⱼ in Höhe der Außenwand-Innenseite,
-  dann senkrecht bis auf Höhe des Biegemittelpunkts, von dort Flanken unter |θ|/2 durch die
-  Gegenwand. Ist rᵢ > W/2 − t (Mittelpunkt jenseits der Mittellinie), wird das V zum Rechteck.
+- V-Ausklinkung im abgewickelten Rohr: die Flanken (je |θ|/2 gegen die Querschnittsebene) laufen
+  gerade bis kurz vor die Außenwand-Innenseite und enden dort in einem Bogen mit rᵢ um den
+  Biegemittelpunkt; dazwischen liegt die Biegezone der Breite bⱼ. Gefaltet stoßen die Seitenwände
+  damit auf der Gehrung **bis an die gebogene Außenwand** – die Ecke ist geschlossen (Wunsch
+  Patrick, 24.10.2026). Ist rᵢ > W/2 − t, wird das V zum Rechteck.
 
 Beispiel RE 60×40×3, 800 + 600 mm, 90°, rᵢ = 3, k = 0,33:
 d = 24, b = (3 + 0,99)·π/2 = 6,267 mm, Abwicklung = 1400 + 48 + 6,267 = **1454,27 mm**.
@@ -72,11 +74,11 @@ geprüft.
 
 ## 4a. Freistellung und Positionier-Zapfen (optional, je Rahmen für alle Knicke)
 
-- **Freistellung** in den Seitenwänden an der V-Spitze (Höhe `u = d`):
-  - *rund*, Durchmesser D: Langloch über die Biegezone, Kreismittelpunkte in beiden Ecken der
-    V-Spitze (bei Biegezone 0 ein Kreis).
-  - *rechteckig*, Breite × Höhe: mittig auf der V-Spitze; Breite muss größer als die Biegezone sein.
-  - D bzw. Höhe < 2·rᵢ, damit die gebogene Außenwand nicht angeschnitten wird.
+- **Freistellung** genau in der Ecke Gehrung/Außenwand-Innenseite (Punkt im Abstand rᵢ vom
+  Biegemittelpunkt auf der Gehrungslinie), nur in den Seitenwänden, die Außenwand bleibt ganz:
+  - *rund*, Durchmesser D: Kreis um die Ecke.
+  - *rechteckig*, Breite × Höhe: symmetrisch zur Gehrungslinie, Höhe entlang der Gehrung.
+  - Abgewickelt erscheint sie als zwei Ausschnitte an den Flankenenden an der Außenwand.
 - **Zapfen**, Durchmesser Dz: runde Nase auf der Gehrungslinie beider Seitenwände, mittig zwischen
   Eckradius und Freistellung. Die Nase sitzt am Segment vor dem Knick, das Segment danach hat den
   passenden Ausschnitt. Abgewickelt: Nase an Flanke A, Ausschnitt an Flanke B.
@@ -120,7 +122,7 @@ Rechnerisch (`src/core/knickrahmen.js`, `planKnickrahmen`):
 | `ANGLE_LIMIT` | min ≤ θ ≤ max, falls angegeben; min ≤ max |
 | `BEND_RADIUS` | Innenradius ≥ 0 |
 | `K_FACTOR` | 0 ≤ k ≤ 1 |
-| `RELIEF` | Maße > 0, kleiner als 2·rᵢ, rechteckig breiter als die Biegezone |
+| `RELIEF` | Maße > 0 |
 | `TAB` | Zapfen passt in die Seitenwand und stößt in der Abwicklung nicht an die Gegenflanke |
 | `SEG_SHORT` | Lᵢ größer als Σ tan(\|θ\|/2)·max(W/2, −d) der Ausklinkungen am Segment, sonst würde das V über das Segment hinausreichen |
 
@@ -160,7 +162,7 @@ gefaltet = abgewickelt relativ 1·10⁻⁶ bei k = 0,5; bei rᵢ = 0, k = 0 zus�
 | J ungültige Eingaben | negative Länge, 175°, über Maximum, Segment zu kurz, 4 Segmente, negativer Radius, K > 1: Fehler mit Bezug, kein Teilergebnis, anderes Feature unberührt |
 | K Speichern/Laden | JSON-Roundtrip baut identisch (Meta, Volumen) |
 | L STEP | Export und Rückimport beider Ansichten, Volumen gleich |
-| E/F Freistellung, Zapfen | rund, rechteckig, mit Zapfen, 3 Segmente gegensinnig: gefaltet = abgewickelt, Zapfen volumenneutral, Nase = halbe Kreisscheibe × 2 Wände, Prüfregeln |
+| E/F Ecke, Freistellung, Zapfen | Ecke geschlossen (Material innerhalb rᵢ), Freistellung in der Ecke; rund, rechteckig, mit Zapfen, 3 Segmente gegensinnig: gefaltet = abgewickelt, Zapfen volumenneutral, Nase = halbe Kreisscheibe × 2 Wände, Prüfregeln |
 | N Regression | alle bisherigen Tests grün |
 | Oberfläche | Knopf → Winkel im Eigenschaftsfenster auf 90° → Länge 1454,27 → Ansicht abgewickelt → zweimal Rückgängig |
 
