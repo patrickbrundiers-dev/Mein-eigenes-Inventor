@@ -6,6 +6,7 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, v3 } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt } from "../core/sketchedit.js";
+import { buildSlot, buildPolygon, mirrorEntities } from "../core/sketchshapes.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
 const PT_R = 7, CURVE_R = 6;
@@ -19,6 +20,9 @@ export const SKETCH_TOOLS = {
   arc3: "Bogen: Anfang, Ende, dann Punkt auf dem Bogen klicken",
   arcc: "Bogen um Mittelpunkt: Mitte, Anfang, Ende (gegen Uhrzeigersinn)",
   point: "Punkt / Bohrungsmitte setzen",
+  slot: "Langloch: erster Mittelpunkt, zweiter Mittelpunkt, dann Breite klicken",
+  polygon: "Polygon: Mittelpunkt, dann eine Ecke klicken – danach Anzahl der Ecken eingeben",
+  mirror: "Spiegeln: vorher Elemente wählen (Auswählen, Umschalt für mehrere), dann die Spiegellinie anklicken",
   dimension: "Bemaßung: Linie, Kreis, zwei Punkte oder zwei Linien wählen, dann Lage klicken",
   project: "Kante des 3D-Modells anklicken, um sie in die Skizze zu übernehmen",
   trim: "Stutzen: Teil einer Linie, eines Kreises oder Bogens anklicken – wird bis zu den nächsten Schnittpunkten entfernt",
@@ -152,6 +156,11 @@ export class Sketcher {
     this.profiles = extractProfiles(sk);
     this.app.updateSketchStatus(r, this.profiles);
     return r;
+  }
+  /** Wie commit, aber erst an einer Kopie prüfen: Fehler (ungültige Eingabe) erzeugen keinen Rückgängig-Schritt */
+  commitShape(label, fn) {
+    try { fn(JSON.parse(JSON.stringify(this.sk))); } catch (e) { toast(`${label}: ${e.message}`, { kind: "err" }); return; }
+    this.commit(label, fn);
   }
   commit(label, fn) {
     this.app.checkpoint(label);
@@ -733,6 +742,19 @@ export class Sketcher {
       this.render();
       return;
     }
+    if (t === "mirror") {
+      const hit = this.hitTest(sx, sy, { points: false, dims: false });
+      const line = hit?.kind === "entity" && this.entity(hit.id)?.type === "line" ? hit.id : null;
+      const ids = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => k.slice(2)).filter((id) => id !== line);
+      if (!line) return toast("Spiegellinie anklicken (eine Linie, gern als Konstruktionslinie)");
+      if (!ids.length) return toast("Zuerst die zu spiegelnden Elemente wählen, dann die Spiegellinie anklicken");
+      try { mirrorEntities(JSON.parse(JSON.stringify(this.sk)), ids, line, { uid }); } catch (err) { return toast(err.message, { kind: "err" }); }
+      this.commit("Spiegeln", (sk) => mirrorEntities(sk, ids, line, { uid }));
+      this.sel.clear();
+      this.app.selectSketchItems([]);
+      this.render();
+      return;
+    }
     if (GLYPH[t] || ["horizontal", "vertical", "coincident", "parallel", "perpendicular", "equal", "tangent", "fix", "midpoint", "concentric", "collinear", "symmetric"].includes(t)) {
       const hit = this.hitTest(sx, sy, { dims: false });
       this.pickForConstraint(hit);
@@ -774,6 +796,30 @@ export class Sketcher {
         break;
       case "point":
         this.addPoint(sn);
+        break;
+      case "slot":
+        if (!this.state) this.state = { pts: [sn] };
+        else if (this.state.pts.length === 1) { if (Math.hypot(sn.x - this.state.pts[0].x, sn.y - this.state.pts[0].y) * this.M.scale > 2) this.state.pts.push(sn); }
+        else {
+          const [a, b] = this.state.pts;
+          const r = slotRadius(a, b, sn);
+          this.state = null;
+          if (r * this.M.scale < 1) break;
+          this.commitShape("Langloch", (sk) => buildSlot(sk, a, b, r, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));
+        }
+        break;
+      case "polygon":
+        if (!this.state) this.state = { start: sn };
+        else {
+          const c = this.state.start;
+          this.state = null;
+          if (Math.hypot(sn.x - c.x, sn.y - c.y) * this.M.scale < 2) break;
+          this.askValue(sx, sy, this.polySides || "6", (val) => {
+            const n = Math.round(evaluate(val, this.scope()));
+            this.polySides = String(n);
+            this.commitShape("Polygon", (sk) => buildPolygon(sk, c, sn, n, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));
+          });
+        }
         break;
     }
     this.render();
@@ -1050,7 +1096,8 @@ export class Sketcher {
   }
   renderDim(g, c, P) {
     const sel = this.sel.has("c:" + c.id);
-    const cls = "sk-dim" + (c.driven ? " driven" : "");
+    const bad = this.lastSolve?.failed?.includes(c.id);
+    const cls = "sk-dim" + (c.driven ? " driven" : "") + (bad ? " err" : "");
     const grp = svgEl("g");
     const text = this.dimText(c);
     let tx, ty, rot = 0;
@@ -1109,7 +1156,7 @@ export class Sketcher {
       const start = c.type === "diameter" ? this.S(cc.x - r * Math.cos(ang), cc.y - r * Math.sin(ang)) : sc;
       grp.append(svgEl("path", { class: cls, d: `M${start[0]},${start[1]}L${sx[0]},${sx[1]}` + arrow(so[0], so[1], so[0] - sc[0], so[1] - sc[1]) }));
       tx = sx[0] + (sx[0] >= sc[0] ? 4 : -4); ty = sx[1];
-      grp.append(textEl(text, tx, ty, 0, "sk-dim-text" + (c.driven ? " driven" : "") + (sel ? " sel" : ""), sx[0] >= sc[0] ? "start" : "end"));
+      grp.append(textEl(text, tx, ty, 0, "sk-dim-text" + (c.driven ? " driven" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), sx[0] >= sc[0] ? "start" : "end"));
       g.append(grp);
       const bb = estimateBox(text, tx, ty, sx[0] >= sc[0] ? "start" : "end");
       this.dimBoxes.push({ id: c.id, ...bb });
@@ -1134,7 +1181,7 @@ export class Sketcher {
     if (tx === undefined) return;
     const anchorUp = 4;
     const nx = Math.sin((rot * Math.PI) / 180) * anchorUp, ny = -Math.cos((rot * Math.PI) / 180) * anchorUp;
-    grp.append(textEl(text, tx + nx, ty + ny, rot, "sk-dim-text" + (c.driven ? " driven" : "") + (sel ? " sel" : ""), "middle"));
+    grp.append(textEl(text, tx + nx, ty + ny, rot, "sk-dim-text" + (c.driven ? " driven" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), "middle"));
     g.append(grp);
     this.dimBoxes.push({ id: c.id, ...estimateBox(text, tx + nx, ty + ny - 4, "middle") });
   }
@@ -1168,7 +1215,7 @@ export class Sketcher {
       const gx = x + ux * 14 + n * 16, gy = y + uy * 14;
       const w = label.length > 1 ? 20 : 13;
       const sel = this.sel.has("c:" + c.id);
-      const grp = svgEl("g", { class: "sk-glyph" + (sel ? " sel" : "") });
+      const grp = svgEl("g", { class: "sk-glyph" + (sel ? " sel" : "") + (this.lastSolve?.failed?.includes(c.id) ? " err" : "") });
       grp.append(svgEl("rect", { x: gx - w / 2, y: gy - 7, width: w, height: 13, rx: 2 }));
       const t = svgEl("text", { x: gx, y: gy + 3.5, "text-anchor": "middle" });
       t.textContent = label;
@@ -1232,6 +1279,23 @@ export class Sketcher {
         }
       }
       path("M" + pts.map((p) => S(p.x, p.y).join(",")).join("L"));
+    } else if (this.tool === "slot" && st.pts) {
+      const [a, b] = st.pts;
+      if (!b) { const A = S(a.x, a.y), B = S(cur.x, cur.y); path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`); }
+      else {
+        const r = slotRadius(a, b, cur);
+        const L = Math.hypot(b.x - a.x, b.y - a.y) || 1, nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L;
+        // Umriss als Punktfolge: Halbkreis um b (von +n über +Achse nach −n), dann um a zurück
+        const base = Math.atan2(ny, nx), pts = [];
+        for (let i = 0; i <= 16; i++) { const t = base - (Math.PI * i) / 16; pts.push(S(b.x + r * Math.cos(t), b.y + r * Math.sin(t))); }
+        for (let i = 0; i <= 16; i++) { const t = base + Math.PI - (Math.PI * i) / 16; pts.push(S(a.x + r * Math.cos(t), a.y + r * Math.sin(t))); }
+        path("M" + pts.map((q) => q.join(",")).join("L") + "Z");
+      }
+    } else if (this.tool === "polygon" && st.start) {
+      const c = st.start, n = Math.max(3, Math.min(64, Number(this.polySides) || 6));
+      const r = Math.hypot(cur.x - c.x, cur.y - c.y), a0 = Math.atan2(cur.y - c.y, cur.x - c.x);
+      const pts = Array.from({ length: n }, (_, i) => S(c.x + r * Math.cos(a0 + (2 * Math.PI * i) / n), c.y + r * Math.sin(a0 + (2 * Math.PI * i) / n)));
+      path("M" + pts.map((q) => q.join(",")).join("L") + "Z");
     } else if (this.tool === "dimension" && st.picks) {
       const t = svgEl("text", { x: m.sx + 12, y: m.sy + 18, class: "sk-infer" });
       t.textContent = st.place ? (st.locked ? "Lage klicken" : "Lage klicken oder zweites Element wählen") : "zweites Element wählen";
@@ -1319,4 +1383,9 @@ function gridStep(scale) {
   return (m < 2 ? 1 : m < 5 ? 2 : 5) * p;
 }
 const round4 = (x) => Math.round(x * 1e4) / 1e4;
+/** Langloch-Radius = Abstand des Mauspunkts von der Mittellinie a–b */
+function slotRadius(a, b, m) {
+  const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+  return Math.abs(dx * (m.y - a.y) - dy * (m.x - a.x)) / L;
+}
 function safeEval(e, scope) { try { return evaluate(e, scope); } catch { return 0; } }

@@ -144,9 +144,9 @@ export class Ribbon {
         { id: "skizze", label: "Skizze", context: true, groups: [
           { label: "Erstellen", buttons: [
             T("line", "Linie", "line"), T("rect", "Rechteck", "rect"), T("rectc", "Rechteck Mitte", "rectc"),
-            T("circle", "Kreis", "circle"), T("arc3", "Bogen", "arc"), T("arcc", "Bogen Mitte", "arcc"), T("point", "Punkt", "point"),
+            T("circle", "Kreis", "circle"), T("arc3", "Bogen", "arc"), T("arcc", "Bogen Mitte", "arcc"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"), T("point", "Punkt", "point"),
           ] },
-          { label: "Ändern", buttons: [T("trim", "Stutzen", "trim"), T("sfillet", "Rundung", "fillet")] },
+          { label: "Ändern", buttons: [T("trim", "Stutzen", "trim"), T("sfillet", "Rundung", "fillet"), T("mirror", "Spiegeln", "mirror")] },
           { label: "Übernehmen", buttons: [T("project", "Kante projizieren", "project"), B("constr", "Konstruktion", "construct", { on: !!sk.construction, run: () => sk.toggleConstruction() })] },
           { label: "Bemaßung", buttons: [T("dimension", "Bemaßung", "dimension")] },
           { label: "Abhängigkeiten", small: true, buttons: [
