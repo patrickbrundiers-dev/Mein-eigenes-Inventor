@@ -3,7 +3,8 @@ import { toast, choiceDialog, downloadBlob, h } from "./dom.js";
 import { sketchToDxf } from "../core/dxf.js";
 import { newPart, uid } from "../core/examples.js";
 import { serializeProject, loadProject, validateProject } from "../core/project.js";
-import { bomRows, cutListRows, collectCutSources } from "./props.js";
+import { bomRows, collectCutSources } from "./props.js";
+import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { MATERIALS } from "../core/sections.js";
 import { fmtNum } from "./dom.js";
 
@@ -278,12 +279,6 @@ export class Files {
     if (!f) return;
     this.app.edit("Import ersetzen", () => { Object.assign(feat, importFeature(f), { id: feat.id, name: feat.name }); });
   }
-}
-
-export function cutListCsv(rows) {
-  const head = ["Pos", "Profil-ID", "Profil", "Zuschnittlänge mm", "Menge", "Gehrung Anfang °", "Gehrung Ende °", "Ausgeklinkt", "kg/m", "kg/Stk", "kg gesamt", "Werkstoff", "Bauteil"];
-  const lines = rows.map((r) => [r.pos, r.profileId, r.section, num(r.length, 1), r.qty, num(r.miters[0], 1), num(r.miters[1], 1), r.coped ? "ja" : "nein", num(r.kgm, 3), num(r.mass, 3), num(r.mass * r.qty, 3), r.material, r.parts]);
-  return csv([head, ...lines]);
 }
 
 function importFeature(f) {

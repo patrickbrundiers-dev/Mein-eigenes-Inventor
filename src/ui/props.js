@@ -5,6 +5,7 @@ import { SECTION_KINDS, FIELD_LABELS, CATALOG, catalogToDims, MATERIALS, THREADS
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
+import { cutListRows, endsText, CUT_RULES } from "../core/cutlist.js";
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
 
@@ -637,7 +638,7 @@ export class Props {
     const app = this.app;
     const d = app.activeDoc();
     const rows = cutListRows(collectCutSources(app, d));
-    modal({ title: `Zuschnittliste – ${d.name}`, width: "820px", body: rows.length ? cutListTable(rows) : h("p", {}, "Keine Profile (Rohr / Rahmen) enthalten."), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportCutList() }] });
+    modal({ title: `Zuschnittliste – ${d.name}`, width: "820px", body: rows.length ? h("div", {}, cutListTable(rows), h("details", { class: "hint" }, h("summary", {}, "Regeln der Zuschnittliste"), h("ul", {}, ...CUT_RULES.map((t) => h("li", {}, t))))) : h("p", {}, "Keine Profile (Rohr / Rahmen) enthalten."), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportCutList() }] });
   }
   settingsDialog() {
     const app = this.app;
@@ -715,37 +716,12 @@ export function collectCutSources(app, d) {
   }
   return [];
 }
-/** Zuschnitte gruppieren: gleiches Profil + Länge + Gehrungen = eine Zeile */
-export function cutListRows(sources) {
-  const map = new Map();
-  for (const { part, result, qty } of sources) {
-    for (const b of result.bodies) {
-      if (b.kind !== "member" || !b.meta) continue;
-      const m = b.meta;
-      const L = Math.round(m.length * 10) / 10;
-      const ends = [m.miterStart || 0, m.miterEnd || 0].map((x) => Math.round(x * 10) / 10).sort((a, c) => a - c);
-      const pid = m.profileId || m.section;
-      const key = [pid, L, ends.join("/"), m.coped ? "A" : "", m.butt ? "S" : "", part.material].join("|");
-      const dens = MATERIALS[part.material]?.density || 7.85;
-      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, qty: 0, kgm: (m.area * dens) / 1000, mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
-      row.qty += qty;
-      row.parts.add(part.name);
-      map.set(key, row);
-    }
-  }
-  return [...map.values()].sort((a, b) => a.profileId.localeCompare(b.profileId) || b.length - a.length).map((r, i) => ({ ...r, pos: i + 1, parts: [...r.parts].join(", ") }));
-}
 function cutListTable(rows, compact = false) {
   const miter = (r) => endsText(r);
   return h("table", { class: "grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Profil"), h("th", {}, "Länge"), h("th", {}, "Stk"), h("th", {}, "Enden"), compact ? null : h("th", {}, "kg/m"), compact ? null : h("th", {}, "kg/Stk"), compact ? null : h("th", {}, "Werkstoff"))),
     h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", { title: r.section, style: { whiteSpace: "nowrap" } }, r.profileId), h("td", { class: "num" }, fmtNum(r.length, 1)), h("td", { class: "num" }, String(r.qty)), h("td", {}, miter(r)),
       compact ? null : h("td", { class: "num" }, fmtNum(r.kgm, 2)), compact ? null : h("td", { class: "num" }, fmtNum(r.mass, 2)), compact ? null : h("td", {}, r.material)))));
-}
-/** Enden einer Zuschnitt-Zeile als Text: "45°/45°", "gerade", "ausgeklinkt" */
-export function endsText(r) {
-  const m = r.miters.some((x) => x) ? r.miters.map((x) => fmtNum(x, 1) + "°").join("/") : "gerade";
-  return m + (r.coped ? ", ausgeklinkt" : "");
 }
 function matchCatalog(kind, dims) {
   if (!dims) return null;
@@ -755,4 +731,4 @@ function matchCatalog(kind, dims) {
   }
   return null;
 }
-export { FEATURE_NAMES, scaleLabel };
+export { FEATURE_NAMES, scaleLabel, cutListRows, endsText };
