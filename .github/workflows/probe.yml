@@ -1,0 +1,20 @@
+name: Probe
+on:
+  workflow_dispatch:
+  push:
+    paths: ["tools/probe.mjs", ".github/workflows/probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install latest
+        run: |
+          echo '{"name":"probe","private":true,"type":"module"}' > package.json
+          npm install replicad@latest replicad-opencascadejs@latest three@latest esbuild@latest electron@latest electron-builder@latest electron-updater@latest --no-audit --no-fund
+          npm ls --depth=0
+      - name: Probe
+        run: node --stack-size=8000 tools/probe.mjs 2>&1
