@@ -110,14 +110,26 @@ Patrick; Lizenzfragen entstehen nicht. Keine neue Abhängigkeit.
 
 ## 4. Entwicklungsplan
 
-| Stufe | Punkt | Status |
-|---|---|---|
-| P0 | Mausrad verstellt keine Zahlenfelder (wie `mausrad.py`) | erledigt (#40) |
-| P1 | Ü1 Profil-Schnelleingabe | erledigt (#40) |
-| P1 | Ü2 Fertigungsprüfung mit Maschinengrenzen | Etappe 2 (dieser Stand) |
-| P1 | Ü3 Maßbilder Querschnitt | Etappe 3 |
-| P1 | Probleme/Prüfmeldungen: Klick wählt Feature | offen |
-| P2 | Muster-Kurzform „3x25“, Kontur-Vorlagen als Skizzenblock, DXF-Import in Skizze, Gravur-Text, Griffe am Modell, Regeln Bohrung/Steg/Rand, gemeinsamer STEP-Referenztest | zurückgestellt bis konkreter Bedarf (ADR-0004) |
+Schwerpunkt nach Rückmeldung von Patrick (24.10.2026): **Funktionen des Rohr-Editors** (Schneidweg-Rechner im
+Teile-Editor, `schneidweg.py`, `schneidweg_dialog.py`, `editor_*.py`, `dreid.py`, `schnittflaeche.py`). Wichtig sind
+ihm besonders der **2D/3D-Schnitt** und bei 3D die **Winkelkorrektur ±45°**.
+
+| Stufe | Punkt | Herkunft im Rohr-Editor | Status |
+|---|---|---|---|
+| P0 | Mausrad verstellt keine Zahlenfelder | `mausrad.py` | erledigt (#40) |
+| P1 | Profil-Schnelleingabe (eigentlich aus der Positionsliste) | `tabellen_eingabe.py` | erledigt (#40) |
+| P1 | Fertigungsprüfung mit Maschinengrenzen (Prüfmeldungen) | `dfm.py`, Stammdaten Maschinen | erledigt (#43) |
+| P1 | **Konturen am Rohr** ohne Skizze: Bohrung, Langloch, Rechteck, Ausklinkung; Lage ab Ende A, Seite/Winkel, Versatz, Muster „3x25“, durchgehend; Schneidweg und Einstiche | `schneidweg.py` (konturen, Formeln), `rechenfeld.muster` | umgesetzt (`src/core/tubecuts.js`) |
+| P1 | **2D/3D-Schnitt der Enden**: 2D = Strahl senkrecht zur Oberfläche (Gehrung innen verdreht), 3D = Kopf geschwenkt (ebene Fläche) | `schnittflaeche.py`, `dreid.py` | umgesetzt (`src/core/endcut.js`) |
+| P1 | **Winkelkorrektur** (Kopfschwenk, Vorgabe ±45°): darüber Kopf auf der Grenze, nicht maßhaltig, Warnung | `dreid.begrenzen`, `schwenk_min/max` | umgesetzt |
+| P1 | **Bohrung 3D** mit Neigung längs/quer, Schnellwahl ±45°/±30°/0°, Ellipse im Schneidweg | `dreid.py`, `schneidweg_dialog.py` | umgesetzt |
+| P1 | Maßbild je Konturart im Eigenschaftenfeld | `massbild.py` | nächster Schritt |
+| P1 | Prüfregeln Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende (jetzt mit Lage der Konturen möglich) | `dfm.py` | nächster Schritt |
+| P1 | Schlitz, Polygon/Sonderkontur, Gravur | `schneidweg.py` | offen |
+| P2 | Griffe am 3D-Modell (Ziehen mit Fang), Maße am Modell, Kontur-Vorlagen, Querschnitt an Stelle x, Gegenrohr/Durchdringung am Ende, 2D/3D auch im Rahmen aus Skizze | `editor_griffe.py`, `konturvorlagen.py`, `editor_schnitt.py`, `durchdringung.py` | zurückgestellt |
+
+Datenformat: neue Felder am Feature Rohr/Profil (`cuts`, `endCuts`, `swivel`) sind optional. Ältere Dateien ohne
+`endCuts` bauen wie bisher mit ebenem (3D-)Schnitt; neue Profile starten mit 2D wie im Rohr-Editor.
 
 ## 5. Architektur und Abhängigkeiten
 
