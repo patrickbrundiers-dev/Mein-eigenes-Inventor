@@ -338,6 +338,17 @@ try {
     return res;
   });
   step("Abhängigkeit Konzentrisch", conc.con && conc.err === null && conc.moved && conc.undone, JSON.stringify(conc));
+  // Kollisionsprüfung: Rahmen steht auf den Platten (Berührung) → keine Kollision; 5 mm tiefer → zwei Kollisionen
+  const col = await evalApp(async () => {
+    const a = window.__werkcad, asm = a.activeDoc();
+    const ok = await a.props.collisionDialog();
+    const dlg = document.querySelector("#modal-root .dialog")?.textContent || "";
+    document.querySelectorAll("#modal-root .dialog footer .btn").forEach((b) => { if (b.textContent === "Schließen") b.click(); });
+    const items = asm.components.map((c) => ({ key: c.id, part: a.doc(c.part), pos: c.id === "c1" ? [c.pos[0], c.pos[1], c.pos[2] - 5] : c.pos, rot: c.rot }));
+    const bad = await a.kernel.call("collisions", { items });
+    return { ok: ok?.length, dlg: dlg.includes("Keine Kollision"), open: !!document.querySelector("#modal-root .dialog"), bad: bad.map((r) => [r.a, r.b].sort().join("-")).sort(), vol: bad.map((r) => Math.round(r.volume)) };
+  });
+  step("Kollisionsprüfung", col.ok === 0 && col.dlg && !col.open && col.bad.join() === "c1-c2,c1-c3", JSON.stringify(col));
   await shot("17b-abhaengigkeit");
 
   // Exporte als Download: STEP + Zuschnittliste, Platten-DXF

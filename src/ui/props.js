@@ -642,6 +642,30 @@ export class Props {
     const rows = cutListRows(collectCutSources(app, d));
     modal({ title: `Zuschnittliste – ${d.name}`, width: "820px", body: rows.length ? h("div", {}, cutListTable(rows), h("details", { class: "hint" }, h("summary", {}, "Regeln der Zuschnittliste"), h("ul", {}, ...CUT_RULES.map((t) => h("li", {}, t))))) : h("p", {}, "Keine Profile (Rohr / Rahmen) enthalten."), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportCutList() }] });
   }
+  /** Kollisionsprüfung der Baugruppe (Schnittvolumen > 1 mm³; Berührung zählt nicht) */
+  async collisionDialog() {
+    const app = this.app;
+    const asm = app.activeDoc();
+    if (asm?.kind !== "assembly") return;
+    const comps = asm.components.filter((c) => !c.hidden && app.doc(c.part));
+    if (comps.length < 2) return toast("Mindestens zwei sichtbare Komponenten nötig");
+    const name = (id) => { const c = asm.components.find((x) => x.id === id); return c?.name || app.doc(c?.part)?.name || id; };
+    const busy = toast("Kollisionen werden geprüft …", { timeout: 0 });
+    let res;
+    try { res = await app.kernel.call("collisions", { items: comps.map((c) => ({ key: c.id, part: app.doc(c.part), pos: c.pos, rot: c.rot, name: c.name })) }); }
+    catch (e) { busy.remove(); return toast("Kollisionsprüfung fehlgeschlagen: " + e.message, { kind: "err" }); }
+    busy.remove();
+    app.collisions = res;
+    const show = (r) => app.viewer.setSelectionHits([{ kind: "group", key: "comp:" + r.a }, { kind: "group", key: "comp:" + r.b }]);
+    if (res[0]) show(res[0]);
+    const body = res.length
+      ? h("div", {}, h("p", {}, `${res.length} Kollision(en) – Zeile anklicken, um die beiden Komponenten zu markieren.`),
+        h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Komponente"), h("th", {}, "Komponente"), h("th", {}, "Überschneidung"))),
+          h("tbody", {}, ...res.map((r) => h("tr", { style: { cursor: "pointer" }, onclick: () => show(r) }, h("td", {}, name(r.a)), h("td", {}, name(r.b)), h("td", { class: "num" }, r.unsure ? "nicht messbar" : fmtNum(r.volume / 1000, 2) + " cm³"))))))
+      : h("p", {}, `Keine Kollision zwischen ${comps.length} Komponenten. Berührende Flächen zählen nicht als Kollision.`);
+    modal({ title: `Kollisionsprüfung – ${asm.name}`, width: "620px", body, buttons: [{ label: "Schließen", primary: true, run: () => app.refreshSelectionHits() }] });
+    return res;
+  }
   settingsDialog() {
     const app = this.app;
     const bridge = window.werkcad;

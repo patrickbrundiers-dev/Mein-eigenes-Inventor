@@ -51,7 +51,9 @@ jobs:
         run: npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
       - name: Kern-Tests
         run: node --test test/core.test.mjs
-      - name: Release anlegen (vor dem Hochladen, sonst kollidieren parallele Uploads)
+      # Als Entwurf anlegen (vor dem Hochladen, sonst kollidieren parallele Uploads). Erst wenn Setup und
+      # latest.yml oben sind, wird veröffentlicht – sonst sehen installierte Programme ein Release ohne latest.yml.
+      - name: Release als Entwurf anlegen
         if: inputs.veroeffentlichen
         shell: bash
         env:
@@ -59,7 +61,7 @@ jobs:
         run: |
           V="v${{ inputs.version }}"
           if ! gh release view "$V" > /dev/null 2>&1; then
-            gh release create "$V" --target "$GITHUB_SHA" --title "$V" --notes-file build/release-notes.md
+            gh release create "$V" --draft --target "$GITHUB_SHA" --title "$V" --notes-file build/release-notes.md
           fi
       - name: Setup bauen und veröffentlichen
         if: inputs.veroeffentlichen
@@ -70,6 +72,19 @@ jobs:
           set -o pipefail
           mkdir -p protokoll
           npm run release 2>&1 | tee protokoll/release.txt
+      - name: Release veröffentlichen
+        if: inputs.veroeffentlichen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="v${{ inputs.version }}"
+          ASSETS=$(gh release view "$V" --json assets --jq '.assets[].name')
+          echo "$ASSETS"
+          for f in latest.yml "WerkCAD-Setup-${{ inputs.version }}.exe"; do
+            echo "$ASSETS" | grep -qxF "$f" || { echo "::error::$f fehlt im Release $V"; exit 1; }
+          done
+          gh release edit "$V" --draft=false --latest
       - name: Setup bauen (Testbuild)
         if: ${{ !inputs.veroeffentlichen }}
         shell: bash

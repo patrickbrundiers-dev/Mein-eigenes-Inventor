@@ -62,8 +62,8 @@ async function check(isManual = false) {
     return { message: `Aktuell (Version ${app.getVersion()}).` };
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/401|403|Bad credentials/i.test(msg)) return { message: "Zugriff verweigert – Token prüfen (Berechtigung »Contents: Read-only« für das Repository)." };
-    if (/404/.test(msg)) return { message: "Noch kein Release gefunden (oder Repository ist privat und es fehlt ein Token)." };
+    if (/\b401\b|Bad credentials/i.test(msg)) return { message: "Zugriff verweigert – Token prüfen (Berechtigung »Contents: Read-only« für das Repository)." };
+    // die Originalmeldung immer mit anzeigen, sonst ist die Ursache nicht erkennbar
     return { message: "Prüfung fehlgeschlagen: " + msg.split("\n")[0] };
   }
 }
