@@ -43,9 +43,10 @@ export function outline(kind, { W, H, r = 0 }, { n = 96, seg = 8 } = {}) {
  * plane: Schnittebene im Profil-Rahmen als z = z0 + cu·u + cv·v.
  * mode "2D" | "3D"; swivel = größter Kopfschwenk [°] für 3D.
  * opts: t (Wand), eps (Überstand des Werkzeugs nach außen/innen).
- * Ergebnis: { outer: [[u, v, z]], inner: [[u, v, z]], need (größter nötiger Schwenk [°]), clamped (bool) }
+ * Ergebnis: { outer: [[u, v, z]], inner: [[u, v, z]], arcs: [[Index…]] (gekrümmte Abschnitte in Reihenfolge, dazwischen
+ * Geraden), need (größter nötiger Schwenk [°]), clamped (bool) }
  */
-export function endCutEdge(kind, dims, plane, mode, swivel = SWIVEL_DEFAULT, { t, eps = 0.5, n, seg } = {}) {
+export function endCutEdge(kind, dims, plane, mode, swivel = SWIVEL_DEFAULT, { t, eps = 0.5, n = 96, seg = 16 } = {}) {
   const T = Math.tan(Math.min(Math.abs(swivel), 89) * DEG);
   let need = 0;
   const outer = [], inner = [];
@@ -58,7 +59,22 @@ export function endCutEdge(kind, dims, plane, mode, swivel = SWIVEL_DEFAULT, { t
     outer.push([p.u + p.nu * eps, p.v + p.nv * eps, zs + gc * eps]);
     inner.push([p.u - p.nu * dIn, p.v - p.nv * dIn, zs - gc * dIn]);
   }
-  return { outer, inner, need, clamped: mode === "3D" && need > Math.min(Math.abs(swivel), 89) + 1e-9 };
+  // Rundrohr in vier Bögen, Rechteckrohr je Ecke ein Bogen (für glatte Flächen im Werkzeugkörper)
+  const q = n / 4;
+  const arcs = kind === "rohr" ? [0, 1, 2, 3].map((k) => Array.from({ length: q + 1 }, (_, i) => (k * q + i) % n))
+    : [0, 1, 2, 3].map((k) => Array.from({ length: seg + 1 }, (_, i) => k * (seg + 1) + i));
+  return { outer, inner, arcs, need, clamped: mode === "3D" && need > Math.min(Math.abs(swivel), 89) + 1e-9 };
+}
+
+/**
+ * 2D oder 3D je Profil bzw. Rahmen, gilt für alle Schnitte dieses Profils (beide Enden), dazu die Winkelkorrektur
+ * (Patrick, 24.10.2026). Ältere Profile mit Angabe je Ende (#48): 2D, wenn ein Ende 2D war; ohne Angabe 3D.
+ * Ergebnis: { mode: "2D" | "3D", swivel: Ausdruck (Text) }
+ */
+export function featureCutSettings(f) {
+  const mode = f?.cutMode === "2D" || f?.cutMode === "3D" ? f.cutMode : f?.endCuts?.A === "2D" || f?.endCuts?.B === "2D" ? "2D" : "3D";
+  const swivel = f?.swivel !== undefined && f.swivel !== "" ? f.swivel : String(SWIVEL_DEFAULT);
+  return { mode, swivel: String(swivel) };
 }
 
 /** Kann das Profil 2D/3D unterscheiden? Rechteckrohr braucht innen einen Eckradius (r ≥ t + 0,6). */

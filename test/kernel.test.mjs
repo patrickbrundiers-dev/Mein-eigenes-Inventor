@@ -622,11 +622,13 @@ test("Konturen am Rohr (Rohr-Editor): Bohrung, Langloch, Ausklinkung, Seite und 
   assert.ok(probe(res, [250, -20, 0], [10, 6, 10]) < probe(rb, [250, -20, 0], [10, 6, 10]) - 20, "Rundrohr 90° = vorne");
 });
 
-test("Enden in 2D und 3D (Rohr-Editor) mit Winkelkorrektur", async () => {
-  const tube = (extra, section = "vierkant", dims = { B: "40", t: "3", r: "6" }) => part([{ id: "pr", type: "profile", section, dims, length: "500", start: ["0", "0", "0"], axis: "X", miterEnd: "45", ...extra }]);
+test("Enden in 2D und 3D (Rohr-Editor) mit Winkelkorrektur, Einstellung je Profil für beide Enden", async () => {
+  // 2D/3D und Winkelkorrektur am Profil (cutMode, swivel), gilt für alle Schnitte des Profils
+  const tube = (extra, cfg = {}, section = "vierkant", dims = { B: "40", t: "3", r: "6" }) =>
+    part([{ id: "pr", type: "profile", section, dims, length: "500", start: ["0", "0", "0"], axis: "X", miterEnd: "45", ...extra, ...cfg }]);
   const legacy = await K.buildPart(tube({})); // ältere Datei ohne Angaben: 3D, ±45°
-  const d3 = await K.buildPart(tube({ endCuts: { B: "3D" }, swivel: "45" }));
-  const d2 = await K.buildPart(tube({ endCuts: { B: "2D" }, swivel: "45" }));
+  const d3 = await K.buildPart(tube({}, { cutMode: "3D", swivel: "45" }));
+  const d2 = await K.buildPart(tube({}, { cutMode: "2D", swivel: "45" }));
   for (const r of [legacy, d3, d2]) { okAll(r); assert.equal(r.status.pr.warning, undefined); solidOk(r.bodies[0].shape); }
   near(vol(d3), vol(legacy), 1e-6, "3D innerhalb der Grenze = ebener Schnitt");
   near(d2.bodies[0].meta.length, d3.bodies[0].meta.length, 0.05, "Außenkante gleich, Zuschnittlänge gleich");
@@ -634,23 +636,37 @@ test("Enden in 2D und 3D (Rohr-Editor) mit Winkelkorrektur", async () => {
   // 2D: Innenkante unter der Außenkante → oben und unten je ein Keil ½·t²·tan45·(Wandbreite) anders
   assert.ok(diff > 2 * 0.5 * 9 * 28 * 0.8 && diff < 2 * 0.5 * 9 * 40 * 1.2, `Keile 2D/3D: ${diff}`);
   assert.deepEqual(d2.bodies[0].meta.endCuts, { A: "", B: "2D" });
+  // glatte Werkzeugflächen: wenige Flächen statt vieler Dreiecke an den Ecken
+  assert.ok(d2.bodies[0].shape.faces.length < 40, `Flächen: ${d2.bodies[0].shape.faces.length}`);
+  // ältere Datei mit 2D je Ende (#48) gilt als 2D für das ganze Bauteil
+  const old2 = await K.buildPart(tube({ endCuts: { A: "2D", B: "2D" } }));
+  near(vol(old2), vol(d2), 1e-3, "alte 2D-Angabe");
   // Winkelkorrektur: 60° Gehrung, Kopf höchstens 45° → gemeldet, Körper gültig, Außenkante wie eben
-  const c = await K.buildPart(tube({ miterEnd: "60", endCuts: { B: "3D" }, swivel: "45" }));
+  const c = await K.buildPart(tube({ miterEnd: "60" }, { cutMode: "3D", swivel: "45" }));
   okAll(c);
   solidOk(c.bodies[0].shape);
   assert.match(c.status.pr.warning, /Ende B: Gehrung braucht 60° Kopfschwenk, Winkelkorrektur auf ±45° – Schnitt nicht maßhaltig/);
-  const flat = await K.buildPart(tube({ miterEnd: "60", swivel: "89" }));
+  const flat = await K.buildPart(tube({ miterEnd: "60" }, { cutMode: "3D", swivel: "89" }));
   near(c.bodies[0].meta.length, flat.bodies[0].meta.length, 0.05);
   const dc = R.measureVolume(c.bodies[0].shape.cut(flat.bodies[0].shape)) + R.measureVolume(flat.bodies[0].shape.cut(c.bodies[0].shape));
   assert.ok(dc > 10, `begrenzter Schwenk ändert die Schnittfläche: ${dc}`);
   // Rundrohr 2D gültig
-  const rr = await K.buildPart(tube({ endCuts: { B: "2D" }, swivel: "45" }, "rohr", { D: "42.4", t: "2.6" }));
+  const rr = await K.buildPart(tube({}, { cutMode: "2D", swivel: "45" }, "rohr", { D: "42.4", t: "2.6" }));
   okAll(rr);
   solidOk(rr.bodies[0].shape);
-  // Flachstahl: 2D nicht möglich → eben mit Hinweis
-  const fl = await K.buildPart(tube({ endCuts: { B: "2D" } }, "flach", { B: "40", t: "8" }));
+  // Flachstahl: 2D/3D gibt es nicht → eben, ohne Meldung
+  const fl = await K.buildPart(tube({}, { cutMode: "2D" }, "flach", { B: "40", t: "8" }));
   okAll(fl);
-  assert.match(fl.status.pr.warning, /2D-Schnitt nur für/);
+  assert.equal(fl.status.pr.warning, undefined);
+  assert.deepEqual(fl.bodies[0].meta.endCuts, { A: "", B: "" });
+  // Rahmen aus Skizze: eine Einstellung für alle Stäbe des Rahmens
+  const frame = (cfg) => part([rectSketchFeature("s1", "XY", 0, 0, 0, 400, 300), { id: "fr", type: "frame", sketch: "s1", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, corner: "gehrung", align: "mitte", rotation: "0", ...cfg }]);
+  const f3 = await K.buildPart(frame({ cutMode: "3D" })), f2 = await K.buildPart(frame({ cutMode: "2D" }));
+  okAll(f3); okAll(f2);
+  assert.deepEqual(f2.bodies.map((b) => b.meta.endCuts.A + b.meta.endCuts.B), ["2D2D", "2D2D", "2D2D", "2D2D"]);
+  for (const b of f2.bodies) solidOk(b.shape);
+  const fd = R.measureVolume(f2.bodies[0].shape.cut(f3.bodies[0].shape)) + R.measureVolume(f3.bodies[0].shape.cut(f2.bodies[0].shape));
+  assert.ok(fd > 100, `2D-Rahmen anders als 3D: ${fd}`); // Keile innen/außen gleichen sich im Volumen aus
 });
 
 test("Bohrung in 3D (Rohr-Editor): Neigung längs/quer, Winkelkorrektur", async () => {

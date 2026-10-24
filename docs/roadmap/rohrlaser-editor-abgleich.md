@@ -126,6 +126,7 @@ ihm besonders der **2D/3D-Schnitt** und bei 3D die **Winkelkorrektur ±45°**.
 | P1 | Maßbild je Konturart im Eigenschaftenfeld | `massbild.py` | umgesetzt (`src/core/massbild.js`, Bild über den Feldern jeder Konturkarte) |
 | P1 | Prüfregeln Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende (jetzt mit Lage der Konturen möglich) | `dfm.py` | umgesetzt (`checkContours` in `src/core/tubecuts.js`, Abwicklung mit Eckbögen, Gegenseite bei „durchgehend“; Faktoren unter Einstellungen → Rohrlaser und Fertigung) |
 | P1 | Gravur: Feature „Prägen“ (Skizze wählen, vertieft oder erhaben, auf Rundrohr abgewickelt, Warnung „Gravur über Kante“) | `schneidweg.py`, `dfm.py` | umgesetzt |
+| P1 | 2D/3D je Profil bzw. Rahmen für alle seine Schnitte (statt je Ende), glatte Ecken im Werkzeugkörper | Patrick | umgesetzt |
 | P1 | Schlitz (offen vom Rand, 2·l + b) und Polygon (Eckpunkte mit Bulge-Bögen, Umfang) als Konturen am Rohr | `schneidweg.py` | umgesetzt |
 | P2 | Griffe am 3D-Modell (Ziehen mit Fang), Maße am Modell, Kontur-Vorlagen, Querschnitt an Stelle x, Gegenrohr/Durchdringung am Ende, 2D/3D auch im Rahmen aus Skizze | `editor_griffe.py`, `konturvorlagen.py`, `editor_schnitt.py`, `durchdringung.py` | zurückgestellt |
 

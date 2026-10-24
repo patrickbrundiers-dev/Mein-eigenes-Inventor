@@ -486,11 +486,11 @@ try {
   await endeB.fill("60");
   await endeB.press("Enter");
   await idle();
-  await page.locator("#props .field", { hasText: "Schnitt Ende B" }).locator("button", { hasText: "3D" }).click(); // neue Profile starten mit 2D
+  await page.locator("#props .field", { hasText: /^Schnitt\s*2D/ }).locator("button", { hasText: "3D" }).click(); // neue Profile starten mit 2D
   await idle();
   const fid = await evalApp(() => window.__werkcad.activeDoc().features[0].id);
   const w3 = await evalApp((id) => { const a = window.__werkcad; return a.results.get(a.activeId).status[id]; }, fid);
-  await page.locator("#props .field", { hasText: "Schnitt Ende B" }).locator("button", { hasText: "2D" }).click();
+  await page.locator("#props .field", { hasText: /^Schnitt\s*2D/ }).locator("button", { hasText: "2D" }).click();
   await idle();
   await page.locator("#props .tube-cut label.chk", { hasText: "3D (schräg" }).click();
   await idle();
