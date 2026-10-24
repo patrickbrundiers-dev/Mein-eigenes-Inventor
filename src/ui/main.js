@@ -16,6 +16,11 @@ try {
 window.__werkcad = app; // für automatische Tests
 
 const bridge = window.werkcad;
+if (bridge?.log) {
+  // Fehler der Oberfläche ins Protokoll (nur Meldung und Stack, keine Projektdaten)
+  window.addEventListener("error", (e) => bridge.log("error", "oberflaeche", e.error?.stack || `${e.message} (${e.filename}:${e.lineno})`));
+  window.addEventListener("unhandledrejection", (e) => bridge.log("error", "oberflaeche", e.reason?.stack || String(e.reason)));
+}
 if (bridge) {
   // Datei per Doppelklick / zweite Instanz
   bridge.onOpenFile?.((path) => app.files.open(path));

@@ -4,6 +4,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const updater = require("./updater.cjs");
+const log = require("./log.cjs");
 
 // Falls die Grafikkarte nicht nutzbar ist (Remotedesktop, alte Treiber): Software-WebGL erlauben
 app.commandLine.appendSwitch("enable-unsafe-swiftshader");
@@ -69,8 +70,12 @@ function createWindow() {
     e.preventDefault();
     win.webContents.send("app:close-request");
   });
+  win.webContents.on("render-process-gone", (_e, d) => log.write("error", "oberflaeche", `Prozess beendet: ${d.reason} (Code ${d.exitCode})`));
+  win.on("unresponsive", () => log.write("warn", "oberflaeche", "Fenster reagiert nicht"));
   updater.init(win, getToken, readSettings);
 }
+// nur mitschreiben, das Standardverhalten bei Ausnahmen bleibt unverändert
+process.on("uncaughtExceptionMonitor", (e) => log.write("error", "hauptprozess", e?.stack || e));
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
@@ -84,6 +89,8 @@ else {
     }
   });
   app.whenReady().then(() => {
+    log.init(path.join(app.getPath("userData"), "protokoll"));
+    log.write("info", "start", `WerkCAD ${app.getVersion()} · Electron ${process.versions.electron} · ${os.platform()} ${os.release()} ${os.arch()}`);
     protocol.handle("app", async (req) => {
       const url = new URL(req.url);
       let rel = decodeURIComponent(url.pathname).replace(/^\/+/, "") || "index.html";
@@ -115,6 +122,10 @@ function atomicWrite(file, data) {
 }
 
 ipcMain.handle("app:version", () => app.getVersion());
+ipcMain.on("log:write", (_e, { level, source, message } = {}) => {
+  log.write(["error", "warn", "info"].includes(level) ? level : "info", String(source || "oberflaeche").slice(0, 40), message);
+});
+ipcMain.handle("log:openFolder", () => (log.dir() ? shell.openPath(log.dir()) : "kein Protokollordner"));
 ipcMain.on("app:version-sync", (e) => { e.returnValue = app.getVersion(); });
 ipcMain.handle("app:initialFile", () => { const f = pendingFile; pendingFile = null; return f; });
 ipcMain.on("app:close-confirmed", (_e, ok) => { if (ok) { allowClose = true; win.close(); } });

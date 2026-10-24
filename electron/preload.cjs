@@ -24,4 +24,6 @@ contextBridge.exposeInMainWorld("werkcad", {
   downloadUpdate: () => ipcRenderer.invoke("update:download"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
   onUpdateEvent: (cb) => ipcRenderer.on("update:event", (_e, ev) => cb(ev)),
+  log: (level, source, message) => ipcRenderer.send("log:write", { level, source, message: String(message ?? "") }),
+  openLogFolder: () => ipcRenderer.invoke("log:openFolder"),
 });

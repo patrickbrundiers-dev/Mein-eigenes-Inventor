@@ -44,6 +44,12 @@ try {
   await win.screenshot({ path: path.join(outDir, "electron.png") });
   const title = await win.title();
   check("Fenstertitel", /WerkCAD/.test(title), title);
+  // Fehlerprotokoll im Benutzerordner
+  const logFile = path.join(await app.evaluate(({ app: a }) => a.getPath("userData")), "protokoll", "werkcad.log");
+  await win.evaluate(() => window.werkcad.log("warn", "rauchtest", "Testeintrag"));
+  await win.waitForTimeout(300);
+  const logText = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
+  check("Fehlerprotokoll geschrieben", /\[info\] start: WerkCAD /.test(logText) && /\[warn\] rauchtest: Testeintrag/.test(logText), logFile);
   const realErrors = errors.filter((e) => e.startsWith("[error]") || !e.startsWith("["));
   check("Keine Fehler in der Konsole", realErrors.length === 0, realErrors.slice(0, 3).join(" | "));
   // Schließen ohne ungespeicherte Änderungen
