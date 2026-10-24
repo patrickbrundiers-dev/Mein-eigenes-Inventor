@@ -9,7 +9,7 @@ import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, endsText, CUT_RULES } from "../core/cutlist.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
-import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern } from "../core/tubecuts.js";
+import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern, parsePolygon, atEnd } from "../core/tubecuts.js";
 import { END_CUT_SECTIONS } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
 import { FEATURE_NAMES } from "./app.js";
@@ -542,15 +542,17 @@ export class Props {
           h("button", { class: "btn small", title: "Duplizieren", onclick: () => this.set(f, (x) => { x.cuts = [...x.cuts.slice(0, i + 1), { ...c }, ...x.cuts.slice(i + 1)]; }, "Kontur duplizieren") }, "⧉"),
           h("button", { class: "btn small danger", title: "Entfernen", onclick: () => this.set(f, (x) => { x.cuts = x.cuts.filter((_, k) => k !== i); }, "Kontur entfernen") }, icon("trash"))),
         h("div", { class: "massbild-wrap", html: contourSketch(kind) }),
-        kind === "ausklinkung"
+        atEnd(kind)
           ? this.seg("Ende", [["A", "A (Anfang)"], ["B", "B (Ende)"]], c.end === "B" ? "B" : "A", (v) => edit(i, (x) => { x.end = v; }, "Ende"))
           : [E("Lage ab Ende A", "x"), this.patternField(c.pattern, (v) => edit(i, (x) => { x.pattern = v; }, "Muster"))],
         round
           ? [E("Winkel", "angle", { unit: "°" }), this.seg("", SIDES.map(([n, a]) => [String(a), n]), String(c.angle ?? "0"), (v) => edit(i, (x) => { x.angle = v; }, "Winkel"))]
           : this.seg("Seite", SIDES.map(([n]) => [n, n]), c.side || "oben", (v) => edit(i, (x) => { x.side = v; }, "Seite")),
         E("Versatz quer", "q"),
-        ...TUBE_CUT_KINDS[kind].fields.map((k) => E(TUBE_CUT_FIELDS[k], k, { allowNeg: false, allowZero: k === "r" })),
-        kind === "ausklinkung" ? null : this.check("Durchgehend (auch Gegenseite)", c.through, (v) => edit(i, (x) => { x.through = v; }, "Durchgehend")),
+        ...TUBE_CUT_KINDS[kind].fields.map((k) => (k === "punkte"
+          ? this.polygonField(c.punkte, (v) => edit(i, (x) => { x.punkte = v; }, "Eckpunkte"))
+          : E(TUBE_CUT_FIELDS[k], k, { allowNeg: false, allowZero: k === "r" }))),
+        atEnd(kind) ? null : this.check("Durchgehend (auch Gegenseite)", c.through, (v) => edit(i, (x) => { x.through = v; }, "Durchgehend")),
         kind === "bohrung" ? this.check("3D (schräg gebohrt, Kopf geschwenkt)", c.d3, (v) => edit(i, (x) => { x.d3 = v; x.tiltL = x.tiltL || "0"; x.tiltQ = x.tiltQ || "0"; }, "Bohrung 3D")) : null,
         kind === "bohrung" && c.d3 ? [["Neigung längs", "tiltL"], ["Neigung quer", "tiltQ"]].map(([label, key]) => [
           E(label, key, { unit: "°" }),
@@ -559,7 +561,20 @@ export class Props {
     return this.section("Konturen am Rohr",
       ...cuts.map(card),
       h("div", { class: "btn-row" }, ...Object.entries(TUBE_CUT_KINDS).map(([k, d]) => h("button", { class: "btn", onclick: () => add(k) }, "+ " + d.label.replace(" am Ende", "")))),
-      h("p", { class: "hint" }, "Wie im Rohr-Editor: Lage = Mitte der ersten Kontur ab Ende A, Muster „3x25“ = 3 Stück im Abstand 25. Seite von Ende A gesehen, Versatz + = im Uhrzeigersinn."));
+      h("p", { class: "hint" }, "Wie im Rohr-Editor: Lage = Mitte der ersten Kontur ab Ende A, Muster „3x25“ = 3 Stück im Abstand 25. Seite von Ende A gesehen, Versatz + = im Uhrzeigersinn. Polygon: Eckpunkte x längs, y quer, optional dritte Zahl = Bogen (Bulge wie in DXF)."));
+  }
+  /** Eckpunkte eines Polygons „0,0; 30,0; 30,10,0.41“ mit Prüfung */
+  polygonField(value, onCommit) {
+    const inp = h("input", { class: "inp", value: value ?? "", spellcheck: "false", placeholder: "0,0; 30,0; 15,20" });
+    const check = () => {
+      try { parsePolygon(inp.value); inp.classList.remove("bad"); inp.title = ""; return true; }
+      catch (e) { inp.classList.add("bad"); inp.title = e.message; return false; }
+    };
+    check();
+    inp.addEventListener("input", check);
+    inp.addEventListener("change", () => { if (check() && inp.value !== value) onCommit(inp.value.trim()); });
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
+    return this.field(TUBE_CUT_FIELDS.punkte, inp);
   }
   /** Musterfeld „3x25“ mit Prüfung */
   patternField(value, onCommit) {

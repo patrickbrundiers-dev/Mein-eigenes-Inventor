@@ -938,6 +938,20 @@ try {
   const g2 = await gst();
   step("Prägen auf Rundrohr", g1.type === "emboss" && g1.st.ok && /graviert, 0.5 mm, 1 auf dem Rohr abgewickelt/.test(g1.st.info) && g2.st.ok && /geprägt/.test(g2.st.info) && g2.bodies === 1, JSON.stringify({ g1, g2 }));
 
+  // Polygon und Schlitz am Rohr: Kontur hinzufügen, Eckpunkte ändern
+  await evalApp(() => { const a = window.__werkcad; a.selectFeature(a.activeDoc().features[0].id); });
+  await idle();
+  await page.locator("#props button", { hasText: "+ Polygon" }).click();
+  await idle();
+  const pk = page.locator("#props .tube-cut .field", { hasText: "Eckpunkte" }).locator("input");
+  await pk.fill("0,0; 40,0; 40,10; 20,16; 0,10");
+  await pk.press("Enter");
+  await idle();
+  await page.locator("#props button", { hasText: "+ Schlitz" }).click();
+  await idle();
+  const pg = await evalApp(() => { const a = window.__werkcad; const f = a.activeDoc().features[0]; const r = a.results.get(a.activeId); return { cuts: f.cuts.map((c) => c.kind + ":" + (c.punkte || c.l)), st: r.status[f.id], pierces: r.bodies[0]?.meta?.pierces, bilder: [...document.querySelectorAll("#props .tube-cut svg.massbild")].map((x) => x.getAttribute("aria-label").split(":")[0]) }; });
+  step("Polygon und Schlitz am Rohr", pg.cuts.join() === "polygon:0,0; 40,0; 40,10; 20,16; 0,10,schlitz:40" && pg.st.ok && !pg.st.warning && pg.pierces === 2 && pg.bilder.join() === "Polygon,Maße Schlitz am Ende", JSON.stringify(pg));
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

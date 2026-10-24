@@ -1,5 +1,5 @@
 // Konturen am Rohr wie im Rohr-Editor der Rohrlaser-Kalkulation (schneidweg.py, Schneidweg-Rechner):
-// Bohrung, Langloch, Rechteck und Ausklinkung über Lage ab Ende A, Seite (bzw. Winkel am Rundrohr), Versatz quer
+// Bohrung, Langloch, Rechteck, Polygon, Schlitz und Ausklinkung über Lage ab Ende A, Seite (bzw. Winkel am Rundrohr), Versatz quer
 // und Muster, ohne Skizze. Reine Rechnung (Lage, Prüfung, Schneidweg); die Körper baut src/kernel/build.js.
 //
 // Bezug wie im Rohr-Editor: x längs ab Ende A, Blick von Ende A: oben 0°, vorne 90° (rechts), unten 180°,
@@ -9,9 +9,13 @@ export const TUBE_CUT_KINDS = {
   bohrung: { label: "Bohrung", fields: ["d"] },
   langloch: { label: "Langloch", fields: ["l", "b"] },
   rechteck: { label: "Rechteck", fields: ["l", "b", "r"] },
+  polygon: { label: "Polygon", fields: ["punkte"] },
+  schlitz: { label: "Schlitz am Ende", fields: ["l", "b"] },
   ausklinkung: { label: "Ausklinkung am Ende", fields: ["l", "b", "r"] },
 };
-export const TUBE_CUT_FIELDS = { d: "Durchmesser d", l: "Länge l (längs)", b: "Breite b (quer)", r: "Eckradius r" };
+export const TUBE_CUT_FIELDS = { d: "Durchmesser d", l: "Länge l (längs)", b: "Breite b (quer)", r: "Eckradius r", punkte: "Eckpunkte x,y; x,y; …" };
+/** Konturen, die offen am Ende A oder B sitzen (ohne Lage und Muster) */
+export const atEnd = (kind) => kind === "ausklinkung" || kind === "schlitz";
 export const TUBE_CUT_SECTIONS = ["rohr", "vierkant", "rechteck"];
 export const SIDES = [["oben", 0], ["vorne", 90], ["unten", 180], ["hinten", 270]];
 
@@ -25,6 +29,8 @@ export function defaultTubeCut(kind = "bohrung", L = 1000) {
   if (kind === "bohrung") return { ...base, d: "10" };
   if (kind === "langloch") return { ...base, l: "30", b: "10" };
   if (kind === "ausklinkung") return { ...base, x: "0", end: "A", l: "30", b: "20", r: "3" };
+  if (kind === "schlitz") return { ...base, x: "0", end: "A", l: "40", b: "6" };
+  if (kind === "polygon") return { ...base, punkte: "0,0; 30,0; 30,10; 15,20; 0,10" };
   return { ...base, l: "40", b: "20", r: "2" };
 }
 
@@ -47,6 +53,54 @@ export function parsePattern(text, ev = Number) {
   return { count: 1, spacing: 0 };
 }
 
+/**
+ * Eckpunkte wie im Rohr-Editor (punkte_roh): "0,0; 40,0; 40,20,0.4142" – x längs, y quer (+ = im Uhrzeigersinn),
+ * optional dritte Zahl = Bogen zum nächsten Punkt als Bulge (tan(Öffnungswinkel/4), + = gegen den Uhrzeiger).
+ * Ergebnis: [[x, y, bulge]] um die Mitte des Hüllrechtecks, dazu Breite l (längs) und Höhe b (quer).
+ */
+export function parsePolygon(text) {
+  const raw = [];
+  for (const part of String(text ?? "").split(";")) {
+    const z = part.replace(/,/g, " ").trim().split(/\s+/).filter(Boolean);
+    if (!z.length) continue;
+    if (z.length !== 2 && z.length !== 3) throw new Error(`Punkt „${part.trim()}“ als x,y eingeben`);
+    const v = z.map(Number);
+    if (v.some((x) => !Number.isFinite(x))) throw new Error(`Punkt „${part.trim()}“ ist keine Zahl`);
+    raw.push([v[0], v[1], v[2] || 0]);
+  }
+  if (raw.length < 3) throw new Error("mindestens 3 Eckpunkte x,y");
+  const all = polygonPoints(raw, 16), xs = all.map((p) => p[0]), ys = all.map((p) => p[1]); // Hülle mit Bögen
+  const cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+  const pts = raw.map(([x, y, bu]) => [x - cx, y - cy, bu]);
+  let area = 0;
+  for (let i = 0; i < all.length; i++) { const a = all[i], b = all[(i + 1) % all.length]; area += a[0] * b[1] - b[0] * a[1]; }
+  if (Math.abs(area) < 1e-6) throw new Error("Eckpunkte umschließen keine Fläche");
+  return { pts, l: Math.max(...xs) - Math.min(...xs), b: Math.max(...ys) - Math.min(...ys) };
+}
+/** Bogenlänge eines Abschnitts mit Bulge (0 = Gerade) */
+const bulgeLength = (a, b, bu) => {
+  const c = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (!bu) return c;
+  const th = 4 * Math.atan(Math.abs(bu));
+  return (c / (2 * Math.sin(th / 2))) * th;
+};
+/** Polygon als Punktliste (Bögen in Stücke zerlegt), für Prüfung und Bild */
+export function polygonPoints(pts, n = 8) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    out.push([a[0], a[1]]);
+    if (!a[2]) continue;
+    const bu = a[2], th = 4 * Math.atan(bu); // + = gegen den Uhrzeiger
+    const dx = b[0] - a[0], dy = b[1] - a[1], c = Math.hypot(dx, dy);
+    const k = (1 - bu * bu) / (4 * bu); // Abstand Sehnenmitte–Mittelpunkt / Sehne, links der Sehne
+    const cx = (a[0] + b[0]) / 2 - dy * k, cy = (a[1] + b[1]) / 2 + dx * k;
+    const R0 = (c * (1 + bu * bu)) / (4 * Math.abs(bu)), a0 = Math.atan2(a[1] - cy, a[0] - cx);
+    for (let j = 1; j < n; j++) out.push([cx + R0 * Math.cos(a0 + (th * j) / n), cy + R0 * Math.sin(a0 + (th * j) / n)]);
+  }
+  return out;
+}
+
 /** Umfang einer Ellipse mit den Halbachsen a, b (Ramanujan, wie schneidweg.py) */
 const ellipse = (a, b) => Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
 
@@ -57,6 +111,8 @@ export function cutLength(c) {
     case "langloch": return 2 * (c.l - c.b) + Math.PI * c.b;
     case "rechteck": return 2 * (c.l + c.b) - 8 * c.r + 2 * Math.PI * c.r;
     case "ausklinkung": return 2 * (c.l - c.r) + (c.b - 2 * c.r) + Math.PI * c.r; // offen zum Ende, Endschnitt nicht gekürzt
+    case "schlitz": return 2 * c.l + c.b; // offen vom Rand
+    case "polygon": return c.pts.reduce((s, a, i) => s + bulgeLength(a, c.pts[(i + 1) % c.pts.length], a[2]), 0);
   }
   return 0;
 }
@@ -85,7 +141,9 @@ export function planTubeCuts(cuts, prof, ev) {
     try {
       const num = (k, label) => ev(c[k] ?? "0", `${name} ${label}`);
       const it = { index, kind, through: !!c.through, end: c.end === "B" ? "B" : "A" };
-      for (const k of TUBE_CUT_KINDS[kind].fields) it[k] = num(k, TUBE_CUT_FIELDS[k]);
+      if (kind === "polygon") Object.assign(it, parsePolygon(c.punkte), { r: 0 });
+      else for (const k of TUBE_CUT_KINDS[kind].fields) it[k] = num(k, TUBE_CUT_FIELDS[k]);
+      if (kind === "schlitz") it.r = 0;
       if (kind === "bohrung") {
         it.l = it.b = it.d; it.r = it.d / 2;
         // Bohrung in 3D (dreid.py): Neigung längs (+ = Richtung Ende B) und quer (+ = im Uhrzeigersinn) gegen die
@@ -121,7 +179,7 @@ export function planTubeCuts(cuts, prof, ev) {
         return err(`Eckradius 0 bis ${fmt(Math.min(it.l, it.b) / 2)} mm`);
       if (Math.abs(it.q) + it.b / 2 > it.faceHalf + 1e-6)
         return err(round ? `breiter als das Rohr (höchstens ${fmt(prof.W)} mm)` : `ragt über die ebene Fläche (|Versatz| + b/2 höchstens ${fmt(it.faceHalf)} mm)`);
-      if (kind === "ausklinkung") {
+      if (atEnd(kind)) {
         if (it.l >= prof.L - 1e-6) return err("länger als das Teil");
         it.xs = [it.end === "A" ? 0 : prof.L];
       } else {
@@ -149,9 +207,9 @@ export function planTubeCuts(cuts, prof, ev) {
 
 /** Kurztext für Baum und Liste: "Bohrung Ø10 oben, 3× ab 100" */
 export function tubeCutLabel(it) {
-  const m = it.kind === "bohrung" ? `Ø${fmt(it.d)}` : `${fmt(it.l)}×${fmt(it.b)}`;
+  const m = it.kind === "bohrung" ? `Ø${fmt(it.d)}` : it.kind === "polygon" ? `${it.pts.length} Ecken` : `${fmt(it.l)}×${fmt(it.b)}`;
   const side = SIDES.find(([, a]) => a === it.angle)?.[0] || `${fmt(it.angle)}°`;
-  const where = it.kind === "ausklinkung" ? `Ende ${it.end}` : it.xs.length > 1 ? `${it.xs.length}× ab ${fmt(it.xs[0])}` : `bei ${fmt(it.xs[0])}`;
+  const where = atEnd(it.kind) ? `Ende ${it.end}` : it.xs.length > 1 ? `${it.xs.length}× ab ${fmt(it.xs[0])}` : `bei ${fmt(it.xs[0])}`;
   return `${TUBE_CUT_KINDS[it.kind].label} ${m}${it.tilt ? ` 3D ${fmt(it.tilt)}°` : ""} ${side}${it.through ? " durchgehend" : ""}, ${where}`;
 }
 
@@ -218,18 +276,21 @@ export function checkContours(items, prof, limits) {
   const U = unrollFrame(prof);
   const parts = [];
   for (const it of items) {
-    const faces = [[U.s(it.angle) + it.q]];
-    if (it.through) faces.push([U.s((it.angle + 180) % 360) - it.q]);
-    for (const [s] of faces)
+    const faces = [[U.s(it.angle) + it.q, 1]];
+    if (it.through) faces.push([U.s((it.angle + 180) % 360) - it.q, -1]); // Gegenseite: quer gespiegelt
+    const poly = it.kind === "polygon" ? polygonPoints(it.pts) : null;
+    for (const [s, sg] of faces)
       for (const x of it.xs) {
-        const xc = it.kind === "ausklinkung" ? (x === 0 ? (it.l - 1) / 2 : x - (it.l - 1) / 2) : x; // offen über das Ende
-        const l = it.kind === "ausklinkung" ? it.l + 1 : it.l;
-        parts.push({ it, x0: xc - l / 2, x1: xc + l / 2, pts: outlinePts(xc, s, l, it.b, it.r) });
+        const end = atEnd(it.kind);
+        const xc = end ? (x === 0 ? (it.l - 1) / 2 : x - (it.l - 1) / 2) : x; // offen über das Ende
+        const l = end ? it.l + 1 : it.l;
+        const pts = poly ? poly.map(([px, py]) => [xc + px, s + sg * py]) : outlinePts(xc, s, l, it.b, it.r);
+        parts.push({ it, x0: xc - l / 2, x1: xc + l / 2, pts });
       }
   }
   if (g.rand > 0) {
     const lim = g.rand * t;
-    const near = parts.filter((p) => p.it.kind !== "ausklinkung").map((p) => ({ p, rest: Math.min(p.x0, prof.L - p.x1) })).filter((x) => x.rest < lim - 1e-9);
+    const near = parts.filter((p) => !atEnd(p.it.kind)).map((p) => ({ p, rest: Math.min(p.x0, prof.L - p.x1) })).filter((x) => x.rest < lim - 1e-9);
     if (near.length) {
       const m = near.reduce((a, b) => (b.rest < a.rest ? b : a));
       out.push({ rule: "Kontur zu nah am Ende", contours: [...new Set(near.map((x) => nr(x.p.it)))], text: `${near.length} Kontur(en) näher als ${fmt(g.rand)} × Wand (${fmt(lim)} mm) am Ende, kleinster Abstand ${fmt(Math.max(m.rest, 0))} mm (Kontur ${nr(m.p.it)})` });

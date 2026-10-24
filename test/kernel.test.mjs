@@ -720,3 +720,24 @@ test("Prägen / Gravieren: Skizze auf Rundrohr abgewickelt, auf Vierkant eben, �
   assert.equal(r.status.e1.ok, false);
   assert.match(r.status.e1.error, /trifft keine Oberfläche/);
 });
+
+test("Schlitz und Polygon am Rohr: Volumen und Lage", async () => {
+  const tube = (cuts) => part([{ id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "500", start: ["0", "0", "0"], axis: "X", cuts }]);
+  const base = await K.buildPart(tube([]));
+  const V0 = vol(base);
+  // Schlitz 40 × 6 am Ende B oben: 40·6·3 weg, Zuschnittlänge bleibt
+  let res = await K.buildPart(tube([{ kind: "schlitz", side: "oben", end: "B", l: "40", b: "6", q: "0" }]));
+  okAll(res);
+  near(V0 - vol(res), 40 * 6 * 3, 0.5, "Schlitz");
+  near(res.bodies[0].meta.length, 500, 1e-6, "Länge");
+  const probe = (r, c, s) => R.measureVolume(r.bodies[0].shape.intersect(R.makeBaseBox(s[0], s[1], s[2]).translate([c[0], c[1], c[2] - s[2] / 2])));
+  assert.ok(probe(res, [480, 0, 20], [20, 4, 4]) < probe(base, [480, 0, 20], [20, 4, 4]) - 100, "am Ende B oben");
+  // Polygon (Fünfeck 30 × 20, Fläche 30·10 + 30·10/2 = 450) vorne, Halbkreis-Polygon (Fläche 20·20 + π·10²/2)
+  res = await K.buildPart(tube([{ kind: "polygon", side: "vorne", x: "200", q: "0", pattern: "1", punkte: "0,0; 30,0; 30,10; 15,20; 0,10" }]));
+  okAll(res);
+  near(V0 - vol(res), 450 * 3, 0.5, "Polygon");
+  assert.ok(probe(res, [200, -20, 0], [24, 4, 14]) < probe(base, [200, -20, 0], [24, 4, 14]) - 100, "vorne = −Y");
+  res = await K.buildPart(tube([{ kind: "polygon", side: "oben", x: "200", q: "0", pattern: "1", punkte: "0 0; 20 0 1; 20 20; 0 20" }]));
+  okAll(res);
+  near(V0 - vol(res), (400 + (Math.PI * 100) / 2) * 3, 0.5, "Polygon mit Bogen");
+});
