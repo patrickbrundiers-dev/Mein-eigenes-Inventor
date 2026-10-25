@@ -197,8 +197,14 @@ function dimsFor(group, kind, main, wall) {
   return catalogToDims(kind, main);
 }
 
-// Einträge ohne Maße – sections.js baut daraus beim Laden den Katalog, bevor catalogToDims bereitsteht
+// Einträge ohne Maße – sections.js baut daraus beim Laden den Katalog, bevor catalogToDims bereitsteht.
+// Ohne Gruppe (Werkstoff ohne Normliste): alle Gruppen, jede Größe einmal.
 function rawEntries(group, kind) {
+  if (!group) {
+    const seen = new Set();
+    return Object.keys(LIB_GROUPS).flatMap((g) => rawEntries(g, kind)).filter((e) => !seen.has(e.size) && seen.add(e.size))
+      .sort((x, y) => bySize(x.main, y.main) || num(x.wall) - num(y.wall));
+  }
   const out = [];
   for (const s of LIB_GROUPS[group]?.kinds[kind] || []) {
     if (s.list) for (const m of s.list) out.push({ group, kind, main: m, wall: null, size: m, norm: s.norm });
@@ -212,7 +218,7 @@ function rawEntries(group, kind) {
  * { group, kind, main, wall, size, dims, norm }. size ist die Katalog-Schreibweise ("60x40x3", "42.4x2.6", "200").
  */
 export function libraryEntries(group, kind) {
-  return rawEntries(group, kind).map((e) => ({ ...e, dims: dimsFor(group, kind, e.main, e.wall) }));
+  return rawEntries(group, kind).map((e) => ({ ...e, dims: dimsFor(e.group, kind, e.main, e.wall) }));
 }
 
 /** Profilarten, die die Gruppe führt (Reihenfolge der erlaubten kinds); ohne Gruppe alle erlaubten */
@@ -276,6 +282,14 @@ export function defaultEntry(group, kind) {
   const mains = mainSizes(group, kind);
   if (!mains.length) return null;
   return pickEntry(group, kind, mains[Math.floor(mains.length / 2)][0]);
+}
+
+/** Katalog-Größe ("60x40x3", "42.4x2.6", "200") → { main, wall } */
+export function splitSize(kind, size) {
+  const s = String(size ?? "");
+  if (!hasWall(kind)) return { main: s, wall: null };
+  const i = s.lastIndexOf("x");
+  return i < 0 ? { main: s, wall: null } : { main: s.slice(0, i), wall: s.slice(i + 1) };
 }
 
 /** Alle Größen über alle Gruppen in Katalog-Schreibweise, sortiert (für Generatoren und Schnelleingabe) */

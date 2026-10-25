@@ -67,3 +67,14 @@ test("Katalog (Generatoren, Schnelleingabe) enthält die Bibliothek und alle bis
   assert.ok(CATALOG.ipe.includes("600") && CATALOG.heb.includes("500") && CATALOG.upn.includes("50"));
   for (const kind of Object.keys(CATALOG)) for (const size of CATALOG[kind]) assert.doesNotThrow(() => sectionGeometry(kind, num(catalogToDims(kind, size))), `${kind} ${size}`);
 });
+
+test("Generatoren: Katalog-Größe zerlegen, ohne Werkstoffgruppe alle Gruppen", async () => {
+  const { splitSize } = await import("../src/core/profillib.js");
+  assert.deepEqual(splitSize("rechteck", "60x40x3"), { main: "60x40", wall: "3" });
+  assert.deepEqual(splitSize("rohr", "42.4x2.6"), { main: "42.4", wall: "2.6" });
+  assert.deepEqual(splitSize("ipe", "200"), { main: "200", wall: null });
+  const all = wallsFor(null, "rohr", "42.4").map(([w]) => w);
+  assert.deepEqual(all, ["1.5", "2", "2.6", "3.2", "4"], "Stahl und Edelstahl zusammen, jede Wandstärke einmal");
+  assert.equal(pickEntry(null, "vierkant", "50", 2).size, "50x2");
+  assert.ok(mainSizes(null, "ipe").length > 0);
+});

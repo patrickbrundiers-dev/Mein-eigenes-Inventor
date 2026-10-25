@@ -4,7 +4,7 @@ import { h, icon, toast, modal, fmtNum, confirmDialog, promptDialog } from "./do
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
 import { SECTION_KINDS, fieldLabel, CATALOG, catalogToDims, profileId, sectionGeometry, kgPerMeter, THREADS, CLEARANCE } from "../core/sections.js";
 import { profileMatches, resolveProfile } from "../core/profilesearch.js";
-import { LIB_GROUPS, groupOfMaterial, groupKinds, mainSizes, wallsFor, wallLabel, hasWall, findEntry, pickEntry, defaultEntry, mainOfDims } from "../core/profillib.js";
+import { LIB_GROUPS, groupOfMaterial, groupKinds, mainSizes, wallsFor, wallLabel, hasWall, findEntry, pickEntry, defaultEntry, mainOfDims, mainLabel, splitSize } from "../core/profillib.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
@@ -640,9 +640,7 @@ export class Props {
           else if (s.type === "select" && s.tiles) g.items.push(this.genTiles(s, v, P, planOf, (x) => setP(s.key, x, s.label)));
           else if (s.type === "select") g.items.push(this.select(s.label, s.options, v, (x) => setP(s.key, x, s.label)));
           else if (s.type === "section") {
-            const kinds = s.kinds || Object.keys(CATALOG);
-            g.items.push(this.select(s.label, kinds.map((k) => [k, SECTION_KINDS[k].label]), v.kind, (k) => setP(s.key, { kind: k, size: CATALOG[k][Math.floor(CATALOG[k].length / 2)] }, s.label)));
-            g.items.push(this.select("", (CATALOG[v.kind] || []).map((c) => [c, c.replace(/\./g, ",")]), v.size, (z) => setP(s.key, { kind: v.kind, size: z }, s.label)));
+            g.items.push(...this.genSectionPicker(s, v, part, (x) => setP(s.key, x, s.label)));
           }
           for (const el of g.items.slice(n0)) linkFieldToSketch(el, s.key, () => svg, markBodies(s.key));
           const msgs = msgsFor(s.key);
@@ -920,6 +918,31 @@ export class Props {
     out.push(h("p", { class: "hint" }, hit
       ? `${hit.norm} · ${LIB_GROUPS[hit.group].label}`
       : `Eigene Maße – nicht in der Normliste für ${LIB_GROUPS[g].label}.`));
+    return out;
+  }
+
+  /**
+   * Profilauswahl im Generator in Schritten wie im Querschnitt: Profilart (nur die im Werkstoff des Bauteils
+   * vorhandenen) → Abmessung → Wandstärke. Wert bleibt { kind, size } in Katalog-Schreibweise.
+   */
+  genSectionPicker(s, v, part, set) {
+    const group = groupOfMaterial(materialOf(part?.material));
+    const kinds = s.kinds || Object.keys(CATALOG);
+    const offered = groupKinds(group, kinds);
+    const kindOpts = (offered.includes(v.kind) ? offered : [v.kind, ...offered]).map((k) => [k, SECTION_KINDS[k].label]);
+    const choose = (e) => e && set({ kind: e.kind, size: e.size });
+    const out = [this.select(s.label, kindOpts, v.kind, (k) => choose(defaultEntry(group, k) || defaultEntry(null, k)))];
+    const g = mainSizes(group, v.kind).length ? group : null;
+    const { main, wall } = splitSize(v.kind, v.size);
+    const outside = " (nicht in Normliste)";
+    const mains = mainSizes(g, v.kind);
+    if (!mains.some(([m]) => m === main)) mains.unshift([main, mainLabel(v.kind, main) + outside]);
+    out.push(this.select("Abmessung", mains, main, (m) => choose(pickEntry(g, v.kind, m, Number(wall)))));
+    if (hasWall(v.kind)) {
+      const walls = wallsFor(g, v.kind, main);
+      if (!walls.some(([w]) => w === wall)) walls.unshift([wall, String(wall).replace(".", ",") + " mm" + outside]);
+      out.push(this.select(wallLabel(v.kind), walls, wall, (w) => set({ kind: v.kind, size: `${main}x${w}` })));
+    }
     return out;
   }
 
