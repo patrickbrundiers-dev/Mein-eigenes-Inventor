@@ -50,8 +50,8 @@ const ROWS_PER_PAGE = 42;
  * bends = [{ name, bends: [{ straight, rotation, angle, arc }], last, length }] je Biegerohr.
  * Gibt Seiten für mappeHtml zurück; leere Listen entfallen.
  */
-export function listPages({ title = "", number = "", bom = [], cut = [], bends = [] } = {}) {
-  const head = (name, part, of) => `<h1>${esc(name)}${of > 1 ? ` (${part}/${of})` : ""}</h1><div class="sub">${esc([title, number].filter(Boolean).join(" · "))}</div>`;
+export function listPages({ title = "", number = "", status = "", bom = [], cut = [], bends = [] } = {}) {
+  const head = (name, part, of) => `<h1>${esc(name)}${of > 1 ? ` (${part}/${of})` : ""}</h1><div class="sub">${esc([title, number, status && "Stand: " + status].filter(Boolean).join(" · "))}</div>`;
   const pages = [];
   const chunked = (rows, name, render) => {
     const n = Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE));

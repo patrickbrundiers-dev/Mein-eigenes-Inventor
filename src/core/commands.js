@@ -17,6 +17,7 @@ export const COMMANDS = [
   { id: "edit.undo", label: "Rückgängig", group: "Bearbeiten", scope: "global", key: "Strg+Z" },
   { id: "edit.redo", label: "Wiederholen", group: "Bearbeiten", scope: "global", key: "Strg+Y" },
 
+  { id: "model.problems", label: "Problemliste", group: "Modell", scope: "3d", keywords: "prüfen prüfung fehler warnungen hinweise freigabe vollständig" },
   { id: "model.rebuild", label: "Neu berechnen", group: "Modell", scope: "3d", key: "F5", keywords: "aktualisieren neuaufbau kernel" },
   { id: "model.buildLog", label: "Berechnungsprotokoll", group: "Modell", scope: "global", keywords: "debug kernel dauer fehler protokoll" },
 

@@ -1,5 +1,6 @@
 // Anwendungssteuerung: Projektzustand, Rückgängig, Neuaufbau, Auswahl, Modi
 import { Viewer } from "./viewer.js";
+import { problemsDialog, quickCounts, countText } from "./pruefung.js";
 import { invertSelection } from "../core/boxselect.js";
 import { Sketcher } from "./sketcher.js";
 import { KernelClient } from "./kernel.js";
@@ -1102,9 +1103,12 @@ export class App {
       if (r) {
         parts.push(h("span", {}, "Masse ", h("span", { class: "num" }, fmtNum(bodiesMass(r.bodies, materialOf(d.material).density), 3) + " kg")));
         parts.push(h("span", {}, "Körper ", h("span", { class: "num" }, String(r.bodies.length))));
-        const errs = Object.values(r.status).filter((s) => !s.ok).length;
-        if (errs) parts.push(h("span", { style: { color: "var(--err)" } }, `${errs} Fehler`));
       }
+    }
+    // Fehler und Warnungen der berechneten Bauteile; Klick öffnet die Problemliste (FU15)
+    if (d?.kind === "part" || d?.kind === "assembly") {
+      const c = quickCounts(this, d);
+      if (c.Fehler || c.Warnung) parts.push(h("button", { class: "status-btn" + (c.Fehler ? " err" : " warn"), title: "Problemliste öffnen", onclick: () => problemsDialog(this) }, countText({ ...c, Hinweis: 0 })));
     }
     if (this.viewer?.hidden.size && (this.mode === "part" || this.mode === "assembly")) parts.push(h("button", { class: "status-btn", title: "Alle einblenden", onclick: () => this.showAllBodies() }, `${this.viewer.hidden.size} ausgeblendet`));
     if (this.mode === "part" && this.selHits?.length > 1) parts.push(h("span", {}, `${this.selHits.length} gewählt`));

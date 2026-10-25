@@ -13,6 +13,7 @@ import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
+import { releaseSection } from "./pruefung.js";
 import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern, parsePolygon, atEnd } from "../core/tubecuts.js";
 import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
@@ -318,6 +319,7 @@ export class Props {
       this.field("Farbe", h("div", { style: { display: "flex", gap: "6px" } },
         h("input", { type: "color", value: app.partColor(part), onchange: (e) => app.edit("Farbe", () => { part.color = e.target.value; }) }),
         part.color ? h("button", { class: "btn", onclick: () => app.edit("Farbe", () => { part.color = null; }) }, "Wie Werkstoff") : null))));
+    out.push(releaseSection(this, part));
     if (r) {
       const vol = r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0);
       const dens = materialOf(part.material).density;
@@ -1321,6 +1323,7 @@ export class Props {
       this.text("Name", asm.name, (v) => app.edit("Name", () => { asm.name = v; }, { rebuild: false })),
       this.text("Nummer", asm.number, (v) => app.edit("Nummer", () => { asm.number = v; }, { rebuild: false })),
       this.text("Beschreibung", asm.description, (v) => app.edit("Beschreibung", () => { asm.description = v; }, { rebuild: false }), { area: true })));
+    out.push(releaseSection(this, asm));
     // Generator-Baugruppe: Einstellungen hier, Einzelteile folgen (syncGenAssembly)
     if (asm.generator && GENERATORS[asm.generator.gen]) {
       out.push(this.section(GENERATORS[asm.generator.gen].label, h("p", { class: "hint" }, "Jedes Rohr, jeder Stab und jedes Blech ist ein eigenes Bauteil (gleiche Teile einmal, mehrfach eingesetzt). Änderungen hier passen alle Einzelteile an; Features, die in einem Bauteil angehängt wurden, bleiben erhalten.")));
