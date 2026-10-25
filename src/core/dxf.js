@@ -1,5 +1,7 @@
 // DXF-Schreiber (AutoCAD R12 / AC1009 – wird von praktisch jedem CAD/CAM gelesen, auch Laser-Software)
 
+import { ellipseGeom, ellipseSamples } from "./ellipse.js";
+
 const f = (v) => {
   const r = Math.round(v * 1e6) / 1e6;
   return Object.is(r, -0) ? "0" : String(r);
@@ -87,6 +89,11 @@ export function sketchToDxf(sketch) {
     const L = e.construction ? "KONSTRUKTION" : "KONTUR";
     if (e.type === "line") { const a = pts.get(e.p1), b = pts.get(e.p2); w.line(a.x, a.y, b.x, b.y, L); }
     else if (e.type === "circle") { const c = pts.get(e.c); w.circle(c.x, c.y, e.r, L); }
+    else if (e.type === "ellipse") { // R12 kennt kein ELLIPSE: geschlossene Polylinie, Sehnenfehler ≤ 0,01 mm
+      const g = ellipseGeom(pts.get(e.c), pts.get(e.a), e.r), R = Math.max(g.A, g.B);
+      const n = Math.min(2048, Math.max(64, Math.ceil(Math.PI / Math.acos(Math.max(-1, 1 - 0.01 / R)))));
+      w.polyline(ellipseSamples(g, n), L, true);
+    }
     else if (e.type === "arc") {
       const c = pts.get(e.c), a = pts.get(e.p1), b = pts.get(e.p2);
       const r = Math.hypot(a.x - c.x, a.y - c.y);

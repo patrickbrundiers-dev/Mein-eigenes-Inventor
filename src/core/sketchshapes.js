@@ -396,7 +396,7 @@ function segSeg(a, b, c, d) {
 const NAMES = {
   horizontal: "Horizontal", vertical: "Vertikal", coincident: "Koinzident", fix: "Fixiert", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis",
   midpoint: "Mittelpunkt", parallel: "Parallel", perpendicular: "Senkrecht", collinear: "Kollinear", equal: "Gleich", concentric: "Konzentrisch",
-  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", offset: "Versatz", pattern: "Muster", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
+  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", offset: "Versatz", pattern: "Muster", semiAxis: "Halbachse", axisAngle: "Achswinkel", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
 };
 /** Klartext einer Bedingung, z. B. »Abstand 120« oder »Parallel« */
 export function constraintLabel(c) {

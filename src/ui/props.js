@@ -14,6 +14,7 @@ import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
+import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
 
 const INERTIA = new WeakMap(); // Ergebnis → Trägheitswerte
 import { FEATURE_NAMES } from "./app.js";
@@ -635,12 +636,25 @@ export class Props {
       if (t === "e") {
         const e = sk.entities.find((x) => x.id === id);
         if (e) {
-          const label = { line: "Linie", circle: "Kreis", arc: "Bogen", point: "Punkt" }[e.type];
+          const label = { line: "Linie", circle: "Kreis", arc: "Bogen", point: "Punkt", ellipse: "Ellipse" }[e.type];
           const info = [];
           if (e.type === "line") { const a = P.get(e.p1), b = P.get(e.p2); info.push(h("dt", {}, "Länge"), h("dd", {}, fmtNum(Math.hypot(b.x - a.x, b.y - a.y), 3)), h("dt", {}, "Winkel"), h("dd", {}, fmtNum((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI, 2) + "°")); }
           if (e.type === "circle") info.push(h("dt", {}, "Durchmesser"), h("dd", {}, fmtNum(2 * e.r, 3)));
           if (e.type === "arc") { const c = P.get(e.c), a = P.get(e.p1); info.push(h("dt", {}, "Radius"), h("dd", {}, fmtNum(Math.hypot(a.x - c.x, a.y - c.y), 3))); }
+          let ellDims = null;
+          if (e.type === "ellipse") {
+            const g = ellipseGeom(P.get(e.c), P.get(e.a), e.r), deg = (g.rot * 180) / Math.PI;
+            info.push(h("dt", {}, "Halbachse a"), h("dd", {}, fmtNum(g.A, 3)), h("dt", {}, "Halbachse b"), h("dd", {}, fmtNum(g.B, 3)),
+              h("dt", {}, "Achswinkel"), h("dd", {}, fmtNum(deg, 2) + "°"), h("dt", {}, "Umfang"), h("dd", {}, fmtNum(ellipsePerimeter(g.A, g.B), 2)));
+            const has = (pred) => sk.constraints.some((c) => c.e === e.id && pred(c));
+            const btn = (txt, c) => h("button", { class: "btn", onclick: () => app.sketcher.addConstraint({ ...c, e: e.id }) }, txt);
+            ellDims = h("div", { class: "btn-row" },
+              has((c) => c.type === "semiAxis" && c.axis !== "b") ? null : btn("a bemaßen", { type: "semiAxis", axis: "a", value: String(Math.round(g.A * 1000) / 1000) }),
+              has((c) => c.type === "semiAxis" && c.axis === "b") ? null : btn("b bemaßen", { type: "semiAxis", axis: "b", value: String(Math.round(g.B * 1000) / 1000) }),
+              has((c) => c.type === "axisAngle") ? null : btn("Winkel bemaßen", { type: "axisAngle", value: String(Math.round(deg * 100) / 100) }));
+          }
           out.push(this.section(label, h("dl", { class: "kv" }, ...info),
+            ellDims,
             e.origin ? null : this.check("Konstruktionslinie", e.construction, () => app.sketcher.toggleConstruction()),
             h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => app.sketcher.deleteSelection() }, "Löschen"))));
           const own = new Set([e.p1, e.p2, e.c, e.p].filter(Boolean));
@@ -667,7 +681,7 @@ export class Props {
       } else if (t === "c") {
         const c = sk.constraints.find((x) => x.id === id);
         if (c) {
-          const names = { distance: "Abstand", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel", horizontal: "Horizontal", vertical: "Vertikal", parallel: "Parallel", perpendicular: "Senkrecht", equal: "Gleich", tangent: "Tangential", tangentAt: "Tangential", fix: "Fixiert", coincident: "Koinzident", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis", midpoint: "Mittelpunkt", concentric: "Konzentrisch", collinear: "Kollinear", symmetric: "Symmetrisch", offset: "Versatz", pattern: "Muster" };
+          const names = { distance: "Abstand", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel", horizontal: "Horizontal", vertical: "Vertikal", parallel: "Parallel", perpendicular: "Senkrecht", equal: "Gleich", tangent: "Tangential", tangentAt: "Tangential", fix: "Fixiert", coincident: "Koinzident", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis", midpoint: "Mittelpunkt", concentric: "Konzentrisch", collinear: "Kollinear", symmetric: "Symmetrisch", offset: "Versatz", pattern: "Muster", semiAxis: "Halbachse", axisAngle: "Achswinkel" };
           out.push(this.section(names[c.type] || c.type,
             c.value !== undefined && !c.driven ? this.expr("Wert", c.value, (v) => app.sketcher.commit("Maß ändern", (s) => { s.constraints.find((k) => k.id === id).value = v; }), { unit: c.type === "angle" ? "°" : "mm" }) : null,
             c.driven ? h("p", { class: "hint" }, "Getriebenes Maß (nur Anzeige). Doppelklick auf das Maß macht es steuernd.") : null,

@@ -709,3 +709,41 @@ test("Bestimmtheit je Element: frei, teilbemaßt, vollständig", () => {
   r = solveSketch(s, {}, { free: true });
   assert.equal(entityFree(s.entities[0], r.free), false);
 });
+
+import { ellipseGeom, ellipseNearest, ellipsePoint } from "../src/core/ellipse.js";
+test("Ellipse: Halbachsen und Winkel bestimmen die Ellipse, Punkt auf Ellipse, Tangente, Profil, DXF", () => {
+  const sk = { id: "s", type: "sketch", plane: "XY", points: [{ id: "c", x: 1, y: 2 }, { id: "a", x: 28, y: 9 }], entities: [{ id: "el", type: "ellipse", c: "c", a: "a", r: 15 }], constraints: [] };
+  let r = solveSketch(sk, {});
+  assert.equal(r.dof, 5); // 2 Punkte + Nebenhalbachse
+  sk.constraints.push({ id: "f", type: "fix", p: "c", x: 0, y: 0 }, { id: "sa", type: "semiAxis", e: "el", axis: "a", value: "30" },
+    { id: "sb", type: "semiAxis", e: "el", axis: "b", value: "20" }, { id: "w", type: "axisAngle", e: "el", value: "30" });
+  r = solveSketch(sk, {}, { free: true });
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.dof, 0);
+  const P = Object.fromEntries(sk.points.map((p) => [p.id, p]));
+  near(P.a.x, 30 * Math.cos(Math.PI / 6)); near(P.a.y, 15); near(sk.entities[0].r, 20);
+  assert.equal(measureConstraint(sk, sk.constraints[3]).toFixed(6), "30.000000");
+  assert.equal(r.free.points.size + r.free.radii.size, 0);
+  // nächster Punkt
+  const g = ellipseGeom(P.c, P.a, 20), q = ellipsePoint(g, 1.1), n = ellipseNearest(g, q.x * 1.3, q.y * 1.3);
+  assert.ok(Math.abs(n.t - 1.1) < 0.2 && n.d > 0);
+  near(ellipseNearest(g, q.x, q.y).d, 0, 1e-9);
+  // Punkt auf Ellipse und Tangente einer Linie
+  sk.points.push({ id: "p", x: 5, y: 40 }, { id: "l1", x: -60, y: 40 }, { id: "l2", x: 60, y: 41 });
+  sk.entities.push({ id: "ln", type: "line", p1: "l1", p2: "l2" });
+  sk.constraints.push({ id: "on", type: "pointOnCircle", p: "p", e: "el" }, { id: "h", type: "horizontal", e: "ln" }, { id: "t", type: "tangent", e1: "ln", e2: "el" });
+  r = solveSketch(sk, {});
+  assert.ok(r.ok, JSON.stringify(r));
+  for (const p of sk.points) P[p.id] = p;
+  near(ellipseNearest(g, P.p.x, P.p.y).d, 0, 1e-6);
+  // horizontale Tangente: y = Höchstpunkt der gedrehten Ellipse = sqrt(a² sin² + b² cos²)
+  near(Math.abs(P.l1.y), Math.sqrt(900 * 0.25 + 400 * 0.75), 1e-6);
+  // Profil: Ellipse ist geschlossene Kontur, DXF als Polylinie
+  sk.entities = sk.entities.filter((e) => e.id !== "ln");
+  const prof = extractProfiles(sk);
+  assert.equal(prof.regions.length, 1);
+  assert.equal(prof.regions[0].outer.kind, "ellipse");
+  near(prof.regions[0].outer.a, 30); near(prof.regions[0].outer.b, 20);
+  const dxf = sketchToDxf(sk);
+  assert.ok(/POLYLINE/.test(dxf) && (dxf.match(/VERTEX/g) || []).length >= 64);
+});

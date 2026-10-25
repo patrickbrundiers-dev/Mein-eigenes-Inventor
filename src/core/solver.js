@@ -14,7 +14,7 @@ function buildVars(sketch) {
     x.push(p.x, p.y);
   }
   for (const e of sketch.entities) {
-    if (e.type === "circle") {
+    if (e.type === "circle" || e.type === "ellipse") {
       idx.set("r:" + e.id, x.length);
       x.push(e.r);
     }
@@ -28,7 +28,7 @@ function writeBack(sketch, vars, x) {
     p.x = x[i];
     p.y = x[i + 1];
   }
-  for (const e of sketch.entities) if (e.type === "circle") e.r = x[vars.idx.get("r:" + e.id)];
+  for (const e of sketch.entities) if (e.type === "circle" || e.type === "ellipse") e.r = x[vars.idx.get("r:" + e.id)];
 }
 
 /**
@@ -53,6 +53,14 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
     throw new Error("Kein Kreis/Bogen");
   };
   const centerIdx = (e) => P(e.c);
+  // Ellipse: Mittelpunkt c, Achsenpunkt a, Nebenhalbachse r → Halbachsen und Richtung
+  const ellFn = (e) => {
+    const c = P(e.c), a = P(e.a), ri = vars.idx.get("r:" + e.id);
+    return (x) => {
+      const dx = x[a] - x[c], dy = x[a + 1] - x[c + 1], A = Math.hypot(dx, dy) || 1e-12;
+      return { cx: x[c], cy: x[c + 1], A, B: Math.abs(x[ri]), ux: dx / A, uy: dy / A };
+    };
+  };
   const lenFn = (e) => {
     if (e.type === "line") { const [a, b] = lineIdx(e); return (x) => Math.hypot(x[b] - x[a], x[b + 1] - x[a + 1]); }
     return radiusFn(e);
@@ -116,6 +124,15 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
         break;
       }
       case "pointOnCircle": {
+        if (E(c.e).type === "ellipse") { // implizit, auf Abstand skaliert
+          const g = ellFn(E(c.e)), p = P(c.p);
+          add(c.id, (x) => {
+            const q = g(x), px = x[p] - q.cx, py = x[p + 1] - q.cy;
+            const u = px * q.ux + py * q.uy, v = -px * q.uy + py * q.ux;
+            return (Math.hypot(u / q.A, v / (q.B || 1e-12)) - 1) * Math.min(q.A, q.B || 1e-12);
+          });
+          break;
+        }
         const e = E(c.e), p = P(c.p), ce = centerIdx(e), rf = radiusFn(e);
         add(c.id, (x) => Math.hypot(x[p] - x[ce], x[p + 1] - x[ce + 1]) - rf(x));
         break;
@@ -162,7 +179,16 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
       case "tangent": {
         const e1 = E(c.e1), e2 = E(c.e2);
         const line = e1.type === "line" ? e1 : e2.type === "line" ? e2 : null;
-        if (line) {
+        if (line && (e1.type === "ellipse" || e2.type === "ellipse")) { // Abstand Mitte–Linie = Stützfunktion der Ellipse
+          const g = ellFn(line === e1 ? e2 : e1), [a, b] = lineIdx(line);
+          add(c.id, (x) => {
+            const q = g(x), dx = x[b] - x[a], dy = x[b + 1] - x[a + 1], L = Math.hypot(dx, dy) || 1e-12;
+            const nx = -dy / L, ny = dx / L;
+            const d = Math.abs(nx * (q.cx - x[a]) + ny * (q.cy - x[a + 1]));
+            const nu = nx * q.ux + ny * q.uy, nv = -nx * q.uy + ny * q.ux;
+            return d - Math.hypot(q.A * nu, q.B * nv);
+          });
+        } else if (line) {
           const circ = line === e1 ? e2 : e1;
           const [a, b] = lineIdx(line), ce = centerIdx(circ), rf = radiusFn(circ);
           add(c.id, (x) => {
@@ -269,6 +295,19 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
           const ux = x[b] - x[a], uy = x[b + 1] - x[a + 1], vx = x[f] - x[d], vy = x[f + 1] - x[d + 1];
           const ang = Math.atan2(Math.abs(ux * vy - uy * vx), ux * vx + uy * vy);
           return ang - v;
+        });
+        break;
+      }
+      case "semiAxis": { // Halbachse einer Ellipse: axis "a" (c→a) oder "b" (Nebenhalbachse)
+        const v = val(c), g = ellFn(E(c.e));
+        add(c.id, (x) => (c.axis === "b" ? g(x).B : g(x).A) - v);
+        break;
+      }
+      case "axisAngle": { // Richtung der Hauptachse zur Skizzen-x-Achse in Grad
+        const v = val(c) * DEG, e = E(c.e), ce = P(e.c), a = P(e.a);
+        add(c.id, (x) => {
+          const d = Math.atan2(x[a + 1] - x[ce + 1], x[a] - x[ce]) - v;
+          return Math.atan2(Math.sin(d), Math.cos(d)) * Math.hypot(x[a] - x[ce], x[a + 1] - x[ce + 1]);
         });
         break;
       }
@@ -402,6 +441,7 @@ function freeOf(vars, fv) {
 export function entityFree(e, free) {
   if (!free) return false;
   if (e.type === "circle") return free.points.has(e.c) || free.radii.has(e.id);
+  if (e.type === "ellipse") return free.points.has(e.c) || free.points.has(e.a) || free.radii.has(e.id);
   return [e.p1, e.p2, e.c, e.p].some((p) => p && free.points.has(p));
 }
 
@@ -524,6 +564,8 @@ export function measureConstraint(sketch, c) {
       }
       return k * (rad(e2) - rad(e1));
     }
+    case "semiAxis": { const e = ents.get(c.e); return c.axis === "b" ? Math.abs(e.r) : Math.hypot(P(e.a).x - P(e.c).x, P(e.a).y - P(e.c).y); }
+    case "axisAngle": { const e = ents.get(c.e); return (Math.atan2(P(e.a).y - P(e.c).y, P(e.a).x - P(e.c).x) * 180) / Math.PI; }
     case "radius": return rad(ents.get(c.e));
     case "diameter": return 2 * rad(ents.get(c.e));
     case "angle": {
@@ -536,4 +578,4 @@ export function measureConstraint(sketch, c) {
   return NaN;
 }
 
-export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset"]);
+export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset", "semiAxis", "axisAngle"]);
