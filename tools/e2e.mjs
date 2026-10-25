@@ -2446,14 +2446,14 @@ try {
   });
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-  await page.locator("#ribbon button", { hasText: /^Kombinieren$/ }).click();
+  await page.locator('#ribbon button[aria-label="Kombinieren"]').click();
   await idle();
   const kb = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features.at(-1); return { type: f.type, st: r.status[f.id], bodies: r.bodies.length, vol: Math.round(r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0)), checks: document.querySelectorAll("#props .checks input").length }; });
-  await page.locator("#ribbon button", { hasText: /^Fläche verschieben$/ }).click();
+  await page.locator('#ribbon button[aria-label="Fläche verschieben"]').click();
   await idle();
   await evalApp(() => { const a = window.__werkcad, f = a.activeDoc().features.at(-1); a.edit("Fläche", () => { f.faces = [{ p: [25, 20, 10] }]; f.distance = "5"; }); });
   await idle();
-  await page.locator("#ribbon button", { hasText: /^Trennen$/ }).click();
+  await page.locator('#ribbon button[aria-label="Trennen"]').click();
   await idle();
   await page.locator("#props .field", { hasText: "Abstand" }).first().locator("input").fill("25");
   await page.locator("#props .field", { hasText: "Abstand" }).first().locator("input").press("Enter");
