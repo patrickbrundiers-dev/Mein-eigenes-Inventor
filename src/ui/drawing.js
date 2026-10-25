@@ -19,6 +19,7 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { planKantteil, kantteilFlatView, bendNote, bendTableCells, splitList } from "../core/blech.js";
 import { bendRule } from "../core/bendtable.js";
 import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
+import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange } from "../core/bruch.js";
 import { holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
@@ -97,14 +98,20 @@ export class DrawingEditor {
       return;
     }
     this.deriveFlats(d);
-    const views = d.views.filter((v) => v.type !== "detail" && v.type !== "flat").map((v) => { const c = this.viewCam(d, v); return { key: v.id, dir: c.dir, up: c.up, cut: c.cut, hidden: v.hidden !== false && v.type !== "iso" }; });
+    const views = d.views.filter((v) => v.type !== "detail" && v.type !== "flat").flatMap((v) => {
+      const c = this.viewCam(d, v), hidden = v.hidden !== false && v.type !== "iso";
+      // Ausbruch: je Bereich eine zweite Projektion mit Schnittebene in der gewählten Tiefe
+      const bos = (v.breakouts || []).map((b, i) => ({ key: `${v.id}#bo${i}`, dir: c.dir, up: c.up, hidden, cut: { n: v3.mul(v3.norm(c.dir), -1), c: b.plane } }));
+      return [{ key: v.id, dir: c.dir, up: c.up, cut: c.cut, hidden }, ...bos];
+    });
     if (!views.length) { this.render(); return; }
     this.loading = true;
     this.render();
     try {
       const res = await this.app.kernel.call("project", { items, views });
       if (this.doc !== d) return;
-      for (const [k, v] of Object.entries(res)) this.proj.set(k, v);
+      for (const [k, v] of Object.entries(res)) if (!k.includes("#")) this.proj.set(k, v);
+      for (const v of d.views) if (v.breakouts?.length && res[v.id]) this.proj.set(v.id, composeBreakout(res[v.id], v.breakouts.map((b, i) => ({ c: b.c, r: b.r, proj: res[`${v.id}#bo${i}`] }))));
       this.deriveFlats(d);
       this.deriveDetails(d);
     } catch (e) {
@@ -456,6 +463,106 @@ export class DrawingEditor {
     return g;
   }
 
+  // ---------- Bruchansicht und Ausbruch ----------
+  breakDialog() {
+    const d = this.doc;
+    const v = this.sel?.type === "view" ? d.views.find((x) => x.id === this.sel.id) : null;
+    if (!v || ["iso", "detail"].includes(v.type) || !this.proj.get(v.id)) return toast("Zuerst eine Ansicht (nicht Isometrie oder Detail) anklicken, dann »Bruch«");
+    const bb = this.proj.get(v.id).bbox;
+    let axis = v.breaks?.length ? v.breakAxis || "u" : bb.x1 - bb.x0 >= bb.y1 - bb.y0 ? "u" : "v";
+    const range = () => (axis === "u" ? [bb.x0, bb.x1] : [bb.y0, bb.y1]);
+    const fill = () => { const [lo, hi] = range(); a.value = fmtNum(lo + (hi - lo) * 0.25, 1); b.value = fmtNum(lo + (hi - lo) * 0.75, 1); };
+    const a = h("input", { class: "inp" }), b = h("input", { class: "inp" });
+    const seg = h("div", { class: "seg" });
+    const drawSeg = () => seg.replaceChildren(...[["u", "Waagerecht"], ["v", "Senkrecht"]].map(([k, l]) => h("button", { class: k === axis ? "on" : "", disabled: v.breaks?.length ? true : undefined, onclick: () => { axis = k; fill(); drawSeg(); } }, l)));
+    fill(); drawSeg();
+    modal({
+      title: "Bruch (verkürzte Darstellung)",
+      body: h("div", {}, h("div", { class: "field" }, h("label", {}, "Richtung des Teils"), seg), h("div", { class: "field" }, h("label", {}, "Von (Modell-mm)"), a), h("div", { class: "field" }, h("label", {}, "Bis (Modell-mm)"), b),
+        h("p", { class: "hint" }, `Der Bereich dazwischen entfällt in der Darstellung, Maße zeigen die wahre Länge (ISO 128-30). Ansicht: ${fmtNum(range()[0], 1)} … ${fmtNum(range()[1], 1)}.`)),
+      buttons: [{ label: "Abbrechen" }, { label: "Brechen", primary: true, run: () => {
+        const num = (x) => Number(String(x.value).replace(",", "."));
+        const nb = { a: num(a), b: num(b) };
+        const list = [...(v.breaks || []), nb];
+        try { breakMap(list, axis, 8 / v.scale); } catch (e) { toast(e.message, { kind: "err" }); return false; }
+        if (!(Math.abs(nb.b - nb.a) >= 1)) { toast("Bereich mindestens 1 mm", { kind: "err" }); return false; }
+        this.app.edit("Bruch", () => { v.breaks = list; v.breakAxis = axis; }, { rebuild: false });
+        this.render();
+        this.app.props.render();
+      } }],
+    });
+  }
+  startBreakout() {
+    const d = this.doc;
+    const v = this.sel?.type === "view" ? d.views.find((x) => x.id === this.sel.id) : null;
+    if (!v || ["iso", "detail", "flat"].includes(v.type) || !this.proj.get(v.id)) return toast("Zuerst eine Ansicht (nicht Isometrie, Detail oder Abwicklung) anklicken, dann »Ausbruch«");
+    this.setTool("breakout");
+    this.pendingBo = { view: v.id };
+  }
+  /** Tiefenbereich des Modells längs der Blickrichtung einer Ansicht (n = zum Betrachter) */
+  depthOf(d, v) {
+    const n = v3.mul(v3.norm(this.viewCam(d, v).dir), -1);
+    const boxes = [];
+    for (const it of this.sourceItems(d) || []) {
+      const M = placementMatrix(it.pos, it.rot);
+      for (const b of this.app.results.get(it.part.id)?.bodies || []) {
+        const bb = b.props?.bbox;
+        if (!bb) continue;
+        const pts = [];
+        for (const x of [bb[0][0], bb[1][0]]) for (const y of [bb[0][1], bb[1][1]]) for (const z of [bb[0][2], bb[1][2]]) pts.push(matApply(M, [x, y, z]));
+        boxes.push([pts.reduce((m, p) => p.map((c, i) => Math.min(c, m[i])), [Infinity, Infinity, Infinity]), pts.reduce((m, p) => p.map((c, i) => Math.max(c, m[i])), [-Infinity, -Infinity, -Infinity])]);
+      }
+    }
+    return depthRange(boxes, n);
+  }
+  async breakoutClick(sx, sy) {
+    const d = this.doc, pb = this.pendingBo;
+    const v = d.views.find((x) => x.id === pb?.view);
+    if (!v) return this.setTool(null);
+    const q = this.viewXf(v).from(sx, sy);
+    if (!pb.c) { pb.c = q; this.app.setHint("Ausbruch: Rand des Bereichs klicken"); return; }
+    const r = Math.hypot(q[0] - pb.c[0], q[1] - pb.c[1]);
+    if (r * v.scale < 2) return toast("Bereich zu klein");
+    const range = this.depthOf(d, v);
+    this.setTool(null);
+    if (!range) return toast("Modell ist noch nicht berechnet – bitte kurz warten");
+    const total = range.max - range.min;
+    const txt = await promptDialog("Ausbruch", `Tiefe ab Vorderkante (mm, Modell ${fmtNum(total, 1)} tief)`, fmtNum(total / 2, 1), { validate: (x) => { const t = Number(String(x).replace(",", ".")); return t > 0 && t < total ? null : `Tiefe zwischen 0 und ${fmtNum(total, 1)} mm`; } });
+    if (txt == null) return;
+    const depth = Number(String(txt).replace(",", "."));
+    const bo = { c: pb.c.map(r3), r: r3(r), depth, plane: r3(range.max - depth) };
+    this.app.edit("Ausbruch", () => { v.breakouts = (v.breakouts || []).concat(bo); });
+    this.sel = { type: "view", id: v.id };
+  }
+  /** Bruchlinien (Zickzack) und Ränder der Ausbrüche einer Ansicht */
+  breakExtras(v) {
+    const p = this.proj.get(v.id);
+    if (!p || (!v.breaks?.length && !v.breakouts?.length)) return null;
+    const xf = this.viewXf(v);
+    const g = svgEl("g", { fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    if (xf.bm) {
+      const ax = xf.bm.axis, [b0, b1] = ax === "u" ? [p.bbox.y0, p.bbox.y1] : [p.bbox.x0, p.bbox.x1];
+      for (const pair of xf.bm.cuts) for (const x of pair) {
+        const pts = zigzag(x, b0, b1, ax, { amp: 1.5 / v.scale, over: 2 / v.scale }).map((q) => xf.toB(...q));
+        g.append(svgEl("polyline", { points: pts.map((q) => q.map(r3).join(",")).join(" ") }));
+      }
+    }
+    for (const b of v.breakouts || []) {
+      const [cx, cy] = xf.to(...b.c);
+      g.append(svgEl("circle", { cx: r3(cx), cy: r3(cy), r: r3(b.r * v.scale) }));
+    }
+    return g;
+  }
+  breakProps(P, v) {
+    if (["iso", "detail"].includes(v.type)) return [];
+    const app = this.app, out = [];
+    const br = v.breaks || [], bos = v.breakouts || [];
+    if (br.length) out.push(h("dl", { class: "kv" }, ...br.flatMap((b, i) => [h("dt", {}, "Bruch " + (i + 1)), h("dd", {}, `${fmtNum(b.a, 1)} … ${fmtNum(b.b, 1)} `, h("button", { class: "btn", title: "Bruch entfernen", onclick: () => { app.edit("Bruch", () => { v.breaks = br.filter((_, k) => k !== i); if (!v.breaks.length) { delete v.breaks; delete v.breakAxis; } }, { rebuild: false }); this.render(); app.props.render(); } }, "×"))])));
+    if (bos.length) out.push(h("dl", { class: "kv" }, ...bos.flatMap((b, i) => [h("dt", {}, "Ausbruch " + (i + 1)), h("dd", {}, `Ø${fmtNum(b.r * 2, 1)}, ${fmtNum(b.depth, 1)} tief `, h("button", { class: "btn", title: "Ausbruch entfernen", onclick: () => { app.edit("Ausbruch", () => { v.breakouts = bos.filter((_, k) => k !== i); if (!v.breakouts.length) delete v.breakouts; }); } }, "×"))])));
+    out.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.breakDialog() }, "Bruch"), v.type !== "flat" ? h("button", { class: "btn", onclick: () => this.startBreakout() }, "Ausbruch") : null));
+    return out;
+  }
+
   // ---------- Hilfsansicht ----------
   startAux() {
     const d = this.doc;
@@ -677,6 +784,7 @@ export class DrawingEditor {
       if (parent && this.proj.get(parent.id)) out.push(this.auxMark(parent, v, this.viewXf(parent)));
     }
     for (const v of d.views) if (v.type === "flat") { const g = this.flatExtras(v); if (g) out.push(g); }
+    for (const v of d.views) { const g = this.breakExtras(v); if (g) out.push(g); }
     for (const t of d.holeTables || []) { const g = this.renderHoleTable(d, t, interactive); if (g) out.push(g); }
     for (const y of d.symbols || []) { const g = this.renderSymbol(d, y, interactive); if (g) out.push(g); }
     for (const L of d.leaders || []) { const g = this.renderLeader(d, L, interactive); if (g) out.push(g); }
@@ -780,8 +888,28 @@ export class DrawingEditor {
   viewXf(v) {
     const p = this.proj.get(v.id);
     const bb = p?.bbox || { x0: -10, y0: -10, x1: 10, y1: 10 };
+    const bm = this.breakMapOf(v);
+    if (bm) {
+      // Bruchansicht: Modellkoordinaten → verkürzte Darstellung, Maße behalten die wahre Länge
+      const [a0, b0] = bm.map(bb.x0, bb.y0), [a1, b1] = bm.map(bb.x1, bb.y1);
+      const cu = (a0 + a1) / 2, cv = (b0 + b1) / 2;
+      const toB = (u, w) => [v.x + (u - cu) * v.scale, v.y - (w - cv) * v.scale];
+      return { to: (u, w) => toB(...bm.map(u, w)), from: (x, y) => bm.unmap((x - v.x) / v.scale + cu, -(y - v.y) / v.scale + cv), toB, bm, bb, cu, cv };
+    }
     const cu = (bb.x0 + bb.x1) / 2, cv = (bb.y0 + bb.y1) / 2;
     return { to: (u, w) => [v.x + (u - cu) * v.scale, v.y - (w - cv) * v.scale], from: (x, y) => [(x - v.x) / v.scale + cu, -(y - v.y) / v.scale + cv], bb, cu, cv };
+  }
+  breakMapOf(v) {
+    if (!v.breaks?.length) return null;
+    try { return breakMap(v.breaks, v.breakAxis || "u", 8 / v.scale); } catch { return null; }
+  }
+  /** Projektion einer Ansicht, wie sie gezeichnet wird (Bruchbereiche entfernt) */
+  viewGeom(v) {
+    const p = this.proj.get(v.id);
+    const bm = p && this.breakMapOf(v);
+    if (!bm) return p;
+    const keep = (a) => !bm.removed(bm.axis === "v" ? a.cy : a.cx);
+    return { ...p, visible: clipBreaks(p.visible, bm), hidden: clipBreaks(p.hidden, bm), arcs: (p.arcs || []).filter(keep), hiddenArcs: (p.hiddenArcs || []).filter(keep), sectionLoops: clipLoopsBreaks(p.sectionLoops, bm) };
   }
   clientToSheet(cx, cy) {
     const r = this.stage.getBoundingClientRect();
@@ -850,7 +978,7 @@ export class DrawingEditor {
   }
   renderView(d, v, interactive) {
     const g = svgEl("g", { "data-view": v.id, class: interactive ? "dw-view" + (this.sel?.type === "view" && this.sel.id === v.id ? " sel" : "") : undefined });
-    const p = this.proj.get(v.id);
+    const p = this.viewGeom(v);
     const xf = this.viewXf(v);
     if (!p) {
       if (interactive) { const t = svgEl("text", { x: v.x, y: v.y, "text-anchor": "middle", class: "dw-loading" }); t.textContent = this.loading ? "Ansicht wird berechnet…" : "–"; g.append(t); }
@@ -1175,7 +1303,7 @@ export class DrawingEditor {
     let best = null, bd = 2.2 / this.zoom;
     for (const v of d.views) {
       if (v.type === "iso") continue;
-      const p = this.proj.get(v.id);
+      const p = this.viewGeom(v);
       if (!p) continue;
       const xf = this.viewXf(v);
       for (const pl of p.visible.concat(v.hidden === false ? [] : p.hidden || [])) {
@@ -1208,7 +1336,7 @@ export class DrawingEditor {
     const d = this.doc;
     for (const v of d.views) {
       if (v.type === "iso") continue;
-      const p = this.proj.get(v.id);
+      const p = this.viewGeom(v);
       if (!p) continue;
       const xf = this.viewXf(v);
       for (const a of p.arcs || []) {
@@ -1224,7 +1352,8 @@ export class DrawingEditor {
     this.tool = t;
     this.pendingDim = null;
     if (t !== "aux") this.pendingAux = null;
-    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : "");
+    if (t !== "breakout") this.pendingBo = null;
+    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : "");
     this.app.ribbon.render();
     this.render();
   }
@@ -1252,6 +1381,7 @@ export class DrawingEditor {
       if (this.tool === "text") return this.textClick(sx, sy);
       if (this.tool === "detail") return this.detailClick(sx, sy);
       if (this.tool === "aux") return this.auxClick(sx, sy);
+      if (this.tool === "breakout") return this.breakoutClick(sx, sy);
       if (this.tool === "leader") return this.leaderClick(sx, sy);
       if (["surface", "gdt", "datum"].includes(this.tool)) return this.symbolClick(sx, sy);
       const dimEl = e.target.closest("[data-dim]");
@@ -1624,6 +1754,7 @@ export class DrawingEditor {
           P.check("Verdeckte Kanten", v.hidden !== false, (on) => app.edit("Verdeckte Kanten", () => { v.hidden = on; })),
           P.check("Mittellinien", v.centerlines !== false, (on) => app.edit("Mittellinien", () => { v.centerlines = on; }, { rebuild: false })),
           P.text("Beschriftung", v.label || "", (t) => app.edit("Beschriftung", () => { v.label = t; }, { rebuild: false })),
+          ...this.breakProps(P, v),
           h("div", { class: "btn-row" }, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.addSectionDialog() }, "Schnitt erzeugen") : null, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.startAux() }, "Hilfsansicht") : null, h("button", { class: "btn", onclick: () => this.startDetail() }, "Detail erzeugen"), h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Ansicht löschen"))));
         return out;
       }
@@ -1685,7 +1816,7 @@ export class DrawingEditor {
     const Y = (y) => H - y;
     // Ansichten
     for (const v of d.views) {
-      const p = this.proj.get(v.id);
+      const p = this.viewGeom(v);
       if (!p) continue;
       const xf = this.viewXf(v);
       const circles = (p.arcs || []).filter((a) => a.full);

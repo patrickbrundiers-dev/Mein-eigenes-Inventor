@@ -266,6 +266,8 @@ export class Ribbon {
             B("dv_det", "Detail", "detail", { on: dr.tool === "detail", run: () => (dr.tool === "detail" ? dr.setTool(null) : dr.startDetail()) }),
             B("dv_aux", "Hilfsansicht", "view", { on: dr.tool === "aux", run: () => (dr.tool === "aux" ? dr.setTool(null) : dr.startAux()) }),
             B("dv_flat", "Abwicklung", "kantteil", { run: () => dr.addFlatView() }),
+            B("dv_break", "Bruch", "cut", { run: () => dr.breakDialog() }),
+            B("dv_bo", "Ausbruch", "cut", { on: dr.tool === "breakout", run: () => (dr.tool === "breakout" ? dr.setTool(null) : dr.startBreakout()) }),
           ] },
           { label: "Beschriften", buttons: [
             B("dd_dim", "Bemaßung", "dimension", { on: dr.tool === "dim", run: () => dr.setTool(dr.tool === "dim" ? null : "dim") }),

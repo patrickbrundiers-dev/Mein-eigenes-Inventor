@@ -372,6 +372,44 @@ try {
   await evalApp(() => { const a = window.__werkcad, id = a.activeId; a.openDoc("beispiel_zeichnung"); a.project.docs = a.project.docs.filter((x) => x.id !== id); a.changed({ rebuild: false }); });
   await idle(120000);
 
+  // Bruchansicht und Ausbruch (Werkzeuge Stufe 35) in der Vorderansicht der Grundplatte
+  const brk = await evalApp(() => {
+    const dr = window.__werkcad.drawing, d = dr.doc, front = d.views.find((v) => v.type === "front");
+    const w0 = dr.sheetRects(d)[front.id].rect;
+    const bb = dr.proj.get(front.id).bbox;
+    dr.sel = { type: "view", id: front.id };
+    dr.breakDialog();
+    return { w0: w0[2] - w0[0], bb, id: front.id };
+  });
+  await page.locator("#modal-root .dialog footer .btn", { hasText: /^Brechen$/ }).click();
+  Object.assign(brk, await evalApp((id) => {
+    const dr = window.__werkcad.drawing, d = dr.doc, v = d.views.find((x) => x.id === id);
+    const w1 = dr.sheetRects(d)[id].rect;
+    const svg = dr.exportSvgString();
+    // Ausbruch in der Mitte der Ansicht, Tiefe halbe Plattendicke
+    const bb = dr.proj.get(id).bbox, xf = dr.viewXf(v), c = xf.to(bb.x0 + (bb.x1 - bb.x0) * 0.12, (bb.y0 + bb.y1) / 2); // links vom Bruch
+    dr.sel = { type: "view", id };
+    dr.startBreakout();
+    dr.breakoutClick(c[0], c[1]);
+    dr.breakoutClick(c[0] + 4, c[1]);
+    return { breaks: v.breaks?.length, w1: w1[2] - w1[0], zig: (svg.match(/<polyline/g) || []).length };
+  }, brk.id).catch((e) => ({ err: String(e) })));
+  await page.waitForTimeout(200);
+  await page.locator("#modal-root .dialog footer .btn", { hasText: "OK" }).click();
+  await idle(120000);
+  await page.waitForTimeout(800);
+  Object.assign(brk, await evalApp(async (id) => {
+    const a = window.__werkcad, dr = a.drawing, d = dr.doc, v = d.views.find((x) => x.id === id), p = dr.proj.get(id);
+    const orig = a.files.saveText;
+    let text = "";
+    a.files.saveText = async (t) => { text = t; };
+    try { await dr.exportDxf(); } finally { a.files.saveText = orig; }
+    return { bo: v.breakouts?.length, loops: p?.sectionLoops?.length || 0, hatch: (text.match(/\nSCHRAFFUR\r?\n/g) || []).length };
+  }, brk.id));
+  step("Bruchansicht und Ausbruch", brk.breaks === 1 && brk.w1 < brk.w0 * 0.75 && brk.zig >= 2 && brk.bo === 1 && brk.loops > 0 && brk.hatch > 2, JSON.stringify(brk));
+  await evalApp(() => window.__werkcad.drawing.fitSheet());
+  await shot("15f-bruch-ausbruch");
+
   // Exporte über den Kern
   const step3d = await evalApp(async () => { const a = window.__werkcad; const t = await a.kernel.call("exportStep", { items: [{ part: a.doc("beispiel_rahmen") }] }); return t.length; });
   step("STEP-Export", step3d > 1000, String(step3d));

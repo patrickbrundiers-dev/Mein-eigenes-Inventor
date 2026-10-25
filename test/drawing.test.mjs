@@ -503,3 +503,36 @@ test("Symbole: Oberfläche, Form- und Lagetoleranz, Bezug", async () => {
   assert.equal(d.polys[0].pts[2].join(), "50,50");
   assert.equal(d.texts[0].text, "A");
 });
+
+test("Bruchansicht: Abbildung, Linien und Schnittflächen ohne den entfernten Bereich", async () => {
+  const B = await import("../src/core/bruch.js");
+  const bm = B.breakMap([{ a: 900, b: 100 }], "u", 10);
+  assert.deepEqual(bm.breaks, [{ a: 100, b: 900 }], "Grenzen werden geordnet");
+  assert.deepEqual(bm.map(950, 3), [160, 3]);
+  assert.deepEqual(bm.unmap(160, 3), [950, 3]);
+  assert.deepEqual(bm.map(50, 7), [50, 7]);
+  assert.deepEqual(bm.cuts, [[100, 110]]);
+  assert.equal(bm.removed(500), true);
+  assert.deepEqual(B.clipBreaks([[[0, 0], [1000, 0], [1000, 20], [0, 20]]], bm), [[[0, 0], [100, 0]], [[900, 0], [1000, 0], [1000, 20], [900, 20]], [[100, 20], [0, 20]]]);
+  assert.equal(B.clipLoopsBreaks([[[0, 0], [1000, 0], [1000, 20], [0, 20]]], bm).length, 2);
+  const vm = B.breakMap([{ a: 0, b: 50 }, { a: 100, b: 150 }], "v", 5);
+  assert.deepEqual(vm.map(7, 200), [7, 110]);
+  assert.throws(() => B.breakMap([{ a: 0, b: 50 }, { a: 40, b: 60 }]), /überlappen/);
+  const z = B.zigzag(100, 0, 20, "v");
+  assert.equal(z[0][1], 100, "senkrecht: Zickzack liegt quer");
+});
+
+test("Ausbruch: außen normale Projektion, innen Schnitt mit Schraffur, Tiefe aus Hüllquadern", async () => {
+  const B = await import("../src/core/bruch.js");
+  assert.deepEqual(B.clipOutsideCircle([[-20, 0], [20, 0]], [0, 0], 5), [[[-20, 0], [-5, 0]], [[5, 0], [20, 0]]]);
+  assert.deepEqual(B.clipInsideCircle([[-20, 0], [20, 0]], [0, 0], 5), [[[-5, 0], [5, 0]]]);
+  const raw = { visible: [[[-20, 0], [20, 0]]], hidden: [[[-20, 2], [20, 2]]], arcs: [{ cx: 0, cy: 0, r: 1 }, { cx: 15, cy: 0, r: 1 }], bbox: { x0: -20, y0: -5, x1: 20, y1: 5 } };
+  const cut = { visible: [[[-20, 1], [20, 1]]], hidden: [], arcs: [], sectionLoops: [[[-20, -3], [20, -3], [20, 3], [-20, 3]]] };
+  const c = B.composeBreakout(raw, [{ c: [0, 0], r: 5, proj: cut }]);
+  assert.equal(c.visible.length, 3, "zwei Reste außen + Schnittkante innen");
+  assert.equal(c.hidden.length, 2, "verdeckte Linie nur außerhalb");
+  assert.deepEqual(c.arcs.map((a) => a.cx), [15]);
+  assert.equal(c.sectionLoops.length, 1);
+  assert.ok(c.sectionLoops[0].every(([x, y]) => Math.hypot(x, y) <= 5 + 1e-6));
+  assert.deepEqual(B.depthRange([[[0, 0, 0], [10, 20, 30]]], [0, -1, 0]), { min: -20, max: 0 });
+});
