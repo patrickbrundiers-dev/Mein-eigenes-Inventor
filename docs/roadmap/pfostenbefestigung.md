@@ -121,7 +121,15 @@ Unit-Tests direkt prüfen.
 | 6 | Podest, Holmtreppe (auf der Stufe), Balkon (Rahmen), Spindeltreppe (Stufe) | Generatoren | je Typ, mehrere Pfosten mit verschiedenen Flächen |
 | 7 | Feinschliff UI (Pfostenauswahl, Hervorhebung), Regressionstests, Anwender-Doku, Release-Notiz | `props.js`, Doku | alte Projekte, Kernel-Körper |
 
-Jede Etappe ist ein eigener PR; nach jeder Etappe laufen alle Tests.
+Jede Etappe ist ein eigener PR; nach jeder Etappe laufen alle Tests. Etappe 3–5 sind zusammen in einem PR gelandet, weil die Vorgabe der Treppe (seitlich) erst mit Etappe 4 meldungsfrei wird.
+
+### Stand nach Etappe 5
+
+- **Treppe:** neues Feld „Pfostenbefestigung“ (seitlich = Vorgabe für neue Treppen, oben, aus). Alte Projekte ohne das Feld laufen mit „aus“ wie bisher. Pfosten an Enden/Knicken rücken in ihr Feld zurück (höchstens ein Drittel des Feldes), damit das Blech auf dem Bauteil liegt; Pfosten ohne passendes Bauteil daneben (Podest-Auslauf) bekommen eine Fußplatte oben bzw. eine Fehlermeldung, wenn auch das nicht geht. UPN-Wangen mit der offenen Seite nach außen: Fehlermeldung, Pfosten wie bisher.
+- **Geländer:** „Befestigung“ hat jetzt oben (Vorgabe), seitlich, Fußplatte (bisher) und keine; Anschluss an Boden/Deckenstirn (ohne Gegenbohrung, nur Randabstand) oder an ein Randprofil (Vorgabe U200, mit Gegenbohrungen).
+- **Abstandsausgleich:** Flacheisen (Vorgabe 60 × 10) steht senkrecht auf dem Blech, greift mit Stecknasen (Länge = Blechdicke, bündig) durch Steckschlitze im Blech und steckt durch einen Schlitz in der nahen Pfostenwand bis kurz vor die Gegenwand. Schlitze = Nase bzw. Flacheisen + 2 × Passungsspiel (gleiche Regel wie `slotSize` im Stecksystem), Schlitzbreite von Hand mit Passungsprüfung. Geprüft: Höchstabstand, Nasen auf der Breite (Mindeststeg), Schlitze im Blech zu Bohrungen und Rand, Material neben dem Pfostenschlitz, Abstand zum Pfostenende, Einstecktiefe, Vollmaterial.
+- **Kernel:** Plattenbohrungen mit eigenem Ø (`[x, y, Ø]`) und Rechteckausschnitte (`rects`).
+- Noch offen (Etappe 6): Podestecken der L/U-Treppe (Blechbohrungen über dem Rahmenende), Holm- und Spindeltreppe, Balkon.
 
 ## 6. Bekannte Grenzen (erste Version)
 

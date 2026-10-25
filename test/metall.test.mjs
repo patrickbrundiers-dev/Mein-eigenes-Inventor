@@ -770,7 +770,7 @@ test("Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, 
   assert.equal(sp.length, 2 * steps.length);
   assert.ok(sp.every((p) => p.holes.length === 1 && p.slots.length === 1 && p.d === 14 && p.t === 5));
   assert.equal(steps[0].W, 1000 - 10, "Stufe zwischen den Seitenblechen");
-  const wh = t.drills.filter((d) => /^Wange/.test(d.target));
+  const wh = t.drills.filter((d) => /^Wange/.test(d.target) && d.d === 14); // ohne Gegenbohrungen der Pfostenbefestigung
   assert.equal(wh.length, 4 * steps.length);
   const A = t.plates.find((p) => p.name === "Stufe 1").H;
   assert.match(t.info, new RegExp(`Lochabstand ${A <= 250 ? 120 : A <= 285 ? 150 : A <= 320 ? 180 : "\\d+"} mm`));

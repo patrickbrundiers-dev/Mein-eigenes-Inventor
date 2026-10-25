@@ -458,7 +458,10 @@ test("Treppe mit Geländer: beidseitig, ums Podest, Knieleisten/Staketen, Höhe 
   const sb = by(r, /Seitenblech/);
   assert.equal(sb.length, 2 * 15);
   assert.ok(sb.every((b) => b.meta.plate.holes === 1 && b.meta.plate.slots === 1));
-  assert.ok(by(r, /^Wange/).every((b) => b.meta.drills === 2 * 15 && b.meta.drillD === 14), JSON.stringify(by(r, /^Wange/).map((b) => b.meta.drills)));
+  // dazu die Gegenbohrungen Ø 13,5 der Pfostenbefestigung (Vorgabe seitlich), Anzahl laut Meldung
+  const wg = by(r, /^Wange/), gb = Number(r.status.g.info.match(/(\d+) Gegenbohrungen/)[1]);
+  assert.ok(wg.every((b) => b.meta.drillD === 14));
+  assert.equal(wg.reduce((s, b) => s + b.meta.drills, 0), 2 * 2 * 15 + gb, JSON.stringify(wg.map((b) => b.meta.drills)));
   // zwischen den Pfosten (wie bisher): schräger Schnitt am Pfosten = Neigung des Laufs (atan 175/280 ≈ 32°)
   const rZ = await K.buildPart(part([{ ...f, id: "z", params: { ...f.params, gelBeltMode: "zwischen" } }]));
   const kl = rZ.bodies.filter((b) => /Knieleiste/.test(b.name));
@@ -559,4 +562,40 @@ test("Pfostenbefestigung oben: Fußplatte auf der U200-Wange, Gegenbohrungen im 
   // Pfosten 2 steht auf der Platte: kein Überlappen von Pfosten und Platte
   const post = res.bodies.find((b) => b.name === "Geländer rechts Pfosten 2"), pl = res.bodies.find((b) => b.name === "Geländer rechts Pfosten 2 Fußplatte");
   near(R.measureVolume(post.shape.clone().intersect(pl.shape.clone())), 0, 1, "Pfosten durchdringt die Platte nicht");
+});
+
+test("Pfostenbefestigung seitlich: Befestigungsblech an der Flachstahl-Wange, Gegenbohrungen, Pfosten liegt am Blech an", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const t = { id: "t", ...defaultGenerator("treppe") };
+  Object.assign(t.params, { gel: "rechts", gelFill: "keine" });
+  const res = await K.buildPart(part([t]));
+  okAll(res);
+  const blech = res.bodies.filter((b) => / Befestigungsblech$/.test(b.name));
+  assert.ok(blech.length >= 5);
+  near(R.measureVolume(blech[1].shape), 160 * 160 * 10 - 4 * Math.PI * (13.5 / 2) ** 2 * 10, 5, "Blech 160 × 160 × 10 mit 4 Bohrungen");
+  const w = res.bodies.find((b) => b.name === "Wange rechts");
+  const transferred = Number(res.status.t.info.match(/(\d+) Gegenbohrungen/)[1]);
+  assert.equal(w.meta.drills - 2 * 15, transferred, "Stufenbohrungen (2 je Stufe) + Gegenbohrungen");
+  const post = res.bodies.find((b) => b.name === "Geländer rechts Pfosten 2"), pl = res.bodies.find((b) => b.name === "Geländer rechts Pfosten 2 Befestigungsblech");
+  near(R.measureVolume(post.shape.clone().intersect(pl.shape.clone())), 0, 1, "Pfosten liegt an, durchdringt nicht");
+  near(R.measureVolume(pl.shape.clone().intersect(w.shape.clone())), 0, 1, "Blech liegt an der Wange an");
+});
+
+test("Pfostenbefestigung mit Abstandsausgleich: Flacheisen mit Stecknasen bündig im Blech, Schlitz im Pfosten, keine Durchdringung", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const t = { id: "t", ...defaultGenerator("treppe") };
+  Object.assign(t.params, { gel: "rechts", gelFill: "keine", gelMSpacer: true, gelMGap: "60" });
+  const res = await K.buildPart(part([t]));
+  okAll(res);
+  const get = (n) => res.bodies.find((b) => b.name === `Geländer rechts Pfosten 2${n}`);
+  const post = get(""), pl = get(" Befestigungsblech"), fl = get(" Flacheisen");
+  assert.ok(post && pl && fl);
+  // Blech: 160 × 160 × 10, 4 Bohrungen, 2 Steckschlitze 10,4 × 15,4
+  near(R.measureVolume(pl.shape), 160 * 160 * 10 - 4 * Math.PI * (13.5 / 2) ** 2 * 10 - 2 * 10.4 * 15.4 * 10, 5, "Blech mit Bohrungen und Steckschlitzen");
+  // Flacheisen 60 × 10, Länge 60 + 36,8 Einstecktiefe, dazu 2 Nasen 15 × 10 × 10
+  near(R.measureVolume(fl.shape), 60 * 10 * (60 + 36.8) + 2 * 15 * 10 * 10, 5, "Flacheisen mit Stecknasen");
+  near(R.measureVolume(fl.shape.clone().intersect(pl.shape.clone())), 0, 1, "Nasen sitzen mit Spiel in den Steckschlitzen");
+  near(R.measureVolume(fl.shape.clone().intersect(post.shape.clone())), 0, 1, "Flacheisen steckt mit Spiel im Pfostenschlitz");
+  near(R.measureVolume(post.shape.clone().intersect(pl.shape.clone())), 0, 1);
+  assert.ok(post.meta.drills >= 1, "Schlitz im Pfosten");
 });

@@ -49,11 +49,30 @@ export function railAlong(path, o, label) {
     if (sg.ts[sg.ts.length - 1] < sg.L - 1e-6) { sg.ts.push(sg.L); sg.ps.push(posts.length - 1); }
   }
   const drop = holderDrop(!!o.holder, o.post, o.holderGap);
+  // Pfosten an Enden und Knicken der Lauflinie mit Befestigung: so weit zurück in ihren Abschnitt, dass die Platte mittig
+  // zum Pfosten ganz auf dem Bauteil liegt (o.mountFit liefert den Weg entlang der Laufrichtung); Stationen der
+  // angrenzenden Abschnitte gehen mit (waagrechter Abstand ab Abschnittsanfang)
+  const movedEnds = new Set();
+  if (o.mountFit && posts.length > 1) {
+    posts.forEach((p, i) => {
+      const where = segs.flatMap((sg) => sg.ps.map((pi, k) => (pi === i ? { sg, k } : null)).filter(Boolean));
+      const own = where.find(({ sg, k }) => (k === 0 || k === sg.ps.length - 1) && sg.d[0] === p.d[0] && sg.d[1] === p.d[1]);
+      if (!own || (where.length < 2 && i !== 0 && i !== posts.length - 1)) return;
+      const top = [p.q[0], p.q[1], p.q[2] + o.H - railH - drop];
+      const dt = o.mountFit({ name: `${label} Pfosten ${i + 1}`, top, base: p.q, along: [p.d[0], p.d[1], 0] });
+      const back = own.k === 0 ? dt > 0 : dt < 0, field = own.k === 0 ? own.sg.ts[1] - own.sg.ts[0] : own.sg.ts[own.k] - own.sg.ts[own.k - 1];
+      if (!dt || !back || !(Math.abs(dt) < field / 3)) return;
+      p.q = [p.q[0] + p.d[0] * dt, p.q[1] + p.d[1] * dt, p.q[2] + p.slope * dt];
+      for (const { sg, k } of where) sg.ts[k] = (p.q[0] - sg.A[0]) * sg.d[0] + (p.q[1] - sg.A[1]) * sg.d[1];
+      movedEnds.add(i);
+    });
+  }
   const mounted = [];
   posts.forEach((p, i) => {
     const top = [p.q[0], p.q[1], p.q[2] + o.H - railH - drop], name = `${label} Pfosten ${i + 1}`;
-    if (o.mount) {
-      const r = o.mount({ name, top, base: p.q, along: [p.d[0], p.d[1], 0] });
+    const r = o.mount ? o.mount({ name, top, base: p.q, along: [p.d[0], p.d[1], 0] }) : null; // null: ohne Befestigung
+    if (r) {
+      if (movedEnds.has(i)) r.moved = true;
       members.push({ section: o.post, a: r.a, b: top, name, up: [p.d[0], p.d[1], 0], ...(r.cuts ? { cuts: r.cuts } : {}) });
       plates.push(r.plate, ...(r.parts || [])); drills.push(...r.drills); mounted.push(r);
     } else members.push({ section: o.post, a: [p.q[0], p.q[1], p.q[2] - o.postDown], b: top, name, up: [p.d[0], p.d[1], 0] });

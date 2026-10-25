@@ -7,7 +7,11 @@ import { sectionOf, defaultGenerator, resolveGenParams, GENERATORS } from "../sr
 const near = (a, b, tol = 1e-6, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg || ""} ${a} ≠ ${b}`);
 const nearV = (a, b, tol = 1e-6, msg) => a.forEach((x, i) => near(x, b[i], tol, msg));
 const E = (x) => Number(String(x).replace(",", "."));
-const treppe = (patch = {}) => GENERATORS.treppe.plan(resolveGenParams("treppe", { ...defaultGenerator("treppe").params, ...patch }, E));
+const treppe = (patch = {}, drop = []) => {
+  const params = { ...defaultGenerator("treppe").params, ...patch };
+  for (const k of drop) delete params[k];
+  return GENERATORS.treppe.plan(resolveGenParams("treppe", params, E));
+};
 
 test("Profilflächen: U200 (UPN), Rechteckrohr, I-Profil, Winkel, Rundrohr", () => {
   const upn = M.profileFaces(sectionOf({ kind: "upn", size: "200" }));
@@ -27,7 +31,7 @@ test("Profilflächen: U200 (UPN), Rechteckrohr, I-Profil, Winkel, Rundrohr", () 
 });
 
 test("Anschlussfläche an der U200-Wange: Oberseite = Flansch, außen offen, innen Steg", () => {
-  const plan = treppe({ support: "upn", upn: { kind: "upn", size: "200" } });
+  const plan = treppe({ support: "upn", upn: { kind: "upn", size: "200" }, gelMount: "aus" });
   const w = plan.members.find((m) => m.name === "Wange rechts");
   const ax = M.memberAxes(w.a, w.b, w.up, w.rot);
   const upL = w.up;
@@ -52,7 +56,7 @@ test("Montagerahmen: Balkonpfosten auf ebener Fläche, Treppenpfosten auf geneig
   const f0 = M.mountFrame(floor, [500, 0, 800], [0, 0, 1], { along: [1, 0, 0] });
   nearV(f0.F, [500, 0, 0]); nearV(f0.x, [1, 0, 0]); nearV(f0.y, [0, 1, 0]); near(f0.tilt, 0);
   // geneigt: Oberseite der U200-Wange
-  const plan = treppe({ support: "upn", upn: { kind: "upn", size: "200" } });
+  const plan = treppe({ support: "upn", upn: { kind: "upn", size: "200" }, gelMount: "aus" });
   const w = plan.members.find((m) => m.name === "Wange rechts");
   const face = M.memberFace(w, [0, 0, 1]);
   const alpha = Math.atan2(w.b[2] - w.a[2], w.b[0] - w.a[0]) / (Math.PI / 180);
@@ -133,7 +137,7 @@ test("Balkonpfosten auf ebener Fläche: Fußplatte am Boden, Pfosten steht auf d
 });
 
 test("Randprofil U200 unter dem Geländer: Bohrbild auf den Flansch übertragen, zu breites Bohrbild abgelehnt", () => {
-  const ok = gelaender({ runs: "3000", mTarget: "profil", oW: "70", oL: "160", mHoles: "2l", mD: "13.5", mE: "25" });
+  const ok = gelaender({ runs: "3000", mTarget: "profil", oW: "70", oL: "160", oHoles: "2l", mD: "13.5", mE: "25" });
   const rand = ok.chains.find((c) => c.name === "Randprofil");
   near(rand.points[0][2], -100, 1e-9, "Oberseite des stehenden U200 auf z = 0");
   const dr = ok.drills.filter((d) => d.target === "Randprofil");
@@ -150,7 +154,7 @@ test("Randprofil U200 unter dem Geländer: Bohrbild auf den Flansch übertragen,
   assert.match(bad.issues.map((x) => x.message).join("\n"), /Bohrung 1 liegt 8 mm über der Kante von Randprofil \(Flansch\)/);
   assert.match(bad.issues.map((x) => x.message).join("\n"), /trifft Rundung, Steg oder Flansch/);
   // gleiche Funktion mit Rechteckrohr statt U200 (keine Sonderlogik)
-  const rr = gelaender({ runs: "3000", mTarget: "profil", mProfile: { kind: "rechteck", size: "120x80x5" }, oW: "70", oL: "160", mHoles: "2l", mD: "13.5", mE: "25" });
+  const rr = gelaender({ runs: "3000", mTarget: "profil", mProfile: { kind: "rechteck", size: "120x80x5" }, oW: "70", oL: "160", oHoles: "2l", mD: "13.5", mE: "25" });
   assert.equal(rr.drills.filter((d) => d.target === "Randprofil").length, 8);
   near(rr.drills.find((d) => d.target === "Randprofil").len, 5 + 2, 1e-9, "durch die Rohrwand");
 });
@@ -174,7 +178,7 @@ test("U200-Treppe: Fußplatte auf der geneigten Wange, Bohrbild auf die kurze Se
   for (const d of dr) {
     const [s, c, h] = M.faceCoords(face, d.p);
     near(h, 1, 1e-9); near(c, 0, 1e-9, "Bohrung auf der Mittellinie der Platte");
-    assert.ok(s > face.sRange[0] && s < face.sRange[1]);
+    assert.ok(face.ends.every((e) => M.vec.dot(M.vec.sub(d.p, e.p), e.n) < -13.5 / 2), "innerhalb der Endschnitte der Wange");
     near(d.len, 11.5 + 2, 1e-9);
   }
   // Pfostenstellung senkrecht zur Montagefläche
@@ -207,10 +211,98 @@ test("Bohrung nahe der Profilkante abgelehnt, Wange aus Flachstahl: kein Platz o
 test("Bestehende Treppe und bestehendes Geländer ohne Befestigungsparameter rechnen wie bisher", async () => {
   const { genValues } = await import("../src/core/generator.js");
   assert.equal(genValues("treppe", { gel: "beide" }).gelMount, "aus");
-  const p = treppe({ support: "upn", upn: { kind: "upn", size: "200" } });
+  const p = treppe({ support: "upn", upn: { kind: "upn", size: "200" } }, ["gelMount"]);
   assert.equal(p.plates.filter((x) => /Fußplatte/.test(x.name)).length, 0);
   const post = p.members.find((m) => m.name === "Geländer rechts Pfosten 1");
   near(post.a[1], -75 - 20, 1e-9, "neben der Wange wie bisher");
   const old = gelaender({ base: "fussplatte" });
   assert.ok(!/Befestigung:/.test(old.info));
+});
+
+test("Seitliche Befestigung ohne Abstandsausgleich: Blech plan an der Wange, Pfosten liegt an, Bohrungen frei", () => {
+  const p = treppe({}); // Standard: Flachstahl-Wange, seitlich mit Befestigungsblech
+  assert.equal(p.issues.length, 0, p.issues.map((x) => x.message).join("\n"));
+  const w = p.members.find((m) => m.name === "Wange rechts");
+  const face = M.memberFace(w, [0, -1, 0]);
+  near(face.wall, 12, 1e-9, "durch die 12-mm-Wange");
+  const posts = p.members.filter((m) => /^Geländer rechts Pfosten \d+$/.test(m.name));
+  const side = posts.filter((m) => p.plates.find((x) => x.name === m.name + " Befestigungsblech"));
+  assert.ok(side.length >= 5);
+  for (const m of side) {
+    const pl = p.plates.find((x) => x.name === m.name + " Befestigungsblech");
+    near(M.faceCoords(face, pl.center)[2], 0, 1e-9, "Blech liegt plan an der Wange");
+    nearV(pl.normal, face.n, 1e-12);
+    near(M.faceCoords(face, m.b)[2], 10 + 20, 1e-9, "Pfosten liegt mit seiner Seite am Blech an (10 + 40/2)");
+    near(Math.abs(M.vec.dot(pl.xDir, [0, 0, 1])), 0, 1e-12, "Blechkanten waagrecht/senkrecht");
+    near(m.a[2], pl.center[2] - 80, 1e-9, "Pfosten beginnt an der Blechunterkante");
+  }
+  const dr = p.drills.filter((d) => d.target === "Wange rechts" && d.d === 13.5);
+  assert.equal(dr.length, 4 * side.length, "4 Gegenbohrungen je Blech");
+  assert.ok(dr.every((d) => Math.abs(M.faceCoords(face, d.p)[2] - 1) < 1e-9 && Math.abs(d.len - 14) < 1e-9));
+  assert.match(p.info, /Befestigungsbleche \(2 davon oben mit Fußplatte, kein Bauteil daneben\), 2 Pfosten an Enden\/Knicken zurückgerückt/);
+  // zu schmales Blech: Pfosten verdeckt die Bohrungen
+  const narrow = treppe({ gelSW: "80", gelE: "15" });
+  assert.match(narrow.issues.map((x) => x.message).join(), /vom Pfosten verdeckt/);
+  // UPN offen nach außen: kein Absturz, Pfosten ohne Befestigung mit Fehlermeldung
+  const upn = treppe({ support: "upn", upn: { kind: "upn", size: "200" } });
+  assert.match(upn.issues.map((x) => x.message).join(), /offene Seite des U-Profils .* »oben mit Fußplatte« .* ohne Befestigung/);
+});
+
+test("Geländer seitlich: an der Deckenstirn bzw. am Randprofil, Randabstand zur Deckenkante", () => {
+  const s = gelaender({ runs: "2500", base: "seitlich" });
+  const post = s.members.find((m) => m.name === "Pfosten 1"), bl = s.plates.find((x) => x.name === "Befestigungsblech 1");
+  nearV(bl.center, [0, 31.2, -100], 1e-9, "Blech mittig auf 200 mm Deckenstirn, links der Lauflinie");
+  near(post.a[2], -180, 1e-9);
+  assert.equal(s.drills.length > 0 && s.drills.some((d) => d.target === "Deckenstirn"), false, "Untergrund: keine Gegenbohrung");
+  const thin = gelaender({ runs: "2500", base: "seitlich", mSlab: "120" });
+  assert.match(thin.issues.map((x) => x.message).join(), /Randabstand .* Deckenstirn|über der Kante von Deckenstirn/);
+  const rp = gelaender({ runs: "2500", base: "seitlich", mTarget: "profil" });
+  const rand = rp.chains.find((c) => c.name === "Randprofil");
+  near(rand.points[0][1], 31.2 + 37.5, 1e-9, "U200 links, Steg zum Pfosten");
+  assert.equal(rp.drills.filter((d) => d.target === "Randprofil").length, 4 * 4, "4 Pfosten × 4 Bohrungen");
+  assert.ok(rp.drills.filter((d) => d.target === "Randprofil").every((d) => Math.abs(d.len - 10.5) < 1e-9), "durch den 8,5-mm-Steg");
+});
+
+test("Abstandsausgleich: Flacheisen durch Schlitz im Pfosten, Stecknasen in Steckschlitzen des Blechs, eine Passungsregel", () => {
+  assert.deepEqual(M.steckPassung(15, 10, 0.5), { w: 16, t: 11 });
+  const tl = M.tabCenters(60, 2, 15, 5);
+  assert.deepEqual(tl.centers, [-12.5, 12.5]);
+  assert.match(M.tabCenters(60, 4, 20, 5).error, /passen nicht in 60 mm/);
+  const base = treppe();
+  const p = treppe({ gelMSpacer: true, gelMGap: "60" });
+  const post = (q) => q.members.find((m) => m.name === "Geländer rechts Pfosten 1");
+  const w = p.members.find((m) => m.name === "Wange rechts"), face = M.memberFace(w, [0, -1, 0]);
+  // Pfosten rückt um den Abstand von der Wange weg, Achse unverändert parallel
+  near(M.faceCoords(face, post(p).b)[2] - M.faceCoords(face, post(base).b)[2], 60, 1e-6, "Pfosten 60 mm weiter außen");
+  const fl = p.plates.find((x) => x.name === "Geländer rechts Pfosten 1 Flacheisen");
+  const bl = p.plates.find((x) => x.name === "Geländer rechts Pfosten 1 Befestigungsblech");
+  assert.ok(fl && bl);
+  near(fl.H, 60, 1e-9, "Flacheisen 60 breit");
+  near(fl.t, 10, 1e-9);
+  nearV(fl.xDir, face.n, 1e-9, "Flacheisen läuft vom Blech zum Pfosten");
+  // Länge = Blechdicke (Nase) + Abstand + Einstecktiefe (Pfostentiefe − Wand − Spiel)
+  const pd = post(p).section.geom.width, wall = post(p).section.dims.t;
+  near(fl.W, 10 + 60 + (pd - wall - 0.2), 1e-6, "Länge mit Nase und Einstecktiefe");
+  // Stecknasen: 2 × 15 mm, Steckschlitze im Blech je 10,4 × 15,4 (Spiel 0,2), Kontur geschlossen ohne Überkreuzung
+  assert.equal(bl.rects.length, 2);
+  assert.ok(bl.rects.every(([, , rw, rh]) => Math.abs(rw - 10.4) < 1e-9 && Math.abs(rh - 15.4) < 1e-9));
+  const ys = fl.poly.filter(([x]) => x === -10).map(([, y]) => y);
+  assert.deepEqual(ys, [...ys].sort((a, b) => a - b), "Nasen in Konturreihenfolge");
+  // Schlitz im Pfosten: Flacheisen + 2 × Spiel, nur durch die nahe Wand
+  const sl = p.drills.find((d) => d.target === "Geländer rechts Pfosten 1" && d.w);
+  near(sl.w, 10.4, 1e-9);
+  near(sl.h, 60.4, 1e-9);
+  near(sl.len, wall + 2, 1e-9);
+  assert.equal(p.issues.filter((i) => i.level === "Fehler").length, 0, p.issues.map((i) => i.message).join("\n"));
+  assert.match(p.info, /mit Flacheisen \(Stecknasen sichern nur die Lage/);
+  // Abstand über dem Höchstmaß, zu viele Nasen, zu enger Schlitz, Abstand ohne Ausgleich
+  const msg = (q) => q.issues.map((i) => i.message).join("\n");
+  assert.match(msg(treppe({ gelMSpacer: true, gelMGap: "200" })), /über dem Höchstmaß 150 mm/);
+  assert.match(msg(treppe({ gelMSpacer: true, gelMTabs: "4", gelMTabW: "20" })), /Stecknasen: 4 Stecknasen/);
+  assert.match(msg(treppe({ gelMSpacer: true, gelMSlotW: "9" })), /passt nicht in den Schlitz 9 mm/);
+  assert.match(msg(treppe({ gelMSpacer: true, gelMSlotW: "14" })), /Schlitz 14 mm für Flacheisen 10 mm/);
+  // Geländer an der Deckenstirn mit Flacheisen
+  const g = gelaender({ runs: "2500", base: "seitlich", mSpacer: true });
+  assert.equal(g.plates.filter((x) => /Flacheisen/.test(x.name)).length, 4);
+  assert.equal(g.issues.filter((i) => i.level === "Fehler").length, 0, msg(g));
 });
