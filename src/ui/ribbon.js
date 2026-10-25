@@ -98,6 +98,30 @@ export class Ribbon {
         app.addFeature({ type: "pattern", kind: "circular", feature: src, axis: "Z", center: ["0", "0", "0"], count: "6", angle: "360" });
       },
       mirror: () => app.addFeature({ type: "mirror", plane: "YZ", offset: "0" }),
+      sweep: () => {
+        const sks = app.activeDoc().features.filter((f) => f.type === "sketch");
+        if (sks.length < 2) return toast("Zuerst zwei Skizzen anlegen: Profil (geschlossen) und Pfad (Linien/Bögen)");
+        app.addFeature({ type: "sweep", sketch: sks.at(-2).id, path: sks.at(-1).id, op: "join" });
+      },
+      loft: () => {
+        const sks = app.activeDoc().features.filter((f) => f.type === "sketch");
+        if (sks.length < 2) return toast("Zuerst mindestens zwei Skizzen mit geschlossener Kontur anlegen (z. B. auf versetzten Ebenen)");
+        app.addFeature({ type: "loft", sketches: sks.slice(-2).map((s) => s.id), ruled: false, op: "join" });
+      },
+      spirale: () => {
+        const sk = app.lastSketchId();
+        if (!sk) return toast("Zuerst eine Skizze mit dem Profil (z. B. Kreis neben der Achse) anlegen");
+        app.addFeature({ type: "spirale", sketch: sk, axis: "y", mode: "umdrehungen", pitch: "10", turns: "5", op: "join" });
+      },
+      patternPath: () => {
+        const src = this.lastPatternSource();
+        const sks = app.activeDoc().features.filter((f) => f.type === "sketch" && f.id !== app.activeDoc().features.find((g) => g.id === src)?.sketch);
+        if (!src || !sks.length) return toast("Zuerst ein Feature (z. B. Bohrung) und eine Skizze mit dem Pfad anlegen");
+        app.addFeature({ type: "pattern", kind: "path", feature: src, path: sks.at(-1).id, count: "5", spacingMode: "gleich", align: true });
+      },
+      datumPlane: () => app.addFeature({ type: "arbeitsebene", mode: "versatz", base: "XY", distance: "50" }),
+      datumAxis: () => app.addFeature({ type: "arbeitsachse", mode: "parallel", dir: "Z", point: { x: "0", y: "0", z: "0" } }),
+      datumPoint: () => app.addFeature({ type: "arbeitspunkt", mode: "koordinaten", x: "0", y: "0", z: "0" }),
       importStep: () => app.files.importStepIntoPart(),
       params: () => app.props.paramsDialog(),
       // Skizze
@@ -116,7 +140,7 @@ export class Ribbon {
   lastPatternSource() {
     const part = this.app.activeDoc();
     const sel = this.app.sel?.type === "feature" ? this.app.feature(this.app.sel.id) : null;
-    const ok = (f) => ["extrude", "revolve", "hole", "emboss", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "kantteil", "import"].includes(f.type);
+    const ok = (f) => ["extrude", "revolve", "hole", "emboss", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "kantteil", "sweep", "loft", "spirale", "import"].includes(f.type);
     if (sel && ok(sel)) return sel.id;
     const list = part.features.filter(ok);
     return list.length ? list[list.length - 1].id : null;
@@ -196,13 +220,14 @@ export class Ribbon {
       return [
         { id: "modell", label: "3D-Modell", groups: [
           { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch")] },
-          { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper"), B("kantteil", "Kantteil", "kantteil")] },
+          { label: "Arbeitselemente", buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
+          { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper"), B("kantteil", "Kantteil", "kantteil"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil")] },
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon")] },
           { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil")] },
           { label: "Stahlbau", buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
-          { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("mirror", "Spiegeln", "mirror")] },
+          { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() })] },
           { label: "Verwalten", buttons: [B("params", "Parameter", "params"), B("importStep", "STEP einfügen", "import"), B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() })] },
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },

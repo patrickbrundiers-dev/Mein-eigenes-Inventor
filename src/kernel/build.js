@@ -5,6 +5,8 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { solveSketch } from "../core/solver.js";
 import { extractProfiles, holeCenters, sketchLines } from "../core/sketch.js";
 import { planeFrame, toWorld, v3 } from "../core/geom.js";
+import { resolveDatums, resolvePlane, mirrorPlane, patternAxis, datumSummary } from "../core/datums.js";
+import { pathChain, reverseChain, pathLength as chainLength, pathPatternStations, coilParams, loopCentroid, validateLoft } from "../core/formen.js";
 import { sectionGeometry, sectionName, profileId, THREADS, loopLength } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
 import { planKnickrahmen, knickInput } from "../core/knickrahmen.js";
@@ -72,6 +74,29 @@ export function createKernel(R) {
     return d;
   }
   const makePlane = (fr) => new R.Plane(fr.origin, fr.xDir, fr.normal);
+  /** Geschlossene Kontur als Draht in Weltkoordinaten (Profil für Sweeping und Spirale) */
+  const loopWire = (loop, frame) => loopToDrawing(loop).sketchOnPlane(makePlane(frame)).wire;
+  /** Eckpunkte einer Kontur (für den Schwerpunkt; Bögen über ihren Mittelpunkt angenähert) */
+  function loopPoints(loop) {
+    if (loop.kind === "circle" || loop.kind === "ellipse") return [loop.c];
+    const out = [loop.start];
+    for (const sg of loop.segs) { if (sg.mid) out.push(sg.mid); out.push(sg.to); }
+    return out;
+  }
+  const vecOf = (p) => (Array.isArray(p) ? p : [p.x, p.y, p.z]);
+  /** Pfad (Kette aus Linien und Bögen) als Draht in Weltkoordinaten */
+  function chainWire(chain, frame) {
+    const W = (q) => toWorld(frame, q[0], q[1]);
+    return R.assembleWire(chain.pieces.map((p) => (p.t === "line" ? R.makeLine(W(p.a), W(p.b)) : R.makeThreePointArc(W(p.a), W(p.m), W(p.b)))));
+  }
+  /** Drehachse einer Skizze: x/y der Skizzenebene oder eine (Konstruktions-)Linie */
+  function sketchAxis(s, axis) {
+    if (axis === "x" || axis === "y" || !axis) return { origin: s.frame.origin, dir: axis === "x" ? s.frame.xDir : s.frame.yDir };
+    const ln = sketchLines(s.sketch, { includeConstruction: true }).find((l) => l.id === axis);
+    if (!ln) throw new Error("Achse fehlt");
+    const origin = toWorld(s.frame, ln.a[0], ln.a[1]);
+    return { origin, dir: v3.sub(toWorld(s.frame, ln.b[0], ln.b[1]), origin) };
+  }
 
   function extrudeRegions(regions, frame, startOffset, length) {
     if (!regions.length) throw new Error("Keine geschlossene Kontur in der Skizze");
@@ -340,6 +365,8 @@ export function createKernel(R) {
     };
     let state = { bodies: [], tools: new Map(), sketches: new Map(), status: {}, welds: [] };
     const feats = part.features || [];
+    // Arbeitselemente: reine Lagen, unabhängig vom Zwischenspeicher
+    const datums = resolveDatums(feats, (x) => evaluate(x, scope));
     // 2D/3D und Winkelkorrektur je Profil bzw. Rahmen (gilt für alle Schnitte dieses Features)
     const cutCfg = (f) => {
       const c = featureCutSettings(f);
@@ -415,7 +442,7 @@ export function createKernel(R) {
             const sk = JSON.parse(JSON.stringify(f));
             const r = solveSketch(sk, scope, { computeDof: true });
             if (!r.ok) throw new Error(r.error || "Skizze nicht lösbar (widersprüchliche Bemaßung)");
-            const frame = planeFrame(sk.plane, E(sk.offset || "0", "Ebenen-Abstand"));
+            const frame = planeFrame(resolvePlane(sk.plane, datums.map), E(sk.offset || "0", "Ebenen-Abstand"));
             const prof = extractProfiles(sk);
             state.sketches.set(f.id, { sketch: sk, frame, prof, dof: r.dof });
             st.dof = r.dof;
@@ -908,7 +935,7 @@ export function createKernel(R) {
           case "pattern": {
             const src = state.tools.get(f.feature);
             if (!src) throw new Error(missingRef(f.feature, "Bezugs-Feature", f));
-            const transforms = patternTransforms(f, E);
+            const transforms = f.kind === "path" ? pathTransforms(f, E, getSketch(f.path, "Pfad-Skizze")) : patternTransforms(f, E, datums.map);
             if (transforms.length > 500) throw new Error("Zu viele Exemplare (max. 500)");
             let n = 0;
             for (const tr of transforms) {
@@ -925,10 +952,76 @@ export function createKernel(R) {
             st.info = `${transforms.length + 1} Exemplare`;
             break;
           }
+          case "sweep": {
+            const s = getSketch(f.sketch, "Profil-Skizze");
+            if (!s.prof.regions.length) throw new Error(s.prof.errors[0] || "Profil-Skizze ohne geschlossene Kontur");
+            if (f.path === f.sketch) throw new Error("Profil und Pfad müssen verschiedene Skizzen sein");
+            const p = getSketch(f.path, "Pfad-Skizze");
+            const chain = pathChain(p.sketch);
+            const spine = chainWire(chain, p.frame);
+            const cfg = { frenet: f.orient !== "fest", transitionMode: "right" };
+            let tool = null;
+            for (const reg of s.prof.regions) {
+              let solid = R.genericSweep(loopWire(reg.outer, s.frame), spine.clone(), cfg);
+              for (const hl of reg.holes) solid = solid.cut(R.genericSweep(loopWire(hl, s.frame), spine.clone(), cfg));
+              tool = tool ? tool.fuse(solid) : solid;
+            }
+            state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
+            applyOp(f.op || "join", tool, f.id, f.name);
+            st.info = `Pfad ${String(Math.round(chainLength(chain) * 10) / 10).replace(".", ",")} mm${chain.closed ? ", geschlossen" : ""}`;
+            break;
+          }
+          case "loft": {
+            const ids = f.sketches || [];
+            validateLoft(ids);
+            const secs = ids.map((id, k) => {
+              const s = getSketch(id, `Skizze ${k + 1}`);
+              if (!s.prof.regions.length) throw new Error(`Skizze ${k + 1}: keine geschlossene Kontur`);
+              if (s.prof.regions.length > 1 || s.prof.regions[0].holes.length) st.warning = "Je Skizze zählt nur die äußere Kontur der ersten Fläche";
+              return loopToDrawing(s.prof.regions[0].outer).sketchOnPlane(makePlane(s.frame));
+            });
+            const tool = secs[0].loftWith(secs.slice(1), { ruled: !!f.ruled });
+            state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
+            applyOp(f.op || "join", tool, f.id, f.name);
+            st.info = `${ids.length} Querschnitte${f.ruled ? ", gerade Übergänge" : ""}`;
+            break;
+          }
+          case "spirale": {
+            const s = getSketch(f.sketch);
+            if (!s.prof.regions.length) throw new Error(s.prof.errors[0] || "Keine geschlossene Kontur");
+            const { origin, dir } = sketchAxis(s, f.axis);
+            const D = v3.norm(dir);
+            const cp = coilParams({ mode: f.mode, pitch: E(f.pitch, "Steigung"), turns: f.mode === "hoehe" ? 0 : E(f.turns, "Umdrehungen"), height: f.mode === "hoehe" ? E(f.height, "Höhe") : 0 });
+            let tool = null;
+            for (const reg of s.prof.regions) {
+              const c2 = loopCentroid(loopPoints(reg.outer));
+              const C = toWorld(s.frame, c2[0], c2[1]);
+              const F = v3.add(origin, v3.mul(D, v3.dot(v3.sub(C, origin), D)));
+              const r = v3.dist(C, F);
+              if (r < 1e-6) throw new Error("Profil liegt auf der Achse");
+              if (cp.pitch < 1e-6) throw new Error("Steigung zu klein");
+              let helix = R.makeHelix(cp.pitch, cp.height, r, F, D, !!f.lefthand);
+              // Anfang der Schraubenlinie in die Profilmitte drehen
+              const S = vecOf(helix.startPoint);
+              const a = v3.norm(v3.sub(S, F)), b = v3.norm(v3.sub(C, F));
+              const ang = (Math.atan2(v3.dot(v3.cross(a, b), D), v3.dot(a, b)) * 180) / Math.PI;
+              if (Math.abs(ang) > 1e-9) helix = helix.rotate(ang, F, D);
+              let solid = R.genericSweep(loopWire(reg.outer, s.frame), helix, { frenet: true });
+              for (const hl of reg.holes) solid = solid.cut(R.genericSweep(loopWire(hl, s.frame), helix.clone(), { frenet: true }));
+              tool = tool ? tool.fuse(solid) : solid;
+            }
+            state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
+            applyOp(f.op || "join", tool, f.id, f.name);
+            st.info = `${String(Math.round(cp.turns * 100) / 100).replace(".", ",")} Umdrehungen, Steigung ${String(cp.pitch).replace(".", ",")} mm, Höhe ${String(Math.round(cp.height * 10) / 10).replace(".", ",")} mm${f.lefthand ? ", linksgängig" : ""}`;
+            break;
+          }
+          case "arbeitsebene": case "arbeitsachse": case "arbeitspunkt": {
+            if (datums.errors[f.id]) throw new Error(datums.errors[f.id]);
+            st.info = datumSummary(f, datums.map.get(f.id));
+            break;
+          }
           case "mirror": {
-            const pl = { XY: [0, 0, 1], XZ: [0, 1, 0], YZ: [1, 0, 0] }[f.plane || "YZ"];
-            const off = E(f.offset || "0", "Abstand");
-            const origin = v3.mul(pl, off);
+            const { n: pl, origin } = mirrorPlane(f, (x) => E(x, "Abstand"), datums.map);
             const added = [];
             for (const b of state.bodies) {
               const m = b.shape.clone().mirror(pl, origin);
@@ -976,7 +1069,7 @@ export function createKernel(R) {
         if (!prev.warning?.includes(INVALID_BODY)) state.status[key] = { ...prev, warning: prev.warning ? prev.warning + "; " + INVALID_BODY : INVALID_BODY };
       }
     }
-    return { bodies: state.bodies, status: state.status, sketches: state.sketches, values, welds: state.welds || [] };
+    return { bodies: state.bodies, status: state.status, sketches: state.sketches, values, welds: state.welds || [], datums: [...datums.map].map(([id, g]) => ({ id, ...g })) };
   }
 
   /** Normteil als eigener Körper (Stückliste mit Normbezeichnung); n = { kind, size, length, grade, galv, name? } */
@@ -1150,18 +1243,32 @@ export function createKernel(R) {
     return sk.revolve(a, { origin: p });
   }
 
-  function patternTransforms(f, E) {
+  /** Muster entlang Pfad: verschieben auf den Pfadpunkt, auf Wunsch mit der Tangente drehen (Skizzenebene des Pfads) */
+  function pathTransforms(f, E, p) {
+    const chain = f.reverse ? reverseChain(pathChain(p.sketch)) : pathChain(p.sketch);
+    const fr = p.frame;
+    const { stations } = pathPatternStations(chain, { count: E(f.count, "Anzahl"), spacing: f.spacingMode === "abstand" ? E(f.spacing, "Abstand") : null, align: f.align !== false });
+    const vec = (m) => v3.add(v3.mul(fr.xDir, m[0]), v3.mul(fr.yDir, m[1]));
+    return stations.map((stn) => (sh) => {
+      let x = sh.translate(vec(stn.move));
+      if (Math.abs(stn.angle) > 1e-9) x = x.rotate(stn.angle, toWorld(fr, stn.p[0], stn.p[1]), fr.normal);
+      return x;
+    });
+  }
+
+  function patternTransforms(f, E, datums) {
     const out = [];
     if (f.kind === "circular") {
-      const ax = f.axis === "custom" ? (f.axisDir || ["0", "0", "1"]).map((x) => E(x, "Achse")) : AXES[f.axis || "Z"];
-      const c = (f.center || ["0", "0", "0"]).map((x) => E(x, "Mittelpunkt"));
+      const da = patternAxis(f.axis, datums);
+      const ax = da ? da.d : f.axis === "custom" ? (f.axisDir || ["0", "0", "1"]).map((x) => E(x, "Achse")) : AXES[f.axis || "Z"];
+      const c = da ? da.p : (f.center || ["0", "0", "0"]).map((x) => E(x, "Mittelpunkt"));
       const n = Math.round(E(f.count, "Anzahl"));
       const total = E(f.angle || "360", "Winkel");
       const step = Math.abs(total - 360) < 1e-9 ? 360 / n : total / Math.max(1, n - 1);
       for (let k = 1; k < n; k++) out.push((s) => s.rotate(step * k, c, ax));
       return out;
     }
-    const d1 = f.dir === "custom" ? v3.norm((f.dirVec || ["1", "0", "0"]).map((x) => E(x, "Richtung"))) : AXES[f.dir || "X"];
+    const d1 = patternAxis(f.dir, datums)?.d || (f.dir === "custom" ? v3.norm((f.dirVec || ["1", "0", "0"]).map((x) => E(x, "Richtung"))) : AXES[f.dir || "X"]);
     const n1 = Math.max(1, Math.round(E(f.count, "Anzahl")));
     const s1 = E(f.spacing, "Abstand");
     const n2 = f.dir2 ? Math.max(1, Math.round(E(f.count2 || "1", "Anzahl 2"))) : 1;
