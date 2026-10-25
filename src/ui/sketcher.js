@@ -82,6 +82,14 @@ export class Sketcher {
     if (this.active) this.render();
   }
 
+  /** Zuletzt eingegebener Wert eines Werkzeugs (werkzeuge.letzte), sonst undefined */
+  lastValue(tool) { return this.prefs?.["werkzeuge.merken"] === false ? undefined : this.prefs?.["werkzeuge.letzte"]?.[tool]; }
+  rememberValue(tool, v) {
+    if (this.prefs?.["werkzeuge.merken"] === false || !this.app.prefs) return;
+    const cur = this.app.prefs.get("werkzeuge.letzte") || {};
+    if (JSON.stringify(cur[tool]) !== JSON.stringify(v)) this.app.prefs.set("werkzeuge.letzte", { ...cur, [tool]: v });
+  }
+
   // ---------- Lebenszyklus ----------
   get part() { return this.app.activeDoc(); }
   get sk() { return this.part?.features.find((f) => f.id === this.sketchId); }
@@ -637,7 +645,8 @@ export class Sketcher {
   patternDialog(mode, ids, center) {
     const scope = this.scope();
     const n0 = String(this.prefs?.["werkzeuge.std.musterAnzahl"] ?? 3), a0 = String(this.prefs?.["werkzeuge.std.musterAbstand"] ?? 20);
-    const last = this.lastPattern?.[mode] || (mode === "rot" ? { n: n0, total: "360" } : { nx: n0, a: a0, ny: "1", b: a0 });
+    const memo = mode === "rot" ? "kreismuster" : "muster";
+    const last = this.lastValue(memo) || (mode === "rot" ? { n: n0, total: "360" } : { nx: n0, a: a0, ny: "1", b: a0 });
     const fields = mode === "rot" ? [["n", "Anzahl"], ["total", "Gesamtwinkel °"]] : [["nx", "Anzahl X"], ["a", "Abstand X"], ["ny", "Anzahl Y"], ["b", "Abstand Y"]];
     const inputs = Object.fromEntries(fields.map(([k]) => [k, h("input", { class: "inp", value: last[k], spellcheck: "false", "data-k": k })]));
     const err = h("div", { class: "hint" });
@@ -665,7 +674,7 @@ export class Sketcher {
         const v = Object.fromEntries(fields.map(([k]) => [k, inputs[k].value.trim()]));
         let opts;
         try { opts = build(v); apply(JSON.parse(JSON.stringify(this.sk)), opts); } catch (e) { err.textContent = e.message; return false; }
-        this.lastPattern = { ...this.lastPattern, [mode]: v };
+        this.rememberValue(memo, v);
         this.commit(mode === "rot" ? "Kreismuster" : "Rechteckmuster", (sk) => apply(sk, opts));
         this.sel.clear();
         this.app.selectSketchItems([]);
@@ -817,12 +826,12 @@ export class Sketcher {
         if (d < bd) { bd = d; best = p.id; }
       }
       if (!best) return toast("Ecke anklicken, an der genau zwei Linien enden");
-      this.askValue(sx, sy, this.lastFillet || String(this.prefs?.["werkzeuge.std.rundung"] ?? 5), (val) => {
+      this.askValue(sx, sy, this.lastValue("rundung") || String(this.prefs?.["werkzeuge.std.rundung"] ?? 5), (val) => {
         const r = evaluate(val, this.scope());
         const test = JSON.parse(JSON.stringify(this.sk));
         const res = filletCorner(test, best, r, uid, val);
         if (!res.ok) return toast(res.message, { kind: "err" });
-        this.lastFillet = val;
+        this.rememberValue("rundung", val);
         this.commit("Skizzenrundung", (sk) => filletCorner(sk, best, r, uid, val));
         if (res.dropped?.length) toast("Entfernt, weil nicht mehr gültig: " + [...new Set(res.dropped)].map((t) => ({ midpoint: "Mittelpunkt", equal: "Gleich" })[t] || t).join(", "));
       });
@@ -862,10 +871,10 @@ export class Sketcher {
         return;
       }
       const pick = { x: lx, y: ly };
-      this.askValue(sx, sy, this.lastOffset || String(this.prefs?.["werkzeuge.std.versatz"] ?? 5), (val) => {
+      this.askValue(sx, sy, this.lastValue("versatz") || String(this.prefs?.["werkzeuge.std.versatz"] ?? 5), (val) => {
         const d = evaluate(val, this.scope());
         try { offsetEntities(JSON.parse(JSON.stringify(this.sk)), ids, d, pick, { uid, value: val }); } catch (err) { return toast(err.message, { kind: "err" }); }
-        this.lastOffset = val;
+        this.rememberValue("versatz", val);
         this.commit("Versatz", (sk) => offsetEntities(sk, ids, d, pick, { uid, value: val }));
         this.sel.clear();
         this.app.selectSketchItems([]);
@@ -962,9 +971,9 @@ export class Sketcher {
           const c = this.state.start;
           this.state = null;
           if (Math.hypot(sn.x - c.x, sn.y - c.y) * this.M.scale < 2) break;
-          this.askValue(sx, sy, this.polySides || String(this.prefs?.["werkzeuge.std.polygon"] ?? 6), (val) => {
+          this.askValue(sx, sy, this.lastValue("polygon") || String(this.prefs?.["werkzeuge.std.polygon"] ?? 6), (val) => {
             const n = Math.round(evaluate(val, this.scope()));
-            this.polySides = String(n);
+            this.rememberValue("polygon", String(n));
             this.commitShape("Polygon", (sk) => buildPolygon(sk, c, sn, n, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));
           });
         }
@@ -1550,7 +1559,7 @@ export class Sketcher {
         path("M" + pts.map((q) => q.join(",")).join("L") + "Z");
       }
     } else if (this.tool === "polygon" && st.start) {
-      const c = st.start, n = Math.max(3, Math.min(64, Number(this.polySides) || 6));
+      const c = st.start, n = Math.max(3, Math.min(64, Number(this.lastValue("polygon") || this.prefs?.["werkzeuge.std.polygon"]) || 6));
       const r = Math.hypot(cur.x - c.x, cur.y - c.y), a0 = Math.atan2(cur.y - c.y, cur.x - c.x);
       const pts = Array.from({ length: n }, (_, i) => S(c.x + r * Math.cos(a0 + (2 * Math.PI * i) / n), c.y + r * Math.sin(a0 + (2 * Math.PI * i) / n)));
       path("M" + pts.map((q) => q.join(",")).join("L") + "Z");

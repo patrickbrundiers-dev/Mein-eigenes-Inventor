@@ -116,3 +116,23 @@ test("Schnellzugriff und Werkzeug-Standardwerte", () => {
   assert.deepEqual(bad.values["werkzeuge.schnellzugriff"], []);
   assert.ok(bad.warnings.length > 0);
 });
+
+test("Farbschema und letzte Werkzeugwerte: Prüfung und Rundlauf", () => {
+  const d = settingDef("darstellung.schema");
+  assert.equal(d.default, "hell");
+  assert.ok(validateValue(d, "dunkel").ok && validateValue(d, "system").ok && !validateValue(d, "lila").ok);
+  const m = settingDef("werkzeuge.letzte");
+  assert.ok(validateValue(m, { rundung: "3", muster: { nx: "4", a: "25", ny: "1", b: "25" } }).ok);
+  assert.ok(!validateValue(m, { bohrer: "3" }).ok, "unbekanntes Werkzeug");
+  assert.ok(!validateValue(m, { rundung: 3 }).ok, "nur Text");
+  assert.ok(!validateValue(m, []).ok);
+  assert.ok(!validateValue(m, { versatz: "x".repeat(201) }).ok);
+  const vals = { ...defaultSettings(), "darstellung.schema": "dunkel", "werkzeuge.letzte": { rundung: "7", polygon: "8" } };
+  const back = loadSettings(serializeSettings(vals));
+  assert.equal(back.warnings.length, 0, back.warnings.join());
+  assert.equal(back.values["darstellung.schema"], "dunkel");
+  assert.deepEqual(back.values["werkzeuge.letzte"], { rundung: "7", polygon: "8" });
+  // kaputter Eintrag fällt mit Warnung auf leer zurück
+  const bad = loadSettings(JSON.stringify({ format: SETTINGS_FORMAT, version: SETTINGS_VERSION, values: { "werkzeuge.letzte": { bohrer: "1" } } }));
+  assert.deepEqual(bad.values["werkzeuge.letzte"], {});
+});

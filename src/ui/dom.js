@@ -167,7 +167,8 @@ export function modal({ title, body, buttons = [], width, onClose }) {
   };
   document.addEventListener("keydown", onKey, true);
   root.append(bd);
-  setTimeout(() => (dlg.querySelector("input,select,textarea") || footer.querySelector(".btn.primary"))?.focus(), 20);
+  // erstes Feld fokussieren – aber nicht, wenn schon in den Dialog geklickt oder getippt wurde (sonst landet Eingabe im falschen Feld)
+  setTimeout(() => { if (!dlg.contains(document.activeElement)) (dlg.querySelector("input,select,textarea") || footer.querySelector(".btn.primary"))?.focus(); }, 20);
   return { close, el: dlg };
 }
 

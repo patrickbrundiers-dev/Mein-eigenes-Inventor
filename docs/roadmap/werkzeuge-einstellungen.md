@@ -97,7 +97,7 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 | K Dateien und Datensicherheit | vorhanden (Verhalten), Optionen fehlen | atomar + `.bak`, Autosave, Migration |
 | L Updates | vorhanden | jetzt im Center |
 | M Datenschutz | vorhanden | keine Telemetrie; Protokoll lokal |
-| N Darstellung | teilweise | Oberflächengröße, Animation; Farbschema geplant |
+| N Darstellung | teilweise | Oberflächengröße, Animation, Farbschema hell/dunkel/wie Windows (Stufe 20) |
 | Versionierung, Migration, Validierung, Import/Export, Trennung Benutzer/Geheimnisse | vorhanden (neu) | `src/core/settings.js` |
 
 ## Stufen dieses Arbeitspakets
@@ -125,4 +125,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 17 | Trägheitsmomente aus dem Dreiecksnetz (Messen → Masse-Eigenschaften) | Kernel-Test Quader/Zylinder/Rohr |
 | 18 | Gefüllte Schnittflächen im 3D-Schnitt (Stencil, Einstellung „Schnittflächen füllen“) | Oberflächentest (Pixel) |
 | 19 | Ellipse in der Skizze (Solver, Profil, DXF) | Solver-/Kernel-/Oberflächentest |
-| 20 (geplant) | Farbschema hell/dunkel, Werkzeugparameter merken | Unit-Test Schema, Oberflächentest |
+| 20 | Farbschema hell/dunkel, letzte Werkzeugwerte über die Sitzung hinaus merken | Unit-Test Schema, Oberflächentest |

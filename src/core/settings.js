@@ -19,7 +19,7 @@ export const CATEGORIES = [
   { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["Beleuchtung", "gespeicherte Ansichten"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
   { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["automatische Bemaßung", "Standardebene"] },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", planned: ["Menüband selbst anordnen", "letzte Werkzeugparameter über die Sitzung hinaus merken"], note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
-  { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Farbschema hell/dunkel", "Tooltip-Verzögerung"] },
+  { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Tooltip-Verzögerung"] },
   { id: "dokument", label: "Dokument und Modell", status: "geplant", planned: ["Standardvorlagen", "Namensregeln", "Standardmaterial", "Modelltoleranz"], note: "Dokumentwerte werden später in der Projektdatei gespeichert, nicht hier." },
   { id: "material", label: "Materialien", status: "teilweise", planned: ["eigene Werkstoffe", "Import/Export der Bibliothek"], note: "Die eingebaute Werkstoffliste (Dichte für Masse und Zuschnittliste) ist fest; siehe unten." },
   { id: "kernel", label: "CAD-Kernel und Leistung", status: "geplant", planned: ["automatische Neuberechnung aus", "Berechnungsprotokoll/Debug-Modus"], note: "Kernel-Toleranzen werden nicht freigegeben, solange sie nicht abgesichert sind." },
@@ -78,7 +78,9 @@ export const SETTINGS = [
   { key: "werkzeuge.std.polygon", cat: "werkzeuge", label: "Standardwert Polygon-Ecken", type: "int", default: 6, min: 3, max: 64 },
   { key: "werkzeuge.std.musterAnzahl", cat: "werkzeuge", label: "Standardwert Musteranzahl", type: "int", default: 3, min: 2, max: 400 },
   { key: "werkzeuge.std.musterAbstand", cat: "werkzeuge", label: "Standardwert Musterabstand", unit: "mm", type: "number", default: 20, min: -100000, max: 100000 },
-  { key: "werkzeuge.std.extrusion", cat: "werkzeuge", label: "Standardwert Extrusionstiefe", unit: "mm", type: "number", default: 10, min: 0.001, max: 100000, help: "Startwert neuer Extrusionen; die Werkzeuge merken sich während der Sitzung den zuletzt eingegebenen Wert." },
+  { key: "werkzeuge.std.extrusion", cat: "werkzeuge", label: "Standardwert Extrusionstiefe", unit: "mm", type: "number", default: 10, min: 0.001, max: 100000, help: "Startwert neuer Extrusionen." },
+  { key: "werkzeuge.merken", cat: "werkzeuge", label: "Letzte Werkzeugwerte merken", type: "bool", default: true, help: "Rundung, Versatz, Polygon und Muster starten mit dem zuletzt eingegebenen Wert, auch nach einem Neustart. Aus = immer die Standardwerte oben." },
+  { key: "werkzeuge.letzte", cat: "werkzeuge", label: "Zuletzt verwendete Werkzeugwerte", type: "toolmemo", default: {}, custom: true },
   { key: "werkzeuge.kuerzel", cat: "werkzeuge", label: "Tastaturkürzel", type: "keymap", default: {}, custom: true, help: "Abweichungen von der Standardbelegung; Konflikte werden abgelehnt." },
 
   { key: "fertigung.stange", cat: "fertigung", label: "Max. Stangenlänge", unit: "mm", type: "number", default: 6500, min: 0, max: 20000, help: "Nutzbar ist die Stange minus Endbeschnitt und Greiferrest. 0 = nicht prüfen." },
@@ -93,9 +95,13 @@ export const SETTINGS = [
   { key: "fertigung.knickSchenkel", cat: "fertigung", label: "Knickrahmen: Schenkel mindestens", unit: "× Rohrmaß", type: "number", default: 2, min: 0, max: 20, help: "Schenkel kürzer als Faktor × Rohrmaß in der Rahmenebene gibt eine Warnung. 0 = nicht prüfen." },
   { key: "fertigung.knickWand", cat: "fertigung", label: "Knickrahmen: Wand höchstens", unit: "mm", type: "number", default: 4, min: 0, max: 30, help: "Dickere Wände lassen sich schwer von Hand knicken (Hinweis). 0 = nicht prüfen." },
 
+  { key: "darstellung.schema", cat: "darstellung", label: "Farbschema", type: "enum", default: "hell", options: [{ value: "hell", label: "Hell" }, { value: "dunkel", label: "Dunkel" }, { value: "system", label: "Wie Windows" }], help: "Gilt für Menüband, Panels, Dialoge und den 3D-Hintergrund. Zeichnungsblätter bleiben weiß." },
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },
   { key: "darstellung.skalierung", cat: "darstellung", label: "Oberflächengröße", unit: "%", type: "enum", default: 100, options: [80, 90, 100, 110, 125, 150].map((v) => ({ value: v, label: v + " %" })), help: "Nur in der Desktop-Version; im Browser die Zoomfunktion des Browsers verwenden." },
 ];
+
+/** Werkzeuge, deren letzte Eingabe gemerkt wird (werkzeuge.letzte) */
+export const TOOL_MEMO_KEYS = ["rundung", "versatz", "polygon", "muster", "kreismuster"];
 
 const BY_KEY = new Map(SETTINGS.map((s) => [s.key, s]));
 export const settingDef = (key) => BY_KEY.get(key);
@@ -132,6 +138,18 @@ export function validateValue(def, v) {
       if (bad.length) return { ok: false, error: "Unbekannter Befehl: " + bad.join(", ") };
       if (new Set(v).size !== v.length) return { ok: false, error: "Befehl doppelt" };
       return { ok: true, value: [...v] };
+    }
+    case "toolmemo": { // {werkzeug: Text | {feld: Text}} – nur bekannte Werkzeuge, kurze Texte
+      if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: "Werkzeugwerte erwartet" };
+      const out = {};
+      for (const [k, x] of Object.entries(v)) {
+        if (!TOOL_MEMO_KEYS.includes(k)) return { ok: false, error: "Unbekanntes Werkzeug: " + k };
+        const okText = (t) => typeof t === "string" && t.length <= 200;
+        if (okText(x)) out[k] = x;
+        else if (x && typeof x === "object" && !Array.isArray(x) && Object.keys(x).length <= 8 && Object.values(x).every(okText)) out[k] = { ...x };
+        else return { ok: false, error: "Ungültiger Wert für " + k };
+      }
+      return { ok: true, value: out };
     }
     case "color":
       return typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? { ok: true, value: v.toLowerCase() } : { ok: false, error: "Farbe als #rrggbb erwartet" };

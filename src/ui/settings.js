@@ -93,7 +93,11 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
 /** Zusatzinhalte je Kategorie, die keine einfachen Optionen sind */
 function extras(app, cat) {
   if (cat === "updates") return [updatesSection(app)];
-  if (cat === "werkzeuge") return [quickAccessEditor(app), keymapEditor(app)];
+  if (cat === "werkzeuge") {
+    const memo = app.prefs.get("werkzeuge.letzte") || {};
+    const forget = h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: !Object.keys(memo).length, onclick: (e) => { app.prefs.reset(["werkzeuge.letzte"]); e.currentTarget.disabled = true; toast("Werkzeuge starten wieder mit den Standardwerten"); } }, "Letzte Werkzeugwerte vergessen"));
+    return [forget, quickAccessEditor(app), keymapEditor(app)];
+  }
   if (cat === "material") {
     return [h("table", { class: "grid" },
       h("thead", {}, h("tr", {}, h("th", {}, "Werkstoff"), h("th", {}, "Dichte g/cm³"))),

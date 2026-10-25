@@ -1054,7 +1054,7 @@ try {
     const dir = await evalApp(() => window.__werkcad.viewer.viewState().dir);
     const stored = await evalApp(() => { try { return JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => k.includes("einstellungen")) || "") || "{}").values?.["werkzeuge.schnellzugriff"]; } catch { return null; } });
     // Standardwert Polygon-Ecken aus den Einstellungen
-    await evalApp(() => { const a = window.__werkcad; a.prefs.set("werkzeuge.std.polygon", 8); a.sketcher.polySides = null; }); // in der Sitzung zuletzt eingegebener Wert hätte Vorrang
+    await evalApp(() => { const a = window.__werkcad; a.prefs.set("werkzeuge.std.polygon", 8); a.prefs.reset(["werkzeuge.letzte"]); }); // zuletzt eingegebener Wert hätte Vorrang
     await evalApp(() => window.__werkcad.newPart("Std"));
     await idle();
     await page.keyboard.press("s");
@@ -1162,6 +1162,37 @@ try {
     const want = ex ? Math.PI * 30 * (el?.r || 0) * ex.h : 0;
     step("Skizze: Ellipse zeichnen und extrudieren", !!el && Math.abs(el.r - 20) < 0.5 && el.regions === 1 && dims.length === 3 && ex && Math.abs(ex.vol / want - 1) < 2e-3,
       JSON.stringify({ el, dims, ex }));
+  }
+
+  // Farbschema dunkel und gemerkte Werkzeugwerte
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    const rgb = (c) => (c.match(/\d+/g) || []).slice(0, 3).map(Number);
+    const lum = (c) => { const [r, g, b] = rgb(c); return (r + g + b) / 3; };
+    const look = () => evalApp(() => {
+      const cs = (sel) => getComputedStyle(document.querySelector(sel));
+      return { theme: document.documentElement.dataset.theme, body: cs("body").backgroundColor, props: cs("#props").backgroundColor, ribbon: cs("#ribbon").backgroundColor, stage: cs("#stage").backgroundImage, ink: cs("body").color };
+    });
+    const light = await look();
+    await evalApp(() => window.__werkcad.prefs.set("darstellung.schema", "dunkel"));
+    await page.waitForTimeout(300);
+    const dark = await look();
+    await shot("26c-dunkel");
+    await evalApp(() => window.__werkcad.prefs.set("darstellung.schema", "hell"));
+    const back = await look();
+    // letzte Werkzeugwerte: Rundung 7 merken, „vergessen“ setzt zurück, ausgeschaltet gilt der Standard
+    const memo = await evalApp(() => {
+      const a = window.__werkcad, s = a.sketcher;
+      s.rememberValue("rundung", "7");
+      const kept = s.lastValue("rundung"), stored = JSON.parse(a.prefs.exportText()).values["werkzeuge.letzte"];
+      a.prefs.set("werkzeuge.merken", false);
+      const off = s.lastValue("rundung");
+      a.prefs.reset(["werkzeuge.merken", "werkzeuge.letzte"]);
+      return { kept, stored, off, after: s.lastValue("rundung") ?? null };
+    });
+    step("Farbschema dunkel, Werkzeugwerte gemerkt", light.theme === "light" && dark.theme === "dark" && lum(dark.body) < 70 && lum(dark.props) < 80 && lum(dark.ink) > 180 && lum(light.body) > 200 && dark.stage !== light.stage && back.theme === "light" && back.body === light.body &&
+      memo.kept === "7" && memo.stored?.rundung === "7" && memo.off === undefined && memo.after === null, JSON.stringify({ light, dark, memo }));
   }
 
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
