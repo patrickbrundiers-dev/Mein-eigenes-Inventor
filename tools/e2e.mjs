@@ -652,6 +652,21 @@ try {
     await shot(file);
   }
   step("Stahlbau-Generatoren", Object.values(stb).every((x) => x.ok && x.norm > 0) && stb.Rahmenecke.norm === 24 && stb.Windverband.norm === 2, JSON.stringify(stb));
+  // Kantteil (MegaCAD-Abgleich M17): U-Profil aus Blech, Abwicklung als DXF
+  await evalApp(() => window.__werkcad.newPart("Kantteil"));
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Kantteil$/ }).click();
+  await idle(60000);
+  const kt = await evalApp(async () => {
+    const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features[0];
+    const orig = a.files.saveText; let got = null;
+    a.files.saveText = async (text, name) => { got = { name, n: text.length, bend: (text.match(/\nBIEGUNG\r?\n/g) || []).length }; };
+    try { await a.files.exportKantteilDxf(f); } finally { a.files.saveText = orig; }
+    return { ok: Object.values(r.status).every((s) => s.ok), info: r.status[f.id]?.info, dxf: got };
+  });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20o-kantteil");
+  step("Kantteil mit Abwicklung", kt.ok && /Abwicklung 172[.,]36 × 1000 mm/.test(kt.info) && /_2mm\.dxf$/.test(kt.dxf?.name || "") && kt.dxf.bend >= 3, JSON.stringify(kt));
 
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));

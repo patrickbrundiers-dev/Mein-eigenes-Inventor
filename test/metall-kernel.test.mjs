@@ -364,3 +364,20 @@ test("Stahlbau-Generatoren: Windverband, Pfette mit Stoß, Rahmenecke mit Normte
   near(bb(rg)[0][0], 115, 0.01, "Riegel beginnt an der Stirnplatte");
   assert.equal(re.bodies.filter((b) => /^Steife/.test(b.name)).length, 4);
 });
+
+test("Kantteil: Volumen = Mittellinie × t × Länge, Abwicklung als Platte (MegaCAD-Abgleich M17)", async () => {
+  const { defaultKantteil } = await import("../src/core/blech.js");
+  const f = { id: "kt", ...defaultKantteil() };
+  const res = await K.buildPart(part([f]));
+  okAll(res);
+  const b = res.bodies[0];
+  const mid = 36 + 92 + 36 + 2 * (3 * Math.PI / 2);
+  near(R.measureVolume(b.shape), mid * 2 * 1000, 1, "Volumen");
+  const bb = b.shape.boundingBox.bounds;
+  near(bb[1][1] - bb[0][1], 1000, 0.01, "Länge in Y"); near(bb[1][0] - bb[0][0], 40, 0.01, "Schenkel 40 außen"); near(bb[1][2] - bb[0][2], 100, 0.01, "Steg 100 außen");
+  assert.match(res.status.kt.info, /Abwicklung 172[.,]36 × 1000 mm, 2 Biegung/);
+  const flat = await K.buildPart(part([{ ...f, view: "abgewickelt" }]));
+  okAll(flat);
+  near(flat.bodies[0].shape.boundingBox.bounds[1][0], 172.357, 0.01);
+  near(b.meta.sheet.flat, 172.357, 0.001);
+});

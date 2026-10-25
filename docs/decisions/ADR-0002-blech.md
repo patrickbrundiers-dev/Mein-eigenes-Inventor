@@ -1,6 +1,6 @@
 # ADR-0002: Keine allgemeine Blechfunktion, nur Knickrahmen-Biegung
 
-Status: angenommen · Datum: 24.10.2026 · Plan P1-D
+Status: ersetzt durch [ADR-0005](ADR-0005-blech-kantteile.md) (25.10.2026) · Datum: 24.10.2026 · Plan P1-D
 
 ## Kontext
 

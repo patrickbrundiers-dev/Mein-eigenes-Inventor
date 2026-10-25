@@ -483,6 +483,24 @@ export class Props {
           this.opSeg(f)));
         break;
       }
+      case "kantteil": {
+        const sh = r?.bodies?.find((b) => b.fid === f.id)?.meta?.sheet;
+        out.push(this.section("Querschnitt",
+          this.text("Schenkel (mm, mit ; trennen)", f.legs || "", (v) => this.set(f, "legs", v, "Schenkel"), { placeholder: "40; 100; 40" }),
+          this.text("Biegewinkel (°, + auf / − ab)", f.angles || "", (v) => this.set(f, "angles", v, "Biegewinkel"), { placeholder: "90; 90" }),
+          this.seg("Maßbezug", [["aussen", "außen"], ["innen", "innen"], ["mitte", "Mitte Blech"]], f.ref || "aussen", (v) => this.set(f, "ref", v, "Maßbezug")),
+          E("Blechdicke", "t", { allowNeg: false, allowZero: false }),
+          E("Innenradius", "ri", { allowNeg: false }),
+          E("K-Faktor", "k", { unit: "", allowNeg: false }),
+          E("Länge (Kantlänge)", "length", { allowNeg: false, allowZero: false }),
+          h("p", { class: "hint" }, "Schenkel von Biegung zu Biegung, Winkel zwischen den Schenkeln (90 = rechtwinklig nach oben, −90 nach unten). Biegezugabe = (ri + K · t) · Winkel – wie beim Knickrahmen; K-Faktor aus der Biegetabelle der Abkantpresse.")));
+        out.push(this.section("Lage und Ansicht",
+          this.vec3("Startpunkt (Mitte Blech)", f.pos || ["0", "0", "0"], (v) => this.set(f, "pos", v, "Startpunkt")),
+          this.seg("Ansicht", [["gefaltet", "gefaltet"], ["abgewickelt", "abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
+          sh ? h("dl", { class: "kv" }, h("dt", {}, "Abwicklung"), h("dd", {}, `${fmtNum(sh.flat, 2)} × ${fmtNum(sh.length, 1)} mm`), h("dt", {}, "Biegelinien"), h("dd", {}, sh.bendLines.map((x) => fmtNum(x, 2)).join(" · ") || "–")) : null,
+          h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportKantteilDxf(f) }, "Abwicklung als DXF"))));
+        break;
+      }
       case "normteil": {
         const kind = f.kind || "schraube4017", def = NORM_KINDS[kind];
         out.push(this.section("Normteil",
@@ -706,7 +724,7 @@ export class Props {
         break;
       }
       case "pattern": {
-        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "import"].includes(g.type) && g.id !== f.id);
+        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "kantteil", "import"].includes(g.type) && g.id !== f.id);
         const axisSeg = (label, key, def) => this.seg(label, [["X", "X"], ["Y", "Y"], ["Z", "Z"], ["-X", "−X"], ["-Y", "−Y"], ["-Z", "−Z"]], f[key] || def, (v) => this.set(f, key, v, label));
         out.push(this.section(f.kind === "circular" ? "Kreismuster" : "Rechteckmuster",
           this.select("Feature", srcs.map((s) => [s.id, s.name]), f.feature, (v) => this.set(f, "feature", v, "Feature")),

@@ -338,3 +338,37 @@ test("Generatoren: Standardprofile stehen im Katalog (Auswahlliste nicht leer)",
       assert.ok(s.kinds.includes(s.default.kind), `${g}.${s.key}: Art ${s.default.kind} nicht erlaubt`);
     }
 });
+
+test("Kantteil: Mittellinie aus Außenmaßen, Abwicklung über Biegezugabe, Umriss, DXF (MegaCAD-Abgleich M17)", async () => {
+  const { planKantteil, kantteilOutline, kantteilFlatDxf, bendAllowance } = await import("../src/core/blech.js");
+  const { DxfWriter } = await import("../src/core/dxf.js");
+  const near = (a, b, t = 1e-6, m = "") => assert.ok(Math.abs(a - b) <= t, `${m} ${a} ≠ ${b}`);
+  // U 40/100/40 außen, t 2, ri 2, K 0,33: Ausgleichswert v = 2(ri + t) − π/2 (ri + K t) je 90°-Biegung
+  const u = planKantteil({ legs: [40, 100, 40], angles: [90, 90], t: 2, ri: 2, k: 0.33 });
+  const v = 2 * 4 - (Math.PI / 2) * (2 + 0.66);
+  near(u.flat, 180 - 2 * v, 1e-9, "Abwicklung");
+  assert.deepEqual(u.flatParts.map((x) => Math.round(x * 1000) / 1000), [36, 4.178, 92, 4.178, 36]);
+  near(u.bendLines[0], 36 + 4.1783 / 2, 1e-3);
+  near(bendAllowance(2, 0.33, 2, Math.PI / 2), 4.17832, 1e-4);
+  // innen gemessen: Schenkel um t größer → Mittellinie +1 je Biegung
+  const ui = planKantteil({ legs: [40, 100, 40], angles: [90, 90], t: 2, ri: 2, k: 0.33, ref: "innen" });
+  near(ui.flat - u.flat, 8, 1e-9, "innen 2·2 mm je Biegung mehr");
+  // Z-Profil: Biegungen in entgegengesetzte Richtung, Mitte des letzten Schenkels liegt oben
+  const z = planKantteil({ legs: [30, 60, 30], angles: [90, -90], t: 3, ri: 3, k: 0.4, ref: "mitte" });
+  near(z.center[2].a[1], 60, 1e-9, "letzter Schenkel auf Höhe 60 (Mittellinie)");
+  assert.equal(z.bends[1].sgn, -1);
+  // Umriss geschlossen, Bögen mit Mittelpunkt im richtigen Abstand
+  const o = kantteilOutline(u, 2);
+  const lastTo = o.segs.at(-1).to;
+  near(lastTo[0], o.start[0]); near(lastTo[1], o.start[1]);
+  assert.equal(o.segs.filter((s) => s.t === "arc").length, 4, "je Biegung innen und außen ein Bogen");
+  const arc0 = o.segs.find((s) => s.t === "arc");
+  near(Math.hypot(arc0.mid[0] - u.bends[0].c[0], arc0.mid[1] - u.bends[0].c[1]), 2, 1e-9, "Innenbogen R = ri");
+  // Fehler
+  assert.throws(() => planKantteil({ legs: [5, 100, 40], angles: [90, 90], t: 2, ri: 10, k: 0.33 }), /Schenkel 1 zu kurz/);
+  assert.throws(() => planKantteil({ legs: [40, 100], angles: [90, 90], t: 2, ri: 2, k: 0.33 }), /2 Schenkel brauchen 1 Biegewinkel/);
+  // DXF: Kontur + 2 Biegelinien auf BIEGUNG
+  const dxf = kantteilFlatDxf(DxfWriter, u, 1000, { name: "Abdeckung", t: 2 });
+  assert.ok((dxf.match(/\nBIEGUNG\r?\n/g) || []).length >= 3, "Layer-Tabelle + 2 Biegelinien");
+  assert.match(dxf, /90%%d auf R2/);
+});

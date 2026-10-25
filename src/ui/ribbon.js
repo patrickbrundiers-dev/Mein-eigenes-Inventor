@@ -6,6 +6,7 @@ import { defaultProfilzug } from "../core/profilzug.js";
 import { defaultBiegerohr } from "../core/biegerohr.js";
 import { defaultRegelkoerper } from "../core/regelkoerper.js";
 import { defaultNormteil } from "../core/normteile.js";
+import { defaultKantteil } from "../core/blech.js";
 import { defaultPlatte, defaultRippe } from "../core/anschluss.js";
 import { defaultGenerator, GENERATORS } from "../core/generator.js";
 import { DISPLAY } from "../core/settings.js";
@@ -60,6 +61,7 @@ export class Ribbon {
       profilzug: () => app.addFeature(defaultProfilzug(catalogToDims("vierkant", "40x3"))),
       regelkoerper: () => app.addFeature(defaultRegelkoerper("zylinder")),
       normteil: () => app.addFeature(defaultNormteil("schraube4017")),
+      kantteil: () => app.addFeature(defaultKantteil()),
       platte: () => {
         const t = this.lastOf(["profile", "frame", "profilzug"]);
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
@@ -112,7 +114,7 @@ export class Ribbon {
   lastPatternSource() {
     const part = this.app.activeDoc();
     const sel = this.app.sel?.type === "feature" ? this.app.feature(this.app.sel.id) : null;
-    const ok = (f) => ["extrude", "revolve", "hole", "emboss", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "import"].includes(f.type);
+    const ok = (f) => ["extrude", "revolve", "hole", "emboss", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "kantteil", "import"].includes(f.type);
     if (sel && ok(sel)) return sel.id;
     const list = part.features.filter(ok);
     return list.length ? list[list.length - 1].id : null;
@@ -192,7 +194,7 @@ export class Ribbon {
       return [
         { id: "modell", label: "3D-Modell", groups: [
           { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch")] },
-          { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper")] },
+          { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper"), B("kantteil", "Kantteil", "kantteil")] },
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon")] },
           { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil")] },

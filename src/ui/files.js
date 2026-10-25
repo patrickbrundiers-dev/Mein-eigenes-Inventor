@@ -1,6 +1,8 @@
 // Öffnen, Speichern, Import/Export – über die Electron-Brücke oder im Browser per Download
 import { toast, choiceDialog, downloadBlob, h } from "./dom.js";
-import { sketchToDxf } from "../core/dxf.js";
+import { sketchToDxf, DxfWriter } from "../core/dxf.js";
+import { planKantteil, kantteilFlatDxf } from "../core/blech.js";
+import { evaluate } from "../core/expr.js";
 import { newPart, uid } from "../core/examples.js";
 import { serializeProject, loadProject, validateProject } from "../core/project.js";
 import { bomRows, collectCutSources } from "./props.js";
@@ -233,6 +235,21 @@ export class Files {
     await this.saveText(weldCsv(rows, d.name), safeName(d.number || d.name) + "_Nahtliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
   }
   /** Alle Listen als Excel-Arbeitsmappe: Stückliste (Baugruppe), Zuschnitt, Summen je Profil, Nahtliste */
+  /** Abwicklung eines Kantteils als DXF (Kontur, Biegelinien mit Winkel) */
+  async exportKantteilDxf(f) {
+    const app = this.app, part = app.activeDoc();
+    const sh = app.results.get(part?.id)?.bodies?.find((b) => b.fid === f.id)?.meta?.sheet;
+    if (!sh) return toast("Kantteil hat Fehler – erst korrigieren", { kind: "err" });
+    let plan;
+    try {
+      const sc = app.props.scope();
+      const E = (x) => evaluate(String(x), sc);
+      plan = planKantteil({ legs: String(f.legs).split(/[;\s]+/).filter(Boolean).map(E), angles: String(f.angles).split(/[;\s]+/).filter(Boolean).map(E), t: E(f.t), ri: E(f.ri), k: E(f.k), ref: f.ref || "aussen" });
+    } catch (e) { return toast("Kantteil: " + e.message, { kind: "err" }); }
+    const name = `${safeName(part.number || part.name)}_${safeName(f.name || "Kantteil")}_${String(sh.t).replace(".", ",")}mm.dxf`.replace(/\s+/g, "_");
+    await this.saveText(kantteilFlatDxf(DxfWriter, plan, sh.length, { name: f.name || part.name, t: sh.t }), name, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
+    toast(`Abwicklung ${fmtNum(plan.flat, 1)} × ${fmtNum(sh.length, 1)} mm gespeichert`, { kind: "ok" });
+  }
   /** Bild der 3D-Ansicht als PNG (doppelte Auflösung, weißer Hintergrund) */
   async exportPng() {
     const d = this.app.activeDoc();
