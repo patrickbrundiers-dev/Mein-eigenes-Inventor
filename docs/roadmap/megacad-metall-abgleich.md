@@ -1,6 +1,6 @@
 # Abgleich MegaCAD Metall 3D ↔ PBCAD
 
-Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **freigegeben 25.10.2026, Umsetzung läuft** (erledigt: Block A – M1 #71, M2 #73, M3 #74, M4)
+Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **freigegeben 25.10.2026, Umsetzung läuft** (erledigt: Block A – M1 #71, M2 #73, M3 #74, M4 #76; Block B – M5, M6)
 
 Auftrag: Patrick hat den Funktionsumfang der Produktseite „MegaCAD Metall 3D“ geschickt („Das möchte ich auch alles
 drin haben“). Übernommen wird nur der **Funktionsumfang als Ziel**; keine Texte, Bilder, Dialoge oder Daten von
@@ -126,8 +126,8 @@ den Entwicklungsplan-Thread. Große Stufen (L) werden beim Start in 2–3 PRs ge
 
 | Stufe | Inhalt | Aufwand |
 |---|---|---|
-| M5 | Regelkörper als Feature: Quader, Zylinder, Kugel, Kegel, Kegelstumpf, Torus, Pyramide | S |
-| M6 | DSTV-/Stahlprofile: IPE, HEA, HEB, UPN, T, L ungleichschenklig, mit Radien und Metergewicht aus den Normtabellen | M |
+| M5 ✓ | Regelkörper als Feature: Quader, Zylinder, Kugel, Kegel, Kegelstumpf, Torus, Pyramide | S |
+| M6 ✓ | DSTV-/Stahlprofile: IPE, HEA, HEB, UPN, T mit Ausrundung und Metergewicht aus den Normtabellen (UPN-Flanschneigung und T-Kantenrundung vereinfacht, ±3 %); L ungleichschenklig gab es schon | M |
 | M7 | Skizze säubern: doppelte/überlappende Elemente, Endpunkte zusammenführen, fast-waagrecht/-senkrecht korrigieren, Toleranz einstellbar | S |
 | M8 | Stirn-/Fuß-/Kopfplatte am Profilende (Maße, Bohrbild, Überstand) und Rippe/Steife; Platte als eigener Körper mit DXF | M |
 | M9 | Schweißnähte: Naht an Kanten/Stoß als Attribut, Symbol nach ISO 2553 in der Zeichnung (Kehl-, HV-, V-, I-Naht, a-Maß, umlaufend, Montage), Nahtliste | M |

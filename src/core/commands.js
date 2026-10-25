@@ -56,6 +56,7 @@ export const COMMANDS = [
   { id: "part.profile", label: "Rohr / Profil", group: "3D-Modell", scope: "part" },
   { id: "part.frame", label: "Rahmen aus Skizze", group: "3D-Modell", scope: "part" },
   { id: "part.knickrahmen", label: "Knickrahmen", group: "3D-Modell", scope: "part" },
+  { id: "part.regelkoerper", label: "Regelkörper", group: "3D-Modell", scope: "part", keywords: "quader zylinder kugel kegel kegelstumpf torus ring pyramide grundkörper primitiv" },
   { id: "part.biegerohr", label: "Rohr gebogen (über Polygonzug)", group: "3D-Modell", scope: "part", keywords: "biegen bogen biegeradius biegeliste handlauf bügel rohrconnect" },
   { id: "part.profilzug", label: "Profilzug 3D", group: "3D-Modell", scope: "part", keywords: "räumlich eckpunkte polygonzug rahmen gehrung zwei ebenen" },
   { id: "part.fillet", label: "Rundung", group: "3D-Modell", scope: "part", keywords: "verrundung" },

@@ -2,7 +2,7 @@
 import { settingsCenter } from "./settings.js";
 import { h, icon, toast, modal, fmtNum, confirmDialog } from "./dom.js";
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
-import { SECTION_KINDS, FIELD_LABELS, CATALOG, catalogToDims, profileId, sectionGeometry, kgPerMeter, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
+import { SECTION_KINDS, fieldLabel, CATALOG, catalogToDims, profileId, sectionGeometry, kgPerMeter, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
 import { profileMatches, resolveProfile } from "../core/profilesearch.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
@@ -14,6 +14,7 @@ import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
+import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
@@ -381,6 +382,22 @@ export class Props {
         if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(f, "alle Gehrungen dieses Profilzugs")));
         break;
       }
+      case "regelkoerper": {
+        const kind = f.kind || "zylinder";
+        let volText = "–";
+        try { const sc = this.scope(); volText = fmtNum(regelVolume(kind, Object.fromEntries(REGEL_KINDS[kind].fields.map((k) => [k, evaluate(String(f.dims?.[k] ?? "0"), sc)]))) / 1000, 1) + " cm³"; } catch { /* Maß mit Fehler */ }
+        out.push(this.section("Regelkörper",
+          this.select("Form", Object.entries(REGEL_KINDS).map(([k, d]) => [k, d.label]), kind, (v) => this.set(f, (x) => { x.kind = v; x.dims = { ...REGEL_DEFAULTS[v] }; }, "Form")),
+          ...REGEL_KINDS[kind].fields.map((k) => this.expr(regelLabel(kind, k), f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, regelLabel(kind, k)), { allowNeg: false, allowZero: kind === "kegel" && k === "d" })),
+          h("dl", { class: "kv" }, h("dt", {}, "Volumen"), h("dd", {}, volText)),
+          kind === "kegel" ? h("p", { class: "hint" }, "d = 0 ergibt einen Spitzkegel, d > 0 einen Kegelstumpf.") : null));
+        out.push(this.section("Lage",
+          this.vec3(kind === "kugel" || kind === "torus" ? "Mittelpunkt" : "Basispunkt (Mitte unten)", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
+          this.seg("Achse", [["Z", "Z"], ["Y", "Y"], ["X", "X"], ["-Z", "−Z"], ["-Y", "−Y"], ["-X", "−X"], ["custom", "frei"]], f.axis || "Z", (v) => this.set(f, "axis", v, "Achse")),
+          f.axis === "custom" ? this.vec3("Richtungsvektor", f.dir || ["0", "0", "1"], (v) => this.set(f, "dir", v, "Richtung")) : null,
+          this.opSeg(f)));
+        break;
+      }
       case "biegerohr": {
         const meta = r?.bodies?.find((b) => b.fid === f.id)?.meta;
         out.push(this.section("Rohr über Polygonzug", ...this.pathPointsEditor(f, false),
@@ -481,7 +498,7 @@ export class Props {
         break;
       }
       case "pattern": {
-        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "biegerohr", "import"].includes(g.type) && g.id !== f.id);
+        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "import"].includes(g.type) && g.id !== f.id);
         const axisSeg = (label, key, def) => this.seg(label, [["X", "X"], ["Y", "Y"], ["Z", "Z"], ["-X", "−X"], ["-Y", "−Y"], ["-Z", "−Z"]], f[key] || def, (v) => this.set(f, key, v, label));
         out.push(this.section(f.kind === "circular" ? "Kreismuster" : "Rechteckmuster",
           this.select("Feature", srcs.map((s) => [s.id, s.name]), f.feature, (v) => this.set(f, "feature", v, "Feature")),
@@ -525,7 +542,7 @@ export class Props {
       this.profileQuick(f, kinds),
       this.select("Profilart", kinds.map((k) => [k, SECTION_KINDS[k].label]), kind, (v) => this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart")),
       this.select("Normgröße", [["", "– eigene Maße –"], ...cat.map((c) => [c, c.replace(/\./g, ",")])], matchCatalog(kind, f.dims) || "", (v) => v && this.set(f, (x) => { x.dims = catalogToDims(kind, v); }, "Normgröße")),
-      ...def.fields.map((k) => this.expr(FIELD_LABELS[k], f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, FIELD_LABELS[k]), { allowNeg: false })),
+      ...def.fields.map((k) => this.expr(fieldLabel(kind, k), f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, fieldLabel(kind, k)), { allowNeg: false })),
       this.meterWeightInfo(f));
   }
   /** Punkte eines räumlichen Zugs (Profilzug, Biegerohr): absolut oder relativ, mit Drehung je Segment (rolls) */

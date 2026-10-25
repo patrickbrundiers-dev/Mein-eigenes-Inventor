@@ -71,3 +71,38 @@ test("Biegerohr: zu kurzes Segment, Umkehr, kleiner Radius, kurze Spannlänge", 
   assert.match(short.issues.map((x) => x.message).join(), /Spannlänge/);
   assert.equal(planBends([[0, 0, 0], [500, 0, 0], [900, 0, 0]], 50, 30).bends.length, 0, "gerade weiter = keine Biegung");
 });
+
+test("Regelkörper: Prüfung und exakte Volumen (MegaCAD-Abgleich M5)", async () => {
+  const { checkRegel, regelVolume, defaultRegelkoerper, REGEL_KINDS } = await import("../src/core/regelkoerper.js");
+  assert.equal(Object.keys(REGEL_KINDS).length, 6);
+  assert.throws(() => checkRegel("torus", { D: 20, d: 20 }), /kleiner als der Mittendurchmesser/);
+  assert.throws(() => checkRegel("zylinder", { D: 0, H: 10 }), /Durchmesser D muss > 0/);
+  assert.doesNotThrow(() => checkRegel("kegel", { D: 60, d: 0, H: 80 }));
+  assert.throws(() => checkRegel("kegel", { D: 60, d: 60, H: 80 }), /Zylinder wählen/);
+  assert.ok(Math.abs(regelVolume("kegel", { D: 60, d: 0, H: 80 }) - Math.PI * 900 * 80 / 3) < 1e-6);
+  assert.ok(Math.abs(regelVolume("pyramide", { L: 60, B: 60, H: 60 }) - 72000) < 1e-9);
+  assert.equal(defaultRegelkoerper("kugel").dims.D, "60");
+});
+
+test("Stahlprofile DSTV: Metergewicht gegen Tabellenwerte, Profil-ID, Schnelleingabe (MegaCAD-Abgleich M6)", async () => {
+  const { sectionGeometry, catalogToDims, profileId, kgPerMeter, CATALOG, STEEL_TABLES, steelSize } = await import("../src/core/sections.js");
+  const { resolveProfile } = await import("../src/core/profilesearch.js");
+  const num = (d) => Object.fromEntries(Object.entries(d).map(([k, v]) => [k, Number(v)]));
+  // Tabellen-Metergewichte (kg/m); UPN (Flanschneigung) und T (Kantenrundungen) vereinfacht ±3 %
+  const soll = [["ipe", "200", 22.4, 0.01], ["ipe", "100", 8.1, 0.015], ["hea", "200", 42.3, 0.01], ["heb", "200", 61.3, 0.01], ["heb", "300", 117, 0.01], ["upn", "100", 10.6, 0.03], ["upn", "200", 25.3, 0.03], ["t", "40", 2.96, 0.03]];
+  for (const [kind, size, kgm, tol] of soll) {
+    const d = num(catalogToDims(kind, size));
+    const g = sectionGeometry(kind, d);
+    const ist = kgPerMeter(g.area, 7.85);
+    assert.ok(Math.abs(ist - kgm) / kgm < tol, `${kind} ${size}: ${ist.toFixed(2)} kg/m statt ${kgm}`);
+    assert.equal(profileId(kind, d), `${kind === "t" ? "T" : kind.toUpperCase()} ${size}`);
+  }
+  for (const kind of Object.keys(STEEL_TABLES)) for (const size of CATALOG[kind]) assert.doesNotThrow(() => sectionGeometry(kind, num(catalogToDims(kind, size))), `${kind} ${size}`);
+  assert.equal(steelSize("ipe", { H: 210, B: 100, s: 5.6, t: 8.5, r: 12 }), null);
+  assert.equal(profileId("ipe", { H: 210, B: 100, s: 5.6, t: 8.5, r: 12 }), "IPE 210x100x5,6x8,5");
+  const hit = resolveProfile("ipe 200");
+  assert.equal(hit.kind, "ipe");
+  assert.equal(hit.id, "IPE 200");
+  assert.equal(resolveProfile("HEB 160").dims.H, "160");
+  assert.throws(() => sectionGeometry("ipe", { H: 50, B: 100, s: 5, t: 20, r: 10 }), /passen nicht/);
+});

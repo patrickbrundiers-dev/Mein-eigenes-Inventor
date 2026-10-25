@@ -39,7 +39,7 @@ jobs:
       - name: Geometrie-Tests
         id: kernel
         continue-on-error: true
-        run: set -o pipefail; node --stack-size=8000 --test --test-reporter=spec test/kernel.test.mjs test/project-kernel.test.mjs test/validation.test.mjs test/parametric.test.mjs 2>&1 | grep -v -E "^\*+|Statistics on Transfer|Transfer Mode|Transferring Shape|WorkSession|Step File Name|^\s*$" | tee ergebnis/kernel.txt
+        run: set -o pipefail; node --stack-size=8000 --test --test-reporter=spec test/kernel.test.mjs test/project-kernel.test.mjs test/validation.test.mjs test/parametric.test.mjs test/metall-kernel.test.mjs 2>&1 | grep -v -E "^\*+|Statistics on Transfer|Transfer Mode|Transferring Shape|WorkSession|Step File Name|^\s*$" | tee ergebnis/kernel.txt
       - name: Oberfläche bauen
         id: build
         continue-on-error: true
