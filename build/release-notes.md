@@ -3,7 +3,7 @@
 - **Generatoren** (3D-Modell → Generatoren, alles rechnet live neu, Stäbe stehen in der Zuschnittliste):
   - Geländer: Läufe über Eck, Pfosten automatisch verteilt, Handlauf mit Gehrung. Füllung aus Staketen, Querstäben, Blech, Glas, Kreuz (mit Ring) oder Rahmen mit Staketen. Einstellungen lassen sich als Vorlage speichern.
   - Tor: Einzel- oder Doppeltor, Oberkante gerade oder als Bogen.
-  - Treppe: geradläufig, L- oder U-Form mit Podest, mit Prüfung nach DIN 18065. Dazu eine Spindeltreppe.
+  - Treppe: geradläufig, L- oder U-Form mit Podest, mit Hinweisen zu ausgewählten Maßen nach DIN 18065 (Schrittmaß, Steigung, Auftritt). Das ersetzt keine Prüfung durch Fachleute. Dazu eine Spindeltreppe.
   - Balkon mit Belag, Stützen oder Kragarm, Wandanschluss und Geländer.
   - Stahlbau: Rahmenecke, Pfette und Windverband.
 - **Anschlüsse:**
