@@ -455,3 +455,4 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .field-bad input, .field-bad select { border-color: var(--err); }
 .field-warn input, .field-warn select { border-color: var(--warn); }
 .rb-small.icon-only { padding: 1px 4px; gap: 0; }
+.sk-guide { stroke: var(--laser); stroke-width: 1; stroke-dasharray: 4 3; opacity: .8; }

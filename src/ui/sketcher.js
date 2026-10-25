@@ -11,6 +11,7 @@ import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from ".
 import { inferLine, inferCircle } from "../core/autoconstraints.js";
 import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
 import { splineSamples, splineNearest } from "../core/spline.js";
+import { specialSnap, alignSnap } from "../core/sketchsnap.js";
 import { autoDimension } from "../core/autodim.js";
 import { cleanSketch, cleanReportText, CLEAN_KINDS, CLEAN_DEFAULTS } from "../core/sketchclean.js";
 import { splineCtrl } from "../core/sketch.js";
@@ -262,22 +263,11 @@ export class Sketcher {
     const hit = this.hitTest(sx, sy, { dims: false, exclude });
     const P = this.pts();
     if (hit?.kind === "point") { const p = P.get(hit.id); return { x: p.x, y: p.y, pointId: p.id, label: "Punkt" }; }
-    // Mittelpunkte von Linien
-    for (const e of this.sk.entities) {
-      if (e.type !== "line") continue;
-      const a = P.get(e.p1), b = P.get(e.p2);
-      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-      const [x, y] = this.S(mx, my);
-      if (Math.hypot(x - sx, y - sy) < this.snapR) return { x: mx, y: my, mid: e.id, label: "Mitte" };
-      if (e.type === "circle") continue;
-    }
-    for (const e of this.sk.entities) {
-      if (e.type !== "circle" && e.type !== "arc" && e.type !== "ellipse") continue;
-      const c = P.get(e.c);
-      const [x, y] = this.S(c.x, c.y);
-      if (Math.hypot(x - sx, y - sy) < this.snapR) return { x: c.x, y: c.y, pointId: c.id, label: "Mitte" };
-    }
     let [lx, ly] = this.L(sx, sy);
+    const tol = this.snapR / (this.M?.scale || 1);
+    // Schnittpunkt, Linienmitte, Mittelpunkt, Quadrant, Bogenmitte (sketchsnap.js)
+    const sp = specialSnap(this.sk, lx, ly, tol, { exclude });
+    if (sp) return sp;
     if (hit?.kind === "entity") {
       const e = this.sk.entities.find((q) => q.id === hit.id);
       if (e.type === "line") {
@@ -292,6 +282,12 @@ export class Sketcher {
       const r = e.type === "circle" ? e.r : Math.hypot(P.get(e.p1).x - c.x, P.get(e.p1).y - c.y);
       const ang = Math.atan2(ly - c.y, lx - c.x);
       return { x: c.x + r * Math.cos(ang), y: c.y + r * Math.sin(ang), on: e.id, onType: "circle", label: "Auf Kreis" };
+    }
+    // Ausrichtung waagrecht/senkrecht zu vorhandenen Punkten und zum Startpunkt (gestrichelte Hilfslinie)
+    if (this.prefs?.["skizze.ausrichten"] !== false) {
+      const st = this.state, refs = [st?.start, ...(st?.pts || [])].filter((q) => q && Number.isFinite(q.x));
+      const al = alignSnap(this.sk, lx, ly, tol, { refs });
+      if (al) return al;
     }
     if (this.gridSnap) {
       const step = this.gridFixed || gridStep(this.M.scale);
@@ -308,6 +304,7 @@ export class Sketcher {
     const id = uid("p");
     sk.points.push({ id, x: sn.x, y: sn.y });
     if (sn.on) cons.push({ id: uid("k"), type: sn.onType === "line" ? "pointOnLine" : "pointOnCircle", p: id, e: sn.on });
+    if (sn.on2) cons.push({ id: uid("k"), type: sn.onType2 === "line" ? "pointOnLine" : "pointOnCircle", p: id, e: sn.on2 });
     if (sn.mid) cons.push({ id: uid("k"), type: "midpoint", p: id, e: sn.mid });
     return id;
   }
@@ -1702,7 +1699,9 @@ export class Sketcher {
     const sn = this.snapInfo;
     if (sn) {
       const [x, y] = this.S(sn.x, sn.y);
-      if (sn.pointId || sn.mid || sn.on) g.append(svgEl("circle", { cx: x, cy: y, r: 6, class: "sk-snap" }));
+      for (const gl of sn.guides || []) { const [x1, y1] = this.S(gl.x1, gl.y1); g.append(svgEl("line", { x1, y1, x2: x, y2: y, class: "sk-guide" })); }
+      if (sn.on2) g.append(svgEl("path", { d: `M${x - 6} ${y - 6}L${x + 6} ${y + 6}M${x - 6} ${y + 6}L${x + 6} ${y - 6}`, class: "sk-snap" }));
+      else if (sn.pointId || sn.mid || sn.on) g.append(svgEl("circle", { cx: x, cy: y, r: 6, class: "sk-snap" }));
       if (sn.label) { const t = svgEl("text", { x: x + 9, y: y - 8, class: "sk-infer" }); t.textContent = sn.label; g.append(t); }
     }
     const st = this.state;

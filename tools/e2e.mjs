@@ -143,6 +143,17 @@ try {
   await shot("08-skizze-leer");
   const skFit = await evalApp(() => { const p = document.querySelector("#ribbon .rb-panel"); return { over: p.scrollWidth - p.clientWidth, groups: p.querySelectorAll(".rb-group").length, finish: !!p.querySelector(".rb-finish") }; });
   step("Skizzen-Menüband passt (Inventor-Aufbau)", skFit.over <= 0 && skFit.groups >= 7 && skFit.finish, JSON.stringify(skFit));
+  // Fangen wie Inventor: Schnittpunkt zweier Linien, Ausrichtung senkrecht zu einem Punkt (Hilfslinien nur kurz eingesetzt, danach entfernt)
+  const snaps = await evalApp(() => {
+    const s = window.__werkcad.sketcher, sk = s.sk, np = sk.points.length, ne = sk.entities.length;
+    sk.points.push({ id: "t1", x: -10, y: 10 }, { id: "t2", x: 30, y: 10 }, { id: "t3", x: 10, y: -10 }, { id: "t4", x: 10, y: 30 });
+    sk.entities.push({ id: "tl1", type: "line", p1: "t1", p2: "t2" }, { id: "tl2", type: "line", p1: "t3", p2: "t4" });
+    try {
+      const at = (x, y) => { const [sx, sy] = s.S(x, y); const r = s.snap(sx + 2, sy + 1); return { label: r.label, x: Math.round(r.x * 1e6) / 1e6, y: Math.round(r.y * 1e6) / 1e6 }; };
+      return { cross: at(10, 10), align: at(30, 22) };
+    } finally { sk.points.length = np; sk.entities.length = ne; }
+  });
+  step("Fangen: Schnittpunkt und Ausrichtung", snaps.cross.label === "Schnittpunkt" && snaps.cross.x === 10 && snaps.cross.y === 10 && /Senkrecht zu Punkt|Ausgerichtet/.test(snaps.align.label) && snaps.align.x === 30, JSON.stringify(snaps));
   await page.locator("#ribbon button", { hasText: "Rechteck" }).first().click();
   const box = await page.locator("#viewer canvas").boundingBox();
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
@@ -1208,7 +1219,7 @@ try {
     await page.locator(".set-search input").fill("fang");
     const fang = page.locator('.set-row[data-key="skizze.fangradius"] input');
     await fang.waitFor({ state: "visible" });
-    const rows = await page.locator(".set-row").count();
+    const rows = await page.locator(".set-row").count(); // Rasterfang, Fangradius, Ausrichtungslinien (»fängt«)
     // Wert setzen und »change« direkt auslösen: robust gegen Neuaufbau der Zeile zwischen Eingabe und Tab
     const setField = (v) => fang.evaluate((el, val) => { el.value = val; el.dispatchEvent(new Event("change", { bubbles: true })); }, v);
     await setField("99");
@@ -1229,7 +1240,7 @@ try {
     await page.locator(".dialog footer .btn", { hasText: "Schließen" }).click();
     const after = await evalApp(() => ({ fang: window.__werkcad.prefs.get("skizze.fangradius") }));
     const prj1 = await evalApp(() => JSON.stringify(window.__werkcad.project));
-    step("Einstellungscenter", rows === 2 && /Höchstens 30/.test(err) && kept === 7 && st.fang === 12 && st.snapR === 12 && st.stored.values?.["skizze.fangradius"] === 12 && st.edge === "ff0000" && after.fang === 7 && prj0 === prj1,
+    step("Einstellungscenter", rows === 3 && /Höchstens 30/.test(err) && kept === 7 && st.fang === 12 && st.snapR === 12 && st.stored.values?.["skizze.fangradius"] === 12 && st.edge === "ff0000" && after.fang === 7 && prj0 === prj1,
       JSON.stringify({ rows, err, kept, st, after, modelUnchanged: prj0 === prj1 }));
   }
 
