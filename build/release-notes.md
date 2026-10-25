@@ -1,11 +1,18 @@
-**Neu in 0.20.0**
+**Neu in 0.21.0**
 
-- **Blech:** Lasche, Konturlasche, Umschlag und Durchzug am Kantteil, in der neuen Menüband-Gruppe »Blech«.
-- **3D-Skizze** als Pfad für Sweeping.
-- **Abgeleitetes Bauteil** (gespiegelt oder skaliert) und »Komponente spiegeln«.
-- **Features** duplizieren, kopieren und einfügen und im Baum verschieben.
-- **Variantentabelle** mit schreibgeschützten Varianten.
-- **Regeln** ohne Programmierung.
-- **Makros** aufzeichnen und über die Befehlssuche starten.
-- **Oberfläche auf Englisch** umschaltbar.
-- **Gestell, Stecknasen:** neue Verbindung von Hand, per Menüband oder als T-Stoß-Automatik. Der stoßende Stab bekommt Zapfen, der durchlaufende passende Schlitze mit Spiel, einstellbar wie im Stecksystem.
+- **Messen wie in Inventor:** Achsabstand, Delta, Umfang, Punkt, Maß im 3D-Fenster und Zweiteinheit.
+- **Blech:** Blechregeln sowie Ecke schließen, Stanzwerkzeug, Konturwalzen und Trennfuge.
+- **Baugruppe:**
+  - »Abhängigkeit platzieren« mit allen Arten und gekoppelte Bewegung.
+  - Stecksystem auch zwischen zwei Bauteilen einer Baugruppe.
+  - Schraubenverbindung mit Klemmlänge, Normlänge, Scheiben, Mutter und Bohrungen.
+  - Kontaktsatz: Beim Bewegen halten Teile an, wo sie anstoßen.
+  - Bewegung als Video (MP4 oder WebM).
+- **Schweißbaugruppe:** Vorbereitung, Kehlnähte als Körper und Nachbearbeitung.
+- **iFeature-Bibliothek:** iFeatures erstellen, einfügen und als .pbif austauschen.
+- **Analyse:** Bereichseigenschaften der Skizze und Entformungsanalyse.
+- **Konstruktions-Assistent:** Welle, Stirnrad, Rillenkugellager DIN 625 und Druckfeder.
+- **IGES-Export** unter Export → IGES.
+- **Gestell:**
+  - Kopf- und Fußplatten am Stabende (Dicke, Überstand, 2 oder 4 Bohrungen) als eigene Einzelteile.
+  - Die Gestell-Info zeigt die Masse je Stab, die Gesamtmasse und den Schwerpunkt und prüft auf Knopfdruck Überschneidungen.
