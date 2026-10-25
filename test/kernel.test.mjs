@@ -878,3 +878,122 @@ test("Biegerohr über Polygonzug: Volumen = Fläche × Abwicklung, Biegeliste (M
   const bad = await K.buildPart(part([{ ...f, section: "rund", dims: { D: "20" }, radius: "700" }]));
   assert.match(bad.status.br.error, /zu kurz für den Biegeradius/);
 });
+
+// ---------- Konturen über die Rundung, 3D je Bauteil, Mindest-Restwand (Patrick, 25.10.2026) ----------
+test("Langloch 30 breit an QR 40x40x3: über die Eckrundung, dort senkrecht zur Mantelfläche", async () => {
+  const qr = (cuts, extra = {}) => part([{ id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "1000", start: ["0", "0", "0"], axis: "X", cuts, ...extra }]);
+  const base = await K.buildPart(qr([]));
+  const V0 = vol(base);
+  const box = (c, s) => R.makeBaseBox(s[0], s[1], s[2]).translate([c[0], c[1], c[2] - s[2] / 2]);
+  const probe = (res, c, s) => R.measureVolume(res.bodies[0].shape.intersect(box(c, s)));
+  // Fläche 30·30 + π·15² auf der Abwicklung; davon 75,2 mm² (|y| > 14) auf den Eckrundungen r 6, dort radial:
+  // Wand je mm Bogen außen (6² − 3²)/(2·6) = 2,25 statt 3
+  const A = 900 + Math.PI * 225, seg = 225 * Math.acos(14 / 15) - 14 * Math.sqrt(29), Ac = 2 * (30 + seg);
+  const cut = { kind: "langloch", x: "500", side: "oben", q: "0", pattern: "1", l: "60", b: "30" };
+  for (const mode of ["2D", "3D"]) {
+    const res = await K.buildPart(qr([cut], { cutMode: mode }));
+    okAll(res);
+    assert.equal(res.status.pr.warning, undefined, mode);
+    near(V0 - vol(res), 3 * (A - Ac) + 2.25 * Ac, 1, `Langloch ${mode}`);
+    // auf beiden Eckrundungen oben ist die Wand offen (vorher fehlte das Langloch ganz)
+    // (radial: an der Außenseite der Rundung; weiter innen liegt derselbe Querwert schon außerhalb der Kontur)
+    for (const y of [-14.5, 14.5]) assert.ok(probe(res, [500, y, 19.4], [10, 0.4, 0.6]) < 0.01 * probe(base, [500, y, 19.4], [10, 0.4, 0.6]), `${mode} Rundung y ${y}`);
+    // daneben bleibt sie stehen
+    assert.ok(probe(res, [500, 0, -18.5], [10, 4, 1]) > 39, "unten zu");
+  }
+  // durchgehend: oben und unten gleich
+  const both = await K.buildPart(qr([{ ...cut, through: true }]));
+  okAll(both);
+  near(V0 - vol(both), 2 * (3 * (A - Ac) + 2.25 * Ac), 2, "durchgehend");
+  // Versatz nach vorne: nur die vordere Rundung
+  const off = await K.buildPart(qr([{ ...cut, l: "40", b: "20", q: "6" }]));
+  okAll(off);
+  assert.ok(probe(off, [500, -14.5, 19.4], [10, 0.4, 0.6]) < 0.01, "vorne offen");
+  assert.ok(probe(off, [500, 14.5, 19.4], [10, 0.4, 0.6]) > 2, "hinten zu");
+});
+
+test("Rundrohr: 2D radial auf der Abwicklung, 3D parallel bis zur Winkelkorrektur", async () => {
+  const rr = (cuts, extra = {}) => part([{ id: "pr", type: "profile", section: "rohr", dims: { D: "42.4", t: "2.6" }, length: "500", start: ["0", "0", "0"], axis: "X", cuts, ...extra }]);
+  const V0 = vol(await K.buildPart(rr([])));
+  const ll = (b, extra = {}) => ({ kind: "langloch", x: "250", angle: "0", pattern: "1", l: "60", b, ...extra });
+  // 2D: Fläche auf der Abwicklung × Wand radial (R² − Ri²)/(2R)
+  const k = (21.2 ** 2 - 18.6 ** 2) / 42.4;
+  let res = await K.buildPart(rr([ll("20")], { cutMode: "2D" }));
+  okAll(res);
+  near(V0 - vol(res), (40 * 20 + Math.PI * 100) * k, 1, "2D b 20");
+  res = await K.buildPart(rr([ll("20", { angle: "90" })], { cutMode: "2D" }));
+  near(V0 - vol(res), (40 * 20 + Math.PI * 100) * k, 1, "2D b 20 vorne");
+  res = await K.buildPart(rr([ll("38", { through: true, angle: "30" })], { cutMode: "2D" }));
+  okAll(res);
+  near(V0 - vol(res), 2 * (22 * 38 + Math.PI * 361) * k, 3, "2D b 38 durchgehend");
+  // 3D: innerhalb ±45° wie bisher (Draufsicht, parallele Wände), darüber begrenzt und gemeldet
+  const old = await K.buildPart(rr([ll("20")]));
+  okAll(old);
+  assert.equal(old.status.pr.warning, undefined);
+  res = await K.buildPart(rr([ll("38")]));
+  assert.ok(res.status.pr.ok);
+  assert.match(res.status.pr.warning, /Kontur 1: braucht in 3D 63,67° Kopfschwenk, Winkelkorrektur auf ±45°/);
+  const dv = V0 - vol(res);
+  assert.ok(dv > (22 * 38 + Math.PI * 361) * k && dv < 1.4 * (22 * 38 + Math.PI * 361) * k, `3D b 38: ${dv}`);
+  // Bauteil gibt 2D vor: kein Kopfschwenk mehr nötig
+  const p2 = rr([ll("38")]);
+  p2.cutMode = "2D";
+  res = await K.buildPart(p2);
+  okAll(res);
+  assert.equal(res.status.pr.warning, undefined);
+  near(V0 - vol(res), (22 * 38 + Math.PI * 361) * k, 1.5, "Bauteil 2D");
+});
+
+test("Schnitt 2D/3D am Bauteil gilt für alle Profile", async () => {
+  const f = { id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "500", start: ["0", "0", "0"], axis: "X", miterStart: "45", miterEnd: "0", cutMode: "2D" };
+  let res = await K.buildPart(part([f]));
+  okAll(res);
+  assert.equal(res.bodies[0].meta.endCuts.A, "2D");
+  const p = part([f]);
+  p.cutMode = "3D";
+  res = await K.buildPart(p);
+  okAll(res);
+  assert.equal(res.bodies[0].meta.endCuts.A, "3D");
+});
+
+test("Mindest-Restwand: Tiefe = Wandstärke lässt 0,1 mm stehen", async () => {
+  const plate = (cutFeature, extra = {}) => ({ ...part([
+    rectSketchFeature("s1", "XY", 0, 0, 0, "100", "50"),
+    { id: "e1", type: "extrude", sketch: "s1", distance: "10", op: "join" },
+    ...cutFeature,
+  ]), ...extra });
+  const V0 = 100 * 50 * 10;
+  // Tasche 20 × 10 von oben, 10 tief = ganze Platte
+  const pocket = [rectSketchFeature("s2", "XY", "10", 40, 20, "20", "10"), { id: "c1", type: "extrude", sketch: "s2", distance: "10", mode: "reverse", op: "cut" }];
+  let res = await K.buildPart(plate(pocket));
+  okAll(res);
+  near(V0 - vol(res), 200 * 9.9, 0.01, "Tasche");
+  assert.match(res.status.c1.info, /Restwand 0,1 mm stehen gelassen|Restwand 0.1 mm stehen gelassen/);
+  // 9,95 tief: auch 0,1 mm
+  res = await K.buildPart(plate([pocket[0], { ...pocket[1], distance: "9.95" }]));
+  near(V0 - vol(res), 200 * 9.9, 0.01, "Tasche 9,95");
+  // 9,5 tief und durch alles bleiben, wie sie sind
+  res = await K.buildPart(plate([pocket[0], { ...pocket[1], distance: "9.5" }]));
+  near(V0 - vol(res), 200 * 9.5, 0.01, "Tasche 9,5");
+  res = await K.buildPart(plate([pocket[0], { ...pocket[1], mode: "through" }]));
+  near(V0 - vol(res), 200 * 10, 0.01, "durch alles");
+  // am Bauteil abgeschaltet: geht durch
+  res = await K.buildPart(plate(pocket, { restwand: false }));
+  near(V0 - vol(res), 200 * 10, 0.01, "abgeschaltet");
+  // Bohrung Ø10 mit Tiefe 10 ohne Spitze
+  const hole = [pointSketch("s3", "XY", "10", [[50, 25]]), { id: "h1", type: "hole", sketch: "s3", diameter: "10", extent: "depth", depth: "10", tip: false, direction: "reverse" }];
+  res = await K.buildPart(plate(hole));
+  okAll(res);
+  near(V0 - vol(res), Math.PI * 25 * 9.9, 0.05, "Bohrung");
+  assert.match(res.status.h1.info, /1× Restwand/);
+  // Wandstärke am Rohr: Tasche von oben 3 tief in QR 40x40x3 (Skizze auf der Oberseite)
+  const tube = part([
+    { id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "200", start: ["0", "0", "0"], axis: "X" },
+    rectSketchFeature("s4", "XY", "20", 90, -5, "20", "10"),
+    { id: "c2", type: "extrude", sketch: "s4", distance: "3", mode: "reverse", op: "cut" },
+  ]);
+  const T0 = vol(await K.buildPart(part([tube.features[0]])));
+  res = await K.buildPart(tube);
+  okAll(res);
+  near(T0 - vol(res), 200 * 2.9, 0.01, "Rohrwand");
+});

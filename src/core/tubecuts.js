@@ -21,6 +21,7 @@ export const SIDES = [["oben", 0], ["vorne", 90], ["unten", 180], ["hinten", 270
 
 const fmt = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
 const DEG = Math.PI / 180;
+const WRAP_MAX = 80 * DEG; // Konturen höchstens 80° um eine Rundung
 export const TILT_QUICK = [-45, -30, 0, 30, 45]; // Schnellwahl der Neigung wie im Rohr-Editor
 
 /** Vorgabe für eine neue Kontur */
@@ -171,14 +172,32 @@ export function planTubeCuts(cuts, prof, ev) {
       }
       const side = !round && (it.angle === 90 || it.angle === 270); // vorne/hinten: Fläche über die Höhe
       it.halfN = round ? prof.W / 2 : (side ? prof.W : prof.H) / 2;
-      // halbe Breite der Fläche quer (Rechteck: ebener Teil ohne Eckradien; Rundrohr: halber Umfang als Grenze)
+      // halbe Breite der Fläche quer (Rechteck: ebener Teil ohne Eckradien; Rundrohr: Radius)
       it.faceHalf = round ? prof.W / 2 : (side ? prof.H : prof.W) / 2 - (prof.r || 0);
       if (!(it.l > 0) || !(it.b > 0)) return err(kind === "bohrung" ? "Durchmesser muss > 0 sein" : "Länge und Breite müssen > 0 sein");
       if (kind === "langloch" && !(it.l > it.b)) return err("Länge muss größer als die Breite sein");
       if ((kind === "rechteck" || kind === "ausklinkung") && !(it.r >= 0 && it.r <= Math.min(it.l, it.b) / 2 + 1e-9))
         return err(`Eckradius 0 bis ${fmt(Math.min(it.l, it.b) / 2)} mm`);
-      if (Math.abs(it.q) + it.b / 2 > it.faceHalf + 1e-6)
-        return err(round ? `breiter als das Rohr (höchstens ${fmt(prof.W)} mm)` : `ragt über die ebene Fläche (|Versatz| + b/2 höchstens ${fmt(it.faceHalf)} mm)`);
+      // Über die Eckrundung bzw. weit um das Rundrohr (Patrick, 25.10.2026): 2D senkrecht zur Mantelfläche, Maße auf
+      // der Abwicklung; 3D am Rundrohr parallele Wände (Maße in der Draufsicht), höchstens bis zur Winkelkorrektur.
+      // Am Rechteckrohr liegt der Teil auf der Eckrundung immer senkrecht zur Mantelfläche. Grenze 80° um die Rundung.
+      it.mode = prof.mode === "2D" ? "2D" : "3D";
+      const ext = Math.abs(it.q) + it.b / 2, rr = prof.r || 0, lim = Math.min(prof.swivel ?? 45, 89), R0 = prof.W / 2;
+      if (round && c.d3 && kind === "bohrung") {
+        if (ext > R0 + 1e-6) return err(`breiter als das Rohr (höchstens ${fmt(prof.W)} mm)`);
+      } else if (round && it.mode === "2D") {
+        if (ext > R0 * WRAP_MAX + 1e-6) return err(`zu breit für das Rohr (|Versatz| + b/2 auf der Abwicklung höchstens ${fmt(R0 * WRAP_MAX)} mm)`);
+        it.wrap = true;
+      } else if (round) {
+        if (ext > R0 * Math.sin(WRAP_MAX) + 1e-6) return err(`zu breit für das Rohr (|Versatz| + b/2 höchstens ${fmt(R0 * Math.sin(WRAP_MAX))} mm)`);
+        it.need = Math.asin(Math.min(1, ext / R0)) / DEG; // Kopfschwenk am Rand der Kontur für parallele Wände
+        if (it.need > lim + 1e-9) { it.wrap = true; it.clampedFrom = it.need; }
+      } else if (ext > it.faceHalf + 1e-6) {
+        if ((c.d3 && kind === "bohrung") || !(rr > 0)) return err(`ragt über die ebene Fläche (|Versatz| + b/2 höchstens ${fmt(it.faceHalf)} mm)`);
+        if (rr < prof.t + 0.6 - 1e-9) return err(`über die Eckrundung nur ab Eckradius Wand + 0,6 mm (ebene Fläche: |Versatz| + b/2 höchstens ${fmt(it.faceHalf)} mm)`);
+        if (ext > it.faceHalf + rr * WRAP_MAX + 1e-6) return err(`ragt zu weit über die Eckrundung (|Versatz| + b/2 auf der Abwicklung höchstens ${fmt(it.faceHalf + rr * WRAP_MAX)} mm)`);
+        it.wrap = true;
+      }
       if (atEnd(kind)) {
         if (it.l >= prof.L - 1e-6) return err("länger als das Teil");
         it.xs = [it.end === "A" ? 0 : prof.L];
@@ -190,7 +209,8 @@ export function planTubeCuts(cuts, prof, ev) {
         if (lo < -1e-6 || hi > prof.L + 1e-6) return err(`liegt nicht ganz auf dem Teil (${fmt(lo)} bis ${fmt(hi)} mm, Teil 0 bis ${fmt(prof.L)} mm)`);
         if (count > 1 && spacing < it.l - 1e-6) return err("Konturen im Muster überlappen (Abstand kleiner als die Länge)");
       }
-      if (it.clampedFrom) issues.push({ index, warning: true, message: `${name}: Bohrung 3D braucht ${fmt(it.clampedFrom)}° Kopfschwenk, Winkelkorrektur auf ±${fmt(Math.min(prof.swivel ?? 45, 89))}° – nicht maßhaltig` });
+      if (it.clampedFrom && it.wrap) issues.push({ index, warning: true, message: `${name}: braucht in 3D ${fmt(it.clampedFrom)}° Kopfschwenk, Winkelkorrektur auf ±${fmt(lim)}° – am Rand nicht parallel` });
+      else if (it.clampedFrom) issues.push({ index, warning: true, message: `${name}: Bohrung 3D braucht ${fmt(it.clampedFrom)}° Kopfschwenk, Winkelkorrektur auf ±${fmt(Math.min(prof.swivel ?? 45, 89))}° – nicht maßhaltig` });
       items.push(it);
     } catch (e) {
       err(e.message.replace(`${name} `, ""));
@@ -211,6 +231,24 @@ export function tubeCutLabel(it) {
   const side = SIDES.find(([, a]) => a === it.angle)?.[0] || `${fmt(it.angle)}°`;
   const where = atEnd(it.kind) ? `Ende ${it.end}` : it.xs.length > 1 ? `${it.xs.length}× ab ${fmt(it.xs[0])}` : `bei ${fmt(it.xs[0])}`;
   return `${TUBE_CUT_KINDS[it.kind].label} ${m}${it.tilt ? ` 3D ${fmt(it.tilt)}°` : ""} ${side}${it.through ? " durchgehend" : ""}, ${where}`;
+}
+
+/**
+ * Umriss einer Kontur als dichter Linienzug um x (x längs, y quer inkl. Versatz), für Abbildungen, die Bögen nicht
+ * erhalten (3D am Rundrohr über der Winkelkorrektur). ext = Überstand offener Konturen über das Ende.
+ */
+export function contourPolyline(it, x = 0, { ext = 0, step = 0.5 } = {}) {
+  let pts;
+  if (it.kind === "polygon") pts = polygonPoints(it.pts, 24).map(([px, py]) => [x + px, py]);
+  else if (atEnd(it.kind)) pts = outlinePts(x + (it.end === "A" ? (it.l - ext) / 2 : (ext - it.l) / 2), 0, it.l + ext, it.b, it.r || 0, 16);
+  else pts = outlinePts(x, 0, it.l, it.b, it.r || 0, 16);
+  pts = pts.map(([px, py]) => [px, it.q + py]).filter((p, i, all) => { const q = all[(i + all.length - 1) % all.length]; return Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-7; });
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length], n = Math.max(1, Math.ceil(Math.abs(b[1] - a[1]) / step));
+    for (let k = 0; k < n; k++) out.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+  }
+  return out;
 }
 
 // ---------- Prüfregeln Bohrung, Steg, Rand (dfm.py der Rohrlaser-Kalkulation) ----------

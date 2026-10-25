@@ -14,7 +14,7 @@ import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern, parsePolygon, atEnd } from "../core/tubecuts.js";
-import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
+import { END_CUT_SECTIONS, featureCutSettings, roundTube3D, SWIVEL_DEFAULT } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
@@ -318,6 +318,7 @@ export class Props {
       this.field("Farbe", h("div", { style: { display: "flex", gap: "6px" } },
         h("input", { type: "color", value: app.partColor(part), onchange: (e) => app.edit("Farbe", () => { part.color = e.target.value; }) }),
         part.color ? h("button", { class: "btn", onclick: () => app.edit("Farbe", () => { part.color = null; }) }, "Wie Werkstoff") : null))));
+    out.push(this.partCutSection(part));
     if (r) {
       const vol = r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0);
       const dens = materialOf(part.material).density;
@@ -561,7 +562,7 @@ export class Props {
           E("Ende", "miterEnd", { unit: "°" }),
           this.seg("Schräg über", [["v", "Höhe"], ["u", "Breite"]], f.miterAxis || "v", (v) => this.set(f, "miterAxis", v, "Gehrungsachse")),
           this.check("Enden parallel (statt trapezförmig)", f.miterSame, (v) => this.set(f, "miterSame", v, "Gehrung")),
-          END_CUT_SECTIONS.includes(f.section || "vierkant") ? this.cutModeFields(f, "beide Enden dieses Profils") : null,
+          END_CUT_SECTIONS.includes(f.section || "vierkant") ? this.cutModeFields(part, f, "beide Enden und die Konturen dieses Profils") : null,
           h("p", { class: "hint" }, "Die Länge gilt auf der Mittellinie; die Zuschnittlänge (längste Kante) steht in der Zuschnittliste.")));
         out.push(this.tubeCutsEditor(f));
         break;
@@ -573,7 +574,7 @@ export class Props {
           E("Drehung", "rotation", { unit: "°" }),
           h("p", { class: "hint" }, "Jede Linie der Skizze wird zum Profil. Linien, die auf anderen enden, werden ausgeklinkt (T-Stoß).")));
         out.push(this.sectionEditor(f));
-        if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(f, "alle Gehrungen dieses Rahmens")));
+        if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(part, f, "alle Gehrungen dieses Rahmens")));
         break;
       case "profilzug": {
         const rows = this.pathPointsEditor(f, true);
@@ -586,7 +587,7 @@ export class Props {
           E("Drehung aller Profile", "rotation", { unit: "°" }),
           h("p", { class: "hint" }, "Eckpunkte im Raum eingeben (absolut oder als Δ zum vorigen Punkt). Jedes Segment wird ein Profil; an den Ecken auf der Winkelhalbierenden gegehrt – auch wenn die Ecke in zwei Ebenen abknickt. Läuft ein Segment parallel zur gewählten Höhenrichtung, zeigt die Höhe nach Y (bzw. Z).")));
         out.push(this.sectionEditor(f));
-        if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(f, "alle Gehrungen dieses Profilzugs")));
+        if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(part, f, "alle Gehrungen dieses Profilzugs")));
         break;
       }
       case "regelkoerper": {
@@ -1023,7 +1024,7 @@ export class Props {
     const groups = group ? [group] : Object.keys(LIB_GROUPS);
     const hit = d && groups.map((g) => findEntry(g, kind, d)).find(Boolean);
     const g = hit?.group || groups.find((x) => LIB_GROUPS[x].kinds[kind]) || null;
-    const setEntry = (e, label) => e && this.set(f, (x) => { x.section = e.kind; x.dims = { ...e.dims }; }, label);
+    const setEntry = (e, label) => e && this.set(f, (x) => { x.section = e.kind; x.dims = { ...e.dims }; roundTube3D(x); }, label);
     const out = [];
     if (isPart) out.push(this.materialSelect(part));
     const offered = groupKinds(group, kinds);
@@ -1031,7 +1032,7 @@ export class Props {
     out.push(this.select("Profilart", kindOpts, kind, (v) => {
       const e = groups.map((x) => defaultEntry(x, v)).find(Boolean);
       if (e) setEntry(e, "Profilart");
-      else this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart");
+      else this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); roundTube3D(x); }, "Profilart");
     }));
     if (!g) {
       out.push(h("p", { class: "hint" }, `${SECTION_KINDS[kind].label} gibt es für ${lib ? lib.label : "diesen Werkstoff"} nicht in der Normliste – Maße unten frei eingeben.`));
@@ -1091,7 +1092,7 @@ export class Props {
     const apply = (hit) => {
       list.replaceChildren();
       if (hit.kind === f.section && Object.keys(hit.dims).every((k) => String(f.dims?.[k]) === String(hit.dims[k]))) { inp.value = current; return; }
-      this.set(f, (x) => { x.section = hit.kind; x.dims = { ...hit.dims }; }, "Profil " + hit.id);
+      this.set(f, (x) => { x.section = hit.kind; x.dims = { ...hit.dims }; roundTube3D(x); }, "Profil " + hit.id);
     };
     const commit = () => {
       if (!inp.value.trim() || inp.value === current) { inp.classList.remove("bad"); list.replaceChildren(); return; }
@@ -1165,9 +1166,20 @@ export class Props {
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
     return this.field(TUBE_CUT_FIELDS.punkte, inp);
   }
+  /** Schnitt 2D/3D für alle Profile des Bauteils und Mindest-Restwand (Patrick, 25.10.2026) */
+  partCutSection(part) {
+    const app = this.app, mode = part.cutMode === "2D" || part.cutMode === "3D" ? part.cutMode : "";
+    return this.section("Schnitt 2D / 3D",
+      this.seg("Für alle Profile", [["", "je Profil"], ["2D", "2D"], ["3D", "3D"]], mode, (v) => app.edit("Schnitt 2D/3D", () => { if (v) part.cutMode = v; else delete part.cutMode; })),
+      mode ? this.expr("Winkelkorrektur ±", part.swivel ?? String(SWIVEL_DEFAULT), (v) => app.edit("Winkelkorrektur", () => { part.swivel = v; }), { unit: "°", allowNeg: false }) : null,
+      h("p", { class: "hint" }, "3D: alle Schnitte (Gehrungen, Konturen) mit geschwenktem Kopf, höchstens bis zur Winkelkorrektur (Vorgabe ±45°); was mehr braucht, wird auf die Grenze gesetzt und gemeldet. 2D: Strahl immer senkrecht zur Mantelfläche. Konturen über eine Eckrundung werden dort immer senkrecht zur Mantelfläche geschnitten. »je Profil« = Einstellung am einzelnen Profil, Rundrohre beginnen in 3D."),
+      this.check("Mindest-Restwand 0,1 mm", part.restwand !== false, (v) => app.edit("Restwand", () => { part.restwand = v; })),
+      h("p", { class: "hint" }, "Endet eine Extrusion (Schnitt), eine Bohrung mit Tiefe oder eine Skizzenkontur genau auf der Rückseite der Wand (Tiefe = Wandstärke) oder weniger als 0,1 mm davor, bleiben 0,1 mm stehen. Durchgehend schneiden: »Durch alles«."));
+  }
   /** 2D/3D und Winkelkorrektur eines Profils bzw. Rahmens (gilt für alle seine Schnitte) */
-  cutModeFields(f, scope) {
-    const cur = featureCutSettings(f);
+  cutModeFields(part, f, scope) {
+    const cur = featureCutSettings(f, part);
+    if (cur.fromPart) return [h("p", { class: "hint" }, `Schnitt ${cur.mode}${cur.mode === "3D" ? `, Winkelkorrektur ±${cur.swivel}°` : ""} – für alle Profile am Bauteil eingestellt (Bauteil anklicken → Schnitt 2D / 3D).`)];
     return [
       this.seg("Schnitt", [["2D", "2D"], ["3D", "3D"]], cur.mode, (v) => this.set(f, (x) => { x.cutMode = v; delete x.endCuts; }, "Schnitt 2D/3D")),
       this.expr("Winkelkorrektur ±", cur.swivel, (v) => this.set(f, "swivel", v, "Winkelkorrektur"), { unit: "°", allowNeg: false }),
