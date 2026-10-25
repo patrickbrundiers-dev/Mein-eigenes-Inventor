@@ -12,6 +12,7 @@ import { StartScreen } from "./start.js";
 import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
+import { entityFree } from "../core/solver.js";
 import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./dom.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { newSketch } from "../core/sketch.js";
@@ -21,6 +22,7 @@ import { resolveParams, evaluate } from "../core/expr.js";
 import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
 
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
+const freeCount = (sk, free) => sk.entities.filter((e) => !e.origin && !e.construction && entityFree(e, free)).length;
 
 export class App {
   constructor() {
@@ -385,6 +387,7 @@ export class App {
     const errs = prof?.errors || [];
     this.hud.replaceChildren(h("div", { class: "hud-card" },
       dof === 0 ? h("b", { style: { color: "var(--ok)" } }, "Vollständig bestimmt") : h("span", {}, "Freiheitsgrade: ", h("b", {}, Number.isFinite(dof) ? dof : "–")),
+      dof > 0 && r?.ok && r.free ? h("span", { class: "hud-free" }, `  ·  ${freeCount(this.sketcher.sk, r.free)} Element(e) noch frei`) : null,
       h("span", {}, "  ·  "),
       h("span", {}, regions ? `${regions} geschlossene Kontur${regions > 1 ? "en" : ""}` : "keine geschlossene Kontur"),
       errs.length ? h("div", { style: { color: "var(--err)" } }, errs[0]) : null,

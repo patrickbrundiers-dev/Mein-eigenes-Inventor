@@ -1,6 +1,6 @@
 // 2D-Skizzierer über der 3D-Ansicht (SVG-Overlay, eigene Trefferprüfung im Bildschirmraum)
 import { svgEl, h, toast, fmtNum, choiceDialog, modal } from "./dom.js";
-import { solveSketch, checkNewConstraint, measureConstraint, DIMENSION_TYPES } from "../core/solver.js";
+import { solveSketch, checkNewConstraint, measureConstraint, DIMENSION_TYPES, entityFree } from "../core/solver.js";
 import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../core/sketch.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, v3 } from "../core/geom.js";
@@ -157,7 +157,7 @@ export class Sketcher {
   solve(extra = []) {
     const sk = this.sk;
     if (!sk) return null;
-    const r = solveSketch(sk, this.scope(), { extra });
+    const r = solveSketch(sk, this.scope(), { extra, free: this.prefs?.["skizze.bestimmtheit"] !== false });
     this.lastSolve = r;
     this.profiles = extractProfiles(sk);
     this.app.updateSketchStatus(r, this.profiles);
@@ -1152,6 +1152,8 @@ export class Sketcher {
     const P = this.pts();
     const S = (x, y) => this.S(x, y);
     const full = this.lastSolve && this.lastSolve.dof === 0;
+    // Bestimmtheit je Element (nur nach erfolgreichem Lösen aussagekräftig)
+    const free = this.lastSolve?.ok ? this.lastSolve.free : null;
     const isSel = (k) => this.sel.has(k);
     const hov = this.hover;
     const pend = new Set((this.pendingPick || []).map((x) => x.id).concat((this.state?.picks || []).map((x) => x.id)));
@@ -1178,6 +1180,7 @@ export class Sketcher {
       const cls = ["sk-line"];
       if (e.construction) cls.push("constr");
       else if (full) cls.push("full");
+      else if (free) cls.push(entityFree(e, free) ? "free" : "full");
       if (isSel(key) || pend.has(e.id)) cls.push("sel");
       else if (hov?.kind === "entity" && hov.id === e.id) cls.push("hover");
       let d = null;
@@ -1209,6 +1212,7 @@ export class Sketcher {
       if (pe?.origin) { g.append(svgEl("circle", { cx: x, cy: y, r: 4, class: "sk-origin" })); continue; }
       const cls = ["sk-pt"];
       if (fixed.has(p.id)) cls.push("fixed");
+      else if (free?.points.has(p.id)) cls.push("free");
       if (openPts.has(p.id)) cls.push("open");
       if (isSel("p:" + p.id) || pend.has(p.id)) cls.push("sel");
       else if (hov?.kind === "point" && hov.id === p.id) cls.push("hover");

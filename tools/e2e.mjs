@@ -1059,6 +1059,25 @@ try {
       JSON.stringify({ shown, dir, stored, polyDefault }));
   }
 
+  // Skizze: Bestimmtheit farbig (freie Elemente hellblau, bestimmte dunkel)
+  {
+    await evalApp(() => window.__werkcad.newPart("Bestimmt"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    await evalApp(() => window.__werkcad.sketcher.commit("Testgeometrie", (sk) => {
+      sk.points.push({ id: "ba", x: 0, y: 0 }, { id: "bb", x: 40, y: 0 }, { id: "bz", x: 0, y: 40 }, { id: "by", x: 30, y: 50 });
+      sk.entities.push({ id: "bl", type: "line", p1: "ba", p2: "bb" }, { id: "bf", type: "line", p1: "bz", p2: "by" });
+      sk.constraints.push({ id: "bfx", type: "fix", p: "ba", x: 0, y: 0 }, { id: "bh", type: "horizontal", e: "bl" }, { id: "bw", type: "length", e: "bl", value: "40" });
+    }));
+    await page.waitForTimeout(200);
+    const cls = await evalApp(() => ({ free: document.querySelectorAll("#overlay .sk-line.free").length, full: document.querySelectorAll("#overlay .sk-line.full").length, hud: document.querySelector(".hud-free")?.textContent || "" }));
+    await page.keyboard.press("Escape");
+    step("Skizze: Bestimmtheit farbig", cls.free === 1 && cls.full >= 1 && /1 Element/.test(cls.hud), JSON.stringify(cls));
+  }
+
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));

@@ -17,7 +17,7 @@ export const SETTINGS_VERSION = 1;
 export const CATEGORIES = [
   { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standardordner", "Standard-Einheit (intern immer mm/Grad)"] },
   { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["gefüllte Schnittflächen", "Beleuchtung", "gespeicherte Ansichten"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
-  { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["Farben für Bestimmtheitszustand", "automatische Bemaßung", "Standardebene"] },
+  { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["automatische Bemaßung", "Standardebene"] },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", planned: ["Menüband selbst anordnen", "letzte Werkzeugparameter über die Sitzung hinaus merken"], note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
   { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Farbschema hell/dunkel", "Tooltip-Verzögerung"] },
   { id: "dokument", label: "Dokument und Modell", status: "geplant", planned: ["Standardvorlagen", "Namensregeln", "Standardmaterial", "Modelltoleranz"], note: "Dokumentwerte werden später in der Projektdatei gespeichert, nicht hier." },
@@ -65,6 +65,7 @@ export const SETTINGS = [
   { key: "skizze.rasterweite", cat: "skizze", label: "Rasterweite", unit: "mm", type: "number", default: 0, min: 0, max: 1000, help: "0 = automatisch passend zum Zoom." },
   { key: "skizze.fangradius", cat: "skizze", label: "Fangradius", unit: "px", type: "int", default: 7, min: 3, max: 30, help: "Abstand, ab dem Punkte und Mittelpunkte gefangen werden." },
   { key: "skizze.symbole", cat: "skizze", label: "Symbole der Abhängigkeiten anzeigen", type: "bool", default: true },
+  { key: "skizze.bestimmtheit", cat: "skizze", label: "Bestimmtheit farbig zeigen", type: "bool", default: true, help: "Noch bewegliche Elemente hellblau, vollständig bestimmte dunkel, Widersprüche rot." },
   { key: "skizze.auto.hv", cat: "skizze", label: "Automatisch: horizontal/vertikal", type: "bool", default: true, help: "Beim Zeichnen gesetzte Bedingungen. Strg gedrückt halten unterdrückt alle für diesen Klick." },
   { key: "skizze.auto.parallel", cat: "skizze", label: "Automatisch: parallel/senkrecht", type: "bool", default: true },
   { key: "skizze.auto.tangential", cat: "skizze", label: "Automatisch: tangential am Bogenende", type: "bool", default: true },
