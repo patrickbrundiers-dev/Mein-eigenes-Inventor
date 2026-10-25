@@ -3,7 +3,7 @@ import { h, icon, contextMenu, promptDialog } from "./dom.js";
 import { FEATURE_NAMES } from "./app.js";
 import { sketchRefs } from "../core/featurerefs.js";
 
-const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil" };
+const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft" };
 
 export class Tree {
   constructor(app) {
@@ -140,6 +140,7 @@ export class Tree {
       })));
     }
     for (const c of asm.components) {
+      if (c.pat) continue; // Musterkopien stehen unter ihrem Muster
       const p = app.doc(c.part);
       const sel = app.sel?.type === "component" && app.sel.id === c.id;
       const sub = p?.kind === "assembly";
@@ -161,6 +162,16 @@ export class Tree {
       if (sub) li.append(this.subComponentList(p, 1));
     }
     if (!asm.components.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Mit »Platzieren« Bauteile einfügen."));
+    for (const pm of asm.patterns || []) {
+      const err = app.asmErrors?.[pm.id];
+      const sel = app.sel?.type === "asmpattern" && app.sel.id === pm.id;
+      const n = asm.components.filter((c) => c.pat === pm.id).length;
+      ul.append(h("li", {}, this.node({
+        label: pm.name || "Muster", ic: pm.kind === "circular" ? "circpattern" : "pattern", cls: (sel ? "sel" : "") + (err ? " err" : "") + (pm.suppressed ? " suppressed" : ""),
+        meta: `${n} Kopien`, title: err ? "Fehler: " + err : pm.name,
+        onClick: () => { app.sel = { type: "asmpattern", id: pm.id }; this.render(); app.props.render(); },
+      })));
+    }
     const cons = asm.constraints || [];
     if (cons.length) {
       const key = "cons:" + asm.id;
@@ -173,9 +184,9 @@ export class Tree {
           const err = app.asmErrors?.[c.id];
           const sel = app.sel?.type === "constraint" && app.sel.id === c.id;
           cu.append(h("li", {}, this.node({
-            label: c.name || (c.type === "buendig" ? "Bündig" : c.type === "konzentrisch" ? "Konzentrisch" : "Fläche an Fläche"), ic: c.type === "konzentrisch" ? "concentric" : "align",
+            label: c.name || (c.type === "buendig" ? "Bündig" : c.type === "konzentrisch" ? "Konzentrisch" : "Fläche an Fläche"), ic: { konzentrisch: "concentric", einfuegen: "insert", winkel: "angle", tangential: "tangent" }[c.type] || "align",
             cls: (sel ? "sel" : "") + (err ? " err" : "") + (c.suppressed ? " suppressed" : ""), title: err ? "Fehler: " + err : c.name,
-            meta: c.gap && c.gap !== "0" ? c.gap + " mm" : "",
+            meta: c.type === "winkel" ? (c.angle ?? "90") + "°" : c.gap && c.gap !== "0" ? c.gap + " mm" : "",
             onClick: () => { app.sel = { type: "constraint", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
             onMenu: (e) => contextMenu(e.clientX, e.clientY, [
               { label: c.suppressed ? "Aktivieren" : "Unterdrücken", icon: "eyeoff", run: () => app.edit("Abhängigkeit", () => { c.suppressed = !c.suppressed; }) },

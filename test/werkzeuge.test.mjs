@@ -168,3 +168,108 @@ test("Bezüge: Skizzen von Sweeping/Erhebung, Arbeitselemente, Löschen mit Abh�
   assert.deepEqual([...dependents(feats, "w1")].sort(), ["a1", "e1", "m", "pt", "s1", "w1", "w2"]);
   assert.deepEqual([...dependents(feats, "a1")].sort(), ["a1", "pt"]);
 });
+
+import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "../src/core/koerper.js";
+
+test("Körper-Werkzeuge: Ebene, Achse, Prüfungen", () => {
+  const { map } = resolveDatums([{ id: "w", type: "arbeitsebene", mode: "versatz", base: "XY", distance: "10" }, { id: "a", type: "arbeitsachse", mode: "parallel", dir: "X", point: { x: "0", y: "3", z: "0" } }], ev);
+  nearV(planeOf("datum:w", 5, map).origin, [0, 0, 15]);
+  nearV(planeOf("YZ", 30).origin, [30, 0, 0]);
+  assert.throws(() => planeOf("datum:x", 0, map), /Arbeitsebene/);
+  assert.deepEqual(axisOf("Y"), { d: [0, 1, 0], p: [0, 0, 0] });
+  nearV(axisOf("datum:a", map).p, [0, 3, 0]);
+  assert.throws(() => axisOf("Q"), /Achse/);
+  assert.deepEqual(validateCombine({ target: "a", tools: ["a", "b"] }), ["b"]);
+  assert.throws(() => validateCombine({ target: "a", tools: ["a"] }), /Werkzeugkörper/);
+  assert.throws(() => validateCombine({ tools: ["b"] }), /Zielkörper/);
+  assert.deepEqual(thickenSpan(4, "beide"), { start: -2, length: 4 });
+  assert.deepEqual(thickenSpan(4, "innen"), { start: -4, length: 4 });
+  assert.throws(() => thickenSpan(0), /Dicke/);
+  assert.equal(validateDraft(-3), -3);
+  assert.throws(() => validateDraft(50), /45/);
+  assert.deepEqual(featureRefs({ type: "kombinieren", target: "e1", tools: ["e2", "e3"] }).sort(), ["e1", "e2", "e3"]);
+});
+
+import { solveAssembly, faceRef, axisRef, insertRef, endFaceFor, CONSTRAINT_TYPES } from "../src/core/asmsolve.js";
+import { placementMatrix, matApplyDir, matApply } from "../src/core/geom.js";
+
+test("Baugruppe: Winkel, Tangential, Einfügen (Stufe 39)", () => {
+  assert.equal(CONSTRAINT_TYPES.einfuegen, "Einfügen");
+  // Platte P (fest): Oberseite z = 10, Bohrung Achse Z durch (50, 20), r = 5; Bolzen B: Achse Z durch (0,0), r = 4, Kopfunterseite z = 0 (Normale −Z)
+  const P = { id: "P", part: "plate", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true };
+  const B = { id: "B", part: "bolt", pos: [200, 100, 50], rot: [30, 0, 0] };
+  const faces = {
+    plate: [{ type: "PLANE", normal: [0, 0, 1], point: [0, 0, 10] }, { type: "PLANE", normal: [0, 0, -1], point: [0, 0, 0] }, { type: "PLANE", normal: [1, 0, 0], point: [100, 0, 0] }, { type: "CYLINDER", axisP: [50, 20, 0], axisD: [0, 0, 1], radius: 5 }],
+    bolt: [{ type: "PLANE", normal: [0, 0, -1], point: [0, 0, 0] }, { type: "PLANE", normal: [1, 0, 0], point: [4, 0, 0] }, { type: "CYLINDER", axisP: [0, 0, -30], axisD: [0, 0, 1], radius: 4 }],
+  };
+  const facesOf = (pid) => faces[pid];
+  const top = faces.plate[0], hole = faces.plate[3];
+  assert.equal(endFaceFor(hole, [55, 20, 9.5], faces.plate), top);
+  const asm = { components: [P, B], constraints: [{ id: "i", type: "einfuegen", gap: "0", a: insertRef("P", { axisP: hole.axisP, axisD: hole.axisD, radius: 5 }, top), b: insertRef("B", { axisP: [0, 0, -30], axisD: [0, 0, 1], radius: 4 }, faces.bolt[0]) }] };
+  const r = solveAssembly(asm, facesOf);
+  assert.deepEqual(r.errors, {});
+  const M = placementMatrix(B.pos, B.rot);
+  nearV(matApply(M, [0, 0, 0]), [50, 20, 10], 1e-6);
+  nearV(matApplyDir(M, [0, 0, -1]), [0, 0, -1], 1e-9);
+
+  // Winkel: Seitenfläche des Bolzens (+X) 30° zur Seitenfläche der Platte (+X)
+  const asm2 = { components: [P, { id: "B", part: "bolt", pos: [0, 0, 0], rot: [0, 0, 0] }], constraints: [{ id: "w", type: "winkel", angle: "30", a: faceRef("P", faces.plate[2]), b: faceRef("B", faces.bolt[1]) }] };
+  assert.deepEqual(solveAssembly(asm2, facesOf).errors, {});
+  const n = matApplyDir(placementMatrix(asm2.components[1].pos, asm2.components[1].rot), [1, 0, 0]);
+  near((Math.acos(n[0]) * 180) / Math.PI, 30, 1e-6);
+
+  // Tangential: Bolzenmantel (r 4) an Plattenseite x = 100, Achse liegt parallel
+  const asm3 = { components: [P, { id: "B", part: "bolt", pos: [130, 0, 0], rot: [0, 0, 0] }], constraints: [{ id: "t", type: "tangential", gap: "0", a: faceRef("P", faces.plate[2]), b: axisRef("B", faces.bolt[2]) }] };
+  assert.deepEqual(solveAssembly(asm3, facesOf).errors, {});
+  near(asm3.components[1].pos[0], 104, 1e-9);
+  // Achse quer zur Fläche: Fehler
+  const asm4 = { components: [P, { id: "B", part: "bolt", pos: [0, 0, 50], rot: [0, 0, 0] }], constraints: [{ id: "t", type: "tangential", gap: "0", a: faceRef("P", top), b: axisRef("B", faces.bolt[2]) }] };
+  assert.match(solveAssembly(asm4, facesOf).errors.t, /parallel/);
+});
+
+import { applyPatterns, patternMatrices, defaultAsmPattern } from "../src/core/asmmuster.js";
+
+test("Komponentenmuster: rechteckig und kreisförmig, folgt der Quelle, räumt auf", () => {
+  const asm = { components: [{ id: "a", part: "p1", name: "Pfosten:1", pos: [10, 0, 0], rot: [0, 0, 0] }], patterns: [defaultAsmPattern("m1", ["a"])] };
+  let r = applyPatterns(asm);
+  assert.equal(r.changed, true);
+  assert.deepEqual(asm.components.map((c) => c.pos[0]), [10, 110, 210]);
+  assert.equal(asm.components[2].name, "Pfosten:1·3");
+  // Quelle bewegt → Kopien folgen; zweite Richtung
+  asm.components[0].pos = [0, 0, 0];
+  Object.assign(asm.patterns[0], { dir2: "Y", count2: "2", spacing2: "50" });
+  r = applyPatterns(asm);
+  assert.equal(asm.components.length, 6);
+  assert.deepEqual(asm.components.filter((c) => c.pat).map((c) => [c.pos[0], c.pos[1]]).sort((p, q) => p[1] - q[1] || p[0] - q[0]), [[100, 0], [200, 0], [0, 50], [100, 50], [200, 50]]);
+  assert.equal(applyPatterns(asm).changed, false, "stabil");
+  // kreisförmig: 4 um Z durch Ursprung, Quelle bei x = 100
+  const asm2 = { components: [{ id: "b", part: "p", name: "B", pos: [100, 0, 0], rot: [0, 0, 0] }], patterns: [defaultAsmPattern("m2", ["b"], "circular")] };
+  applyPatterns(asm2);
+  nearV(asm2.components[1].pos, [0, 100, 0], 1e-9);
+  near(asm2.components[1].rot[2], 90, 1e-9);
+  // Muster gelöscht → Kopien weg
+  asm2.patterns = [];
+  assert.equal(applyPatterns(asm2).changed, true);
+  assert.equal(asm2.components.length, 1);
+  assert.throws(() => patternMatrices({ kind: "linear", count: "1" }), /mindestens 2/);
+  const bad = applyPatterns({ components: [], patterns: [{ id: "x", kind: "linear", comps: ["fehlt"], count: "2", spacing: "1" }] });
+  assert.match(bad.errors.x, /Quellkomponente/);
+});
+
+import { capPlan, trimPlan, equalParts } from "../src/core/rahmen.js";
+
+test("Rahmen: Endkappe, Kürzen an Ebene, Gleichteile (Stufe 40)", () => {
+  assert.deepEqual(capPlan({ thickness: 5 }, true).ends, ["A", "B"]);
+  assert.deepEqual(capPlan({ thickness: 5, end: "B" }, false).ends, ["B"]);
+  assert.throws(() => capPlan({ thickness: 5, mode: "eingesetzt" }, false), /Hohlprofil/);
+  assert.throws(() => capPlan({ thickness: 0 }, true), /Dicke/);
+  const ax = { origin: [0, 0, 0], z: [1, 0, 0], lo: 0, hi: 500 };
+  assert.deepEqual(trimPlan(ax, [400, 0, 0], [1, 0, 0]), { end: "B", at: 400, delta: -100, sign: 1 });
+  const ex = trimPlan(ax, [-50, 0, 0], [-1, 0, 0]);
+  assert.equal(ex.end, "A"); near(ex.delta, 50);
+  assert.throws(() => trimPlan(ax, [0, 0, 0], [0, 1, 0]), /parallel/);
+  assert.throws(() => trimPlan(ax, [-10, 0, 0], [1, 0, 0], "B"), /hinter/);
+  const mk = (name, L, m1 = 0, m2 = 0) => ({ kind: "member", name, meta: { profileId: "QR 40x3", length: L, miterStart: m1, miterEnd: m2 } });
+  const eq = equalParts([mk("S1", 1000, 45, 45), mk("S2", 600), mk("S3", 1000.04, 45, 45), mk("S4", 600), mk("S5", 1000, 0, 45), { kind: "solid", name: "Platte" }]);
+  assert.deepEqual(eq.map((g) => [g.count, g.names.join()]), [[2, "S1,S3"], [2, "S2,S4"], [1, "S5"]]);
+});

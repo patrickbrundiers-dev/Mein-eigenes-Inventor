@@ -6,6 +6,8 @@ import { solveSketch } from "../core/solver.js";
 import { extractProfiles, holeCenters, sketchLines } from "../core/sketch.js";
 import { planeFrame, toWorld, v3 } from "../core/geom.js";
 import { resolveDatums, resolvePlane, mirrorPlane, patternAxis, datumSummary } from "../core/datums.js";
+import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "../core/koerper.js";
+import { capPlan, trimPlan } from "../core/rahmen.js";
 import { pathChain, reverseChain, pathLength as chainLength, pathPatternStations, coilParams, loopCentroid, validateLoft } from "../core/formen.js";
 import { sectionGeometry, sectionName, profileId, THREADS, loopLength } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
@@ -75,6 +77,11 @@ export function createKernel(R) {
     return d;
   }
   const makePlane = (fr) => new R.Plane(fr.origin, fr.xDir, fr.normal);
+  /** Querschnitt eines Stabs aus seinen Metadaten (Profilart und Maße beim Erzeugen) */
+  const sectionGeometryOf = (meta) => {
+    if (!meta?.sec) throw new Error("Querschnitt des Stabs unbekannt");
+    return sectionGeometry(meta.sec.kind, meta.sec.dims);
+  };
   /** Geschlossene Kontur als Draht in Weltkoordinaten (Profil für Sweeping und Spirale) */
   const loopWire = (loop, frame) => loopToDrawing(loop).sketchOnPlane(makePlane(frame)).wire;
   /** Eckpunkte einer Kontur (für den Schwerpunkt; Bögen über ihren Mittelpunkt angenähert) */
@@ -406,6 +413,17 @@ export function createKernel(R) {
       return s;
     };
     let currentFeature = null;
+    /** Flächen der Körper an Punkten (Auswahl im 3D-Fenster) → [{body, face, p}] */
+    const facesAt = (points) => {
+      const out = [];
+      for (const p of points) {
+        for (const body of state.bodies) {
+          const face = new R.FaceFinder().containsPoint(p).find(body.shape, { unique: false })[0];
+          if (face) { out.push({ body, face, p }); break; }
+        }
+      }
+      return out;
+    };
 
     const applyOp = (op, tool, fid, label) => {
       const bodies = state.bodies;
@@ -586,7 +604,7 @@ export function createKernel(R) {
             for (const it of tc.items) for (const x of it.xs) solid = solid.cut(tubeCutTool(it, x, fr, geom));
             if (tc.items.length) st.info = `${tc.pierces} Kontur(en), Schneidweg Innenkonturen ${round(tc.cutLength)} mm`;
             const name = sectionName(f.section, dims);
-            const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
+            const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z, sec: { kind: f.section, dims } };
             meta.endCuts = ends;
             meta.axis = memberAxis(solid, fr, geom);
             meta.miterParts = { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) };
@@ -715,7 +733,7 @@ export function createKernel(R) {
             const list = [];
             const cut = cutCfg(f);
             const add = (solid, meta, name) => { pushMember(state, solid, f, meta, name); list.push({ shape: solid, kind: "member", meta, name }); };
-            const metaOf = (sec, solid, fr, extra = {}) => ({ section: sectionName(sec.kind, sec.dims), profileId: profileId(sec.kind, sec.dims), area: sec.geom.area, length: memberLength(solid, fr), miterStart: 0, miterEnd: 0, frameZ: fr.z, axis: memberAxis(solid, fr, sec.geom), generator: f.gen, ...extra });
+            const metaOf = (sec, solid, fr, extra = {}) => ({ section: sectionName(sec.kind, sec.dims), profileId: profileId(sec.kind, sec.dims), area: sec.geom.area, length: memberLength(solid, fr), miterStart: 0, miterEnd: 0, frameZ: fr.z, axis: memberAxis(solid, fr, sec.geom), generator: f.gen, sec: { kind: sec.kind, dims: sec.dims }, ...extra });
             // Bohrungen (z. B. Handlaufhalter): Zylinder ab p in Richtung dir, nur am Stab, durch dessen Achse p geht
             const drillsOf = (name, A, B, size) => (plan.drills || []).filter((d) => {
               if (d.target !== name) return false;
@@ -1020,6 +1038,173 @@ export function createKernel(R) {
             state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
             applyOp(f.op || "join", tool, f.id, f.name);
             st.info = `${String(Math.round(cp.turns * 100) / 100).replace(".", ",")} Umdrehungen, Steigung ${String(cp.pitch).replace(".", ",")} mm, Höhe ${String(Math.round(cp.height * 10) / 10).replace(".", ",")} mm${f.lefthand ? ", linksgängig" : ""}`;
+            break;
+          }
+          case "endkappe": {
+            const tool = state.tools.get(f.target);
+            if (!tool) throw new Error(missingRef(f.target, "Profil", f));
+            const mems = tool.shapes.filter((x) => x.kind === "member");
+            const idx = f.members?.length ? f.members : mems.map((_, k) => k);
+            const shapes = [];
+            let n = 0;
+            for (const mi of idx) {
+              const mem = mems[mi];
+              if (!mem?.meta?.axis) throw new Error(`Stab ${mi + 1} nicht gefunden`);
+              const ax = mem.meta.axis;
+              const g = sectionGeometryOf(mem.meta);
+              const cp = capPlan({ thickness: E(f.thickness || "3", "Dicke"), overhang: E(f.overhang || "0", f.mode === "eingesetzt" ? "Spiel" : "Überstand"), end: f.end, mode: f.mode }, g.holes.length > 0);
+              for (const e of cp.ends) {
+                const endB = e === "B";
+                const miter = endB ? mem.meta.miterEnd : mem.meta.miterStart;
+                if (Math.abs(miter || 0) > 0.05) { st.warning = `Gehrung an Ende ${e} von ${mem.name}: Kappe sitzt nur am geraden Ende richtig`; continue; }
+                const inside = f.mode === "eingesetzt";
+                // Grundfläche senkrecht zur Achse; aufgesetzt außen auf dem Ende, eingesetzt bündig im Rohr
+                const z0 = endB ? (inside ? ax.hi - cp.t : ax.hi) : (inside ? ax.lo : ax.lo - cp.t);
+                let d = loopToDrawing(inside ? g.holes[0] : g.outer);
+                const off = inside ? -Math.abs(cp.ov) : cp.ov;
+                if (Math.abs(off) > 1e-9) d = d.offset(off);
+                const solid = d.sketchOnPlane(new R.Plane(v3.add(ax.origin, v3.mul(ax.z, z0)), ax.u, ax.z)).extrude(cp.t);
+                const name = `${f.name || "Endkappe"} ${mem.name} ${e}`;
+                const meta = { plate: { W: g.width + 2 * off, H: g.height + 2 * off, t: cp.t, holes: 0, d: 0 }, endcap: true, partOf: mem.name };
+                state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
+                shapes.push({ shape: solid, kind: "solid", meta, name });
+                const wa = E(f.weldA || "0", "Nahtdicke a");
+                if (wa > 0) state.welds.push({ fid: f.id, kind: "kehl", a: wa, side: "pfeil", around: true, field: false, length: ax.perimeter, p3: v3.add(ax.origin, v3.mul(ax.z, endB ? ax.hi : ax.lo)), name });
+                n++;
+              }
+            }
+            if (!n) throw new Error("Keine Kappe gesetzt – Enden auf Gehrung");
+            state.tools.set(f.id, { op: "new", shapes });
+            st.info = `${n} Endkappe(n) ${f.mode === "eingesetzt" ? "eingesetzt" : "aufgesetzt"}, ${String(E(f.thickness || "3", "Dicke")).replace(".", ",")} mm`;
+            break;
+          }
+          case "kuerzen": {
+            const fr0 = planeOf(f.plane || "YZ", E(f.offset || "0", "Abstand"), datums.map);
+            const bodies = state.bodies.filter((b) => b.kind === "member" && b.fid === f.target);
+            if (!bodies.length) throw new Error(missingRef(f.target, "Profil oder Rahmen", f));
+            const idx = f.members?.length ? f.members : bodies.map((_, k) => k);
+            const tms = state.tools.get(f.target)?.shapes.filter((x) => x.kind === "member") || [];
+            const toolMembers = tms.length === bodies.length ? tms : [];
+            let n = 0;
+            const notes = [];
+            for (const mi of idx) {
+              const b = bodies[mi];
+              if (!b?.meta?.axis) throw new Error(`Stab ${mi + 1} nicht gefunden`);
+              const ax = b.meta.axis;
+              const tp = trimPlan(ax, fr0.origin, fr0.normal, f.end || "auto");
+              const out = v3.mul(ax.z, tp.sign); // vom Stab weg
+              let shape = b.shape;
+              if (tp.delta > 1e-6) {
+                // verlängern: Querschnitt vom Ende bis über die Ebene hinaus, dann an der Ebene schneiden
+                const g = sectionGeometryOf(b.meta);
+                const tilt = Math.abs(v3.dot(v3.norm(fr0.normal), v3.norm(ax.z)));
+                const extra = (Math.hypot(g.width, g.height) / 2) * Math.sqrt(Math.max(0, 1 - tilt * tilt)) / Math.max(tilt, 0.05) + 2;
+                const zEnd = tp.end === "B" ? ax.hi : ax.lo;
+                const start = tp.end === "B" ? zEnd - 0.01 : zEnd - tp.delta - extra;
+                const ext = regionToDrawing({ outer: g.outer, holes: g.holes }).sketchOnPlane(new R.Plane(v3.add(ax.origin, v3.mul(ax.z, start)), ax.u, ax.z)).extrude(tp.delta + extra + 0.01);
+                shape = shape.fuse(ext);
+              }
+              const nOut = v3.dot(fr0.normal, out) > 0 ? fr0.normal : v3.mul(fr0.normal, -1);
+              const hs = halfSpace(fr0.origin, nOut, BIG);
+              shape = shape.cut(hs);
+              b.shape = shape;
+              b.meta = { ...b.meta, length: memberLength(shape, ax), axis: { ...ax, ...memberSpan(shape, ax) } };
+              const tm = toolMembers[mi];
+              if (tm) { tm.shape = shape; tm.meta = b.meta; }
+              if (tp.end === "A") b.meta.miterStart = Math.round(Math.acos(Math.min(1, Math.abs(v3.dot(v3.norm(fr0.normal), ax.z)))) * 1800 / Math.PI) / 10;
+              else b.meta.miterEnd = Math.round(Math.acos(Math.min(1, Math.abs(v3.dot(v3.norm(fr0.normal), ax.z)))) * 1800 / Math.PI) / 10;
+              notes.push(`${b.name}: ${tp.delta > 0 ? "+" : ""}${String(Math.round(tp.delta * 10) / 10).replace(".", ",")} mm`);
+              n++;
+            }
+            st.info = `${n} Stab/Stäbe an Ende ${f.end && f.end !== "auto" ? f.end : "(näheres)"}: ${notes.join(", ")}`;
+            break;
+          }
+          case "kombinieren": {
+            const tools = validateCombine(f);
+            const target = state.bodies.filter((b) => b.fid === f.target && b.kind === "solid");
+            if (!target.length) throw new Error(missingRef(f.target, "Zielkörper", f));
+            const used = state.bodies.filter((b) => tools.includes(b.fid) && b.kind === "solid");
+            if (!used.length) throw new Error("Werkzeugkörper fehlen");
+            const op = f.op || "join";
+            let shape = target.map((b) => b.shape).reduce((a, b) => a.fuse(b));
+            for (const b of used) shape = op === "cut" ? shape.cut(b.shape.clone()) : op === "intersect" ? shape.intersect(b.shape.clone()) : shape.fuse(b.shape.clone());
+            if (isEmptyShape(shape)) throw new Error("Ergebnis ist leer");
+            const keep = new Set(f.keep ? [] : used);
+            state.bodies = state.bodies.filter((b) => !keep.has(b) && !target.slice(1).includes(b));
+            target[0].shape = shape;
+            st.info = `${used.length} Werkzeugkörper ${op === "cut" ? "abgezogen" : op === "intersect" ? "geschnitten" : "vereinigt"}${f.keep ? ", Werkzeuge behalten" : ""}`;
+            break;
+          }
+          case "trennen": {
+            const fr = planeOf(f.plane, E(f.offset || "0", "Abstand"), datums.map);
+            const pl = makePlane(fr);
+            const keepSide = f.keep || "beide";
+            const out = [];
+            let n = 0;
+            for (const b of state.bodies) {
+              if (b.kind !== "solid" || (f.bodies?.length && !f.bodies.includes(b.fid))) { out.push(b); continue; }
+              const r = b.shape.split(pl);
+              if (!r.positive || !r.negative) { out.push(b); continue; }
+              n++;
+              if (keepSide !== "minus") out.push({ ...b, shape: r.positive, name: keepSide === "beide" ? `${b.name} (1)` : b.name });
+              if (keepSide !== "plus") out.push({ ...b, shape: r.negative, name: keepSide === "beide" ? `${b.name} (2)` : b.name, fid: keepSide === "beide" ? f.id : b.fid });
+            }
+            if (!n) throw new Error("Die Ebene schneidet keinen Körper");
+            state.bodies = out;
+            st.info = `${n} Körper geteilt`;
+            break;
+          }
+          case "verschieben": {
+            const sel = state.bodies.filter((b) => !f.bodies?.length || f.bodies.includes(b.fid));
+            if (!sel.length) throw new Error("Keine Körper gewählt");
+            const mv = (f.move || ["0", "0", "0"]).map((x) => E(x, "Verschiebung"));
+            const ang = E(f.angle || "0", "Winkel");
+            const ax = Math.abs(ang) > 1e-12 ? axisOf(f.axis, datums.map) : null;
+            const tf = (sh) => { let x = sh; if (ax) x = x.rotate(ang, ax.p, ax.d); return v3.len(mv) > 0 ? x.translate(mv) : x; };
+            for (const b of sel) {
+              if (f.copy) state.bodies.push({ ...b, shape: tf(b.shape.clone()), name: b.name + " (Kopie)", fid: f.id, meta: b.meta ? { ...b.meta } : b.meta });
+              else b.shape = tf(b.shape);
+            }
+            st.info = `${sel.length} Körper ${f.copy ? "kopiert" : "verschoben"}`;
+            break;
+          }
+          case "aufdicken": case "flaeche": {
+            const refs = f.faces || [];
+            if (!refs.length) throw new Error("Fläche wählen");
+            const hits = facesAt(refs.map((r) => r.p));
+            if (!hits.length) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+            const t = E(f.type === "flaeche" ? f.distance : f.thickness, f.type === "flaeche" ? "Abstand" : "Dicke");
+            for (const { body, face } of hits) {
+              if (face.geomType !== "PLANE") throw new Error("Nur ebene Flächen");
+              const n = v3.norm(tuple(face.normalAt()));
+              if (f.type === "flaeche") {
+                if (!(Math.abs(t) > 0)) throw new Error("Abstand ≠ 0");
+                const solid = R.basicFaceExtrusion(face, new R.Vector(v3.mul(n, t)));
+                body.shape = t > 0 ? body.shape.fuse(solid) : body.shape.cut(solid);
+              } else {
+                const { start, length } = thickenSpan(t, f.side);
+                let solid = R.basicFaceExtrusion(face, new R.Vector(v3.mul(n, length)));
+                if (Math.abs(start) > 0) solid = solid.translate(v3.mul(n, start));
+                if ((f.op || "new") === "join") body.shape = body.shape.fuse(solid);
+                else state.bodies.push({ shape: solid, kind: "solid", name: f.name || "Aufdickung", fid: f.id });
+              }
+            }
+            st.info = `${hits.length} Fläche(n) ${f.type === "flaeche" ? (t > 0 ? "herausgezogen" : "zurückgesetzt") : "aufgedickt"} um ${String(Math.abs(t)).replace(".", ",")} mm`;
+            break;
+          }
+          case "entformung": {
+            const refs = f.faces || [];
+            if (!refs.length) throw new Error("Flächen wählen");
+            const ang = validateDraft(E(f.angle || "1", "Winkel"));
+            const pl = makePlane(planeOf(f.plane || "XY", E(f.offset || "0", "Abstand"), datums.map));
+            const hits = facesAt(refs.map((r) => r.p));
+            if (!hits.length) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+            const bodies = [...new Set(hits.map((x) => x.body))];
+            for (const b of bodies) {
+              const pts = refs.map((r) => r.p).filter((p) => hits.some((x) => x.body === b && x.p === p));
+              b.shape = b.shape.draft(ang, (ff) => (pts.length === 1 ? ff.containsPoint(pts[0]) : ff.either(pts.map((p) => (x) => x.containsPoint(p)))), pl);
+            }
+            st.info = `${hits.length} Fläche(n) um ${String(ang).replace(".", ",")}° geneigt`;
             break;
           }
           case "arbeitsebene": case "arbeitsachse": case "arbeitspunkt": {
@@ -1487,6 +1672,7 @@ export function createKernel(R) {
         line: m.l.id,
         endCuts: ends,
         axis: memberAxis(solid, m.fr, g),
+        sec: { kind: section.kind, dims: section.dims },
       };
       built.set(m, { solid, meta, name: `${baseName} ${m.idx + 1}` });
     }
