@@ -56,6 +56,9 @@ export function commandRunners(app) {
     "asm.bom": r("bom"),
     "asm.cutlist": () => app.props.cutListDialog(),
     "asm.collide": () => app.props.collisionDialog(),
+    "asm.joint": () => app.props.jointDialog(),
+    "asm.animate": () => app.props.animateJoints(),
+    "asm.explode": () => app.props.explodeDialog(),
   };
   for (const v of ["iso", "front", "back", "left", "right", "top", "bottom"]) run["view." + v] = () => app.viewer.setView(v);
   for (const m of ["kanten", "schattiert", "draht", "transparent", "foto"]) run["view.mode." + m] = () => app.prefs.set("ansicht.darstellung", m);

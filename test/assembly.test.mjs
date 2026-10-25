@@ -114,3 +114,50 @@ test("Unterbaugruppen: Auflösen mit Gesamt-Platzierung, Zyklus-Schutz, Struktur
   assert.deepEqual(mb.map((x) => x.asm.name), ["Wagen", "Achse"]);
   assert.deepEqual(mb[1].rows.map((r) => [r.doc.name, r.qty]), [["Rad", 2]]);
 });
+
+test("Kinematik: Drehgelenk, Winkelbereich, Mitläufer, Explosion (MegaCAD-Abgleich M23)", async () => {
+  const { defaultJoint, setJointAngle, jointPlacement, sweepAngles, swingAngle, explodeOffsets, jointFollowers, clampAngle } = await import("../src/core/kinematik.js");
+  const { placementMatrix, matApply } = await import("../src/core/geom.js");
+  // Torflügel 1000 breit, Achse senkrecht an x = 0
+  const c = { id: "f", pos: [0, 0, 0], rot: [0, 0, 0], joint: defaultJoint([0, 0, 0], [0, 0, 2], { min: 0, max: 100 }) };
+  assert.deepEqual(c.joint.d, [0, 0, 1]);
+  const tip = () => matApply(placementMatrix(c.pos, c.rot), [1000, 0, 0]);
+  assert.equal(setJointAngle(c, 90), 90);
+  assert.ok(Math.abs(tip()[0]) < 1e-6 && Math.abs(tip()[1] - 1000) < 1e-6, "Flügelende nach +Y gedreht");
+  assert.equal(setJointAngle(c, 150), 100, "auf den Bereich begrenzt");
+  setJointAngle(c, 0);
+  assert.ok(Math.abs(tip()[0] - 1000) < 1e-6 && Math.abs(tip()[1]) < 1e-6, "zurück in der Ausgangslage");
+  // Achse nicht im Ursprung, Bauteil schon gedreht
+  const d = { pos: [500, 200, 0], rot: [0, 0, 30], joint: defaultJoint([500, 200, 0], [0, 0, 1], { min: -90, max: 0 }) };
+  const pl = jointPlacement(d, -30);
+  assert.ok(Math.abs(pl.rot[2]) < 1e-6 && Math.abs(pl.pos[0] - 500) < 1e-6, "Drehung um eigene Achse addiert sich");
+  assert.deepEqual(d.rot, [0, 0, 30], "jointPlacement ändert nichts");
+  assert.equal(clampAngle(d.joint, 20), 0);
+  assert.deepEqual(sweepAngles({ min: 0, max: 90 }, 3), [0, 30, 60, 90]);
+  assert.equal(swingAngle({ min: 0, max: 90 }, 0), 0);
+  assert.ok(Math.abs(swingAngle({ min: 0, max: 90 }, 0.5) - 90) < 1e-9);
+  assert.ok(Math.abs(swingAngle({ min: 0, max: 90 }, 1)) < 1e-9);
+  assert.throws(() => defaultJoint([0, 0, 0], [0, 0, 0]), /Achsrichtung/);
+  // Mitläufer über Abhängigkeiten; fixierte Teile und andere Gelenke unterbrechen
+  const asm = { components: [{ id: "post", fixed: true }, { id: "leaf", joint: {} }, { id: "handle" }, { id: "lock" }, { id: "other", joint: {} }, { id: "x" }],
+    constraints: [{ a: { comp: "post" }, b: { comp: "leaf" } }, { a: { comp: "leaf" }, b: { comp: "handle" } }, { a: { comp: "handle" }, b: { comp: "lock" } }, { a: { comp: "lock" }, b: { comp: "other" } }, { a: { comp: "other" }, b: { comp: "x" } }, { a: { comp: "leaf" }, b: { comp: "x" }, suppressed: true }] };
+  assert.deepEqual(jointFollowers(asm, "leaf").sort(), ["handle", "lock"]);
+  // Explosion: Abstand zur Mitte wächst mit dem Faktor
+  const off = explodeOffsets([{ id: "a", center: [0, 0, 0] }, { id: "b", center: [100, 0, 0] }, { id: "c", center: [50, 0, 0] }], 1);
+  assert.deepEqual(off.get("a"), [-50, 0, 0]);
+  assert.deepEqual(off.get("b"), [50, 0, 0]);
+  assert.deepEqual(off.get("c"), [0, 0, 0]);
+  const same = explodeOffsets([{ id: "a", center: [5, 5, 5] }, { id: "b", center: [5, 5, 5] }], 1);
+  assert.notDeepEqual(same.get("a"), same.get("b"), "gleiche Mitten werden aufgefächert");
+});
+
+test("Kinematik: Komponente mit Gelenk wird von Abhängigkeiten nicht verschoben (M23)", async () => {
+  const { solveAssembly } = await import("../src/core/asmsolve.js");
+  const faces = [{ type: "PLANE", normal: [1, 0, 0], point: [10, 0, 0] }, { type: "PLANE", normal: [-1, 0, 0], point: [0, 0, 0] }];
+  const asm = { components: [{ id: "A", part: "p", pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "B", part: "p", pos: [50, 0, 0], rot: [0, 0, 0], joint: { p: [50, 0, 0], d: [0, 0, 1], angle: 0, min: 0, max: 90 } }],
+    constraints: [{ id: "k", type: "gegen", a: { comp: "B", n: [-1, 0, 0], d: 0 }, b: { comp: "A", n: [1, 0, 0], d: 10 }, gap: "0" }] };
+  const res = solveAssembly(asm, () => faces);
+  assert.deepEqual(asm.components[1].pos, [50, 0, 0], "Gelenk-Komponente bleibt");
+  assert.ok(Math.abs(asm.components[0].pos[0] - 40) < 1e-6, "die freie Komponente kommt zum Gelenk-Teil");
+  assert.deepEqual(res.errors, {});
+});

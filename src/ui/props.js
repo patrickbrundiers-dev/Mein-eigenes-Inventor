@@ -24,7 +24,8 @@ import { NORM_KINDS, NORM_SIZES, BOLT_LENGTHS, defaultNormteil, normDesignation,
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
-import { decomposePlacement } from "../core/geom.js";
+import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir } from "../core/geom.js";
+import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers } from "../core/kinematik.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom } from "../core/subasm.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
@@ -1069,7 +1070,157 @@ export class Props {
         p ? h("button", { class: "btn", onclick: () => app.openDoc(p.id) }, "Bauteil bearbeiten") : null,
         h("button", { class: "btn", onclick: () => this.duplicateComponent(c.id) }, "Duplizieren"),
         h("button", { class: "btn danger", onclick: () => this.deleteComponent(c.id) }, "Entfernen")),
+      this.jointSection(asm, c),
     ];
+  }
+  /** Drehgelenk der Komponente (M23): Winkel live verstellen, Bereich, Bewegen, Kollision im Bereich */
+  jointSection(asm, c) {
+    const app = this.app, j = c.joint;
+    if (!j) return this.section("Drehgelenk", h("p", { class: "hint" }, "Für Tor-Flügel, Klappen, Deckel: Achse festlegen, dann im Winkelbereich bewegen."),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.jointDialog(c) }, "Drehgelenk anlegen")));
+    const out = h("span", { class: "num" }, fmtNum(j.angle, 1) + "°");
+    const slider = h("input", { type: "range", class: "joint-angle", min: Math.min(j.min, j.max), max: Math.max(j.min, j.max), step: "0.5", value: j.angle, style: { width: "100%" } });
+    const movers = [c.id, ...jointFollowers(asm, c.id)];
+    slider.addEventListener("input", () => {
+      const a = Number(slider.value);
+      out.textContent = fmtNum(a, 1) + "°";
+      const d = jointDelta(j, a);
+      app.viewer.setComponentDeltas(new Map(movers.map((id) => [id, d])));
+    });
+    slider.addEventListener("change", () => app.edit("Gelenkwinkel", () => { setJointAngle(c, Number(slider.value)); }));
+    const lim = (label, key) => {
+      const inp = h("input", { class: "inp", type: "number", step: "1", value: j[key] });
+      inp.addEventListener("change", () => {
+        const v = Number(inp.value);
+        const next = { ...j, [key]: v };
+        if (!Number.isFinite(v) || !(Math.min(next.min, next.max) <= j.angle && j.angle <= Math.max(next.min, next.max))) { inp.classList.add("bad"); inp.title = "Bereich muss den aktuellen Winkel enthalten"; return; }
+        app.edit("Gelenkbereich", () => { j[key] = v; });
+      });
+      return this.field(label, h("div", { class: "expr-wrap" }, inp, h("span", { class: "val" }, "°")));
+    };
+    const f = (v) => v.map((x) => fmtNum(x, 1)).join(" / ");
+    return this.section("Drehgelenk",
+      this.field("Winkel", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, slider, out)),
+      lim("von", "min"), lim("bis", "max"),
+      h("dl", { class: "kv" }, h("dt", {}, "Achse durch"), h("dd", {}, f(j.p)), h("dt", {}, "Richtung"), h("dd", {}, f(j.d)),
+        movers.length > 1 ? h("dt", {}, "Geht mit") : null, movers.length > 1 ? h("dd", {}, movers.slice(1).map((id) => asm.components.find((x) => x.id === id)?.name).join(", ")) : null),
+      h("p", { class: "hint" }, "Abhängigkeiten verschieben diese Komponente nicht mehr; daran hängende Teile gehen mit."),
+      h("div", { class: "btn-row" },
+        h("button", { class: "btn", onclick: () => this.animateJoints([c.id]) }, "Bewegen"),
+        h("button", { class: "btn", onclick: () => this.jointSweepCheck(c) }, "Kollision im Bereich prüfen"),
+        h("button", { class: "btn danger", onclick: () => app.edit("Drehgelenk entfernen", () => { delete c.joint; }) }, "Gelenk entfernen")));
+  }
+  /** Drehgelenk anlegen: Achse an einer Kante der Komponente, an einer Konzentrisch-Abhängigkeit oder frei */
+  jointDialog(comp) {
+    const app = this.app, asm = app.activeDoc();
+    if (asm?.kind !== "assembly") return;
+    const c = comp || (app.sel?.type === "component" ? asm.components.find((x) => x.id === app.sel.id) : null);
+    if (!c) return toast("Erst die Komponente wählen, die sich drehen soll (z. B. den Torflügel)");
+    if (c.joint) return toast(`${c.name} hat schon ein Drehgelenk`);
+    if (c.fixed) return toast("Fixierte Komponenten drehen sich nicht – Fixierung lösen");
+    const box = app.viewer.componentBox(c.id);
+    if (!box) return toast("Komponente ist leer oder ausgeblendet");
+    // Achse aus Konzentrisch-Abhängigkeit (Bolzen, Scharnier) in Baugruppen-Koordinaten
+    const conc = (asm.constraints || []).find((k) => !k.suppressed && k.type === "konzentrisch" && (k.a.comp === c.id || k.b.comp === c.id));
+    let concAxis = null;
+    if (conc) { const ref = conc.a.comp === c.id ? conc.b : conc.a, other = asm.components.find((x) => x.id === ref.comp); if (other) { const M = placementMatrix(other.pos, other.rot); concAxis = { p: matApply(M, ref.p), d: matApplyDir(M, ref.d) }; } }
+    const st = { at: concAxis ? "bolzen" : "links", dir: "z", min: 0, max: 90 };
+    const point = () => {
+      if (st.at === "bolzen") return concAxis.p;
+      const [lo, hi] = box, mid = lo.map((x, k) => (x + hi[k]) / 2);
+      const p = [...mid];
+      const ax = { x: 0, y: 1, z: 2 }[st.dir];
+      p[ax] = lo[ax];
+      if (st.at === "links") p[0] = lo[0]; else if (st.at === "rechts") p[0] = hi[0]; else if (st.at === "vorne") p[1] = lo[1]; else if (st.at === "hinten") p[1] = hi[1];
+      return p;
+    };
+    const dirVec = () => (st.at === "bolzen" ? concAxis.d : { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }[st.dir]);
+    const pIn = [0, 1, 2].map(() => h("input", { class: "inp" }));
+    const fill = () => point().forEach((x, k) => { pIn[k].value = String(Math.round(x * 100) / 100); });
+    const seg = (opts, key) => { const w = h("div", { class: "seg" }); const draw = () => { w.replaceChildren(...opts.map(([v, l]) => h("button", { class: st[key] === v ? "on" : "", onclick: () => { st[key] = v; draw(); fill(); } }, l))); }; draw(); return w; };
+    const num = (key) => { const i = h("input", { class: "inp", type: "number", step: "1", value: st[key] }); i.addEventListener("change", () => { st[key] = Number(i.value); }); return i; };
+    const atOpts = [...(concAxis ? [["bolzen", "Bolzenachse"]] : []), ["links", "links"], ["rechts", "rechts"], ["vorne", "vorne"], ["hinten", "hinten"], ["mitte", "Mitte"]];
+    fill();
+    const body = h("div", {},
+      h("p", {}, `Komponente »${c.name}« dreht sich um eine Achse. Winkel 0° ist die heutige Lage.`),
+      this.field("Achse an", seg(atOpts, "at")),
+      this.field("Richtung", seg([["z", "senkrecht (Z)"], ["x", "X"], ["y", "Y"]], "dir")),
+      this.field("Punkt auf der Achse", h("div", { class: "vec3" }, ...pIn)),
+      this.field("Winkel von", h("div", { class: "expr-wrap" }, num("min"), h("span", { class: "val" }, "°"))),
+      this.field("Winkel bis", h("div", { class: "expr-wrap" }, num("max"), h("span", { class: "val" }, "°"))),
+      h("p", { class: "hint" }, "Positiv = gegen den Uhrzeigersinn, wenn man entgegen der Achsrichtung schaut (bei Z: von oben). Für die andere Richtung negative Winkel angeben."));
+    modal({ title: "Drehgelenk anlegen", width: "520px", body, buttons: [{ label: "Abbrechen" }, { label: "Anlegen", primary: true, run: () => {
+      const p = pIn.map((i) => Number(String(i.value).replace(",", ".")));
+      if (p.some((x) => !Number.isFinite(x))) { toast("Punkt auf der Achse prüfen", { kind: "err" }); return false; }
+      if (!(Math.min(st.min, st.max) <= 0 && Math.max(st.min, st.max) >= 0) || st.min === st.max) { toast("Der Bereich muss 0° (heutige Lage) enthalten", { kind: "err" }); return false; }
+      app.edit("Drehgelenk", () => { c.joint = defaultJoint(p, dirVec(), { min: st.min, max: st.max }); });
+      app.sel = { type: "component", id: c.id };
+      this.render();
+    } }] });
+  }
+  /** Gelenke hin und zurück bewegen (nur Anzeige); ids = Komponenten mit Gelenk, sonst alle */
+  animateJoints(ids, { duration = 3000 } = {}) {
+    const app = this.app, asm = app.activeDoc();
+    if (asm?.kind !== "assembly") return Promise.resolve(false);
+    const list = asm.components.filter((c) => c.joint && !c.hidden && (!ids || ids.includes(c.id)));
+    if (!list.length) { toast("Keine Komponente mit Drehgelenk – erst »Drehgelenk« anlegen"); return Promise.resolve(false); }
+    if (this.animating) return this.animating;
+    const movers = list.map((c) => ({ c, ids: [c.id, ...jointFollowers(asm, c.id)] }));
+    this.animating = new Promise((resolve) => {
+      const t0 = performance.now();
+      const step = (now) => {
+        const t = Math.min(1, (now - t0) / duration);
+        const map = new Map();
+        for (const m of movers) { const d = jointDelta(m.c.joint, swingAngle(m.c.joint, t)); for (const id of m.ids) map.set(id, d); }
+        app.viewer.setComponentDeltas(map);
+        if (t < 1) requestAnimationFrame(step);
+        else { app.viewer.setComponentDeltas(new Map()); this.animating = null; resolve(true); }
+      };
+      requestAnimationFrame(step);
+    });
+    return this.animating;
+  }
+  /** Kollision im Bewegungsbereich: an 7 Winkeln die bewegten Teile gegen alle anderen prüfen */
+  async jointSweepCheck(c, { steps = 6, silent = false } = {}) {
+    const app = this.app, asm = app.activeDoc();
+    const movers = new Set([c.id, ...jointFollowers(asm, c.id)]);
+    const comps = asm.components.filter((x) => !x.hidden && app.doc(x.part));
+    const busy = silent ? null : toast("Bewegungsbereich wird geprüft …", { timeout: 0 });
+    const rows = [];
+    try {
+      for (const a of sweepAngles(c.joint, steps)) {
+        const D = jointDelta(c.joint, a);
+        const items = comps.flatMap((x) => flattenAssembly({ id: asm.id, components: [x] }, (id) => app.doc(id)).map((o) => ({ key: x.id, part: o.part, ...decomposePlacement(movers.has(x.id) ? matMul(D, o.matrix) : o.matrix), name: x.name })));
+        const res = (await app.kernel.call("collisions", { items })).filter((r) => r.a !== r.b && (movers.has(r.a) !== movers.has(r.b)));
+        rows.push({ angle: a, hits: res });
+      }
+    } catch (e) { busy?.remove(); toast("Prüfung fehlgeschlagen: " + e.message, { kind: "err" }); return null; }
+    busy?.remove();
+    if (silent) return rows;
+    const name = (id) => asm.components.find((x) => x.id === id)?.name || id;
+    const bad = rows.filter((r) => r.hits.length);
+    const body = bad.length
+      ? h("div", {}, h("p", {}, `Kollision bei ${bad.length} von ${rows.length} geprüften Winkeln.`),
+        h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Winkel"), h("th", {}, "Stößt an"))),
+          h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, fmtNum(r.angle, 1) + "°"), h("td", {}, r.hits.length ? [...new Set(r.hits.map((x) => name(movers.has(x.a) ? x.b : x.a)))].join(", ") : "frei"))))))
+      : h("p", {}, `Frei im ganzen Bereich ${fmtNum(c.joint.min, 1)}° … ${fmtNum(c.joint.max, 1)}° (${rows.length} Winkel geprüft). Berührende Flächen zählen nicht.`);
+    modal({ title: `Bewegungsbereich – ${c.name}`, width: "520px", body, buttons: [{ label: "Schließen", primary: true }] });
+    return rows;
+  }
+  /** Explosionsdarstellung: Regler für den Abstand (nur Anzeige, bleibt bis zum Zurücksetzen) */
+  explodeDialog() {
+    const app = this.app, v = app.viewer;
+    if (app.activeDoc()?.kind !== "assembly") return;
+    const out = h("span", { class: "num" });
+    const r = h("input", { type: "range", class: "explode-factor", min: "0", max: "2", step: "0.05", value: v.explode || 0.6, style: { width: "100%" } });
+    const show = () => { out.textContent = Math.round(Number(r.value) * 100) + " %"; v.setExplode(Number(r.value)); };
+    r.addEventListener("input", show);
+    show();
+    modal({ title: "Explosionsdarstellung", width: "420px",
+      body: h("div", {}, h("p", {}, "Komponenten rücken von der Mitte weg. Nur Anzeige – Lage, Stückliste und Export bleiben unverändert; das Bild (PNG/Rendern) zeigt die Explosion."),
+        this.field("Abstand", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, r, out))),
+      buttons: [{ label: "Zusammenbauen", run: () => { v.setExplode(0); app.ribbon.render(); } }, { label: "Übernehmen", primary: true, run: () => app.ribbon.render() }],
+      onClose: () => app.ribbon.render() });
   }
   constraintProps(asm, c) {
     const app = this.app;

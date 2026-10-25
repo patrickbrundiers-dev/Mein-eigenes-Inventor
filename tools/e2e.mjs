@@ -371,6 +371,41 @@ try {
     return { ok: ok?.length, dlg: dlg.includes("Keine Kollision"), open: !!document.querySelector("#modal-root .dialog"), bad: bad.map((r) => [r.a, r.b].sort().join("-")).sort(), vol: bad.map((r) => Math.round(r.volume)) };
   });
   step("Kollisionsprüfung", col.ok === 0 && col.dlg && !col.open && col.bad.join() === "c1-c2,c1-c3", JSON.stringify(col));
+  // Kinematik (MegaCAD-Abgleich M23): Drehgelenk anlegen, Winkel per Regler, Bewegen, Explosion, Bereich prüfen
+  const jc = await evalApp(() => {
+    const a = window.__werkcad, c = a.activeDoc().components.find((x) => !x.fixed);
+    a.sel = { type: "component", id: c.id };
+    a.props.render();
+    a.props.jointDialog(c);
+    return { id: c.id, pos: JSON.stringify(c.pos), rot: JSON.stringify(c.rot) };
+  });
+  await page.locator("#modal-root .dialog footer .btn", { hasText: "Anlegen" }).click();
+  await idle(60000);
+  await evalApp(() => { const s = document.querySelector("#props input.joint-angle"); s.value = "45"; s.dispatchEvent(new Event("input")); s.dispatchEvent(new Event("change")); });
+  await idle(60000);
+  await shot("17b2-drehgelenk");
+  const kin = await evalApp(async (id) => {
+    const a = window.__werkcad, v = a.viewer, asm = a.activeDoc(), c = asm.components.find((x) => x.id === id);
+    const r = { joint: !!c.joint, angle: c.joint?.angle, rot: c.rot.map((x) => Math.round(x)), section: /Drehgelenk/.test(document.querySelector("#props")?.textContent || "") };
+    r.anim = await a.props.animateJoints(null, { duration: 300 });
+    r.cleared = v.compDeltas.size === 0;
+    const g = v.root.children.find((x) => x.userData.comp === id);
+    v.setExplode(1);
+    r.exploded = v.root.children.filter((x) => x.userData.comp).some((x) => !x.matrix.equals(x.userData.baseMatrix));
+    v.setExplode(0);
+    r.back = g.matrix.equals(g.userData.baseMatrix);
+    const rows = await a.props.jointSweepCheck(c, { steps: 2, silent: true });
+    r.sweep = rows?.map((x) => x.angle);
+    return r;
+  }, jc.id);
+  const undoKin = await evalApp((jc) => {
+    const a = window.__werkcad;
+    a.undo(); a.undo();
+    const c = a.activeDoc().components.find((x) => x.id === jc.id);
+    return { joint: !!c.joint, same: JSON.stringify(c.pos) === jc.pos && JSON.stringify(c.rot) === jc.rot };
+  }, jc);
+  await idle(60000);
+  step("Drehgelenk und Explosion", kin.joint && kin.angle === 45 && kin.section && kin.anim === true && kin.cleared && kin.exploded && kin.back && kin.sweep?.join() === "0,45,90" && !undoKin.joint && undoKin.same, JSON.stringify({ kin, undoKin }));
   await shot("17b-abhaengigkeit");
 
   // Unterbaugruppen (MegaCAD-Abgleich M19): Beispiel-Baugruppe zweimal in eine neue Baugruppe, Mengen verdoppeln sich

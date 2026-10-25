@@ -72,10 +72,12 @@ export function solveAssembly(asm, facesOf, evalGap = (g) => Number(g) || 0) {
       if (c.type === "konzentrisch") { Object.assign(c.a, { p: ra.p, d: ra.d, r: ra.r }); Object.assign(c.b, { p: rb.p, d: rb.d, r: rb.r }); }
       else { c.a.d = ra.d; c.b.d = rb.d; }
       // bewegt wird B; ist B fixiert, dann A (falls frei)
+      // Komponenten mit Drehgelenk bewegen sich nur über den Gelenkwinkel (M23) – wie fixiert
+      const held = (c) => c.fixed || !!c.joint;
       let [fix, mov, rf, rm] = [A, B, ra, rb];
-      if (B.fixed && !A.fixed) [fix, mov, rf, rm] = [B, A, rb, ra];
-      if (mov.fixed) {
-        if (!satisfied(fix, rf, mov, rm, c.type, evalGap(c.gap))) errors[c.id] = "Beide Bauteile fixiert – Abhängigkeit nicht erfüllt";
+      if (held(B) && !held(A)) [fix, mov, rf, rm] = [B, A, rb, ra];
+      if (held(mov)) {
+        if (!satisfied(fix, rf, mov, rm, c.type, evalGap(c.gap))) errors[c.id] = "Beide Bauteile fixiert (oder mit Drehgelenk) – Abhängigkeit nicht erfüllt";
         continue;
       }
       const MF = placementMatrix(fix.pos, fix.rot), MM = placementMatrix(mov.pos, mov.rot);
