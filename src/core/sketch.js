@@ -1,5 +1,7 @@
 // Skizzen-Datenmodell: Profile (geschlossene Konturen) finden, Punkte für Bohrungen, Hilfen
 
+import { ellipseGeom, ellipseSamples } from "./ellipse.js";
+
 export function newSketch(id, name, plane) {
   return { id, type: "sketch", name, plane, offset: "0", points: [], entities: [], constraints: [] };
 }
@@ -18,6 +20,7 @@ export function arcGeometry(c, p1, p2) {
 
 /** Punkte einer Kontur für Flächen-/Inklusionstests */
 function sampleLoop(loop) {
+  if (loop.kind === "ellipse") return ellipseSamples({ cx: loop.c[0], cy: loop.c[1], A: loop.a, B: loop.b, ux: Math.cos(loop.rot), uy: Math.sin(loop.rot) }, 64);
   if (loop.kind === "circle") {
     const pts = [];
     for (let i = 0; i < 48; i++) {
@@ -81,7 +84,7 @@ function pointInPoly(pt, poly) {
 /**
  * Findet geschlossene Konturen in einer Skizze.
  * Rückgabe: {regions: [{outer, holes:[]}], loops, errors:[], openPoints:[ids]}
- * loop: {kind:'circle', c:[x,y], r} | {kind:'path', start:[x,y], segs:[{t:'line',to}|{t:'arc',to,mid}]}
+ * loop: {kind:'circle', c:[x,y], r} | {kind:'ellipse', c, a, b, rot (Bogenmaß, Richtung der Halbachse a)} | {kind:'path', start:[x,y], segs:[{t:'line',to}|{t:'arc',to,mid}]}
  */
 export function extractProfiles(sketch) {
   const pts = new Map(sketch.points.map((p) => [p.id, p]));
@@ -104,6 +107,11 @@ export function extractProfiles(sketch) {
     if (e.type === "circle") {
       const c = pts.get(e.c);
       if (c && e.r > 1e-9) loops.push({ kind: "circle", c: [c.x, c.y], r: e.r, ents: [e.id] });
+    } else if (e.type === "ellipse") {
+      const c = pts.get(e.c), a = pts.get(e.a);
+      if (!c || !a) continue;
+      const g = ellipseGeom(c, a, e.r);
+      if (g.A > 1e-9 && g.B > 1e-9) loops.push({ kind: "ellipse", c: [c.x, c.y], a: g.A, b: g.B, rot: g.rot, ents: [e.id] });
     } else if (e.type === "line" || e.type === "arc") {
       const a = find(e.p1), b = find(e.p2);
       if (a === b) continue;
@@ -227,7 +235,7 @@ export function deleteEntities(sketch, ids) {
   const del = new Set(ids);
   sketch.entities = sketch.entities.filter((e) => !del.has(e.id));
   const usedPts = new Set();
-  for (const e of sketch.entities) for (const k of ["p1", "p2", "c", "p"]) if (e[k]) usedPts.add(e[k]);
+  for (const e of sketch.entities) for (const k of ["p1", "p2", "c", "p", "a"]) if (e[k]) usedPts.add(e[k]);
   const delPts = new Set(sketch.points.filter((p) => !usedPts.has(p.id)).map((p) => p.id));
   sketch.points = sketch.points.filter((p) => !delPts.has(p.id));
   sketch.constraints = sketch.constraints.filter((c) => {
@@ -244,6 +252,7 @@ export function sketchBounds(sketch) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const pts = new Map(sketch.points.map((p) => [p.id, p]));
   for (const p of sketch.points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  for (const e of sketch.entities) if (e.type === "ellipse") { const c = pts.get(e.c), m = Math.max(Math.hypot(pts.get(e.a).x - c.x, pts.get(e.a).y - c.y), e.r); x0 = Math.min(x0, c.x - m); x1 = Math.max(x1, c.x + m); y0 = Math.min(y0, c.y - m); y1 = Math.max(y1, c.y + m); }
   for (const e of sketch.entities) if (e.type === "circle") { const c = pts.get(e.c); x0 = Math.min(x0, c.x - e.r); x1 = Math.max(x1, c.x + e.r); y0 = Math.min(y0, c.y - e.r); y1 = Math.max(y1, c.y + e.r); }
   if (!Number.isFinite(x0)) return null;
   return { x0, y0, x1, y1 };

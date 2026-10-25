@@ -46,6 +46,11 @@ export function createKernel(R) {
   // ---------- 2D -> replicad ----------
   function loopToDrawing(loop) {
     if (loop.kind === "circle") return R.drawCircle(loop.r).translate(loop.c[0], loop.c[1]);
+    if (loop.kind === "ellipse") { // OpenCascade verlangt Haupt- ≥ Nebenradius
+      const swap = loop.b > loop.a;
+      const deg = (loop.rot * 180) / Math.PI + (swap ? 90 : 0);
+      return R.drawEllipse(Math.max(loop.a, loop.b), Math.min(loop.a, loop.b)).rotate(deg, [0, 0]).translate(loop.c[0], loop.c[1]);
+    }
     let pen = R.draw(loop.start);
     for (const s of loop.segs) pen = s.t === "line" ? pen.lineTo(s.to) : pen.threePointsArcTo(s.to, s.mid);
     return pen.close();

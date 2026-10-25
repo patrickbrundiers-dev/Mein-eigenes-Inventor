@@ -51,6 +51,7 @@ const P = {
   rect: '<rect x="4" y="6" width="16" height="12"/>',
   rectc: '<rect x="4" y="6" width="16" height="12"/><path d="M12 10v4M10 12h4"/>',
   circle: '<circle cx="12" cy="12" r="8"/><path d="M12 12h8" stroke-dasharray="2 1.5"/>',
+  ellipse: '<ellipse cx="12" cy="12" rx="9" ry="5.5" transform="rotate(-20 12 12)"/><path d="M12 12l8.4-3" stroke-dasharray="2 1.5"/>',
   arc: '<path d="M4 18a9 9 0 0 1 16 0"/><circle cx="4" cy="18" r="1.4"/><circle cx="20" cy="18" r="1.4"/><circle cx="12" cy="7" r="1.4"/>',
   arcc: '<path d="M18 12a6 6 0 0 0-6-6"/><circle cx="12" cy="12" r="1.4"/><path d="M12 12L18 12M12 12V6" stroke-dasharray="2 1.5"/>',
   point: '<circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',

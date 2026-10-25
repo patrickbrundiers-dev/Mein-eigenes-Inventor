@@ -886,7 +886,7 @@ try {
     const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
     const selectOrig = () => evalApp(() => { const s = window.__werkcad.sketcher; s.sel.clear(); s.sel.add("e:mk"); window.__werkcad.selectSketchItems(["e:mk"]); });
     await selectOrig();
-    await page.locator("#ribbon .rb-btn", { hasText: /^Rechteckmuster$/ }).click();
+    await page.locator("#ribbon button", { hasText: /^Rechteckmuster$/ }).click();
     let [cx, cy] = await at(0, 60);
     await page.mouse.click(cx, cy);
     await page.locator(".dialog input[data-k=nx]").fill("3");
@@ -897,7 +897,7 @@ try {
     await page.waitForTimeout(300);
     const rect = await evalApp(() => window.__werkcad.sketcher.sk.entities.filter((e) => e.type === "circle").length);
     await selectOrig();
-    await page.locator("#ribbon .rb-btn", { hasText: /^Kreismuster$/ }).click();
+    await page.locator("#ribbon button", { hasText: /^Kreismuster$/ }).click();
     [cx, cy] = await at(0, 0);
     await page.mouse.click(cx, cy);
     await page.locator(".dialog input[data-k=n]").fill("4");
@@ -1113,6 +1113,40 @@ try {
     await shot("22b-schnitt-gefuellt");
     sc.capsAfter = await evalApp(() => { const a = window.__werkcad; a.toggleClip("Y"); return a.viewer.capGroup.children.length; });
     step("Schnitt: Schnittflächen gefüllt", sc.caps > 0 && sc.caps === sc.bodies && sc.capsOff === 0 && sc.capsAgain === sc.caps && sc.diff > 50 && sc.covered >= sc.coveredHollow && sc.capsAfter === 0, JSON.stringify(sc));
+  }
+
+  // Skizze: Ellipse mit drei Klicks zeichnen, Halbachsen bemaßen, extrudieren
+  {
+    await evalApp(() => window.__werkcad.newPart("Ellipse"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const cv = await page.locator("#viewer canvas").boundingBox();
+    const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
+    await evalApp(() => { window.__werkcad.sketcher.gridSnap = false; });
+    await page.locator("#ribbon .rb-btn", { hasText: /^Ellipse$/ }).click();
+    for (const [x, y] of [[40, 30], [70, 30], [50, 50]]) { const [px, py] = await at(x, y); await page.mouse.click(px, py); await page.waitForTimeout(120); }
+    const el = await evalApp(() => {
+      const s = window.__werkcad.sketcher, e = s.sk.entities.find((q) => q.type === "ellipse");
+      return e ? { id: e.id, r: e.r, regions: s.profiles?.regions.length } : null;
+    });
+    await page.keyboard.press("Escape");
+    // Auswahl → Eigenschaften: Halbachsen bemaßen
+    await evalApp((id) => { const s = window.__werkcad.sketcher; s.sel = new Set(["e:" + id]); window.__werkcad.selectSketchItems([...s.sel]); }, el?.id);
+    await page.waitForTimeout(200);
+    for (const t of ["a bemaßen", "b bemaßen", "Winkel bemaßen"]) { await page.locator("#props button", { hasText: t }).click(); await page.waitForTimeout(120); }
+    const dims = await evalApp(() => window.__werkcad.sketcher.sk.constraints.filter((c) => c.type === "semiAxis" || c.type === "axisAngle").map((c) => c.type + (c.axis || "") + "=" + c.value));
+    await shot("26b-ellipse");
+    await page.locator("#ribbon button", { hasText: "Skizze fertig" }).click();
+    await page.waitForTimeout(300);
+    await page.locator("#ribbon button", { hasText: "Extrusion" }).first().click();
+    await idle();
+    const ex = await evalApp(() => { const a = window.__werkcad; const b = a.results.get(a.activeId)?.bodies[0]; return b ? { vol: b.props.volume, h: b.props.bbox[1][2] - b.props.bbox[0][2] } : null; });
+    const want = ex ? Math.PI * 30 * (el?.r || 0) * ex.h : 0;
+    step("Skizze: Ellipse zeichnen und extrudieren", !!el && Math.abs(el.r - 20) < 0.5 && el.regions === 1 && dims.length === 3 && ex && Math.abs(ex.vol / want - 1) < 2e-3,
+      JSON.stringify({ el, dims, ex }));
   }
 
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig

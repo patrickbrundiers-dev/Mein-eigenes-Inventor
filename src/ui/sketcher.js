@@ -8,6 +8,7 @@ import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
 import { inferLine, inferCircle } from "../core/autoconstraints.js";
 import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities } from "../core/sketchshapes.js";
+import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
 const PT_R = 7, CURVE_R = 6;
@@ -19,6 +20,7 @@ export const SKETCH_TOOLS = {
   rectc: "Rechteck aus Mitte: Mittelpunkt, dann Ecke klicken – oder Breite tippen, Tab, Höhe tippen, Enter",
   circle: "Kreis: Mittelpunkt, dann Radius klicken – oder Durchmesser tippen, Enter",
   arc3: "Bogen: Anfang, Ende, dann Punkt auf dem Bogen klicken",
+  ellipse: "Ellipse: Mittelpunkt, Ende der Hauptachse, dann einen Punkt für die Nebenhalbachse klicken",
   arcc: "Bogen um Mittelpunkt: Mitte, Anfang, Ende (gegen Uhrzeigersinn)",
   point: "Punkt / Bohrungsmitte setzen",
   slot: "Langloch: erster Mittelpunkt, zweiter Mittelpunkt, dann Breite klicken",
@@ -178,6 +180,7 @@ export class Sketcher {
   }
 
   // ---------- Trefferprüfung ----------
+  ellG(e, P = this.pts()) { return ellipseGeom(P.get(e.c), P.get(e.a), e.r); }
   pts() { return new Map(this.sk.points.map((p) => [p.id, p])); }
   hitTest(sx, sy, { points = true, curves = true, dims = true, exclude = new Set() } = {}) {
     const sk = this.sk;
@@ -219,6 +222,10 @@ export class Sketcher {
             if (a - g.a1 > g.sweep) d = Infinity;
           }
         }
+        else if (e.type === "ellipse") {
+          const [lx, ly] = this.L(sx, sy);
+          d = ellipseNearest(this.ellG(e, P), lx, ly).d * this.M.scale;
+        }
         if (d < bd) { bd = d; best = { kind: "entity", id: e.id }; }
       }
       if (best) return best;
@@ -241,7 +248,7 @@ export class Sketcher {
       if (e.type === "circle") continue;
     }
     for (const e of this.sk.entities) {
-      if (e.type !== "circle" && e.type !== "arc") continue;
+      if (e.type !== "circle" && e.type !== "arc" && e.type !== "ellipse") continue;
       const c = P.get(e.c);
       const [x, y] = this.S(c.x, c.y);
       if (Math.hypot(x - sx, y - sy) < this.snapR) return { x: c.x, y: c.y, pointId: c.id, label: "Mitte" };
@@ -255,6 +262,7 @@ export class Sketcher {
         const t = ((lx - a.x) * dx + (ly - a.y) * dy) / L2;
         return { x: a.x + t * dx, y: a.y + t * dy, on: e.id, onType: "line", label: "Auf Linie" };
       }
+      if (e.type === "ellipse") { const q = ellipseNearest(this.ellG(e, P), lx, ly); return { x: q.x, y: q.y, on: e.id, onType: "circle", label: "Auf Ellipse" }; }
       const c = P.get(e.c);
       const r = e.type === "circle" ? e.r : Math.hypot(P.get(e.p1).x - c.x, P.get(e.p1).y - c.y);
       const ang = Math.atan2(ly - c.y, lx - c.x);
@@ -385,6 +393,14 @@ export class Sketcher {
     this.state = null;
     this.addRect(a, t.b, this.tool === "rectc", t.dims);
   }
+  addEllipse(c, a, rb) {
+    this.commit("Ellipse", (sk) => {
+      const cons = [];
+      const cid = this.usePoint(sk, c, cons), aid = this.usePoint(sk, a, cons);
+      sk.entities.push({ id: uid("el"), type: "ellipse", c: cid, a: aid, r: Math.max(rb, 1e-3), construction: !!this.construction });
+      sk.constraints.push(...cons);
+    });
+  }
   addCircle(c, r, diameter = null, auto = null) {
     this.commit("Kreis", (sk) => {
       const cons = [];
@@ -433,6 +449,7 @@ export class Sketcher {
     const E = (h) => (h.kind === "entity" ? this.entity(h.id) : null);
     const isLine = (h) => E(h)?.type === "line";
     const isCirc = (h) => ["circle", "arc"].includes(E(h)?.type);
+    const isEll = (h) => E(h)?.type === "ellipse";
     const isPt = (h) => h.kind === "point";
     let c = null;
     const done = () => { this.pendingPick = []; };
@@ -471,12 +488,14 @@ export class Sketcher {
         break;
       case "concentric":
         if (picks.length < 2) return;
-        if (isCirc(picks[0]) && isCirc(picks[1])) c = { type: "concentric", e1: picks[0].id, e2: picks[1].id };
+        if ((isCirc(picks[0]) || isEll(picks[0])) && (isCirc(picks[1]) || isEll(picks[1]))) c = { type: "concentric", e1: picks[0].id, e2: picks[1].id };
         else { done(); return; }
         break;
       case "tangent":
         if (picks.length < 2) return;
-        if ((isLine(picks[0]) || isCirc(picks[0])) && isCirc(picks[1]) || (isCirc(picks[0]) && isLine(picks[1]))) {
+        if ((isLine(picks[0]) && isEll(picks[1])) || (isEll(picks[0]) && isLine(picks[1]))) c = { type: "tangent", e1: picks[0].id, e2: picks[1].id };
+        else if (isEll(picks[0]) || isEll(picks[1])) { done(); return toast("Ellipse: tangential nur zu einer Linie"); }
+        else if ((isLine(picks[0]) || isCirc(picks[0])) && isCirc(picks[1]) || (isCirc(picks[0]) && isLine(picks[1]))) {
           c = { type: "tangent", e1: picks[0].id, e2: picks[1].id };
           if (isCirc(picks[0]) && isCirc(picks[1])) {
             const P = this.pts();
@@ -525,6 +544,10 @@ export class Sketcher {
       }
       if (e.type === "circle") return { type: "diameter", e: e.id, labelAngle: this.angleFor(P.get(e.c), place) };
       if (e.type === "arc") return { type: "radius", e: e.id, labelAngle: this.angleFor(P.get(e.c), place) };
+      if (e.type === "ellipse") { // Halbachse nach Klickrichtung: nahe der Hauptachse → a, sonst b
+        const q = ellipseLocal(this.ellG(e, P), place.x, place.y);
+        return { type: "semiAxis", e: e.id, axis: Math.abs(q.v) > Math.abs(q.u) ? "b" : "a" };
+      }
       return null;
     }
     if (picks.length === 2) {
@@ -904,6 +927,16 @@ export class Sketcher {
           this.state = null;
         }
         break;
+      case "ellipse":
+        if (!this.state) this.state = { pts: [sn] };
+        else if (this.state.pts.length === 1) { if (Math.hypot(sn.x - this.state.pts[0].x, sn.y - this.state.pts[0].y) * this.M.scale > 2) this.state.pts.push(sn); }
+        else {
+          const [c, a] = this.state.pts;
+          const rb = Math.abs(ellipseLocal(ellipseGeom(c, a, 1), sn.x, sn.y).v);
+          this.state = null;
+          if (rb * this.M.scale >= 1) this.addEllipse(c, a, rb);
+        }
+        break;
       case "arcc":
         if (!this.state) this.state = { pts: [sn] };
         else if (this.state.pts.length === 1) this.state.pts.push(sn);
@@ -948,7 +981,7 @@ export class Sketcher {
   /** zusammenhängende Linien/Bögen über gemeinsame Punkte (Kreis: nur er selbst) */
   connectedChain(id) {
     const start = this.entity(id);
-    if (!start || start.type === "circle" || start.type === "point") return start ? [id] : [];
+    if (!start || start.type === "circle" || start.type === "ellipse" || start.type === "point") return start ? [id] : [];
     const kind = !!start.construction;
     const pool = this.sk.entities.filter((e) => (e.type === "line" || e.type === "arc") && !e.origin && !!e.construction === kind);
     const out = new Set([id]), queue = [start];
@@ -1011,6 +1044,7 @@ export class Sketcher {
       const c = sk.constraints.find((k) => k.id === hit.id);
       if (!c) return;
       if (c.type === "radius" || c.type === "diameter") { const e = this.entity(c.e); const cc = P.get(e.c); c.labelAngle = Math.atan2(ly - cc.y, lx - cc.x); return; }
+      if (c.type === "semiAxis" || c.type === "axisAngle") return;
       if (c.type === "angle") { c.labelOffset = Math.max(5 / this.M.scale, Math.hypot(lx - d.start[0], ly - d.start[1]) + (c._base ?? (c._base = c.labelOffset || 20))); return; }
       const [a, b] = this.dimPoints(c, P);
       if (!a || !b) return;
@@ -1036,9 +1070,10 @@ export class Sketcher {
         this.profiles = extractProfiles(sk);
         return;
       } else if (e.type === "arc") targets = [e.c, e.p1, e.p2].map((p) => ({ p, x: O.get(p).x + dx, y: O.get(p).y + dy }));
+      else if (e.type === "ellipse") targets = [e.c, e.a].map((p) => ({ p, x: O.get(p).x + dx, y: O.get(p).y + dy }));
       else if (e.type === "point") targets = [{ p: e.p, x: lx, y: ly }];
     }
-    const keep = JSON.stringify(sk.points.concat(sk.entities.filter((x) => x.type === "circle").map((x) => ({ id: x.id, r: x.r }))));
+    const keep = JSON.stringify(sk.points.concat(sk.entities.filter((x) => x.type === "circle" || x.type === "ellipse").map((x) => ({ id: x.id, r: x.r }))));
     const extra = targets.map((t, i) => ({ id: "drag" + i, type: "target", p: t.p, x: t.x, y: t.y, w: 0.05 }));
     solveSketch(sk, this.scope(), { extra, computeDof: false, writeOnFail: true, maxIterations: 40 });
     const r2 = solveSketch(sk, this.scope(), { computeDof: false, maxIterations: 40 });
@@ -1046,7 +1081,7 @@ export class Sketcher {
       const old = JSON.parse(keep);
       const m = new Map(old.map((o) => [o.id, o]));
       for (const p of sk.points) { const o = m.get(p.id); if (o) { p.x = o.x; p.y = o.y; } }
-      for (const c of sk.entities) if (c.type === "circle" && m.get(c.id)) c.r = m.get(c.id).r;
+      for (const c of sk.entities) if ((c.type === "circle" || c.type === "ellipse") && m.get(c.id)) c.r = m.get(c.id).r;
     }
     this.profiles = extractProfiles(sk);
   }
@@ -1116,7 +1151,7 @@ export class Sketcher {
     if (pts.includes("O")) pts.splice(pts.indexOf("O"), 1);
     this.commit("Löschen", (sk) => {
       // Punkte: zugehörige Elemente mitlöschen
-      for (const p of pts) for (const e of sk.entities) if ([e.p1, e.p2, e.c, e.p].includes(p) && !e.origin) ents.push(e.id);
+      for (const p of pts) for (const e of sk.entities) if ([e.p1, e.p2, e.c, e.p, e.a].includes(p) && !e.origin) ents.push(e.id);
       sk.constraints = sk.constraints.filter((c) => !cons.includes(c.id));
       deleteEntities(sk, ents.filter((id) => id !== "Oe"));
     });
@@ -1192,6 +1227,8 @@ export class Sketcher {
         const c = P.get(e.c);
         const C = S(c.x, c.y), r = e.r * this.M.scale;
         d = `M${C[0] - r},${C[1]}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0`;
+      } else if (e.type === "ellipse") {
+        d = "M" + ellipseSamples(this.ellG(e, P), 96).map((q) => S(q[0], q[1]).join(",")).join("L") + "Z";
       } else if (e.type === "arc") {
         const c = P.get(e.c), p1 = P.get(e.p1), p2 = P.get(e.p2);
         const geo = arcGeometry(c, p1, p2);
@@ -1255,7 +1292,7 @@ export class Sketcher {
     try { v = c.driven ? measureConstraint(this.sk, c) : evaluate(c.value, scope); } catch { /* */ }
     const num = fmtNum(v, 2);
     const isExpr = !c.driven && !/^\s*-?[\d.,]+\s*$/.test(String(c.value));
-    let t = c.type === "diameter" ? "Ø" + num : c.type === "radius" ? "R" + num : c.type === "angle" ? num + "°" : num;
+    let t = c.type === "diameter" ? "Ø" + num : c.type === "radius" ? "R" + num : c.type === "angle" || c.type === "axisAngle" ? num + "°" : c.type === "semiAxis" ? `${c.axis === "b" ? "b" : "a"} ${num}` : num;
     if (isExpr) t = `fx: ${t}`;
     if (c.driven) t = `(${t})`;
     return t;
@@ -1333,6 +1370,25 @@ export class Sketcher {
       grp.append(svgEl("path", { class: cls, d: `M${sp[0]},${sp[1]}L${sf[0]},${sf[1]}` + arrow(sf[0], sf[1], ddx, ddy) + arrow(sp[0], sp[1], -ddx, -ddy) }));
       tx = (sp[0] + sf[0]) / 2; ty = (sp[1] + sf[1]) / 2;
       rot = (Math.atan2(ddy, ddx) * 180) / Math.PI;
+      if (rot > 90) rot -= 180;
+      if (rot < -90) rot += 180;
+    } else if (c.type === "semiAxis" || c.type === "axisAngle") {
+      const e = this.entity(c.e);
+      if (!e) return;
+      const g = this.ellG(e, P), sc = this.S(g.cx, g.cy);
+      if (c.type === "semiAxis") {
+        const q = c.axis === "b" ? ellipsePoint(g, Math.PI / 2) : ellipsePoint(g, 0), sq = this.S(q.x, q.y);
+        grp.append(svgEl("path", { class: cls, d: `M${sc[0]},${sc[1]}L${sq[0]},${sq[1]}` + arrow(sq[0], sq[1], sq[0] - sc[0], sq[1] - sc[1]) }));
+        tx = (sc[0] + sq[0]) / 2; ty = (sc[1] + sq[1]) / 2;
+        rot = (Math.atan2(sq[1] - sc[1], sq[0] - sc[0]) * 180) / Math.PI;
+      } else {
+        const r = g.A * 0.45, n = 16, pts = [];
+        for (let i = 0; i <= n; i++) { const t = (g.rot * i) / n; pts.push(this.S(g.cx + r * Math.cos(t), g.cy + r * Math.sin(t))); }
+        const ref = this.S(g.cx + r * 1.2, g.cy);
+        grp.append(svgEl("path", { class: cls, d: `M${sc[0]},${sc[1]}L${ref[0]},${ref[1]}M` + pts.map((q) => q.join(",")).join("L") }));
+        // Text unterhalb der Winkelhalbierenden, damit er nicht auf dem Maß der Halbachse a liegt
+        [tx, ty] = this.S(g.cx + r * 0.75 * Math.cos(g.rot / 2 - 0.4), g.cy + r * 0.75 * Math.sin(g.rot / 2 - 0.4));
+      }
       if (rot > 90) rot -= 180;
       if (rot < -90) rot += 180;
     } else if (c.type === "radius" || c.type === "diameter") {
@@ -1461,6 +1517,15 @@ export class Sketcher {
         const k = Math.SQRT1_2;
         g.append(svgEl("path", { d: `M${c[0]},${c[1]}L${c[0] + r * k},${c[1] - r * k}`, class: "sk-dyn-line" }));
         this.dynBox(g, 0, c[0] + r * k + 30, c[1] - r * k - 14, "Ø", "", vals.d);
+      }
+    } else if (this.tool === "ellipse" && st.pts) {
+      const [c, a] = st.pts;
+      if (!a) { const A = S(c.x, c.y), B = S(cur.x, cur.y); path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`); }
+      else {
+        const g0 = ellipseGeom(c, a, 1), rb = Math.abs(ellipseLocal(g0, cur.x, cur.y).v);
+        path("M" + ellipseSamples(ellipseGeom(c, a, rb), 96).map((q) => S(q[0], q[1]).join(",")).join("L") + "Z");
+        const A = S(c.x, c.y), B = S(a.x, a.y);
+        g.append(svgEl("path", { d: `M${2 * A[0] - B[0]},${2 * A[1] - B[1]}L${B[0]},${B[1]}`, class: "sk-dyn-line" }));
       }
     } else if ((this.tool === "arc3" || this.tool === "arcc") && st.pts) {
       const pts = [...st.pts, cur];

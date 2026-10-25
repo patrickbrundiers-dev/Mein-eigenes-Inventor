@@ -782,3 +782,14 @@ test("Trägheitsmomente aus dem Netz: Quader, Zylinder, Rohr gegen Formeln", () 
   const tube = R.makeCylinder(Ra, L).cut(R.makeCylinder(Ri, L));
   check(tube, [m3 * (3 * (Ra * Ra + Ri * Ri) + L * L) / 12, m3 * (3 * (Ra * Ra + Ri * Ri) + L * L) / 12, m3 * (Ra * Ra + Ri * Ri) / 2], 0.02, "Rohr");
 });
+
+test("Ellipse extrudieren: Volumen π·a·b·h, auch mit b > a", async () => {
+  const sk = (id, ax, ay, r) => ({ id, type: "sketch", name: id, plane: "XY", offset: "0", points: [{ id: "c", x: 10, y: 5 }, { id: "a", x: 10 + ax, y: 5 + ay }], entities: [{ id: "el", type: "ellipse", c: "c", a: "a", r }], constraints: [] });
+  const a = 30, b = 20, h = 10;
+  const res = await K.buildPart(part([sk("s1", a * Math.cos(0.5), a * Math.sin(0.5), b), { id: "e1", type: "extrude", sketch: "s1", distance: String(h) }]));
+  okAll(res);
+  near(vol(res), Math.PI * a * b * h, 1e-3 * Math.PI * a * b * h, "Ellipse");
+  const res2 = await K.buildPart(part([sk("s2", 12, 0, 25), { id: "e2", type: "extrude", sketch: "s2", distance: "5" }]));
+  okAll(res2);
+  near(vol(res2), Math.PI * 12 * 25 * 5, 1e-3 * Math.PI * 12 * 25 * 5, "Ellipse b>a");
+});

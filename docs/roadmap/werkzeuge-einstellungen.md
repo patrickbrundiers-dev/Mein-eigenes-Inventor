@@ -49,7 +49,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Maße direkt beim Zeichnen | vorhanden | Rechteck/Linie/Kreis, `src/core/dyninput.js` |
 | Polylinie (Linienkette) | vorhanden | Linienwerkzeug setzt am Endpunkt fort |
 | Langloch, Polygon | vorhanden | Stufe 6: aus Bögen/Linien mit tangentAt/gleich bzw. Konstruktionskreis + gleiche Seiten; bleibt parametrisch |
-| Ellipse, Spline | blockiert | Solver (`src/core/solver.js`) und Profilbildung kennen nur Linie/Kreis/Bogen |
+| Ellipse, Spline | teilweise | Stufe 19: Ellipse (Mittelpunkt, Achsenende, Nebenhalbachse; Halbachsen, Achswinkel, Punkt auf Ellipse, Tangente an Linie; Profil, DXF als Polylinie). Ellipsenbogen, Stutzen an Ellipsen und Spline (Stufe 21) folgen |
 | Stutzen, Skizzenrundung | vorhanden | `src/core/sketchedit.js` |
 | Spiegeln | vorhanden | Stufe 6: Kopien über »symmetrisch« an Originale gebunden |
 | Versatz | vorhanden | Stufe 7: Kontur anklicken (ganze Kette), Seite klicken, Abstand; Ecken im Schnittpunkt, Bögen konzentrisch; ein sichtbares Maß steuert alle Kopien |
@@ -124,5 +124,5 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 16 | Bestimmtheit der Skizze farbig (frei/bestimmt/Widerspruch) | Solver-Tests Nullraum, Oberflächentest |
 | 17 | Trägheitsmomente aus dem Dreiecksnetz (Messen → Masse-Eigenschaften) | Kernel-Test Quader/Zylinder/Rohr |
 | 18 | Gefüllte Schnittflächen im 3D-Schnitt (Stencil, Einstellung „Schnittflächen füllen“) | Oberflächentest (Pixel) |
-| 19 (geplant) | Ellipse in der Skizze (Solver, Profil, DXF) | Solver-/Kernel-/Oberflächentest |
+| 19 | Ellipse in der Skizze (Solver, Profil, DXF) | Solver-/Kernel-/Oberflächentest |
 | 20 (geplant) | Farbschema hell/dunkel, Werkzeugparameter merken | Unit-Test Schema, Oberflächentest |
