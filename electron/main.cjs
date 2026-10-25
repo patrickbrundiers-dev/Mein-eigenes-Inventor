@@ -273,6 +273,21 @@ ipcMain.handle("pdf:print", async (_e, { svg, width, height, name }) => {
   }
 });
 
+// Mehrseitiges PDF aus fertigem HTML (Fertigungsmappe); Seitenformate aus den @page-Regeln, Ergebnis als Bytes
+ipcMain.handle("pdf:render", async (_e, html) => {
+  if (typeof html !== "string") throw new Error("HTML fehlt");
+  const tmp = path.join(os.tmpdir(), `werkcad-mappe-${Date.now()}.html`);
+  fs.writeFileSync(tmp, html, "utf8");
+  const pw = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
+  try {
+    await pw.loadFile(tmp);
+    return await pw.webContents.printToPDF({ printBackground: true, margins: { marginType: "none" }, preferCSSPageSize: true });
+  } finally {
+    pw.destroy();
+    fs.rm(tmp, () => {});
+  }
+});
+
 // Einstellungen + Updates
 ipcMain.handle("settings:get", () => {
   const s = readSettings();

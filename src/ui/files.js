@@ -12,7 +12,8 @@ import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
 import { collectNorm } from "../core/normteile.js";
 import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
 import { decomposePlacement } from "../core/geom.js";
-import { buildXlsx } from "../core/xlsx.js";
+import { buildXlsx, zipFiles } from "../core/xlsx.js";
+import { mappeHtml, listPages, mappeName } from "../core/mappe.js";
 import { listSheets } from "../core/lists.js";
 import { fmtNum } from "./dom.js";
 
@@ -251,9 +252,8 @@ export class Files {
     downloadBlob(new Blob([buf]), name);
     return { path: name };
   }
-  exportItems() {
+  exportItems(d = this.app.activeDoc()) {
     const app = this.app;
-    const d = app.activeDoc();
     if (!d) return null;
     if (d.kind === "part") return [{ part: d, name: d.name }];
     // alle Komponenten, auch ausgeblendete – passend zu Stück- und Zuschnittliste
@@ -369,23 +369,62 @@ export class Files {
     toast(`Bild ${img.width} × ${img.height} px gespeichert`, { kind: "ok" });
   }
   async exportListsXlsx() {
+    const d = this.app.activeDoc();
+    const sheets = this.listSheetsFor(d);
+    if (!sheets.length) return toast("Keine Listen vorhanden – keine Profile, Nähte oder Bauteile");
+    const data = buildXlsx(sheets);
+    await this.saveBinary(data, safeName(d.number || d.name) + "_Listen.xlsx", [{ name: "Excel-Arbeitsmappe", extensions: ["xlsx"] }]);
+    toast(`Excel: ${sheets.map((s) => s.name).join(", ")}`, { kind: "ok" });
+  }
+  /** Tabellenblätter der Excel-Listen für Bauteil oder Baugruppe */
+  listSheetsFor(d) {
     const app = this.app;
-    const d = app.activeDoc();
     const src = collectCutSources(app, d);
     const asm = d.kind === "assembly";
     const docOf = (id) => app.doc(id);
     // Struktur- und Baukastenliste nur, wenn es Unterbaugruppen gibt – sonst wären sie gleich der Stückliste
     const nested = asm && d.components.some((c) => app.doc(c.part)?.kind === "assembly");
-    const sheets = listSheets({
+    return listSheets({
       cut: cutListRows(src), welds: weldRows(collectWelds(src)),
       bom: asm ? bomRows(app, d) : collectNorm(src.map((s) => ({ bodies: s.result.bodies, qty: s.qty }))).map((x, i) => ({ ...x, pos: i + 1, number: "" })),
       structure: nested ? structureBom(d, docOf).map((x) => ({ level: x.level, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty, total: x.total })) : [],
       modular: nested ? modularBom(d, docOf).map((m) => ({ name: m.asm.name, number: m.asm.number, rows: m.rows.map((x) => ({ pos: x.pos, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty })) })) : [],
     });
-    if (!sheets.length) return toast("Keine Listen vorhanden – keine Profile, Nähte oder Bauteile");
-    const data = buildXlsx(sheets);
-    await this.saveBinary(data, safeName(d.number || d.name) + "_Listen.xlsx", [{ name: "Excel-Arbeitsmappe", extensions: ["xlsx"] }]);
-    toast(`Excel: ${sheets.map((s) => s.name).join(", ")}`, { kind: "ok" });
+  }
+  /**
+   * Fertigungsmappe (E3) als ZIP: PDF mit allen Zeichnungen (fehlende Einzelteilzeichnungen entstehen dabei), Stück- und
+   * Zuschnittliste; dazu Excel-Listen, Zuschnitt-CSV, STEP gesamt und je Position, Profil-STEPs für den Rohrlaser und
+   * die Zeichnungen als DXF. Im Browser steht statt des PDFs eine druckfertige HTML-Datei im ZIP.
+   */
+  async exportMappe(d = this.app.activeDoc()) {
+    const app = this.app;
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Fertigungsmappe gibt es für Bauteile und Baugruppen");
+    await this.withBusy("Fertigungsmappe", async () => {
+      const parts = await app.builtParts(d);
+      const made = await app.partDrawings(d.id, { quiet: true });
+      const bom = d.kind === "assembly" ? bomRows(app, d) : [];
+      const order = [d.id, ...bom.filter((r) => r.part).map((r) => r.part.id), ...parts.map((p) => p.id)];
+      const drawings = [...new Set(order)].flatMap((id) => app.project.docs.filter((x) => x.kind === "drawing" && x.source?.id === id));
+      const sheets = [];
+      for (const dr of drawings) sheets.push(await app.drawing.sheetExport(dr));
+      const cut = cutListRows(collectCutSources(app, d));
+      const base = mappeName(d.number || d.name);
+      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, bom, cut })], { title: "Fertigungsmappe " + d.name });
+      const files = [];
+      const pdf = this.bridge?.renderPdf ? await this.bridge.renderPdf(html) : null;
+      files.push(pdf ? [base + "_Fertigungsmappe.pdf", new Uint8Array(pdf)] : [base + "_Fertigungsmappe.html", html]);
+      const used = new Set();
+      const unique = (dir, name, ext) => { let n = `${dir}/${mappeName(name)}`, k = 2; while (used.has(n + ext)) n = `${dir}/${mappeName(name)}_${k++}`; used.add(n + ext); return n + ext; };
+      for (const s of sheets) files.push([unique("Zeichnungen", s.name, ".dxf"), s.dxf]);
+      const xl = this.listSheetsFor(d);
+      if (xl.length) files.push([base + "_Listen.xlsx", buildXlsx(xl)]);
+      if (cut.length) files.push([base + "_Zuschnitt.csv", cutListCsv(cut)]);
+      files.push([base + ".step", await app.kernel.call("exportStep", { items: this.exportItems(d) })]);
+      if (d.kind === "assembly") for (const r of bom.filter((x) => x.part)) files.push([unique("Positionen", `${String(r.pos).padStart(2, "0")}_${r.number || r.name}`, ".step"), await app.kernel.call("exportStep", { items: [{ part: r.part, name: r.part.name }] })]);
+      for (const p of parts) for (const x of await app.kernel.call("bodySteps", { part: p, onlyMembers: true })) files.push([unique("Laser", x.name, ".step"), x.text]);
+      await this.saveBinary(zipFiles(files), base + "_Fertigungsmappe.zip", [{ name: "ZIP-Archiv", extensions: ["zip"] }]);
+      toast(`Fertigungsmappe: ${sheets.length} Zeichnung${sheets.length === 1 ? "" : "en"}${made.length ? ` (${made.length} neu)` : ""}, ${files.length} Dateien`, { kind: "ok", timeout: 6000 });
+    });
   }
   async exportBom() {
     const app = this.app;

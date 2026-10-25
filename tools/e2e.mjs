@@ -775,6 +775,26 @@ try {
     await idle();
   }
 
+  // Einzelteilzeichnungen (E5) und Fertigungsmappe (E3) aus der Beispiel-Baugruppe
+  {
+    const ez = await evalApp(async () => {
+      const a = window.__werkcad;
+      const parts = ["beispiel_rahmen", "beispiel_platte", "beispiel_rohr"];
+      const drawn = () => parts.filter((id) => a.project.docs.some((x) => x.kind === "drawing" && x.source?.id === id));
+      const before = drawn().length;
+      const made = await a.partDrawings("beispiel_bg");
+      const again = await a.partDrawings("beispiel_bg");
+      const info = made.map((d) => ({ views: d.views.length, dims: d.dims.length, pend: !!(d.pendingAutoViews || d.pendingAutoDims), title: d.title.benennung }));
+      const orig = a.files.saveBinary; let zip = null, name = "";
+      a.files.saveBinary = async (buf, n) => { zip = new TextDecoder().decode(buf); name = n; };
+      try { await a.files.exportMappe(a.doc("beispiel_bg")); } finally { a.files.saveBinary = orig; }
+      return { before, made: made.length, again: again.length, after: drawn().length, info, name, pages: zip ? (zip.match(/class="pg"/g) || []).length : 0, lists: zip ? zip.includes("<h1>Stückliste") && zip.includes("<h1>Zuschnittliste") : false,
+        dxf: zip ? (zip.match(/Zeichnungen\/[^\x00]*?\.dxf/g) || []).length : 0, pos: zip ? /Positionen\/01_/.test(zip) : false, laser: zip ? /Laser\/[^\x00]*?\.step/.test(zip) : false, step: zip ? zip.includes("ISO-10303-21") : false, xlsx: zip ? /_Listen\.xlsx/.test(zip) : false };
+    });
+    step("Einzelteilzeichnungen und Fertigungsmappe", ez.after === 3 && ez.made === 3 - ez.before && ez.made > 0 && ez.again === 0 && ez.info.every((x) => x.views >= 2 && x.dims > 0 && !x.pend) && /_Fertigungsmappe\.zip$/.test(ez.name) && ez.pages >= 4 && ez.lists && ez.dxf >= 3 && ez.pos && ez.laser && ez.step && ez.xlsx,
+      JSON.stringify(ez));
+  }
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();

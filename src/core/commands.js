@@ -74,6 +74,7 @@ export const COMMANDS = [
   { id: "file.png", label: "Bild der Ansicht (PNG)", group: "Export", scope: "3d", keywords: "png bild screenshot foto ansicht export" },
   { id: "file.render", label: "Fotorealistisches Bild (PNG, hoch aufgelöst)", group: "Export", scope: "3d", keywords: "rendern render foto bild png hochauflösend" },
   { id: "file.listsXlsx", label: "Listen als Excel (.xlsx)", group: "Export", scope: "3d", keywords: "excel xlsx zuschnittliste stückliste nahtliste tabelle export" },
+  { id: "file.mappe", label: "Fertigungsmappe (PDF + Dateien als ZIP)", group: "Export", scope: "3d", keywords: "werkstatt mappe pdf zip zeichnungen laser paket" },
   { id: "part.naht", label: "Schweißnaht", group: "3D-Modell", scope: "part", keywords: "schweissen kehlnaht v-naht hv-naht iso 2553 a-maß nahtliste" },
   { id: "part.kantteil", label: "Kantteil (Blech)", group: "3D-Modell", scope: "part", keywords: "blech kantteil abkanten abwicklung biegen winkel u-profil z-profil kassette abdeckung laser dxf" },
   { id: "part.regelkoerper", label: "Regelkörper", group: "3D-Modell", scope: "part", keywords: "quader zylinder kugel kegel kegelstumpf torus ring pyramide grundkörper primitiv" },
@@ -88,6 +89,7 @@ export const COMMANDS = [
   { id: "part.params", label: "Parameter", group: "3D-Modell", scope: "part", keywords: "variablen formeln" },
   { id: "part.importStep", label: "STEP einfügen", group: "3D-Modell", scope: "part" },
   { id: "doc.newDrawing", label: "Zeichnung ableiten", group: "3D-Modell", scope: "3d" },
+  { id: "doc.partDrawings", label: "Einzelteilzeichnungen erzeugen", group: "3D-Modell", scope: "assembly", keywords: "zeichnung positionen alle bauteile fertigungszeichnung" },
 
   { id: "sketch.select", label: "Skizze: Auswählen", group: "Skizze", scope: "sketch", key: "S" },
   { id: "sketch.line", label: "Skizze: Linie", group: "Skizze", scope: "sketch", key: "L", keywords: "polylinie" },

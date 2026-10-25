@@ -15,7 +15,7 @@ Listen-Schwäche, die beim Kantteil auffiel, steckt noch in den Generatoren; ein
 lassen sich noch nicht aus PBCAD heraus in ihrer Quelldatei öffnen.
 
 **Stand 25.10.2026:** Freigegeben sind F1 und F2. Stangenoptimierung (E1) und Kalkulation (E2) hat Patrick vorerst
-zurückgestellt; umgesetzt sind V1, V2 und E7.
+zurückgestellt; umgesetzt sind V1, V2, E7 (#96) sowie V3, E3 und E5.
 
 ## Teil A – Erweiterungen
 
@@ -25,9 +25,9 @@ zurückgestellt; umgesetzt sind V1, V2 und E7.
 |---|---|---|---|---|---|
 | E1 ⏸ | **Stangenoptimierung (1D-Zuschnitt)** – zurückgestellt (Patrick, 25.10.2026); Entwurf mit Tests liegt als `plan/zurueckgestellt/E1-stangenplan.patch` im Projektordner: Teile der Zuschnittliste auf Stangen (Standard 6000/6500 mm je Profil, Greiferrest und Endbeschnitt aus der Fertigungsprüfung) verteilen, Verschnitt in % und kg, Schnittplan als Liste und Excel, Restlängen-Lager optional | Zuschnittliste gruppiert, Fertigungsprüfung kennt Stangenlänge (`dfm.js`), aber keine Verteilung | Materialbestellung und Verschnitt sofort sichtbar; täglich nutzbar | M | P0 |
 | E2 ⏸ | **Kalkulation** – zurückgestellt (Patrick, 25.10.2026): Material (kg × €/kg je Werkstoff/Profilart), Laser (Schneidweg + Einstiche × Maschinensatz), Schweißen (Nahtlänge aus M9 × min/m), Biegen (je Biegung), Oberfläche (Verzinken nach kg, Pulvern nach m²), Zuschlag; Kalkulationsblatt als Excel und im Panel | Masse, Schneidweg, Einstiche, Nähte, Oberfläche einzeln vorhanden; keine Preise | Angebotspreis direkt aus dem Modell statt Nebenrechnung | M | P0 |
-| E3 | **Fertigungsmappe als PDF**: alle Zeichnungen, Stückliste, Zuschnittliste, Biegeliste, DXF-/STEP-Paket je Position als ZIP | PDF je Zeichnung, Listen einzeln | ein Klick für die Werkstatt bzw. den Laser-Dienstleister | S | P1 |
+| E3 ✓ | **Fertigungsmappe als PDF**: alle Zeichnungen, Stückliste, Zuschnittliste, Biegeliste, DXF-/STEP-Paket je Position als ZIP. Umgesetzt als ZIP mit PDF (jede Zeichnung in ihrem Blattformat, Stück- und Zuschnittliste A4), Excel-Listen, Zuschnitt-CSV, STEP gesamt und je Position, Profil-STEPs für den Rohrlaser, Zeichnungen als DXF; fehlende Einzelteilzeichnungen entstehen dabei | PDF je Zeichnung, Listen einzeln | ein Klick für die Werkstatt bzw. den Laser-Dienstleister | S | P1 |
 | E4 | **Angebotsblatt**: Render-Bild (M22), Hauptmaße, Werkstoff/Oberfläche, Gewicht, Feld für den Preis (von Hand, solange E2 zurückgestellt ist), Firmenkopf aus den Einstellungen, als PDF | fehlt | Angebote ohne Word-Nacharbeit | S | P1 |
-| E5 | **Einzelteilzeichnungen auf Knopfdruck**: für alle Positionen einer Baugruppe (oder alle Körper eines Generators) Zeichnungen mit Ansichten, Bemaßung (Auto-Bemaßung vorhanden) und Schriftfeld erzeugen | Zeichnung je Dokument von Hand | Fertigungszeichnungen für 30 Positionen in Minuten | M | P1 |
+| E5 ✓ | **Einzelteilzeichnungen auf Knopfdruck**: für alle Positionen einer Baugruppe (oder alle Körper eines Generators) Zeichnungen mit Ansichten, Bemaßung (Auto-Bemaßung vorhanden) und Schriftfeld erzeugen | Zeichnung je Dokument von Hand | Fertigungszeichnungen für 30 Positionen in Minuten | M | P1 |
 | E6 | **Blech-Nesting (2D)**: Platten, Kantteil-Abwicklungen, Knotenbleche auf Tafeln (z. B. 3000 × 1500) verteilen, Tafel-DXF, Ausnutzung in % | DXF je Teil | Tafelbestellung und Laser-Vorbereitung | L | P2 |
 
 ### A.2 Konstruktion
@@ -56,7 +56,7 @@ zurückgestellt; umgesetzt sind V1, V2 und E7.
 |---|---|---|---|---|
 | V1 ✓ | **Listen-Eingaben mit Ausdrücken** in allen Generatoren (Lauflängen, Feldteilungen …) | `generator.js:44` und `balkon.js:117` trennen noch an Leerzeichen; `L + 5` zerfällt. Derselbe Fehler wurde beim Kantteil in #94 behoben; `splitList` aus `blech.js` überall nutzen | XS | P0 |
 | V2 ✓ | **Oberflächentest stabil** | CI-Lauf zu #94 brach einmal am Tastenkürzel-Dialog ab (`tools/e2e.mjs:935`, Klick-Timeout); auf Sichtbarkeit warten statt sofort klicken | XS | P0 |
-| V3 | **Verknüpfte Bauteile bequemer**: „Quelldatei öffnen“, „Verknüpfung lösen“ im Kontextmenü, Hinweis beim Speichern, wenn Quelldateien neuer sind | heute nur Aktualisieren im Eigenschaftenfeld | S | P1 |
+| V3 ✓ | **Verknüpfte Bauteile bequemer**: Aktualisieren, Quelldatei öffnen, Verknüpfung lösen bzw. „Als eigene Datei speichern“ auch im Kontextmenü des Baums | im Eigenschaftenfeld gab es die Knöpfe schon, im Baum nicht; Aktualisieren beim Öffnen läuft schon (M24) | XS | P1 |
 | V4 | **Neuaufbau großer Generatoren schneller**: gleiche Stäbe (gleicher Querschnitt, gleiche Länge und Schnitte) nur einmal bauen und versetzen, erst Zeit messen | Feature-Zwischenspeicher gibt es schon (`build.js`, Präfix-Cache); ein Generator wird bei jeder Parameteränderung aber als Ganzes mit allen Stäben neu gebaut | M | P2 |
 | V5 | **Generator-Bedienung**: Bemaßungsbild der Parameter im Eigenschaftenfeld (was ist „Gurtabstand“?), Fehler direkt am betroffenen Feld, Prüfhinweise (Öffnung, Steigung) farbig neben dem Wert | Modell rechnet bei jeder Änderung neu, Fehler und Hinweise erscheinen nur als Meldung bzw. Liste | M | P1 |
 | V6 | **Kollision automatisch in den Gelenkbereich**: aus der Bewegungsprüfung den freien Bereich als min/max vorschlagen | Prüfung zeigt nur Treffer | S | P2 |
@@ -69,7 +69,7 @@ zurückgestellt; umgesetzt sind V1, V2 und E7.
 | Block | Inhalt | Warum so |
 |---|---|---|
 | **F1 (P0)** | V1 ✓, V2 ✓, E7 ✓ (E1, E2 zurückgestellt) | zwei schnelle Fehlerbehebungen, dann Oberfläche |
-| **F2 (P1)** | E3, E4, E5, V3, V5, E8, E9 | Ausgabe für Werkstatt und Kunde, dann Bedienung, dann die zwei häufigsten neuen Generatoren |
+| **F2 (P1)** | E3 ✓, E4, E5 ✓, V3 ✓, V5, E8, E9 | Ausgabe für Werkstatt und Kunde, dann Bedienung, dann die zwei häufigsten neuen Generatoren |
 | **F3 (P2)** | E10, E11, E12, E13, E14, E15, V4, V6, V7, V8, V9, E6 | Ausbau nach Bedarf; Blech-Nesting zuletzt, weil am aufwendigsten |
 | **F4 (P3)** | E16 | nur bei konkretem Bedarf |
 

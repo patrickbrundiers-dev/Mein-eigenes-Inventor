@@ -70,6 +70,10 @@ export function crc32(bytes) {
   for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
+/** ZIP ohne Kompression; entries = [[name, Uint8Array | string]] */
+export function zipFiles(entries) {
+  return zipStore(entries.map(([n, d]) => [n, typeof d === "string" ? enc.encode(d) : d]));
+}
 function zipStore(entries) {
   const parts = [], central = [];
   let offset = 0;
