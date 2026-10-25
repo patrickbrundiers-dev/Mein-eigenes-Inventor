@@ -21,6 +21,7 @@ import { profileId } from "./sections.js";
 import { sketchLines } from "./sketch.js";
 import { solveSketch } from "./solver.js";
 import { resolvePathPoints, pathSegments, upFor, UP_AXES } from "./profilzug.js";
+import { tabLayout, slotSize, defaultStecksystem } from "./stecksystem.js";
 
 /** Lage des Profils zur Skelettlinie: Ankerpunkt des Querschnitts auf der Linie (o/m/u = oben/Mitte/unten, l/m/r) */
 export const PLACES = Object.freeze([
@@ -34,11 +35,16 @@ export const JOINT_KINDS = Object.freeze({
   ecke: { label: "Eckverbindung", hint: "erster Stab läuft bis zur Außenseite des zweiten, der zweite stößt stumpf an" },
   stutzen: { label: "Auf Gestell stutzen", hint: "zweiter Stab wird an der zugewandten Fläche des ersten gekürzt oder verlängert" },
   nuten: { label: "Nuten", hint: "zweiter Stab wird mit der Form des ersten ausgeklinkt (Endbearbeitung bleibt)" },
+  stecken: { label: "Stecknasen", hint: "zweiter Stab wird gestutzt, Zapfen aus seinen Wänden stecken in Schlitzen (mit Spiel) im ersten" },
 });
 /** Verbindungen, bei denen ein Spalt (mm) zwischen den Stäben möglich ist */
 export const GAP_KINDS = Object.freeze(["gehrung", "ecke", "stutzen"]);
 export const CORNER_AUTO = Object.freeze([["gehrung", "Gehrung"], ["ecke", "Eckverbindung"], ["keine", "keine"]]);
-export const TEE_AUTO = Object.freeze([["stutzen", "Auf Gestell stutzen"], ["nuten", "Nuten"], ["keine", "keine"]]);
+export const TEE_AUTO = Object.freeze([["stutzen", "Auf Gestell stutzen"], ["nuten", "Nuten"], ["stecken", "Stecknasen"], ["keine", "keine"]]);
+/** Stecknasen: Einstellungen wie im Stecksystem (stecksystem.js); Zapfenlänge leer = Wand des Schlitzstabs + Überstand */
+export const STECK_FIELDS = Object.freeze([["count", "Anzahl je Wand"], ["width", "Zapfenbreite"], ["edge", "Randabstand"], ["clearance", "Spiel je Seite"], ["over", "Überstand"]]);
+export const steckOf = (x) => ({ ...defaultStecksystem(), ...(x || {}) });
+const HOLLOW_RECT = ["vierkant", "rechteck"];
 
 const ROUND = ["rohr", "rund"];
 const keyOf = (p) => p.map((x) => Math.round(x * 1e3)).join(",");
@@ -170,7 +176,7 @@ export function gestellPlan(input) {
     const [du, dv] = placeShift(m.place || input.place || "mm", sec.geom.width, sec.geom.height);
     const off = v3.add(v3.mul(fr0.u, du + num(m.offU)), v3.mul(fr0.v, dv + num(m.offV)));
     const a = v3.add(s.a, off), b = v3.add(s.b, off);
-    const o = { m, s, sec, rot, z, a, b, fr: { ...fr0, origin: a }, len: v3.dist(a, b), cuts: { start: [], end: [] }, copes: [], taken: { start: false, end: false }, joints: [], label };
+    const o = { m, s, sec, rot, z, a, b, fr: { ...fr0, origin: a }, len: v3.dist(a, b), cuts: { start: [], end: [] }, copes: [], tabs: [], slots: [], taken: { start: false, end: false }, joints: [], label };
     M.push(o);
     byId.set(m.id, o);
   }
@@ -201,6 +207,8 @@ export function gestellPlan(input) {
     const n = v3.dot(sd.n, dB) > 0 ? v3.mul(sd.n, -1) : sd.n; // zeigt von B weg zu A hin
     B.cuts[endB] = [{ p: v3.add(v3.sub(nd.qA, v3.mul(n, sd.half)), v3.mul(n, -gap)), n }];
   };
+  const steck = []; // Stecknasen, gerechnet nach dem Verlängern/Kürzen
+  let steckOpts = null;
   const apply = (kind, A, B, gap, how) => {
     const nd = nodeOf(A, B);
     if (!nd) { warn(`${A.label} und ${B.label} laufen parallel – keine ${JOINT_KINDS[kind].label}`); return false; }
@@ -227,6 +235,11 @@ export function gestellPlan(input) {
     } else if (kind === "nuten") {
       B.copes.push(A);
       B.taken[eB] = true;
+    } else if (kind === "stecken") {
+      trimTo(B, eB, A, nd, 0);
+      B.taken[eB] = true;
+      if (ROUND.includes(A.sec.kind) || !(HOLLOW_RECT.includes(B.sec.kind) || B.sec.kind === "flach")) warn(`${B.label}: Stecknasen nur von Rechteck-/Quadratrohr oder Flachstahl in ein eckiges Profil – nur gestutzt`);
+      else steck.push({ A, B, eB, opts: steckOf(steckOpts) });
     }
     A.joints.push(`${text} mit ${B.label}`);
     B.joints.push(`${text} mit ${A.label}`);
@@ -241,6 +254,7 @@ export function gestellPlan(input) {
     manual.add([j.a, j.b].sort().join("|"));
     if (j.kind === "keine") continue;
     if (!JOINT_KINDS[j.kind]) { warn(`Unbekannte Verbindung ${j.kind}`); continue; }
+    steckOpts = j.steck || input.steck;
     apply(j.kind, A, B, Math.max(0, num(j.gap)), "(von Hand)");
   }
   const isManual = (A, B) => manual.has([A.m.id, B.m.id].sort().join("|"));
@@ -254,6 +268,7 @@ export function gestellPlan(input) {
     nodes.get(k).push({ o, end, p });
   }
   const corner = input?.corner || "gehrung", tee = input?.tee || "stutzen", autoGap = Math.max(0, num(input?.gap));
+  steckOpts = input?.steck;
   for (const [, list] of nodes) {
     const free = list.filter((x) => !x.o.taken[x.end]);
     if (list.length === 1 && free.length === 1) {
@@ -294,11 +309,56 @@ export function gestellPlan(input) {
     if (o.len < 1) warn(`${o.label} ist nach dem Kürzen zu kurz`);
   }
 
+  // 3b) Stecknasen: Zapfen aus den Wänden von B, deren Berührlinie mit der Fläche von A längs zur Achse von A liegt,
+  // Schlitze (Zapfen + 2 × Spiel) durch die Wand von A
+  for (const { A, B, eB, opts } of steck) {
+    const c0 = B.cuts[eB][0];
+    if (!c0) continue;
+    const nOut = v3.mul(c0.n, -1), F = c0.p; // Fläche von A, Normale zu B hin
+    const den = v3.dot(B.z, nOut);
+    if (Math.abs(den) < 0.05) { warn(`${B.label}: Stecknasen – Stab steht zu flach auf ${A.label}`); continue; }
+    const C = v3.add(B.a, v3.mul(B.z, v3.dot(v3.sub(F, B.a), nOut) / den)); // Stabachse auf der Fläche
+    const tA = A.sec.dims.t, flat = B.sec.kind === "flach";
+    if (!(tA > 0)) { warn(`${A.label}: Wanddicke unbekannt – keine Stecknasen`); continue; }
+    const W = B.sec.geom.width, H = B.sec.geom.height, tB = flat ? H : B.sec.dims.t, r = flat ? 0 : Number.isFinite(B.sec.dims.r) ? B.sec.dims.r : 2 * tB;
+    // Wandpaare: Normale ±u (Berührlinie entlang v, Länge H) oder ±v (entlang u, Länge W); Flachstahl: eine Wand in der Mitte
+    const pairs = flat ? [{ n: B.fr.v, along: B.fr.u, L: W, off: [0] }] : [
+      { n: B.fr.u, along: B.fr.v, L: H, off: [W / 2 - tB / 2, -(W / 2 - tB / 2)] },
+      { n: B.fr.v, along: B.fr.u, L: W, off: [H / 2 - tB / 2, -(H / 2 - tB / 2)] },
+    ];
+    const proj = (d) => v3.norm(v3.sub(d, v3.mul(nOut, v3.dot(d, nOut))));
+    // ebener Bereich der Fläche von A quer zu seiner Achse (ohne Eckradien): dort müssen die Schlitze liegen
+    const crossA = Math.abs(v3.dot(A.fr.u, nOut)) >= Math.abs(v3.dot(A.fr.v, nOut)) ? A.fr.v : A.fr.u;
+    const rA = Number.isFinite(A.sec.dims.r) ? A.sec.dims.r : 2 * tA;
+    const limit = (crossA === A.fr.u ? A.sec.geom.width : A.sec.geom.height) / 2 - rA;
+    const len = num(opts.length) > 0 ? num(opts.length) : tA + num(opts.over);
+    const w = num(opts.width), sl = slotSize(w, tB, num(opts.clearance));
+    let best = null, why = "";
+    for (const q of pairs.map((x) => ({ ...x, along: proj(x.along), score: Math.abs(v3.dot(proj(x.along), A.z)) })).sort((x, y) => y.score - x.score)) {
+      const L = q.L - 2 * r;
+      let xs;
+      try { xs = tabLayout(L, opts); } catch (e) { why = why || e.message; continue; }
+      const pos = q.off.flatMap((off) => xs.map((x) => v3.add(v3.add(C, v3.mul(q.n, off)), v3.mul(q.along, x - L / 2))));
+      const ext = (Math.abs(v3.dot(q.along, crossA)) * sl.w + Math.abs(v3.dot(q.n, crossA)) * sl.t) / 2;
+      if (pos.some((P) => Math.abs(v3.dot(v3.sub(P, A.a), crossA)) + ext > limit + 1e-6)) { why = why || `Schlitze lägen im Eckradius von ${A.label}`; continue; }
+      best = { ...q, pos, n: xs.length * q.off.length };
+      break;
+    }
+    if (!best) { warn(`${B.label}: Stecknasen – ${why || "kein Platz"}`); continue; }
+    for (const P of best.pos) {
+      B.tabs.push({ p: v3.add(P, v3.mul(nOut, 0.05)), xDir: best.along, dir: v3.mul(nOut, -1), w, h: tB, len: len + 0.05 });
+      A.slots.push({ p: v3.add(P, v3.mul(nOut, 1)), xDir: best.along, dir: v3.mul(nOut, -1), w: sl.w, h: sl.t, len: tA + 2 });
+    }
+    B.joints.push(`${best.n} Zapfen ${fmt1(w)} × ${fmt1(tB)}, Länge ${fmt1(len)}`);
+    A.joints.push(`${best.n} Schlitze ${fmt1(sl.w)} × ${fmt1(sl.t)} für ${B.label}`);
+  }
+
   // Ausgabe in Generator-Form
   const pid = (o) => secLabel(o.sec);
   const copeOf = (c) => ({ section: c.sec, a: c.a, b: c.b, up: c.s.up, rot: c.rot, cuts: c.cuts });
-  const member = (o) => ({ gid: o.m.id, name: `${pid(o)} ${o.m.no}`, section: o.sec, a: o.a, b: o.b, up: o.s.up, rot: o.rot, cuts: o.cuts, ...(o.copes.length ? { copes: o.copes.map(copeOf) } : {}) });
+  const member = (o) => ({ gid: o.m.id, name: `${pid(o)} ${o.m.no}`, section: o.sec, a: o.a, b: o.b, up: o.s.up, rot: o.rot, cuts: o.cuts, ...(o.copes.length ? { copes: o.copes.map(copeOf) } : {}), ...(o.tabs.length ? { tabs: o.tabs } : {}) });
   const out = new Map(auto.map((o) => [o.m.id, member(o)]));
+  const slots = new Map(auto.filter((o) => o.slots.length).map((o) => [o.m.id, o.slots])); // je Stab: Schlitze (Bohrungen des Bauplans)
 
   // 4) Wiederverwenden: Stab übernimmt Profil, Länge und Endbearbeitung seines Vorbilds, gelegt auf die eigene Linie
   for (const o of M.filter((x) => x.m.reuse)) {
@@ -315,7 +375,9 @@ export function gestellPlan(input) {
     out.set(o.m.id, {
       ...src, gid: o.m.id, name: `${pid(so)} ${o.m.no}`, a: T.p(src.a), b: T.p(src.b), up: T.d(src.up), cuts: mapCuts(src.cuts),
       ...(src.copes ? { copes: src.copes.map((c) => ({ ...c, a: T.p(c.a), b: T.p(c.b), up: T.d(c.up), cuts: mapCuts(c.cuts) })) } : {}),
+      ...(src.tabs ? { tabs: src.tabs.map((t) => ({ ...t, p: T.p(t.p), xDir: T.d(t.xDir), dir: T.d(t.dir) })) } : {}),
     });
+    if (slots.has(so.m.id)) slots.set(o.m.id, slots.get(so.m.id).map((t) => ({ ...t, p: T.p(t.p), xDir: T.d(t.xDir), dir: T.d(t.dir) })));
     o.joints.push(`wiederverwendet von ${so.label}`);
     o.sec = so.sec;
   }
@@ -325,10 +387,12 @@ export function gestellPlan(input) {
     const pm = out.get(o.m.id);
     return { id: o.m.id, no: o.m.no, name: pm.name, profile: secLabel(o.sec), seg: o.s.label, len: axisLength(pm), angA: cutDeg(pm.cuts.start, pm), angB: cutDeg(pm.cuts.end, pm), joints: o.joints, reuse: o.m.reuse ? byId.get(o.m.reuse)?.label : "" };
   });
-  return { members, chains: [], plates: [], drills: [], issues, rows, info: `${members.length} Stäbe` };
+  const drills = [...slots].flatMap(([id, list]) => { const pm = out.get(id); return pm ? list.map((d) => ({ ...d, target: pm.name })) : []; });
+  return { members, chains: [], plates: [], drills, issues, rows, info: `${members.length} Stäbe` };
 }
 
 const round1 = (x) => Math.round(x * 10) / 10;
+const fmt1 = (x) => String(round1(x)).replace(".", ",");
 /** Profilbezeichnung kurz wie in der Zuschnittliste, z. B. »QR 40x40x3« */
 export const secLabel = (sec) => profileId(sec.kind, sec.dims) || sec.kind;
 
