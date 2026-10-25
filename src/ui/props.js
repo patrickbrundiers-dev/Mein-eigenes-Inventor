@@ -1586,8 +1586,8 @@ export class Props {
     });
   }
   /** Schiebetor (E8) als Baugruppe: Bauteil Flügel (Schiebegelenk −X, 0 … Durchfahrt) und Bauteil feste Teile */
-  slidingGateAssembly(f, planOf) {
-    const app = this.app, src = app.activeDoc();
+  slidingGateAssembly(f, planOf, { into } = {}) {
+    const app = this.app, src = into ? {} : app.activeDoc();
     let W;
     try { W = resolveGenParams(f.gen, f.params, (x) => evaluate(String(x), this.scope())).width; planOf(f.params); } catch (e) { return toast("Schiebetor rechnet nicht: " + e.message, { kind: "err" }); }
     const base = f.name || "Schiebetor";
@@ -1605,7 +1605,10 @@ export class Props {
     asm.name = base;
     asm.components.push({ id: uid("c"), part: fixed.id, name: fixed.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
     asm.components.push({ id: uid("c"), part: leaf.id, name: leaf.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0], joint: defaultJoint([0, 0, 0], [-1, 0, 0], { min: 0, max: Math.round(W), kind: "schiebe" }) });
-    app.edit("Schiebetor als Baugruppe", () => { app.project.docs.push(leaf, fixed, asm); }, { rebuild: false });
+    app.edit("Schiebetor als Baugruppe", () => {
+      app.project.docs.push(leaf, fixed, asm);
+      if (into) into.components.push({ id: uid("c"), part: asm.id, name: asm.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: !into.components.length });
+    }, { rebuild: false });
     app.openDoc(asm.id);
     app.sel = { type: "component", id: asm.components[1].id };
     this.render();
