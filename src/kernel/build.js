@@ -661,7 +661,7 @@ export function createKernel(R) {
             const metaOf = (sec, solid, fr, extra = {}) => ({ section: sectionName(sec.kind, sec.dims), profileId: profileId(sec.kind, sec.dims), area: sec.geom.area, length: memberLength(solid, fr), miterStart: 0, miterEnd: 0, frameZ: fr.z, axis: memberAxis(solid, fr, sec.geom), generator: f.gen, ...extra });
             for (const ch of plan.chains) {
               const segs = ch.points.slice(1).map((b, i) => ({ id: "s" + (i + 1), a: ch.points[i], b }));
-              const ms = buildMembers(segs, { kind: ch.section.kind, dims: ch.section.dims }, { corner: "gehrung", align: "mitte", rotation: "0" }, E, cut, () => ch.up || [0, 0, 1], ch.name);
+              const ms = buildMembers(segs, { kind: ch.section.kind, dims: ch.section.dims }, { corner: "gehrung", align: "mitte", rotation: String(ch.rot || 0) }, E, cut, () => ch.up || [0, 0, 1], ch.name);
               for (const m of ms) add(m.solid, { ...m.meta, generator: f.gen }, ms.length > 1 ? m.name : ch.name);
             }
             for (const m of plan.members) {
@@ -673,7 +673,9 @@ export function createKernel(R) {
               add(solid, metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z) }), m.name);
             }
             for (const pl of plan.plates) {
-              let d = R.drawRoundedRectangle(pl.W, pl.H, pl.r || 0);
+              let d;
+              if (pl.poly) { d = R.draw(pl.poly[0]); for (const q of pl.poly.slice(1)) d = d.lineTo(q); d = d.close(); }
+              else d = R.drawRoundedRectangle(pl.W, pl.H, pl.r || 0);
               for (const [x, y] of pl.holes || []) d = d.cut(R.drawCircle(pl.d / 2).translate(x, y));
               const solid = d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t);
               const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length, d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
