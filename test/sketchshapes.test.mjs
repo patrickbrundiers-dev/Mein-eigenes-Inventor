@@ -202,3 +202,46 @@ test("Muster: rechteckig und kreisförmig, Werte änderbar", () => {
   near(Math.hypot(Q2.get(l1.p2).x - Q2.get(l1.p1).x, Q2.get(l1.p2).y - Q2.get(l1.p1).y), 15, 1e-6);
   assert.throws(() => patternEntities(s2, ["l"], { mode: "lin", nx: 1, ny: 1, a: "5", b: "5" }, { uid }));
 });
+
+import { inferLine, inferCircle } from "../src/core/autoconstraints.js";
+
+test("Automatische Bedingungen: parallel, senkrecht, tangential, gleich", () => {
+  const sk = sketch();
+  // schräge Linie 30° von (0,0) nach (cos30·20, sin30·20)
+  const c30 = Math.cos(Math.PI / 6), s30 = Math.sin(Math.PI / 6);
+  sk.points.push({ id: "a", x: 0, y: 0 }, { id: "b", x: 20 * c30, y: 20 * s30 });
+  sk.entities.push({ id: "l1", type: "line", p1: "a", p2: "b" });
+  // parallel: frei gezeichnet bei 31°
+  let r = inferLine(sk, { x: 50, y: 0 }, { x: 50 + 30 * Math.cos(31 * Math.PI / 180), y: 30 * Math.sin(31 * Math.PI / 180) });
+  assert.equal(r.cons[0].type, "parallel");
+  near(Math.atan2(r.b.y, r.b.x - 50), Math.PI / 6, 1e-9);
+  // senkrecht am Endpunkt b (Vorgänger), gleich lang innerhalb der Toleranz
+  const B = sk.points[1];
+  r = inferLine(sk, { x: B.x, y: B.y, pointId: "b" }, { x: B.x - 20.3 * s30, y: B.y + 20.3 * c30 + 0.2 }, { tolLen: 1 });
+  assert.deepEqual(r.cons.map((c) => c.type), ["perpendicular", "equal"]);
+  near(Math.hypot(r.b.x - B.x, r.b.y - B.y), 20, 1e-9);
+  // ohne Toleranz kein "gleich"; mit kinds.parallel=false nichts
+  assert.deepEqual(inferLine(sk, { x: B.x, y: B.y, pointId: "b" }, { x: B.x - 20.3 * s30, y: B.y + 20.3 * c30 }).cons.map((c) => c.type), ["perpendicular"]);
+  assert.equal(inferLine(sk, { x: 50, y: 0 }, { x: 80, y: 18 }, { kinds: { parallel: false } }), null);
+  // Zielpunkt auf bestehendem Punkt: nichts verbiegen
+  assert.equal(inferLine(sk, { x: 50, y: 0 }, { x: 70, y: 11, pointId: "a" }), null);
+  // tangential am Bogenende: Bogen um (0,50) r=10 von 270° (0,40) bis 0° (10,50); Ende (10,50) Tangente senkrecht
+  sk.points.push({ id: "m", x: 0, y: 50 }, { id: "s", x: 0, y: 40 }, { id: "t", x: 10, y: 50 });
+  sk.entities.push({ id: "bg", type: "arc", c: "m", p1: "s", p2: "t" });
+  r = inferLine(sk, { x: 10, y: 50, pointId: "t" }, { x: 10.5, y: 70 });
+  assert.equal(r.cons[0].type, "tangentAt");
+  assert.equal(r.cons[0].e1, "bg");
+  near(r.b.x, 10, 1e-9);
+  // Kreis: gleicher Radius
+  sk.points.push({ id: "k0", x: 100, y: 0 });
+  sk.entities.push({ id: "kr", type: "circle", c: "k0", r: 8 });
+  const ci = inferCircle(sk, { x: 140, y: 0 }, 8.3, { tolR: 0.5 });
+  assert.equal(ci.r, 8); assert.equal(ci.cons[0].e2, "kr");
+  assert.equal(inferCircle(sk, { x: 140, y: 0 }, 9.3, { tolR: 0.5 }), null);
+  // gesetzte Bedingungen ergeben eine lösbare Skizze
+  const id = "l2";
+  sk.points.push({ id: "q1", x: 50, y: 0 }, { id: "q2", x: 50 + 30 * c30, y: 30 * s30 });
+  sk.entities.push({ id, type: "line", p1: "q1", p2: "q2" });
+  sk.constraints.push({ id: "kp", type: "parallel", e1: id, e2: "l1" });
+  assert.ok(solveSketch(sk).ok);
+});

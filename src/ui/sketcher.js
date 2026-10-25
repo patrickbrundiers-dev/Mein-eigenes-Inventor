@@ -6,6 +6,7 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, v3 } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
+import { inferLine, inferCircle } from "../core/autoconstraints.js";
 import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities } from "../core/sketchshapes.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
@@ -295,6 +296,11 @@ export class Sketcher {
       }
       if (opts.length != null) cons.push({ id: uid("m"), type: "length", e: id, value: String(opts.length), labelOffset: 18 / this.M.scale });
       sk.constraints.push(...cons);
+      // automatische Bedingungen nur, wenn sie die Skizze nicht überbestimmen
+      for (const a of hv ? [] : opts.auto || []) {
+        const c = { id: uid("k"), ...a, e1: a.e1 ?? id, e2: a.e2 ?? id, ...(a.type === "tangentAt" ? { p: p1 } : {}) };
+        try { if (checkNewConstraint(sk, c, this.scope()) === "ok") sk.constraints.push(c); } catch { /* unpassend: weglassen */ }
+      }
       this.lastLine = { p1, p2 };
     });
     return this.lastLine;
@@ -332,7 +338,7 @@ export class Sketcher {
   /** Endpunkt der Linie aus Maus und getippter Länge/Winkel */
   lineTarget(cur) {
     const st = this.state;
-    if (!dynTyped(st.dyn)) return { b: this.inferHV(st.start, cur), opts: {} };
+    if (!dynTyped(st.dyn)) { const b = this.inferHV(st.start, cur); return { b, opts: { auto: b.auto, noInfer: this.noAuto || !this.autoOn("hv") } }; }
     const r = this.dynResult(lineLive(st.start, cur));
     if (!r) return null;
     const b = lineEnd(st.start, r.values.len, r.values.ang);
@@ -354,7 +360,13 @@ export class Sketcher {
   finishCircle(cur) {
     const c = this.state.start;
     const r = Math.hypot(cur.x - c.x, cur.y - c.y);
-    if (!dynTyped(this.state.dyn)) { if (r * this.M.scale < 1) return; this.state = null; this.addCircle(c, r); return; }
+    if (!dynTyped(this.state.dyn)) {
+      if (r * this.M.scale < 1) return;
+      this.state = null;
+      const inf = this.noAuto ? null : inferCircle(this.sk, c, r, { tolR: this.autoTol(), kinds: this.autoKinds() });
+      this.addCircle(c, inf ? inf.r : r, null, inf?.cons);
+      return;
+    }
     const res = this.dynResult({ d: 2 * r });
     if (!res) return;
     this.state = null;
@@ -373,7 +385,7 @@ export class Sketcher {
     this.state = null;
     this.addRect(a, t.b, this.tool === "rectc", t.dims);
   }
-  addCircle(c, r, diameter = null) {
+  addCircle(c, r, diameter = null, auto = null) {
     this.commit("Kreis", (sk) => {
       const cons = [];
       const cid = this.usePoint(sk, c, cons);
@@ -381,6 +393,10 @@ export class Sketcher {
       sk.entities.push({ id, type: "circle", c: cid, r: Math.max(r, 1e-3), construction: !!this.construction });
       if (diameter != null) cons.push({ id: uid("m"), type: "diameter", e: id, value: String(diameter), labelAngle: Math.PI / 4 });
       sk.constraints.push(...cons);
+      for (const a of auto || []) {
+        const k = { id: uid("k"), ...a, e1: id };
+        try { if (checkNewConstraint(sk, k, this.scope()) === "ok") sk.constraints.push(k); } catch { /* weglassen */ }
+      }
     });
   }
   addArc(center, start, end) {
@@ -712,6 +728,7 @@ export class Sketcher {
   // ---------- Maus ----------
   pointerDown(e) {
     if (e.button !== 0 || !this.active) return;
+    this.noAuto = !!e.ctrlKey;
     if (this.viewer.handleCubeClick(e.clientX, e.clientY)) return;
     this.mapping();
     const [sx, sy] = this.eventPos(e);
@@ -940,16 +957,25 @@ export class Sketcher {
     }
     return [...out];
   }
+  /** Art automatischer Bedingungen erlaubt? (Einstellung; Strg unterdrückt alle) */
+  autoOn(kind) { return !this.noAuto && this.prefs?.["skizze.auto." + kind] !== false; }
+  autoKinds() { return { parallel: this.autoOn("parallel"), tangent: this.autoOn("tangential"), equal: this.autoOn("gleich") }; }
+  autoTol() { return (this.snapR || 7) / (this.M?.scale || 1); }
+  /** Endpunkt einer neuen Linie einrasten: horizontal/vertikal, sonst parallel/senkrecht/tangential/gleich */
   inferHV(a, b) {
-    if (b.pointId) return b;
+    if (b.pointId || this.noAuto) return b;
     const dx = b.x - a.x, dy = b.y - a.y;
     const ang = Math.abs((Math.atan2(dy, dx) * 180) / Math.PI);
-    if (Math.min(ang, 180 - ang) < 2.5) return { ...b, y: a.y, on: null, mid: null, inferred: "H" };
-    if (Math.abs(90 - ang) < 2.5) return { ...b, x: a.x, on: null, mid: null, inferred: "V" };
-    return b;
+    if (this.autoOn("hv")) {
+      if (Math.min(ang, 180 - ang) < 2.5) return { ...b, y: a.y, on: null, mid: null, inferred: "H" };
+      if (Math.abs(90 - ang) < 2.5) return { ...b, x: a.x, on: null, mid: null, inferred: "V" };
+    }
+    const r = inferLine(this.sk, a, b, { tolLen: this.autoTol(), kinds: this.autoKinds() });
+    return r ? { ...r.b, inferred: r.glyph, auto: r.cons } : b;
   }
   pointerMove(e) {
     if (!this.active) return;
+    this.noAuto = !!e.ctrlKey;
     this.mapping();
     const [sx, sy] = this.eventPos(e);
     const [lx, ly] = this.L(sx, sy);
@@ -1422,8 +1448,10 @@ export class Sketcher {
       const c = S(st.start.x, st.start.y);
       const live = { d: 2 * Math.hypot(cur.x - st.start.x, cur.y - st.start.y) };
       const vals = st.dyn ? dynValues(st.dyn, live, this.scope()).values : live;
-      const r = (vals.d / 2) * this.M.scale;
+      const inf = st.dyn && dynTyped(st.dyn) || this.noAuto ? null : inferCircle(this.sk, st.start, vals.d / 2, { tolR: this.autoTol(), kinds: this.autoKinds() });
+      const r = ((inf ? 2 * inf.r : vals.d) / 2) * this.M.scale;
       g.append(svgEl("circle", { cx: c[0], cy: c[1], r, class: "sk-preview" }));
+      if (inf) { const t = svgEl("text", { x: c[0] + r + 8, y: c[1] + 4, class: "sk-infer" }); t.textContent = "="; g.append(t); }
       if (st.dyn) {
         const k = Math.SQRT1_2;
         g.append(svgEl("path", { d: `M${c[0]},${c[1]}L${c[0] + r * k},${c[1] - r * k}`, class: "sk-dyn-line" }));
