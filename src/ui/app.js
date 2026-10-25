@@ -18,7 +18,7 @@ import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } fro
 import { classText } from "../core/tolerance.js";
 import { setUserBendTables, adoptProjectBendTables, projectBendTableCopies } from "../core/bendtable.js";
 import { newSketch } from "../core/sketch.js";
-import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir } from "../core/geom.js";
+import { v3, planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir } from "../core/geom.js";
 import { flattenAssembly } from "../core/subasm.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
@@ -507,16 +507,15 @@ export class App {
   }
   /** Stab anklicken während eines Gestell-Werkzeugs (Gehrung, Nuten …) */
   gestellPick(hit) { return gestellPick(this, hit); }
-  /** Gestell-Referenzmodell: Skizzen des Skeletts in der Gestell-Baugruppe zeigen (Linien, auf denen die Stäbe liegen) */
+  /** Gestell-Referenzmodell: die Skelettlinien (Skizzen gelöst, Profilzüge als Stücke) in der Gestell-Baugruppe zeigen */
   skeletonSketches(asm) {
     const sk = this.doc(asm.gestell.skeleton);
-    if (!sk || asm.gestell.hideSkeleton || !skeletonSegs(this, sk).length) return [];
-    const scope = resolveParams(sk.params).values, res = this.results.get(sk.id);
-    return sk.features.filter((f) => f.type === "sketch" && !f.suppressed).map((f) => {
-      let frame = res?.sketches?.[f.id]?.frame;
-      if (!frame) try { frame = planeFrame(resolvePlane(f.plane, this.datumMap(sk)), evaluate(f.offset || "0", scope)); } catch { return null; }
-      return { sketch: f, frame, active: false };
-    }).filter(Boolean);
+    if (!sk || asm.gestell.hideSkeleton) return [];
+    return skeletonSegs(this, sk).map((g) => {
+      const x = v3.norm(v3.sub(g.b, g.a)), y = v3.norm(v3.cross(Math.abs(x[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0], x));
+      const sketch = { points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: v3.dist(g.a, g.b), y: 0 }], entities: [{ id: "l", type: "line", p1: "a", p2: "b" }] };
+      return { sketch, frame: { origin: g.a, xDir: x, yDir: y, normal: v3.cross(x, y) }, active: false };
+    });
   }
   /** Arbeitsebene auf eine ebene Modellfläche legen */
   datumFacePick(id, hit) {
