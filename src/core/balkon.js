@@ -31,7 +31,7 @@ export const BALKON = {
     { key: "deckT", label: "Belagdicke", type: "num", default: "30", group: "Belag", when: (p) => p.deck !== "keiner" },
     { key: "railing", label: "Geländer", type: "check", default: true, group: "Geländer" },
     { key: "railH", label: "Geländerhöhe über Belag", type: "num", default: "1000", group: "Geländer", when: (p) => p.railing },
-    { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"]], default: "staketen", group: "Geländer", when: (p) => p.railing },
+    { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz mit Ring"], ["rahmen", "Rahmen mit Staketen"]], default: "staketen", group: "Geländer", when: (p) => p.railing },
     { key: "inset", label: "Geländer vom Rand", type: "num", default: "60", group: "Geländer", when: (p) => p.railing },
   ],
 

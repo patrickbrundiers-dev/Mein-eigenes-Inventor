@@ -1,5 +1,6 @@
 // Geländer-Generator (MegaCAD-Abgleich M11): Pfosten mit automatischer Aufteilung, Handlauf auf den Pfosten
-// (über Eck gegehrt), Ober-/Untergurt zwischen den Pfosten, Füllung (Staketen, Querstäbe, Blech, Glas), Fußplatten.
+// (über Eck gegehrt), Ober-/Untergurt zwischen den Pfosten, Füllung (Staketen, Querstäbe, Blech, Glas, Kreuz mit
+// oder ohne Ring, Rahmen mit Staketen), Fußplatten.
 // Reine Rechnung; Bauplan-Format siehe generator.js.
 //
 // Lage: Lauflinie auf dem Boden (z = 0) ab Ursprung entlang +X, Pfosten mittig auf der Linie. Über Eck: weitere
@@ -28,11 +29,14 @@ export const GELAENDER = {
     { key: "bottom", label: "Untergurt", type: "check", default: true, group: "Handlauf und Gurte" },
     { key: "bottomZ", label: "Untergurt über Boden", type: "num", default: "100", group: "Handlauf und Gurte", when: (p) => p.bottom },
     { key: "belt", label: "Gurtprofil", type: "section", kinds: ["flach", "vierkant", "rechteck"], default: { kind: "flach", size: "40x8" }, group: "Handlauf und Gurte", when: (p) => p.top || p.bottom },
-    { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["keine", "keine"]], default: "staketen", group: "Füllung" },
-    { key: "bar", label: "Stab", type: "section", kinds: ["vierkantvoll", "rund", "vierkant", "rohr", "flach"], default: { kind: "vierkantvoll", size: "12" }, group: "Füllung", when: (p) => p.fill === "staketen" || p.fill === "quer" },
-    { key: "gapMax", label: "Öffnung max.", type: "num", default: "110", group: "Füllung", when: (p) => p.fill === "staketen" || p.fill === "quer" },
+    { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz"], ["rahmen", "Rahmen mit Staketen"], ["keine", "keine"]], default: "staketen", group: "Füllung" },
+    { key: "bar", label: "Stab", type: "section", kinds: ["vierkantvoll", "rund", "vierkant", "rohr", "flach"], default: { kind: "vierkantvoll", size: "12" }, group: "Füllung", when: (p) => ["staketen", "quer", "kreuz", "rahmen"].includes(p.fill) },
+    { key: "gapMax", label: "Öffnung max.", type: "num", default: "110", group: "Füllung", when: (p) => ["staketen", "quer", "rahmen"].includes(p.fill) },
+    { key: "ring", label: "Ring in der Kreuzmitte", type: "check", default: true, group: "Füllung", when: (p) => p.fill === "kreuz" },
+    { key: "ringD", label: "Ring-Durchmesser (Mitte Stab)", type: "num", default: "300", group: "Füllung", when: (p) => p.fill === "kreuz" && p.ring },
+    { key: "frame", label: "Füllungsrahmen", type: "section", kinds: ["vierkant", "rechteck", "flach", "vierkantvoll"], default: { kind: "vierkant", size: "20x2" }, group: "Füllung", when: (p) => p.fill === "rahmen" },
     { key: "panelT", label: "Dicke", type: "num", default: "3", group: "Füllung", when: (p) => p.fill === "blech" || p.fill === "glas" },
-    { key: "panelGap", label: "Abstand zu Pfosten/Gurt", type: "num", default: "15", group: "Füllung", when: (p) => p.fill === "blech" || p.fill === "glas" },
+    { key: "panelGap", label: "Abstand zu Pfosten/Gurt", type: "num", default: "15", group: "Füllung", when: (p) => ["blech", "glas", "rahmen"].includes(p.fill) },
   ],
 
   /** Bauplan aus aufgelösten Parametern (Zahlen, Profile mit geom) */
@@ -120,6 +124,41 @@ export const GELAENDER = {
           members.push({ section: p.bar, a: P3(at(s0), z), b: P3(at(s1), z), name: `Querstab ${i + 1}.${k + 1}` });
         }
         nBars += n;
+      } else if (p.fill === "kreuz") {
+        // Diagonalen von Ecke zu Ecke des Feldes, an den Pfosten senkrecht abgeschnitten; Ring in der Mitte (gegehrter Zug)
+        const along = [fd.d[0], fd.d[1], 0], n = [-fd.d[1], fd.d[0], 0];
+        const A = P3(at(s0), fillLo), B = P3(at(s1), fillHi), C = P3(at(s0), fillHi), D = P3(at(s1), fillLo);
+        const cut = (q, sg) => ({ p: q, n: along.map((x) => x * sg) });
+        members.push({ section: p.bar, a: A, b: B, name: `Diagonale ${i + 1}.1`, up: along, cuts: { start: [cut(A, -1)], end: [cut(B, 1)] } });
+        members.push({ section: p.bar, a: C, b: D, name: `Diagonale ${i + 1}.2`, up: along, cuts: { start: [cut(C, -1)], end: [cut(D, 1)] } });
+        nBars += 2;
+        if (p.ring) {
+          const r = p.ringD / 2, bw = Math.max(p.bar.geom.width, p.bar.geom.height);
+          if (!(r > bw && 2 * r + bw < Math.min(clear, fillHi - fillLo))) throw new Error(`Ring ⌀ ${p.ringD} passt nicht ins Feld ${Math.round(clear)} × ${Math.round(fillHi - fillLo)} mm`);
+          const c = at((s0 + s1) / 2), zc = (fillLo + fillHi) / 2, N = 24;
+          const ring = Array.from({ length: N + 1 }, (_, k) => { const t = (2 * Math.PI * k) / N; return [c[0] + fd.d[0] * r * Math.cos(t), c[1] + fd.d[1] * r * Math.cos(t), zc + r * Math.sin(t)]; });
+          chains.push({ section: p.bar, points: ring, name: `Ring ${i + 1}`, up: n });
+        }
+        // Öffnung = größter Inkreis der vier Dreiecke zwischen Diagonalen und Rand (Ring nicht angerechnet)
+        const w = clear / 2, h = (fillHi - fillLo) / 2, L = Math.hypot(w, h);
+        gapMaxSeen = Math.max(gapMaxSeen, (2 * w * h) / (Math.min(w, h) + L));
+      } else if (p.fill === "rahmen") {
+        // Füllungsrahmen (gegehrt) mit Abstand zu Pfosten und Gurten, Staketen innen zwischen den Rahmenstäben
+        const fr = p.frame, fw = fr.geom.height, g = p.panelGap;
+        const fs0 = s0 + g + fw / 2, fs1 = s1 - g - fw / 2, fz0 = fillLo + g + fw / 2, fz1 = fillHi - g - fw / 2;
+        if (!(fs1 - fs0 > 3 * fw && fz1 - fz0 > 3 * fw)) throw new Error("Füllungsrahmen passt nicht ins Feld – Abstand oder Rahmenprofil prüfen");
+        const n = [-fd.d[1], fd.d[0], 0];
+        chains.push({ section: fr, points: [P3(at(fs0), fz0), P3(at(fs1), fz0), P3(at(fs1), fz1), P3(at(fs0), fz1), P3(at(fs0), fz0)], name: `Füllungsrahmen ${i + 1}`, up: n });
+        const i0 = fs0 + fw / 2, i1 = fs1 - fw / 2, inner = i1 - i0, zl = fz0 + fw / 2, zh = fz1 - fw / 2;
+        const b = p.bar.geom.height;
+        const m = Math.max(0, Math.ceil((inner - p.gapMax) / (b + p.gapMax) - 1e-9));
+        const gap = (inner - m * b) / (m + 1);
+        gapMaxSeen = Math.max(gapMaxSeen, gap, g);
+        for (let k = 0; k < m; k++) {
+          const s = i0 + gap * (k + 1) + b * k + b / 2;
+          members.push({ section: p.bar, a: P3(at(s), zl), b: P3(at(s), zh), name: `Stab ${i + 1}.${k + 1}`, up: [fd.d[0], fd.d[1], 0] });
+        }
+        nBars += m;
       } else if (p.fill === "blech" || p.fill === "glas") {
         const W = clear - 2 * p.panelGap, Hp = fillHi - fillLo - 2 * p.panelGap;
         if (!(W > 0 && Hp > 0)) throw new Error("Füllung: Abstand zu groß für das Feld");

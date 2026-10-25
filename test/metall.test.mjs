@@ -392,3 +392,36 @@ test("Fotodarstellung: Oberflächen je Werkstoff und Körperart, Bühne aus der 
   assert.deepEqual(st.center, [500, 250, 200]);
   assert.ok(st.sun[2] > 300 && st.shadowHalf > st.radius && st.shadowFar > 2 * st.radius);
 });
+
+test("Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCAD-Abgleich M11)", async () => {
+  const { defaultGenerator, resolveGenParams, GENERATORS } = await import("../src/core/generator.js");
+  const f = defaultGenerator("gelaender");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...patch }, E));
+  const k = plan({ runs: "2400", fill: "kreuz" });
+  const diag = k.members.filter((m) => /^Diagonale/.test(m.name));
+  assert.equal(diag.length, 4, "2 Felder × 2 Diagonalen");
+  assert.ok(diag.every((m) => m.cuts.start.length === 1 && m.cuts.end.length === 1), "an den Pfosten abgeschnitten");
+  assert.ok(Math.abs(diag[0].a[0] - 20) < 1e-9 && Math.abs(diag[0].b[0] - 1180) < 1e-9, "von Pfostenfläche zu Pfostenfläche");
+  const rings = k.chains.filter((c) => /^Ring/.test(c.name));
+  assert.equal(rings.length, 2);
+  const r0 = rings[0].points, c0 = [600, 0, (r0[0][2] + r0[12][2]) / 2];
+  assert.ok(r0.every((q) => Math.abs(Math.hypot(q[0] - c0[0], q[2] - c0[2]) - 150) < 1e-6 && Math.abs(q[1]) < 1e-9), "Kreis ⌀ 300 in der Feldebene");
+  assert.match(k.issues.map((x) => x.message).join(), /Öffnung \d+ mm größer als 120/, "Kreuz hält 120 mm nicht ein → Warnung");
+  assert.throws(() => plan({ runs: "2400", fill: "kreuz", ringD: "900" }), /Ring ⌀ 900 passt nicht/);
+  assert.equal(plan({ runs: "2400", fill: "kreuz", ring: false }).chains.filter((c) => /^Ring/.test(c.name)).length, 0);
+  // über Eck: Diagonalen liegen in der gedrehten Feldebene
+  const e = plan({ runs: "1200; 1200", angle: "90", fill: "kreuz", ring: false });
+  const d2 = e.members.filter((m) => /^Diagonale 2\./.test(m.name));
+  assert.ok(d2.every((m) => Math.abs(m.a[0] - 1200) < 1e-9 && Math.abs(m.b[0] - 1200) < 1e-9));
+  const r = plan({ runs: "1200", fill: "rahmen" });
+  const fr = r.chains.find((c) => /^Füllungsrahmen 1/.test(c.name));
+  assert.equal(fr.points.length, 5, "geschlossener Rahmen");
+  const xs = fr.points.map((q) => q[0]);
+  assert.ok(Math.abs(Math.min(...xs) - (20 + 15 + 10)) < 1e-9, "Abstand zum Pfosten 15 mm, Rahmenmitte");
+  const bars = r.members.filter((m) => /^Stab 1\./.test(m.name)).map((m) => m.a[0]).sort((a, b) => a - b);
+  const i0 = 20 + 15 + 20, i1 = 1200 - 20 - 15 - 20;
+  const gaps = [bars[0] - 6 - i0, ...bars.slice(1).map((x, j) => x - bars[j] - 12), i1 - bars[bars.length - 1] - 6];
+  assert.ok(gaps.every((g) => g > 0 && g <= 110 + 1e-9), gaps.join());
+  assert.ok(r.members.filter((m) => /^Stab/.test(m.name)).every((m) => m.a[2] > fr.points[0][2] && m.b[2] < fr.points[2][2]), "Staketen innerhalb des Rahmens");
+});
