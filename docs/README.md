@@ -13,9 +13,10 @@ kein Programmcode geändert.
 | [knickrahmen/stufe1-plan.md](knickrahmen/stufe1-plan.md) | Knickrahmen: Abgrenzung, Winkelkonvention, Datenmodell, MVP, Dateiliste, Testplan |
 | [roadmap/p1-backlog.md](roadmap/p1-backlog.md) | Backlog nach P0: Rest P0-E, P1, Entscheidung P2 |
 | [betrieb/wiederherstellung.md](betrieb/wiederherstellung.md) | Daten wiederherstellen, Version zurückrollen, Upgrade-Nachweis |
-| [decisions/ADR-0002-blech.md](decisions/ADR-0002-blech.md) | Keine allgemeine Blechfunktion |
+| [decisions/ADR-0002-blech.md](decisions/ADR-0002-blech.md) | Keine allgemeine Blechfunktion (ersetzt durch ADR-0005) |
 | [decisions/ADR-0003-erweiterbarkeit.md](decisions/ADR-0003-erweiterbarkeit.md) | Noch keine Plugin-API |
 | [decisions/ADR-0004-p2-zurueckgestellt.md](decisions/ADR-0004-p2-zurueckgestellt.md) | P2-Themen zurückgestellt |
+| [decisions/ADR-0005-blech-kantteile.md](decisions/ADR-0005-blech-kantteile.md) | Blech: Kantteile mit Abwicklung und DXF |
 | [roadmap/werkzeuge-einstellungen.md](roadmap/werkzeuge-einstellungen.md) | Werkzeug-/Einstellungsmatrix und Stufen (Masterplan Werkzeuge) |
 | [architecture/einstellungen.md](architecture/einstellungen.md) | Einstellungscenter: Ablage, Regeln, Standardwerte |
 | [testing/baseline-2026-10-24.md](testing/baseline-2026-10-24.md) | Testergebnisse vor jeder Änderung |

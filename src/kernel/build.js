@@ -13,6 +13,7 @@ import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.
 import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
+import { planKantteil, kantteilOutline } from "../core/blech.js";
 import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims, boltSizeForHole, boltSet } from "../core/normteile.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
@@ -750,6 +751,33 @@ export function createKernel(R) {
             const tool = orientZ(regelSolid(kind, d), dir, pos);
             state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
             applyOp(f.op || "join", tool, f.id, f.name);
+            break;
+          }
+          case "kantteil": {
+            const list = (x, label) => String(x ?? "").split(/[;\s]+/).filter(Boolean).map((v, i) => E(v, `${label} ${i + 1}`));
+            const t = E(f.t ?? "2", "Blechdicke"), L = E(f.length ?? "1000", "Länge");
+            if (!(L > 0)) throw new Error("Länge muss > 0 sein");
+            const plan = planKantteil({ legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), t, ri: E(f.ri ?? "0", "Innenradius"), k: E(f.k ?? "0.33", "K-Faktor"), ref: f.ref || "aussen" });
+            const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Lage " + "XYZ"[k]));
+            let solid;
+            if (f.view === "abgewickelt") solid = R.makeBaseBox(plan.flat, L, t).translate([plan.flat / 2, L / 2, -t / 2]);
+            else {
+              const o = kantteilOutline(plan, t);
+              let d = R.draw(o.start), cur = o.start;
+              for (const sg of o.segs) {
+                if (Math.hypot(sg.to[0] - cur[0], sg.to[1] - cur[1]) < 1e-9) continue;
+                d = sg.t === "arc" ? d.threePointsArcTo(sg.to, sg.mid) : d.lineTo(sg.to);
+                cur = sg.to;
+              }
+              solid = d.close().sketchOnPlane(new R.Plane([0, L, 0], [1, 0, 0], [0, -1, 0])).extrude(L);
+            }
+            solid = solid.translate(pos);
+            const name = f.name || `Kantteil ${round(t)} mm, Abw. ${round(plan.flat)} × ${round(L)}`;
+            const meta = { sheet: { t, flat: plan.flat, length: L, bends: plan.bends.map((b) => ({ angle: b.angle, r: b.rm - t / 2 })), bendLines: plan.bendLines } };
+            state.tools.set(f.id, { op: "new", shapes: [{ shape: solid, kind: "solid", meta, name }], sheet: { plan, L, t } });
+            state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
+            st.info = `Abwicklung ${round(plan.flat)} × ${round(L)} mm, ${plan.bends.length} Biegung(en)` + (plan.bends.length ? `, Biegezugabe ${plan.flatParts.filter((_, i) => i % 2).map(round).join(" / ")} mm` : "") + (f.view === "abgewickelt" ? "" : " · Abwicklung als DXF in den Eigenschaften");
+            if (plan.issues.length) st.warning = plan.issues.map((x) => x.message).join("; ");
             break;
           }
           case "normteil": {

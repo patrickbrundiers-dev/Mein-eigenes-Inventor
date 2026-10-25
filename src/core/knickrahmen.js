@@ -15,6 +15,7 @@
 
 import { sectionGeometry } from "./sections.js";
 import { planeFrame, toWorld, v3 } from "./geom.js";
+import { bendAllowance } from "./blech.js";
 
 export const KNICK_LIMITS = { maxSegments: 3, minAngle: 0.5, maxAngle: 160 };
 export const KNICK_SECTIONS = ["rechteck", "vierkant"];
@@ -125,7 +126,7 @@ export function planKnickrahmen(input) {
     if (i < bends.length) {
       const b = bends[i];
       const theta = Math.abs(b.angle) * DEG;
-      const zone = (ri + k * t) * theta; // Biegezugabe (Länge der neutralen Faser in der Biegezone)
+      const zone = bendAllowance(ri, k, t, theta); // Biegezugabe (Länge der neutralen Faser in der Biegezone)
       // σ: Seite der Außenwand in Profil-u-Richtung (u zeigt nach links); Linksknick → Außenwand rechts
       const kn = { index: i, angle: b.angle, sigma: b.angle > 0 ? -1 : 1, x1: x, x2: x + zone, zone, tanHalf: tanHalf[i] };
       // Freistellung (Pflicht): Seitenwände an der Außenwand über die ganze Biegezone frei, und dort,
