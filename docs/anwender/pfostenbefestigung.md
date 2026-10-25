@@ -22,6 +22,12 @@ Vorgaben für neue Teile: Treppe **seitlich**, Geländer **oben**, Balkon **oben
 - **Eine Bohrreihe mittig**, wenn die Fläche für 4 Bohrungen zu niedrig ist (Hinweis).
 - **Ausweichen**: seitlich ohne Bauteil daneben → Fußplatte oben (Antritt, Auslauf, Pfosten auf dem Podest); oben ohne Auflage → Blech seitlich. Nur wenn es passt; die Info-Zeile zählt es.
 
+## Einzelne Pfosten
+
+- **Einzelne Pfosten abweichend:** z. B. `4 aus; rechts 5 7 oben; links 2 seitlich`. Zahl = Pfosten- bzw. Stabnummer, Wörter wie `rechts`/`links` grenzen auf einen Geländerzug ein, am Ende die Art (`oben`, `seitlich`, `aus`). Die übrigen Pfosten bleiben unverändert.
+- **Meldung am Pfosten:** Fährt man im Eigenschaftenfeld mit der Maus über eine Meldung »Pfosten 3: …«, wird dieser Pfosten mit Blech, Fußplatte und Flacheisen im 3D-Fenster hervorgehoben; der Fokus auf einem Befestigungsfeld hebt alle Bleche/Fußplatten hervor.
+- **Befestigungsprofile wiederverwenden:** über »Vorlagen« des Generators (speichert alle Werte, auch die Befestigung).
+
 ## Prüfungen und Meldungen
 
 Geprüft werden Randabstände in Platte und Bauteil (1,2 · d bzw. eigener Wert), Bohrungen auf Rundung, Steg oder Flansch,

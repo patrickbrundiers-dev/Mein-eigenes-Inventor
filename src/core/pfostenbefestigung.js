@@ -392,7 +392,33 @@ export function mountSchema(key = (k) => k, group = "Pfostenbefestigung", kind =
     { key: key("mSlot"), label: "Langloch-Länge (0 = rund)", type: "num", default: "0", group, when: any },
     { key: key("mTD"), label: "Gegenbohrung im Bauteil Ø (0 = wie Platte)", type: "num", default: "0", group, when: any },
     { key: key("mEdge"), label: "Mindest-Randabstand im Bauteil (0 = 1,2 · d)", type: "num", default: "0", group, when: any },
+    { key: key("mPer"), label: "Einzelne Pfosten abweichend (z. B. »4 aus; rechts 5 oben«)", type: "text", default: "", group, when: any },
   ];
+}
+
+/**
+ * Einzelne Pfosten abweichend: »4 aus; rechts 5 7 oben; links 2 seitlich« → [{ words, nums, kind }]. Zahlen = Pfosten-
+ * bzw. Stabnummer am Namensende, Wörter müssen im Namen vorkommen (z. B. rechts/links), Art oben/seitlich/aus.
+ */
+export function parseOverrides(text, key = "mPer") {
+  const out = [];
+  for (const part of String(text || "").split(";").map((x) => x.trim()).filter(Boolean)) {
+    const tok = part.split(/[\s,]+/).filter(Boolean), kind = tok.pop()?.toLowerCase();
+    if (!["oben", "seitlich", "aus"].includes(kind)) throw fieldError(`Pfosten abweichend: »${part}« – am Ende oben, seitlich oder aus angeben`, key);
+    const nums = tok.filter((x) => /^\d+(\.\d+)?$/.test(x)), words = tok.filter((x) => !/^\d+(\.\d+)?$/.test(x)).map((x) => x.toLowerCase());
+    if (!nums.length) throw fieldError(`Pfosten abweichend: »${part}« – Pfostennummer fehlt`, key);
+    out.push({ words, nums, kind });
+  }
+  return out;
+}
+
+/** Art für diesen Pfosten laut Abweichungsliste (letzter Treffer gilt) oder null */
+export function overrideFor(per, name) {
+  const tail = /(\d+(?:\.\d+)?)$/.exec(name)?.[1], lower = name.toLowerCase();
+  if (!tail || !per?.length) return null;
+  let kind = null;
+  for (const o of per) if (o.nums.some((n) => n === tail || n === tail.split(".")[0]) && o.words.every((w) => lower.includes(w))) kind = o.kind;
+  return kind;
 }
 
 /** Aufgelöste Parameter (Zahlen) mit Vorsilbe in ein Befestigungsobjekt */
@@ -402,7 +428,7 @@ export function mountConfig(p, key = (k) => k, kind = "oben") {
     sW: v("sW"), sH: v("sH"), sT: v("sT"), sZ: v("sZ") || 0, sDown: v("sDown") || 0, shim: v("mShim") ?? 20,
     spacer: kind === "seitlich" && !!v("mSpacer"), gap: kind === "seitlich" && v("mSpacer") ? v("mGap") || 0 : 0, gapMax: v("mGapMax") ?? 150, flat: v("mFlat"), ins: v("mIns") || 0,
     tabs: v("mTabs") ?? 2, tabW: v("mTabW") ?? 15, play: v("mPlay") ?? 0.2, slotW: v("mSlotW") || 0, steg: v("mSteg") ?? 5, shift: v("mShift") || 0,
-    kind, holes: v(kind === "seitlich" ? "sHoles" : "oHoles") || "4", holesKey: key(kind === "seitlich" ? "sHoles" : "oHoles"), free: v("mFree") || [], d: v("mD"), e: v("mE"), slot: v("mSlot") || 0, td: v("mTD") || 0, edge: v("mEdge") || 0, keys: (k) => key(k) };
+    kind, per: parseOverrides(v("mPer"), key("mPer")), holes: v(kind === "seitlich" ? "sHoles" : "oHoles") || "4", holesKey: key(kind === "seitlich" ? "sHoles" : "oHoles"), free: v("mFree") || [], d: v("mD"), e: v("mE"), slot: v("mSlot") || 0, td: v("mTD") || 0, edge: v("mEdge") || 0, keys: (k) => key(k) };
 }
 
 /** Bohrbild in Plattenkoordinaten (x längs, y quer, Ursprung Plattenmitte) */

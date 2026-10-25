@@ -12,7 +12,7 @@ import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
 import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
 import { holderSchema, holderDrop, holderParts } from "./handlaufhalter.js";
-import { mountSchema, mountConfig, topMount, plateFace, applyTargetHoles, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
+import { mountSchema, mountConfig, topMount, plateFace, applyTargetHoles, mountCollisions, mountInfo, overrideFor } from "./pfostenbefestigung.js";
 
 // Befestigung der Geländerstäbe auf der Stufe: Felder mit Vorsilbe »stab« (stabOW …)
 const sk = (k) => "stab" + k[0].toUpperCase() + k.slice(1);
@@ -96,7 +96,7 @@ export const SPINDEL = {
           const f = (j + 0.5) / perStep - 0.5, aj = pa + sg * theta * f, zt = top + f * s, nm = `Geländerstab ${i}${perStep > 1 ? "." + (j + 1) : ""}`;
           const q = at(R - postOff, aj, zt - drop);
           const tg = [-Math.sin(aj * DEG) * sg, Math.cos(aj * DEG) * sg];
-          if (mcfg) {
+          if (mcfg && overrideFor(mcfg.per, nm) !== "aus") {
             // Fußplatte auf der Stufe (Platte entlang der Tangente), Bohrungen in die Stufe
             const step = plates.find((x) => x.name === `Stufe ${i}`), face = plateFace(step);
             const r = topMount(mcfg, { name: nm, post: p.post, top: q, along: [tg[0], tg[1], 0], face, plateName: `${nm} Fußplatte` });

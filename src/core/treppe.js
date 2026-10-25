@@ -15,7 +15,7 @@ import { railAlong } from "./treppengelaender.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { holderSchema } from "./handlaufhalter.js";
-import { mountSchema, mountConfig, topMount, sideMount, sideOffset, findSideFace, planeFace, findMemberFace, findPlateFace, faceCoords, applyTargetHoles, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
+import { mountSchema, mountConfig, topMount, sideMount, sideOffset, findSideFace, planeFace, findMemberFace, findPlateFace, faceCoords, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
 const podest = (p) => p.form === "L" || p.form === "U";
 const gel = (p) => p.gel !== "keine";
@@ -305,11 +305,14 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
         if (!f && Math.abs(base[2] - p.height) < 1) f = planeFace([0, 0, p.height], [0, 0, 1], along, "obere Decke");
         return f ? { face: f, r: topMount(cfgTop, { name, post: o.post, top, along, face: f, plateName: `${name} Fußplatte` }) } : null;
       };
+      // einzelne Pfosten abweichend (Feld »Einzelne Pfosten abweichend«): aus = wie ohne Befestigung
+      const ov = overrideFor(cfg.per, name), kindP = ov || kind;
+      if (ov === "aus") return null;
       let face = null, r = null;
-      if (kind === "seitlich") {
+      if (kindP === "seitlich") {
         let why = null;
         try { face = findSideFace(onBeam ? [...beams, ...segs] : segs, base, along, 600, 100 + cfg.gap); } catch (e) { why = e.message; }
-        if (face) r = sideMount(cfg, { name, post: o.post, top, base, along, face, plateName: `${name} Befestigungsblech` });
+        if (face) r = sideMount(cfgSide, { name, post: o.post, top, base, along, face, plateName: `${name} Befestigungsblech` });
         else {
           // kein Bauteil daneben (Antritt, Auslauf, Pfosten über dem Podest): oben mit Fußplatte, wenn die passt
           const t = onTop(), floor = Math.abs(base[2]) < 1 || Math.abs(base[2] - p.height) < 1;

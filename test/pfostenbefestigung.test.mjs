@@ -409,3 +409,21 @@ test("Spindeltreppe: Fußplatte je Geländerstab auf der Stufe, entlang der Tang
   assert.equal(st.holes.length, 2 * bars.filter((b) => /^Geländerstab 1(\.\d)?$/.test(b.name)).length, "2 Bohrungen je Stab in Stufe 1");
   assert.match(s.info, /Befestigung: \d+ Fußplatten, \d+ Gegenbohrungen übertragen, geometrisch geprüft/);
 });
+
+test("Einzelne Pfosten abweichend: aus, andere Art, Seite, verständlicher Fehler", () => {
+  assert.deepEqual(M.parseOverrides("4 aus; rechts 5 7 oben"), [{ words: [], nums: ["4"], kind: "aus" }, { words: ["rechts"], nums: ["5", "7"], kind: "oben" }]);
+  assert.equal(M.overrideFor(M.parseOverrides("rechts 5 oben"), "Geländer rechts Pfosten 5"), "oben");
+  assert.equal(M.overrideFor(M.parseOverrides("rechts 5 oben"), "Geländer links Pfosten 5"), null);
+  assert.equal(M.overrideFor(M.parseOverrides("3 aus"), "Geländerstab 3.2"), "aus");
+  assert.equal(M.overrideFor(M.parseOverrides("1 aus"), "Pfosten 11"), null);
+  assert.throws(() => treppe({ gelMPer: "4 weg" }), (e) => e.key === "gelMPer" && /oben, seitlich oder aus/.test(e.message));
+  // Treppe: Pfosten 2 rechts ohne Befestigung, alle anderen unverändert
+  const base = treppe(), t = treppe({ gelMPer: "rechts 2 aus" });
+  assert.ok(!t.plates.some((x) => x.name === "Geländer rechts Pfosten 2 Befestigungsblech"));
+  assert.ok(t.plates.some((x) => x.name === "Geländer links Pfosten 2 Befestigungsblech"));
+  assert.equal(t.plates.filter((x) => / Befestigungsblech$/.test(x.name)).length, base.plates.filter((x) => / Befestigungsblech$/.test(x.name)).length - 1);
+  // Geländer: Pfosten 1 ohne Fußplatte (steht auf z = 0), der Rest oben auf dem Boden
+  const g = gelaender({ runs: "2500", mPer: "1 aus" });
+  assert.ok(!g.plates.some((x) => x.name === "Fußplatte 1") && g.plates.some((x) => x.name === "Fußplatte 2"));
+  near(g.members.find((m) => m.name === "Pfosten 1").a[2], 0, 1e-9);
+});

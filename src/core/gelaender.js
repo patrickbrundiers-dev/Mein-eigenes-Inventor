@@ -13,7 +13,7 @@ import { splitList } from "./expr.js";
 import { holderSchema, holderDrop, holderParts, entryWall } from "./handlaufhalter.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
-import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, findPlateFace, faceCoords, holesBelow, applyTargetHoles, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
+import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, findPlateFace, faceCoords, holesBelow, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
 const mountKind = (p) => (p.base === "oben" || p.base === "seitlich" ? p.base : null);
 const SEC = { rohr: "Rundrohr", vierkant: "Quadratrohr", rechteck: "Rechteckrohr", flach: "Flachstahl", rund: "Rundstahl", vierkantvoll: "Vierkantstahl" };
@@ -98,6 +98,7 @@ export const GELAENDER = {
     // Lauflinie, Oberseite auf z = 0 (U/UPN offen nach außen = rechts). Seitlich: Decke bzw. Randprofil links der
     // Lauflinie (Innenseite), Oberkante z = 0, Befestigungsblech an der Stirnseite, Pfosten rechts davor.
     const mount = kind ? mountConfig(p, undefined, kind) : null, mounted = [];
+    const mountTop = kind ? mountConfig(p, undefined, "oben") : null, mountSide = kind ? mountConfig(p, undefined, "seitlich") : null;
     const sOff = kind === "seitlich" ? sideOffset(mount, post) : 0;
     let rand = null;
     const sup = mount && p.supports ? p.supports : null; // vom Balkon: Rahmen (Stäbe) und Belag in Geländer-Lage
@@ -117,9 +118,10 @@ export const GELAENDER = {
     // Pfosten (Breite quer zur Lauflinie): Profil-u zeigt quer → Drehung so, dass Breite u ⟂ Lauf
     posts.forEach((q, i) => {
       const top = P3(q.at, zPostTop), name = `Pfosten ${i + 1}`, along = [q.d[0], q.d[1], 0];
-      if (mount) {
+      const ov = mount ? overrideFor(mount.per, name) : null, kindP = ov || kind; // einzelne Pfosten abweichend
+      if (mount && ov !== "aus") {
         let r;
-        if (kind === "oben") {
+        if (kindP === "oben") {
           let face;
           if (sup) {
             // Balkon: auf dem Belag (Bohrungen auch in den Rahmen darunter) bzw. direkt auf dem Rahmen
@@ -128,7 +130,7 @@ export const GELAENDER = {
             if (!face) throw fieldError(`${name}: weder Belag noch Rahmen unter dem Pfosten – Geländer vom Rand prüfen`, "mTarget");
           } else face = rand ? findMemberFace(rand, P3(q.at, 0), up) : planeFace([0, 0, 0], up, along, "Boden");
           if (!face) throw fieldError(`${name}: kein Randprofil unter dem Pfosten`, "mTarget");
-          r = topMount(mount, { name, post, top, along, face, plateName: `Fußplatte ${i + 1}` });
+          r = topMount(mountTop, { name, post, top, along, face, plateName: `Fußplatte ${i + 1}` });
           if (sup && face.targetKind === "plate") {
             applyTargetHoles(sup.plates, face, r.targetHoles);
             const below = holesBelow(mount, r.holes, sup.members, name);
@@ -137,13 +139,13 @@ export const GELAENDER = {
         } else {
           const left = [-q.d[1], q.d[0], 0];
           let face;
-          try { face = sup ? findSideFace(sup.members, P3(q.at, 0), along, 2 * sOff + 500, 100 + mount.gap) : rand ? findSideFace(rand, P3(q.at, 0), along, 2 * sOff + 500) : slabFace(P3([q.at[0] + left[0] * sOff, q.at[1] + left[1] * sOff], 0), [-left[0], -left[1], 0], along, p.mSlab, "Deckenstirn"); } catch (e) { throw fieldError(e.message, "mProfile"); }
+          try { face = sup ? findSideFace(sup.members, P3(q.at, 0), along, 2 * sOff + 500, 100 + mountSide.gap) : rand ? findSideFace(rand, P3(q.at, 0), along, 2 * sOff + 500) : slabFace(P3([q.at[0] + left[0] * sOff, q.at[1] + left[1] * sOff], 0), [-left[0], -left[1], 0], along, p.mSlab, "Deckenstirn"); } catch (e) { throw fieldError(e.message, "mProfile"); }
           if (!face) throw fieldError(`${name}: ${sup ? "kein Rahmen" : "kein Randprofil"} neben dem Pfosten`, "mTarget");
-          r = sideMount(mount, { name, post, top, base: P3(q.at, 0), along, face, plateName: `Befestigungsblech ${i + 1}` });
+          r = sideMount(mountSide, { name, post, top, base: P3(q.at, 0), along, face, plateName: `Befestigungsblech ${i + 1}` });
         }
         members.push({ section: post, a: r.a, b: top, name, up: along, ...(r.cuts ? { cuts: r.cuts } : {}) });
         plates.push(r.plate, ...(r.parts || [])); drills.push(...r.drills); issues.push(...r.issues); mounted.push(r);
-      } else members.push({ section: post, a: P3(q.at, zBase), b: top, name, up: [q.d[0], q.d[1], 0] });
+      } else members.push({ section: post, a: P3(q.at, mount ? 0 : zBase), b: top, name, up: [q.d[0], q.d[1], 0] });
       if (holder) {
         const hp = holderParts({ q: P3(q.at, zPostTop), along: q.d, axisZ: H - railH / 2, post, railH, d: p.holderD, name: `Pfosten ${i + 1}`, target: "Handlauf" });
         members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
