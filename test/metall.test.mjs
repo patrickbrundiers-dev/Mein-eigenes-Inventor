@@ -731,6 +731,7 @@ test("Geländernorm Deutschland: Höhe, Öffnungen, Leitereffekt, Boden nach Nut
   assert.match(msg(run("gelaender", { use: "industrie" })), /use:Fußleiste ≥ 100 mm/);
   assert.match(msg(run("treppe", { gelUse: "wohn" })), /gelFill:Waagrechte/, "Treppe mit Knieleisten im Wohnhaus");
   assert.match(msg(run("balkon", { railH: "850" })), /railH:Höhe 850 mm unter 900 mm/);
+  assert.equal(run("spindel", { height: "2222.5", steps: "14", D: "3065", angle: "22.5" }).filter((x) => /Öffnung/.test(x.message)).length, 0, "automatisch genug Stäbe je Stufe (Abstand je Teilung gerechnet)");
   assert.match(msg(run("spindel", { bars: "1" })), /post:Öffnung \d+ mm über 120 mm/, "ein Stab je Stufe reicht im Wohnhaus nicht");
   assert.match(msg(railingIssues({ use: "wohn", height: 1000, fill: "staketen", gap: 100, rail: { kind: "rohr", geom: { width: 60.3 } } }, { rail: "rail" })), /rail:Handlauf Ø 60,3 mm/);
 });

@@ -63,8 +63,9 @@ export const SPINDEL = {
     const railPts = [];
     // Stäbe je Stufe: so viele, dass der lichte Abstand (waagrecht) die Geländernorm einhält
     const barW = p.railing ? Math.max(p.post.geom.width, p.post.geom.height) : 0;
-    const chord = 2 * (R - postOff) * Math.sin((theta * DEG) / 2);
-    const perStep = !p.railing ? 0 : p.bars > 0 ? Math.round(p.bars) : Math.max(1, Math.ceil(chord / (normRules(p.use, H).gapV + barW) - 1e-9));
+    const clearOf = (k) => 2 * (R - postOff) * Math.sin((theta * DEG) / 2 / k) - barW;
+    let perStep = !p.railing ? 0 : p.bars > 0 ? Math.round(p.bars) : 1;
+    if (p.railing && !(p.bars > 0)) while (perStep < 50 && clearOf(perStep) > normRules(p.use, H).gapV + 1e-6) perStep++;
     for (let i = 1; i < n; i++) {
       // Stufe i: Vorderkante bei (i − 1)·θ, hinten um θ + Überdeckung weiter
       const a0 = sg * (i - 1) * theta, a1 = a0 + sg * (theta + ov);
@@ -91,8 +92,7 @@ export const SPINDEL = {
     if (p.railing && railPts.length >= 2) chains.push({ section: p.rail, points: railPts, name: "Handlauf", up: [0, 0, 1] });
     if (p.railing) {
       // Geländernorm: ein Stab je Stufe – lichter Abstand der Stäbe waagrecht gemessen
-      const clear = 2 * (R - postOff) * Math.sin((theta * DEG) / 2 / perStep) - barW;
-      issues.push(...railingIssues({ use: p.use, fall: H, height: p.railH, fill: "staketen", gap: clear, bottom: 0, rail: p.rail }, { height: "railH", gap: "post", rail: "rail", use: "use" }));
+      issues.push(...railingIssues({ use: p.use, fall: H, height: p.railH, fill: "staketen", gap: clearOf(perStep), bottom: 0, rail: p.rail }, { height: "railH", gap: "post", rail: "rail", use: "use" }));
     }
     const total = (n - 1) * theta;
     const info = `${n} Steigungen à ${fmt(s)} mm, ${fmt(theta)}° je Stufe (Gehlinie ${fmt(ag)} mm, 2s + a = ${Math.round(step)} mm), Gesamtdrehung ${fmt(total)}°, Durchgangshöhe ${Math.round(head)} mm, Laufbreite ${Math.round(R - r0)} mm` + (p.railing ? `, ${perStep} Geländerstäbe je Stufe` : "");
