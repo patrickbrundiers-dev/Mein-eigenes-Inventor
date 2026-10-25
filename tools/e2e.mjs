@@ -1486,6 +1486,50 @@ try {
     step("Skizze säubern", before.lines === 5 && after.lines === 4 && after.pts === before.pts - 4 && after.hor === 1 && undone === 5 && /4 Punkt/.test(hint), JSON.stringify({ before, hint, after, undone }));
   }
 
+  // DXF-Import in die Skizze (MegaCAD-Abgleich M21): Platte mit Rundung und Bohrung aus einer Fremd-DXF
+  {
+    await evalApp(() => window.__werkcad.newPart("DXF"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const text = ["0", "SECTION", "2", "HEADER", "9", "$INSUNITS", "70", "4", "0", "ENDSEC", "0", "SECTION", "2", "ENTITIES",
+      "0", "LWPOLYLINE", "8", "KONTUR", "90", "4", "70", "1", "10", "100", "20", "100", "10", "200", "20", "100", "42", "0.4142135623730951", "10", "250", "20", "150", "10", "100", "20", "150",
+      "0", "CIRCLE", "8", "BOHRUNG", "10", "150", "20", "125", "40", "8",
+      "0", "TEXT", "8", "BESCHRIFTUNG", "10", "0", "20", "0", "1", "Teil 1",
+      "0", "ENDSEC", "0", "EOF"].join("\n");
+    await evalApp((t) => { window.__werkcad.sketcher.importDxfDialog({ name: "platte.dxf", text: t }); }, text);
+    await page.waitForTimeout(300);
+    const dlg = await page.locator(".dialog").last().textContent();
+    await page.locator(".dialog label.chk", { hasText: "linke untere Ecke" }).click();
+    await page.locator(".dialog footer .btn", { hasText: "Importieren" }).click();
+    await page.waitForTimeout(400);
+    const imp = await evalApp(() => {
+      const s = window.__werkcad.sketcher.sk;
+      const used = new Set(s.entities.filter((e) => e.type === "line").flatMap((e) => [e.p1, e.p2]));
+      const xs = s.points.filter((p) => used.has(p.id)).map((p) => p.x), ys = s.points.filter((p) => used.has(p.id)).map((p) => p.y);
+      return { ents: s.entities.filter((e) => e.type !== "point").map((e) => e.type).sort().join(), minX: Math.min(...xs), minY: Math.min(...ys) };
+    });
+    await shot("26g-dxf-import");
+    await page.locator("#ribbon button", { hasText: /^Skizze fertig$/ }).first().click();
+    await idle();
+    step("DXF-Import in Skizze", /KONTUR \(4\)/.test(dlg) && /BOHRUNG \(1\)/.test(dlg) && /1 × TEXT/.test(dlg) && imp.ents === "arc,circle,line,line,line" && Math.abs(imp.minX) < 1e-6 && Math.abs(imp.minY) < 1e-6, JSON.stringify({ dlg: dlg.slice(0, 160), imp }));
+  }
+
+  // Bild der Ansicht als PNG (M21)
+  {
+    const png = await evalApp(async () => {
+      const a = window.__werkcad, orig = a.files.saveBinary;
+      let got = null;
+      a.files.saveBinary = async (buf, name) => { got = { name, head: Array.from(buf.slice(0, 4)), n: buf.length }; };
+      try { await a.files.exportPng(); } finally { a.files.saveBinary = orig; }
+      const c = a.viewer.renderer.domElement;
+      return { ...got, cw: c.width, ch: c.height };
+    });
+    step("Bild als PNG", png.head.join() === "137,80,78,71" && /\.png$/.test(png.name) && png.n > 2000, JSON.stringify(png));
+  }
+
   // Farbschema dunkel und gemerkte Werkzeugwerte
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));

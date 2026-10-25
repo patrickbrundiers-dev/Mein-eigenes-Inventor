@@ -233,6 +233,13 @@ export class Files {
     await this.saveText(weldCsv(rows, d.name), safeName(d.number || d.name) + "_Nahtliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
   }
   /** Alle Listen als Excel-Arbeitsmappe: Stückliste (Baugruppe), Zuschnitt, Summen je Profil, Nahtliste */
+  /** Bild der 3D-Ansicht als PNG (doppelte Auflösung, weißer Hintergrund) */
+  async exportPng() {
+    const d = this.app.activeDoc();
+    const img = this.app.viewer.snapshotPng({ scale: 2 });
+    await this.saveBinary(img.data, safeName(d?.number || d?.name || "Ansicht") + ".png", [{ name: "PNG-Bild", extensions: ["png"] }]);
+    toast(`Bild ${img.width} × ${img.height} px gespeichert`, { kind: "ok" });
+  }
   async exportListsXlsx() {
     const app = this.app;
     const d = app.activeDoc();
@@ -292,6 +299,12 @@ export class Files {
     if (!f) return null;
     const isStl = /\.stl$/i.test(f.name);
     return { name: f.name, data: isStl ? bytesToBase64(new Uint8Array(await f.arrayBuffer())) : await f.text(), binary: isStl };
+  }
+  /** DXF-Datei wählen → { name, text } */
+  async pickDxf() {
+    if (this.bridge) { const f = await this.bridge.openFile({ filters: [{ name: "DXF", extensions: ["dxf"] }] }); return f && { name: f.name, text: f.data }; }
+    const f = await pickFile(".dxf");
+    return f && { name: f.name, text: await f.text() };
   }
   async importStepAsPart() {
     const f = await this.pickStep();

@@ -728,6 +728,14 @@ export class Viewer {
     return box;
   }
   /** Auf Auswahl zoomen; leere Auswahl → alles */
+  /** Auf Weltpunkte [[x,y,z]…] zoomen, Blickrichtung bleibt */
+  fitPoints(pts) {
+    const box = new THREE.Box3();
+    for (const p of pts) box.expandByPoint(new THREE.Vector3(...p));
+    if (box.isEmpty()) return;
+    if (box.getSize(new THREE.Vector3()).length() < 1) box.expandByScalar(5);
+    this.fit(box, { keepGrid: true });
+  }
   fitHits(hits) {
     const box = this.boxOfHits(hits);
     if (box.isEmpty()) return this.fit();
@@ -1031,6 +1039,32 @@ export class Viewer {
       });
     }
     return out;
+  }
+  /** Bild der Ansicht als PNG-Bytes: scale = Vielfaches der Fenstergröße, background = Farbe oder null (transparent); ohne Raster und Achsen */
+  snapshotPng({ scale = 2, background = 0xffffff } = {}) {
+    const r = this.renderer;
+    const ratio = r.getPixelRatio();
+    const helpers = this.helpers.visible;
+    r.setPixelRatio(scale);
+    const size = r.getSize(new THREE.Vector2());
+    r.setSize(size.x, size.y, false);
+    if (background != null) r.setClearColor(background, 1);
+    this.helpers.visible = false;
+    try {
+      r.render(this.scene, this.camera);
+      const url = r.domElement.toDataURL("image/png");
+      const bin = atob(url.slice(url.indexOf(",") + 1));
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return { data: out, width: Math.round(size.x * scale), height: Math.round(size.y * scale) };
+    } finally {
+      this.helpers.visible = helpers;
+      r.setClearColor(0x000000, 0);
+      r.setPixelRatio(ratio);
+      r.setSize(size.x, size.y, false);
+      this.needsRender = true;
+      r.render(this.scene, this.camera);
+    }
   }
   snapshot() {
     this.needsRender = true;

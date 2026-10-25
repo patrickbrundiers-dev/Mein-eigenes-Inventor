@@ -259,3 +259,71 @@ test("Normteile: Bezeichnung, Prüfung, Tabellen (MegaCAD-Abgleich M20)", async 
   assert.deepEqual(rows.map((r) => [r.name, r.qty]), [["A", 1], ["B", 3]]);
   assert.equal(rows[1].mass, 0.00785);
 });
+
+test("DXF-Import: Rundreise, Polylinie mit Bögen, Blöcke, Einheiten, Ellipse, Spline, OCS (MegaCAD-Abgleich M21)", async () => {
+  const { parseDxf, dxfToSketch, bulgeArc, sampleBspline, primsBounds } = await import("../src/core/dxfread.js");
+  const { sketchToDxf } = await import("../src/core/dxf.js");
+  const { newSketch, extractProfiles } = await import("../src/core/sketch.js");
+  const { buildSlot } = await import("../src/core/sketchshapes.js");
+  let n = 0; const uid = (p) => p + ++n;
+  const near = (a, b, t = 1e-6, m = "") => assert.ok(Math.abs(a - b) <= t, `${m} ${a} ≠ ${b}`);
+  // Bulge: Halbkreis von (0,0) nach (10,0) gegen den Uhrzeigersinn → Mitte (5,0), unten herum
+  const hb = bulgeArc([0, 0], [10, 0], 1);
+  near(hb.c[0], 5); near(hb.c[1], 0); near(hb.r, 5); near(hb.a0, -Math.PI, 1e-9, "Start bei 180°"); near(Math.abs(hb.a1), 0, 1e-9);
+  const qb = bulgeArc([10, 0], [0, 10], Math.tan(Math.PI / 8)); // Viertelkreis um den Ursprung
+  near(qb.c[0], 0); near(qb.c[1], 0); near(qb.r, 10);
+  // B-Spline Grad 1 = Polygonzug
+  assert.deepEqual(sampleBspline(1, [0, 0, 1, 1], [[0, 0], [10, 0]], null, 2).map((p) => p.map((v) => Math.round(v))), [[0, 0], [5, 0], [10, 0]]);
+
+  // Rundreise: Skizze mit Langloch und Kreis → DXF (R12) → Skizze, gleiche Profile
+  const sk = newSketch("s", "S", "XY");
+  const usePoint = (s, p) => { const id = uid("p"); s.points.push({ id, x: p.x, y: p.y }); return id; };
+  buildSlot(sk, { x: 0, y: 0 }, { x: 100, y: 0 }, 20, { uid, usePoint });
+  sk.points.push({ id: "pc", x: 50, y: 0 }); sk.entities.push({ id: "kc", type: "circle", c: "pc", r: 8 });
+  const back = parseDxf(sketchToDxf(sk));
+  assert.deepEqual(back.layers.map((l) => l.name), ["KONSTRUKTION", "KONTUR"]);
+  const sk2 = newSketch("t", "T", "XY");
+  dxfToSketch(sk2, back.prims.filter((p) => p.layer === "KONTUR"), { uid });
+  const prof = extractProfiles(sk2);
+  assert.equal(prof.regions.length, 1, "Langloch mit Loch = ein Profil"); assert.equal(prof.regions[0].holes.length, 1);
+  assert.deepEqual(prof.errors, []); assert.equal(prof.openPoints.length, 0);
+  near(prof.regions[0].area, 100 * 40 + Math.PI * 400 - Math.PI * 64, 10, "Fläche (abgetastet)");
+
+  // Handgeschriebene DXF: cm, LWPOLYLINE mit Bogen, Block 2× eingefügt (gedreht, skaliert), Ellipse, Spline, Text, OCS-Bogen
+  const L = (...a) => a.join("\n");
+  const dxf = L("0", "SECTION", "2", "HEADER", "9", "$INSUNITS", "70", "5", "0", "ENDSEC",
+    "0", "SECTION", "2", "BLOCKS", "0", "BLOCK", "8", "0", "2", "B1", "10", "1", "20", "1",
+    "0", "LINE", "8", "0", "10", "1", "20", "1", "11", "3", "21", "1", "0", "ENDBLK",
+    "0", "ENDSEC",
+    "0", "SECTION", "2", "ENTITIES",
+    "0", "LWPOLYLINE", "8", "Laser", "90", "4", "70", "1", "10", "0", "20", "0", "10", "10", "20", "0", "42", "1", "10", "10", "20", "4", "10", "0", "20", "4",
+    "0", "INSERT", "8", "Teile", "2", "B1", "10", "20", "20", "0", "50", "90", "41", "2", "42", "2",
+    "0", "ELLIPSE", "8", "Laser", "10", "0", "20", "20", "11", "4", "21", "0", "40", "0.5", "41", "0", "42", "6.283185307179586",
+    "0", "SPLINE", "8", "Laser", "71", "1", "72", "4", "73", "2", "40", "0", "40", "0", "40", "1", "40", "1", "10", "0", "20", "30", "10", "5", "20", "30",
+    "0", "TEXT", "8", "Laser", "10", "0", "20", "0", "1", "Hallo",
+    "0", "ARC", "8", "Laser", "10", "5", "20", "0", "40", "1", "50", "0", "51", "90", "210", "0", "220", "0", "230", "-1",
+    "0", "ENDSEC", "0", "EOF");
+  const r = parseDxf(dxf);
+  assert.equal(r.scale, 10); assert.equal(r.unit, "cm");
+  assert.deepEqual(r.skipped, { TEXT: 1 });
+  assert.deepEqual(r.layers, [{ name: "Laser", count: 7 }, { name: "Teile", count: 1 }]);
+  const arc = r.prims.find((p) => p.kind === "arc" && p.r === 20);
+  assert.ok(arc, "Bogen aus Wölbung, in mm"); near(arc.c[0], 100); near(arc.c[1], 20);
+  const ins = r.prims.find((p) => p.layer === "Teile");
+  // Block: (1,1)→(3,1) relativ Basis (1,1) → (0,0)→(2,0), ×2 → (0,0)→(4,0), 90° → (0,0)→(0,4), +(20,0) → (20,0)→(20,4), cm → mm
+  near(ins.a[0], 200); near(ins.a[1], 0); near(ins.b[0], 200); near(ins.b[1], 40);
+  const el = r.prims.find((p) => p.kind === "ellipse");
+  near(el.major[0], 40); near(el.ratio, 0.5); near(el.c[1], 200);
+  const ocs = r.prims.find((p) => p.kind === "arc" && Math.abs(p.r - 10) < 1e-9);
+  near(ocs.c[0], -50, 1e-9, "OCS gespiegelt"); near(ocs.a0, Math.PI / 2, 1e-9); near(ocs.a1, Math.PI, 1e-9);
+  const bb = primsBounds(r.prims);
+  near(bb[0][0], -60); near(bb[1][1], 300);
+  // Übernahme: Polylinie geschlossen (gemeinsame Punkte), Ellipse als Ellipse
+  const sk3 = newSketch("u", "U", "XY");
+  const cnt = dxfToSketch(sk3, r.prims.filter((p) => p.layer === "Laser"), { uid });
+  assert.equal(cnt.entities, 7);
+  const pr3 = extractProfiles(sk3);
+  assert.equal(pr3.regions.length, 2, "Polylinien-Kontur und Ellipse");
+  near(pr3.regions.find((x) => x.outer.kind !== "ellipse").area, 100 * 40 + Math.PI * 400 / 2, 10, "Kontur mit Halbkreis");
+  assert.throws(() => parseDxf("hallo"), /Keine DXF/);
+});
