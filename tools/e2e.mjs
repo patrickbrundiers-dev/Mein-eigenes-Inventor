@@ -1593,7 +1593,7 @@ try {
     const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
     const selectOrig = () => evalApp(() => { const s = window.__werkcad.sketcher; s.sel.clear(); s.sel.add("e:mk"); window.__werkcad.selectSketchItems(["e:mk"]); });
     await selectOrig();
-    await page.locator("#ribbon button", { hasText: /^Rechteckmuster$/ }).click();
+    await page.locator('#ribbon button[aria-label="Rechteckmuster"]').click();
     let [cx, cy] = await at(0, 60);
     await page.mouse.click(cx, cy);
     // der Dialog setzt den Fokus 20 ms nach dem Öffnen auf das erste Feld – erst danach tippen
@@ -1606,7 +1606,7 @@ try {
     await page.waitForTimeout(300);
     const rect = await evalApp(() => window.__werkcad.sketcher.sk.entities.filter((e) => e.type === "circle").length);
     await selectOrig();
-    await page.locator("#ribbon button", { hasText: /^Kreismuster$/ }).click();
+    await page.locator('#ribbon button[aria-label="Kreismuster"]').click();
     [cx, cy] = await at(0, 0);
     await page.mouse.click(cx, cy);
     // der Dialog setzt den Fokus 20 ms nach dem Öffnen auf das erste Feld – erst danach tippen
