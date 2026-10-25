@@ -121,13 +121,14 @@ export class App {
     const same = this.project.docs.filter((d) => d.kind === kind);
     return nextName(this.prefs.get(key), this.project.docs.map((d) => d.name), { projekt: this.project.name, ...extra }, same.length + 1);
   }
-  newPart(name) {
-    const p = newPart(name || this.docName("part"));
+  newPart(name) { return this.addDoc(this.withPartDefaults(newPart(name || this.docName("part")))); }
+  /** Werkstoff und Sachnummer neuer Bauteile aus den Einstellungen (auch für importierte Bauteile) */
+  withPartDefaults(p) {
     const mat = this.prefs.get("dokument.werkstoff");
     p.material = materialOf(mat).source === "fallback" ? "S235" : mat;
     const num = this.prefs.get("dokument.nummer");
     if (num) p.number = nextName(num, this.parts().map((d) => d.number).filter(Boolean), { projekt: this.project.name }, this.parts().length + 1);
-    return this.addDoc(p);
+    return p;
   }
   newAssembly() { return this.addDoc(newAssembly(this.docName("assembly"))); }
   newDrawing(source) {
