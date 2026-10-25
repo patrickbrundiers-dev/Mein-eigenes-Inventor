@@ -2624,6 +2624,7 @@ try {
     await idle(60000);
     await evalApp(() => window.__werkcad.newPart("Winkel rechts"));
     await idle();
+    await page.locator("#ribbon .rb-tab", { hasText: "Verwalten" }).click();
     await page.locator("#ribbon button", { hasText: /^Abgeleitetes Bauteil$/ }).click();
     await idle(60000);
     const der = await evalApp(async (srcId) => {
@@ -2632,6 +2633,7 @@ try {
       return f.id;
     }, q);
     await idle(60000);
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
     await page.locator("#ribbon button", { hasText: /^3D-Skizze$/ }).click();
     await idle(60000);
     const s42 = await evalApp(() => {
@@ -2670,6 +2672,7 @@ try {
       return F.id;
     });
     await idle(60000);
+    await page.locator("#ribbon .rb-tab", { hasText: "Verwalten" }).click();
     await page.locator("#ribbon button", { hasText: /^Variantentabelle$/ }).click();
     await page.locator(".dialog button", { hasText: /^Zeile hinzufügen$/ }).click();
     await page.locator(".dialog .var-table tbody tr").nth(1).locator("td").nth(3).locator("input").fill("25");
@@ -2688,6 +2691,7 @@ try {
     // Regeln: Dialog öffnet, Regel per Modell, Meldung in den Eigenschaften
     await evalApp((fid) => window.__werkcad.openDoc(fid), fid);
     await idle(60000);
+    await page.locator("#ribbon .rb-tab", { hasText: "Verwalten" }).click();
     await page.locator("#ribbon button", { hasText: /^Regeln$/ }).click();
     await page.locator(".dialog button", { hasText: /Prüfen und melden/ }).click();
     const ruleRows = await page.locator(".dialog .rule").count();
@@ -2706,6 +2710,7 @@ try {
     await page.locator(".cmd-palette input").fill("Makro: Ansicht Test");
     const palHit = await page.locator(".cmd-palette").textContent();
     await page.keyboard.press("Escape");
+    await page.locator("#ribbon .rb-tab", { hasText: "Verwalten" }).click();
     await page.locator("#ribbon button", { hasText: /^Makros$/ }).click();
     const macroDlg = await page.locator(".dialog .macro").count();
     await page.locator(".dialog button", { hasText: /^Schließen$/ }).click();
