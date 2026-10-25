@@ -136,3 +136,25 @@ test("Farbschema und letzte Werkzeugwerte: Prüfung und Rundlauf", () => {
   const bad = loadSettings(JSON.stringify({ format: SETTINGS_FORMAT, version: SETTINGS_VERSION, values: { "werkzeuge.letzte": { bohrer: "1" } } }));
   assert.deepEqual(bad.values["werkzeuge.letzte"], {});
 });
+
+import { validateLayout, layoutColumns, movePanel, togglePanel, DEFAULT_LAYOUT } from "../src/core/layout.js";
+test("Panel-Anordnung: Prüfung, Spalten, Rundlauf", () => {
+  assert.ok(validateLayout(DEFAULT_LAYOUT).ok);
+  assert.ok(!validateLayout({ ...DEFAULT_LAYOUT, browser: "oben" }).ok);
+  assert.ok(!validateLayout({ ...DEFAULT_LAYOUT, wLeft: 50 }).ok);
+  assert.ok(!validateLayout({ ...DEFAULT_LAYOUT, hide: ["werkzeug"] }).ok);
+  assert.deepEqual(validateLayout({}).value, { ...DEFAULT_LAYOUT, hide: [] }, "fehlende Werte = Standard");
+  assert.equal(layoutColumns(DEFAULT_LAYOUT).columns, "260px minmax(0, 1fr) 300px");
+  const both = movePanel({ ...DEFAULT_LAYOUT, wRight: 340 }, "browser", "right");
+  const c = layoutColumns(both);
+  assert.deepEqual(c.right, ["browser", "props"]); assert.equal(c.columns, "0px minmax(0, 1fr) 340px");
+  assert.equal(layoutColumns(togglePanel(DEFAULT_LAYOUT, "props")).wRight, 0);
+  assert.equal(layoutColumns(DEFAULT_LAYOUT, ["browser"]).wLeft, 0, "Startseite ohne Browser");
+  const vals = { ...defaultSettings(), "oberflaeche.layout": { ...both, wLeft: 300 } };
+  const back = loadSettings(serializeSettings(vals));
+  assert.equal(back.warnings.length, 0);
+  assert.deepEqual(back.values["oberflaeche.layout"], { ...both, wLeft: 300 });
+  const bad = loadSettings(JSON.stringify({ format: SETTINGS_FORMAT, version: SETTINGS_VERSION, values: { "oberflaeche.layout": { browser: "mitte" } } }));
+  assert.equal(bad.warnings.length, 1);
+  assert.deepEqual(bad.values["oberflaeche.layout"], DEFAULT_LAYOUT);
+});

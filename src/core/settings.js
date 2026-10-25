@@ -1,3 +1,4 @@
+import { DEFAULT_LAYOUT, validateLayout } from "./layout.js";
 import { validateKeymap, commandDef } from "./commands.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
@@ -96,6 +97,7 @@ export const SETTINGS = [
   { key: "fertigung.knickWand", cat: "fertigung", label: "Knickrahmen: Wand höchstens", unit: "mm", type: "number", default: 4, min: 0, max: 30, help: "Dickere Wände lassen sich schwer von Hand knicken (Hinweis). 0 = nicht prüfen." },
 
   { key: "darstellung.schema", cat: "darstellung", label: "Farbschema", type: "enum", default: "hell", options: [{ value: "hell", label: "Hell" }, { value: "dunkel", label: "Dunkel" }, { value: "system", label: "Wie Windows" }], help: "Gilt für Menüband, Panels, Dialoge und den 3D-Hintergrund. Zeichnungsblätter bleiben weiß." },
+  { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },
   { key: "darstellung.skalierung", cat: "darstellung", label: "Oberflächengröße", unit: "%", type: "enum", default: 100, options: [80, 90, 100, 110, 125, 150].map((v) => ({ value: v, label: v + " %" })), help: "Nur in der Desktop-Version; im Browser die Zoomfunktion des Browsers verwenden." },
 ];
@@ -139,6 +141,8 @@ export function validateValue(def, v) {
       if (new Set(v).size !== v.length) return { ok: false, error: "Befehl doppelt" };
       return { ok: true, value: [...v] };
     }
+    case "layout":
+      return validateLayout(v);
     case "toolmemo": { // {werkzeug: Text | {feld: Text}} – nur bekannte Werkzeuge, kurze Texte
       if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: "Werkzeugwerte erwartet" };
       const out = {};

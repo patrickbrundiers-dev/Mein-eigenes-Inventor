@@ -5,6 +5,7 @@ import { defaultKnickrahmen } from "../core/knickrahmen.js";
 import { defaultProfilzug } from "../core/profilzug.js";
 import { DISPLAY } from "../core/settings.js";
 import { commandDef, inScope } from "../core/commands.js";
+import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
 
 export class Ribbon {
   constructor(app) {
@@ -127,6 +128,16 @@ export class Ribbon {
           B("sel_all", "Alle wählen", "view", { disabled: app.mode !== "part", run: () => app.selectEverything() }),
           B("sel_inv", "Umkehren", "view", { disabled: app.mode !== "part", run: () => app.invertSelection() }),
         ] },
+        { label: "Fenster", small: true, buttons: (() => {
+          const L = app.prefs.get("oberflaeche.layout") || DEFAULT_LAYOUT, set = (v) => app.prefs.set("oberflaeche.layout", v);
+          return [
+            B("w_browser", "Modellbrowser", "eye", { on: !L.hide.includes("browser"), run: () => set(togglePanel(L, "browser")) }),
+            B("w_props", "Eigenschaften", "eye", { on: !L.hide.includes("props"), run: () => set(togglePanel(L, "props")) }),
+            B("w_reset", "Anordnung zurücksetzen", "view", { disabled: JSON.stringify(L) === JSON.stringify(DEFAULT_LAYOUT), run: () => app.prefs.reset(["oberflaeche.layout"]) }),
+            B("w_bside", "Browser rechts", "view", { on: L.browser === "right", run: () => set(movePanel(L, "browser", L.browser === "right" ? "left" : "right")) }),
+            B("w_pside", "Eigenschaften links", "view", { on: L.props === "left", run: () => set(movePanel(L, "props", L.props === "left" ? "right" : "left")) }),
+          ];
+        })() },
         { label: "Sichtbarkeit", buttons: [B("v_showall", "Alle einblenden", "eye", { disabled: !app.viewer.hidden.size, run: () => app.showAllBodies() })] },
         { label: "Schnitt", buttons: ["X", "Y", "Z"].map((a) => B("clip_" + a, "Schnitt " + a, "cut", { on: app.viewer.clip?.axis === a, run: () => app.toggleClip(a) })) },
         { label: "Qualität", buttons: [
