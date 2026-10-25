@@ -1246,6 +1246,30 @@ export class Viewer {
       r.render(this.scene, this.camera);
     }
   }
+  /** Kleines Vorschaubild für die Startseite (PNG als data:-URL, transparenter Hintergrund, Ausschnitt aus der Mitte) */
+  thumbnail({ width = 320, height = 240 } = {}) {
+    const r = this.renderer;
+    const src = r.domElement;
+    if (!src.width || !src.height) return null;
+    const helpers = this.helpers.visible;
+    this.helpers.visible = false;
+    try {
+      // wie die Zeichenschleife, aber ohne ViewCube: ganze Fläche leeren, Szene zeichnen
+      r.setScissorTest(false);
+      r.clear();
+      r.setViewport(0, 0, this.container.clientWidth, this.container.clientHeight);
+      r.render(this.scene, this.camera);
+      const a = width / height;
+      const cw = Math.min(src.width, src.height * a), ch = cw / a;
+      const c = document.createElement("canvas");
+      c.width = width; c.height = height;
+      c.getContext("2d").drawImage(src, (src.width - cw) / 2, (src.height - ch) / 2, cw, ch, 0, 0, width, height);
+      return c.toDataURL("image/png");
+    } finally {
+      this.helpers.visible = helpers;
+      this.needsRender = true;
+    }
+  }
   snapshot() {
     this.needsRender = true;
     const r = this.renderer;

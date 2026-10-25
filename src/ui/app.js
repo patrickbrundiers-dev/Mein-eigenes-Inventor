@@ -118,7 +118,7 @@ export class App {
     document.getElementById("start").hidden = !start;
     document.getElementById("overlay").style.display = mode === "sketch" ? "" : "none";
     this.viewTools.hidden = draw || start;
-    this.docking.setModeHidden(start ? ["browser"] : []);
+    this.docking.setModeHidden(start ? ["browser", "props"] : []);
     if (start) this.start.render();
     if (draw) this.drawing.open(this.activeDoc());
     else this.drawing.close();
@@ -290,6 +290,7 @@ export class App {
     this.project = prj;
     this.filePath = filePath;
     this.readOnly = false;
+    this.previewDue = filePath || null;
     const matIssues = adoptProjectMaterials(prj);
     adoptProjectBendTables(prj);
     this.syncMaterials();
@@ -446,6 +447,11 @@ export class App {
       this.tree.render();
       this.props.render();
       this.updateStatus();
+      // erstes fertiges Modell nach dem Öffnen → Vorschaubild für die Startseite auffrischen
+      if (this.previewDue && this.previewDue === this.filePath && d.kind !== "drawing") {
+        this.previewDue = null;
+        requestAnimationFrame(() => this.files.storePreview());
+      }
     } catch (e) {
       toast("Fehler beim Berechnen: " + e.message, { kind: "err" });
     }

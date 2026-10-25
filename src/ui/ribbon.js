@@ -369,6 +369,24 @@ export class Ribbon {
         this.exportTab("drawing"),
       ];
     }
+    if (mode === "start") {
+      // Startseite: nur Extras (Anwendungsoptionen und Hilfe), wie bei gängigen Konstruktionsprogrammen
+      return [
+        { id: "extras", label: "Extras", groups: [
+          { label: "Optionen", buttons: [
+            B("x_options", "Anwendungs­optionen", "settings", { run: () => app.props.settingsDialog() }),
+            B("x_ribbon", "Menüband anpassen", "grid", { run: () => app.props.settingsDialog({ category: "werkzeuge" }) }),
+            B("x_material", "Materialien", "steel", { run: () => app.props.settingsDialog({ category: "material" }) }),
+          ] },
+          { label: "Hilfe", buttons: [
+            B("x_search", "Befehl suchen", "search", { run: () => app.commands.exec("app.search") }),
+            B("x_steps", "Erste Schritte", "play", { run: () => app.start.firstSteps() }),
+            B("x_about", "Über PBCAD", "info", { run: () => app.props.aboutDialog() }),
+            window.werkcad?.openLogFolder ? B("x_log", "Fehler­protokoll", "open", { run: () => window.werkcad.openLogFolder() }) : null,
+          ].filter(Boolean) },
+        ] },
+      ];
+    }
     return [];
   }
   exportTab(kind) {
