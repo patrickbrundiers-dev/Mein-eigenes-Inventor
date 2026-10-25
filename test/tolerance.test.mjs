@@ -52,8 +52,8 @@ test("Toleranz am Maß: prüfen und Text", () => {
   assert.equal(toleranceText({ art: "allg" }, 5, "m", "rad"), "±0,5");
   assert.equal(toleranceText({ art: "allg" }, 50, null), "", "ohne Klasse nichts");
   assert.equal(toleranceText({ art: "sym", v: 0.05 }, 50, "m"), "±0,05");
-  assert.equal(toleranceText({ art: "abm", o: 0.2, u: -0.1 }, 50, "m"), "+0,2/−0,1");
-  assert.equal(toleranceText({ art: "abm", o: 0.1, u: 0 }, 50, "m"), "+0,1/0");
+  assert.equal(toleranceText({ art: "abm", o: 0.2, u: -0.1 }, 50, "m"), " +0,2/−0,1");
+  assert.equal(toleranceText({ art: "abm", o: 0.1, u: 0 }, 50, "m"), " +0,1/0");
   assert.equal(toleranceText({ art: "abm", o: 0.1, u: -0.1 }, 50, "m"), "±0,1");
   assert.equal(toleranceText({ art: "pass", pass: "H7" }, 20, "m"), " H7");
   assert.equal(toleranceText(undefined, 20, "m"), "");

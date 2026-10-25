@@ -94,7 +94,7 @@ export function toleranceText(t, nominal, cls, kind = "lin") {
   if (!t?.art) return "";
   if (t.art === "allg") { const g = generalTolerance(cls, nominal, kind); return g == null ? "" : "±" + num(g); }
   if (t.art === "sym") return "±" + num(t.v);
-  if (t.art === "abm") return t.o === -t.u ? "±" + num(t.o) : `${signed(t.o)}/${signed(t.u)}`;
+  if (t.art === "abm") return t.o === -t.u ? "±" + num(t.o) : ` ${signed(t.o)}/${signed(t.u)}`;
   if (t.art === "pass") return " " + t.pass;
   return "";
 }
