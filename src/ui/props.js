@@ -13,6 +13,9 @@ import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, 
 import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
 import { patternOf } from "../core/sketchshapes.js";
+import { inertiaFromMeshes } from "../core/inertia.js";
+
+const INERTIA = new WeakMap(); // Ergebnis → Trägheitswerte
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
 
@@ -176,7 +179,8 @@ export class Props {
         h("dt", {}, "Oberfläche"), h("dd", {}, fmtNum(r.bodies.reduce((s, b) => s + (b.props?.area || 0), 0) / 100, 2) + " cm²"),
         centerOf(r.bodies) ? [h("dt", {}, "Schwerpunkt"), h("dd", {}, centerOf(r.bodies).map((v) => fmtNum(v, 1)).join(" / ") + " mm")] : null,
         bb ? [h("dt", {}, "Abmessungen"), h("dd", {}, `${fmtNum(bb[1][0] - bb[0][0], 1)} × ${fmtNum(bb[1][1] - bb[0][1], 1)} × ${fmtNum(bb[1][2] - bb[0][2], 1)}`)] : null,
-        h("dt", {}, "Körper"), h("dd", {}, String(r.bodies.length)))));
+        h("dt", {}, "Körper"), h("dd", {}, String(r.bodies.length))),
+        this.inertiaBlock(r, dens, vol)));
       const members = r.bodies.filter((b) => b.kind === "member");
       if (members.length) {
         const rows = cutListRows([{ part, result: r, qty: 1 }]);
@@ -595,6 +599,27 @@ export class Props {
     inp.addEventListener("change", () => { if (check() && inp.value !== value) onCommit(inp.value.trim()); });
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
     return this.field("Muster", inp);
+  }
+
+  /** Trägheitsmomente aus dem Darstellungsnetz (Kernel liefert sie nicht) */
+  inertiaBlock(r, dens, vol) {
+    const meshes = r.bodies.map((b) => b.mesh).filter((m) => m?.positions && m?.indices);
+    if (meshes.length !== r.bodies.length || !meshes.length) return null;
+    let memo = INERTIA.get(r);
+    if (!memo || memo.dens !== dens) { memo = { dens, it: inertiaFromMeshes(meshes, dens, vol) }; INERTIA.set(r, memo); }
+    const it = memo.it;
+    if (!it) return null;
+    const f = (v) => fmtNum(v, v >= 100 ? 0 : 2);
+    const I = it.atCenter;
+    const dev = it.meshDeviation;
+    return h("details", { class: "inertia" }, h("summary", {}, "Trägheitsmomente"),
+      h("dl", { class: "kv" },
+        h("dt", {}, "Haupt-I₁/I₂/I₃"), h("dd", {}, it.principal.map(f).join(" / ") + " kg·mm²"),
+        h("dt", {}, "Ixx/Iyy/Izz"), h("dd", {}, [I[0][0], I[1][1], I[2][2]].map(f).join(" / ")),
+        h("dt", {}, "Ixy/Ixz/Iyz"), h("dd", {}, [I[0][1], I[0][2], I[1][2]].map(f).join(" / ")),
+        h("dt", {}, "um Ursprung Ixx/Iyy/Izz"), h("dd", {}, [it.atOrigin[0][0], it.atOrigin[1][1], it.atOrigin[2][2]].map(f).join(" / "))),
+      h("p", { class: "hint" }, `Bezogen auf den Schwerpunkt, Achsen parallel zum Bauteil. Berechnet aus dem Darstellungsnetz (Qualität „${{ grob: "Schnell", normal: "Normal", fein: "Fein" }[this.app.quality] || this.app.quality}“)` +
+        (dev != null ? `; Volumen des Netzes weicht ${fmtNum(Math.abs(dev) * 100, 2)} % vom exakten Wert ab – Trägheitswerte ähnlich genau.` : ".")));
   }
 
   // ---------- Skizzenmodus ----------

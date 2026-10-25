@@ -757,3 +757,28 @@ test("Schlitz und Polygon am Rohr: Volumen und Lage", async () => {
   okAll(res);
   near(V0 - vol(res), (400 + (Math.PI * 100) / 2) * 3, 0.5, "Polygon mit Bogen");
 });
+
+import { inertiaFromMeshes } from "../src/core/inertia.js";
+test("Trägheitsmomente aus dem Netz: Quader, Zylinder, Rohr gegen Formeln", () => {
+  const rho = 7.85, kg = (v) => v * rho * 1e-6;
+  const check = (shape, exact, tol, name) => {
+    const mesh = K.meshBody(shape);
+    const it = inertiaFromMeshes([mesh], rho, R.measureVolume(shape));
+    assert.ok(it, name);
+    const I = [it.atCenter[0][0], it.atCenter[1][1], it.atCenter[2][2]];
+    exact.forEach((e, i) => assert.ok(Math.abs(I[i] / e - 1) < tol, `${name} I${i}: ${I[i]} ≠ ${e}`));
+    log(name, "Netzabweichung", it.meshDeviation, "I", I.map((x) => x.toFixed(1)).join(" "));
+    return it;
+  };
+  // Quader 100×50×20 (exakt bis auf Rundung)
+  const m1 = kg(100 * 50 * 20);
+  const box = check(R.makeBaseBox(100, 50, 20), [m1 / 12 * (50 ** 2 + 20 ** 2), m1 / 12 * (100 ** 2 + 20 ** 2), m1 / 12 * (100 ** 2 + 50 ** 2)], 1e-6, "Quader");
+  assert.ok(Math.abs(box.mass - m1) < 1e-9);
+  // Zylinder r=20, h=80 (Achse z): Izz = m r²/2, Ixx = m(3r²+h²)/12
+  const r = 20, hgt = 80, m2 = kg(Math.PI * r * r * hgt);
+  check(R.makeCylinder(r, hgt), [m2 * (3 * r * r + hgt * hgt) / 12, m2 * (3 * r * r + hgt * hgt) / 12, m2 * r * r / 2], 0.02, "Zylinder");
+  // Rohr Da 48,3 / s 2,6, L 400: Izz = m (Ra²+Ri²)/2
+  const Ra = 24.15, Ri = 24.15 - 2.6, L = 400, m3 = kg(Math.PI * (Ra * Ra - Ri * Ri) * L);
+  const tube = R.makeCylinder(Ra, L).cut(R.makeCylinder(Ri, L));
+  check(tube, [m3 * (3 * (Ra * Ra + Ri * Ri) + L * L) / 12, m3 * (3 * (Ra * Ra + Ri * Ri) + L * L) / 12, m3 * (Ra * Ra + Ri * Ri) / 2], 0.02, "Rohr");
+});

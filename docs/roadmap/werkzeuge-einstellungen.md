@@ -73,7 +73,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Punkte (Ecken) einzeln anklicken | vorhanden | Stufe 10: beim Messen nahe am Kantenende klicken; Lage X/Y/Z, Abstand Ecke–Ecke/Kante/Fläche exakt (BRepExtrema), Δ X/Y/Z |
 | Bounding Box, Volumen, Masse | vorhanden | `bodyProps` (Volumen, Box), Masse mit Werkstoffdichte |
 | Oberfläche, Schwerpunkt | vorhanden | Masse-Eigenschaften im Bauteil (Stufe 4) |
-| Trägheitsmomente | blockiert | `GProp_GProps.MatrixOfInertia` ist in der eingebauten OpenCascade-Fassung (replicad-opencascadejs 1.1.0) nicht verfügbar |
+| Trägheitsmomente | vorhanden (Stufe 17) | aus dem Dreiecksnetz berechnet, da `GProp_GProps.MatrixOfInertia` im eingebauten OpenCascade fehlt; Netzabweichung wird angezeigt |
 | Kollisionsprüfung | vorhanden | Baugruppe (Entwicklungsplan G-1) |
 | Ungültige Körper erkennen | vorhanden | Körperprüfung aus P0 |
 | Messwerte mit konfigurierbarer Genauigkeit | vorhanden (neu) | Einstellung „Dezimalstellen“ |
@@ -122,7 +122,7 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 14 | Automatische Skizzenbedingungen: parallel, senkrecht, tangential, konzentrisch, gleich; Strg unterdrückt; je Art abschaltbar | Unit-Tests Erkennung, Oberflächentest |
 | 15 | Schnellzugriffsleiste (Befehle anheften) und Standardwerte je Werkzeug | Unit-Test Schema/Migration, Oberflächentest |
 | 16 | Bestimmtheit der Skizze farbig (frei/bestimmt/Widerspruch) | Solver-Tests Nullraum, Oberflächentest |
-| 17 (geplant) | Trägheitsmomente aus dem Dreiecksnetz | Kernel-Test Quader/Zylinder/Rohr |
+| 17 | Trägheitsmomente aus dem Dreiecksnetz (Messen → Masse-Eigenschaften) | Kernel-Test Quader/Zylinder/Rohr |
 | 18 (geplant) | Gefüllte Schnittflächen im 3D-Schnitt | Oberflächentest (Pixel) |
 | 19 (geplant) | Ellipse in der Skizze (Solver, Profil, DXF) | Solver-/Kernel-/Oberflächentest |
 | 20 (geplant) | Farbschema hell/dunkel, Werkzeugparameter merken | Unit-Test Schema, Oberflächentest |
