@@ -782,12 +782,22 @@ export class App {
   /** Benutzereinstellungen anwenden. Ändert nie das Modell, nur Anzeige und Bedienung. */
   applyPrefs(keys) {
     const p = this.prefs;
+    if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
     this.viewer.applyPrefs(p.values);
     this.sketcher.applyPrefs(p.values);
     if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);
     if (keys?.includes("ansicht.qualitaet") && this.quality !== p.get("ansicht.qualitaet")) { this.quality = p.get("ansicht.qualitaet"); this.ribbon.render(); this.rebuild(); }
     if (!keys || keys.includes("werkzeuge.kuerzel")) this.commands.update();
     if (keys) { this.refreshSelectionHits(); this.props.render(); this.updateStatus(); this.ribbon.render(); }
+  }
+
+  /** Farbschema setzen (hell/dunkel/wie System); „System“ folgt Windows auch während der Sitzung */
+  applyTheme() {
+    const mode = this.prefs.get("darstellung.schema");
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (mq && !this.themeListener) { this.themeListener = () => { if (this.prefs.get("darstellung.schema") === "system") { this.applyTheme(); this.viewer.applyPrefs(this.prefs.values); } }; mq.addEventListener?.("change", this.themeListener); }
+    const dark = mode === "dunkel" || (mode === "system" && !!mq?.matches);
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
   }
 
   // ---------- Oberfläche ----------

@@ -101,7 +101,7 @@ export class Viewer {
     if (this.grid) this.helpers.remove(this.grid);
     const step = niceStep(size / 20);
     const n = Math.max(4, Math.round(size / step));
-    const g = new THREE.GridHelper(n * step, n, 0x9fb0c2, 0xc6d1db);
+    const g = new THREE.GridHelper(n * step, n, this.dark ? 0x6b7987 : 0x9fb0c2, this.dark ? 0x46525e : 0xc6d1db);
     g.rotation.x = Math.PI / 2;
     g.material.transparent = true;
     g.material.opacity = 0.55;
@@ -110,6 +110,7 @@ export class Viewer {
     this.grid = g;
     this.helpers.add(g);
     this.gridStep = step;
+    this.gridSize = size;
   }
   makeTriad() {
     const mk = (dir, color) => {
@@ -260,6 +261,8 @@ export class Viewer {
     this.showGrid = v["ansicht.raster"];
     if (!this.sketchFrame) this.grid.visible = this.showGrid;
     this.showCube = v["ansicht.viewcube"];
+    const dark = document.documentElement.dataset.theme === "dark";
+    if (dark !== !!this.dark) { this.dark = dark; if (this.grid) { const old = this.grid; this.makeGrid(this.gridSize || 400); this.grid.position.copy(old.position); this.grid.quaternion.copy(old.quaternion); this.grid.visible = old.visible; } }
     if (v["ansicht.schnittFuellen"] !== undefined && v["ansicht.schnittFuellen"] !== this.fillSection) {
       this.fillSection = v["ansicht.schnittFuellen"];
       this.updateCaps();
