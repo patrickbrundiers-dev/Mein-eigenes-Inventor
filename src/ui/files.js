@@ -6,6 +6,10 @@ import { serializeProject, loadProject, validateProject } from "../core/project.
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
+import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
+import { decomposePlacement } from "../core/geom.js";
+import { buildXlsx } from "../core/xlsx.js";
+import { listSheets } from "../core/lists.js";
 import { fmtNum } from "./dom.js";
 
 const PROJECT_FILTERS = [{ name: "PBCAD-Projekt", extensions: ["wcad"] }];
@@ -144,7 +148,7 @@ export class Files {
     if (!d) return null;
     if (d.kind === "part") return [{ part: d, name: d.name }];
     // alle Komponenten, auch ausgeblendete – passend zu Stück- und Zuschnittliste
-    if (d.kind === "assembly") return d.components.filter((c) => app.doc(c.part)).map((c) => ({ part: app.doc(c.part), pos: c.pos, rot: c.rot, name: c.name }));
+    if (d.kind === "assembly") return flattenAssembly(d, (id) => app.doc(id), { includeHidden: true }).map((o) => ({ part: o.part, ...decomposePlacement(o.matrix), name: o.path.join(" / ") }));
     return null;
   }
   async withBusy(label, fn) {
@@ -175,7 +179,7 @@ export class Files {
   async exportMembers() {
     const app = this.app;
     const d = app.activeDoc();
-    const parts = d.kind === "part" ? [d] : [...new Set(d.components.map((c) => c.part))].map((id) => app.doc(id)).filter(Boolean);
+    const parts = d.kind === "part" ? [d] : [...new Set(flattenAssembly(d, (id) => app.doc(id), { includeHidden: true }).map((o) => o.part))];
     await this.withBusy("Profil-Export", async () => {
       const files = [];
       for (const p of parts) {
@@ -226,6 +230,25 @@ export class Files {
     const rows = weldRows(collectWelds(collectCutSources(this.app, d)));
     if (!rows.length) return toast("Keine Schweißnähte vorhanden – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
     await this.saveText(weldCsv(rows, d.name), safeName(d.number || d.name) + "_Nahtliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
+  }
+  /** Alle Listen als Excel-Arbeitsmappe: Stückliste (Baugruppe), Zuschnitt, Summen je Profil, Nahtliste */
+  async exportListsXlsx() {
+    const app = this.app;
+    const d = app.activeDoc();
+    const src = collectCutSources(app, d);
+    const asm = d.kind === "assembly";
+    const docOf = (id) => app.doc(id);
+    // Struktur- und Baukastenliste nur, wenn es Unterbaugruppen gibt – sonst wären sie gleich der Stückliste
+    const nested = asm && d.components.some((c) => app.doc(c.part)?.kind === "assembly");
+    const sheets = listSheets({
+      cut: cutListRows(src), welds: weldRows(collectWelds(src)), bom: asm ? bomRows(app, d) : [],
+      structure: nested ? structureBom(d, docOf).map((x) => ({ level: x.level, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty, total: x.total })) : [],
+      modular: nested ? modularBom(d, docOf).map((m) => ({ name: m.asm.name, number: m.asm.number, rows: m.rows.map((x) => ({ pos: x.pos, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty })) })) : [],
+    });
+    if (!sheets.length) return toast("Keine Listen vorhanden – keine Profile, Nähte oder Bauteile");
+    const data = buildXlsx(sheets);
+    await this.saveBinary(data, safeName(d.number || d.name) + "_Listen.xlsx", [{ name: "Excel-Arbeitsmappe", extensions: ["xlsx"] }]);
+    toast(`Excel: ${sheets.map((s) => s.name).join(", ")}`, { kind: "ok" });
   }
   async exportBom() {
     const app = this.app;

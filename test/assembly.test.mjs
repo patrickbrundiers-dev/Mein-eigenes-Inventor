@@ -77,3 +77,40 @@ test("Große Baugruppe: 150 gestapelte Platten lösen schnell und exakt", () => 
   for (let i = 0; i < N; i++) near(asm.components[i].pos[2], i * 10, 1e-6);
   assert.ok(ms < 1000, `${ms} ms`);
 });
+
+test("Unterbaugruppen: Auflösen mit Gesamt-Platzierung, Zyklus-Schutz, Struktur- und Baukastenstückliste (MegaCAD-Abgleich M19)", async () => {
+  const { flattenAssembly, canInsert, partCounts, structureBom, modularBom } = await import("../src/core/subasm.js");
+  const { matApply } = await import("../src/core/geom.js");
+  const docs = {
+    rahmen: { id: "rahmen", kind: "part", name: "Rahmen" },
+    rad: { id: "rad", kind: "part", name: "Rad" },
+    achse: { id: "achse", kind: "assembly", name: "Achse", components: [
+      { id: "a1", part: "rad", name: "Rad:1", pos: [0, -500, 0], rot: [0, 0, 0] },
+      { id: "a2", part: "rad", name: "Rad:2", pos: [0, 500, 0], rot: [0, 0, 0] },
+    ] },
+    wagen: { id: "wagen", kind: "assembly", name: "Wagen", components: [
+      { id: "w1", part: "rahmen", name: "Rahmen:1", pos: [0, 0, 0], rot: [0, 0, 0] },
+      { id: "w2", part: "achse", name: "Achse vorne", pos: [1000, 0, 0], rot: [0, 0, 90] },
+      { id: "w3", part: "achse", name: "Achse hinten", pos: [0, 0, 0], rot: [0, 0, 0] },
+    ] },
+  };
+  const docOf = (id) => docs[id];
+  const occ = flattenAssembly(docs.wagen, docOf);
+  assert.equal(occ.length, 5);
+  const front = occ.filter((o) => o.top.id === "w2");
+  assert.equal(front.length, 2);
+  // Rad:1 der vorderen Achse: (0, −500, 0) um Z 90° gedreht → (500, 0, 0), dann + (1000, 0, 0)
+  const p = matApply(front[0].matrix, [0, 0, 0]);
+  assert.ok(Math.abs(p[0] - 1500) < 1e-9 && Math.abs(p[1]) < 1e-9, "Gesamt-Platzierung " + p);
+  assert.deepEqual(matApply(front[0].inner, [0, 0, 0]).map((x) => Math.round(x)), [0, -500, 0], "im System der Komponente");
+  assert.deepEqual(front[0].path, ["Achse vorne", "Rad:1"]);
+  assert.equal(partCounts(docs.wagen, docOf).get("rad"), 4);
+  assert.equal(canInsert(docs.achse, docs.wagen, docOf), false, "Zyklus");
+  assert.equal(canInsert(docs.wagen, docs.wagen, docOf), false, "sich selbst");
+  assert.equal(canInsert(docs.wagen, docs.achse, docOf), true);
+  const sb = structureBom(docs.wagen, docOf);
+  assert.deepEqual(sb.map((r) => [r.level, r.doc.name, r.qty, r.total]), [["1", "Rahmen", 1, 1], ["2", "Achse", 2, 2], ["2.1", "Rad", 2, 4]]);
+  const mb = modularBom(docs.wagen, docOf);
+  assert.deepEqual(mb.map((x) => x.asm.name), ["Wagen", "Achse"]);
+  assert.deepEqual(mb[1].rows.map((r) => [r.doc.name, r.qty]), [["Rad", 2]]);
+});

@@ -1,6 +1,6 @@
 # Abgleich MegaCAD Metall 3D ↔ PBCAD
 
-Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **freigegeben 25.10.2026, Umsetzung läuft** (erledigt: Block A – M1 #71, M2 #73, M3 #74, M4 #76; Block B – M5 und M6 #79, M7, M8, M9, M10, M11 erste Stufe #81; M12, M13)
+Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **freigegeben 25.10.2026, Umsetzung läuft** (erledigt: Block A – M1 #71, M2 #73, M3 #74, M4 #76; Block B – M5 und M6 #79, M7, M8, M9, M10, M11 erste Stufe #81; M12, M13 #83; M18, M19)
 
 Auftrag: Patrick hat den Funktionsumfang der Produktseite „MegaCAD Metall 3D“ geschickt („Das möchte ich auch alles
 drin haben“). Übernommen wird nur der **Funktionsumfang als Ziel**; keine Texte, Bilder, Dialoge oder Daten von
@@ -135,8 +135,8 @@ den Entwicklungsplan-Thread. Große Stufen (L) werden beim Start in 2–3 PRs ge
 | M11 (✓ Stufe 1: Pfosten, Handlauf, Gurte, Staketen/Querstäbe/Blech/Glas, über Eck) | Geländer-Generator mit Füllungsarten, Pfostenaufteilung, über Eck | L (2–3 PRs) |
 | M12 ✓ | Tor-Generator: Einzel-/Doppeltor, gerade/Rund-/Stichbogen | M |
 | M13 (✓ Stufe 1: Wangen Flach/UPN, 1-/2-Holm, Stufen Gitterrost/Blech/Holz, Prüfung 2s + a) | Treppe geradläufig mit Wangen/Holmen und Stufenarten, Steigungsprüfung | L (2 PRs) |
-| M18 | Excel-Export (`.xlsx`) für Zuschnitt- und Stückliste | S |
-| M19 | Unterbaugruppen, dann Struktur- und Baukastenstückliste | L (2 PRs) |
+| M18 ✓ | Excel-Export (`.xlsx`) für Zuschnitt- und Stückliste | S |
+| M19 ✓ | Unterbaugruppen, dann Struktur- und Baukastenstückliste | L (2 PRs) |
 | M20 | Normteile parametrisch: Sechskantschrauben (ISO 4014/4017), Muttern (ISO 4032), Scheiben (ISO 7089), Gewindestange, Spannschloss; in Stückliste mit Normbezeichnung | M |
 | M21 | DXF-Import in Skizze; IGES prüfen; PNG-Bildexport | M |
 

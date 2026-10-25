@@ -92,7 +92,8 @@ export function validateProject(prj) {
   for (const d of prj.docs) {
     if (d?.kind === "assembly" && Array.isArray(d.components)) {
       for (const c of d.components) {
-        if (byId.get(c?.part)?.kind !== "part") issues.push(issue("komponente-verweis", "warning", d.id, `Baugruppe »${d.name || d.id}«: Komponente »${c?.name || c?.id}« verweist auf ein fehlendes Bauteil.`));
+        const k = byId.get(c?.part)?.kind;
+        if (k !== "part" && !(k === "assembly" && c.part !== d.id)) issues.push(issue("komponente-verweis", "warning", d.id, `Baugruppe »${d.name || d.id}«: Komponente »${c?.name || c?.id}« verweist auf ein fehlendes Bauteil.`));
       }
     }
     if (d?.kind === "drawing" && d.source && !byId.has(d.source.id)) {

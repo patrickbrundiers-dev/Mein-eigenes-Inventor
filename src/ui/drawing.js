@@ -5,7 +5,8 @@ import { DxfWriter } from "../core/dxf.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { uid } from "../core/examples.js";
 import { scaleLabel } from "./tree.js";
-import { v3, placementMatrix, matApply } from "../core/geom.js";
+import { v3, matApply, decomposePlacement } from "../core/geom.js";
+import { flattenAssembly } from "../core/subasm.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
 import { weldSymbol } from "../core/weld.js";
@@ -58,7 +59,7 @@ export class DrawingEditor {
     const src = d?.source && app.doc(d.source.id);
     if (!src) return null;
     if (src.kind === "part") return [{ part: src, pos: [0, 0, 0], rot: [0, 0, 0] }];
-    if (src.kind === "assembly") return src.components.filter((c) => !c.hidden && app.doc(c.part)).map((c) => ({ part: app.doc(c.part), pos: c.pos, rot: c.rot, name: c.name }));
+    if (src.kind === "assembly") return flattenAssembly(src, (id) => app.doc(id)).map((o) => ({ part: o.part, ...decomposePlacement(o.matrix), name: o.path.join(" / ") }));
     return null;
   }
   async update() {
@@ -584,7 +585,9 @@ export class DrawingEditor {
     if (src?.kind !== "assembly") return toast("Positionsnummern gibt es nur in Zeichnungen von Baugruppen");
     const v = (this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "iso") || d.views[0];
     if (!v || !this.proj.get(v.id)) return toast("Zuerst Ansichten erzeugen");
-    const anchors = balloonAnchors(src, (pid) => this.app.results.get(pid));
+    // Positionsnummern je Bauteil der Mengenstückliste, auch aus Unterbaugruppen
+    const flat = { components: flattenAssembly(src, (id) => this.app.doc(id)).map((o) => ({ part: o.part.id, ...decomposePlacement(o.matrix) })) };
+    const anchors = balloonAnchors(flat, (pid) => this.app.results.get(pid));
     if (!anchors.length) return toast("Die Bauteile sind noch nicht berechnet – bitte kurz warten");
     const cam = this.viewCam(d, v);
     const xf = this.viewXf(v);
@@ -610,7 +613,7 @@ export class DrawingEditor {
     const anchors = [];
     const add = (pid, M) => (this.app.results.get(pid)?.welds || []).forEach((w, i) => anchors.push({ key: `${pid}:${w.fid}:${i}`, p3: M ? matApply(M, w.p3) : w.p3, w }));
     if (src.kind === "part") add(src.id, null);
-    else { const seen = new Set(); for (const c of src.components || []) if (!c.hidden && !seen.has(c.part)) { seen.add(c.part); add(c.part, placementMatrix(c.pos, c.rot)); } }
+    else { const seen = new Set(); for (const o of flattenAssembly(src, (id) => this.app.doc(id))) if (!seen.has(o.part.id)) { seen.add(o.part.id); add(o.part.id, o.matrix); } }
     if (!anchors.length) return toast("Keine Schweißnähte im Modell – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
     const cam = this.viewCam(d, v);
     const xf = this.viewXf(v);

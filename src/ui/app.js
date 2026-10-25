@@ -16,7 +16,8 @@ import { entityFree } from "../core/solver.js";
 import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./dom.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { newSketch } from "../core/sketch.js";
-import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, alignFaces, matApply, matApplyDir } from "../core/geom.js";
+import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir } from "../core/geom.js";
+import { flattenAssembly } from "../core/subasm.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
@@ -262,7 +263,7 @@ export class App {
           this.showPart(d, r2);
         } else this.showPart(d, res);
       } else if (d.kind === "assembly") {
-        const ids = [...new Set(d.components.map((c) => c.part))];
+        const ids = [...new Set(flattenAssembly(d, (id) => this.doc(id), { includeHidden: true }).map((o) => o.part.id))];
         const results = await Promise.all(ids.map((id) => this.doc(id) ? this.buildPart(this.doc(id)) : null));
         if (this.activeId !== d.id) return;
         void results;
@@ -295,11 +296,16 @@ export class App {
     this.refreshSelectionHits();
   }
   showAssembly(asm) {
-    const comps = asm.components.map((c) => {
-      const p = this.doc(c.part);
-      const r = this.results.get(c.part);
-      return { id: c.id, partKey: c.part, bodies: r?.bodies, color: p ? this.partColor(p) : "#999", pos: c.pos, rot: c.rot, opacity: c.hidden ? 0 : 1 };
-    }).filter((c) => c.opacity > 0);
+    const docOf = (id) => this.doc(id);
+    const comps = asm.components.flatMap((c) => {
+      if (c.hidden) return [];
+      const p = docOf(c.part);
+      if (p?.kind === "assembly") {
+        // Unterbaugruppe: jedes Bauteil mit Gesamt-Platzierung, Auswahl wirkt auf die ganze Komponente
+        return flattenAssembly({ id: asm.id, components: [c] }, docOf).map((o) => ({ id: c.id, partKey: o.part.id, bodies: this.results.get(o.part.id)?.bodies, color: this.partColor(o.part), matrix: o.matrix, inner: o.inner, leaf: o.part.id, opacity: 1 }));
+      }
+      return [{ id: c.id, partKey: c.part, bodies: this.results.get(c.part)?.bodies, color: p ? this.partColor(p) : "#999", pos: c.pos, rot: c.rot, opacity: 1 }];
+    });
     this.viewer.showAssembly(comps);
     this.viewer.showSketches([]);
     if (this.fittedFor !== asm.id && comps.length) {
@@ -683,6 +689,7 @@ export class App {
     if (conc && (hit.info?.type !== "CYLINDER" || !hit.info.axisD)) return toast("Bitte eine zylindrische Fläche wählen (Bohrung, Rohr, Bolzen)");
     if (!conc && (hit.info?.type !== "PLANE" || !hit.info.normal)) return toast("Bitte eine ebene Fläche wählen");
     const cid = hit.key.slice(5);
+    hit = { ...hit, info: innerInfo(hit) };
     if (!this.align.first) {
       this.align.first = { cid, info: hit.info, hit };
       this.refreshSelectionHits();
@@ -724,6 +731,8 @@ export class App {
   }
   /** Ebene und zylindrische Flächen (mit Achse) für Abhängigkeiten */
   assemblyFaces(partId) {
+    const d = this.doc(partId);
+    if (d?.kind === "assembly") return flattenAssembly(d, (id) => this.doc(id)).flatMap((o) => this.assemblyFaces(o.part.id).map((f) => transformFace(f, o.matrix)));
     const r = this.results.get(partId);
     if (!r) return [];
     return r.bodies.flatMap((b) => (b.mesh?.faces || []).filter((f) => (f.type === "PLANE" && f.normal && f.point) || (f.type === "CYLINDER" && f.axisD)));
@@ -776,6 +785,12 @@ export class App {
     const base = { body: hit.body, kind: hit.kind, idx: hit.info.idx, end: hit.end };
     if (d.kind === "part") return { ...base, part: d };
     const c = d.components.find((x) => "comp:" + x.id === hit.key);
+    const inner = hit.group?.userData?.inner;
+    if (c && hit.group?.userData?.leaf) {
+      // Bauteil in einer Unterbaugruppe: Gesamt-Platzierung zerlegen
+      const pl = decomposePlacement(matMul(placementMatrix(c.pos, c.rot), inner || IDENT4));
+      return { ...base, part: this.doc(hit.group.userData.leaf), pos: pl.pos, rot: pl.rot };
+    }
     const p = c && this.doc(c.part);
     return p ? { ...base, part: p, pos: c.pos, rot: c.rot } : null;
   }
@@ -1046,3 +1061,19 @@ const r6 = (x) => Math.round(x * 1e6) / 1e6;
 function safeNum(g) { try { return evaluate(String(g ?? "0"), {}); } catch { return 0; } }
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 export { matApply, matApplyDir, BASE_PLANES };
+
+const IDENT4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+/** Flächen-Info (Ebene oder Zylinder) mit einer Platzierungsmatrix umrechnen */
+function transformFace(f, m) {
+  const o = { ...f };
+  if (f.point) o.point = matApply(m, f.point);
+  if (f.normal) o.normal = matApplyDir(m, f.normal);
+  if (f.axisP) o.axisP = matApply(m, f.axisP);
+  if (f.axisD) o.axisD = matApplyDir(m, f.axisD);
+  return o;
+}
+/** Info eines Treffers im System der (obersten) Komponente – bei Bauteilen in Unterbaugruppen umgerechnet */
+function innerInfo(hit) {
+  const m = hit.group?.userData?.inner;
+  return m && hit.info ? transformFace(hit.info, m) : hit.info;
+}

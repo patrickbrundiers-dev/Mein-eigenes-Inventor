@@ -61,6 +61,7 @@ export const COMMANDS = [
   { id: "part.gelaender", label: "Geländer (Generator)", group: "3D-Modell", scope: "part", keywords: "geländer pfosten handlauf staketen füllung brüstung generator" },
   { id: "part.tor", label: "Tor (Generator)", group: "3D-Modell", scope: "part", keywords: "tor hoftor gartentor doppeltor flügel rundbogen stichbogen generator" },
   { id: "part.treppe", label: "Treppe geradläufig (Generator)", group: "3D-Modell", scope: "part", keywords: "treppe wange holm stufen gitterrost steigung auftritt din 18065 generator" },
+  { id: "file.listsXlsx", label: "Listen als Excel (.xlsx)", group: "Export", scope: "3d", keywords: "excel xlsx zuschnittliste stückliste nahtliste tabelle export" },
   { id: "part.naht", label: "Schweißnaht", group: "3D-Modell", scope: "part", keywords: "schweissen kehlnaht v-naht hv-naht iso 2553 a-maß nahtliste" },
   { id: "part.regelkoerper", label: "Regelkörper", group: "3D-Modell", scope: "part", keywords: "quader zylinder kugel kegel kegelstumpf torus ring pyramide grundkörper primitiv" },
   { id: "part.biegerohr", label: "Rohr gebogen (über Polygonzug)", group: "3D-Modell", scope: "part", keywords: "biegen bogen biegeradius biegeliste handlauf bügel rohrconnect" },

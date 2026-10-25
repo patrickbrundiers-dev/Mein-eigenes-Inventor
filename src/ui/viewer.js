@@ -468,8 +468,9 @@ export class Viewer {
       }
       const g = this.makePartGroup(c.bodies, c.color, "comp:" + c.id, c.opacity ?? 1, shared);
       g.matrixAutoUpdate = false;
-      g.matrix.fromArray(placementMatrix(c.pos, c.rot));
+      g.matrix.fromArray(c.matrix || placementMatrix(c.pos, c.rot));
       g.userData.comp = c.id;
+      if (c.leaf) { g.userData.leaf = c.leaf; g.userData.inner = c.inner; }
       this.root.add(g);
     }
     this.root.updateMatrixWorld(true);
