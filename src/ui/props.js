@@ -520,6 +520,17 @@ export class Props {
           this.seg("Bohrungen", PLATE_HOLES.map((n) => [String(n), String(n)]), String(f.holes ?? "4"), (v) => this.set(f, "holes", v, "Bohrungen")),
           Number(f.holes ?? 4) ? [E("Bohrung Ø", "holeDia", { allowNeg: false, allowZero: false }), E("Randabstand (Mitte Bohrung)", "edge", { allowNeg: false })] : null,
           h("p", { class: "hint" }, "2 Bohrungen liegen auf der längeren Seite, 4 in den Ecken. Hinweis bei Randabstand unter 1,2 · d. Als DXF für den Laser: Fläche der Platte wählen → Export → Platte als DXF.")));
+        out.push(this.section("Stoß und Verschraubung",
+          this.check("Gegenplatte (Stirnplattenstoß zweier Stäbe)", !!f.counter, (v) => this.set(f, "counter", v, "Gegenplatte")),
+          Number(f.holes ?? 4) ? this.check("verschrauben (Schraube, Scheiben, Mutter)", !!f.bolts, (v) => this.set(f, "bolts", v, "Verschraubung")) : null,
+          f.bolts && Number(f.holes ?? 4) ? [
+            this.select("Schraube", [["", "passend zur Bohrung"], ...NORM_SIZES.map((s) => [s, s])], f.boltSize || "", (v) => this.set(f, "boltSize", v || undefined, "Schraube")),
+            this.select("Festigkeit", NORM_KINDS.schraube4017.grades.map((g) => [g, g]), f.boltGrade || "8.8", (v) => this.set(f, "boltGrade", v, "Festigkeit")),
+            this.check("feuerverzinkt (tZn)", !!f.galv, (v) => this.set(f, "galv", v, "Verzinkt")),
+            E("zusätzliche Klemmlänge (z. B. Stützenflansch)", "clampExtra", { allowNeg: false }),
+          ] : null,
+          h("p", { class: "hint" }, "Gegenplatte = gleiche Platte für den anschließenden Stab (Pfetten-, Träger- oder Rahmenstoß). Die Schrauben gehen durch beide Platten; für eine Kopfplatte an einem Stützenflansch die Flanschdicke als zusätzliche Klemmlänge angeben. Schraubenlänge = nächste Vorzugslänge.")));
+        out.push(this.normListSection(part));
         out.push(this.weldListSection(part));
         break;
       }

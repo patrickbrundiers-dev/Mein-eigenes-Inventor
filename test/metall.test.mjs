@@ -327,3 +327,14 @@ test("DXF-Import: Rundreise, Polylinie mit Bögen, Blöcke, Einheiten, Ellipse, 
   near(pr3.regions.find((x) => x.outer.kind !== "ellipse").area, 100 * 40 + Math.PI * 400 / 2, 10, "Kontur mit Halbkreis");
   assert.throws(() => parseDxf("hallo"), /Keine DXF/);
 });
+
+test("Generatoren: Standardprofile stehen im Katalog (Auswahlliste nicht leer)", async () => {
+  const { CATALOG } = await import("../src/core/sections.js");
+  const { GENERATORS } = await import("../src/core/generator.js");
+  for (const [g, G] of Object.entries(GENERATORS))
+    for (const s of G.schema.filter((x) => x.type === "section")) {
+      const c = CATALOG[s.default.kind];
+      assert.ok(Array.isArray(c) ? c.includes(s.default.size) : c && String(s.default.size) in c, `${g}.${s.key}: ${s.default.kind} ${s.default.size}`);
+      assert.ok(s.kinds.includes(s.default.kind), `${g}.${s.key}: Art ${s.default.kind} nicht erlaubt`);
+    }
+});

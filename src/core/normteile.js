@@ -90,3 +90,32 @@ export function collectNorm(sources) {
   }
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "de", { numeric: true }));
 }
+
+/** Schraubengröße zu einer Durchgangsbohrung (mittlere Reihe ISO 273: d + 1 bis d + 3) */
+export function boltSizeForHole(holeDia) {
+  let best = null;
+  for (const k of NORM_SIZES) if (NORM_THREADS[k].d <= holeDia - 0.9) best = k;
+  return best;
+}
+
+/**
+ * Verschraubung durch eine Klemmlänge (Schraube ISO 4017, je eine Scheibe ISO 7089 unter Kopf und Mutter, Mutter ISO 4032).
+ * Achse z: Klemmpaket von z = 0 bis z = clamp. Rückgabe { length, parts: [{ kind, size, length?, z0 }] } – jedes Teil
+ * beginnt bei z0 und geht in +z. Länge = Vorzugslänge ≥ Klemmlänge + 2 Scheiben + Mutter + 2 Gewindegänge Überstand.
+ */
+export function boltSet(size, clamp) {
+  const t = NORM_THREADS[size];
+  if (!t) throw new Error("Unbekannte Gewindegröße: " + size);
+  if (!(clamp > 0)) throw new Error("Klemmlänge muss > 0 sein");
+  const need = clamp + 2 * t.h + t.m + 2 * t.P;
+  const length = BOLT_LENGTHS.find((l) => l >= need - 1e-9) ?? Math.ceil(need / 10) * 10;
+  return {
+    length,
+    parts: [
+      { kind: "schraube4017", size, length, z0: -t.h },
+      { kind: "scheibe", size, z0: -t.h },
+      { kind: "scheibe", size, z0: clamp },
+      { kind: "mutter", size, z0: clamp + t.h },
+    ],
+  };
+}

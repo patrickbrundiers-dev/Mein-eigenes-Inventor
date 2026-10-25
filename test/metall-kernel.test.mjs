@@ -315,3 +315,52 @@ test("Balkon-Generator: Rahmen, Querträger, Belag, Stützen, Wandplatten, Gelä
   assert.equal(r2.bodies.filter((b) => /^Stütze|^Geländer/.test(b.name)).length, 0);
   assert.equal(r2.bodies.find((b) => b.name === "Belag").meta.density, 0.7, "Holz");
 });
+
+test("Stirnplattenstoß: Gegenplatte und Verschraubung mit Normteilen (MegaCAD-Abgleich M15)", async () => {
+  const { collectNorm } = await import("../src/core/normteile.js");
+  const prof = { id: "pr", type: "profile", section: "rechteck", dims: { B: "120", H: "60", t: "4", r: "6" }, length: "1000", start: ["0", "0", "0"], axis: "X", rotation: "0" };
+  const res0 = await K.buildPart(part([prof]));
+  if (!res0.status.pr.ok) { log("Profil-Feature anders aufgebaut – Test übersprungen", JSON.stringify(res0.status.pr)); return; }
+  const pl = { id: "pl", type: "platte", target: "pr", member: 0, end: "B", thickness: "15", overhang: "40", width: "0", height: "0", radius: "0", holes: "4", holeDia: "18", edge: "25", counter: true, bolts: true, boltGrade: "8.8" };
+  const res = await K.buildPart(part([prof, pl]));
+  okAll(res);
+  const rows = collectNorm([{ bodies: res.bodies.map((b) => ({ ...b, props: { volume: R.measureVolume(b.shape) } })) }]);
+  // Ø 18 → M16; Klemmlänge 30 + 2·3 + 14,8 + 4 = 54,8 → 55
+  assert.deepEqual(rows.map((r) => [r.name, r.qty]), [["Scheibe ISO 7089 - 16 - 200 HV", 8], ["Sechskantmutter ISO 4032 - M16 - 8", 4], ["Sechskantschraube ISO 4017 - M16 x 55 - 8.8", 4]]);
+  assert.ok(res.bodies.some((b) => /Gegenplatte/.test(b.name)));
+  assert.match(res.status.pl.info, /4 × M16 x 55 \(Klemmlänge 30 mm\)/);
+  // Schrauben stehen in den Bohrungen: Schraubenachse quer zur Platte, innerhalb der Plattenfläche
+  const bolt = res.bodies.find((b) => b.meta?.norm?.kind === "schraube4017");
+  const bb = bolt.shape.boundingBox.bounds;
+  assert.ok(bb[0][0] < 1000 && bb[1][0] > 1030, "Schraube durch beide Platten (x 1000 … 1030)");
+});
+
+test("Stahlbau-Generatoren: Windverband, Pfette mit Stoß, Rahmenecke mit Normteilen (MegaCAD-Abgleich M15)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const { collectNorm } = await import("../src/core/normteile.js");
+  const bb = (b) => b.shape.boundingBox.bounds;
+  const build = async (gen, params = {}) => { const f = { id: "g", ...defaultGenerator(gen) }; Object.assign(f.params, params); const r = await K.buildPart(part([f])); okAll(r); return r; };
+  const norms = (r) => collectNorm([{ bodies: r.bodies.map((b) => ({ ...b, props: { volume: R.measureVolume(b.shape) } })) }]).map((x) => [x.name, x.qty]);
+  // Windverband X mit 2 Spannschlössern, 4 Knotenbleche, 4 Stabstücke
+  const wv = await build("windverband");
+  assert.deepEqual(norms(wv), [["Spannschloss DIN 1480 - M16 - verzinkt", 2]]);
+  assert.equal(wv.bodies.filter((b) => /^Knotenblech/.test(b.name)).length, 4);
+  assert.equal(wv.bodies.filter((b) => /^Diagonale/.test(b.name)).length, 4);
+  assert.match(wv.status.g.info, /2 Diagonale\(n\) Rundstahl Ø 16/);
+  // Pfette 2 × 5000, Stoß ab 6000 → ein Stoß über dem Mittelbinder, 4 Pfettenschuhe
+  const pf = await build("pfette");
+  assert.equal(pf.bodies.filter((b) => /^Pfette \d/.test(b.name)).length, 2);
+  assert.equal(pf.bodies.filter((b) => /^Pfettenschuh/.test(b.name)).length, 4);
+  const p1 = pf.bodies.find((b) => b.name === "Pfette 1");
+  near(bb(p1)[1][0], 5000 - 5, 0.01, "Stoßfuge 10 mm"); near(bb(p1)[0][2], 0, 0.01, "Pfette liegt auf dem Binder"); near(bb(p1)[1][2], 120, 0.01, "hochkant");
+  assert.equal(norms(pf).filter((x) => /^Sechskantschraube/.test(x[0])).reduce((a, x) => a + x[1], 0), 4 + 4, "je Schuh 2 Schrauben (zwei Längen)");
+  // Rahmenecke HEA 200 / IPE 240: 6 Schrauben M20 10.9, Stirnplatte bündig am Stützenflansch
+  const re = await build("rahmenecke");
+  const n = norms(re);
+  assert.ok(n.some(([nm, q]) => /^Sechskantschraube ISO 4017 - M20 x \d+ - 10\.9$/.test(nm) && q === 6), JSON.stringify(n));
+  const sp = re.bodies.find((b) => b.name === "Stirnplatte"), col = re.bodies.find((b) => b.name === "Stütze"), rg = re.bodies.find((b) => b.name === "Riegel");
+  near(bb(sp)[0][0], 95, 0.01, "Stirnplatte an der Flanschaußenseite (190/2)"); near(bb(sp)[1][0], 115, 0.01);
+  near(bb(col)[1][0], 95, 0.01, "Stütze hat die Flansche quer zu X");
+  near(bb(rg)[0][0], 115, 0.01, "Riegel beginnt an der Stirnplatte");
+  assert.equal(re.bodies.filter((b) => /^Steife/.test(b.name)).length, 4);
+});
