@@ -541,3 +541,49 @@ test("Ausbruch: außen normale Projektion, innen Schnitt mit Schraffur, Tiefe au
   assert.ok(c.sectionLoops[0].every(([x, y]) => Math.hypot(x, y) <= 5 + 1e-6));
   assert.deepEqual(B.depthRange([[[0, 0, 0], [10, 20, 30]]], [0, -1, 0]), { min: -20, max: 0 });
 });
+
+test("Rundungen: je Radius ein Maß „4× R15“, Maßlinie trifft den Bogen; Bohrungshälften und Fasenkanten zählen nicht", () => {
+  const bbox = { x0: 0, y0: 0, x1: 300, y1: 200 };
+  const q = Math.PI / 2;
+  const arcs = [
+    { cx: 285, cy: 185, r: 15, sweep: q, a0: 0, a1: q }, { cx: 15, cy: 185, r: 15, sweep: q, a0: q, a1: 2 * q },
+    { cx: 15, cy: 15, r: 15, sweep: q, a0: -2 * q, a1: -q }, { cx: 285, cy: 15, r: 15, sweep: q, a0: -q, a1: 0 },
+    { cx: 285, cy: 15, r: 13, sweep: q, a0: -q, a1: 0 }, // Fasenkante an der Rundung
+    { cx: 25, cy: 25, r: 4.25, sweep: Math.PI, a0: -q, a1: q }, { cx: 25.002, cy: 25, r: 4.25, sweep: Math.PI, a0: q, a1: 3 * q }, // Bohrung in zwei Hälften
+  ];
+  const dims = planAutoDims([{ id: "oben", axes: ["X", "Y"], bbox, arcs }]);
+  const rad = dims.filter((m) => m.kind === "rad");
+  assert.equal(rad.length, 1);
+  assert.equal(rad[0].count, 4);
+  assert.equal(dimLabel(rad[0]), "4× R15");
+  const views = { oben: sheetView(bbox, 150, 120, 0.5, []) };
+  layoutAutoDims(dims, views, { frame: [20, 10, 410, 287] });
+  // Blattwinkel liegt im Bogen der gewählten Ecke (Blatt-y zeigt nach unten)
+  const m = rad[0], t = Math.atan2(-Math.sin(m.angle), Math.cos(m.angle));
+  const a0 = Math.min(...m.span), a1 = Math.max(...m.span);
+  assert.ok(t >= a0 - 1e-6 && t <= a1 + 1e-6 || t + 2 * Math.PI <= a1 + 1e-6, `Winkel ${t} nicht in ${a0}..${a1}`);
+  assert.ok(!("alts" in m));
+  // zweiter Aufruf mit schon bemaßtem Radius: nichts Neues
+  assert.equal(planAutoDims([{ id: "oben", axes: ["X", "Y"], bbox, arcs }], { rads: new Set([15000]) }).filter((x) => x.kind === "rad").length, 0);
+  // Profilteile: keine Eckradien
+  assert.equal(planAutoDims([{ id: "oben", axes: ["X", "Y"], bbox, arcs }], { noRadii: true }).filter((x) => x.kind === "rad").length, 0);
+});
+
+test("Fasen: 45°-Kanten mit Länge a·√2 bekommen einen Hinweis „2 × 45°“, keine falsche Wandstärke", () => {
+  const bbox = { x0: 0, y0: 0, x1: 100, y1: 10 };
+  const lines = [[[2, 0], [98, 0], [100, 2], [100, 8], [98, 10], [2, 10], [0, 8], [0, 2], [2, 0]]];
+  const used = { chamfers: [2] };
+  const dims = planAutoDims([{ id: "vorne", axes: ["X", "Z"], bbox, lines, arcs: [] }], used);
+  const f = dims.filter((m) => m.kind === "fase");
+  assert.equal(f.length, 1);
+  assert.equal(f[0].text, "4× 2 × 45°");
+  assert.equal(f[0].fase, 2);
+  assert.ok(!dims.some((m) => m.wall));
+  const views = { vorne: sheetView(bbox, 150, 120, 1, []) };
+  layoutAutoDims(dims, views, { frame: [20, 10, 410, 287] });
+  assert.ok(Array.isArray(f[0].at) && f[0].at.length === 2);
+  const R = views.vorne.rect;
+  assert.ok(f[0].at[0] < R[0] || f[0].at[0] > R[2] || f[0].at[1] < R[1] || f[0].at[1] > R[3], "Hinweis steht außerhalb der Ansicht");
+  // schon vorhanden: kein zweiter Hinweis
+  assert.equal(planAutoDims([{ id: "vorne", axes: ["X", "Z"], bbox, lines, arcs: [] }], { chamfers: [2], chamfersDone: new Set([2000]) }).filter((m) => m.kind === "fase").length, 0);
+});
