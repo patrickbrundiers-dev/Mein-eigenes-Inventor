@@ -1220,6 +1220,7 @@ export class Props {
     if (asm.generator && GENERATORS[asm.generator.gen]) {
       out.push(this.section(GENERATORS[asm.generator.gen].label, h("p", { class: "hint" }, "Jedes Rohr, jeder Stab und jedes Blech ist ein eigenes Bauteil (gleiche Teile einmal, mehrfach eingesetzt). Änderungen hier passen alle Einzelteile an; Features, die in einem Bauteil angehängt wurden, bleiben erhalten.")));
       out.push(...this.genFields(asm.generator, asm, (fn, label) => app.edit(label, () => { fn(asm.generator); app.syncGenAssembly(asm); })));
+      out.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.paramsDialog() }, "Parameter…")));
     }
     const rows = bomRows(app, asm);
     const total = rows.reduce((s, r) => s + (r.mass || 0) * r.qty, 0);
@@ -1534,8 +1535,8 @@ export class Props {
   paramsDialog() {
     const app = this.app;
     const part = app.activeDoc();
-    if (part?.kind !== "part") return toast("Parameter gehören zu einem Bauteil");
-    const rows = JSON.parse(JSON.stringify(part.params));
+    if (part?.kind !== "part" && !part?.generator) return toast("Parameter gehören zu einem Bauteil");
+    const rows = JSON.parse(JSON.stringify(part.params || []));
     const tbody = h("tbody");
     const draw = () => {
       const { values, errors } = resolveParams(rows);
@@ -1564,7 +1565,7 @@ export class Props {
         const names = rows.map((r) => r.name);
         if (rows.some((r) => !isValidName(r.name))) { toast("Ungültiger Parametername (Buchstabe am Anfang, keine Leerzeichen)", { kind: "err" }); return false; }
         if (new Set(names).size !== names.length) { toast("Parameternamen müssen eindeutig sein", { kind: "err" }); return false; }
-        app.edit("Parameter", () => { part.params = rows; });
+        app.edit("Parameter", () => { part.params = rows; if (part.generator) app.syncGenAssembly(part); });
       } }],
     });
   }

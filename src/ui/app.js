@@ -159,6 +159,8 @@ export class App {
     const n = this.project.docs.filter((d) => d.kind === "assembly" && d.generator?.gen === gen).length + 1;
     const asm = newAssembly(name || `${GENERATORS[gen].label} ${n}`);
     asm.generator = { gen, params: JSON.parse(JSON.stringify(params || defaultGenerator(gen).params)) };
+    // Ausdrücke wie »L« rechnen weiter mit den Parametern des Ausgangsteils
+    if (from?.params?.length) asm.params = JSON.parse(JSON.stringify(from.params));
     if (from?.kind === "part") asm.genMaterial = { material: from.material, color: from.color ?? null, finish: from.finish ? JSON.parse(JSON.stringify(from.finish)) : undefined };
     this.edit(`${GENERATORS[gen].label} als Baugruppe`, () => {
       this.project.docs.push(asm);

@@ -811,6 +811,16 @@ try {
   const ga1 = await ga();
   step("Generator als Baugruppe mit Einzelteilen", ga0.kind === "assembly" && ga0.gen === "treppe" && ga0.comps > 80 && ga0.parts >= 10 && ga0.parts < ga0.comps && ga0.genteil && ga0.ok && ga0.posts > 6 && ga0.postParts * 2 <= ga0.posts && ga0.wangeAlongX && ga0.fields > 20
     && ga1.ok && ga1.wangeId === ga0.wangeId && ga1.comps >= ga0.comps, JSON.stringify({ ga0, ga1 }));
+  // Umwandeln eines Generator-Features, dessen Maß einen Teileparameter nutzt: Parameter gehen mit in die Baugruppe
+  const gconv = await evalApp(() => {
+    const a = window.__werkcad, p = a.newPart("Zaun mit Parameter");
+    p.params = [{ name: "L", expr: "4000", comment: "" }];
+    const f = a.addGeneratorFeature("zaun");
+    f.params.length = "L";
+    const asm = a.generatorAssembly("zaun", { params: f.params, name: "Zaun aus Teil", from: p });
+    return { kind: asm.kind, params: asm.params?.length, comps: asm.components.length, len: asm.generator.params.length };
+  });
+  step("Generator mit Parameter als Baugruppe", gconv.kind === "assembly" && gconv.params === 1 && gconv.comps > 5 && gconv.len === "L", JSON.stringify(gconv));
   // Stahlbau-Generatoren (MegaCAD-Abgleich M15): Rahmenecke, Pfette, Windverband – je ein Bauteil, Normteile in der Liste
   const stb = {};
   for (const [label, file] of [["Rahmenecke", "20l-rahmenecke"], ["Pfette", "20m-pfette"], ["Windverband", "20n-windverband"]]) {
