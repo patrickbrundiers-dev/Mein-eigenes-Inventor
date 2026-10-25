@@ -1141,7 +1141,7 @@ try {
     const cv = await page.locator("#viewer canvas").boundingBox();
     const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
     await evalApp(() => { window.__werkcad.sketcher.gridSnap = false; });
-    await page.locator("#ribbon .rb-btn", { hasText: /^Ellipse$/ }).click();
+    await page.locator("#ribbon button", { hasText: /^Ellipse$/ }).click();
     for (const [x, y] of [[40, 30], [70, 30], [50, 50]]) { const [px, py] = await at(x, y); await page.mouse.click(px, py); await page.waitForTimeout(120); }
     const el = await evalApp(() => {
       const s = window.__werkcad.sketcher, e = s.sk.entities.find((q) => q.type === "ellipse");
@@ -1162,6 +1162,38 @@ try {
     const want = ex ? Math.PI * 30 * (el?.r || 0) * ex.h : 0;
     step("Skizze: Ellipse zeichnen und extrudieren", !!el && Math.abs(el.r - 20) < 0.5 && el.regions === 1 && dims.length === 3 && ex && Math.abs(ex.vol / want - 1) < 2e-3,
       JSON.stringify({ el, dims, ex }));
+  }
+
+  // Skizze: geschlossenen Spline klicken, Punkt einfügen, extrudieren
+  {
+    await evalApp(() => window.__werkcad.newPart("Spline"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const cv = await page.locator("#viewer canvas").boundingBox();
+    const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
+    await page.locator("#ribbon button", { hasText: /^Spline$/ }).click();
+    for (const [x, y] of [[20, 10], [70, 0], [80, 50], [30, 60], [20, 10]]) { const [px, py] = await at(x, y); await page.mouse.click(px, py); await page.waitForTimeout(120); }
+    const sp = await evalApp(() => {
+      const s = window.__werkcad.sketcher, e = s.sk.entities.find((q) => q.type === "spline");
+      return e ? { id: e.id, n: e.pts.length, closed: e.p1 === e.p2, regions: s.profiles?.regions.length, area: s.profiles?.regions[0]?.area } : null;
+    });
+    await page.keyboard.press("Escape");
+    await evalApp((id) => { const s = window.__werkcad.sketcher; s.sel = new Set(["e:" + id]); window.__werkcad.selectSketchItems([...s.sel]); }, sp?.id);
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "Punkt einfügen" }).click();
+    await page.waitForTimeout(200);
+    const n2 = await evalApp(() => window.__werkcad.sketcher.sk.entities.find((q) => q.type === "spline").pts.length);
+    await shot("26d-spline");
+    await page.locator("#ribbon button", { hasText: "Skizze fertig" }).click();
+    await page.waitForTimeout(300);
+    await page.locator("#ribbon button", { hasText: "Extrusion" }).first().click();
+    await idle();
+    const ex = await evalApp(() => { const a = window.__werkcad; const b = a.results.get(a.activeId)?.bodies[0]; return b ? { vol: b.props.volume, h: b.props.bbox[1][2] - b.props.bbox[0][2] } : null; });
+    step("Skizze: Spline zeichnen und extrudieren", !!sp && sp.n === 5 && sp.closed && sp.regions === 1 && n2 === 6 && ex && ex.vol > 0.5 * sp.area * ex.h && ex.vol < 1.5 * sp.area * ex.h,
+      JSON.stringify({ sp, n2, ex }));
   }
 
   // Farbschema dunkel und gemerkte Werkzeugwerte

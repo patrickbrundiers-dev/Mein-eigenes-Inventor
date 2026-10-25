@@ -2,6 +2,7 @@
 // Die Skizze bewegt sich dadurch so wenig wie möglich, wenn ein Maß geändert wird.
 
 import { evaluate } from "./expr.js";
+import { splineNearest } from "./spline.js";
 
 const DEG = Math.PI / 180;
 
@@ -124,6 +125,11 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
         break;
       }
       case "pointOnCircle": {
+        if (E(c.e).type === "spline") { // Abstand mit Vorzeichen zur abgetasteten Kurve
+          const ids = E(c.e).pts.map(P), p = P(c.p);
+          add(c.id, (x) => splineNearest(ids.map((i) => [x[i], x[i + 1]]), x[p], x[p + 1]).sd);
+          break;
+        }
         if (E(c.e).type === "ellipse") { // implizit, auf Abstand skaliert
           const g = ellFn(E(c.e)), p = P(c.p);
           add(c.id, (x) => {
@@ -178,6 +184,24 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
       }
       case "tangent": {
         const e1 = E(c.e1), e2 = E(c.e2);
+        if (e1.type === "spline" || e2.type === "spline") { // Spline-Ende: Richtung zum Nachbar-Kontrollpunkt
+          const sp = e1.type === "spline" ? e1 : e2, o = sp === e1 ? e2 : e1, ids = sp.pts;
+          const [q0, q1] = c.end === "end" ? [P(ids[ids.length - 1]), P(ids[ids.length - 2])] : [P(ids[0]), P(ids[1])];
+          if (o.type === "line") {
+            const [a, b] = lineIdx(o);
+            add(c.id, (x) => {
+              const ux = x[q1] - x[q0], uy = x[q1 + 1] - x[q0 + 1], vx = x[b] - x[a], vy = x[b + 1] - x[a + 1];
+              return (ux * vy - uy * vx) / ((Math.hypot(ux, uy) * Math.hypot(vx, vy)) || 1e-12);
+            });
+          } else {
+            const ce = centerIdx(o);
+            add(c.id, (x) => {
+              const ux = x[q1] - x[q0], uy = x[q1 + 1] - x[q0 + 1], rx = x[q0] - x[ce], ry = x[q0 + 1] - x[ce + 1];
+              return (ux * rx + uy * ry) / ((Math.hypot(ux, uy) * Math.hypot(rx, ry)) || 1e-12);
+            });
+          }
+          break;
+        }
         const line = e1.type === "line" ? e1 : e2.type === "line" ? e2 : null;
         if (line && (e1.type === "ellipse" || e2.type === "ellipse")) { // Abstand Mitte–Linie = Stützfunktion der Ellipse
           const g = ellFn(line === e1 ? e2 : e1), [a, b] = lineIdx(line);
@@ -441,6 +465,7 @@ function freeOf(vars, fv) {
 export function entityFree(e, free) {
   if (!free) return false;
   if (e.type === "circle") return free.points.has(e.c) || free.radii.has(e.id);
+  if (e.type === "spline") return (e.pts || []).some((p) => free.points.has(p));
   if (e.type === "ellipse") return free.points.has(e.c) || free.points.has(e.a) || free.radii.has(e.id);
   return [e.p1, e.p2, e.c, e.p].some((p) => p && free.points.has(p));
 }

@@ -198,6 +198,7 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 /* Skizze */
 .sk-line { stroke: var(--sk-line); stroke-width: 1.6; fill: none; }
 .sk-line.constr { stroke: #6f86b3; stroke-dasharray: 6 4; stroke-width: 1.1; }
+.sk-ctrl { stroke: #8ea3cc; stroke-dasharray: 3 3; stroke-width: 0.8; fill: none; pointer-events: none; }
 .sk-line.full { stroke: var(--sk-full); }
 .sk-line.free { stroke: #2a7fe6; }
 .sk-line.hover { stroke: var(--laser); stroke-width: 2.6; }

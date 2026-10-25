@@ -1,6 +1,7 @@
 // DXF-Schreiber (AutoCAD R12 / AC1009 – wird von praktisch jedem CAD/CAM gelesen, auch Laser-Software)
 
 import { ellipseGeom, ellipseSamples } from "./ellipse.js";
+import { splineSamples } from "./spline.js";
 
 const f = (v) => {
   const r = Math.round(v * 1e6) / 1e6;
@@ -89,6 +90,10 @@ export function sketchToDxf(sketch) {
     const L = e.construction ? "KONSTRUKTION" : "KONTUR";
     if (e.type === "line") { const a = pts.get(e.p1), b = pts.get(e.p2); w.line(a.x, a.y, b.x, b.y, L); }
     else if (e.type === "circle") { const c = pts.get(e.c); w.circle(c.x, c.y, e.r, L); }
+    else if (e.type === "spline") { // R12 kennt kein SPLINE: Polylinie, 48 Stützpunkte je Abschnitt
+      const ctrl = (e.pts || []).map((id) => pts.get(id)).filter(Boolean).map((p) => [p.x, p.y]);
+      if (ctrl.length >= 2) w.polyline(splineSamples(ctrl, 48), L, e.p1 === e.p2);
+    }
     else if (e.type === "ellipse") { // R12 kennt kein ELLIPSE: geschlossene Polylinie, Sehnenfehler ≤ 0,01 mm
       const g = ellipseGeom(pts.get(e.c), pts.get(e.a), e.r), R = Math.max(g.A, g.B);
       const n = Math.min(2048, Math.max(64, Math.ceil(Math.PI / Math.acos(Math.max(-1, 1 - 0.01 / R)))));

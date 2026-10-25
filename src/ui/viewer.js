@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { placementMatrix, toWorld } from "../core/geom.js";
 import { segmentsInBox, trianglesInBox } from "../core/boxselect.js";
 import { ellipseGeom, ellipseSamples } from "../core/ellipse.js";
+import { splineSamples } from "../core/spline.js";
 
 const COL = {
   edge: 0x1c2733,
@@ -503,6 +504,10 @@ export class Viewer {
             const t0 = a0 + ((a1 - a0) * i) / n, t1 = a0 + ((a1 - a0) * (i + 1)) / n;
             target.push(W(c.x + r * Math.cos(t0), c.y + r * Math.sin(t0)), W(c.x + r * Math.cos(t1), c.y + r * Math.sin(t1)));
           }
+        } else if (e.type === "spline") {
+          const ctrl = (e.pts || []).map((id) => pts.get(id)).filter(Boolean).map((p) => [p.x, p.y]);
+          const q = ctrl.length >= 2 ? splineSamples(ctrl, 16) : [];
+          for (let i = 0; i + 1 < q.length; i++) target.push(W(q[i][0], q[i][1]), W(q[i + 1][0], q[i + 1][1]));
         } else if (e.type === "ellipse") {
           const c = pts.get(e.c), a = pts.get(e.a);
           if (!c || !a) continue;

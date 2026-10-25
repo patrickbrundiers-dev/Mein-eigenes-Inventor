@@ -820,3 +820,19 @@ test("3D-Profilzug: räumlicher Zug mit Gehrungen, Längen und Masse (MegaCAD-Ab
   okAll(box);
   assert.deepEqual(box.bodies.map((b) => Math.round(b.meta.length * 100) / 100).sort((a, b) => a - b), [560, 600, 1000, 1040]);
 });
+
+test("Spline extrudieren: geschlossene Kurve und Spline mit Linie", async () => {
+  const mk = (id, pts, ents) => ({ id, type: "sketch", name: id, plane: "XY", offset: "0", points: pts, entities: ents, constraints: [] });
+  const pts = [{ id: "a", x: 0, y: 0 }, { id: "b", x: 15, y: 30 }, { id: "c", x: 35, y: 30 }, { id: "d", x: 50, y: 0 }];
+  const s1 = mk("s1", pts, [{ id: "sp", type: "spline", pts: ["a", "b", "c", "d"], p1: "a", p2: "d" }, { id: "ln", type: "line", p1: "a", p2: "d" }]);
+  const res = await K.buildPart(part([s1, { id: "e1", type: "extrude", sketch: "s1", distance: "10" }]));
+  okAll(res);
+  // Fläche zwischen Bézier (0,0)(15,30)(35,30)(50,0) und Sehne: fein über Green integriert
+  let area = 0, prev = [0, 0];
+  for (let k = 1; k <= 4000; k++) {
+    const t = k / 4000, u = 1 - t, q = [3 * u * u * t * 15 + 3 * u * t * t * 35 + t * t * t * 50, 3 * u * u * t * 30 + 3 * u * t * t * 30];
+    area += prev[0] * q[1] - q[0] * prev[1]; prev = q;
+  }
+  area /= 2;
+  near(vol(res), Math.abs(area) * 10, 1, "Spline mit Linie");
+});
