@@ -683,6 +683,19 @@ try {
     return { kind: asm.kind, comps: asm.components.length, slide: c.joint.kind, max: c.joint.max, pos: c.pos.map((x) => Math.round(x)), section: /Schiebegelenk/.test(text) && /mm/.test(text), sweep: rows?.map((r) => [r.angle, r.hits.length]) };
   });
   step("Schiebetor mit Schiebegelenk", st0.ok && st0.n > 30 && /Gegengewicht 1600/.test(st0.info) && st0.tiles >= 5 && st0.dims >= 4 && st1.kind === "assembly" && st1.comps === 2 && st1.slide === "schiebe" && st1.max === 4000 && st1.pos.join() === "-2000,0,0" && st1.section && st1.sweep?.every(([, n]) => n === 0), JSON.stringify({ st0, st1 }));
+  // Zaun (E9): Generator, Gelände per Bildkachel auf »gestuft«
+  await evalApp(() => window.__werkcad.newPart("Zaun"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Zaun$/ }).click();
+  await idle(120000);
+  const zn0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), dims: document.querySelectorAll("#props svg.gsk .dim").length }; });
+  await page.locator("#props .tile", { hasText: "gestuft" }).click();
+  await idle(120000);
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("front", { animate: false }); v.fit(); });
+  await shot("20g3-zaun-gestuft");
+  const zn1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), rise: !!document.querySelector('#props [data-key="rise"]') }; });
+  step("Zaun-Generator", zn0.ok && zn0.n > 40 && /4 Felder/.test(zn0.info) && zn0.dims >= 3 && zn1.ok && /gestuft 600 mm/.test(zn1.info) && zn1.rise, JSON.stringify({ zn0, zn1 }));
 
   // Treppen-Generator (MegaCAD-Abgleich M13): Wangentreppe, dann zwei Holme
   await evalApp(() => window.__werkcad.newPart("Treppe"));

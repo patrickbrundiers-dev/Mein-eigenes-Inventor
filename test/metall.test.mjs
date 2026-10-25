@@ -532,3 +532,34 @@ test("Schiebetor-Plan: Gegengewicht, Rollenböcke unter dem Schwanz, Teile getre
   const q = plan({ fill: "quer" });
   assert.ok(q.members.some((m) => /Querstab/.test(m.name)));
 });
+
+test("Zaun-Plan: Felder, Pfosten, Gefälle und Stufung am Hang (E9)", async () => {
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const f = g.defaultGenerator("zaun");
+  const plan = (patch) => g.GENERATORS.zaun.plan(g.resolveGenParams("zaun", { ...f.params, ...patch }, E));
+  const e = plan({});
+  assert.equal(e.members.filter((m) => /^Pfosten/.test(m.name)).length, 5, "10 m bei max. 2,5 m: 4 Felder, 5 Pfosten");
+  assert.match(e.info, /4 Felder à 2440 mm/);
+  assert.ok(e.members.filter((m) => /Unterriegel/.test(m.name)).every((m) => m.a[2] === 80 + 20 && m.b[2] === 100), "eben: Unterriegel waagrecht");
+  // Gefälle: Riegel steigen mit dem Gelände (600 auf 10 m), schräg geschnitten
+  const s = plan({ terrain: "gefaelle" });
+  const u1 = s.members.find((m) => m.name === "Feld 1 Unterriegel");
+  assert.ok(Math.abs((u1.b[2] - u1.a[2]) / (u1.b[0] - u1.a[0]) - 0.06) < 1e-9 && u1.cuts);
+  const p5 = s.members.find((m) => m.name === "Pfosten 5");
+  assert.ok(Math.abs(p5.a[2] - (600 - 600)) < 1e-9 && Math.abs(p5.b[2] - (600 + 80 + 1200 + 50)) < 1e-9);
+  // gestuft: Felder waagrecht über dem höheren Ende; Pfosten bis über das höhere Feld
+  const st = plan({ terrain: "stufen" });
+  const r2 = st.members.filter((m) => /^Feld 2 /.test(m.name) && /riegel/.test(m.name));
+  assert.ok(r2.every((m) => Math.abs(m.a[2] - m.b[2]) < 1e-9 && !m.cuts));
+  assert.ok(Math.abs(st.members.find((m) => m.name === "Feld 2 Unterriegel").a[2] - (300 + 80 + 20)) < 1e-9);
+  assert.ok(Math.abs(st.members.find((m) => m.name === "Pfosten 2").b[2] - (300 + 80 + 1200 + 50)) < 1e-9);
+  assert.ok(!st.issues.length);
+  assert.ok(plan({ terrain: "stufen", rise: "1500" }).issues.some((i) => /Bodenluft/.test(i.message)));
+  // Füllungen
+  assert.ok(plan({ fill: "quer" }).members.some((m) => /Querstab/.test(m.name)));
+  const b = plan({ fill: "blech", terrain: "gefaelle", base: "fussplatte" });
+  assert.equal(b.plates.filter((x) => /Blech/.test(x.name)).length, 4);
+  assert.equal(b.plates.filter((x) => /Fußplatte/.test(x.name)).length, 5);
+  assert.throws(() => plan({ length: "100" }), /mindestens 500/);
+});

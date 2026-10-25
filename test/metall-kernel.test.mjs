@@ -457,3 +457,19 @@ test("Schiebetor: Flügel mit Gegengewicht, Rollenböcke, Pfosten; Teile Flügel
   assert.equal(leaf.bodies.length + fixed.bodies.length, r.bodies.length);
   assert.ok(fixed.bodies.every((b) => !/^Flügel/.test(b.name)));
 });
+
+test("Zaun: eben, Gefälle mit schrägen Riegeln, gestuft, Blech mit Fußplatten (E9)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const bb = (b) => b.shape.boundingBox.bounds;
+  for (const patch of [{}, { terrain: "gefaelle", fill: "quer" }, { terrain: "stufen" }, { terrain: "gefaelle", fill: "blech", base: "fussplatte" }]) {
+    const f = { id: "z", ...defaultGenerator("zaun") };
+    Object.assign(f.params, patch);
+    const r = await K.buildPart(part([f]));
+    okAll(r);
+    assert.equal(r.bodies.filter((b) => /^Pfosten/.test(b.name)).length, 5, JSON.stringify(patch));
+    if (patch.terrain === "gefaelle" && patch.fill === "quer") {
+      const u = r.bodies.find((b) => b.name === "Feld 4 Unterriegel");
+      near(bb(u)[1][2], 0.06 * 9970 + 80 + 40, 1, "Unterriegel folgt dem Gelände (OK am Pfosten 5)");
+    }
+  }
+});
