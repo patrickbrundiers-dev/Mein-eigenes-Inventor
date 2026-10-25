@@ -138,6 +138,8 @@ table.grid td { border-bottom: 1px solid var(--steel-2); padding: 3px 4px; verti
 table.grid td.num { text-align: right; font-family: var(--din); white-space: nowrap; }
 table.grid tr.sel td { background: var(--laser-soft); }
 table.grid input.inp { padding: 2px 4px; }
+table.grid.totals { margin-top: 10px; }
+table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .pick-list { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; border-radius: 10px; background: var(--laser-soft); border: 1px solid #f3c08f; font-size: 11.5px; }
 .chip button { border: 0; background: none; cursor: pointer; padding: 0 2px; color: var(--ink-soft); }

@@ -2,12 +2,12 @@
 import { settingsCenter } from "./settings.js";
 import { h, icon, toast, modal, fmtNum, confirmDialog } from "./dom.js";
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
-import { SECTION_KINDS, FIELD_LABELS, CATALOG, catalogToDims, profileId, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
+import { SECTION_KINDS, FIELD_LABELS, CATALOG, catalogToDims, profileId, sectionGeometry, kgPerMeter, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
 import { profileMatches, resolveProfile } from "../core/profilesearch.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
-import { cutListRows, endsText, CUT_RULES } from "../core/cutlist.js";
+import { cutListRows, cutListTotals, endsText, CUT_RULES } from "../core/cutlist.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern, parsePolygon, atEnd } from "../core/tubecuts.js";
 import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
@@ -489,7 +489,21 @@ export class Props {
       this.profileQuick(f, kinds),
       this.select("Profilart", kinds.map((k) => [k, SECTION_KINDS[k].label]), kind, (v) => this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart")),
       this.select("Normgröße", [["", "– eigene Maße –"], ...cat.map((c) => [c, c.replace(/\./g, ",")])], matchCatalog(kind, f.dims) || "", (v) => v && this.set(f, (x) => { x.dims = catalogToDims(kind, v); }, "Normgröße")),
-      ...def.fields.map((k) => this.expr(FIELD_LABELS[k], f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, FIELD_LABELS[k]), { allowNeg: false })));
+      ...def.fields.map((k) => this.expr(FIELD_LABELS[k], f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, FIELD_LABELS[k]), { allowNeg: false })),
+      this.meterWeightInfo(f));
+  }
+  /** Fläche und Metergewicht des Querschnitts mit dem Werkstoff des Bauteils */
+  meterWeightInfo(f) {
+    try {
+      const scope = this.scope();
+      const d = Object.fromEntries(Object.entries(f.dims || {}).map(([k, v]) => [k, evaluate(String(v), scope)]));
+      const area = sectionGeometry(f.section || "vierkant", d).area;
+      const part = this.app.activeDoc();
+      const mat = MATERIALS[part?.material] || MATERIALS.S235;
+      return h("dl", { class: "kv" },
+        h("dt", {}, "Fläche A"), h("dd", {}, fmtNum(area, 1) + " mm²"),
+        h("dt", {}, "Metergewicht"), h("dd", { title: mat.label }, fmtNum(kgPerMeter(area, mat.density), 2) + " kg/m"));
+    } catch { return null; }
   }
 
   /** Profil-Schnelleingabe: Profil-ID oder Kurzform tippen ("40x3", "RE 70x50x4"), Treffer darunter zum Anklicken */
@@ -867,7 +881,7 @@ export class Props {
     const app = this.app;
     const d = app.activeDoc();
     const rows = cutListRows(collectCutSources(app, d));
-    modal({ title: `Zuschnittliste – ${d.name}`, width: "820px", body: rows.length ? h("div", {}, cutListTable(rows), this.dfmList(rows, true), h("details", { class: "hint" }, h("summary", {}, "Regeln der Zuschnittliste"), h("ul", {}, ...CUT_RULES.map((t) => h("li", {}, t))))) : h("p", {}, "Keine Profile (Rohr / Rahmen) enthalten."), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportCutList() }] });
+    modal({ title: `Zuschnittliste – ${d.name}`, width: "820px", body: rows.length ? h("div", {}, cutListTable(rows), cutListTotalsTable(cutListTotals(rows)), this.dfmList(rows, true), h("details", { class: "hint" }, h("summary", {}, "Regeln der Zuschnittliste"), h("ul", {}, ...CUT_RULES.map((t) => h("li", {}, t))))) : h("p", {}, "Keine Profile (Rohr / Rahmen) enthalten."), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportCutList() }] });
   }
   /** Fertigungsprüfung Rohrlaser (src/core/dfm.js) unter der Zuschnittliste; Grenzen im Einstellungscenter */
   dfmList(rows, rules = false) {
@@ -987,6 +1001,13 @@ function cutListTable(rows, compact = false) {
     h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Profil"), h("th", {}, "Länge"), h("th", {}, "Stk"), h("th", {}, "Enden"), compact ? null : h("th", {}, "kg/m"), compact ? null : h("th", {}, "kg/Stk"), compact ? null : h("th", {}, "Werkstoff"))),
     h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", { title: r.section, style: { whiteSpace: "nowrap" } }, r.profileId), h("td", { class: "num" }, fmtNum(r.length, 1)), h("td", { class: "num" }, String(r.qty)), h("td", {}, miter(r)),
       compact ? null : h("td", { class: "num" }, fmtNum(r.kgm, 2)), compact ? null : h("td", { class: "num" }, fmtNum(r.mass, 2)), compact ? null : h("td", {}, r.material)))));
+}
+/** Summen je Profil (Bestellung/Lager) unter der Zuschnittliste */
+function cutListTotalsTable(t) {
+  return h("table", { class: "grid totals" },
+    h("thead", {}, h("tr", {}, h("th", {}, "Profil"), h("th", {}, "Werkstoff"), h("th", {}, "Stk"), h("th", {}, "Länge gesamt m"), h("th", {}, "kg/m"), h("th", {}, "kg gesamt"))),
+    h("tbody", {}, ...t.groups.map((g) => h("tr", {}, h("td", { style: { whiteSpace: "nowrap" } }, g.profileId), h("td", {}, g.material), h("td", { class: "num" }, String(g.qty)), h("td", { class: "num" }, fmtNum(g.length / 1000, 2)), h("td", { class: "num" }, fmtNum(g.kgm, 2)), h("td", { class: "num" }, fmtNum(g.mass, 2)))),
+      h("tr", { class: "sum" }, h("td", {}, h("b", {}, "Summe")), h("td", {}), h("td", { class: "num" }, String(t.qty)), h("td", { class: "num" }, fmtNum(t.length / 1000, 2)), h("td", {}), h("td", { class: "num" }, h("b", {}, fmtNum(t.mass, 2))))));
 }
 function matchCatalog(kind, dims) {
   if (!dims) return null;
