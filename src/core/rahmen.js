@@ -1,6 +1,7 @@
 // Rahmen-Werkzeuge (Inventor Gestell-Generator): Endkappe, Kürzen/Verlängern an einer Ebene, Gleichteile.
 // Reine Rechnung an der Stabachse (meta.axis: origin, z, u, v, lo, hi); die Geometrie baut der Kernel.
 import { v3 } from "./geom.js";
+import { twoPlaneParts } from "./cutlist.js";
 
 export const CAP_MODES = Object.freeze([["aufgesetzt", "Aufgesetzt (Platte auf dem Ende)"], ["eingesetzt", "Eingesetzt (Stopfen im Rohr)"]]);
 
@@ -39,7 +40,8 @@ export function equalParts(bodies, material = "") {
     const m = b.meta;
     const L = Math.round((m.length || 0) * 10) / 10;
     const ends = [m.miterStart || 0, m.miterEnd || 0].map((x) => Math.round(x * 10) / 10).sort((a, c) => a - c).join("/");
-    const key = [m.profileId || m.section, L, ends, m.coped ? "A" : "", m.cutSig || "", m.drills || "", material].join("|");
+    const parts2 = twoPlaneParts(m.miterParts); // Gehrung in zwei Ebenen: Breiten-/Höhenanteil unterscheiden
+    const key = [m.profileId || m.section, L, ends, parts2 ? JSON.stringify(parts2) : "", m.coped ? "A" : "", m.cutSig || "", m.drills || "", material].join("|");
     const g = map.get(key) || { key, profileId: m.profileId || m.section, length: L, names: [], count: 0 };
     g.names.push(b.name);
     g.count++;

@@ -272,4 +272,7 @@ test("Rahmen: Endkappe, Kürzen an Ebene, Gleichteile (Stufe 40)", () => {
   const mk = (name, L, m1 = 0, m2 = 0) => ({ kind: "member", name, meta: { profileId: "QR 40x3", length: L, miterStart: m1, miterEnd: m2 } });
   const eq = equalParts([mk("S1", 1000, 45, 45), mk("S2", 600), mk("S3", 1000.04, 45, 45), mk("S4", 600), mk("S5", 1000, 0, 45), { kind: "solid", name: "Platte" }]);
   assert.deepEqual(eq.map((g) => [g.count, g.names.join()]), [[2, "S1,S3"], [2, "S2,S4"], [1, "S5"]]);
+  // gleicher Gesamtwinkel, aber andere Anteile Breite/Höhe (Gehrung in zwei Ebenen): keine Gleichteile
+  const sp = (name, b, hh) => ({ ...mk(name, 800, 50, 0), meta: { ...mk(name, 800, 50, 0).meta, miterParts: { A: { b, h: hh }, B: { b: 0, h: 0 } } } });
+  assert.deepEqual(equalParts([sp("T1", 30, 40), sp("T2", 40, 30), sp("T3", 30, 40)]).map((g) => g.names.join()), ["T1,T3", "T2"]);
 });
