@@ -60,6 +60,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Automatische Bedingungen beim Zeichnen | vorhanden | horizontal/vertikal, auf Linie/Kreis, Mittelpunkt; Stufe 14: parallel/senkrecht, tangential am Bogenende, gleich lang/gleicher Radius (`src/core/autoconstraints.js`); Strg unterdrückt, je Art abschaltbar |
 | Raster, Rasterfang, Fangradius | vorhanden | Rasterweite und Fangradius jetzt einstellbar |
 | Status unter-/vollständig bestimmt | vorhanden | Freiheitsgrade im HUD |
+| Skizze automatisch vollständig bemaßen | vorhanden | Stufe 22: Menüband Skizze → „Voll bemaßen“ bzw. Befehlssuche; Durchmesser/Radien, Längen, Winkel, Lage zum Ursprung oder gewählten Punkt; nur Maße, die einen Freiheitsgrad wegnehmen; ein Rückgängig-Schritt |
 | Überbestimmt / widersprüchlich mit Ursache | vorhanden | Stufe 6: HUD nennt die nicht erfüllbaren Bedingungen, Maße/Symbole rot |
 | Offene Konturen erkennen | vorhanden | `extractProfiles` |
 | Bedingungen unterdrücken | vorhanden | Stufe 7: Eigenschaften → „Unterdrückt“; bleibt gespeichert, wirkt nicht, wird blass gezeigt |
@@ -127,3 +128,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 19 | Ellipse in der Skizze (Solver, Profil, DXF) | Solver-/Kernel-/Oberflächentest |
 | 20 | Farbschema hell/dunkel, letzte Werkzeugwerte über die Sitzung hinaus merken | Unit-Test Schema, Oberflächentest |
 | 21 | Spline in der Skizze (Kontrollpunkte, tangential, Profil, DXF) | Unit-, Kernel-, Oberflächentest |
+| 22 | Skizze vollständig bemaßen | Unit-Test Rechteck mit Bohrung, Oberflächentest |

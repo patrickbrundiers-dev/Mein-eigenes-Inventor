@@ -1196,6 +1196,35 @@ try {
       JSON.stringify({ sp, n2, ex }));
   }
 
+  // Skizze vollständig bemaßen: Rechteck mit Bohrung, ein Klick, voll bestimmt, Rückgängig nimmt alles zurück
+  {
+    await evalApp(() => window.__werkcad.newPart("Autobemassung"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    await evalApp(() => window.__werkcad.sketcher.commit("Testgeometrie", (sk) => {
+      sk.points.push({ id: "ra", x: 10, y: 5 }, { id: "rb", x: 90, y: 5 }, { id: "rc", x: 90, y: 45 }, { id: "rd", x: 10, y: 45 }, { id: "rm", x: 30, y: 25 });
+      sk.entities.push({ id: "r1", type: "line", p1: "ra", p2: "rb" }, { id: "r2", type: "line", p1: "rb", p2: "rc" }, { id: "r3", type: "line", p1: "rc", p2: "rd" }, { id: "r4", type: "line", p1: "rd", p2: "ra" }, { id: "rk", type: "circle", c: "rm", r: 6 });
+      sk.constraints.push({ id: "rh1", type: "horizontal", e: "r1" }, { id: "rh3", type: "horizontal", e: "r3" }, { id: "rv2", type: "vertical", e: "r2" }, { id: "rv4", type: "vertical", e: "r4" });
+    }));
+    await page.waitForTimeout(200);
+    const n0 = await evalApp(() => window.__werkcad.sketcher.sk.constraints.length);
+    await page.locator("#ribbon button", { hasText: /^Voll bemaßen$/ }).click();
+    await page.waitForTimeout(300);
+    const hint = await page.locator(".dialog .hint").last().textContent();
+    await page.locator(".dialog button", { hasText: /^Bemaßen$/ }).click();
+    await page.waitForTimeout(300);
+    const after = await evalApp(() => { const s = window.__werkcad.sketcher; const r = s.solve(); return { n: s.sk.constraints.length, dof: r.dof, ok: r.ok }; });
+    await shot("26e-voll-bemasst");
+    await evalApp(() => window.__werkcad.undo());
+    await page.waitForTimeout(300);
+    const undone = await evalApp(() => window.__werkcad.sketcher.sk.constraints.length);
+    await page.keyboard.press("Escape");
+    step("Skizze vollständig bemaßen", after.ok && after.dof === 0 && after.n - n0 === 7 && undone === n0 && /7 Maß/.test(hint), JSON.stringify({ n0, hint, after, undone }));
+  }
+
   // Farbschema dunkel und gemerkte Werkzeugwerte
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
