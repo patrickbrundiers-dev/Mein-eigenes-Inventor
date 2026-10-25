@@ -74,6 +74,7 @@ export const COMMANDS = [
   { id: "file.png", label: "Bild der Ansicht (PNG)", group: "Export", scope: "3d", keywords: "png bild screenshot foto ansicht export" },
   { id: "file.render", label: "Fotorealistisches Bild (PNG, hoch aufgelöst)", group: "Export", scope: "3d", keywords: "rendern render foto bild png hochauflösend" },
   { id: "file.listsXlsx", label: "Listen als Excel (.xlsx)", group: "Export", scope: "3d", keywords: "excel xlsx zuschnittliste stückliste nahtliste tabelle export" },
+  { id: "file.angebot", label: "Angebotsblatt (PDF)", group: "Export", scope: "3d", keywords: "angebot kunde preis pdf bild" },
   { id: "file.mappe", label: "Fertigungsmappe (PDF + Dateien als ZIP)", group: "Export", scope: "3d", keywords: "werkstatt mappe pdf zip zeichnungen laser paket" },
   { id: "part.naht", label: "Schweißnaht", group: "3D-Modell", scope: "part", keywords: "schweissen kehlnaht v-naht hv-naht iso 2553 a-maß nahtliste" },
   { id: "part.kantteil", label: "Kantteil (Blech)", group: "3D-Modell", scope: "part", keywords: "blech kantteil abkanten abwicklung biegen winkel u-profil z-profil kassette abdeckung laser dxf" },

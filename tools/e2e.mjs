@@ -795,6 +795,29 @@ try {
       JSON.stringify(ez));
   }
 
+  // Angebotsblatt (E4): Dialog ausfüllen, Preis von Hand, Seite mit Bild und Summen
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_bg"));
+    await idle();
+    await evalApp(() => {
+      const a = window.__werkcad;
+      window.__angebot = null;
+      a.files.saveText = ((orig) => async (text, name) => { window.__angebot = { text, name }; a.files.saveText = orig; return { path: name }; })(a.files.saveText);
+      a.files.exportAngebot();
+    });
+    const af = (label) => page.locator("#modal-root .dialog .field", { has: page.locator(`label:text-is("${label}")`) }).locator("input, textarea");
+    await af("Kunde").fill("Familie Muster\nGartenweg 2");
+    await af("Menge").fill("2");
+    await af("Einzelpreis netto €").fill("1.000");
+    await page.locator("#modal-root .dialog footer .btn", { hasText: "Erstellen" }).click();
+    await page.waitForFunction(() => !!window.__angebot, null, { timeout: 60000 });
+    const ang = await evalApp(() => {
+      const t = window.__angebot.text;
+      return { name: window.__angebot.name, img: /<img src="data:image\/png;base64,[A-Za-z0-9+/]{100,}/.test(t), kunde: t.includes("Familie Muster<br>Gartenweg 2"), sum: (t.match(/Gesamtbetrag<\/td><td class="n">([^<]*)/) || [])[1], dims: /Hauptmaße \(L × B × H\)<\/td><td>[\d.]+ × [\d.]+ × [\d.]+ mm/.test(t), mass: /Gewicht ca\./.test(t), kept: window.__werkcad.activeDoc().angebot?.price };
+    });
+    step("Angebotsblatt", /^Angebot_BG-100\.html$/.test(ang.name) && ang.img && ang.kunde && ang.sum === "2.380,00 €" && ang.dims && ang.mass && ang.kept === "1.000", JSON.stringify(ang));
+  }
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();

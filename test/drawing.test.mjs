@@ -367,3 +367,30 @@ test("ZIP: Einträge aus Text und Bytes, gültige Signaturen", () => {
   assert.equal(dv.getUint16(z.length - 22 + 10, true), 2);
   assert.ok(new TextDecoder().decode(z).includes("Ordner/b.bin"));
 });
+
+// ---------- Angebotsblatt (E4) ----------
+import { angebotPage, priceLines, parsePrice, money } from "../src/core/angebot.js";
+
+test("Angebotsblatt: Preis von Hand, MwSt., Fakten aus dem Modell", () => {
+  assert.equal(parsePrice("1.234,50 €"), 1234.5);
+  assert.equal(parsePrice("1234.5"), 1234.5);
+  assert.equal(parsePrice("1.000"), 1000);
+  assert.ok(Number.isNaN(parsePrice("")) && Number.isNaN(parsePrice("viel")));
+  assert.equal(money(2938.11), "2.938,11 €");
+  const p = priceLines({ qty: 2, price: "1.234,50", vat: 19 });
+  assert.equal(p.net, 2469);
+  assert.equal(money(p.gross), "2.938,11 €");
+  assert.equal(priceLines({ price: "" }), null);
+  const pg = angebotPage({ firma: "Metallbau <M>\nHauptstr. 1", kunde: "Frau Muster", nummer: "A-17", betreff: "Angebot: Tor", qty: 2, price: "1.234,50", vat: 19,
+    dims: [3000, 40, 1800], materials: ["S235JR"], finishes: ["tZn + pulver RAL 7016"], mass: 84.4, positions: 5, image: "data:image/png;base64,AAAA" });
+  assert.equal(pg.width, 210);
+  assert.match(pg.html, /Metallbau &lt;M&gt;<br>Hauptstr\. 1/);
+  assert.match(pg.html, /3\.000 × 40 × 1\.800 mm/);
+  assert.match(pg.html, /84 kg/);
+  assert.match(pg.html, /Angebot Nr\. A-17/);
+  assert.match(pg.html, /Gesamtbetrag<\/td><td class="n">2\.938,11 €/);
+  assert.match(pg.html, /<img src="data:image\/png;base64,AAAA"/);
+  const leer = angebotPage({ qty: 3, price: "" });
+  assert.match(leer.html, /3 × Einzelpreis netto<\/td><td class="n"><\/td>/, "ohne Preis bleibt das Feld zum Eintragen");
+  assert.match(leer.html, /Oberfläche<\/td><td>roh/);
+});

@@ -14,6 +14,10 @@ import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
 import { decomposePlacement } from "../core/geom.js";
 import { buildXlsx, zipFiles } from "../core/xlsx.js";
 import { mappeHtml, listPages, mappeName } from "../core/mappe.js";
+import { angebotPage } from "../core/angebot.js";
+import { bodiesMass } from "../core/mass.js";
+import { materialOf } from "../core/materials.js";
+import { finishLabel } from "../core/oberflaeche.js";
 import { listSheets } from "../core/lists.js";
 import { fmtNum } from "./dom.js";
 
@@ -389,6 +393,67 @@ export class Files {
       bom: asm ? bomRows(app, d) : collectNorm(src.map((s) => ({ bodies: s.result.bodies, qty: s.qty }))).map((x, i) => ({ ...x, pos: i + 1, number: "" })),
       structure: nested ? structureBom(d, docOf).map((x) => ({ level: x.level, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty, total: x.total })) : [],
       modular: nested ? modularBom(d, docOf).map((m) => ({ name: m.asm.name, number: m.asm.number, rows: m.rows.map((x) => ({ pos: x.pos, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty })) })) : [],
+    });
+  }
+  /**
+   * Angebotsblatt (E4) als PDF (Browser: druckfertiges HTML): Firmenkopf, Kunde, Bild der aktuellen Ansicht
+   * (fotorealistisch), Hauptmaße, Werkstoff, Oberfläche, Gewicht und der von Hand eingetragene Preis.
+   * Die Angaben bleiben am Dokument (d.angebot); Firmenkopf und Hinweis merkt sich PBCAD auch für neue Projekte.
+   */
+  async exportAngebot() {
+    const app = this.app, d = app.activeDoc();
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Angebotsblatt gibt es für Bauteile und Baugruppen");
+    const mem = (k, v) => { try { if (v === undefined) return localStorage.getItem("pbcad.angebot." + k) || ""; localStorage.setItem("pbcad.angebot." + k, v); } catch { /* ohne Speicher */ } return ""; };
+    const last = d.angebot || {};
+    const v = {
+      firma: last.firma ?? mem("firma"), kunde: last.kunde || "", nummer: last.nummer || "", betreff: last.betreff || "Angebot: " + d.name,
+      text: last.text || "", qty: last.qty || 1, price: last.price || "", vat: last.vat ?? 19,
+      hinweis: last.hinweis ?? (mem("hinweis") || "Alle Preise in Euro. Angebot freibleibend, gültig 30 Tage."), foto: last.foto !== false,
+    };
+    const inp = (k, opts = {}) => { const el = h(opts.area ? "textarea" : "input", { class: "inp", rows: opts.area || undefined, type: opts.type || "text", placeholder: opts.placeholder || "" }); el.value = v[k]; el.addEventListener("input", () => { v[k] = el.value; }); return el; };
+    const field = (label, el) => h("div", { class: "field" }, h("label", {}, label), el);
+    const foto = h("input", { type: "checkbox", checked: v.foto, onchange: (e) => { v.foto = e.target.checked; } });
+    const ok = await new Promise((res) => modal({
+      title: "Angebotsblatt", width: "560px", onClose: (r) => res(!!r),
+      body: h("div", { class: "angebot-form" },
+        field("Firmenkopf", inp("firma", { area: 3, placeholder: "Firma, Anschrift, Telefon" })),
+        field("Kunde", inp("kunde", { area: 3, placeholder: "Name und Anschrift" })),
+        field("Angebots-Nr.", inp("nummer")),
+        field("Betreff", inp("betreff")),
+        field("Leistung", inp("text", { area: 3, placeholder: "Beschreibung, z. B. Lieferung und Montage" })),
+        field("Menge", inp("qty", { type: "number" })),
+        field("Einzelpreis netto €", inp("price", { placeholder: "leer = Feld zum Eintragen" })),
+        field("MwSt. %", inp("vat", { type: "number" })),
+        field("Hinweis", inp("hinweis", { area: 2 })),
+        h("label", { class: "chk" }, foto, "Bild fotorealistisch")),
+      buttons: [{ label: "Abbrechen" }, { label: "Erstellen", primary: true, value: true }],
+    }));
+    if (!ok) return;
+    mem("firma", v.firma);
+    mem("hinweis", v.hinweis);
+    app.edit("Angebotsangaben", () => { d.angebot = { ...v }; }, { rebuild: false });
+    await this.withBusy("Angebotsblatt", async () => {
+      await app.builtParts(d);
+      const rows = d.kind === "assembly" ? bomRows(app, d) : [{ part: d, qty: 1, mass: bodiesMass((app.results.get(d.id)?.bodies || []).filter((b) => !b.meta?.norm), materialOf(d.material).density) }];
+      const own = rows.filter((r) => r.part);
+      const uniq = (a) => [...new Set(a.filter(Boolean))];
+      const viewer = app.viewer, prev = viewer.displayMode;
+      if (v.foto && prev !== "foto") viewer.setDisplayMode("foto");
+      let img;
+      try { img = viewer.snapshotPng({ scale: 2 }); } finally { if (v.foto && prev !== "foto") viewer.setDisplayMode(prev); }
+      let bin = "";
+      for (let i = 0; i < img.data.length; i += 0x8000) bin += String.fromCharCode.apply(null, img.data.subarray(i, i + 0x8000));
+      const box = viewer.contentBox();
+      const dims = box.isEmpty() ? [] : [box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z];
+      const page = angebotPage({
+        ...v, datum: new Date().toLocaleDateString("de-DE"), image: "data:image/png;base64," + btoa(bin), dims,
+        materials: uniq(own.map((r) => (r.part.material ? materialOf(r.part.material).label : ""))), finishes: uniq(own.map((r) => finishLabel(r.part))),
+        mass: rows.reduce((a, r) => a + (Number.isFinite(r.mass) ? r.mass * (r.qty || 1) : 0), 0), positions: d.kind === "assembly" ? own.length : 1,
+      });
+      const html = mappeHtml([page], { title: v.betreff });
+      const base = mappeName((v.nummer ? "Angebot_" + v.nummer : "Angebot_" + (d.number || d.name)));
+      if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+      else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
     });
   }
   /**

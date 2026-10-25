@@ -14,6 +14,7 @@ export function commandRunners(app) {
     "file.newPart": () => app.newPart(),
     "file.listsXlsx": () => app.files.exportListsXlsx(),
     "file.mappe": () => app.files.exportMappe(),
+    "file.angebot": () => app.files.exportAngebot(),
     "file.png": () => app.files.exportPng(),
     "file.linkPart": () => app.files.linkPartFromFile(),
     "file.savePartFile": () => { const d = app.activeDoc(); if (d?.kind === "part") app.files.savePartAsFile(d); },

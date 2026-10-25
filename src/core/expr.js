@@ -283,10 +283,10 @@ export function resolveParams(params, base = {}) {
   return { values, errors };
 }
 
-/** Formatiert Zahlen deutsch mit sinnvoller Stellenzahl */
 /** Liste aus einem Eingabefeld: mit ; getrennt (Ausdrücke dürfen Leerzeichen enthalten), ohne ; durch Leerzeichen */
 export const splitList = (x) => { const s = String(x ?? ""); return (s.includes(";") ? s.split(";") : s.split(/\s+/)).map((v) => v.trim()).filter(Boolean); };
 
+/** Formatiert Zahlen deutsch mit sinnvoller Stellenzahl */
 export function fmt(v, digits = 2) {
   if (!Number.isFinite(v)) return "–";
   const r = Math.round(v * 10 ** digits) / 10 ** digits;
