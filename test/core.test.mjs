@@ -781,3 +781,33 @@ test("Spline: Enden auf Kontrollpunkten, tangential an Linie, Punkt auf Spline, 
   assert.equal(pr2.regions.length, 1);
   assert.ok(/POLYLINE/.test(sketchToDxf(sk2)));
 });
+
+import { autoDimension } from "../src/core/autodim.js";
+test("Skizze vollständig bemaßen: Rechteck mit Bohrung danach voll bestimmt, ohne doppelte Maße", () => {
+  const sk = {
+    points: [{ id: "O", x: 0, y: 0 }, { id: "a", x: 10, y: 5 }, { id: "b", x: 90, y: 5 }, { id: "c", x: 90, y: 45 }, { id: "d", x: 10, y: 45 }, { id: "m", x: 30, y: 25 },
+      { id: "s", x: 120, y: 0 }, { id: "t", x: 150, y: 30 }],
+    entities: [{ id: "Oe", type: "point", p: "O", origin: true },
+      { id: "l1", type: "line", p1: "a", p2: "b" }, { id: "l2", type: "line", p1: "b", p2: "c" }, { id: "l3", type: "line", p1: "c", p2: "d" }, { id: "l4", type: "line", p1: "d", p2: "a" },
+      { id: "k", type: "circle", c: "m", r: 6 }, { id: "sl", type: "line", p1: "s", p2: "t" }],
+    constraints: [{ id: "fo", type: "fix", p: "O", x: 0, y: 0 }, { id: "h1", type: "horizontal", e: "l1" }, { id: "h3", type: "horizontal", e: "l3" }, { id: "v2", type: "vertical", e: "l2" }, { id: "v4", type: "vertical", e: "l4" },
+      { id: "w", type: "length", e: "l1", value: "80" }],
+  };
+  const before = JSON.stringify(sk);
+  let n = 0;
+  const r = autoDimension(sk, {}, { uid: (p) => p + ++n });
+  assert.equal(JSON.stringify(sk), before, "Eingabe unverändert");
+  assert.equal(r.dofBefore, 3 + 3 + 4); // Rechteck 3 (Breite schon bemaßt), Kreis 3, schräge Linie 4
+  assert.equal(r.dofAfter, 0);
+  assert.ok(!r.constraints.some((c) => c.type === "length" && c.e === "l1"), "bemaßte Breite bleibt einzig");
+  assert.ok(r.constraints.some((c) => c.type === "diameter" && c.e === "k" && c.value === "12"));
+  assert.ok(r.constraints.some((c) => c.type === "length" && c.e === "sl"));
+  const done = { ...sk, constraints: [...sk.constraints, ...r.constraints] };
+  const s = solveSketch(done, {});
+  assert.ok(s.ok); assert.equal(s.dof, 0);
+  // Punkte bleiben, wo sie waren
+  const P = Object.fromEntries(done.points.map((p) => [p.id, p]));
+  near(P.c.x, 90, 1e-6); near(P.t.y, 30, 1e-6);
+  // erneut aufgerufen: nichts mehr zu tun
+  assert.equal(autoDimension(done, {}).constraints.length, 0);
+});

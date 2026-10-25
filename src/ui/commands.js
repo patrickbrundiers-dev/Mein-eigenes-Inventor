@@ -41,6 +41,7 @@ export function commandRunners(app) {
     "select.edges": () => app.setSelFilter("kanten"),
     "select.everything": () => app.selectEverything(),
     "select.invert": () => app.invertSelection(),
+    "sketch.autodim": () => app.sketcher.autoDimensionDialog(),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
     "asm.align": r("align"),

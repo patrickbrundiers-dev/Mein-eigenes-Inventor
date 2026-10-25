@@ -9,6 +9,7 @@ import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from ".
 import { inferLine, inferCircle } from "../core/autoconstraints.js";
 import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities } from "../core/sketchshapes.js";
 import { splineSamples, splineNearest } from "../core/spline.js";
+import { autoDimension } from "../core/autodim.js";
 import { splineCtrl } from "../core/sketch.js";
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
@@ -407,6 +408,36 @@ export class Sketcher {
     if (Math.abs(t.b.x - a.x) < 1e-9 || Math.abs(t.b.y - a.y) < 1e-9) { toast("Rechteck braucht Breite und Höhe"); return; }
     this.state = null;
     this.addRect(a, t.b, this.tool === "rectc", t.dims);
+  }
+  /** „Skizze vollständig bemaßen“: Auswahl der Maßarten, Bezug Ursprung oder gewählter Punkt; ein Rückgängig-Schritt */
+  autoDimensionDialog() {
+    if (!this.sk) return;
+    const selPt = [...this.sel].filter((s) => s.startsWith("p:")).map((s) => s.slice(2));
+    const ref = selPt.length === 1 ? selPt[0] : "O";
+    const kinds = { radius: true, length: true, angle: true, position: true };
+    const labels = { radius: "Durchmesser und Radien", length: "Linienlängen", angle: "Winkel an Ecken", position: "Lage zum Bezugspunkt" };
+    const info = h("p", { class: "hint" });
+    const run = () => autoDimension(this.sk, this.scope(), { ref, kinds, uid });
+    const update = () => {
+      const r = run();
+      info.textContent = r.dofBefore === 0 ? "Die Skizze ist schon voll bestimmt."
+        : `${r.constraints.length} Maß(e) werden gesetzt. Danach frei: ${r.dofAfter} Freiheitsgrad(e)` + (r.dofAfter ? " – für den Rest weitere Maßarten zulassen oder Bedingungen setzen." : ".");
+    };
+    const boxes = Object.keys(kinds).map((k) => {
+      const cb = h("input", { type: "checkbox", checked: true, onchange: () => { kinds[k] = cb.checked; update(); } });
+      return h("label", { class: "chk" }, cb, labels[k]);
+    });
+    update();
+    modal({
+      title: "Skizze vollständig bemaßen",
+      body: h("div", {}, ...boxes, h("p", { class: "hint" }, ref === "O" ? "Bezug: Skizzenursprung. Einen Punkt vorher wählen, um ihn als Bezug zu nehmen." : "Bezug: gewählter Punkt."), info),
+      buttons: [{ label: "Abbrechen", value: null }, { label: "Bemaßen", primary: true, run: () => {
+        const r = run();
+        if (!r.constraints.length) { toast("Keine Maße nötig"); return; }
+        this.commit("Vollständig bemaßen", (sk) => sk.constraints.push(...r.constraints));
+        toast(`${r.constraints.length} Maß(e) gesetzt` + (r.dofAfter ? `, ${r.dofAfter} Freiheitsgrad(e) bleiben` : " – Skizze voll bestimmt"), { kind: r.dofAfter ? "" : "ok" });
+      } }],
+    });
   }
   /** Spline aus den geklickten Punkten anlegen; closed = letzter Punkt ist der erste */
   finishSpline(closed = false) {
