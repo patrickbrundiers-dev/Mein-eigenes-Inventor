@@ -640,6 +640,18 @@ try {
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20k-balkon");
   step("Balkon-Generator", bk.ok && bk.n > 40 && /Balkon 3000 × 1500 mm/.test(bk.info) && !bk.warn, JSON.stringify(bk));
+  // Stahlbau-Generatoren (MegaCAD-Abgleich M15): Rahmenecke, Pfette, Windverband – je ein Bauteil, Normteile in der Liste
+  const stb = {};
+  for (const [label, file] of [["Rahmenecke", "20l-rahmenecke"], ["Pfette", "20m-pfette"], ["Windverband", "20n-windverband"]]) {
+    await evalApp((n) => window.__werkcad.newPart(n), label);
+    await idle();
+    await page.locator("#ribbon button", { hasText: new RegExp("^" + label + "$") }).click();
+    await idle(120000);
+    stb[label] = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, norm: r.bodies.filter((b) => b.meta?.norm).length, ok: Object.values(r.status).every((s) => s.ok), info: Object.values(r.status)[0]?.info }; });
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await shot(file);
+  }
+  step("Stahlbau-Generatoren", Object.values(stb).every((x) => x.ok && x.norm > 0) && stb.Rahmenecke.norm === 24 && stb.Windverband.norm === 2, JSON.stringify(stb));
 
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));

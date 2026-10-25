@@ -13,7 +13,7 @@ import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.
 import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
-import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims } from "../core/normteile.js";
+import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims, boltSizeForHole, boltSet } from "../core/normteile.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
 import { GENERATORS, resolveGenParams } from "../core/generator.js";
@@ -615,11 +615,30 @@ export function createKernel(R) {
             const solid = d.sketchOnPlane(new R.Plane(P, ax.u, nrm)).extrude(plan.t);
             const name = f.name || `Platte ${round(plan.W)}x${round(plan.H)}x${round(plan.t)}`;
             const meta = { plate: { W: plan.W, H: plan.H, t: plan.t, holes: plan.holes.length, d: plan.d }, partOf: mem.name };
-            state.tools.set(f.id, { op: "new", shapes: [{ shape: solid, kind: "solid", meta, name }], plate: { ax, P, nrm, W: plan.W, H: plan.H, t: plan.t } });
+            const shapes = [{ shape: solid, kind: "solid", meta, name }];
             state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
+            // Gegenplatte (Stoß zweier Stäbe) und Verschraubung (M15)
+            let boltInfo = "";
+            if (f.counter) {
+              const c2 = solid.clone().translate(v3.mul(nrm, plan.t));
+              const m2 = { ...meta, counter: true };
+              state.bodies.push({ shape: c2, kind: "solid", name: name + " Gegenplatte", fid: f.id, meta: m2 });
+              shapes.push({ shape: c2, kind: "solid", meta: m2, name: name + " Gegenplatte" });
+            }
+            if (f.bolts && plan.holes.length) {
+              const size = f.boltSize || boltSizeForHole(plan.d);
+              if (!size) throw new Error(`Bohrung Ø ${round(plan.d)} zu klein für eine Schraube ab M6`);
+              if (NORM_THREADS[size].d > plan.d - 0.9) throw new Error(`${size} passt nicht durch Ø ${round(plan.d)}`);
+              const clamp = plan.t * (f.counter ? 2 : 1) + num("clampExtra", "zusätzliche Klemmlänge");
+              const yDir = v3.cross(nrm, ax.u);
+              let L = 0;
+              for (const [x, y] of plan.holes) L = pushBoltSet(state, f, shapes, size, clamp, v3.add(P, v3.add(v3.mul(ax.u, x), v3.mul(yDir, endB ? y : -y))), nrm, f.boltGrade || "8.8", !!f.galv);
+              boltInfo = `, ${plan.holes.length} × ${size} x ${L} (Klemmlänge ${round(clamp)} mm)`;
+            }
+            state.tools.set(f.id, { op: "new", shapes, plate: { ax, P, nrm, W: plan.W, H: plan.H, t: plan.t } });
             const wa = num("weldA", "Nahtdicke a");
             if (wa > 0) state.welds.push({ fid: f.id, kind: "kehl", a: wa, side: "pfeil", around: true, field: false, length: ax.perimeter, p3: v3.add(P, v3.mul(ax.v, ax.height / 2)), name });
-            st.info = `${round(plan.W)} × ${round(plan.H)} × ${round(plan.t)} mm` + (plan.holes.length ? `, ${plan.holes.length} × Ø ${round(plan.d)}` : "") + ` an ${mem.name}, Ende ${endB ? "B" : "A"}`;
+            st.info = `${round(plan.W)} × ${round(plan.H)} × ${round(plan.t)} mm` + (plan.holes.length ? `, ${plan.holes.length} × Ø ${round(plan.d)}` : "") + ` an ${mem.name}, Ende ${endB ? "B" : "A"}` + boltInfo;
             if (plan.issues.length) st.warning = plan.issues.map((x) => x.message).join("; ");
             break;
           }
@@ -684,6 +703,10 @@ export function createKernel(R) {
               state.bodies.push({ shape: solid, kind: "solid", name: pl.name, fid: f.id, meta });
               list.push({ shape: solid, kind: "solid", meta, name: pl.name });
             }
+            for (const n of plan.norms || []) {
+              if (n.bolt) pushBoltSet(state, f, list, n.size, n.clamp, n.pos, v3.norm(n.dir), n.grade || "8.8", !!n.galv);
+              else pushNorm(state, f, list, n, n.pos, v3.norm(n.dir));
+            }
             state.tools.set(f.id, { op: "member", shapes: list });
             st.info = plan.info;
             if (plan.issues.length) st.warning = plan.issues.map((x) => x.message).join("; ");
@@ -735,13 +758,10 @@ export function createKernel(R) {
             const warn = checkNorm(kind, f.size, L);
             const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Basispunkt " + "XYZ"[k]));
             const dir = f.axis === "custom" ? (f.dir || ["0", "0", "1"]).map((x) => E(x, "Richtung")) : AXES[f.axis || "Z"];
-            const solid = orientZ(normSolid(kind, f.size, L), dir, pos);
-            const designation = normDesignation({ kind, size: f.size, length: L, grade: f.grade, galv: f.galv });
-            const meta = { norm: { kind, size: f.size, length: L, grade: f.grade || "", designation }, density: normDensity(f.grade) };
-            const name = f.name || designation;
-            state.tools.set(f.id, { op: "new", shapes: [{ shape: solid, kind: "norm", meta, name }] });
-            state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
-            st.info = designation;
+            const list = [];
+            const b = pushNorm(state, f, list, { kind, size: f.size, length: L, grade: f.grade, galv: f.galv, name: f.name }, pos, dir);
+            state.tools.set(f.id, { op: "new", shapes: list });
+            st.info = b.meta.norm.designation;
             if (warn.length) st.warning = warn.join("; ");
             break;
           }
@@ -903,6 +923,26 @@ export function createKernel(R) {
     return { bodies: state.bodies, status: state.status, sketches: state.sketches, values, welds: state.welds || [] };
   }
 
+  /** Normteil als eigener Körper (Stückliste mit Normbezeichnung); n = { kind, size, length, grade, galv, name? } */
+  function pushNorm(state, f, list, n, pos, dir) {
+    const solid = orientZ(normSolid(n.kind, n.size, n.length || 0), dir, pos);
+    const designation = normDesignation(n);
+    const meta = { norm: { kind: n.kind, size: n.size, length: n.length || 0, grade: n.grade || "", designation }, density: normDensity(n.grade) };
+    const body = { shape: solid, kind: "solid", name: n.name || designation, fid: f.id, meta };
+    state.bodies.push(body);
+    list?.push({ shape: solid, kind: "norm", meta, name: body.name });
+    return body;
+  }
+  /** Verschraubung (Schraube, 2 Scheiben, Mutter) an Punkt p, Achse dir, Klemmlänge clamp; gibt die Schraubenlänge zurück */
+  function pushBoltSet(state, f, list, size, clamp, p, dir, grade = "8.8", galv = false) {
+    const set = boltSet(size, clamp);
+    const nut = { "8.8": "8", "10.9": "10" }[grade] || grade, washer = /^A[24]/.test(grade) ? grade.slice(0, 2) : "200 HV";
+    for (const part of set.parts) {
+      const g = part.kind === "mutter" ? nut : part.kind === "scheibe" ? washer : grade;
+      pushNorm(state, f, list, { kind: part.kind, size, length: part.length, grade: g, galv }, v3.add(p, v3.mul(dir, part.z0)), dir);
+    }
+    return set.length;
+  }
   function pushMember(state, solid, f, meta, name) {
     state.bodies.push({ shape: solid, kind: "member", name, fid: f.id, meta });
   }

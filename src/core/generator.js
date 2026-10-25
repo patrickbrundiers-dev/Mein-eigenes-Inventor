@@ -12,6 +12,8 @@
 //            members: [{ section, a, b, name, up?, rot? }], – einzelne Stäbe, Enden gerade
 //            plates: [{ center, xDir, normal, W, H, t, holes?, d?, r?, poly?, name }], – Platten (Mitte der Unterseite;
 //              poly = Umriss [[x, y]…] in der Plattenebene statt Rechteck W × H)
+//            norms?: [{ kind, size, length?, grade?, pos, dir, name? } | { bolt: true, size, clamp, pos, dir, grade? }],
+//              – Normteile bzw. Verschraubungen (Schraube, Scheiben, Mutter; Klemmpaket ab pos in Richtung dir)
 //            info, issues: [{ level, message }] }
 
 import { catalogToDims, sectionGeometry, CATALOG } from "./sections.js";
@@ -20,8 +22,9 @@ import { TOR } from "./tor.js";
 import { TREPPE } from "./treppe.js";
 import { SPINDEL } from "./spindel.js";
 import { BALKON } from "./balkon.js";
+import { WINDVERBAND, PFETTE, RAHMENECKE } from "./stahlbau.js";
 
-export const GENERATORS = { gelaender: GELAENDER, tor: TOR, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON };
+export const GENERATORS = { gelaender: GELAENDER, tor: TOR, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE };
 
 /** Neues Feature mit den Standardwerten des Generators */
 export function defaultGenerator(gen) {

@@ -70,6 +70,9 @@ export class Ribbon {
       treppe: () => this.addGenerator("treppe"),
       spindel: () => this.addGenerator("spindel"),
       balkon: () => this.addGenerator("balkon"),
+      rahmenecke: () => this.addGenerator("rahmenecke"),
+      pfette: () => this.addGenerator("pfette"),
+      windverband: () => this.addGenerator("windverband"),
       naht: () => app.addFeature({ type: "naht", kind: "kehl", a: "4", side: "pfeil", around: false, field: false, edges: selEdges() }),
       rippe: () => {
         const p = this.lastOf(["platte"]);
@@ -193,6 +196,7 @@ export class Ribbon {
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon")] },
           { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil")] },
+          { label: "Stahlbau", buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
           { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() })] },
