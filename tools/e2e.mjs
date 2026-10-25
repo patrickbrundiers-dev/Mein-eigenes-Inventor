@@ -1316,8 +1316,12 @@ try {
     const row = page.locator('.km-row[data-cmd="part.fillet"] .km-key');
     // Liste wird bei jeder Eingabe neu gebaut; auf die Zeile warten, einmal neu filtern, falls sie fehlt (CI-Abbruch #94)
     for (let k = 0; k < 2; k++) {
-      await page.locator(".km input[type=search]").fill("rundung");
-      try { await row.waitFor({ state: "visible", timeout: 8000 }); break; } catch (e) {
+      try {
+        // Einstellungscenter kann nach der Suche noch einmal neu aufbauen: Feld dann neu suchen (CI-Abbruch #123)
+        if (!(await page.locator(".km input[type=search]").isVisible())) { await page.locator(".set-search input").fill("tastatur"); await page.locator(".km input[type=search]").waitFor({ state: "visible", timeout: 10000 }); }
+        await page.locator(".km input[type=search]").fill("rundung", { timeout: 10000 });
+        await row.waitFor({ state: "visible", timeout: 8000 }); break;
+      } catch (e) {
         if (k) throw new Error(`Kürzelzeile fehlt: ${await page.locator(".km").innerText().catch(() => "kein .km")}`.slice(0, 600));
         await idle();
       }

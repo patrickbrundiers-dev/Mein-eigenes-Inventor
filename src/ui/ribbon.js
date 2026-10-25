@@ -259,7 +259,7 @@ export class Ribbon {
             T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"),
             T("sscale", "Skalieren", "scale"), T("offset", "Versatz", "offset"), B("sclean", "Säubern", "clean", { run: () => sk.cleanDialog() }),
           ] },
-          { label: "Muster", small: true, buttons: [T("pattern", "Rechteckmuster", "pattern"), T("cpattern", "Kreismuster", "circpattern"), T("mirror", "Spiegeln", "mirror")] },
+          { label: "Muster", small: true, buttons: [C("pattern", "Rechteckmuster", "pattern"), C("cpattern", "Kreismuster", "circpattern"), C("mirror", "Spiegeln", "mirror")] },
           { label: "Bemaßung", big: 1, buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() }), B("params", "Parameter", "params")] },
           { label: "Abhängigkeiten", small: true, buttons: [
             C("coincident", "Koinzident", "coincident"), C("collinear", "Kollinear", "collinear"), C("concentric", "Konzentrisch", "concentric"),
