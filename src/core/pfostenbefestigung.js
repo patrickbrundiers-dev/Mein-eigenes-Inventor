@@ -15,6 +15,7 @@ const norm = (a) => { const l = len(a) || 1; return mul(a, 1 / l); };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
 const DEG = Math.PI / 180;
+import { fieldError } from "./generror.js";
 
 export const vec = { dot, add, sub, mul, len, norm, cross };
 
@@ -123,9 +124,9 @@ export function memberFace(m, want, label = m.name) {
   const s = ax.z, c = cross(best.n, s), sign = dot(c, qAxis) >= 0 ? 1 : -1;
   const flip = (r) => r && { at: sign * r.at, edge: r.edge };
   const [lo, hi] = sign > 0 ? [f.lo, f.hi] : [flip(f.hi), flip(f.lo)];
-  const L = len(sub(m.b, m.a));
+  const across = (f.side.endsWith("x") ? m.section.geom.height : m.section.geom.width) / 2;
   const face = makeFace({ name: m.name, label: `${label} (${SIDE_LABEL[f.side]?.(m.section.kind) || "Seite"})`, target: m.name, targetKind: "member",
-    o: add(m.a, mul(best.n, f.half)), n: best.n, s, sRange: [0, L], cLo: lo, cHi: hi, wall: f.wall,
+    o: add(m.a, mul(best.n, f.half)), n: best.n, s, sRange: axisRange(m), cLo: lo, cHi: hi, cPhys: [-across, across], wall: f.wall,
     exclude: f.exclude.map(([a, b]) => (sign > 0 ? [a, b] : [-b, -a])) });
   return face;
 }
@@ -146,7 +147,7 @@ export function plateFace(pl, side = "oben") {
   const box = pl.poly ? bbox2(pl.poly) : [-pl.W / 2, -pl.H / 2, pl.W / 2, pl.H / 2];
   const [cy0, cy1] = sign > 0 ? [box[1], box[3]] : [-box[3], -box[1]];
   return makeFace({ name: pl.name, label: `${pl.name} (${top ? "Oberseite" : "Unterseite"})`, target: pl.name, targetKind: "plate", plate: pl,
-    o: top ? add(pl.center, mul(n0, pl.t)) : pl.center, n, s, sRange: [box[0], box[2]], cLo: { at: cy0, edge: "kante" }, cHi: { at: cy1, edge: "kante" }, wall: pl.t,
+    o: top ? add(pl.center, mul(n0, pl.t)) : pl.center, n, s, sRange: [box[0], box[2]], cLo: { at: cy0, edge: "kante" }, cHi: { at: cy1, edge: "kante" }, cPhys: [cy0, cy1], wall: pl.t,
     poly: pl.poly ? pl.poly.map(([x, y]) => [x, sign * y]) : null });
 }
 
@@ -162,21 +163,53 @@ export function faceCoords(face, P) {
 }
 
 /**
- * Nächstgelegenes Anschlussbauteil: unter den Stäben (cands) den, dessen Achse dem Punkt P am nächsten liegt (innerhalb
- * seiner Länge, Abstand ≤ maxDist), und dort die Fläche Richtung want. null, wenn keiner in Reichweite.
+ * Nächstgelegenes Anschlussbauteil: unter den Stäben (cands) den, dessen Achse (als Strecke) dem Punkt P am nächsten
+ * liegt (Abstand ≤ maxDist, längs höchstens alongTol über die Endschnitte hinaus), und dort die Fläche Richtung want.
+ * null, wenn keiner in Reichweite.
  */
-export function findMemberFace(cands, P, want, maxDist = Infinity) {
+export function findMemberFace(cands, P, want, maxDist = Infinity, alongTol = 100) {
   let best = null, bd = Infinity;
   for (const m of cands) {
-    const ab = sub(m.b, m.a), L2 = dot(ab, ab);
-    if (!(L2 > 0)) continue;
-    const t = dot(sub(P, m.a), ab) / L2;
-    if (t < -1e-6 || t > 1 + 1e-6) continue;
-    const dd = len(sub(P, add(m.a, mul(ab, t))));
-    if (dd < bd) { bd = dd; best = m; }
+    const ab = sub(m.b, m.a), L = len(ab);
+    if (!(L > 0)) continue;
+    const [t0, t1] = axisRange(m), z = mul(ab, 1 / L);
+    const t = dot(sub(P, m.a), z);
+    if (t < t0 - alongTol || t > t1 + alongTol) continue;
+    const dd = len(sub(P, add(m.a, mul(z, Math.max(t0, Math.min(t1, t))))));
+    if (dd < bd - 1e-9) { bd = dd; best = m; }
   }
   if (!best || bd > maxDist) return null;
   return memberFace(best, want);
+}
+
+/** Achsbereich [t0, t1] eines Stabs zwischen seinen Endschnitten (ohne Schnitte 0 … Länge) */
+export function axisRange(m) {
+  const ab = sub(m.b, m.a), L = len(ab), z = mul(ab, 1 / (L || 1));
+  const at = (c) => { const n = norm(c.n), dn = dot(z, n); return Math.abs(dn) > 0.05 ? dot(sub(c.p, m.a), n) / dn : null; };
+  let t0 = 0, t1 = L;
+  for (const c of m.cuts?.start || []) { const t = at(c); if (t != null) t0 = Math.max(t0, t); }
+  for (const c of m.cuts?.end || []) { const t = at(c); if (t != null) t1 = Math.min(t1, t); }
+  return t1 > t0 ? [t0, t1] : [0, L];
+}
+
+/**
+ * Platte unter dem Punkt P (z. B. Stufe unter einem Pfosten): Oberseite liegt unter P, Lot trifft den Umriss; die
+ * nächste von oben. null, wenn keine.
+ */
+export function findPlateFace(plates, P) {
+  let best = null, bz = Infinity;
+  for (const pl of plates) {
+    const f = plateFace(pl);
+    if (dot(f.n, [0, 0, 1]) < 0.5) continue;
+    const Q = linePlane(P, [0, 0, 1], f.o, f.n);
+    if (!Q) continue;
+    const h = P[2] - Q[2];
+    if (h < -1e-6 || h > bz) continue;
+    const [s, c] = faceCoords(f, Q);
+    const inside = f.poly ? distToPoly([s, c], f.poly) === 0 : s >= f.sRange[0] && s <= f.sRange[1] && c >= f.cLo.at && c <= f.cHi.at;
+    if (inside) { best = f; bz = h; }
+  }
+  return best;
 }
 
 // ---------- Montagerahmen und Pfostenachse ----------
@@ -190,7 +223,8 @@ export function linePlane(P, d, o, n) {
 
 /**
  * Lokales Koordinatensystem der Montage: Pfostenachse durch P (Richtung axis, i. d. R. lotrecht), Montagefläche face,
- * Regel rule: "lotrecht" (Pfosten bleibt in Richtung axis) oder "normal" (Pfosten senkrecht zur Fläche).
+ * Regel rule: "lotrecht" (Pfosten bleibt in Richtung axis) oder "normal" (Pfosten senkrecht zur Fläche, ebenfalls durch P,
+ * damit der Handlauf oben an seiner Stelle bleibt).
  * along: Richtung, an der sich die Platte ausrichtet (Lauflinie); rot: Drehung der Platte um die Normale (°).
  * Rückgabe { F (Fußpunkt auf der Fläche), n, x, y (Plattenachsen, y = n × x), axis (Pfostenachse), tilt (° zwischen
  * Pfostenachse und Normale) }.
@@ -198,7 +232,7 @@ export function linePlane(P, d, o, n) {
 export function mountFrame(face, P, axis, { rule = "lotrecht", along = face.s, rot = 0 } = {}) {
   const n = face.n;
   const ax = rule === "normal" ? n : norm(axis);
-  const F = linePlane(P, norm(axis), face.o, n);
+  const F = linePlane(P, rule === "normal" ? n : norm(axis), face.o, n); // »normal«: Pfosten durch P senkrecht zur Fläche
   if (!F) throw new Error("Pfostenachse liegt parallel zur Montagefläche");
   let x = sub(along, mul(n, dot(along, n)));
   if (len(x) < 1e-6) x = face.s;
@@ -223,11 +257,12 @@ export function toMount(fr, P, origin = fr.F) {
 
 // ---------- Kollision (Hüllquader) ----------
 
-/** Hüllquader { c, ax: [3 Achsen], h: [3 Halbmaße] } eines Bauplan-Stabs (ohne Schnitte) */
+/** Hüllquader { c, ax: [3 Achsen], h: [3 Halbmaße] } eines Bauplan-Stabs */
 export function memberBox(m) {
   const ax = memberAxes(m.a, m.b, m.up || [0, 0, 1], m.rot || 0);
   const g = m.section.geom, L = len(sub(m.b, m.a));
-  return { c: add(m.a, mul(ax.z, L / 2)), ax: [ax.u, ax.v, ax.z], h: [g.width / 2, g.height / 2, L / 2], name: m.name };
+  const [t0, t1] = axisRange(m); // Schnitte an den Enden kürzen den Quader
+  return { c: add(m.a, mul(ax.z, (t0 + t1) / 2)), ax: [ax.u, ax.v, ax.z], h: [g.width / 2, g.height / 2, (t1 - t0) / 2], name: m.name };
 }
 /** Hüllquader einer Bauplan-Platte */
 export function plateBox(pl) {
@@ -263,4 +298,220 @@ function bbox2(pts) {
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
-export { fmt };
+
+// ---------- Parameter (Gruppe »Pfostenbefestigung« im Generator-Schema) ----------
+
+export const HOLE_PATTERNS = [["4", "4 (Ecken)"], ["2l", "2 in Längsrichtung"], ["2q", "2 quer"], ["frei", "frei (x; y je Bohrung)"]];
+export const POST_RULES = [["lotrecht", "lotrecht (Pfostenfuß schräg geschnitten)"], ["normal", "senkrecht zur Montagefläche"]];
+
+/**
+ * Schema-Einträge der Befestigung. key: Vorsilbe (z. B. »gel«), kind(p): "oben" | "seitlich" | null je nach gewählter
+ * Befestigungsart, def: Standardwerte je Generator (Zahlen als Text). Ältere Features haben die Art »aus« und sehen
+ * diese Felder nicht; die Werte selbst brauchen daher kein missing.
+ */
+export function mountSchema(key = (k) => k, group = "Pfostenbefestigung", kind = () => null, def = {}) {
+  const D = { oW: "120", oL: "120", oT: "10", holes: "4", d: "11", e: "20", ...def };
+  const top = (p) => kind(p) === "oben", any = (p) => !!kind(p);
+  const free = (p) => any(p) && p[key("mHoles")] === "frei";
+  return [
+    { key: key("mRule"), label: "Pfostenstellung", type: "select", options: POST_RULES, default: "lotrecht", group, when: top },
+    { key: key("oW"), label: "Fußplatte Breite (quer)", type: "num", default: D.oW, group, when: top },
+    { key: key("oL"), label: "Fußplatte Länge (entlang Lauf)", type: "num", default: D.oL, group, when: top },
+    { key: key("oT"), label: "Fußplatte Dicke", type: "num", default: D.oT, group, when: top },
+    { key: key("oDx"), label: "Pfosten auf der Platte längs versetzt", type: "num", default: "0", group, when: top },
+    { key: key("oDy"), label: "Pfosten auf der Platte quer versetzt", type: "num", default: "0", group, when: top },
+    { key: key("mRot"), label: "Platte um die Flächennormale gedreht", type: "num", unit: "°", default: "0", group, when: any },
+    { key: key("mHoles"), label: "Bohrbild", type: "select", options: HOLE_PATTERNS, default: D.holes, group, when: any },
+    { key: key("mFree"), label: "Bohrungen frei (x; y; x; y … ab Pfostenachse)", type: "list", default: "-40; 0; 40; 0", group, when: free },
+    { key: key("mD"), label: "Bohrung Ø", type: "num", default: D.d, group, when: any },
+    { key: key("mE"), label: "Randabstand in der Platte (Mitte Bohrung)", type: "num", default: D.e, group, when: (p) => any(p) && !free(p) },
+    { key: key("mSlot"), label: "Langloch-Länge (0 = rund)", type: "num", default: "0", group, when: any },
+    { key: key("mTD"), label: "Gegenbohrung im Bauteil Ø (0 = wie Platte)", type: "num", default: "0", group, when: any },
+    { key: key("mEdge"), label: "Mindest-Randabstand im Bauteil (0 = 1,2 · d)", type: "num", default: "0", group, when: any },
+  ];
+}
+
+/** Aufgelöste Parameter (Zahlen) mit Vorsilbe in ein Befestigungsobjekt */
+export function mountConfig(p, key = (k) => k) {
+  const v = (k) => p[key(k)];
+  return { rule: v("mRule") || "lotrecht", W: v("oW"), L: v("oL"), t: v("oT"), dx: v("oDx") || 0, dy: v("oDy") || 0, rot: v("mRot") || 0,
+    holes: v("mHoles") || "4", free: v("mFree") || [], d: v("mD"), e: v("mE"), slot: v("mSlot") || 0, td: v("mTD") || 0, edge: v("mEdge") || 0, keys: (k) => key(k) };
+}
+
+/** Bohrbild in Plattenkoordinaten (x längs, y quer, Ursprung Plattenmitte) */
+export function holePattern(cfg, L, W) {
+  const k = cfg.keys || ((x) => x);
+  const { d, e } = cfg;
+  if (!(d > 0)) throw fieldError("Bohrung Ø muss > 0 sein", k("mD"));
+  if (cfg.holes === "frei") {
+    const f = cfg.free;
+    if (f.length % 2) throw fieldError("Bohrungen frei: je Bohrung x und y angeben", k("mFree"));
+    return Array.from({ length: f.length / 2 }, (_, i) => [f[2 * i] + cfg.dx, f[2 * i + 1] + cfg.dy]);
+  }
+  if (!(e >= d / 2 + 1e-6)) throw fieldError(`Randabstand ${fmt(e)} mm zu klein für Ø ${fmt(d)} – mindestens ${fmt(d / 2)} mm`, k("mE"));
+  const x = L / 2 - e, y = W / 2 - e;
+  const pts = cfg.holes === "2l" ? [[-x, 0], [x, 0]] : cfg.holes === "2q" ? [[0, -y], [0, y]] : [[-x, -y], [x, -y], [x, y], [-x, y]];
+  if (cfg.holes !== "2q" && x < d / 2 + 1e-6) throw fieldError("Bohrungen überschneiden sich – Platte länger oder Randabstand kleiner", k("mE"));
+  if (cfg.holes !== "2l" && y < d / 2 + 1e-6) throw fieldError("Bohrungen überschneiden sich – Platte breiter oder Randabstand kleiner", k("mE"));
+  return pts;
+}
+
+// ---------- Prüfungen ----------
+
+/** Umriss eines Pfostens (Hülle bzw. Kreis) um den Fußpunkt, entlang der Pfostenachse auf die Montageebene projiziert */
+function postFootprint(fr, post, along) {
+  const g = post.geom, round = post.kind === "rohr" || post.kind === "rund";
+  const pa = memberAxes([0, 0, 0], fr.axis, [along[0], along[1], along[2] || 0]);
+  const ring = round ? Array.from({ length: 16 }, (_, i) => [Math.cos((i * Math.PI) / 8) * g.width / 2, Math.sin((i * Math.PI) / 8) * g.width / 2])
+    : [[-g.width / 2, -g.height / 2], [g.width / 2, -g.height / 2], [g.width / 2, g.height / 2], [-g.width / 2, g.height / 2]];
+  return ring.map(([a, b]) => {
+    const P = add(add(fr.F, mul(pa.u, a)), mul(pa.v, b));
+    const Q = linePlane(P, fr.axis, fr.F, fr.n) || P;
+    const q = toMount(fr, Q);
+    return [q[0], q[1]];
+  });
+}
+
+/** Abstand Punkt → Polygon (0 innen) */
+export function distToPoly([x, y], poly) {
+  let inside = false, dmin = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    const dx = xj - xi, dy = yj - yi, L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((x - xi) * dx + (y - yi) * dy) / L2)) : 0;
+    dmin = Math.min(dmin, Math.hypot(x - xi - t * dx, y - yi - t * dy));
+  }
+  return inside ? 0 : dmin;
+}
+
+/**
+ * Bohrung im Anschlussbauteil prüfen (Flächenkoordinaten s, c): innerhalb der Länge, quer im nutzbaren Bereich mit
+ * Randabstand edge zu freien Kanten bzw. frei von Rundung/Steg, nicht in gesperrten Bereichen. Rückgabe: Grund oder null.
+ */
+export function holeProblem(face, s, c, d, edge) {
+  const r = d / 2;
+  if (face.poly) {
+    if (distToPoly([s, c], face.poly) > 0) return `liegt außerhalb von ${face.label}`;
+    const toEdge = edgeDistance([s, c], face.poly);
+    if (toEdge < edge - 1e-6) return `Randabstand ${fmt(toEdge)} mm in ${face.label} (mindestens ${fmt(edge)} mm)`;
+    return null;
+  }
+  const [s0, s1] = face.sRange;
+  if (s < s0 + r - 1e-6 || s > s1 - r + 1e-6) return `liegt außerhalb der Länge von ${face.label} (Pfosten auf der Platte versetzen oder Bohrbild ändern)`;
+  const lim = (b, sg) => {
+    if (!b) return null;
+    const gap = sg * (c - b.at); // Abstand der Mitte von der Grenze nach innen
+    if (b.edge === "kante") {
+      if (gap < r - 1e-6) return `liegt ${fmt(r - gap)} mm über der Kante von ${face.label}`;
+      if (gap < edge - 1e-6) return `Randabstand ${fmt(gap)} mm zur Kante von ${face.label} (mindestens ${fmt(edge)} mm)`;
+    } else if (gap < r + 1 - 1e-6) return `trifft Rundung, Steg oder Flansch von ${face.label} (${fmt(r + 1 - gap)} mm zu weit außen)`;
+    return null;
+  };
+  const why = lim(face.cLo, 1) || lim(face.cHi, -1);
+  if (why) return why;
+  for (const [a, b] of face.exclude || []) if (c + r > a - 1 && c - r < b + 1) return `trifft den Steg unter ${face.label}`;
+  return null;
+}
+
+function edgeDistance(p, poly) {
+  let d = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j], dx = xj - xi, dy = yj - yi, L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((p[0] - xi) * dx + (p[1] - yi) * dy) / L2)) : 0;
+    d = Math.min(d, Math.hypot(p[0] - xi - t * dx, p[1] - yi - t * dy));
+  }
+  return d;
+}
+
+// ---------- Befestigung von oben mit Fußplatte ----------
+
+/**
+ * Fußplatte unter einem Pfosten. ctx: { name (Pfosten), post (Profil), top (oberer Pfostenpunkt auf der Achse),
+ * axis (Pfostenrichtung, i. d. R. [0, 0, 1]), along (Lauf-/Ausrichtungsrichtung), face (Anschlussfläche), plateName }.
+ * Kollisionen prüft danach mountCollisions mit dem fertigen Bauplan.
+ * Rückgabe { frame, a (neuer Pfostenfuß auf der Plattenoberseite), cuts, plate, drills, targetHoles, holes (Welt),
+ * issues, ok } – Pfosten wird von a bis top gebaut. Ungültige Bohrungen werden gemeldet und nicht übertragen.
+ */
+export function topMount(cfg, ctx) {
+  const k = cfg.keys || ((x) => x), issues = [], name = ctx.name;
+  const { W, L, t } = cfg;
+  if (!(t > 0)) throw fieldError("Fußplatte: Dicke muss > 0 sein", k("oT"));
+  if (!(W > 0 && L > 0)) throw fieldError("Fußplatte: Breite und Länge müssen > 0 sein", k("oW"));
+  const face = ctx.face;
+  if (dot(face.n, [0, 0, 1]) < 0.2) throw fieldError(`${name}: ${face.label} zeigt nicht nach oben – für »oben mit Fußplatte« eine obere Fläche wählen`, k("mount"));
+  const fr = mountFrame(face, ctx.top, ctx.axis || [0, 0, 1], { rule: cfg.rule, along: ctx.along, rot: cfg.rot });
+  if (cfg.rule !== "normal" && fr.tilt > 45 + 1e-9) throw fieldError(`${name}: Pfosten steht ${fmt(fr.tilt)}° schräg zur Montagefläche (höchstens 45°) – Pfostenstellung »senkrecht zur Montagefläche« wählen`, k("mRule"));
+  // Pfostenachse trifft die Fläche in F; Plattenmitte so, dass der Pfosten bei (dx, dy) auf der Platte steht
+  const C = fromMount(fr, [-cfg.dx, -cfg.dy, 0]);
+  const holes = holePattern(cfg, L, W).map(([x, y]) => [x - cfg.dx, y - cfg.dy]); // Plattenkoordinaten
+  // Bohrungen in der Platte: innerhalb, Randabstand, nicht unter dem Pfosten
+  const foot = postFootprint({ ...fr, F: add(fr.F, mul(fr.n, t)) }, ctx.post, ctx.along).map(([x, y]) => [x + cfg.dx, y + cfg.dy]);
+  const d = cfg.d, slot = cfg.slot > d ? cfg.slot : 0;
+  holes.forEach(([x, y], i) => {
+    const ex = L / 2 - Math.abs(x) - (slot ? (slot - d) / 2 : 0), ey = W / 2 - Math.abs(y);
+    if (Math.min(ex, ey) < d / 2 + 1e-6) issues.push({ key: k("mHoles"), level: "Fehler", message: `${name}: Bohrung ${i + 1} liegt nicht ganz in der Fußplatte` });
+    else if (Math.min(ex, ey) < 1.2 * d - 1e-6) issues.push({ key: k("mE"), level: "Hinweis", message: `${name}: Bohrung ${i + 1} Randabstand ${fmt(Math.min(ex, ey))} mm unter 1,2 · d in der Platte (EN 1993-1-8)` });
+    if (distToPoly([x, y], foot) < d - 1e-6) issues.push({ key: k("oW"), level: "Fehler", message: `${name}: Bohrung ${i + 1} liegt unter dem Pfosten – nicht verschraubbar (Platte größer oder Bohrbild ändern)` });
+  });
+  if (foot.some(([x, y]) => Math.abs(x) > L / 2 + 1e-6 || Math.abs(y) > W / 2 + 1e-6)) issues.push({ key: k("oW"), level: "Warnung", message: `${name}: Pfosten steht über die Fußplatte über` });
+  // Bohrbild ins Anschlussbauteil übertragen (Plattenunterseite = Montagefläche)
+  const td = cfg.td > 0 ? cfg.td : d, edge = cfg.edge > 0 ? cfg.edge : 1.2 * td;
+  const world = holes.map(([x, y]) => fromMount(fr, [x, y, 0], C));
+  const drills = [], targetHoles = [];
+  const corners = [[-L / 2, -W / 2], [L / 2, -W / 2], [L / 2, W / 2], [-L / 2, W / 2]].map(([x, y]) => faceCoords(face, fromMount(fr, [x, y, 0], C)));
+  const beside = face.cPhys && (corners.every(([, c]) => c < face.cPhys[0] - 1e-6) || corners.every(([, c]) => c > face.cPhys[1] + 1e-6));
+  if (beside) {
+    const [, cF] = faceCoords(face, fr.F);
+    issues.push({ key: k("mount"), level: "Fehler", message: `${name}: Fußplatte liegt neben ${face.label} – Pfostenachse ${fmt(Math.abs(cF))} mm neben der Flächenmitte, keine Bohrung übertragen` });
+  } else if (face.target) {
+    world.forEach((P, i) => {
+      const [s, c] = faceCoords(face, P);
+      const why = holeProblem(face, s, c, td, edge);
+      if (why) { issues.push({ key: k("mEdge"), level: "Fehler", message: `${name}: Bohrung ${i + 1} ${why} – nicht übertragen` }); return; }
+      if (face.targetKind === "member") drills.push({ target: face.target, p: add(P, face.n), dir: mul(face.n, -1), d: td, len: face.wall + 2 });
+      else {
+        const pl = face.plate, x0 = norm(pl.xDir), y0 = cross(norm(pl.normal), x0), q = sub(P, pl.center);
+        targetHoles.push([dot(q, x0), dot(q, y0), td]);
+      }
+    });
+  }
+  // Platte über die Fläche hinaus?
+  if (face.cPhys && !beside) {
+    const over = Math.max(0, ...corners.map(([, c]) => Math.max(face.cPhys[0] - c, c - face.cPhys[1])));
+    if (over > 0.5) issues.push({ key: k("oW"), level: "Hinweis", message: `${name}: Fußplatte steht ${fmt(over)} mm über ${face.label} über` });
+  }
+  const plate = { center: C, xDir: fr.x, normal: fr.n, W: L, H: W, t, holes, d, ...(slot ? { slots: holes.map(([x, y]) => [x, y, slot]), holes: [] } : {}), name: ctx.plateName || `${name} Fußplatte`, mount: "oben" };
+  // Pfostenfuß: Achse durch top trifft die Plattenoberseite; schräg → Schnitt parallel zur Platte
+  const a = linePlane(ctx.top, fr.axis, add(fr.F, mul(fr.n, t)), fr.n);
+  const cuts = fr.tilt > 0.01 ? { start: [{ p: a, n: mul(fr.n, -1) }], end: [] } : null;
+  return { post: name, target: face.target, frame: fr, a, axis: fr.axis, cuts, plate, drills, targetHoles, holes: world, issues, ok: !issues.some((x) => x.level === "Fehler"), transferred: drills.length + targetHoles.length };
+}
+
+/** Kollision der erzeugten Befestigungsteile mit dem fertigen Bauplan (eigener Pfosten und Zielbauteil ausgenommen) */
+export function mountCollisions(results, plan, key = "mount") {
+  const own = new Set(results.flatMap((r) => [r.plate?.name, ...(r.parts || []).map((x) => x.name)]));
+  const out = [];
+  for (const r of results) {
+    for (const part of [r.plate, ...(r.parts || [])].filter(Boolean)) {
+      const hit = collisions(plateBox(part), plan, (n) => n === r.post || n === r.target || own.has(n) || n.startsWith(r.post + " "));
+      if (hit.length) out.push({ key, level: "Warnung", message: `${r.post}: ${part.name} kollidiert mit ${hit.slice(0, 3).join(", ")}${hit.length > 3 ? " …" : ""}` });
+    }
+  }
+  return out;
+}
+
+/** Bohrungen in Zielplatten des Bauplans eintragen (eigener Ø je Loch) */
+export function applyTargetHoles(plates, face, holes) {
+  if (!holes.length || face.targetKind !== "plate") return;
+  const pl = plates.find((x) => x === face.plate || x.name === face.target);
+  if (pl) pl.holes = [...(pl.holes || []), ...holes];
+}
+
+/** Info-Zeile mit Prüfstufe (Plan §12) */
+export function mountInfo(results, what) {
+  const n = results.length;
+  if (!n) return "";
+  const tr = results.reduce((s, r) => s + (r.transferred || 0), 0), bad = results.filter((r) => !r.ok).length;
+  return `${n} ${what}` + (tr ? `, ${tr} Gegenbohrungen übertragen` : "") + (bad ? `, ${bad} mit Fehlern` : ", geometrisch geprüft") + ", Randabstände plausibilisiert, statisch nicht nachgewiesen";
+}

@@ -9,6 +9,8 @@
 //      Stift + Bohrung (handlaufhalter.js); mit through gehen Knieleisten bzw. Untergurt durch die Pfosten (Durchbruch
 //      mit Aufmaß allow), die Staketen (Profil stab) durch Bohrungen in der oberen Wand des Untergurts; Stück bis beltMax, Stoß im Pfosten.
 //      keys: Feldschlüssel für Fehlermeldungen { bar, belt, stab, beltMax }.
+//      mount({ name, top, base (Punkt der Lauflinie), along }): Pfostenbefestigung (pfostenbefestigung.js) – liefert Pfostenfuß a, Schnitt, Platte,
+//      Bohrungen, Meldungen; ohne mount steht der Pfosten wie bisher postDown unter der Lauflinie.
 
 import { holderDrop, holderParts, entryWall } from "./handlaufhalter.js";
 import { fieldError } from "./generror.js";
@@ -21,7 +23,7 @@ const holeFor = (sec, allow, xDir) => (ROUND.has(sec.kind) ? { d: sec.geom.width
 export function railAlong(path, o, label) {
   const members = [], chains = [], plates = [], drills = [];
   const pts = path.filter((q, i) => i === 0 || Math.hypot(q[0] - path[i - 1][0], q[1] - path[i - 1][1], q[2] - path[i - 1][2]) > 1e-6);
-  if (pts.length < 2) return { members, chains, plates, drills, posts: 0, fields: 0, bars: 0, gapMax: 0 };
+  if (pts.length < 2) return { members, chains, plates, drills, posts: 0, fields: 0, bars: 0, gapMax: 0, mounted: [] };
   const railH = o.rail.geom.height, postW = o.post.geom.width, half = o.post.geom.height / 2;
   const segs = [];
   for (let i = 0; i + 1 < pts.length; i++) {
@@ -47,9 +49,14 @@ export function railAlong(path, o, label) {
     if (sg.ts[sg.ts.length - 1] < sg.L - 1e-6) { sg.ts.push(sg.L); sg.ps.push(posts.length - 1); }
   }
   const drop = holderDrop(!!o.holder, o.post, o.holderGap);
+  const mounted = [];
   posts.forEach((p, i) => {
-    const top = [p.q[0], p.q[1], p.q[2] + o.H - railH - drop];
-    members.push({ section: o.post, a: [p.q[0], p.q[1], p.q[2] - o.postDown], b: top, name: `${label} Pfosten ${i + 1}`, up: [p.d[0], p.d[1], 0] });
+    const top = [p.q[0], p.q[1], p.q[2] + o.H - railH - drop], name = `${label} Pfosten ${i + 1}`;
+    if (o.mount) {
+      const r = o.mount({ name, top, base: p.q, along: [p.d[0], p.d[1], 0] });
+      members.push({ section: o.post, a: r.a, b: top, name, up: [p.d[0], p.d[1], 0], ...(r.cuts ? { cuts: r.cuts } : {}) });
+      plates.push(r.plate, ...(r.parts || [])); drills.push(...r.drills); mounted.push(r);
+    } else members.push({ section: o.post, a: [p.q[0], p.q[1], p.q[2] - o.postDown], b: top, name, up: [p.d[0], p.d[1], 0] });
     if (!o.holder) return;
     const hp = holderParts({ q: top, along: p.d, axisZ: p.q[2] + o.H - railH / 2, post: o.post, railH, d: o.holderD, slope: p.slope, name: `${label} Pfosten ${i + 1}`, target: `${label} Handlauf` });
     members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
@@ -67,7 +74,7 @@ export function railAlong(path, o, label) {
   if (o.through && (o.fill === "quer" || o.fill === "staketen")) {
     const r = through(segs, o, label, { top, half, postName: (i) => `${label} Pfosten ${i + 1}` });
     members.push(...r.members); drills.push(...r.drills);
-    return { members, chains, plates, drills, posts: posts.length, fields: r.fields, bars: r.bars, gapMax: r.gapMax, pieces: r.pieces };
+    return { members, chains, plates, drills, posts: posts.length, fields: r.fields, bars: r.bars, gapMax: r.gapMax, pieces: r.pieces, mounted };
   }
   for (const sg of segs) {
     const at = (s, h) => [sg.A[0] + sg.d[0] * s, sg.A[1] + sg.d[1] * s, sg.A[2] + sg.slope * s + h];
@@ -103,7 +110,7 @@ export function railAlong(path, o, label) {
       }
     }
   }
-  return { members, chains, plates, drills, posts: posts.length, fields, bars, gapMax };
+  return { members, chains, plates, drills, posts: posts.length, fields, bars, gapMax, mounted };
 }
 
 /**

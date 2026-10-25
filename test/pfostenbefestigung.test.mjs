@@ -98,3 +98,119 @@ test("Kollision der Hüllquader", () => {
   assert.deepEqual(M.collisions(sunk, plan), ["Pfosten"]);
   assert.deepEqual(M.collisions(sunk, plan, (n) => n === "Pfosten"), []);
 });
+
+const gelaender = (patch = {}) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...defaultGenerator("gelaender").params, ...patch }, E));
+const U200 = { support: "upn", upn: { kind: "upn", size: "200" }, gelMount: "oben" };
+
+test("Fußplatte: Bohrbild, Prüfungen in der Platte", () => {
+  const cfg = { W: 70, L: 160, t: 10, dx: 0, dy: 0, holes: "2l", d: 13.5, e: 25, free: [] };
+  assert.deepEqual(M.holePattern(cfg, 160, 70), [[-55, 0], [55, 0]]);
+  assert.deepEqual(M.holePattern({ ...cfg, holes: "4" }, 160, 70), [[-55, -10], [55, -10], [55, 10], [-55, 10]]);
+  assert.deepEqual(M.holePattern({ ...cfg, holes: "frei", free: [-40, 0, 40, 5] }, 160, 70), [[-40, 0], [40, 5]]);
+  assert.throws(() => M.holePattern({ ...cfg, e: 5 }, 160, 70), /Randabstand 5 mm zu klein/);
+  assert.throws(() => M.holePattern({ ...cfg, holes: "4", e: 30 }, 160, 70), /überschneiden sich/);
+  // Bohrung unter dem Pfosten wird erkannt
+  const floor = M.planeFace([0, 0, 0], [0, 0, 1], [1, 0, 0], "Boden");
+  const post = sectionOf({ kind: "vierkant", size: "40x3" });
+  const r = M.topMount({ ...cfg, holes: "frei", free: [10, 0, 60, 0] }, { name: "Pfosten 1", post, top: [0, 0, 900], along: [1, 0, 0], face: floor });
+  assert.match(r.issues.map((x) => x.message).join(), /Bohrung 1 liegt unter dem Pfosten/);
+  assert.ok(!/Bohrung 2/.test(r.issues.map((x) => x.message).join()));
+});
+
+test("Balkonpfosten auf ebener Fläche: Fußplatte am Boden, Pfosten steht auf der Platte", () => {
+  const p = gelaender({ runs: "2500" });
+  const post = p.members.find((m) => m.name === "Pfosten 1"), plate = p.plates.find((x) => x.name === "Fußplatte 1");
+  nearV(post.a, [0, 0, 10]); assert.equal(post.cuts, undefined, "lotrecht auf ebener Fläche: kein Schrägschnitt");
+  nearV(plate.center, [0, 0, 0]); nearV(plate.normal, [0, 0, 1]);
+  assert.equal(plate.holes.length, 4);
+  assert.equal(p.drills.filter((d) => /^Boden/.test(d.target || "")).length, 0, "Untergrund: keine Gegenbohrung");
+  assert.match(p.info, /4 Fußplatten, geometrisch geprüft/);
+  assert.match(p.info, /statisch nicht nachgewiesen/);
+  // bisherige einfache Fußplatte bleibt wählbar und unverändert
+  const old = gelaender({ runs: "2500", base: "fussplatte" });
+  nearV(old.members.find((m) => m.name === "Pfosten 1").a, [0, 0, 10]);
+  assert.equal(old.plates.filter((x) => /^Fußplatte/.test(x.name)).length, 4);
+});
+
+test("Randprofil U200 unter dem Geländer: Bohrbild auf den Flansch übertragen, zu breites Bohrbild abgelehnt", () => {
+  const ok = gelaender({ runs: "3000", mTarget: "profil", oW: "70", oL: "160", mHoles: "2l", mD: "13.5", mE: "25" });
+  const rand = ok.chains.find((c) => c.name === "Randprofil");
+  near(rand.points[0][2], -100, 1e-9, "Oberseite des stehenden U200 auf z = 0");
+  const dr = ok.drills.filter((d) => d.target === "Randprofil");
+  assert.equal(dr.length, 8, "4 Pfosten × 2 Bohrungen");
+  assert.ok(dr.every((d) => Math.abs(d.p[2] - 1) < 1e-9 && d.dir[2] === -1 && Math.abs(d.len - 13.5) < 1e-9), "von oben durch den 11,5 mm Flansch");
+  // Mitte der Gegenbohrung = Mitte der Plattenbohrung (Plattenunterseite liegt auf der Fläche)
+  const pl = ok.plates.find((x) => x.name === "Fußplatte 2");
+  const holeW = pl.holes.map(([x, y]) => M.vec.add(M.vec.add(pl.center, M.vec.mul(pl.xDir, x)), M.vec.mul(M.vec.cross(pl.normal, pl.xDir), y)));
+  for (const h of holeW) assert.ok(dr.some((d) => Math.hypot(d.p[0] - h[0], d.p[1] - h[1]) < 1e-9), "Bohrung übertragen");
+  assert.equal(ok.issues.filter((x) => x.level === "Fehler").length, 0);
+  // Standard-Platte 120 × 120 mit 4 Bohrungen passt nicht auf den 75er Flansch
+  const bad = gelaender({ runs: "3000", mTarget: "profil" });
+  assert.equal(bad.drills.filter((d) => d.target === "Randprofil").length, 0, "nichts verschoben, nichts übertragen");
+  assert.match(bad.issues.map((x) => x.message).join("\n"), /Bohrung 1 liegt 8 mm über der Kante von Randprofil \(Flansch\)/);
+  assert.match(bad.issues.map((x) => x.message).join("\n"), /trifft Rundung, Steg oder Flansch/);
+  // gleiche Funktion mit Rechteckrohr statt U200 (keine Sonderlogik)
+  const rr = gelaender({ runs: "3000", mTarget: "profil", mProfile: { kind: "rechteck", size: "120x80x5" }, oW: "70", oL: "160", mHoles: "2l", mD: "13.5", mE: "25" });
+  assert.equal(rr.drills.filter((d) => d.target === "Randprofil").length, 8);
+  near(rr.drills.find((d) => d.target === "Randprofil").len, 5 + 2, 1e-9, "durch die Rohrwand");
+});
+
+test("U200-Treppe: Fußplatte auf der geneigten Wange, Bohrbild auf die kurze Seite übertragen", () => {
+  const p = treppe(U200);
+  const w = p.members.find((m) => m.name === "Wange rechts"), face = M.memberFace(w, [0, 0, 1]);
+  const posts = p.members.filter((m) => /^Geländer rechts Pfosten \d+$/.test(m.name));
+  const onWange = posts.filter((m) => p.plates.find((x) => x.name === m.name + " Fußplatte" && M.vec.dot(x.normal, face.n) > 0.9999));
+  assert.ok(onWange.length >= 4, "Pfosten auf der Wange");
+  for (const m of onWange) {
+    const pl = p.plates.find((x) => x.name === m.name + " Fußplatte");
+    near(M.faceCoords(face, pl.center)[2], 0, 1e-9, "Platte liegt plan auf dem Flansch");
+    near(M.faceCoords(face, pl.center)[1], 0, 1e-9, "mittig auf der Flanschbreite");
+    near(m.a[0], m.b[0], 1e-9); near(m.a[1], m.b[1], 1e-9, "Pfosten lotrecht");
+    near(M.faceCoords(face, m.a)[2], 10, 1e-9, "Pfostenfuß auf der Plattenoberseite");
+    nearV(m.cuts.start[0].n, M.vec.mul(face.n, -1), 1e-12, "Fuß parallel zur Platte geschnitten");
+  }
+  const dr = p.drills.filter((d) => d.target === "Wange rechts" && Math.abs(M.vec.dot(d.dir, face.n) + 1) < 1e-9);
+  assert.ok(dr.length >= 2 * onWange.length - 2, "Gegenbohrungen im Flansch");
+  for (const d of dr) {
+    const [s, c, h] = M.faceCoords(face, d.p);
+    near(h, 1, 1e-9); near(c, 0, 1e-9, "Bohrung auf der Mittellinie der Platte");
+    assert.ok(s > face.sRange[0] && s < face.sRange[1]);
+    near(d.len, 11.5 + 2, 1e-9);
+  }
+  // Pfostenstellung senkrecht zur Montagefläche
+  const n = treppe({ ...U200, gelMRule: "normal" });
+  const m2 = n.members.find((m) => m.name === onWange[1].name);
+  nearV(M.vec.norm(M.vec.sub(m2.b, m2.a)), face.n, 1e-9);
+  assert.equal(m2.cuts, undefined);
+});
+
+test("Treppenwinkel und Pfostenlage ändern: Platte und Bohrbild gehen mit", () => {
+  const a = treppe({ ...U200, height: "2800" }), b = treppe({ ...U200, height: "3000", steps: "16" });
+  const nA = M.memberFace(a.members.find((m) => m.name === "Wange rechts"), [0, 0, 1]).n, nB = M.memberFace(b.members.find((m) => m.name === "Wange rechts"), [0, 0, 1]).n;
+  assert.ok(Math.abs(nA[0] - nB[0]) > 1e-3, "andere Neigung");
+  const plB = b.plates.find((x) => x.name === "Geländer rechts Pfosten 2 Fußplatte");
+  nearV(plB.normal, nB, 1e-12, "Platte folgt der neuen Neigung");
+  const shifted = treppe({ ...U200, gelODx: "30" });
+  const p0 = a.plates.find((x) => x.name === "Geländer rechts Pfosten 2 Fußplatte"), p1 = shifted.plates.find((x) => x.name === "Geländer rechts Pfosten 2 Fußplatte");
+  near(M.vec.len(M.vec.sub(p0.center, p1.center)), 30, 1e-9, "Pfosten auf der Platte versetzt → Platte 30 mm verschoben");
+  const d0 = a.drills.filter((d) => d.target === "Wange rechts" && d.d === 13.5), d1 = shifted.drills.filter((d) => d.target === "Wange rechts" && d.d === 13.5);
+  assert.notDeepEqual(d0.map((d) => d.p), d1.map((d) => d.p), "Gegenbohrungen gehen mit");
+});
+
+test("Bohrung nahe der Profilkante abgelehnt, Wange aus Flachstahl: kein Platz oben", () => {
+  const p = treppe({ ...U200, gelODy: "25" });
+  assert.match(p.issues.map((x) => x.message).join("\n"), /über der Kante von Wange rechts \(Flansch\)|Randabstand .* zur Kante von Wange rechts/);
+  const f = treppe({ support: "flach", gelMount: "oben" });
+  assert.match(f.issues.map((x) => x.message).join("\n"), /Wange rechts \(Seite\) – nicht übertragen/);
+});
+
+test("Bestehende Treppe und bestehendes Geländer ohne Befestigungsparameter rechnen wie bisher", async () => {
+  const { genValues } = await import("../src/core/generator.js");
+  assert.equal(genValues("treppe", { gel: "beide" }).gelMount, "aus");
+  const p = treppe({ support: "upn", upn: { kind: "upn", size: "200" } });
+  assert.equal(p.plates.filter((x) => /Fußplatte/.test(x.name)).length, 0);
+  const post = p.members.find((m) => m.name === "Geländer rechts Pfosten 1");
+  near(post.a[1], -75 - 20, 1e-9, "neben der Wange wie bisher");
+  const old = gelaender({ base: "fussplatte" });
+  assert.ok(!/Befestigung:/.test(old.info));
+});

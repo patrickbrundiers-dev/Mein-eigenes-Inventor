@@ -540,3 +540,23 @@ test("Handlaufhalter: Bohrung 12,1 mm im Handlauf, Stift und Endkappe als Körpe
   near(bb(w)[1][1], 0, 0.5, "Steg bündig an der Stufe");
   near(bb(w)[0][1], -75, 0.5, "Flansche nach außen (UPN 200: 75 mm)");
 });
+
+test("Pfostenbefestigung oben: Fußplatte auf der U200-Wange, Gegenbohrungen im Flansch, Pfostenfuß schräg", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const t = { id: "t", ...defaultGenerator("treppe") };
+  Object.assign(t.params, { support: "upn", upn: { kind: "upn", size: "200" }, gel: "rechts", gelMount: "oben", gelFill: "keine" });
+  const res = await K.buildPart(part([t]));
+  okAll(res);
+  const t0 = { ...t, params: { ...t.params, gelMount: "aus" } };
+  const r0 = await K.buildPart(part([t0]));
+  const w = res.bodies.find((b) => b.name === "Wange rechts"), w0 = r0.bodies.find((b) => b.name === "Wange rechts");
+  const transferred = Number(res.status.t.info.match(/(\d+) Gegenbohrungen/)[1]);
+  assert.equal((w.meta.drills || 0) - (w0.meta.drills || 0), transferred, "jede übertragene Bohrung ist im Flansch");
+  near(R.measureVolume(w0.shape) - R.measureVolume(w.shape), transferred * Math.PI * (13.5 / 2) ** 2 * 11.5, transferred * 30, "Bohrungen Ø 13,5 durch den 11,5-mm-Flansch");
+  const plates = res.bodies.filter((b) => / Fußplatte$/.test(b.name));
+  assert.ok(plates.length >= 5);
+  near(R.measureVolume(plates[1].shape), 70 * 160 * 10 - 2 * Math.PI * (13.5 / 2) ** 2 * 10, 5, "Platte 160 × 70 × 10 mit 2 Bohrungen");
+  // Pfosten 2 steht auf der Platte: kein Überlappen von Pfosten und Platte
+  const post = res.bodies.find((b) => b.name === "Geländer rechts Pfosten 2"), pl = res.bodies.find((b) => b.name === "Geländer rechts Pfosten 2 Fußplatte");
+  near(R.measureVolume(post.shape.clone().intersect(pl.shape.clone())), 0, 1, "Pfosten durchdringt die Platte nicht");
+});

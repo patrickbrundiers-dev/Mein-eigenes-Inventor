@@ -13,6 +13,7 @@ import { splitList } from "./expr.js";
 import { holderSchema, holderDrop, holderParts, entryWall } from "./handlaufhalter.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
+import { mountSchema, mountConfig, topMount, planeFace, findMemberFace, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
 const SEC = { rohr: "Rundrohr", vierkant: "Quadratrohr", rechteck: "Rechteckrohr", flach: "Flachstahl", rund: "Rundstahl", vierkantvoll: "Vierkantstahl" };
 
@@ -25,9 +26,12 @@ export const GELAENDER = {
     ...normSchema(undefined, "Lauflinie"),
     { key: "post", label: "Pfosten", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Pfosten" },
     { key: "postMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Pfosten" },
-    { key: "base", label: "Befestigung", type: "select", options: [["fussplatte", "Fußplatte"], ["keine", "ohne (eingespannt)"]], default: "fussplatte", group: "Pfosten" },
+    { key: "base", label: "Befestigung", type: "select", options: [["oben", "oben mit Fußplatte, Bohrbild ins Anschlussbauteil"], ["fussplatte", "einfache Fußplatte (bisher)"], ["keine", "ohne (eingespannt)"]], default: "oben", group: "Pfosten" },
     { key: "baseSize", label: "Fußplatte Größe", type: "num", default: "120", group: "Pfosten", when: (p) => p.base === "fussplatte" },
     { key: "baseT", label: "Fußplatte Dicke", type: "num", default: "10", group: "Pfosten", when: (p) => p.base === "fussplatte" },
+    { key: "mTarget", label: "Anschlussbauteil", type: "select", options: [["boden", "Boden / Decke (nicht im Modell, Bohrbild für Dübel)"], ["profil", "Randprofil unter dem Geländer (wird erzeugt)"]], default: "boden", group: "Pfostenbefestigung", when: (p) => p.base === "oben" },
+    { key: "mProfile", label: "Randprofil", type: "section", default: { kind: "upn", size: "200" }, group: "Pfostenbefestigung", when: (p) => p.base === "oben" && p.mTarget === "profil" },
+    ...mountSchema(undefined, "Pfostenbefestigung", (p) => (p.base === "oben" ? "oben" : null)),
     { key: "rail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Handlauf und Gurte" },
     ...holderSchema(undefined, "Handlauf und Gurte"),
     { key: "overhang", label: "Handlauf-Überstand an den Enden", type: "num", default: "50", group: "Handlauf und Gurte" },
@@ -79,15 +83,37 @@ export const GELAENDER = {
       for (let k = 0; k < n; k++) fields.push({ a: [a[0] + d[0] * (L * k) / n, a[1] + d[1] * (L * k) / n], d, len: L / n, run: i });
     });
     const railH = rail.geom.height, railW = rail.geom.width;
-    const zBase = p.base === "fussplatte" ? p.baseT : 0;
+    const zBase = p.base === "fussplatte" ? p.baseT : p.base === "oben" ? p.oT : 0;
     const holder = p.holder !== "keine";
     const zPostTop = H - railH - holderDrop(holder, post, p.holderGap);
     const members = [], plates = [], chains = [], drills = [];
     const P3 = (xy, z) => [xy[0], xy[1], z];
     const up = [0, 0, 1];
+    // Pfostenbefestigung oben (pfostenbefestigung.js): Fußplatte auf dem Boden oder auf einem Randprofil, dessen
+    // Oberseite auf z = 0 liegt (U/UPN offen nach außen = rechts der Lauflinie); Bohrbild geht ins Randprofil
+    const mount = p.base === "oben" ? mountConfig(p) : null, mounted = [];
+    let rand = null;
+    if (mount && p.mTarget === "profil") {
+      const sec = p.mProfile, d0 = norm2(sub2(pts[1], pts[0]));
+      const rot = orientRot(sec, [d0[0], d0[1], 0], up, { tall: up, open: [d0[1], -d0[0], 0], legs: [-d0[1], d0[0], -1], stem: [0, 0, -1] });
+      const zr = -rotExtent(sec, rot).high / 2, ext = mount.L / 2 + 20;
+      const rp = pts.map((q) => P3(q, zr));
+      const e0 = norm2(sub2(pts[0], pts[1])), e1 = norm2(sub2(pts[pts.length - 1], pts[pts.length - 2]));
+      rp[0] = P3([pts[0][0] + e0[0] * ext, pts[0][1] + e0[1] * ext], zr);
+      rp[rp.length - 1] = P3([pts[pts.length - 1][0] + e1[0] * ext, pts[pts.length - 1][1] + e1[1] * ext], zr);
+      chains.push({ section: sec, points: rp, name: "Randprofil", up, rot });
+      rand = rp.slice(1).map((b, k) => ({ name: "Randprofil", a: rp[k], b, section: sec, up, rot }));
+    }
     // Pfosten (Breite quer zur Lauflinie): Profil-u zeigt quer → Drehung so, dass Breite u ⟂ Lauf
     posts.forEach((q, i) => {
-      members.push({ section: post, a: P3(q.at, zBase), b: P3(q.at, zPostTop), name: `Pfosten ${i + 1}`, up: [q.d[0], q.d[1], 0] });
+      const top = P3(q.at, zPostTop), name = `Pfosten ${i + 1}`;
+      if (mount) {
+        const face = rand ? findMemberFace(rand, P3(q.at, 0), up) : planeFace([0, 0, 0], up, [q.d[0], q.d[1], 0], "Boden");
+        if (!face) throw fieldError(`${name}: kein Randprofil unter dem Pfosten`, "mTarget");
+        const r = topMount(mount, { name, post, top, along: [q.d[0], q.d[1], 0], face, plateName: `Fußplatte ${i + 1}` });
+        members.push({ section: post, a: r.a, b: top, name, up: [q.d[0], q.d[1], 0], ...(r.cuts ? { cuts: r.cuts } : {}) });
+        plates.push(r.plate); drills.push(...r.drills); issues.push(...r.issues); mounted.push(r);
+      } else members.push({ section: post, a: P3(q.at, zBase), b: top, name, up: [q.d[0], q.d[1], 0] });
       if (holder) {
         const hp = holderParts({ q: P3(q.at, zPostTop), along: q.d, axisZ: H - railH / 2, post, railH, d: p.holderD, name: `Pfosten ${i + 1}`, target: "Handlauf" });
         members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
@@ -244,12 +270,13 @@ export const GELAENDER = {
         }
       });
     }
+    issues.push(...mountCollisions(mounted, { members, plates }));
     // Geländernorm: Höhe, Öffnungen, Abstand zum Boden nach Nutzung (gelaendernorm.js)
     const bottomEdge = p.bottom ? zBot - beltExt([1, 0], [0, 0, 1]).high / 2 : ["blech", "glas", "rahmen"].includes(p.fill) ? fillLo + p.panelGap : 0;
     const gapKey = ["staketen", "quer", "rahmen"].includes(p.fill) ? "gapMax" : ["blech", "glas"].includes(p.fill) ? "panelGap" : p.fill === "kreuz" ? (p.ring ? "ringD" : "fill") : "fill";
     issues.push(...railingIssues({ use: p.use, fall: p.fall, height: H, fill: p.fill, gap: gapMaxSeen, bottom: bottomEdge, open: fillHi - fillLo, rail }, { height: "height", fill: "fill", gap: gapKey, bottom: p.bottom ? "bottomZ" : "fill", rail: "rail", use: "use" }));
     const total = runs.reduce((a, b) => a + b, 0);
-    const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "");
+    const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, "Fußplatten")}` : "");
     return { chains, members, plates, drills, info, issues, sections: SEC };
   },
 

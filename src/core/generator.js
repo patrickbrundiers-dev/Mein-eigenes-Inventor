@@ -11,7 +11,7 @@
 //   type "list"    Zahlenliste, z. B. Längen "3000; 1500"
 // Bauplan: { chains: [{ section, points, name, up?, rot? }], – zusammenhängende Stäbe mit Gehrung an den Ecken
 //            members: [{ section, a, b, name, up?, rot? }], – einzelne Stäbe, Enden gerade
-//            plates: [{ center, xDir, normal, W, H, t, holes?, slots? ([x, y, Länge] entlang xDir), d?, r?, poly?, name }], – Platten (Mitte der Unterseite;
+//            plates: [{ center, xDir, normal, W, H, t, holes? ([x, y] oder [x, y, Ø]), slots? ([x, y, Länge] entlang xDir), d?, r?, poly?, name }], – Platten (Mitte der Unterseite;
 //              poly = Umriss [[x, y]…] in der Plattenebene statt Rechteck W × H)
 //            norms?: [{ kind, size, length?, grade?, pos, dir, name? } | { bolt: true, size, clamp, pos, dir, grade? }],
 //              – Normteile bzw. Verschraubungen (Schraube, Scheiben, Mutter; Klemmpaket ab pos in Richtung dir)
