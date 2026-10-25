@@ -2,7 +2,7 @@
 import { settingsCenter } from "./settings.js";
 import { h, icon, toast, modal, fmtNum, confirmDialog } from "./dom.js";
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
-import { SECTION_KINDS, fieldLabel, CATALOG, catalogToDims, profileId, sectionGeometry, kgPerMeter, MATERIALS, THREADS, CLEARANCE } from "../core/sections.js";
+import { SECTION_KINDS, fieldLabel, CATALOG, catalogToDims, profileId, sectionGeometry, kgPerMeter, THREADS, CLEARANCE } from "../core/sections.js";
 import { profileMatches, resolveProfile } from "../core/profilesearch.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
@@ -17,6 +17,7 @@ import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
+import { materialOf, materialList } from "../core/materials.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
 import { splineLength, splineDegree } from "../core/spline.js";
 
@@ -73,6 +74,19 @@ export class Props {
     sel.value = value ?? options[0]?.[0];
     sel.addEventListener("change", () => onChange(sel.value));
     return this.field(label, sel);
+  }
+  /** Werkstoffauswahl: eingebaute und eigene in Gruppen; unbekannter Schlüssel mit Warnung */
+  materialSelect(part) {
+    const app = this.app, mat = materialOf(part.material), all = materialList();
+    const opt = (m) => h("option", { value: m.key }, m.label + (m.source === "project" ? " (aus Projektdatei)" : ""));
+    const groups = [["builtin", "Eingebaut"], ["user", "Eigene"], ["project", "Nur in dieser Datei"]]
+      .map(([src, label]) => [label, all.filter((m) => m.source === src)]).filter(([, l]) => l.length);
+    const sel = h("select", { class: "inp" }, ...groups.map(([label, list]) => h("optgroup", { label }, ...list.map(opt))));
+    sel.value = mat.key;
+    sel.addEventListener("change", () => app.edit("Werkstoff", () => { part.material = sel.value; }));
+    const warn = part.material && mat.source === "fallback"
+      ? h("div", { class: "msg warn" }, `Werkstoff »${part.material}« ist unbekannt – gerechnet wird mit ${mat.label}.`) : null;
+    return h("div", {}, this.field("Werkstoff", sel), warn);
   }
   seg(label, options, value, onChange) {
     const wrap = h("div", { class: "seg" }, ...options.map(([v, l]) => h("button", { class: v === value ? "on" : "", onclick: () => v !== value && onChange(v), title: l }, l)));
@@ -169,13 +183,13 @@ export class Props {
       this.text("Name", part.name, (v) => app.edit("Name", () => { part.name = v; }, { rebuild: false })),
       this.text("Teilenummer", part.number, (v) => app.edit("Nummer", () => { part.number = v; }, { rebuild: false })),
       this.text("Beschreibung", part.description, (v) => app.edit("Beschreibung", () => { part.description = v; }, { rebuild: false }), { area: true }),
-      this.select("Werkstoff", Object.entries(MATERIALS).map(([k, m]) => [k, m.label]), part.material, (v) => app.edit("Werkstoff", () => { part.material = v; })),
+      this.materialSelect(part),
       this.field("Farbe", h("div", { style: { display: "flex", gap: "6px" } },
         h("input", { type: "color", value: app.partColor(part), onchange: (e) => app.edit("Farbe", () => { part.color = e.target.value; }) }),
         part.color ? h("button", { class: "btn", onclick: () => app.edit("Farbe", () => { part.color = null; }) }, "Wie Werkstoff") : null))));
     if (r) {
       const vol = r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0);
-      const dens = MATERIALS[part.material]?.density || 7.85;
+      const dens = materialOf(part.material).density;
       const bb = unionBox(r.bodies.map((b) => b.props?.bbox).filter(Boolean));
       out.push(this.section("Masse-Eigenschaften", h("dl", { class: "kv" },
         h("dt", {}, "Volumen"), h("dd", {}, fmtNum(vol / 1000, 2) + " cm³"),
@@ -565,7 +579,7 @@ export class Props {
       const d = Object.fromEntries(Object.entries(f.dims || {}).map(([k, v]) => [k, evaluate(String(v), scope)]));
       const area = sectionGeometry(f.section || "vierkant", d).area;
       const part = this.app.activeDoc();
-      const mat = MATERIALS[part?.material] || MATERIALS.S235;
+      const mat = materialOf(part?.material);
       return h("dl", { class: "kv" },
         h("dt", {}, "Fläche A"), h("dd", {}, fmtNum(area, 1) + " mm²"),
         h("dt", {}, "Metergewicht"), h("dd", { title: mat.label }, fmtNum(kgPerMeter(area, mat.density), 2) + " kg/m"));
@@ -1064,8 +1078,8 @@ export function bomRows(app, asm) {
     if (!p) continue;
     const r = app.results.get(p.id);
     const vol = r ? r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0) : NaN;
-    const mass = (vol * (MATERIALS[p.material]?.density || 7.85)) / 1e6;
-    const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: MATERIALS[p.material]?.label || p.material, qty: 0, mass };
+    const mass = (vol * materialOf(p.material).density) / 1e6;
+    const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: p.material ? materialOf(p.material).label : "", qty: 0, mass };
     row.qty++;
     map.set(p.id, row);
   }

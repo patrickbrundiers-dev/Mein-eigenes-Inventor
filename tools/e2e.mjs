@@ -934,6 +934,8 @@ try {
     await page.locator("#ribbon button", { hasText: /^Rechteckmuster$/ }).click();
     let [cx, cy] = await at(0, 60);
     await page.mouse.click(cx, cy);
+    // der Dialog setzt den Fokus 20 ms nach dem Öffnen auf das erste Feld – erst danach tippen
+    await page.waitForFunction(() => document.activeElement?.dataset?.k === "nx");
     await page.locator(".dialog input[data-k=nx]").fill("3");
     await page.locator(".dialog input[data-k=a]").fill("20");
     await page.locator(".dialog input[data-k=ny]").fill("2");
@@ -945,6 +947,8 @@ try {
     await page.locator("#ribbon button", { hasText: /^Kreismuster$/ }).click();
     [cx, cy] = await at(0, 0);
     await page.mouse.click(cx, cy);
+    // der Dialog setzt den Fokus 20 ms nach dem Öffnen auf das erste Feld – erst danach tippen
+    await page.waitForFunction(() => document.activeElement?.dataset?.k === "n");
     await page.locator(".dialog input[data-k=n]").fill("4");
     await page.locator(".dialog footer .btn", { hasText: "Muster erzeugen" }).click();
     await page.waitForTimeout(300);
@@ -1253,6 +1257,50 @@ try {
     const undone = await evalApp(() => window.__werkcad.sketcher.sk.constraints.length);
     await page.keyboard.press("Escape");
     step("Skizze vollständig bemaßen", after.ok && after.dof === 0 && after.n - n0 === 7 && undone === n0 && /7 Maß/.test(hint), JSON.stringify({ n0, hint, after, undone }));
+  }
+
+  // Eigene Werkstoffe: Cortenstahl 7,87 anlegen, dem Rahmen zuweisen, Masse und Zuschnittliste rechnen damit
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    const before = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(); return { mat: d.material, mass: document.querySelector("#status")?.textContent.match(/Masse ([\d.,]+)/)?.[1] }; });
+    await page.locator("#ribbon .rb-file").click();
+    await page.locator(".file-menu button", { hasText: "Einstellungen" }).click();
+    await page.locator(".set-cat", { hasText: "Materialien" }).click();
+    await page.locator(".mat-editor button", { hasText: "Werkstoff anlegen" }).click();
+    const form = page.locator(".dialog .mat-form");
+    await form.locator('input[aria-label="Name"]').fill("Cortenstahl");
+    await form.locator('input[aria-label="Kürzel"]').fill("CORTEN");
+    await form.locator('input[aria-label="Dichte"]').fill("0");
+    await page.locator(".dialog footer .btn", { hasText: "Übernehmen" }).click();
+    const err = await form.locator(".set-err").textContent();
+    await form.locator('input[aria-label="Dichte"]').fill("7,87");
+    await page.locator(".dialog footer .btn", { hasText: "Übernehmen" }).click();
+    await page.locator('.mat-editor tr[data-key="CORTEN"]').waitFor();
+    await shot("26g-werkstoffe");
+    await page.locator(".dialog footer .btn", { hasText: "Schließen" }).click();
+    const sel = page.locator("#props .field", { hasText: "Werkstoff" }).locator("select");
+    await sel.selectOption("CORTEN");
+    await idle();
+    await page.waitForTimeout(300);
+    const after = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc();
+      const cut = [...document.querySelectorAll("#props table.grid tbody tr")].map((r) => r.textContent);
+      a.embedMaterials();
+      return { mat: d.material, dens: [...document.querySelectorAll("#props dl.kv dd")].map((x) => x.textContent).find((t) => /g\/cm³/.test(t)), mass: document.querySelector("#status")?.textContent.match(/Masse ([\d.,]+)/)?.[1], embedded: a.project.materials, groups: [...document.querySelectorAll("#props select optgroup")].map((g) => g.label), cut: cut.length };
+    });
+    // Löschen gesperrt, solange benutzt
+    await page.locator("#ribbon .rb-file").click();
+    await page.locator(".file-menu button", { hasText: "Einstellungen" }).click();
+    await page.locator(".set-cat", { hasText: "Materialien" }).click();
+    const delDisabled = await page.locator('.mat-editor tr[data-key="CORTEN"] button', { hasText: "Löschen" }).isDisabled();
+    await page.locator(".dialog footer .btn", { hasText: "Schließen" }).click();
+    await evalApp(() => { const a = window.__werkcad; a.undo(); delete a.project.materials; a.prefs.reset(["material.eigene"]); });
+    await idle();
+    const num = (t) => Number(String(t).replace(/\./g, "").replace(",", "."));
+    step("Eigene Werkstoffe", /Dichte/.test(err) && after.mat === "CORTEN" && /7,87/.test(after.dens) && Math.abs(num(after.mass) / num(before.mass) - 7.87 / 7.85) < 0.002 &&
+      after.embedded?.[0]?.key === "CORTEN" && after.groups.join() === "Eingebaut,Eigene" && delDisabled,
+      JSON.stringify({ err, before, after, delDisabled }));
   }
 
   // Panels: Eigenschaften nach links andocken, Breite am Rand ziehen, gespeichert, zurücksetzen

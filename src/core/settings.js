@@ -1,4 +1,5 @@
 import { DEFAULT_LAYOUT, validateLayout } from "./layout.js";
+import { validateMaterialLib } from "./materials.js";
 import { validateKeymap, commandDef } from "./commands.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
@@ -18,11 +19,11 @@ export const SETTINGS_VERSION = 1;
 export const CATEGORIES = [
   { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standardordner", "Standard-Einheit (intern immer mm/Grad)"] },
   { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["Beleuchtung", "gespeicherte Ansichten"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
-  { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["automatische Bemaßung", "Standardebene"] },
-  { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", planned: ["Menüband selbst anordnen", "letzte Werkzeugparameter über die Sitzung hinaus merken"], note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
+  { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["Standardebene"] },
+  { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", planned: ["Menüband selbst anordnen"], note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
   { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Tooltip-Verzögerung"] },
   { id: "dokument", label: "Dokument und Modell", status: "geplant", planned: ["Standardvorlagen", "Namensregeln", "Standardmaterial", "Modelltoleranz"], note: "Dokumentwerte werden später in der Projektdatei gespeichert, nicht hier." },
-  { id: "material", label: "Materialien", status: "teilweise", planned: ["eigene Werkstoffe", "Import/Export der Bibliothek"], note: "Die eingebaute Werkstoffliste (Dichte für Masse und Zuschnittliste) ist fest; siehe unten." },
+  { id: "material", label: "Materialien", status: "aktiv", note: "Eigene Werkstoffe gelten für Masse, Trägheit, Zuschnittliste und Zeichnung. Benutzte eigene Werkstoffe werden als Kopie in der Projektdatei gespeichert, damit sie auf anderen Rechnern stimmen." },
   { id: "kernel", label: "CAD-Kernel und Leistung", status: "geplant", planned: ["automatische Neuberechnung aus", "Berechnungsprotokoll/Debug-Modus"], note: "Kernel-Toleranzen werden nicht freigegeben, solange sie nicht abgesichert sind." },
   { id: "dateien", label: "Dateien und Datensicherheit", status: "teilweise", planned: ["Anzahl Sicherungen", "Projekt paketieren", "schreibgeschützter Modus"], note: "Speichern ist immer atomar mit einer Sicherung (.bak) der vorherigen Fassung." },
   { id: "blech", label: "Blechparameter", status: "geplant", planned: ["Biegetabellen", "K-Faktor je Material"], note: "Keine allgemeine Blechfunktion (ADR-0002); Biegewerte des Knickrahmens stehen im Feature." },
@@ -97,6 +98,7 @@ export const SETTINGS = [
   { key: "fertigung.knickWand", cat: "fertigung", label: "Knickrahmen: Wand höchstens", unit: "mm", type: "number", default: 4, min: 0, max: 30, help: "Dickere Wände lassen sich schwer von Hand knicken (Hinweis). 0 = nicht prüfen." },
 
   { key: "darstellung.schema", cat: "darstellung", label: "Farbschema", type: "enum", default: "hell", options: [{ value: "hell", label: "Hell" }, { value: "dunkel", label: "Dunkel" }, { value: "system", label: "Wie Windows" }], help: "Gilt für Menüband, Panels, Dialoge und den 3D-Hintergrund. Zeichnungsblätter bleiben weiß." },
+  { key: "material.eigene", cat: "material", label: "Eigene Werkstoffe", type: "materials", default: [], custom: true },
   { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },
   { key: "darstellung.skalierung", cat: "darstellung", label: "Oberflächengröße", unit: "%", type: "enum", default: 100, options: [80, 90, 100, 110, 125, 150].map((v) => ({ value: v, label: v + " %" })), help: "Nur in der Desktop-Version; im Browser die Zoomfunktion des Browsers verwenden." },
@@ -143,6 +145,8 @@ export function validateValue(def, v) {
     }
     case "layout":
       return validateLayout(v);
+    case "materials":
+      return validateMaterialLib(v);
     case "toolmemo": { // {werkzeug: Text | {feld: Text}} – nur bekannte Werkzeuge, kurze Texte
       if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: "Werkzeugwerte erwartet" };
       const out = {};

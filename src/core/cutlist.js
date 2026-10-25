@@ -1,6 +1,7 @@
 // Zuschnittliste: Profil-Zuschnitte gruppieren, Enden beschreiben, CSV für die Rohrlaser-Kalkulation.
 // Rein fachlich (ohne Oberfläche), damit die Regeln getestet und offengelegt werden können.
-import { MATERIALS, kgPerMeter } from "./sections.js";
+import { kgPerMeter } from "./sections.js";
+import { materialOf } from "./materials.js";
 import { fmt as fmtNum } from "./expr.js";
 
 /** Verwendete Regeln – stehen im Zuschnittlisten-Dialog und in docs/ */
@@ -26,8 +27,8 @@ export function cutListRows(sources) {
       const pid = m.profileId || m.section;
       const parts2 = twoPlaneParts(m.miterParts);
       const key = [pid, L, ends.join("/"), parts2 ? JSON.stringify(parts2) : "", m.coped ? "A" : "", m.butt ? "S" : "", m.cutSig || "", m.endCuts ? m.endCuts.A + m.endCuts.B : "", m.bends ? JSON.stringify(m.bends.map((b) => [b.straight, b.rotation, b.angle].map((x) => Math.round(x * 10) / 10))) : "", part.material].join("|");
-      const dens = MATERIALS[part.material]?.density || 7.85;
-      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, miterParts: parts2, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, d3: !!m.endCuts && (m.endCuts.A === "3D" || m.endCuts.B === "3D"), contours: m.contours && m.tube ? { items: m.contours, prof: m.tube } : null, bent: m.bends ? { count: m.bends.length, radius: m.bendRadius } : null, knick: m.knicks ? { legs: m.legs || [], inPlane: m.inPlane, wall: m.wall } : null, qty: 0, kgm: kgPerMeter(m.area, dens), mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
+      const mat = materialOf(part.material), dens = mat.density;
+      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, miterParts: parts2, coped: !!m.coped, butt: !!m.butt, material: mat.label, d3: !!m.endCuts && (m.endCuts.A === "3D" || m.endCuts.B === "3D"), contours: m.contours && m.tube ? { items: m.contours, prof: m.tube } : null, bent: m.bends ? { count: m.bends.length, radius: m.bendRadius } : null, knick: m.knicks ? { legs: m.legs || [], inPlane: m.inPlane, wall: m.wall } : null, qty: 0, kgm: kgPerMeter(m.area, dens), mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
       row.qty += qty;
       row.parts.add(part.name);
       map.set(key, row);

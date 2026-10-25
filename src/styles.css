@@ -410,3 +410,9 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .massbild .mb-dot { fill: var(--ink-soft, #4a5866); }
 .pz-point { border-bottom: 1px solid var(--steel-2); padding-bottom: 4px; margin-bottom: 4px; }
 .pz-point .pz-opts { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin: 2px 0; }
+
+/* Werkstoffbibliothek */
+.mat-editor .btn-row { margin-bottom: 8px; }
+.mat-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--steel-3); margin-right: 6px; vertical-align: -2px; }
+.mat-actions { text-align: right; white-space: nowrap; }
+.mat-actions .btn { padding: 1px 6px; font-size: 11px; margin-left: 4px; }
