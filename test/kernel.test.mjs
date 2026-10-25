@@ -124,6 +124,24 @@ test("Rahmen aus Skizze: Gehrung und Stumpf", async () => {
   assert.ok(L2 <= 300 + 1e-3 && L2 > 300 - 21.3, "Abzweig " + L2); // gleiche Rohre: Sattelspitzen reichen bis zur Achse
 });
 
+test("Bohrungsachsen für die Bohrungstabelle: nur innere Zylinderflächen", async () => {
+  // Platte mit Bohrung Ø10 und aufgesetztem Zapfen Ø20 (außen): nur die Bohrung zählt
+  const res = await K.buildPart(part([
+    rectSketchFeature("s1", "XY", 0, 0, 0, "100", "40"),
+    { id: "e1", type: "extrude", sketch: "s1", distance: "10" },
+    pointSketch("s2", "XY", 10, [[20, 20]]),
+    { id: "h1", type: "hole", sketch: "s2", diameter: "10", extent: "through" },
+    { id: "s3", type: "sketch", name: "z", plane: { ref: "XY" }, offset: "10", points: [{ id: "c", x: 70, y: 20 }], entities: [{ id: "k", type: "circle", c: "c", r: 10 }], constraints: [] },
+    { id: "e2", type: "extrude", sketch: "s3", distance: "15" },
+  ]));
+  okAll(res);
+  const holes = res.bodies.flatMap((b) => K.bodyProps(b.shape).holes);
+  assert.equal(holes.length, 1, JSON.stringify(holes));
+  near(holes[0].r, 5, 1e-6);
+  near(holes[0].p[0], 20, 1e-6); near(holes[0].p[1], 20, 1e-6);
+  near(Math.abs(holes[0].d[2]), 1, 1e-9);
+});
+
 test("Muster, Spiegeln, Fase an Kante, Wandung", async () => {
   const base = [
     rectSketchFeature("s1", "XY", 0, 0, 0, "100", "40"),

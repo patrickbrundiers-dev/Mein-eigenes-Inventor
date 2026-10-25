@@ -302,6 +302,76 @@ try {
   step("Detailansicht", det && det.letter === "Z" && det.scale >= det.parentScale * 2 - 1e-9 && det.lines > 0 && det.svg && det.dxf && !det.tool, JSON.stringify(det));
   await shot("15c-detail");
 
+  // Zeichnung I (Werkzeuge Stufe 33): Bohrungstabelle, Hinweis mit Bohrungsvorschlag, Änderungstabelle
+  const ht = await evalApp(async () => {
+    const a = window.__werkcad, dr = a.drawing, d = a.activeDoc();
+    const top = d.views.find((v) => v.type === "top");
+    dr.sel = { type: "view", id: top.id };
+    dr.addHoleTable();
+    const t = d.holeTables?.[0];
+    const rows = t ? dr.holeTableOf(d, t).rows : [];
+    const svg = dr.svg.outerHTML;
+    // Hinweis an der ersten Bohrung: Text wird aus dem Bohrungs-Feature vorgeschlagen
+    const c = (dr.proj.get(top.id).arcs || []).find((x) => x.full);
+    const [sx, sy] = dr.viewXf(top).to(c.cx + c.r, c.cy);
+    dr.setTool("leader");
+    dr.leaderClick(sx, sy);
+    return { rows: rows.length, tags: rows.map((r) => r.tag).join(), svg: svg.includes("data-holetable") && svg.includes(">Bohrung<") && svg.includes(">A1<") };
+  });
+  await page.waitForTimeout(200);
+  const sug = await page.locator("#modal-root .dialog input").first().inputValue();
+  await page.locator("#modal-root .dialog footer .btn", { hasText: "OK" }).click();
+  await evalApp(() => { const dr = window.__werkcad.drawing; dr.setTool(null); dr.addRevisionDialog(); });
+  await page.locator("#modal-root .dialog .field", { has: page.locator('label:text-is("Änderung")') }).locator("input").fill("Bohrungen auf Ø11");
+  await page.locator("#modal-root .dialog footer .btn", { hasText: "Eintragen" }).click();
+  Object.assign(ht, await evalApp(async () => {
+    const a = window.__werkcad, dr = a.drawing, d = a.activeDoc();
+    const orig = a.files.saveText;
+    let text = "";
+    a.files.saveText = async (t) => { text = t; };
+    try { await dr.exportDxf(); } finally { a.files.saveText = orig; }
+    const svg = dr.exportSvgString();
+    return { leader: d.leaders?.[0]?.text, rev: d.revisions?.map((r) => r.rev).join(), revSvg: svg.includes("Bohrungen auf Ø11") && svg.includes("data-revisions"), dxf: text.includes("A1") && text.includes("Bohrungen auf") && text.includes("11 durch") };
+  }));
+  ht.sug = sug;
+  step("Bohrungstabelle, Hinweis und Änderung", ht.rows === 4 && ht.tags === "A1,A2,A3,A4" && ht.svg && /^4× Ø11/.test(ht.sug) && ht.leader === ht.sug && ht.rev === "B" && ht.revSvg && ht.dxf, JSON.stringify(ht));
+  await shot("15d-bohrungstabelle");
+
+  // Hilfsansicht auf die Gehrung des Rohrs
+  await evalApp(() => window.__werkcad.newDrawing({ kind: "part", id: "beispiel_rohr" }));
+  await idle(120000);
+  await page.waitForTimeout(1000);
+  await idle(120000);
+  await evalApp(() => {
+    const dr = window.__werkcad.drawing, d = dr.doc;
+    // In der Vorderansicht erscheint die Gehrung (30°) als schräge Kante aus kurzen Stücken
+    const front = d.views.find((v) => v.type === "front");
+    let seg = null;
+    for (const pl of dr.proj.get(front.id).visible) for (let i = 1; i < pl.length && !seg; i++) {
+      const dx = pl[i][0] - pl[i - 1][0], dy = pl[i][1] - pl[i - 1][1], L = Math.hypot(dx, dy);
+      if (L > 2 && Math.abs(dx) / L < 0.99 && Math.abs(dy) / L < 0.99) seg = [pl[i - 1], pl[i]];
+    }
+    dr.sel = { type: "view", id: front.id };
+    dr.startAux();
+    const [sx, sy] = dr.viewXf(front).to((seg[0][0] + seg[1][0]) / 2, (seg[0][1] + seg[1][1]) / 2);
+    dr.auxClick(sx, sy);
+  });
+  await idle(120000);
+  await page.waitForTimeout(800);
+  const aux = await evalApp(() => {
+    const dr = window.__werkcad.drawing, d = dr.doc;
+    const v = d.views.find((x) => x.type === "aux");
+    const p = v && dr.proj.get(v.id);
+    const svg = dr.exportSvgString();
+    const par = d.views.find((x) => x.id === v?.parent), pc = par && dr.viewCam(d, par);
+    return v ? { letter: v.letter, vis: p?.visible.length || 0, err: p?.error, dirY: Math.round((v.dir[0] * pc.dir[0] + v.dir[1] * pc.dir[1] + v.dir[2] * pc.dir[2]) * 1000), tool: dr.tool, mark: (svg.match(new RegExp(`>${v.letter}<`, "g")) || []).length } : null;
+  });
+  step("Hilfsansicht", aux && aux.vis > 0 && !aux.err && aux.dirY === 0 && !aux.tool && aux.mark >= 2, JSON.stringify(aux));
+  await evalApp(() => window.__werkcad.drawing.fitSheet());
+  await shot("15e-hilfsansicht");
+  await evalApp(() => { const a = window.__werkcad, id = a.activeId; a.openDoc("beispiel_zeichnung"); a.project.docs = a.project.docs.filter((x) => x.id !== id); a.changed({ rebuild: false }); });
+  await idle(120000);
+
   // Exporte über den Kern
   const step3d = await evalApp(async () => { const a = window.__werkcad; const t = await a.kernel.call("exportStep", { items: [{ part: a.doc("beispiel_rahmen") }] }); return t.length; });
   step("STEP-Export", step3d > 1000, String(step3d));
@@ -1092,7 +1162,14 @@ try {
     const f1 = await evalApp(() => { const d = window.__werkcad.activeDoc(); return { n: d.features.length, type: d.features.at(-1).type }; });
     // Kürzel G für Rundung im Einstellungscenter, E (belegt) wird abgelehnt
     await page.keyboard.press("Control+,");
-    await page.locator(".set-search input").fill("tastatur");
+    // Suche wird neu gerendert; auf den Kürzel-Bereich warten, sonst Suche einmal wiederholen (CI-Abbruch #113)
+    for (let k = 0; k < 2; k++) {
+      await page.locator(".set-search input").fill(k ? "" : "tastatur");
+      if (k) await page.locator(".set-search input").fill("tastatur");
+      try { await page.locator(".km input[type=search]").waitFor({ state: "visible", timeout: 10000 }); break; } catch (e) {
+        if (k) throw new Error(`Kürzel-Bereich fehlt: ${await page.locator(".set-center").innerText().catch(() => "kein Dialog")}`.slice(0, 600));
+      }
+    }
     const row = page.locator('.km-row[data-cmd="part.fillet"] .km-key');
     // Liste wird bei jeder Eingabe neu gebaut; auf die Zeile warten, einmal neu filtern, falls sie fehlt (CI-Abbruch #94)
     for (let k = 0; k < 2; k++) {
