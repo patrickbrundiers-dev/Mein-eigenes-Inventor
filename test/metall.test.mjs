@@ -506,3 +506,29 @@ test("Treppengeländer: Pfostenabstand entlang des schrägen Handlaufs ≤ Höch
     assert.ok(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) <= 1200 + 1e-6, `Feld ${i}`);
   }
 });
+
+test("Schiebetor-Plan: Gegengewicht, Rollenböcke unter dem Schwanz, Teile getrennt (E8)", async () => {
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const f = g.defaultGenerator("schiebetor");
+  const plan = (patch) => g.GENERATORS.schiebetor.plan(g.resolveGenParams("schiebetor", { ...f.params, ...patch }, E));
+  const all = plan({});
+  assert.equal(all.geo.T, 1600, "Gegengewicht 40 % von 4000");
+  const beam = all.members.find((m) => m.name === "Flügel Laufprofil");
+  assert.deepEqual([beam.a[0], beam.b[0]], [-1600, 4000]);
+  const rb = all.plates.filter((p) => /^Rollenbock/.test(p.name));
+  assert.equal(rb.length, 2);
+  // offen (um die Durchfahrt nach −X verschoben) liegt der Flügel weiter auf beiden Rollenböcken
+  for (const x of [0, -4000]) assert.ok(rb.every((p) => p.center[0] - p.W / 2 >= beam.a[0] + x - 1e-6 && p.center[0] + p.W / 2 <= beam.b[0] + x + 1e-6), `Verschiebung ${x}`);
+  assert.ok(rb.every((p) => Math.abs(p.center[2] + p.t - 60) < 1e-9), "Oberkante Rollenbock = Unterkante Laufprofil");
+  const bars = all.members.filter((m) => /Flügel Stab/.test(m.name));
+  assert.ok(bars.length > 20 && bars.every((m) => m.a[0] > 0 && m.a[0] < 4000), "Staketen nur in der Durchfahrt");
+  const leaf = plan({ teil: "fluegel" }), fixed = plan({ teil: "fest" });
+  assert.ok(leaf.members.every((m) => m.name.startsWith("Flügel")) && leaf.plates.length === 0);
+  assert.deepEqual(fixed.members.map((m) => m.name).sort(), ["Fangpfosten", "Führungspfosten"]);
+  assert.equal(leaf.members.length + fixed.members.length, all.members.length);
+  assert.throws(() => plan({ tail: "300" }), /Gegengewicht zu kurz/);
+  assert.ok(plan({ tail: "1000" }).issues.some((i) => /35 %/.test(i.message)));
+  const q = plan({ fill: "quer" });
+  assert.ok(q.members.some((m) => /Querstab/.test(m.name)));
+});

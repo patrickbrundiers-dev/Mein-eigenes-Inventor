@@ -157,6 +157,20 @@ test("Kinematik: Drehgelenk, Winkelbereich, Mitläufer, Explosion (MegaCAD-Abgle
   assert.notDeepEqual(same.get("a"), same.get("b"), "gleiche Mitten werden aufgefächert");
 });
 
+test("Kinematik: Schiebegelenk verschiebt entlang der Richtung in mm (E8)", async () => {
+  const { defaultJoint, setJointAngle, isSlide, jointUnit, jointLabel } = await import("../src/core/kinematik.js");
+  const j = defaultJoint([0, 0, 0], [-2, 0, 0], { min: 0, max: 4000, kind: "schiebe" });
+  assert.ok(isSlide(j) && jointUnit(j) === "mm" && jointLabel(j) === "Schiebegelenk");
+  assert.ok(!isSlide(defaultJoint()) && jointUnit(defaultJoint()) === "°");
+  const c = { pos: [100, 0, 0], rot: [0, 0, 30], joint: j }, g = { pos: [500, 0, 0], rot: [0, 0, 0] };
+  assert.equal(setJointAngle(c, 1500, [g]), 1500);
+  assert.deepEqual([c.pos.map((x) => Math.round(x)), Math.round(c.rot[2])], [[-1400, 0, 0], 30], "nur verschoben, nicht gedreht");
+  assert.deepEqual(g.pos.map((x) => Math.round(x)), [-1000, 0, 0], "Mitläufer mitverschoben");
+  assert.equal(setJointAngle(c, 9000), 4000, "auf den Weg begrenzt");
+  setJointAngle(c, 0);
+  assert.deepEqual(c.pos.map((x) => Math.round(x)), [100, 0, 0]);
+});
+
 test("Kinematik: Komponente mit Gelenk wird von Abhängigkeiten nicht verschoben (M23)", async () => {
   const { solveAssembly } = await import("../src/core/asmsolve.js");
   const faces = [{ type: "PLANE", normal: [1, 0, 0], point: [10, 0, 0] }, { type: "PLANE", normal: [-1, 0, 0], point: [0, 0, 0] }];

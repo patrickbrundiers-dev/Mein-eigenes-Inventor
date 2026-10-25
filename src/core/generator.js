@@ -21,12 +21,13 @@ import { catalogToDims, sectionGeometry, CATALOG } from "./sections.js";
 import { splitList } from "./expr.js";
 import { GELAENDER } from "./gelaender.js";
 import { TOR } from "./tor.js";
+import { SCHIEBETOR } from "./schiebetor.js";
 import { TREPPE } from "./treppe.js";
 import { SPINDEL } from "./spindel.js";
 import { BALKON } from "./balkon.js";
 import { WINDVERBAND, PFETTE, RAHMENECKE } from "./stahlbau.js";
 
-export const GENERATORS = { gelaender: GELAENDER, tor: TOR, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE };
+export const GENERATORS = { gelaender: GELAENDER, tor: TOR, schiebetor: SCHIEBETOR, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE };
 
 /** Neues Feature mit den Standardwerten des Generators */
 export function defaultGenerator(gen) {

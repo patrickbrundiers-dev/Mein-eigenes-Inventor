@@ -663,6 +663,26 @@ try {
   await idle(120000);
   const tor1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
   step("Tor-Generator", tor0.ok && tor0.n > 30 && /Doppeltor/.test(tor0.info) && tor1.ok && /Scheitel 2750 mm/.test(tor1.info), JSON.stringify({ tor0, tor1 }));
+  // Schiebetor (E8): Generator, dann als Baugruppe mit Schiebegelenk, Flügel per Regler öffnen, Bereich prüfen
+  await evalApp(() => window.__werkcad.newPart("Schiebetor"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Schiebetor$/ }).click();
+  await idle(120000);
+  const st0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), tiles: document.querySelectorAll("#props .tile").length, dims: document.querySelectorAll("#props svg.gsk .dim").length }; });
+  await page.locator("#props button", { hasText: "Als Baugruppe mit Schiebegelenk" }).click();
+  await idle(120000);
+  await evalApp(() => { const s = document.querySelector("#props input.joint-angle"); s.value = "2000"; s.dispatchEvent(new Event("input")); s.dispatchEvent(new Event("change")); });
+  await idle(120000);
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("front", { animate: false }); v.fit(); });
+  await shot("20g2-schiebetor-offen");
+  const st1 = await evalApp(async () => {
+    const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.joint);
+    const text = document.querySelector("#props")?.textContent || "";
+    const rows = await a.props.jointSweepCheck(c, { steps: 2, silent: true });
+    return { kind: asm.kind, comps: asm.components.length, slide: c.joint.kind, max: c.joint.max, pos: c.pos.map((x) => Math.round(x)), section: /Schiebegelenk/.test(text) && /mm/.test(text), sweep: rows?.map((r) => [r.angle, r.hits.length]) };
+  });
+  step("Schiebetor mit Schiebegelenk", st0.ok && st0.n > 30 && /Gegengewicht 1600/.test(st0.info) && st0.tiles >= 5 && st0.dims >= 4 && st1.kind === "assembly" && st1.comps === 2 && st1.slide === "schiebe" && st1.max === 4000 && st1.pos.join() === "-2000,0,0" && st1.section && st1.sweep?.every(([, n]) => n === 0), JSON.stringify({ st0, st1 }));
 
   // Treppen-Generator (MegaCAD-Abgleich M13): Wangentreppe, dann zwei Holme
   await evalApp(() => window.__werkcad.newPart("Treppe"));

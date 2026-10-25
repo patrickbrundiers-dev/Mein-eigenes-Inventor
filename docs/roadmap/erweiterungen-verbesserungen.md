@@ -36,7 +36,7 @@ zurückgestellt; umgesetzt sind V1, V2, E7 (#96) sowie V3, E3, E4 und E5.
 |---|---|---|---|---|---|
 | E7 ✓ | **Oberfläche und RAL-Farbe je Bauteil**: Feld Oberfläche (roh, verzinkt, pulverbeschichtet + RAL, verzinkt + pulver) in Bauteil/Generator; Fotodarstellung färbt danach, Stückliste nutzt es | Werkstoff ja, Oberfläche nein | Angebotsbilder in Kundenfarbe; Pulvern richtig kalkuliert | S | P0 |
 | E17 ✓ | **Treppe mit Geländer** (Patrick, 25.10.2026, wie MegaCAD): links, rechts oder beidseitig, ums Podest, Knieleisten oder Staketen mit Untergurt, Handlauf-Auslauf oben, Höhe über Stufenvorderkante; ältere Treppen bleiben ohne Geländer | Treppe ohne Geländer | Industrietreppe in einem Schritt | M | P1 |
-| E8 | **Schiebetor (freitragend)** mit Laufschiene, Rollenböcken, Gegengewichtsteil, Torfüllung aus dem Geländer-Baukasten; dazu **Schiebegelenk** in der Kinematik | Tor-Generator: Dreh-/Doppeltor; nur Drehgelenk | häufiger Auftrag, mit Bewegungsprüfung | M | P1 |
+| E8 ✓ | **Schiebetor (freitragend)** mit Laufschiene, Rollenböcken, Gegengewichtsteil, Torfüllung aus dem Geländer-Baukasten; dazu **Schiebegelenk** in der Kinematik | Tor-Generator: Dreh-/Doppeltor; nur Drehgelenk | häufiger Auftrag, mit Bewegungsprüfung | M | P1 |
 | E9 | **Zaun-Generator**: Zaunfelder in Reihe mit Pfosten, Gefälle/Stufung am Hang, Füllungen aus dem Geländer | Geländer über Eck, kein Gelände | Grundstückszäune schnell und mit Stückliste | M | P1 |
 | E10 | **Vordach/Carport-Generator**: Stützen, Binder, Pfetten mit Pfettenschuhen, Windverband – kombiniert die Stahlbau-Generatoren aus #88 | Einzelne Stahlbau-Generatoren | ganzes Vordach aus wenigen Maßen | M | P2 |
 | E11 | **Beschläge als Normteile**: Torbänder/Anschweißbänder, Schlosskasten, Bodenanschlag, Kugelkopf-Pfostenkappen | Schrauben/Muttern/Spannschloss | Tore und Geländer mit vollständiger Stückliste | S | P2 |
@@ -70,7 +70,7 @@ zurückgestellt; umgesetzt sind V1, V2, E7 (#96) sowie V3, E3, E4 und E5.
 | Block | Inhalt | Warum so |
 |---|---|---|
 | **F1 (P0)** | V1 ✓, V2 ✓, E7 ✓ (E1, E2 zurückgestellt) | zwei schnelle Fehlerbehebungen, dann Oberfläche |
-| **F2 (P1)** | E3 ✓, E4 ✓, E5 ✓, V3 ✓, V5, E8, E9 | Ausgabe für Werkstatt und Kunde, dann Bedienung, dann die zwei häufigsten neuen Generatoren |
+| **F2 (P1)** | E3 ✓, E4 ✓, E5 ✓, V3 ✓, V5, E8 ✓, E9 | Ausgabe für Werkstatt und Kunde, dann Bedienung, dann die zwei häufigsten neuen Generatoren |
 | **F3 (P2)** | E10, E11, E12, E13, E14, E15, V4, V6, V7, V8, V9, E6 | Ausbau nach Bedarf; Blech-Nesting zuletzt, weil am aufwendigsten |
 | **F4 (P3)** | E16 | nur bei konkretem Bedarf |
 

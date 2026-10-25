@@ -39,6 +39,7 @@ const P = {
   naht: '<path d="M3 20h18"/><path d="M3 20l9-9"/><path d="M6 17l3 3M9 14l3 3M12 11l3 3" stroke-width="1.4"/>',
   gelaender: '<path d="M3 21V7M12 21V7M21 21V7"/><path d="M2 6h20"/><path d="M6 9v10M9 9v10M15 9v10M18 9v10" stroke-width="1.2"/><path d="M3 19h18"/>',
   tor: '<path d="M3 21V5M21 21V5"/><path d="M5 20V9q3.5-3 7-3t7 3v11z"/><path d="M12 6v14M8.5 8v12M15.5 8v12" stroke-width="1.2"/>',
+  schiebetor: '<path d="M2 18h20"/><path d="M4 17V8h16v9"/><path d="M4 17l6-6M10 8v9M13 8v9M16 8v9" stroke-width="1.2"/><path d="M3 5h5M3 5l2-2M3 5l2 2"/>',
   treppe: '<path d="M3 21h4v-4h4v-4h4V9h4V5h2"/><path d="M3 17L19 3" stroke-width="1.2"/>',
   rahmenecke: '<path d="M5 21V5h4v16"/><path d="M9 7l12-3v4L9 11"/><path d="M9 4v9"/>',
   pfette: '<path d="M2 9h20v4H2z"/><path d="M6 13v6M18 13v6"/><path d="M4 19h4M16 19h4"/>',
