@@ -90,7 +90,7 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 | C Skizzen | teilweise | Rasterfang, Rasterweite, Fangradius, Symbole, automatische Bedingungen je Art, Bestimmtheit farbig (Stufe 16) |
 | D 3D-Ansicht | teilweise | Projektion, Darstellungsmodus, Qualität, Maus, Zoom/Drehen, Raster, ViewCube, Farben |
 | E Werkzeuge und Tastatur | teilweise | Kürzel verwalten, Konflikte, Werkzeugsuche, Schnellzugriff, Standardwerte je Werkzeug (Stufe 15), Menüband anordnen (Stufe 25) |
-| F Kernel | fehlt | bewusst: keine Toleranzen ohne Absicherung |
+| F Kernel | teilweise | Stufe 28: automatisches Neuberechnen abschaltbar (F5), Berechnungsprotokoll; bewusst keine Toleranzen ohne Absicherung |
 | G Materialien | ja | Stufe 24: eigene Werkstoffe (Name, Kürzel, Dichte, Farbe, Werkstoffnummer) anlegen, bearbeiten, duplizieren, löschen; Import/Export als JSON; benutzte eigene Werkstoffe als Kopie in der Projektdatei |
 | H Blech | fehlt | ADR-0002 |
 | I Rohrlaser/Maschinen | teilweise | Grenzen einer Maschine für die Fertigungsprüfung (`src/core/dfm.js`); mehrere Maschinenprofile eigenes Format (P3) |
@@ -134,3 +134,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 25 | Menüband selbst anordnen: Gruppen je Registerkarte aus-/einblenden und verschieben (Rechtsklick oder Einstellungscenter), „Beenden“ in der Skizze geschützt | Unit-Test `ribbonlayout.js`, Oberflächentest |
 | 26 | Dokument-Vorgaben: Namensregeln ({n}, {projekt}, {datum}, {quelle}), Sachnummer, Werkstoff neuer Bauteile, neues Projekt mit Bauteil/Baugruppe/leer | Unit-Test `naming.js`, Oberflächentest |
 | 27 | Dateien: Anzahl Sicherungen, schreibgeschützt öffnen, Projekt paketieren (verknüpfte Bauteile eingebettet) | Unit-Test Sicherungen/Paket, Desktop-Rauchtest, Oberflächentest |
+| 28 | Kernel: automatisches Neuberechnen abschaltbar, F5 »Neu berechnen«, Berechnungsprotokoll (Dauer, Features, Meldungen) | Unit-Test `buildlog.js`, Oberflächentest |

@@ -1428,6 +1428,28 @@ export class Props {
   }
   /** Einstellungscenter (src/ui/settings.js); Updates sind dort eine eigene Kategorie */
   settingsDialog(opts) { return settingsCenter(this.app, opts); }
+  /** Berechnungsprotokoll (Einstellung kernel.protokoll): letzte Neuaufbauten mit Dauer und Meldungen */
+  buildLogDialog() {
+    const app = this.app;
+    const on = app.prefs.get("kernel.protokoll");
+    const body = h("div", { class: "buildlog" });
+    const render = () => {
+      const list = app.buildLog.entries();
+      body.replaceChildren(
+        on ? null : h("p", { class: "msg warn" }, "Das Protokoll ist aus. Einschalten unter Einstellungen → CAD-Kernel und Leistung."),
+        list.length ? h("table", { class: "grid" }, h("thead", {}, h("tr", {}, ...["Zeit", "Bauteil", "Dauer", "Features", "Körper", "Meldungen"].map((t) => h("th", {}, t)))),
+          h("tbody", {}, ...list.map((e) => h("tr", { class: e.msgs.some((m) => m.kind === "Fehler") ? "err" : "" },
+            h("td", {}, new Date(e.time).toLocaleTimeString("de-DE")), h("td", {}, e.part), h("td", { class: "num" }, e.ms + " ms"),
+            h("td", { class: "num" }, String(e.features)), h("td", { class: "num" }, String(e.bodies)),
+            h("td", {}, ...e.msgs.map((m) => h("div", {}, `${m.kind} ${m.feature}: ${m.text}`)))))))
+          : h("p", { class: "hint" }, "Noch keine Berechnung protokolliert."));
+    };
+    render();
+    modal({ title: "Berechnungsprotokoll", width: 760, body, buttons: [
+      { label: "Leeren", run: () => { app.buildLog.clear(); render(); return false; } },
+      { label: "Kopieren", run: () => { navigator.clipboard?.writeText(app.buildLog.text()).then(() => toast("Protokoll kopiert", { kind: "ok" }), () => toast("Kopieren nicht möglich", { kind: "err" })); return false; } },
+      { label: "Schließen", primary: true }] });
+  }
   aboutDialog() {
     const v = window.werkcad?.version || "Entwicklerversion";
     modal({ title: "Über PBCAD", body: h("div", { style: { maxWidth: "52ch" } },
