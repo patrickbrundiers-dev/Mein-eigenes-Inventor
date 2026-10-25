@@ -3,7 +3,7 @@
 // Die Baugruppe hält die Einstellungen (asm.gestell, siehe src/core/gestell.js); jeder Stab ist ein Bauteil mit
 // Feature »genteil« (gen »gestell«), gleiche Stäbe teilen sich ein Bauteil (app.syncGenAssembly).
 import { h, toast, modal, fmtNum, downloadBlob } from "./dom.js";
-import { skeletonSegments, defaultGestell, addMember, removeMember, setJoint, gestellPlan, gestellCsv, JOINT_KINDS, GAP_KINDS, PLACES, CORNER_AUTO, TEE_AUTO } from "../core/gestell.js";
+import { skeletonSegments, defaultGestell, addMember, removeMember, setJoint, gestellPlan, gestellCsv, JOINT_KINDS, GAP_KINDS, PLACES, CORNER_AUTO, TEE_AUTO, STECK_FIELDS, steckOf } from "../core/gestell.js";
 import { planeFrame } from "../core/geom.js";
 import { resolvePlane } from "../core/datums.js";
 import { resolveParams, evaluate } from "../core/expr.js";
@@ -136,6 +136,10 @@ export function gestellSections(P, asm) {
     P.seg("T-Stöße", TEE_AUTO, g.tee || "stutzen", (v) => upd("T-Stöße", (G) => { G.tee = v; })),
     P.expr("Spalt", String(g.gap ?? 0), (v) => { try { const x = gapOf(v, P.scope()); upd("Spalt", (G) => { if (x) G.gap = x; else delete G.gap; }); } catch (e) { toast(e.message, { kind: "err" }); } }, { allowNeg: false }),
     h("p", { class: "hint" }, "Spalt zwischen den Stäben bei Gehrung, Eckverbindung und Stutzen – gilt für die Automatik und die Werkzeuge im Menüband."),
+    g.tee === "stecken" || g.joints.some((j) => j.kind === "stecken") ? h("div", {},
+      h("h4", {}, "Stecknasen"),
+      ...STECK_FIELDS.map(([k, label]) => P.expr(label, String(steckOf(g.steck)[k]), (v) => upd("Stecknasen", (G) => { G.steck = { ...steckOf(G.steck), [k]: Number(evaluate(v, {})) || 0 }; }), { unit: k === "count" ? "" : "mm", allowNeg: false })),
+      h("p", { class: "hint" }, "Zapfen sitzen an den Wänden des stoßenden Stabs, deren Kante längs zum durchlaufenden Stab liegt; Schlitze = Zapfen + 2 × Spiel, nur im ebenen Teil der Wand (nicht im Eckradius). Zapfenlänge = Wand des durchlaufenden Stabs + Überstand.")) : null,
     ...plan.issues.map((x) => h("div", { class: "msg warn" }, x.message)),
     free.length ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => upd("Stäbe einfügen", (G) => { for (const s of free) addMember(G, s.id); }) }, `${free.length} Linie(n) ohne Stab einfügen`)) : null,
     h("div", { class: "btn-row" },
