@@ -119,3 +119,21 @@ export function kantteilFlatDxf(DxfWriter, plan, L, { name = "", t = 0 } = {}) {
 }
 
 const fmt = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
+
+/**
+ * Abwicklungsansicht für die Zeichnung: Kontur Lf × L (Ansichtskoordinaten, u längs der Abwicklung) und je Biegung
+ * Lage, Winkel, Richtung, Innenradius und wirksamer K-Faktor (Biegenotiz und Biegetabelle wie Inventor).
+ */
+export function kantteilFlatView(plan, L, { t, k, kOf = null }) {
+  const Lf = plan.flat;
+  const bends = plan.bends.map((b, i) => ({ nr: i + 1, x: plan.bendLines[i], angle: Math.abs(b.angle), up: b.sgn > 0, ri: b.rm - t / 2, k: kOf ? kOf(Math.abs(b.angle)) : k }));
+  return { visible: [[[0, 0], [Lf, 0], [Lf, L], [0, L], [0, 0]]], hidden: [], arcs: [], bbox: { x0: 0, y0: 0, x1: Lf, y1: L }, bends, flat: Lf, length: L };
+}
+
+/** Biegenotiz an der Biegelinie, z. B. „1: 90° auf R2“ */
+export const bendNote = (b) => `${b.nr}: ${fmt(b.angle)}° ${b.up ? "auf" : "ab"} R${fmt(b.ri)}`;
+
+/** Zellen der Biegetabelle (Kopf + Zeilen): Nr., Winkel, Richtung, Innenradius, K, Lage ab linkem Rand */
+export function bendTableCells(bends) {
+  return [["Nr.", "Winkel", "Richtung", "Ri", "K", "Lage"], ...bends.map((b) => [String(b.nr), fmt(b.angle) + "°", b.up ? "auf" : "ab", fmt(b.ri), String(Math.round(b.k * 1000) / 1000).replace(".", ","), fmt(b.x)])];
+}

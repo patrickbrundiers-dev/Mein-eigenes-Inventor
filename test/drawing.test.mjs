@@ -459,3 +459,47 @@ test("Hinweise: Bohrung, Fase oder frei; Änderungsindex", async () => {
   assert.equal(currentRevision({ title: { revision: "A" } }), "A");
   assert.equal(currentRevision({ title: { revision: "A" }, revisions: [{ rev: "B" }, { rev: "C" }] }), "C");
 });
+
+test("Abwicklungsansicht: Kontur, Biegelinien, Biegenotiz und Biegetabelle", async () => {
+  const { planKantteil, kantteilFlatView, bendNote, bendTableCells } = await import("../src/core/blech.js");
+  const plan = planKantteil({ legs: [40, 100, 40], angles: [90, -90], t: 2, ri: 2, k: 0.33 });
+  const v = kantteilFlatView(plan, 500, { t: 2, k: 0.33, kOf: (a) => (a > 45 ? 0.4 : 0.3) });
+  near(v.bbox.x1, plan.flat, 1e-9);
+  assert.equal(v.bbox.y1, 500);
+  assert.equal(v.visible[0].length, 5);
+  assert.deepEqual(v.bends.map((b) => [b.nr, b.up, b.ri, b.k]), [[1, true, 2, 0.4], [2, false, 2, 0.4]]);
+  assert.equal(bendNote(v.bends[1]), "2: 90° ab R2");
+  const cells = bendTableCells(v.bends);
+  assert.deepEqual(cells[0], ["Nr.", "Winkel", "Richtung", "Ri", "K", "Lage"]);
+  assert.deepEqual(cells[1].slice(0, 5), ["1", "90°", "auf", "2", "0,4"]);
+});
+
+test("Symbole: Oberfläche, Form- und Lagetoleranz, Bezug", async () => {
+  const S = await import("../src/core/symbole.js");
+  assert.equal(S.validateSurface({ kind: "spanend", text: " Ra 3,2 " }).value.text, "Ra 3,2");
+  assert.equal(S.validateSurface({ kind: "x" }).ok, false);
+  const s0 = S.surfaceSymbol("beliebig", 10, 50, "");
+  const s1 = S.surfaceSymbol("spanend", 10, 50, "Ra 3,2");
+  const s2 = S.surfaceSymbol("ohne", 10, 50, "Rz 25");
+  assert.equal(s0.lines.length, 2);
+  assert.equal(s1.lines.length, 4, "Schenkel, Bezugslinie, Querstrich");
+  assert.equal(s2.circles.length, 1);
+  assert.deepEqual(s1.lines[0].slice(2), [10, 50], "Wurzel im Punkt");
+  assert.equal(S.validateGdt({ sym: "ebenheit", tol: "0,05" }).ok, true);
+  assert.match(S.validateGdt({ sym: "ebenheit", tol: "0,05", datums: "A" }).error, /keinen Bezug/);
+  assert.match(S.validateGdt({ sym: "parallelitaet", tol: "0,1" }).error, /braucht einen Bezug/);
+  assert.deepEqual(S.validateGdt({ sym: "position", tol: "0,2", dia: true, datums: "a b-c" }).value, { sym: "position", tol: 0.2, dia: true, datums: ["A", "B-C"] });
+  assert.equal(S.validateGdt({ sym: "position", tol: "0" }).ok, false);
+  assert.equal(S.validateGdt({ sym: "position", tol: 0.1, datums: "A B C D" }).ok, false);
+  for (const k of S.GDT_KINDS) { const g = S.gdtGlyph(k.value, 0, 0); assert.ok(g.lines.length + g.circles.length + g.polys.length > 0, k.value); }
+  const f = S.gdtFrame({ sym: "position", tol: 0.2, dia: true, datums: ["A", "B"] }, 20, 20, [10, 60]);
+  assert.equal(f.texts.map((t) => t.text).join(), "Ø0,2,A,B");
+  assert.equal(f.height, 7);
+  assert.ok(f.width >= 28);
+  assert.equal(f.polys.at(-1).pts[0].join(), "10,60", "Pfeil am Element");
+  assert.equal(S.validateDatumLetter("b").value, "B");
+  assert.equal(S.validateDatumLetter("O").ok, false);
+  const d = S.datumSymbol("A", [50, 50], [50, 38]);
+  assert.equal(d.polys[0].pts[2].join(), "50,50");
+  assert.equal(d.texts[0].text, "A");
+});

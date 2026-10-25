@@ -16,6 +16,9 @@ import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
 import { bomRows } from "./props.js";
 import { evaluate, resolveParams } from "../core/expr.js";
+import { planKantteil, kantteilFlatView, bendNote, bendTableCells, splitList } from "../core/blech.js";
+import { bendRule } from "../core/bendtable.js";
+import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
 import { holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
@@ -93,7 +96,8 @@ export class DrawingEditor {
       if (d.pendingAutoDims) { delete d.pendingAutoDims; this.autoDims({ silent: true }); }
       return;
     }
-    const views = d.views.filter((v) => v.type !== "detail").map((v) => { const c = this.viewCam(d, v); return { key: v.id, dir: c.dir, up: c.up, cut: c.cut, hidden: v.hidden !== false && v.type !== "iso" }; });
+    this.deriveFlats(d);
+    const views = d.views.filter((v) => v.type !== "detail" && v.type !== "flat").map((v) => { const c = this.viewCam(d, v); return { key: v.id, dir: c.dir, up: c.up, cut: c.cut, hidden: v.hidden !== false && v.type !== "iso" }; });
     if (!views.length) { this.render(); return; }
     this.loading = true;
     this.render();
@@ -101,6 +105,7 @@ export class DrawingEditor {
       const res = await this.app.kernel.call("project", { items, views });
       if (this.doc !== d) return;
       for (const [k, v] of Object.entries(res)) this.proj.set(k, v);
+      this.deriveFlats(d);
       this.deriveDetails(d);
     } catch (e) {
       toast("Ansichten konnten nicht berechnet werden: " + e.message, { kind: "err" });
@@ -203,6 +208,7 @@ export class DrawingEditor {
       d.dims = d.dims.filter((m) => !gone.has(m.view));
       if (d.holeTables) d.holeTables = d.holeTables.filter((t) => !gone.has(t.view));
       if (d.leaders) d.leaders = d.leaders.filter((t) => !gone.has(t.view));
+      if (d.symbols) d.symbols = d.symbols.filter((t) => !gone.has(t.view));
     }, { rebuild: false });
     this.sel = null;
     this.render();
@@ -289,6 +295,164 @@ export class DrawingEditor {
     const t = svgEl("text", { x: r3(cx + rr * 0.75 + 1), y: r3(cy - rr * 0.75 - 1), "font-size": 5, fill: "#111a24", stroke: "none" });
     t.textContent = s.letter;
     g.append(t);
+    return g;
+  }
+
+  // ---------- Abwicklung (Kantteil) ----------
+  /** Kantteile der Quelle mit gebautem Blech (Länge aus dem Kernel) */
+  kantteileOf(d = this.doc) {
+    const src = d?.source && this.app.doc(d.source.id);
+    if (src?.kind !== "part") return [];
+    const bodies = this.app.results.get(src.id)?.bodies || [];
+    return src.features.filter((f) => f.type === "kantteil" && !f.suppressed && bodies.some((b) => b.fid === f.id && b.meta?.sheet));
+  }
+  flatOf(d, v) {
+    const src = d.source && this.app.doc(d.source.id);
+    const f = src?.features.find((x) => x.id === v.feature);
+    const sh = f && this.app.results.get(src.id)?.bodies?.find((b) => b.fid === f.id)?.meta?.sheet;
+    if (!sh) return null;
+    try {
+      const scope = resolveParams(src.params || []).values, E = (x) => evaluate(String(x), scope);
+      const t = E(f.t), ri = E(f.ri), k = E(f.k);
+      const br = bendRule({ rule: f.rule || "k", material: src.material || "S235", t, ri, k });
+      const plan = planKantteil({ legs: splitList(f.legs).map(E), angles: splitList(f.angles).map(E), t, ri, k, kOf: br.kOf, ref: f.ref || "aussen" });
+      return kantteilFlatView(plan, sh.length, { t, k, kOf: br.kOf });
+    } catch { return null; }
+  }
+  deriveFlats(d = this.doc) {
+    for (const v of d?.views || []) {
+      if (v.type !== "flat") continue;
+      const p = this.flatOf(d, v);
+      if (p) this.proj.set(v.id, p); else this.proj.delete(v.id);
+    }
+  }
+  addFlatView() {
+    const d = this.doc;
+    const ks = this.kantteileOf(d);
+    if (!ks.length) return toast("Die Quelle hat kein fehlerfreies Kantteil – Abwicklung gibt es für Kantteile");
+    const f = ks.find((x) => !d.views.some((v) => v.type === "flat" && v.feature === x.id)) || ks[0];
+    const scale = d.views.find((v) => v.type === "front")?.scale || 1;
+    const v = { id: uid("v"), type: "flat", feature: f.id, dir: [0, 0, -1], up: [0, 1, 0], scale, hidden: false, label: "Abwicklung" + (ks.length > 1 ? " " + (f.name || "") : ""), bendTable: true, x: 0, y: 0 };
+    const p = this.flatOf(d, v);
+    if (!p) return toast("Abwicklung konnte nicht berechnet werden", { kind: "err" });
+    this.proj.set(v.id, p);
+    const half = (Math.max(p.flat, p.length) * scale) / 2 + 12;
+    const [sw, sh] = this.sheetSize(d);
+    [v.x, v.y] = this.freeSpot(d, half, sw / 2, sh / 2);
+    this.app.edit("Abwicklung", () => d.views.push(v), { rebuild: false });
+    this.sel = { type: "view", id: v.id };
+    this.render();
+    toast(`Abwicklung ${fmtNum(p.flat, 1)} × ${fmtNum(p.length, 1)} mm mit ${p.bends.length} Biegung(en)`);
+  }
+  /** Biegelinien (Strich-Zweipunktlinie), Biegenotizen und Biegetabelle einer Abwicklungsansicht */
+  flatExtras(v) {
+    const p = this.proj.get(v.id);
+    if (!p?.bends) return null;
+    const xf = this.viewXf(v);
+    const g = svgEl("g", { fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    const txt = (x, y, s, size = 2.5, rot = 0, anchor = "start") => { const e = svgEl("text", { x: r3(x), y: r3(y), "font-size": size, "text-anchor": anchor, fill: "#111a24", stroke: "none", transform: rot ? `rotate(${rot} ${r3(x)} ${r3(y)})` : undefined }); e.textContent = s; g.append(e); };
+    for (const b of p.bends) {
+      const [x, y0] = xf.to(b.x, p.length + 2 / v.scale), [, y1] = xf.to(b.x, -2 / v.scale);
+      g.append(svgEl("line", { x1: r3(x), y1: r3(y0), x2: r3(x), y2: r3(y1), "stroke-dasharray": "8 1.2 1 1.2 1 1.2" }));
+      txt(x - 1, y1 - 2, bendNote(b), 2.5, -90);
+    }
+    if (v.bendTable !== false && p.bends.length) {
+      const cells = bendTableCells(p.bends), cols = [10, 16, 16, 12, 12, 18], rh = 5, Wt = cols.reduce((a, b) => a + b, 0);
+      const [x0] = xf.to(xf.bb.x0, 0), [, yb] = xf.to(0, xf.bb.y0);
+      const y0 = yb + 14;
+      g.append(svgEl("rect", { x: r3(x0), y: r3(y0), width: Wt, height: rh * cells.length, "stroke-width": LW.vis }));
+      for (let i = 1; i < cells.length; i++) g.append(svgEl("line", { x1: r3(x0), y1: r3(y0 + rh * i), x2: r3(x0 + Wt), y2: r3(y0 + rh * i), "stroke-width": i === 1 ? LW.vis : LW.thin }));
+      let cx = x0;
+      for (const w of cols.slice(0, -1)) { cx += w; g.append(svgEl("line", { x1: r3(cx), y1: r3(y0), x2: r3(cx), y2: r3(y0 + rh * cells.length) })); }
+      cells.forEach((row, k) => { let x = x0; row.forEach((s, i) => { txt(x + 1, y0 + rh * k + 3.6, s, k ? 2.5 : 2.2); x += cols[i]; }); });
+      txt(x0, y0 - 1.5, `Abwicklung ${fmtNum(p.flat, 1)} × ${fmtNum(p.length, 1)}`, 2.5);
+    }
+    return g;
+  }
+
+  // ---------- Symbole: Oberfläche, Form- und Lagetoleranz, Bezug ----------
+  /** Klickpunkt in einer Ansicht → {view, p} (Fangpunkt oder nächster Punkt auf einer Kante) */
+  pickInView(sx, sy) {
+    const d = this.doc;
+    const rects = this.sheetRects(d);
+    const v = d.views.find((x) => { const r = rects[x.id]?.rect; return x.type !== "iso" && r && sx >= r[0] - 3 && sx <= r[2] + 3 && sy >= r[1] - 3 && sy <= r[3] + 3; });
+    if (!v) return null;
+    const xf = this.viewXf(v), q = xf.from(sx, sy);
+    const s = this.snapAt(sx, sy);
+    if (s?.view === v.id) return { view: v, p: s.p };
+    const seg = nearestSegment(this.proj.get(v.id).visible, q, 3 / (v.scale * this.zoom));
+    if (!seg) return { view: v, p: q };
+    const dx = seg.b[0] - seg.a[0], dy = seg.b[1] - seg.a[1], t = Math.max(0, Math.min(1, ((q[0] - seg.a[0]) * dx + (q[1] - seg.a[1]) * dy) / (dx * dx + dy * dy)));
+    return { view: v, p: [seg.a[0] + t * dx, seg.a[1] + t * dy] };
+  }
+  symbolClick(sx, sy) {
+    const hit = this.pickInView(sx, sy);
+    if (!hit) return toast("In eine Ansicht klicken (Kante oder Fläche)");
+    const kind = this.tool;
+    const [px, py] = this.viewXf(hit.view).to(...hit.p);
+    const at = kind === "surface" ? [px, py] : kind === "datum" ? [px, py - 12] : [px + 8, py - 16];
+    this.symbolDialog({ id: uid("y"), kind, view: hit.view.id, p: hit.p.map(r3), at: at.map(r3) }, true);
+  }
+  symbolDialog(sym, isNew) {
+    const d = this.doc;
+    const f = { ...sym };
+    const fields = [];
+    const inp = (k, label, ph) => h("div", { class: "field" }, h("label", {}, label), h("input", { class: "inp", value: f[k] ?? "", placeholder: ph || "", oninput: (e) => { f[k] = e.target.value; } }));
+    const sel = (k, label, opts) => h("div", { class: "field" }, h("label", {}, label), h("select", { class: "inp", onchange: (e) => { f[k] = e.target.value; } }, ...opts.map((o) => h("option", { value: o.value, selected: f[k] === o.value }, o.label))));
+    let title;
+    if (f.kind === "surface") {
+      title = "Oberflächenangabe";
+      f.surf = f.surf || "spanend";
+      if (f.text === undefined) f.text = "Ra 3,2";
+      fields.push(sel("surf", "Verfahren", SURFACE_KINDS), inp("text", "Kenngröße", "Ra 3,2"), h("p", { class: "hint" }, "DIN EN ISO 21920-1: Zeichen auf der Kante oder an einer Hinweislinie (ziehen)."));
+    } else if (f.kind === "gdt") {
+      title = "Form- und Lagetoleranz";
+      f.sym = f.sym || "ebenheit";
+      f.tolTxt = f.tol != null ? fmtNum(f.tol, 3) : "0,1";
+      f.datTxt = (f.datums || []).join(" ");
+      fields.push(sel("sym", "Toleranzart", GDT_KINDS.map((k) => ({ value: k.value, label: `${k.group}: ${k.label}` }))), inp("tolTxt", "Toleranz (mm)", "0,05"),
+        h("label", { class: "chk" }, h("input", { type: "checkbox", checked: !!f.dia, onchange: (e) => { f.dia = e.target.checked; } }), "Toleranzzone zylindrisch (Ø)"),
+        inp("datTxt", "Bezüge", "A B"), h("p", { class: "hint" }, "DIN EN ISO 1101. Bezüge mit Leerzeichen trennen, gemeinsamer Bezug als A-B. Formtoleranzen haben keinen Bezug."));
+    } else {
+      title = "Bezug";
+      if (!f.letter) { const used = new Set((d.symbols || []).filter((x) => x.kind === "datum").map((x) => x.letter)); f.letter = "ABCDEFGHJKLMNPRSTUVWXYZ".split("").find((l) => !used.has(l)) || "Z"; }
+      fields.push(inp("letter", "Bezugsbuchstabe"), h("p", { class: "hint" }, "ISO 5459: Dreieck auf der Bezugsfläche, Kästchen mit Buchstabe (ziehen)."));
+    }
+    const buttons = [{ label: "Abbrechen" }, { label: isNew ? "Setzen" : "OK", primary: true, run: () => {
+      let val;
+      if (f.kind === "surface") { const r = validateSurface({ kind: f.surf, text: f.text }); if (!r.ok) { toast(r.error, { kind: "err" }); return false; } val = { surf: r.value.kind, text: r.value.text }; }
+      else if (f.kind === "gdt") { const r = validateGdt({ sym: f.sym, tol: f.tolTxt, dia: f.dia, datums: f.datTxt }); if (!r.ok) { toast(r.error, { kind: "err" }); return false; } val = r.value; }
+      else { const r = validateDatumLetter(f.letter); if (!r.ok) { toast(r.error, { kind: "err" }); return false; } val = { letter: r.value }; }
+      this.app.edit(title, () => {
+        if (isNew) d.symbols = (d.symbols || []).concat({ id: sym.id, kind: sym.kind, view: sym.view, p: sym.p, at: sym.at, ...val });
+        else Object.assign(d.symbols.find((x) => x.id === sym.id), val);
+      }, { rebuild: false });
+      this.sel = { type: "symbol", id: sym.id };
+      this.render();
+    } }];
+    if (!isNew) buttons.unshift({ label: "Löschen", danger: true, run: () => { this.app.edit("Symbol löschen", () => { d.symbols = d.symbols.filter((x) => x.id !== sym.id); }, { rebuild: false }); this.sel = null; this.render(); } });
+    modal({ title, body: h("div", {}, ...fields), buttons });
+  }
+  renderSymbol(d, y, interactive) {
+    const v = d.views.find((x) => x.id === y.view);
+    if (!v || !this.proj.get(v.id)) return null;
+    const P = this.viewXf(v).to(...y.p);
+    let geo;
+    if (y.kind === "surface") {
+      geo = surfaceSymbol(y.surf, y.at[0], y.at[1], y.text, textWidth);
+      if (Math.hypot(y.at[0] - P[0], y.at[1] - P[1]) > 1) {
+        geo.lines.push([y.at[0], y.at[1], P[0], P[1]]);
+        const e = [P[0] - y.at[0], P[1] - y.at[1]], l = Math.hypot(...e), u = [e[0] / l, e[1] / l];
+        geo.polys.push({ pts: [P, [P[0] - u[0] * 3 - u[1] * 0.9, P[1] - u[1] * 3 + u[0] * 0.9], [P[0] - u[0] * 3 + u[1] * 0.9, P[1] - u[1] * 3 - u[0] * 0.9]], closed: true, fill: true });
+      }
+    } else if (y.kind === "gdt") geo = gdtFrame(y, y.at[0], y.at[1], P, textWidth);
+    else geo = datumSymbol(y.letter, P, y.at);
+    const g = svgEl("g", { "data-symbol": y.id, class: interactive ? "dw-dimgrp" + (this.sel?.id === y.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    for (const [x1, y1, x2, y2] of geo.lines) g.append(svgEl("line", { x1: r3(x1), y1: r3(y1), x2: r3(x2), y2: r3(y2) }));
+    for (const [cx, cy, r] of geo.circles) g.append(svgEl("circle", { cx: r3(cx), cy: r3(cy), r: r3(r) }));
+    for (const q of geo.polys) g.append(svgEl(q.closed ? "polygon" : "polyline", { points: q.pts.map((t) => t.map(r3).join(",")).join(" "), fill: q.fill ? "#111a24" : "none" }));
+    for (const t of geo.texts) { const e = svgEl("text", { x: r3(t.x), y: r3(t.y), "font-size": 3.5, "text-anchor": t.anchor, fill: "#111a24", stroke: "none" }); e.textContent = t.text; g.append(e); }
+    if (interactive && geo.width) g.append(svgEl("rect", { x: r3(y.at[0]), y: r3(y.at[1]), width: r3(geo.width), height: geo.height, fill: "transparent", stroke: "none" }));
     return g;
   }
 
@@ -512,7 +676,9 @@ export class DrawingEditor {
       const parent = d.views.find((x) => x.id === v.parent);
       if (parent && this.proj.get(parent.id)) out.push(this.auxMark(parent, v, this.viewXf(parent)));
     }
+    for (const v of d.views) if (v.type === "flat") { const g = this.flatExtras(v); if (g) out.push(g); }
     for (const t of d.holeTables || []) { const g = this.renderHoleTable(d, t, interactive); if (g) out.push(g); }
+    for (const y of d.symbols || []) { const g = this.renderSymbol(d, y, interactive); if (g) out.push(g); }
     for (const L of d.leaders || []) { const g = this.renderLeader(d, L, interactive); if (g) out.push(g); }
     if (d.revisions?.length) out.push(this.revisionTableSvg(d, W));
     return out;
@@ -1058,7 +1224,7 @@ export class DrawingEditor {
     this.tool = t;
     this.pendingDim = null;
     if (t !== "aux") this.pendingAux = null;
-    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : "");
+    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : "");
     this.app.ribbon.render();
     this.render();
   }
@@ -1087,14 +1253,17 @@ export class DrawingEditor {
       if (this.tool === "detail") return this.detailClick(sx, sy);
       if (this.tool === "aux") return this.auxClick(sx, sy);
       if (this.tool === "leader") return this.leaderClick(sx, sy);
+      if (["surface", "gdt", "datum"].includes(this.tool)) return this.symbolClick(sx, sy);
       const dimEl = e.target.closest("[data-dim]");
       const noteEl = e.target.closest("[data-note]");
       const balloonEl = e.target.closest("[data-balloon]");
       const weldEl = e.target.closest("[data-weld]");
       const tableEl = e.target.closest("[data-holetable]");
       const leaderEl = e.target.closest("[data-leader]");
+      const symEl = e.target.closest("[data-symbol]");
       const viewEl = e.target.closest("[data-view]");
-      if (tableEl) { this.select({ type: "holetable", id: tableEl.getAttribute("data-holetable") }); drag = { kind: "holetable", id: this.sel.id, start: [sx, sy], moved: false }; }
+      if (symEl) { this.select({ type: "symbol", id: symEl.getAttribute("data-symbol") }); drag = { kind: "symbol", id: this.sel.id, start: [sx, sy], moved: false }; }
+      else if (tableEl) { this.select({ type: "holetable", id: tableEl.getAttribute("data-holetable") }); drag = { kind: "holetable", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (leaderEl) { this.select({ type: "leader", id: leaderEl.getAttribute("data-leader") }); drag = { kind: "leader", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (weldEl) { this.select({ type: "weld", id: weldEl.getAttribute("data-weld") }); drag = { kind: "weld", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (balloonEl) { this.select({ type: "balloon", id: balloonEl.getAttribute("data-balloon") }); drag = { kind: "balloon", id: this.sel.id, start: [sx, sy], moved: false }; }
@@ -1144,8 +1313,8 @@ export class DrawingEditor {
           const b = d.balloons.find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [...b.at];
           b.at = [drag.o[0] + dx, drag.o[1] + dy];
-        } else if (drag.kind === "holetable" || drag.kind === "leader") {
-          const o = (drag.kind === "holetable" ? d.holeTables : d.leaders).find((x) => x.id === drag.id);
+        } else if (drag.kind === "holetable" || drag.kind === "leader" || drag.kind === "symbol") {
+          const o = (drag.kind === "holetable" ? d.holeTables : drag.kind === "leader" ? d.leaders : d.symbols).find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [...o.at];
           o.at = [r3(drag.o[0] + dx), r3(drag.o[1] + dy)];
         } else if (drag.kind === "weld") {
@@ -1182,6 +1351,8 @@ export class DrawingEditor {
       if (noteEl) this.editNote(noteEl.getAttribute("data-note"));
       const leaderEl = e.target.closest("[data-leader]");
       if (leaderEl) this.editLeader(leaderEl.getAttribute("data-leader"));
+      const symEl = e.target.closest("[data-symbol]");
+      if (symEl) { const y = this.doc.symbols.find((x) => x.id === symEl.getAttribute("data-symbol")); if (y) this.symbolDialog(y, false); }
     });
   }
   offsetFor(m, xf, sx, sy) {
@@ -1310,7 +1481,7 @@ export class DrawingEditor {
     if (src?.kind !== "part" || src.features.some((f) => !f.suppressed && ["frame", "profilzug", "biegerohr", "knickrahmen", "profile"].includes(f.type))) used.wall = true;
     const views = cands.filter((v) => !keep.some((m) => m.view === v.id && m.auto)).map((v) => {
       const c = this.viewCam(d, v), p = this.proj.get(v.id);
-      return { id: v.id, axes: viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, lines: p.visible, holes };
+      return { id: v.id, axes: v.type === "flat" ? ["F1", "F2"] : viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, lines: p.visible, holes };
     });
     const add = planAutoDims(views, used).map((m) => ({ id: uid("m"), ...m, auto: true }));
     const keepNotes = (d.notes || []).filter((n) => !(n.auto && !n.touched));
@@ -1381,6 +1552,7 @@ export class DrawingEditor {
       if (this.sel.type === "view") this.deleteView(this.sel.id);
       else if (this.sel.type === "dim") { this.app.edit("Maß löschen", () => { d.dims = d.dims.filter((m) => m.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "holetable") { this.app.edit("Bohrungstabelle löschen", () => { d.holeTables = d.holeTables.filter((x) => x.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
+      else if (this.sel.type === "symbol") { this.app.edit("Symbol löschen", () => { d.symbols = d.symbols.filter((x) => x.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "leader") { this.app.edit("Hinweis löschen", () => { d.leaders = d.leaders.filter((x) => x.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "weld") { this.app.edit("Nahtsymbol löschen", () => { d.welds = d.welds.filter((w) => w.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "balloon") { this.app.edit("Positionsnummer löschen", () => { d.balloons = d.balloons.filter((b) => b.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
@@ -1415,6 +1587,17 @@ export class DrawingEditor {
           P.text("Buchstabe", v.letter, (t) => app.edit("Schnitt", () => { v.letter = (t || "A").slice(0, 2).toUpperCase(); }, { rebuild: false })),
           P.select("Maßstab", SCALES.map((s) => [String(s), scaleLabel(s)]), String(v.scale), (s) => app.edit("Maßstab", () => { v.scale = Number(s); }, { rebuild: false })),
           h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Schnitt löschen"))));
+        return out;
+      }
+      if (v && v.type === "flat") {
+        const ks = this.kantteileOf(d);
+        out.push(P.section("Abwicklung",
+          ks.length > 1 ? P.select("Kantteil", ks.map((f) => [f.id, f.name || f.id]), v.feature, (fid) => { app.edit("Abwicklung", () => { v.feature = fid; }, { rebuild: false }); this.deriveFlats(d); this.render(); }) : null,
+          P.select("Maßstab", SCALES.map((s) => [String(s), scaleLabel(s)]), String(v.scale), (s) => app.edit("Maßstab", () => { v.scale = Number(s); }, { rebuild: false })),
+          P.check("Biegetabelle", v.bendTable !== false, (on) => app.edit("Biegetabelle", () => { v.bendTable = on; }, { rebuild: false })),
+          P.text("Beschriftung", v.label || "", (t) => app.edit("Beschriftung", () => { v.label = t; }, { rebuild: false })),
+          h("p", { class: "hint" }, "Kontur und Biegelinien mit Biegenotiz (Winkel, Richtung, Innenradius) aus dem Kantteil und seiner Biegeregel; Ausschnitte und Bohrungen erscheinen nicht."),
+          h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Abwicklung löschen"))));
         return out;
       }
       if (v && v.type === "aux") {
