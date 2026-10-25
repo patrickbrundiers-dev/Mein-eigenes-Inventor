@@ -29,10 +29,12 @@ import { flattenAssembly } from "../core/subasm.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
+import { axisDistance, measureFormat, MAX_MEASURE_ITEMS } from "../core/messen.js";
 import { resolveDatums, resolvePlane } from "../core/datums.js";
 import { sketchRefs, dependents } from "../core/featurerefs.js";
 import { applyPatterns } from "../core/asmmuster.js";
-import { faceRef, axisRef, insertRef, endFaceFor, worldToLocal, solveAssembly, CONSTRAINT_TYPES } from "../core/asmsolve.js";
+import { worldToLocal, solveAssembly, CONSTRAINT_TYPES } from "../core/asmsolve.js";
+import { beginPlace, placePick, placeState } from "./abhaengigkeit.js";
 import { partContent, baseName } from "../core/links.js";
 import { finishColor } from "../core/oberflaeche.js";
 import { Docking } from "./layout.js";
@@ -108,6 +110,7 @@ export class App {
     this.sel = null;
     this.selHits = [];
     this.pick = null;
+    this.endMeasure();
     this.viewer.clearPlanes();
     this.viewer.setHidden([]);
     // Gestelle folgen ihrem Skelett (Skizze oder Profilzug wurde vielleicht geändert)
@@ -601,6 +604,7 @@ export class App {
     const part = this.activeDoc();
     if (!part?.features.some((f) => f.id === id) || this.linkedReadOnly(part)) return;
     this.pick = null;
+    this.endMeasure();
     this.viewer.clearPlanes();
     this.sel = { type: "feature", id };
     this.setMode("sketch");
@@ -679,6 +683,7 @@ export class App {
     const part = this.activeDoc();
     const f = part?.features?.find((x) => x.id === id);
     this.pick = null;
+    this.endMeasure();
     if (f && (f.type === "fillet" || f.type === "chamfer") && (f.mode || "edges") === "edges") this.pick = { kind: "edges", feature: f.id };
     if (f && f.type === "naht") this.pick = { kind: "edges", feature: f.id };
     if (f && ["shell", "aufdicken", "flaeche", "entformung"].includes(f.type)) this.pick = { kind: "faces", feature: f.id };
@@ -799,7 +804,8 @@ export class App {
     const p = this.pick;
     if (p?.kind === "edges") return { edges: true, faces: false };
     if (p?.kind === "measure") return { edges: true, faces: true, vertices: true };
-    if (p?.kind === "faces" || p?.kind === "sketchPlane" || p?.kind === "align") return { edges: false, faces: true };
+    if (p?.kind === "align") return { edges: true, faces: true, vertices: true };
+    if (p?.kind === "faces" || p?.kind === "sketchPlane") return { edges: false, faces: true };
     if (this.mode === "assembly") return { edges: false, faces: true };
     if (this.selFilter === "flaechen") return { edges: false, faces: true };
     if (this.selFilter === "kanten") return { edges: true, faces: false };
@@ -833,7 +839,7 @@ export class App {
       return;
     }
     const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
-    if (p?.kind === "measure") return this.measurePick(hit);
+    if (p?.kind === "measure") return this.measurePick(hit, e);
     if (p?.kind === "edges") return this.toggleFeatureEdge(p.feature, hit);
     if (p?.kind === "faces") return this.toggleFeatureFace(p.feature, hit);
     if (p?.kind === "datumFace") return this.datumFacePick(p.feature, hit);
@@ -954,66 +960,12 @@ export class App {
   }
 
   // ---------- Baugruppe: Ausrichten ----------
-  beginAlign(mode = "gegen") {
-    this.align = { mode, gap: this.align?.gap || "0", angle: this.align?.angle || "90", persist: this.align?.persist };
-    this.pick = { kind: "align" };
-    this.setHint("Fläche am Bauteil anklicken, das bewegt werden soll");
-    this.props.render();
-  }
-  alignPick(hit) {
-    if (!hit || hit.kind !== "face" || !hit.key.startsWith("comp:")) return;
-    const mode = this.align.mode;
-    const conc = mode === "konzentrisch" || mode === "einfuegen";
-    const isCyl = hit.info?.type === "CYLINDER" && hit.info.axisD, isPlane = hit.info?.type === "PLANE" && hit.info.normal;
-    if (mode === "tangential") {
-      if (!isCyl && !isPlane) return toast("Bitte eine ebene oder zylindrische Fläche wählen");
-      if (this.align.first && (this.align.first.info.type === "CYLINDER") === !!isCyl) return toast(isCyl ? "Jetzt eine ebene Fläche wählen" : "Jetzt eine zylindrische Fläche wählen");
-    } else if (conc && !isCyl) return toast("Bitte eine zylindrische Fläche wählen (Bohrung, Rohr, Bolzen)");
-    else if (!conc && !isPlane) return toast("Bitte eine ebene Fläche wählen");
-    const cid = hit.key.slice(5);
-    if (!this.align.first && this.activeDoc().components.find((c) => c.id === cid)?.pat) return toast("Musterkopien folgen ihrer Quelle – bitte die Quelle ausrichten");
-    hit = { ...hit, info: innerInfo(hit) };
-    if (mode === "einfuegen") {
-      const comp = this.activeDoc().components.find((c) => c.id === cid);
-      const local = worldToLocal(comp, hit.point, [0, 0, 1]).p;
-      const end = endFaceFor(hit.info, local, this.assemblyFaces(comp.part));
-      if (!end) return toast("Zur Zylinderfläche fehlt eine ebene Stirnfläche");
-      hit.info = { ...hit.info, end };
-    }
-    if (!this.align.first) {
-      this.align.first = { cid, info: hit.info, hit };
-      this.refreshSelectionHits();
-      this.setHint("Zielfläche an einem anderen Bauteil anklicken");
-      return;
-    }
-    if (cid === this.align.first.cid) return toast("Bitte eine Fläche an einem anderen Bauteil wählen");
-    const asm = this.activeDoc();
-    const B = asm.components.find((c) => c.id === this.align.first.cid);
-    const A = asm.components.find((c) => c.id === cid);
-    if (B.fixed && A.fixed) { toast("Beide Bauteile sind fixiert"); this.cancelPick(); return; }
-    const kind = ["konzentrisch", "einfuegen", "winkel", "tangential", "buendig"].includes(mode) ? mode : "gegen";
-    const ref = (id, info) => (kind === "einfuegen" ? insertRef(id, info, info.end) : info.type === "CYLINDER" ? axisRef(id, info) : faceRef(id, info));
-    const con = {
-      id: uid("ab"), type: kind, gap: kind === "konzentrisch" || kind === "winkel" ? "0" : this.align.gap || "0",
-      a: ref(A.id, hit.info), b: ref(B.id, this.align.first.info),
-      name: `${CONSTRAINT_NAMES[kind]}: ${B.name || "?"} → ${A.name || "?"}`,
-      ...(kind === "winkel" ? { angle: this.align.angle || "90" } : {}),
-    };
-    const persist = this.align.persist !== false;
-    this.edit(persist ? "Abhängigkeit" : "Ausrichten", () => {
-      asm.constraints = asm.constraints || [];
-      asm.constraints.push(con);
-      solveAssembly(asm, (pid) => this.assemblyFaces(pid), (g) => safeNum(g));
-      if (!persist) asm.constraints = asm.constraints.filter((c) => c.id !== con.id);
-    });
-    this.align = { mode: this.align.mode, gap: this.align.gap, angle: this.align.angle, persist: this.align.persist };
-    this.pick = null;
-    this.setHint("");
-    this.sel = persist ? { type: "constraint", id: con.id } : { type: "component", id: B.id };
-    this.refreshSelectionHits();
-    this.tree.render();
-    this.props.render();
-  }
+  beginAlign(mode = "gegen") { beginPlace(this, { mode }); }
+  /** »Abhängigkeit platzieren« (Stufe 44) */
+  beginPlace(opts) { beginPlace(this, opts); }
+  alignPick(hit) { return placePick(this, hit); }
+  asmEval(g) { return safeNum(g); }
+
   /** Ebene Flächen eines Bauteils (Bauteil-Koordinaten) aus dem letzten Rechenergebnis */
   planarFaces(partId) {
     const r = this.results.get(partId);
@@ -1041,20 +993,28 @@ export class App {
     this.pick = { kind: "measure" };
     this.measure = { hits: [] };
     this.viewer.setSelectionHits([]);
-    this.setHint("Messen: Fläche, Kante oder Ecke anklicken, dann optional ein zweites Element – Esc beendet");
+    this.viewer.showMeasure(null);
+    this.setHint("Messen: Fläche, Kante oder Ecke anklicken, dann optional ein zweites Element (Strg/Umschalt: weitere) – Esc beendet");
     this.props.render();
     this.ribbon.render();
   }
-  async measurePick(hit) {
+  async measurePick(hit, e) {
     const m = this.measure;
+    const multi = !!(e?.ctrlKey || e?.shiftKey || e?.metaKey);
     if (!hit || hit.info?.idx === undefined) { m.hits = []; m.result = null; m.error = hit ? "Dieses Element lässt sich nicht messen" : null; }
     else {
       const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face) && a.end === hit.end;
-      if (m.hits.length >= 2 || m.hits.some(same)) m.hits = [];
-      m.hits.push(hit);
+      if (multi && m.hits.some(same)) m.hits = m.hits.filter((a) => !same(a)); // Strg-Klick auf Gewähltes nimmt es heraus
+      else {
+        if (!multi && (m.hits.length >= 2 || m.hits.some(same))) m.hits = [];
+        if (m.hits.length >= MAX_MEASURE_ITEMS) m.hits.shift();
+        m.hits.push(hit);
+      }
+      m.show = "min";
     }
     this.viewer.setSelectionHits(m.hits);
-    if (!m.hits.length) { this.props.render(); return; }
+    this.viewer.showMeasure(null);
+    if (!m.hits.length) { m.result = null; this.props.render(); return; }
     const items = m.hits.map((x) => this.measureItem(x)).filter(Boolean);
     m.busy = true; m.error = null;
     this.props.render();
@@ -1069,7 +1029,18 @@ export class App {
       m.error = "Messen fehlgeschlagen: " + e.message;
     }
     m.busy = false;
+    this.updateMeasureView();
     this.props.render();
+  }
+  /** Maß im 3D-Fenster: Mindestabstand (nächste Punkte) oder Achsabstand, je nach gewählter Zeile */
+  updateMeasureView() {
+    const m = this.measure, r = m?.result;
+    if (!r || r.items.length !== 2 || this.prefs.get("messen.anzeige3d") === false) return this.viewer.showMeasure(null);
+    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen"), second: this.prefs.get("messen.zweiteinheit") || "" });
+    const ax = m.show === "axis" ? axisDistance(r.items[0], r.items[1]) : null;
+    if (ax) return this.viewer.showMeasure({ a: ax.a, b: ax.b, text: F.len(ax.value) });
+    if (!r.pa || !r.pb) return this.viewer.showMeasure(null);
+    this.viewer.showMeasure({ a: r.pa, b: r.pb, text: F.len(r.distance) });
   }
   /** Pick-Treffer → Messauftrag für den Kern (Bauteil oder platzierte Komponente) */
   measureItem(hit) {
@@ -1087,11 +1058,17 @@ export class App {
     return p ? { ...base, part: p, pos: c.pos, rot: c.rot } : null;
   }
 
+  /** Messwerkzeug ohne Rückfrage verlassen (Dokument- oder Moduswechsel): Maß im 3D-Fenster entfernen */
+  endMeasure() {
+    if (!this.measure) return;
+    this.measure = null;
+    this.viewer.showMeasure(null);
+  }
   cancelPick() {
-    if (this.pick?.kind === "measure") { this.measure = null; this.ribbon.render(); }
+    if (this.pick?.kind === "measure") { this.endMeasure(); this.ribbon.render(); }
     if (this.pick?.feature) { this._editingFeature = null; this.rebuild(); }
     this.pick = null;
-    this.align = this.align ? { mode: this.align.mode, gap: this.align.gap } : null;
+    this.align = this.align ? { ...placeState(this.align), picks: [], first: null, edit: null } : null;
     this.viewer.clearPlanes();
     this.setHint("");
     this.refreshSelectionHits();
@@ -1340,8 +1317,8 @@ export const CONSTRAINT_NAMES = CONSTRAINT_TYPES;
 export const FEATURE_NAMES = {
   sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
-  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", skizze3d: "3D-Skizze", abgeleitet: "Abgeleitet",
-  endkappe: "Endkappe", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", trennen: "Trennen", verschieben: "Körper verschieben", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung",
+  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
+  endkappe: "Endkappe", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung",
 };
 
 /** Welche Bedingungen nicht erfüllbar sind, in Klartext (rot markiert in der Skizze) */

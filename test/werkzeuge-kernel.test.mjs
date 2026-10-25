@@ -293,3 +293,278 @@ test("Regeln vor dem Aufbau: Parameter setzen, Feature unterdrücken, Meldung (S
   const r2 = await K.buildPart(p);
   near(vol(r2), 2000, 1e-3, "beide Quader, Höhe 10");
 });
+
+test("Blechregel am Kantteil: Dicke, Radius und K aus der Regel (Stufe 44)", async () => {
+  const kt = { id: "k1", type: "kantteil", legs: "40; 100; 40", angles: "90; 90", ref: "aussen", t: "2", ri: "2", k: "0.33", length: "200",
+    sheetRule: { id: "r", name: "Stahl 3 mm", material: "S235", t: 3, ri: 4, rule: "k", k: 0.4, relief: "rechteck", reliefW: 0, reliefD: 0 } };
+  const res = await K.buildPart(part([kt]));
+  okAll(res);
+  const b = res.bodies[0];
+  assert.match(res.status.k1.info, /Blechregel Stahl 3 mm/);
+  // Volumen ≈ Dicke × abgewickelte Länge × Länge (gerade Teile + Biegungen auf der neutralen Faser mit K 0,4)
+  const flat = b.meta.sheet.flat;
+  near(vol(res), 3 * flat * 200, 3 * flat * 200 * 0.01);
+  const own = await K.buildPart(part([{ ...kt, tFromRule: false, t: "1" }]));
+  near(own.bodies[0].meta.sheet.flat > flat ? 1 : 0, 1, 0, "dünneres Blech: längere Abwicklung bei gleichem Außenmaß");
+});
+
+test("Stecksystem: Zapfen durch die Platte, Schlitze mit Spiel (Stufe 45)", async () => {
+  // Platte 200 × 100 × 5 (z 0 … 5), darauf eine Rippe 160 × 4 × 50 (Mitte y = 50)
+  const feats = [
+    rectSketchFeature("sp", "XY", 0, 0, 0, "200", "100"), { id: "pl", type: "extrude", sketch: "sp", distance: "5", op: "new" },
+    rectSketchFeature("sr", "XY", 5, 20, 48, "160", "4"), { id: "ri", type: "extrude", sketch: "sr", distance: "50", op: "new" },
+    { id: "st", type: "stecksystem", tab: "ri", slot: "pl", mode: "anzahl", count: "3", width: "20", edge: "15", clearance: "0.2", length: "", over: "0" },
+  ];
+  const res = await K.buildPart(part(feats));
+  okAll(res);
+  assert.match(res.status.st.info, /3 Zapfen 20 × 4 mm, Länge 5 mm · Schlitze 20.4 × 4.4 mm · Wand 5 mm/);
+  const plate = res.bodies.find((b) => b.fid === "pl"), rib = res.bodies.find((b) => b.fid === "ri");
+  near(R.measureVolume(plate.shape), 200 * 100 * 5 - 3 * 20.4 * 4.4 * 5, 1);
+  near(R.measureVolume(rib.shape), 160 * 4 * 50 + 3 * 20 * 4 * 5, 1);
+  near(rib.shape.boundingBox.bounds[0][2], 0, 1e-6, "Zapfen reichen bis zur Plattenunterseite");
+  // Überstand 2 mm: Zapfen ragen unten heraus
+  const r2 = await K.buildPart(part([...feats.slice(0, 4), { ...feats[4], over: "2" }]));
+  near(r2.bodies.find((b) => b.fid === "ri").shape.boundingBox.bounds[0][2], -2, 1e-6);
+  // zu viele Zapfen: Fehler
+  const r3 = await K.buildPart(part([...feats.slice(0, 4), { ...feats[4], count: "8", width: "30" }]));
+  assert.match(r3.status.st.error || "", /passen nicht/);
+});
+
+test("Stecksystem zwischen zwei Bauteilen einer Baugruppe (Stufe 46)", async () => {
+  const { placementMatrix, matInvertRigid, matApply, matApplyDir } = await import("../src/core/geom.js");
+  const S = await import("../src/core/stecksystem.js");
+  // Platte 200 × 100 × 5 im Ursprung; Rippe 80 × 4 × 50 als eigenes Bauteil, um 90° gedreht auf die Platte gestellt
+  const plate = { ...part([rectSketchFeature("sp", "XY", 0, 0, 0, "200", "100"), { id: "pl", type: "extrude", sketch: "sp", distance: "5", op: "new" }]), id: "pb", name: "Platte" };
+  const rib = { ...part([rectSketchFeature("sr", "XY", 0, 0, 0, "80", "4"), { id: "ri", type: "extrude", sketch: "sr", distance: "50", op: "new" }]), id: "pa", name: "Rippe" };
+  const asm = { id: "a", kind: "assembly", name: "Konsole", components: [
+    { id: "c1", part: "pa", pos: [100, 10, 5], rot: [0, 0, 90] },
+    { id: "c2", part: "pb", pos: [0, 0, 0], rot: [0, 0, 0] },
+  ] };
+  const conn = { ...S.defaultSteckverbindung("st1", "c1", "c2"), name: "Rippe–Platte" };
+  // wie der Worker (tabSlot): Körper platzieren, planen, Quader ins Bauteil-System zurückrechnen
+  const plan = async (p, c) => {
+    const res = await K.buildPart(p);
+    const M = placementMatrix(c.pos, c.rot);
+    return { b: res.bodies[0], inv: matInvertRigid(M), shape: K.placed(res.bodies[0].shape, c.pos, c.rot) };
+  };
+  const A = await plan(rib, asm.components[0]), B = await plan(plate, asm.components[1]);
+  const pl = K.tabSlotPlan(A.shape, B.shape, { mode: "anzahl", count: 2, spacing: 150, width: 20, edge: 10, clearance: 0.2, length: null, over: 0 });
+  const local = (inv) => (bx) => ({ ...bx, c: matApply(inv, bx.c), u: matApplyDir(inv, bx.u), n: matApplyDir(inv, bx.n) });
+  const docs = [rib, plate];
+  let n = 0;
+  S.applySteck(docs, asm, conn, { tabs: pl.tabs.map(local(A.inv)), slots: pl.slots.map(local(B.inv)), tabBody: A.b.fid, slotBody: B.b.fid }, () => "z" + ++n);
+  assert.equal(rib.features.at(-1).type, "steckzapfen");
+  const rr = await K.buildPart(rib), rp = await K.buildPart(plate);
+  okAll(rr); okAll(rp);
+  near(vol(rr), 80 * 4 * 50 + 2 * 20 * 4 * 5, 1);
+  near(vol(rp), 200 * 100 * 5 - 2 * 20.4 * 4.4 * 5, 1);
+  // Zapfen zeigen im Bauteil-System der Rippe nach −Z (unter den Fuß), unabhängig von der Drehung in der Baugruppe
+  near(rr.bodies[0].shape.boundingBox.bounds[0][2], -5, 1e-6);
+  // Schlitze liegen in der Platte unter der gedrehten Rippe (x 96 … 100)
+  const sl = plate.features.at(-1).boxes;
+  for (const b of sl) near(b.c[0], 98, 1e-6);
+  assert.match(rp.status[plate.features.at(-1).id].info, /2 Schlitze aus »Konsole«/);
+});
+
+test("Blech: Ecke schließen, Stanzwerkzeug, Konturwalzen mit Trennfuge (Stufe 48)", async () => {
+  const kt = { id: "k1", type: "kantteil", legs: "40; 100; 40", angles: "90; 90", ref: "aussen", t: "2", ri: "2", k: "0.33", length: "500" };
+  const build = async (feats) => { const res = await K.buildPart(part(feats)); okAll(res); const b = res.bodies.find((x) => x.meta?.sheet); assert.ok(K.shapeValid(b.shape), "Körper gültig"); return { res, b, sh: b.meta.sheet }; };
+  const st = (id, leg) => ({ id, type: "lasche", base: "k1", edge: "vorne", leg, length: "30", angle: "90", dir: "auf" });
+  // Kassetten-Ecke: Stirnlasche am Steg bis an beide Seitenschenkel, Volumen wächst um die Verlängerung
+  const open = await build([kt, st("s2", "2")]);
+  const cl = await build([kt, st("s2", "2"), { id: "e1", type: "eckeschliessen", base: "k1", bend: "1", side: "vorne", gap: "0.5" }, { id: "e2", type: "eckeschliessen", base: "k1", bend: "2", side: "vorne", gap: "0.5" }]);
+  assert.match(cl.res.status.e2.info, /2 Ecke\(n\) geschlossen/);
+  const dv = R.measureVolume(cl.b.shape) - R.measureVolume(open.b.shape);
+  assert.ok(dv > 2 * 1.5 * 25 * 2 && dv < 2 * 1.5 * 34 * 2, "Volumen der Verlängerung " + dv);
+  // an allen drei Schenkeln, eine Ecke mit Stoß andersherum
+  const all = await build([kt, st("s1", "1"), st("s2", "2"), st("s3", "3"), { id: "e1", type: "eckeschliessen", base: "k1", bend: "1", gap: "0.5" }, { id: "e2", type: "eckeschliessen", base: "k1", bend: "2", gap: "0.5", through: "b" }]);
+  assert.equal(all.sh.flatModel.bends.length, 5);
+  // Stanzwerkzeug: zwei Langlöcher und ein Rundloch nehmen Material weg, Abwicklung mit Konturen
+  const plain = await build([kt]);
+  const pu = await build([kt, { id: "p1", type: "stanzung", base: "k1", leg: "2", s: "30; 70", y: "100; 100", form: "langloch", a: "30", b: "10" }, { id: "p2", type: "stanzung", base: "k1", leg: "1", s: "20", y: "200", form: "rund", d: "10" }]);
+  const slot = 20 * 10 + Math.PI * 25;
+  near(R.measureVolume(plain.b.shape) - R.measureVolume(pu.b.shape), 2 * (2 * slot + Math.PI * 25), 5, "gestanzt (Halbkreise als Vieleck)");
+  assert.equal(pu.sh.flatModel.holes.length, 2);
+  const flat = await build([{ ...kt, view: "abgewickelt" }, { id: "p1", type: "stanzung", base: "k1", leg: "2", s: "30", y: "100", form: "rechteck", a: "20", b: "10" }]);
+  const pf = await build([{ ...kt, view: "abgewickelt" }]);
+  near(R.measureVolume(pf.b.shape) - R.measureVolume(flat.b.shape), 400, 1e-3, "Rechteck in der Abwicklung");
+
+  // Konturwalzen: Linie y = 50 parallel zur X-Achse, Material links → Zylindermantel Ø 104 außen
+  const sk = (pts) => ({ id: "s1", type: "sketch", plane: { ref: "XY" }, offset: "0", points: pts.map((p, i) => ({ id: "p" + i, x: p[0], y: p[1] })), entities: pts.slice(1).map((_, i) => ({ id: "l" + i, type: "line", p1: "p" + i, p2: "p" + (i + 1) })), constraints: [] });
+  const kw = { id: "w1", type: "konturwalzen", sketch: "s1", side: "links", axis: "x", angle: "360", t: "2", ri: "2", k: "0.33" };
+  const ring = await build([sk([[0, 50], [100, 50]]), kw]);
+  near(R.measureVolume(ring.b.shape), 2 * Math.PI * 51 * 2 * 100, 1, "Zylindermantel");
+  near(ring.b.shape.boundingBox.bounds[1][1], 52, 1e-3);
+  assert.equal(ring.sh.flatModel, null);
+  assert.match(ring.res.status.w1.info, /Trennfuge setzen/);
+  // Trennfuge 2 mm: Abwicklung 2π · 51 − 2 × 100
+  const rip = await build([sk([[0, 50], [100, 50]]), kw, { id: "tf", type: "trennfuge", base: "w1", gap: "2", pos: "90" }]);
+  near(rip.sh.flatModel.width, 2 * Math.PI * 51 - 2, 1e-6); near(rip.sh.flatModel.height, 100, 1e-6);
+  near(R.measureVolume(rip.b.shape), (2 * Math.PI * 51 - 2) * 2 * 100, 1, "aufgeschnitten");
+  // Kegel halb gewalzt: Kreisringausschnitt; L-Kontur mit Biegung: 3D ja, Abwicklung nicht
+  const cone = await build([sk([[0, 30], [100, 60]]), { ...kw, angle: "180" }]);
+  assert.equal(cone.sh.flatModel.roll.kind, "kegel");
+  const el = await build([sk([[0, 50], [100, 50], [100, 80]]), kw]);
+  assert.equal(el.sh.flatModel, null); assert.equal(el.sh.bends.length, 1);
+  // Fehler: Kontur auf der Achse, Trennfuge bei schon offenem Mantel
+  const bad = await K.buildPart(part([sk([[0, 0], [100, 50]]), kw]));
+  assert.match(bad.status.w1.error, /Drehachse/);
+  const bad2 = await K.buildPart(part([sk([[0, 50], [100, 50]]), { ...kw, angle: "180" }, { id: "tf", type: "trennfuge", base: "w1", gap: "2" }]));
+  assert.match(bad2.status.tf.error, /360/);
+});
+
+test("IGES-Export: Flächen aus dem Kern als NURBS mit Rand (Stufe 49)", async () => {
+  const { igesFaces } = await import("../src/kernel/igesocc.js");
+  const I = await import("../src/core/iges.js");
+  const closed = (loop) => loop.every((c, i) => { const n = loop[(i + 1) % loop.length], a = I.evalCurve(c, c.t1), b = I.evalCurve(n, n.t0); return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 1e-6; });
+  // Platte mit Bohrung: 7 Flächen, Deckflächen mit Innenrand, alle Ränder geschlossen und mit Parameterkurve
+  const holey = R.makeBaseBox(60, 40, 10).cut(R.makeCylinder(5, 20, [0, 0, -5]));
+  const h = igesFaces(R, holey);
+  assert.equal(h.faces.length, 7); assert.equal(h.approx, 0);
+  assert.equal(h.faces.filter((f) => f.loops.length === 2).length, 2);
+  for (const f of h.faces) for (const l of f.loops) { assert.ok(closed(l), "Rand geschlossen"); assert.ok(l.every((c) => c.pc), "Parameterkurve"); }
+  // Bohrungswand: Zylinder Ø 10, Parameterkurven bilden den Rand auf der Fläche ab
+  const wall = h.faces.find((f) => f.surface.degU === 2);
+  for (const c of wall.loops[0]) for (const t of [c.t0, (c.t0 + c.t1) / 2, c.t1]) {
+    const uv = I.evalCurve(c.pc, c.pc.t0 + ((t - c.t0) / (c.t1 - c.t0)) * (c.pc.t1 - c.pc.t0));
+    const p = I.evalSurface(wall.surface, uv[0], uv[1]);
+    near(Math.hypot(p[0], p[1]), 5, 1e-9, "auf dem Zylinder");
+  }
+  // Rundung und Kugel: exakt, Datei lesbar
+  const fil = igesFaces(R, R.makeBaseBox(60, 40, 20).fillet(5));
+  assert.equal(fil.faces.length, 26); assert.equal(fil.approx, 0);
+  const sph = igesFaces(R, R.makeSphere(15));
+  const s = sph.faces[0].surface;
+  for (const [a, b] of [[0.2, 0.3], [0.7, 0.9]]) { const p = I.evalSurface(s, s.knotsU[0] + a * (s.knotsU.at(-1) - s.knotsU[0]), s.knotsV[0] + b * (s.knotsV.at(-1) - s.knotsV[0])); near(Math.hypot(...p), 15, 1e-9, "Kugel"); }
+  const rd = I.readIgesEntities(I.writeIges([...h.faces, ...fil.faces, ...sph.faces]));
+  assert.equal(rd.entities.filter((e) => e.type === 144).length, 7 + 26 + 1);
+});
+
+test("Schraubenverbindung: Klemmlänge aus den Platten, Bohrungen, Mutter oder Gewinde (Stufe 50)", async () => {
+  // zwei Platten 10 + 12 mm mit 3 mm Luft, Punkte auf einer Skizze 20 mm darüber, Richtung nach unten
+  const plate = (id, z, t) => [rectSketchFeature(id, "XY", z, 0, 0, "100", "60"), { id: id + "e", type: "extrude", sketch: id, distance: String(t), op: "new" }];
+  const pts = { id: "sp", type: "sketch", name: "Punkte", plane: { ref: "XY" }, offset: "45", points: [{ id: "a", x: 20, y: 30 }, { id: "b", x: 80, y: 30 }], entities: [{ id: "pa", type: "point", p: "a" }, { id: "pb", type: "point", p: "b" }], constraints: [] };
+  const feats = [...plate("p1", 0, 10), ...plate("p2", 13, 12), pts];
+  const res = await K.buildPart(part([...feats, { id: "sv", type: "schraubverbindung", sketch: "sp", direction: "umgekehrt", joint: "durchsteck", size: "M12", grade: "8.8", washerHead: true, washerNut: true, hole: true }]));
+  okAll(res);
+  // Klemmlänge 25 (Luft zählt mit), Länge ≥ 25 + 2 · 2,5 + 10,8 + 3,5 = 44,3 → 45
+  assert.match(res.status.sv.info, /2 × M12 x 45, Klemmlänge 25 mm/);
+  const norm = res.bodies.filter((b) => b.meta?.norm);
+  assert.equal(norm.length, 8);
+  assert.deepEqual([...new Set(norm.map((b) => b.meta.norm.designation))].sort(), ["Scheibe ISO 7089 - 12 - 200 HV", "Sechskantmutter ISO 4032 - M12 - 8", "Sechskantschraube ISO 4017 - M12 x 45 - 8.8"]);
+  // Bohrungen Ø 13,5 durch beide Platten
+  const plates = res.bodies.filter((b) => !b.meta?.norm);
+  near(R.measureVolume(plates[0].shape), 100 * 60 * 10 - 2 * Math.PI * 6.75 ** 2 * 10, 1, "Platte 1 gebohrt");
+  near(R.measureVolume(plates[1].shape), 100 * 60 * 12 - 2 * Math.PI * 6.75 ** 2 * 12, 1, "Platte 2 gebohrt");
+  // Schraubenkopf liegt auf der Scheibe oben (z = 25 + 2,5), Mutter unten
+  const bolt = norm.find((b) => b.meta.norm.kind === "schraube4017");
+  near(bolt.shape.boundingBox.bounds[1][2], 25 + 2.5 + 7.5, 0.01, "Kopfoberseite");
+  near(bolt.shape.boundingBox.bounds[0][2], 25 + 2.5 - 45, 0.01, "Schraubenende");
+  // Gewinde im unteren Teil: Klemmlänge bis zur unteren Platte, Kernloch Ø 10,2 im Gewindeteil
+  const thick = [...plate("p1", 0, 20), ...plate("p2", 23, 12), pts];
+  const gw = await K.buildPart(part([...thick, { id: "sv", type: "schraubverbindung", sketch: "sp", direction: "umgekehrt", joint: "gewinde", size: "M12", grade: "8.8", washerHead: true, hole: true }]));
+  okAll(gw);
+  assert.match(gw.status.sv.info, /2 × M12 x 30, Klemmlänge 15 mm, Einschraubtiefe 12,5 mm/);
+  assert.equal(gw.bodies.filter((b) => b.meta?.norm).length, 4);
+  // zu dünnes Gewindeteil: Fehler
+  const thin = await K.buildPart(part([...plate("p1", 0, 5), ...plate("p2", 8, 12), { ...pts, offset: "40" }, { id: "sv", type: "schraubverbindung", sketch: "sp", direction: "umgekehrt", joint: "gewinde", size: "M12" }]));
+  assert.match(thin.status.sv.error, /zu dünn/);
+  // kein Körper auf der Achse
+  const miss = await K.buildPart(part([...plate("p1", 0, 10), { ...pts, points: [{ id: "a", x: 500, y: 500 }], entities: [{ id: "pa", type: "point", p: "a" }] }, { id: "sv", type: "schraubverbindung", sketch: "sp", direction: "umgekehrt" }]));
+  assert.match(miss.status.sv.error, /kein Körper/);
+});
+
+test("iFeature: Tasche aus einem Bauteil auf die Oberseite eines anderen einsetzen (Stufe 52)", async () => {
+  const I = await import("../src/core/ifeature.js");
+  const src = part([
+    rectSketchFeature("b", "XY", 0, 0, 0, "100", "50", "Basis"),
+    { id: "eb", type: "extrude", name: "Block", sketch: "b", distance: "20" },
+    rectSketchFeature("s1", "XY", "20", 10, 10, "20", "10", "Taschenskizze"),
+    { id: "t1", type: "extrude", name: "Tasche", sketch: "s1", distance: "t", mode: "reverse", op: "cut" },
+  ], [{ name: "t", expr: "5" }]);
+  okAll(await K.buildPart(src));
+  const v = I.extractIFeature(src, ["t1"], { name: "Tasche 20x10" });
+  assert.deepEqual(v.features.map((f) => f.id), ["s1", "t1"]);
+  // Ziel: Block 100 × 50 × 30, Tasche auf die Oberseite (XY in 30 mm), 8 tief
+  const dst = part([rectSketchFeature("b", "XY", 0, 0, 0, "100", "50", "Basis"), { id: "eb", type: "extrude", name: "Block", sketch: "b", distance: "30" }]);
+  let k = 0;
+  const r = I.placeIFeature(v, I.targetFrame({ ref: "XY" }, { offset: 30 }), { values: { t: "8" }, params: [], names: dst.features.map((f) => f.name), newId: () => "n" + k++ });
+  dst.features.push(...r.features); dst.params = r.params;
+  const res = await K.buildPart(dst);
+  okAll(res);
+  near(vol(res), 100 * 50 * 30 - 20 * 10 * 8, 1e-3, "Volumen mit Tasche");
+  assert.deepEqual(r.features.map((f) => f.name), ["Taschenskizze", "Tasche"]);
+  // XZ, 90° gedreht und umgekehrt: Skizzen-x zeigt nach Z, Normale nach +Y
+  const g = I.placeIFeature(v, I.targetFrame({ ref: "XZ" }, { rotate: 90, flip: true }), { params: [{ name: "t", expr: "1" }], names: ["Taschenskizze"], newId: () => "m" + k++ });
+  assert.deepEqual(g.features[0].plane.normal, [0, 1, 0]); assert.deepEqual(g.features[0].plane.xDir, [0, 0, 1]);
+  assert.equal(g.features[0].name, "Taschenskizze 2"); assert.deepEqual(g.renamed, { t: "t_2" }); assert.equal(g.features[1].distance, "t_2");
+  const dst2 = part([rectSketchFeature("b", "XY", 0, 0, 0, "100", "50", "Basis"), { id: "eb", type: "extrude", name: "Block", sketch: "b", distance: "30" }], [{ name: "t", expr: "1" }]);
+  const g2 = I.placeIFeature(v, I.targetFrame({ ref: "XZ" }), { params: dst2.params, names: [], newId: () => "q" + k++ });
+  dst2.features.push(...g2.features); dst2.params.push(...g2.params);
+  const res2 = await K.buildPart(dst2);
+  okAll(res2);
+  near(vol(res2), 100 * 50 * 30 - 20 * 10 * 5, 1e-3, "Tasche in der Vorderseite");
+});
+
+test("Schweißbaugruppe: Teile an ihrer Lage, Vorbereitung, Kehlnaht als Körper, Nachbearbeitung (Stufe 53)", async () => {
+  const { inlineDerived } = await import("../src/core/ableiten.js");
+  const W = await import("../src/core/schweissbaugruppe.js");
+  // Grundplatte 100 × 60 × 10 und Steg 10 × 60 × 50 mittig darauf (T-Stoß)
+  const platte = { id: "pl", kind: "part", name: "Platte", params: [], features: [rectSketchFeature("a", "XY", 0, 0, 0, "100", "60"), { id: "ae", type: "extrude", sketch: "a", distance: "10" }] };
+  const steg = { id: "st", kind: "part", name: "Steg", params: [], features: [rectSketchFeature("b", "XY", 0, 0, 0, "10", "60"), { id: "be", type: "extrude", sketch: "b", distance: "50" }] };
+  const asm = { id: "as", kind: "assembly", name: "Konsole", components: [{ id: "c1", part: "pl", name: "Platte:1", pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "c2", part: "st", name: "Steg:1", pos: [45, 0, 10], rot: [0, 0, 0] }] };
+  const docs = new Map([platte, steg, asm].map((d) => [d.id, d]));
+  const weld = { id: "wp", kind: "part", name: "Konsole geschweißt", params: [], features: [
+    { id: "sb", type: "schweissbaugruppe", source: "as" },
+    // Nähte an beiden Fußkanten des Stegs (a 4 → Schenkel 4·√2)
+    { id: "n1", type: "naht", name: "Naht", kind: "kehl", a: "4", bead: true, edges: [{ p: [45, 30, 10], type: "LINE" }, { p: [55, 30, 10], type: "LINE" }] },
+    // Nachbearbeitung: Bohrung Ø 10 durch die fertige Gruppe (Platte)
+    { id: "hs", type: "sketch", name: "Bohrbild", plane: { ref: "XY" }, offset: "0", points: [{ id: "q", x: 20, y: 30 }], entities: [{ id: "qe", type: "point", p: "q" }], constraints: [] },
+    { id: "ho", type: "hole", name: "Bohrung", sketch: "hs", diameter: "10", extent: "through", direction: "both" },
+  ] };
+  const res = await K.buildPart(inlineDerived(weld, (id) => docs.get(id)));
+  okAll(res);
+  const z = 4 * Math.SQRT2, bead = 2 * 0.5 * z * z * 60;
+  near(vol(res), 100 * 60 * 10 + 10 * 60 * 50 + bead - Math.PI * 25 * 10, 0.5, "Teile + Nähte − Bohrung");
+  assert.equal(res.bodies.length, 3, "Platte, Steg, Nahtkörper");
+  assert.ok(res.bodies.some((b) => b.meta?.weld));
+  assert.match(res.status.n1.info, /Nahtkörper 1,92 cm³/);
+  assert.deepEqual([...W.weldPhases(weld.features).values()], ["naht", "nachbearbeitung", "nachbearbeitung"]);
+  // Fehler: nicht als erstes Feature, Baugruppe fehlt
+  const r2 = await K.buildPart(inlineDerived({ ...weld, features: [weld.features[2], weld.features[0]] }, (id) => docs.get(id)));
+  assert.match(r2.status.sb.error, /erste Feature/);
+  const r3 = await K.buildPart(inlineDerived({ ...weld, features: [{ ...weld.features[0], source: "weg" }] }, (id) => docs.get(id)));
+  assert.match(r3.status.sb.error, /Baugruppe fehlt/);
+});
+
+test("Konstruktions-Assistent: Welle, Stirnrad, Rillenkugellager, Druckfeder (Stufe 55)", async () => {
+  const A = await import("../src/core/assistent.js");
+  const res = await K.buildPart(part([
+    { id: "w", type: "welle", sections: "30x40; 40x80; 30x40", chamfer: "1", axis: "Z", pos: ["0", "0", "0"] },
+    { id: "z", type: "zahnrad", m: "2", z: "24", b: "20", alpha: "20", bore: "20", axis: "Z", pos: ["100", "0", "0"] },
+    { id: "l", type: "lager", series: "6204", seal: "2RS", axis: "X", pos: ["0", "100", "0"] },
+    { id: "f", type: "feder", d: "2", D: "16", n: "6", L0: "40", axis: "Z", pos: ["0", "-100", "0"] },
+  ]));
+  okAll(res);
+  assert.equal(res.bodies.length, 4);
+  const v = (i) => R.measureVolume(res.bodies[i].shape);
+  // Welle: Zylinder minus zwei Fasenringe (Kegelstumpf-Differenz 1 × 1)
+  const cham = Math.PI * (15 * 15 - (1 / 3) * (15 * 15 + 15 * 14 + 14 * 14)) * 1;
+  near(v(0), Math.PI * (15 * 15 * 80 + 20 * 20 * 80) - 2 * cham, 0.5, "Welle");
+  const bb = res.bodies[0].shape.boundingBox.bounds; near(bb[1][2] - bb[0][2], 160, 1e-6, "Wellenlänge");
+  // Stirnrad: Fläche zwischen Fuß- und Kopfkreis, Volumen grob (Zahnhälfte ≈ Lücke)
+  const g = A.gearData(2, 24, 20);
+  const gv = v(1), lo = Math.PI * ((g.df / 2) ** 2 - 100) * 20, hi = Math.PI * ((g.da / 2) ** 2 - 100) * 20;
+  assert.ok(gv > lo && gv < hi, `Zahnrad-Volumen ${gv}`);
+  const gb = res.bodies[1].shape.boundingBox.bounds; near(gb[1][0] - gb[0][0], g.da, 0.2, "Kopfkreis");
+  assert.match(res.status.z.info, /d 48, da 52, df 43 mm/);
+  // Lager 6204: Außen 47, Breite 14, entlang X gedreht
+  const lb = res.bodies[2].shape.boundingBox.bounds;
+  near(lb[1][0] - lb[0][0], 14, 1e-3, "Lagerbreite"); near(lb[1][1] - lb[0][1], 47, 1e-3, "Außen-Ø");
+  assert.equal(res.bodies[2].meta.norm.designation, "Rillenkugellager DIN 625 - 6204-2RS");
+  // Feder: Drahtvolumen ≈ π²·D·d²/4 · Windungen (Steigung klein)
+  const sp = A.springData(2, 16, 6, 40);
+  const wire = (Math.PI * 1) * Math.hypot(Math.PI * 16, sp.pitch) * sp.nt;
+  near(v(3), wire, wire * 0.02, "Federdraht");
+  assert.match(res.status.f.info, /R = 6,63 N\/mm, Blocklänge 16 mm/);
+});

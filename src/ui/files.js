@@ -308,6 +308,18 @@ export class Files {
       await this.saveText(text, safeName(d.number || d.name) + ".step", "model/step", [{ name: "STEP", extensions: ["step", "stp"] }]);
     });
   }
+  /** IGES 5.3: getrimmte NURBS-Flächen (Werkzeuge Stufe 49), Baugruppe mit allen Komponenten an ihrer Lage */
+  async exportIges() {
+    const items = this.exportItems();
+    if (!items?.length) return toast("Nichts zu exportieren");
+    const d = this.app.activeDoc();
+    await this.withBusy("IGES-Export", async () => {
+      const name = safeName(d.number || d.name) + ".igs";
+      const r = await this.app.kernel.call("exportIges", { items, fileName: name });
+      await this.saveText(r.text, name, "model/iges", [{ name: "IGES", extensions: ["igs", "iges"] }]);
+      toast(`IGES gespeichert: ${r.faces} Flächen` + (r.approx ? `, davon ${r.approx} als Näherung (Raster)` : ""), { kind: "ok" });
+    });
+  }
   async exportStl() {
     const items = this.exportItems();
     if (!items?.length) return toast("Nichts zu exportieren");

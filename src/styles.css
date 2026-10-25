@@ -535,3 +535,13 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .rule-body { margin-top: 6px; }
 .rule-body .inp { flex: 1 1 140px; }
 .macro ol { margin: 6px 0; padding-left: 22px; }
+
+/* Messen (Stufe 47): Maß im 3D-Fenster und Ergebnisliste wie Inventor */
+.measure-label { position: absolute; left: 0; top: 0; pointer-events: none; padding: 1px 6px; border-radius: var(--radius-s); background: color-mix(in srgb, var(--surface) 85%, transparent); color: var(--dye); font: 600 12px/1.5 var(--din); white-space: nowrap; z-index: 5; }
+.measure-list { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin: 0; }
+.measure-list dt { color: var(--ink-soft); }
+.measure-list dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; cursor: copy; }
+.measure-list .main { background: color-mix(in srgb, var(--laser) 22%, transparent); border-radius: var(--radius-s); padding: 0 4px; }
+.measure-list .shown { outline: 1px solid var(--dye); }
+.measure-list .sub { padding-left: 14px; }
+details.measure-more > summary { cursor: pointer; color: var(--ink-soft); margin: 2px 0; }

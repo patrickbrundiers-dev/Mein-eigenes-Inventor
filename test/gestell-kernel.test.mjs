@@ -104,3 +104,14 @@ test("Gestell: Stecknasen am T-Stoß – Zapfen am stoßenden Stab, Schlitze mit
   const vLong = vol(await buildBody(g, key(g, 1))), vLong0 = vol(await buildBody(ref, key(ref, 1)));
   near(vLong0 - vLong, 4 * 5.5 * 2.5 * 3, 1, "Schlitze durch die Wand (je Seite 0,25 Spiel)");
 });
+
+test("Gestell: Fußplatte wird ein eigenes Einzelteil mit Bohrungen", async () => {
+  const g = defaultGestell("sk", segments);
+  g.members[4].plateA = { thickness: "8", overhang: "20", holes: "4", holeDia: "11", edge: "15" };
+  const groups = groupParts(gestellPlan({ ...g, segments }));
+  const pg = groups.find((x) => x.key.startsWith("p:"));
+  assert.ok(pg, "Platte als eigene Gruppe");
+  const res = await buildBody(g, pg.key);
+  assert.equal(res.bodies.length, 1);
+  near(vol(res), 80 * 80 * 8 - 4 * Math.PI * 5.5 * 5.5 * 8, 5, "Platte 80 × 80 × 8 mit 4 × Ø 11");
+});

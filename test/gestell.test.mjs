@@ -107,3 +107,19 @@ test("Gestell: Stecknasen von Hand, Schlitze als Durchbrüche im durchlaufenden 
   const p2 = gestellPlan({ ...g, segments });
   assert.equal(p2.drills.filter((d) => d.target.endsWith(" 3")).length, 4, "Stab 3 übernimmt die Schlitze von Stab 1");
 });
+
+test("Gestell: Kopf- und Fußplatte am geraden Stabende, nicht an der Gehrung", () => {
+  const segments = rect(), g = defaultGestell("sk", segments);
+  g.members[4].plateA = { thickness: "8", overhang: "20", holes: "4", holeDia: "11", edge: "15" };
+  g.members[0].plateB = { thickness: "8" };
+  const plan = gestellPlan({ ...g, segments });
+  assert.equal(plan.plates.length, 1, "Ecke mit Gehrung bekommt keine Platte");
+  assert.ok(plan.issues.some((x) => /Stab 1: Platte an Ende B nur an geradem Ende/.test(x.message)));
+  const pl = plan.plates[0], mid = plan.members.find((m) => m.gid === "gm5");
+  near(pl.W, 80); near(pl.H, 80); near(pl.t, 8);
+  assert.equal(pl.holes.length, 4);
+  assert.deepEqual(pl.normal.map((x) => Math.round(x) + 0), [0, -1, 0], "außen am Ende A, zeigt vom Stab weg");
+  near(pl.center[0], mid.a[0], 1e-6, "Mitte auf der Stabachse");
+  near(pl.center[1], 20, 1e-6, "Ende A liegt an der Innenseite von Stab 1 (halbe Profilbreite)");
+  assert.ok(plan.rows.find((r) => r.no === 5).joints.some((t) => /Platte 80 × 80 × 8 an Ende A/.test(t)));
+});
