@@ -19,11 +19,11 @@ export const SETTINGS_VERSION = 1;
  * teilweise = einige Optionen wirken, Rest geplant; geplant = nur Beschreibung, keine Optionen.
  */
 export const CATEGORIES = [
-  { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standardordner", "Standard-Einheit (intern immer mm/Grad)"] },
-  { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["Beleuchtung"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
-  { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["Standardebene"] },
+  { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standard-Einheit (intern immer mm/Grad)"] },
+  { id: "ansicht", label: "3D-Ansicht", status: "aktiv", note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
+  { id: "skizze", label: "Skizzen", status: "aktiv" },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
-  { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Tooltip-Verzögerung"] },
+  { id: "darstellung", label: "Darstellung", status: "aktiv", note: "Die Verzögerung der Tooltips gibt Windows vor; sie lässt sich hier nicht einstellen." },
   { id: "dokument", label: "Dokument und Modell", status: "teilweise", planned: ["Modelltoleranz"], note: "Gilt für neu angelegte Dokumente; vorhandene bleiben, wie sie sind. Platzhalter: {n} laufende Nummer ({n:3} = dreistellig), {projekt}, {datum}, bei Zeichnungen {quelle}." },
   { id: "material", label: "Materialien", status: "aktiv", note: "Eigene Werkstoffe gelten für Masse, Trägheit, Zuschnittliste und Zeichnung. Benutzte eigene Werkstoffe werden als Kopie in der Projektdatei gespeichert, damit sie auf anderen Rechnern stimmen." },
   { id: "kernel", label: "CAD-Kernel und Leistung", status: "teilweise", planned: ["Kernel-Toleranzen (erst, wenn abgesichert)"], note: "Neu berechnen: F5 oder Menüband 3D-Modell → Verwalten. Berechnungsprotokoll: Befehlssuche (Strg+K) → »Berechnungsprotokoll«." },
@@ -45,6 +45,7 @@ const QUAL = [{ value: "grob", label: "Schnell" }, { value: "normal", label: "No
 
 /** Alle einstellbaren Werte. Jede Option hier wirkt tatsächlich (sonst steht sie unter planned). */
 export const SETTINGS = [
+  { key: "allgemein.ordner", cat: "allgemein", label: "Standardordner für Projekte", type: "folder", default: "", help: "Hier starten »Öffnen« und »Speichern unter«. Leer = zuletzt benutzter Ordner. Nur in der Desktop-Version." },
   { key: "allgemein.autosaveSekunden", cat: "allgemein", label: "Automatische Sicherung nach", unit: "s", type: "number", default: 1.5, min: 0.5, max: 120, help: "Wartezeit nach der letzten Änderung, bevor die Wiederherstellungsdatei geschrieben wird. Abschalten ist nicht vorgesehen." },
   { key: "allgemein.loeschenBestaetigen", cat: "allgemein", label: "Löschen von Dokumenten bestätigen", type: "bool", default: true },
   { key: "allgemein.dezimalstellen", cat: "allgemein", label: "Dezimalstellen für Messwerte", type: "int", default: 3, min: 0, max: 6, help: "Anzeige beim Messen (Abstand, Winkel). Gerechnet wird immer mit voller Genauigkeit." },
@@ -63,10 +64,12 @@ export const SETTINGS = [
   { key: "ansicht.raster", cat: "ansicht", label: "Bodenraster anzeigen", type: "bool", default: true },
   { key: "ansicht.schnittFuellen", cat: "ansicht", label: "Schnittflächen füllen", type: "bool", default: true, help: "Beim Schnitt X/Y/Z wird das geschnittene Material als geschlossene, abgedunkelte Fläche gezeigt statt hohl." },
   { key: "ansicht.viewcube", cat: "ansicht", label: "ViewCube anzeigen", type: "bool", default: true },
+  { key: "ansicht.beleuchtung", cat: "ansicht", label: "Beleuchtung", type: "enum", default: "standard", options: [{ value: "standard", label: "Standard" }, { value: "kontrast", label: "Kontrastreich (Kanten und Rundungen deutlicher)" }, { value: "weich", label: "Weich (wenig Schatten)" }], help: "Gilt für die normale Darstellung; die Fotodarstellung hat ihr eigenes Licht." },
   { key: "ansicht.kantenfarbe", cat: "ansicht", label: "Kantenfarbe", type: "color", default: "#1c2733" },
   { key: "ansicht.auswahlfarbe", cat: "ansicht", label: "Auswahlfarbe", type: "color", default: "#d9600c" },
   { key: "ansicht.hoverfarbe", cat: "ansicht", label: "Hervorhebung unter dem Mauszeiger", type: "color", default: "#ef7d1a" },
 
+  { key: "skizze.standardebene", cat: "skizze", label: "Erste Skizze in leerem Bauteil auf", type: "enum", default: "waehlen", options: [{ value: "waehlen", label: "Ebene jedes Mal wählen" }, { value: "XY", label: "XY-Ebene" }, { value: "XZ", label: "XZ-Ebene" }, { value: "YZ", label: "YZ-Ebene" }], help: "Hat das Bauteil schon Körper, wählst du die Ebene oder Fläche wie gewohnt." },
   { key: "skizze.rasterfang", cat: "skizze", label: "Rasterfang beim Öffnen einer Skizze", type: "bool", default: false },
   { key: "skizze.rasterweite", cat: "skizze", label: "Rasterweite", unit: "mm", type: "number", default: 0, min: 0, max: 1000, help: "0 = automatisch passend zum Zoom." },
   { key: "skizze.fangradius", cat: "skizze", label: "Fangradius", unit: "px", type: "int", default: 7, min: 3, max: 30, help: "Abstand, ab dem Punkte und Mittelpunkte gefangen werden." },
@@ -158,6 +161,10 @@ export function validateValue(def, v) {
     }
     case "layout":
       return validateLayout(v);
+    case "folder":
+      if (typeof v !== "string") return { ok: false, error: "Ordner erwartet" };
+      if (v.length > 500 || /[\u0000-\u001f]/.test(v)) return { ok: false, error: "Ungültiger Ordnerpfad" };
+      return { ok: true, value: v.trim() };
     case "name":
       return validateNameTemplate(v, def.placeholders, { allowEmpty: !!def.allowEmpty });
     case "materialkey":
