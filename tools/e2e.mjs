@@ -219,6 +219,7 @@ try {
 
   // Rohr-Profil
   await evalApp(() => window.__werkcad.selectFeature(null));
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: "Rohr / Profil" }).click();
   await idle();
   await shot("13-profil");
@@ -636,6 +637,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Knickrahmen"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: "Knickrahmen" }).click();
   await idle();
   const kr0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, len: r.bodies[0]?.meta?.length, errors: Object.values(r.status).filter((s) => !s.ok).length }; });
@@ -661,6 +663,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Profilzug"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: "Profilzug 3D" }).click();
   await idle();
   const pz0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, errors: Object.values(r.status).filter((s) => !s.ok).length }; });
@@ -676,6 +679,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Biegerohr"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: "Rohr gebogen" }).click();
   await idle();
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
@@ -706,10 +710,13 @@ try {
   await evalApp(() => window.__werkcad.newPart("Stirnplatte"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: "Rohr / Profil" }).click();
   await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: "Stirn-/Fußplatte" }).click();
   await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: /^Rippe$/ }).click();
   await idle();
   const sp0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, kinds: r.bodies.map((b) => b.kind).join(), bad: Object.values(r.status).filter((s) => !s.ok).length }; });
@@ -899,6 +906,7 @@ try {
   // Generatoren stehen im Menüband der Baugruppe und bauen sich dort als Unterbaugruppe ein
   const host = await evalApp(() => { const a = window.__werkcad; a.newAssembly(); return { id: a.activeId }; });
   await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: /^Treppe$/ }).click();
   await idle(180000);
   const hosted = await evalApp((id) => { const a = window.__werkcad, h = a.doc(id), c = h.components[0]; return { n: h.components.length, sub: a.doc(c?.part)?.generator?.gen, open: a.activeDoc()?.id === c?.part }; }, host.id);
@@ -953,6 +961,7 @@ try {
   // Kantteil (MegaCAD-Abgleich M17): U-Profil aus Blech, Abwicklung als DXF
   await evalApp(() => window.__werkcad.newPart("Kantteil"));
   await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: /^Kantteil$/ }).click();
   await idle(60000);
   const kt = await evalApp(async () => {
@@ -1112,6 +1121,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: "Rohr / Profil" }).click();
   await idle();
   const pq = () => page.locator("#props input.profile-quick");
@@ -1534,12 +1544,12 @@ try {
     await page.waitForTimeout(300);
     const cv = await page.locator("#viewer canvas").boundingBox();
     const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
-    await page.locator("#ribbon .rb-btn", { hasText: /^Verlängern$/ }).click();
+    await page.locator("#ribbon button", { hasText: /^Verlängern$/ }).click();
     let [cx, cy] = await at(18, 10);
     await page.mouse.click(cx, cy);
     await page.waitForTimeout(200);
     const ext = await evalApp(() => { const p = window.__werkcad.sketcher.sk.points.find((q) => q.id === "ei"); return { x: p.x, y: p.y }; });
-    await page.locator("#ribbon .rb-btn", { hasText: /^Teilen$/ }).click();
+    await page.locator("#ribbon button", { hasText: /^Teilen$/ }).click();
     [cx, cy] = await at(35, 10);
     await page.mouse.click(cx, cy);
     await page.waitForTimeout(200);
@@ -1965,7 +1975,7 @@ try {
 
   // Menüband anordnen (Werkzeuge Stufe 25): Gruppe per Rechtsklick ausblenden und verschieben, im Center wieder einblenden
   {
-    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
     const groupsNow = () => evalApp(() => [...document.querySelectorAll("#ribbon .rb-group")].map((g) => g.dataset.group));
     const g0 = await groupsNow();
     await page.locator('#ribbon .rb-group[data-group="Anschluss"]').click({ button: "right" });
@@ -1973,7 +1983,7 @@ try {
     await page.waitForTimeout(150);
     const g1 = await groupsNow();
     const plus = await page.locator("#ribbon .rb-hidden").textContent();
-    await page.locator('#ribbon .rb-group[data-group="Profile"]').click({ button: "right" });
+    await page.locator('#ribbon .rb-group[data-group="Blech"]').click({ button: "right" });
     await page.locator(".menu button", { hasText: "Nach links" }).click();
     await page.waitForTimeout(150);
     const g2 = await groupsNow();
@@ -1982,20 +1992,39 @@ try {
     await evalApp(() => window.__werkcad.props.settingsDialog({ category: "werkzeuge" }));
     await page.waitForTimeout(300);
     const box = page.locator(".dialog .rb-editor");
+    await box.locator('select[aria-label="Registerkarte"]').selectOption("metallbau");
     const unchecked = !(await box.locator('li[data-group="Anschluss"] input[type=checkbox]').isChecked());
     await box.locator('li[data-group="Anschluss"] input[type=checkbox]').check();
     await page.waitForTimeout(100);
-    const shown = await evalApp(() => window.__werkcad.prefs.get("werkzeuge.menueband").modell?.hide || []);
+    const shown = await evalApp(() => window.__werkcad.prefs.get("werkzeuge.menueband").metallbau?.hide || []);
     await box.locator("button", { hasText: "Alles zurücksetzen" }).click();
     await page.waitForTimeout(100);
     const cleared = await evalApp(() => window.__werkcad.prefs.get("werkzeuge.menueband"));
     await page.keyboard.press("Escape");
     await page.waitForTimeout(200);
     const g3 = await groupsNow();
-    const iP = (g) => g.indexOf("Profile"), iE = (g) => g.indexOf("Erstellen");
+    const iP = (g) => g.indexOf("Blech");
     step("Menüband anordnen", g0.includes("Anschluss") && !g1.includes("Anschluss") && g1.length === g0.length - 1 && plus === "+1" &&
-      iP(g2) === iE(g2) - 1 && saved?.modell?.hide?.includes("Anschluss") && unchecked && shown.length === 0 && Object.keys(cleared || {}).length === 0 && g3.join() === g0.join(),
+      iP(g2) === iP(g0) - 1 && saved?.metallbau?.hide?.includes("Anschluss") && unchecked && shown.length === 0 && Object.keys(cleared || {}).length === 0 && g3.join() === g0.join(),
       JSON.stringify({ g1: g1.length, plus, g2, saved, unchecked, shown, cleared, same: g3.join() === g0.join() }));
+  }
+
+  // Menüband aufgeräumt (Inventor-Vorbild): Bauteil und Baugruppe passen ohne Scrollen in 1600 px, Hauptbefehle groß, Rest klein
+  {
+    const fit = async () => evalApp(() => { const p = document.querySelector("#ribbon .rb-panel"); return { over: p.scrollWidth - p.clientWidth, big: p.querySelectorAll(".rb-btn").length, small: p.querySelectorAll(".rb-small").length }; });
+    const tab = async (t) => { await page.locator("#ribbon .rb-tab", { hasText: t }).click(); return fit(); };
+    const fPart = await tab("3D-Modell"), fPartM = await tab("Metallbau");
+    await shot("26e2-menueband-metallbau");
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    await shot("26e1-menueband-bauteil");
+    await evalApp(() => window.__werkcad.newAssembly());
+    await idle();
+    const fAsm = await tab("Zusammenfügen");
+    await shot("26e3-menueband-baugruppe");
+    const fAsmM = await tab("Metallbau");
+    await shot("26e4-menueband-baugruppe-metallbau");
+    const all = [fPart, fPartM, fAsm, fAsmM];
+    step("Menüband aufgeräumt", all.every((f) => f.over <= 0) && fPart.small >= 8 && fAsm.small >= 8, JSON.stringify({ fPart, fPartM, fAsm, fAsmM }));
   }
 
   // Dokument-Vorgaben (Werkzeuge Stufe 26): Namensregel, Sachnummer, Standardwerkstoff, Inhalt neuer Projekte

@@ -126,7 +126,7 @@ export const SETTINGS = [
 ];
 
 /** Werkzeuge, deren letzte Eingabe gemerkt wird (werkzeuge.letzte) */
-export const TOOL_MEMO_KEYS = ["rundung", "versatz", "polygon", "muster", "kreismuster"];
+export const TOOL_MEMO_KEYS = ["rundung", "versatz", "polygon", "muster", "kreismuster", "trafo-move", "trafo-rotate", "trafo-scale"];
 
 const BY_KEY = new Map(SETTINGS.map((s) => [s.key, s]));
 export const settingDef = (key) => BY_KEY.get(key);

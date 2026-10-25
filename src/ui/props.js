@@ -30,7 +30,7 @@ import { NORM_KINDS, NORM_SIZES, BOLT_LENGTHS, defaultNormteil, normDesignation,
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
-import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir } from "../core/geom.js";
+import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, jointUnit, jointLabel } from "../core/kinematik.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom } from "../core/subasm.js";
 import { materialOf, materialList } from "../core/materials.js";
@@ -1636,6 +1636,48 @@ export class Props {
     copy.pos = [c.pos[0] + 50, c.pos[1], c.pos[2]];
     this.app.edit("Duplizieren", () => asm.components.push(copy));
     this.app.sel = { type: "component", id: copy.id };
+  }
+  /** gewählte Komponente der offenen Baugruppe (oder Hinweis) */
+  selectedComponent(what) {
+    const asm = this.app.activeDoc();
+    const c = asm?.kind === "assembly" && this.app.sel?.type === "component" ? asm.components.find((x) => x.id === this.app.sel.id) : null;
+    if (!c) toast(`Erst die Komponente wählen, die ${what}`);
+    return c;
+  }
+  copySelectedComponent() {
+    const c = this.selectedComponent("kopiert werden soll");
+    if (c) this.duplicateComponent(c.id);
+  }
+  showAllComponents() {
+    const asm = this.app.activeDoc();
+    if (asm?.kind === "assembly") this.app.edit("Alle einblenden", () => { for (const c of asm.components) delete c.hidden; });
+  }
+  /** Komponente um einen Betrag verschieben bzw. um eine Achse drehen (wie Inventor Free Move / Free Rotate, mit Zahlen) */
+  moveComponentDialog(kind) {
+    const c = this.selectedComponent(kind === "move" ? "verschoben werden soll" : "gedreht werden soll");
+    if (!c) return;
+    if (c.fixed) return toast(`${c.name} ist fixiert – zuerst »Fixiert« abwählen`);
+    const scope = this.scope();
+    const inputs = kind === "move" ? [["dx", "X"], ["dy", "Y"], ["dz", "Z"]].map(([k, l]) => [k, l, h("input", { class: "inp", value: "0", spellcheck: "false" })]) : [["angle", "Winkel °", h("input", { class: "inp", value: "90", spellcheck: "false" })]];
+    const axis = h("select", { class: "inp" }, ...["X", "Y", "Z"].map((a) => h("option", { value: a, selected: a === "Z" }, a)));
+    const err = h("div", { class: "hint" });
+    modal({
+      title: kind === "move" ? `${c.name} verschieben` : `${c.name} drehen`,
+      body: h("div", { class: "pattern-dlg" }, ...inputs.map(([, l, inp]) => h("div", { class: "field" }, h("label", {}, l), inp)),
+        kind === "rotate" ? h("div", { class: "field" }, h("label", {}, "Achse (Welt)"), axis) : null, err),
+      buttons: [{ label: "Abbrechen", value: null }, { label: kind === "move" ? "Verschieben" : "Drehen", primary: true, run: () => {
+        let v;
+        try { v = inputs.map(([, , inp]) => evaluate(inp.value.trim() || "0", scope)); } catch (e) { err.textContent = e.message; return false; }
+        if (kind === "move") this.app.edit("Verschieben", () => { c.pos = c.pos.map((x, i) => Math.round((Number(x) + v[i]) * 1e6) / 1e6); });
+        else this.app.edit("Drehen", () => {
+          // um die Weltachse durch den Ursprung der Komponente
+          const ax = [0, 0, 0]; ax["XYZ".indexOf(axis.value)] = 1;
+          const d = decomposePlacement(matMul(rotationAbout(c.pos, ax, v[0]), placementMatrix(c.pos, c.rot)));
+          c.rot = d.rot;
+        });
+        return true;
+      } }],
+    });
   }
 
   // ---------- Dialoge ----------

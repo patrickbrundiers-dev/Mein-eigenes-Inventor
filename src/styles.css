@@ -454,3 +454,4 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .field-msg.hint { color: var(--steel-4); border-color: var(--steel-4); }
 .field-bad input, .field-bad select { border-color: var(--err); }
 .field-warn input, .field-warn select { border-color: var(--warn); }
+.rb-small.icon-only { padding: 2px 4px; gap: 0; }

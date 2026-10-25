@@ -220,46 +220,57 @@ export class Ribbon {
         ] },
       ],
     };
+    // Aufbau wie Inventor: je Gruppe die wichtigsten Befehle groß (big = Anzahl), die übrigen klein in Spalten zu je 3;
+    // Metallbau (Profile, Blech, Anschluss, Generatoren, Stahlbau) als eigene Karte wie Inventors Konstruktion-Karte
     if (mode === "part") {
       return [
         { id: "modell", label: "3D-Modell", groups: [
           { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch")] },
-          { label: "Arbeitselemente", buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
-          { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper"), B("kantteil", "Kantteil", "kantteil"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil")] },
-          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
-          { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil")] },
-          { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
-          { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
+          { label: "Erstellen", big: 2, buttons: [B("extrude", "Extrusion", "extrude"), B("revolve", "Drehung", "revolve"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil"), B("cutExtrude", "Ausschnitt", "cut"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper")] },
+          { label: "Ändern", big: 2, buttons: [B("hole", "Bohrung", "hole"), B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
+          { label: "Muster", small: true, buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
+          { label: "Arbeitselemente", small: true, buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() })] },
-          { label: "Verwalten", buttons: [B("params", "Parameter", "params"), B("importStep", "STEP einfügen", "import"), B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() })] },
+          { label: "Verwalten", big: 1, buttons: [B("params", "Parameter", "params"), B("importStep", "STEP einfügen", "import"), B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() })] },
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },
+        ] },
+        { id: "metallbau", label: "Metallbau", groups: [
+          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
+          { label: "Blech", buttons: [B("kantteil", "Kantteil", "kantteil")] },
+          { label: "Anschluss", buttons: [B("naht", "Schweißnaht", "naht"), B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("normteil", "Normteil", "normteil")] },
         ] },
         this.exportTab("part"),
         view,
       ];
     }
     if (mode === "sketch") {
+      const C = (tool, label, ic) => T(tool, label, ic, { iconOnly: true });
       return [
         { id: "skizze", label: "Skizze", context: true, groups: [
-          { label: "Erstellen", buttons: [
-            T("line", "Linie", "line"), T("rect", "Rechteck", "rect"), T("rectc", "Rechteck Mitte", "rectc"),
-            T("circle", "Kreis", "circle"), T("arc3", "Bogen", "arc"), T("arcc", "Bogen Mitte", "arcc"), T("spline", "Spline", "spline"), T("point", "Punkt", "point"),
+          { label: "Erstellen", big: 4, buttons: [
+            T("line", "Linie", "line"), T("circle", "Kreis", "circle"), T("arc3", "Bogen", "arc"), T("rect", "Rechteck", "rect"),
+            T("rectc", "Rechteck Mitte", "rectc"), T("arcc", "Bogen Mitte", "arcc"), T("spline", "Spline", "spline"),
+            T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"),
+            T("sfillet", "Rundung", "fillet"), T("point", "Punkt", "point"),
           ] },
-          { label: "Formen", small: true, buttons: [T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon")] },
-          { label: "Ändern", buttons: [T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"), T("sfillet", "Rundung", "fillet"), T("offset", "Versatz", "offset"), T("mirror", "Spiegeln", "mirror"), B("sclean", "Säubern", "clean", { run: () => sk.cleanDialog() }), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() })] },
-          { label: "Muster", small: true, buttons: [T("pattern", "Rechteckmuster", "pattern"), T("cpattern", "Kreismuster", "circpattern")] },
-          { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("constr", "Konstruktion", "construct", { on: !!sk.construction, run: () => sk.toggleConstruction() })] },
-          { label: "Bemaßung", buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() })] },
+          { label: "Übernehmen", big: 1, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() })] },
+          { label: "Ändern", small: true, buttons: [
+            T("smove", "Verschieben", "move"), T("scopy", "Kopieren", "copy"), T("srotate", "Drehen", "rotate"),
+            T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"),
+            T("sscale", "Skalieren", "scale"), T("offset", "Versatz", "offset"), B("sclean", "Säubern", "clean", { run: () => sk.cleanDialog() }),
+          ] },
+          { label: "Muster", small: true, buttons: [T("pattern", "Rechteckmuster", "pattern"), T("cpattern", "Kreismuster", "circpattern"), T("mirror", "Spiegeln", "mirror")] },
+          { label: "Bemaßung", big: 2, buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() }), B("params", "Parameter", "params")] },
           { label: "Abhängigkeiten", small: true, buttons: [
-            T("horizontal", "Horizontal", "horizontal"), T("vertical", "Vertikal", "vertical"), T("coincident", "Koinzident", "coincident"),
-            T("parallel", "Parallel", "parallel"), T("perpendicular", "Senkrecht", "perpendicular"), T("equal", "Gleich", "equal"),
-            T("tangent", "Tangential", "tangent"), T("fix", "Fixieren", "fix"), T("midpoint", "Mittelpunkt", "midpoint"),
-            T("concentric", "Konzentrisch", "concentric"), T("collinear", "Kollinear", "collinear"), T("symmetric", "Symmetrisch", "symmetric"),
+            C("coincident", "Koinzident", "coincident"), C("collinear", "Kollinear", "collinear"), C("concentric", "Konzentrisch", "concentric"),
+            C("fix", "Fixieren", "fix"), C("parallel", "Parallel", "parallel"), C("perpendicular", "Senkrecht", "perpendicular"),
+            C("horizontal", "Horizontal", "horizontal"), C("vertical", "Vertikal", "vertical"), C("tangent", "Tangential", "tangent"),
+            C("midpoint", "Mittelpunkt", "midpoint"), C("symmetric", "Symmetrisch", "symmetric"), C("equal", "Gleich", "equal"),
           ] },
-          { label: "Anzeige", buttons: [
+          { label: "Format", small: true, buttons: [
+            B("constr", "Konstruktion", "construct", { on: !!sk.construction, run: () => sk.toggleConstruction() }),
             B("glyphs", "Symbole", "eye", { on: sk.showGlyphs, run: () => { sk.showGlyphs = !sk.showGlyphs; sk.render(); this.render(); } }),
             B("gridsnap", "Rasterfang", "grid", { on: sk.gridSnap, run: () => { sk.gridSnap = !sk.gridSnap; sk.render(); this.render(); } }),
-            B("params", "Parameter", "params"),
           ] },
           { label: "Beenden", buttons: [B("finishSketch", "Skizze fertig", "finish", { finish: true })] },
         ] },
@@ -267,16 +278,20 @@ export class Ribbon {
       ];
     }
     if (mode === "assembly") {
+      const asm = app.activeDoc();
       return [
         { id: "baugruppe", label: "Zusammenfügen", groups: [
-          { label: "Komponente", buttons: [B("place", "Platzieren", "place"), B("normteilAsm", "Normteil", "normteil"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() })] },
-          { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon")] },
+          { label: "Komponente", big: 2, buttons: [B("place", "Platzieren", "place"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("normteilAsm", "Normteil", "normteil"), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() })] },
+          { label: "Position", small: true, buttons: [B("cmove", "Verschieben", "move", { run: () => app.props.moveComponentDialog("move") }), B("crotate", "Drehen", "rotate", { run: () => app.props.moveComponentDialog("rotate") }), B("ccopy", "Kopieren", "copy", { run: () => app.props.copySelectedComponent() })] },
+          { label: "Beziehungen", big: 2, buttons: [B("align", "Fläche an Fläche", "align", { on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("joint", "Drehgelenk", "hinge", { run: () => app.props.jointDialog() }), B("alignFlush", "Bündig", "align", { on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" })] },
+          { label: "Verwalten", big: 1, buttons: [B("bom", "Stückliste", "bom"), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() }), B("asmParams", "Parameter", "params", { disabled: !asm?.generator, run: () => app.props.paramsDialog() }), B("showComps", "Alle einblenden", "eye", { disabled: !asm?.components?.some((c) => c.hidden), run: () => app.props.showAllComponents() })] },
+          { label: "Prüfen", small: true, buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() })] },
+          { label: "Bewegung", small: true, buttons: [B("animate", "Bewegen", "motion", { run: () => app.props.animateJoints() }), B("explode", "Explosion", "explode", { on: app.viewer.explode > 0, run: () => app.props.explodeDialog() })] },
+          { label: "Zeichnung", small: true, buttons: [B("newDrawing", "Zeichnung ableiten", "drawing"), B("partDrawings", "Einzelteilzeichnungen", "drawing", { run: () => app.partDrawings(app.activeId) })] },
+        ] },
+        { id: "metallbau", label: "Metallbau", groups: [
+          { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun")] },
           { label: "Stahlbau", buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband")] },
-          { label: "Positionieren", buttons: [B("align", "Fläche an Fläche", "align", { on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "align", { on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" })] },
-          { label: "Listen", buttons: [B("bom", "Stückliste", "bom"), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() })] },
-          { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() })] },
-          { label: "Bewegung", buttons: [B("joint", "Drehgelenk", "hinge", { run: () => app.props.jointDialog() }), B("animate", "Bewegen", "motion", { run: () => app.props.animateJoints() }), B("explode", "Explosion", "explode", { on: app.viewer.explode > 0, run: () => app.props.explodeDialog() })] },
-          { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing"), B("partDrawings", "Einzelteilzeichnungen", "drawing", { run: () => app.partDrawings(app.activeId) })] },
         ] },
         this.exportTab("assembly"),
         view,
@@ -376,14 +391,13 @@ export class Ribbon {
       const L = applyRibbonLayout(tab.id, tab.groups, this.app.prefs.get("werkzeuge.menueband") || {});
       for (const g of L.groups) {
         const btns = h("div", { class: "rb-buttons" });
-        if (g.small) {
-          // Kleine Knöpfe in Spalten zu je 3
-          for (let i = 0; i < g.buttons.length; i += 3) {
-            btns.append(h("div", { class: "rb-stack" }, ...g.buttons.slice(i, i + 3).map((b) =>
-              h("button", { class: "rb-small" + (b.on ? " on" : ""), title: this.tip(b), onclick: b.run, disabled: b.disabled }, icon(b.icon), b.label))));
-          }
-        } else {
-          for (const b of g.buttons) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, title: this.tip(b) }, icon(b.icon), h("span", {}, b.label)));
+        // groß: alle (Standard), keine (small) oder die ersten g.big; der Rest klein in Spalten zu je 3
+        const nBig = g.small ? 0 : g.big ?? g.buttons.length;
+        for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, title: this.tip(b) }, icon(b.icon), h("span", {}, b.label)));
+        const rest = g.buttons.slice(nBig);
+        for (let i = 0; i < rest.length; i += 3) {
+          btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + 3).map((b) =>
+            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), title: this.tip(b), "aria-label": b.label, onclick: b.run, disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : b.label))));
         }
         panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns, h("div", { class: "rb-group-label" }, g.label)));
       }

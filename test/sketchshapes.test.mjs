@@ -1,7 +1,7 @@
 // Langloch, Polygon, Spiegeln: Form, Freiheitsgrade, Kontur, Folgen von Maßänderungen
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, constraintLabel, patternEntities, patternOf } from "../src/core/sketchshapes.js";
+import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, constraintLabel, patternEntities, patternOf, transformEntities } from "../src/core/sketchshapes.js";
 import { solveSketch } from "../src/core/solver.js";
 import { newSketch, extractProfiles } from "../src/core/sketch.js";
 
@@ -244,4 +244,41 @@ test("Automatische Bedingungen: parallel, senkrecht, tangential, gleich", () => 
   sk.entities.push({ id, type: "line", p1: "q1", p2: "q2" });
   sk.constraints.push({ id: "kp", type: "parallel", e1: id, e2: "l1" });
   assert.ok(solveSketch(sk).ok);
+});
+
+test("Verschieben, Drehen, Skalieren, Kopieren (Inventor Move/Rotate/Scale/Copy): Bedingungen bleiben lösbar", () => {
+  const base = () => ({
+    points: [{ id: "O", x: 0, y: 0 }, { id: "a", x: 40, y: 0 }, { id: "c", x: 20, y: 10 }],
+    entities: [{ id: "Oe", type: "point", p: "O", origin: true, construction: true }, { id: "L", type: "line", p1: "O", p2: "a" }, { id: "K", type: "circle", c: "c", r: 5 }],
+    constraints: [{ id: "Of", type: "fix", p: "O", x: 0, y: 0 }, { id: "h", type: "horizontal", e: "L" }, { id: "d", type: "length", e: "L", value: "40" }, { id: "dk", type: "diameter", e: "K", value: "10" }],
+  });
+  const P = (sk, id) => sk.points.find((p) => p.id === id);
+  // Verschieben: Linie löst sich vom Ursprung, der bleibt stehen; Maße unverändert
+  const m = base();
+  transformEntities(m, ["L", "K"], { kind: "move", dx: 10, dy: 5 }, { uid });
+  assert.ok(solveSketch(m).ok);
+  near(P(m, "O").x, 0); near(P(m, "a").x, 50); near(P(m, "a").y, 5); near(P(m, "c").x, 30);
+  assert.notEqual(m.entities[1].p1, "O");
+  // Drehen um 90°: horizontal fällt weg, Länge bleibt
+  const r = base();
+  transformEntities(r, ["L"], { kind: "rotate", cx: 0, cy: 0, angle: 90 }, { uid });
+  assert.ok(solveSketch(r).ok);
+  assert.ok(!r.constraints.some((c) => c.id === "h"));
+  near(P(r, "a").x, 0, 1e-6); near(P(r, "a").y, 40, 1e-6);
+  // Skalieren ×2: Zahlenmaße wachsen mit
+  const s = base();
+  transformEntities(s, ["L", "K"], { kind: "scale", cx: 0, cy: 0, factor: 2 }, { uid });
+  assert.ok(solveSketch(s).ok);
+  assert.equal(s.constraints.find((c) => c.id === "d").value, "80");
+  assert.equal(s.constraints.find((c) => c.id === "dk").value, "20");
+  near(P(s, "a").x, 80); near(s.entities[2].r, 10);
+  // Kopieren: Original bleibt, Kopie frei
+  const k = base();
+  const out = transformEntities(k, ["K"], { kind: "move", dx: 0, dy: 30, copy: true }, { uid });
+  assert.equal(k.entities.length, 4);
+  const kk = k.entities.find((e) => e.id === out.entities[0]);
+  near(P(k, kk.c).y, 40); near(P(k, "c").y, 10);
+  assert.ok(solveSketch(k).ok);
+  assert.throws(() => transformEntities(base(), [], { kind: "move", dx: 1, dy: 0 }, { uid }), /wählen/);
+  assert.throws(() => transformEntities(base(), ["L"], { kind: "scale", cx: 0, cy: 0, factor: 0 }, { uid }), /Faktor/);
 });
