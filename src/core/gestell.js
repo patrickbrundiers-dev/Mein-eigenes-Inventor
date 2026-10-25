@@ -11,7 +11,7 @@
 // asm.gestell = {
 //   skeleton: Bauteil-ID (Skelett: Skizzenlinien und Profilzüge), section: { kind, size, group? } (Vorgabe),
 //   place: "mm" (Lage zur Linie, siehe PLACES), rot: Drehung in °, corner: Ecken automatisch, tee: T-Stöße automatisch, gap?: Spalt der Automatik und der Werkzeuge,
-//   members: [{ id, no, seg, section?, place?, rot?, offU?, offV?, extA?, extB?, reuse? }],
+//   members: [{ id, no, seg, section?, place?, rot?, offU?, offV?, extA?, extB?, reuse?, plateA?, plateB? }] (Platte wie defaultPlatte),
 //   joints: [{ id, kind (JOINT_KINDS), a, b (Stab-IDs), gap? }], next: nächste Stabnummer }
 // Verbindungen von Hand gehen vor; was an einem Ende von Hand gesetzt ist, setzt die Automatik nicht mehr.
 
@@ -22,6 +22,7 @@ import { sketchLines } from "./sketch.js";
 import { solveSketch } from "./solver.js";
 import { resolvePathPoints, pathSegments, upFor, UP_AXES } from "./profilzug.js";
 import { tabLayout, slotSize, defaultStecksystem } from "./stecksystem.js";
+import { platePlan } from "./anschluss.js";
 
 /** Lage des Profils zur Skelettlinie: Ankerpunkt des Querschnitts auf der Linie (o/m/u = oben/Mitte/unten, l/m/r) */
 export const PLACES = Object.freeze([
@@ -382,13 +383,35 @@ export function gestellPlan(input) {
     o.sec = so.sec;
   }
 
+  // 5) Kopf- und Fußplatten am Stabende (wie Anschlussbleche: außen am geraden Ende, Mitte auf der Achse, Stab bleibt lang)
+  const plates = [];
+  for (const o of M) {
+    const pm = out.get(o.m.id);
+    if (!pm) continue;
+    const z = v3.norm(v3.sub(pm.b, pm.a)), fr = memberFrame(pm.a, z, pm.rot, pm.up);
+    for (const [end, key, tag] of [["start", "plateA", "A"], ["end", "plateB", "B"]]) {
+      const st = o.m[key] ?? (o.m.reuse ? byId.get(o.m.reuse)?.m[key] : null); // wiederverwendet: Platte vom Vorbild
+      if (!st) continue;
+      const P0 = end === "start" ? pm.a : pm.b, out1 = end === "start" ? v3.mul(z, -1) : z;
+      const cs = pm.cuts[end] || [];
+      if (cs.length > 1 || (cs.length && Math.abs(v3.dot(v3.norm(cs[0].n), z)) < 0.9999)) { warn(`${o.label}: Platte an Ende ${tag} nur an geradem Ende – Gehrung oder Ausklinkung dort zuerst aufheben`); continue; }
+      const C = cs.length ? v3.add(P0, v3.mul(z, v3.dot(v3.sub(cs[0].p, P0), z))) : P0;
+      let pl;
+      try { pl = platePlan(o.sec.geom, { thickness: num(st.thickness, 10), overhang: num(st.overhang), width: num(st.width), height: num(st.height), radius: num(st.radius), holes: num(st.holes), holeDia: num(st.holeDia), edge: num(st.edge) }); }
+      catch (e) { warn(`${o.label}, Platte ${tag}: ${e.message}`); continue; }
+      for (const x of pl.issues) warn(`${o.label}, Platte ${tag}: ${x.message}`);
+      plates.push({ center: C, xDir: fr.u, normal: out1, W: pl.W, H: pl.H, t: pl.t, r: pl.r, holes: pl.holes, d: pl.d, name: `Platte ${round1(pl.W)}x${round1(pl.H)}x${round1(pl.t)}` });
+      o.joints.push(`Platte ${fmt1(pl.W)} × ${fmt1(pl.H)} × ${fmt1(pl.t)} an Ende ${tag}`);
+    }
+  }
+
   const members = M.map((o) => out.get(o.m.id)).filter(Boolean);
   const rows = M.filter((o) => out.has(o.m.id)).map((o) => {
     const pm = out.get(o.m.id);
     return { id: o.m.id, no: o.m.no, name: pm.name, profile: secLabel(o.sec), seg: o.s.label, len: axisLength(pm), angA: cutDeg(pm.cuts.start, pm), angB: cutDeg(pm.cuts.end, pm), joints: o.joints, reuse: o.m.reuse ? byId.get(o.m.reuse)?.label : "" };
   });
   const drills = [...slots].flatMap(([id, list]) => { const pm = out.get(id); return pm ? list.map((d) => ({ ...d, target: pm.name })) : []; });
-  return { members, chains: [], plates: [], drills, issues, rows, info: `${members.length} Stäbe` };
+  return { members, chains: [], plates, drills, issues, rows, info: `${members.length} Stäbe` + (plates.length ? `, ${plates.length} Platten` : "") };
 }
 
 const round1 = (x) => Math.round(x * 10) / 10;
@@ -432,6 +455,6 @@ function cutDeg(list, pm) {
 export function gestellCsv(rows) {
   const esc = (s) => (/[;"\n]/.test(String(s)) ? `"${String(s).replace(/"/g, '""')}"` : String(s));
   const f = (x) => String(x).replace(".", ",");
-  return ["Stab;Profil;Skelettlinie;Länge Achse (mm);Schnitt A (°);Schnitt B (°);Verbindungen",
-    ...rows.map((r) => [r.name, r.profile, r.seg, f(r.len), f(r.angA), f(r.angB), r.joints.join(", ")].map(esc).join(";"))].join("\n");
+  return ["Stab;Profil;Skelettlinie;Länge Achse (mm);Schnitt A (°);Schnitt B (°);Masse (kg);Verbindungen",
+    ...rows.map((r) => [r.name, r.profile, r.seg, f(r.len), f(r.angA), f(r.angB), r.mass ? f(Math.round(r.mass * 1000) / 1000) : "", r.joints.join(", ")].map(esc).join(";"))].join("\n");
 }

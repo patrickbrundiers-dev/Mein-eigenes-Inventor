@@ -984,10 +984,25 @@ try {
   await page.locator("#ribbon button", { hasText: /^Gestell-Info$/ }).click();
   await page.waitForSelector(".dialog table.grid tbody tr", { timeout: 20000 });
   const infoRows = await page.locator(".dialog table.grid tbody tr").count();
+  const infoMass = await page.locator(".dialog .hint").filter({ hasText: "Masse gesamt" }).textContent().catch(() => "");
   await shot("20p-gestell-info");
   await page.locator(".dialog .btn", { hasText: "Schließen" }).click();
+  // Fußplatte an Stab 5 (Ende A) über die Eigenschaften: eigenes Einzelteil mit Bohrungen
+  await evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc();
+    a.sel = { type: "component", id: asm.components.find((c) => c.genKey && c.name.endsWith(" 5")).id };
+    a.props.render();
+  });
+  await page.locator("#props label.chk", { hasText: "Platte an Ende A" }).locator("input").check();
+  await idle(180000);
+  const gsP = await evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.genKey?.startsWith("p:"));
+    const b = c && a.results.get(c.part)?.bodies?.[0];
+    return { comps: asm.components.length, plate: b?.meta?.plate || null, ok: !!c && Object.values(a.results.get(c.part)?.status || {}).every((x) => x.ok) };
+  });
   step("Gestell wie Inventor", gs0.gestell && gs0.sketches > 0 && gs0.members === 5 && gs0.comps === 5 && gs0.parts === 3 && gs0.ok && gs0.lens[0] === 560 && gs0.lens.at(-1) === 1040
-    && gs1.ok && gs1.joints === 1 && gs1.parts >= 4 && infoRows === 5, JSON.stringify({ gs0, gs1, infoRows }));
+    && gs1.ok && gs1.joints === 1 && gs1.parts >= 4 && infoRows === 5 && /Masse gesamt [1-9][\d,.]* kg, Schwerpunkt/.test(infoMass)
+    && gsP.ok && gsP.comps === 6 && gsP.plate?.holes === 4, JSON.stringify({ gs0, gs1, infoRows, infoMass, gsP }));
   // Kantteil (MegaCAD-Abgleich M17): U-Profil aus Blech, Abwicklung als DXF
   await evalApp(() => window.__werkcad.newPart("Kantteil"));
   await idle();
