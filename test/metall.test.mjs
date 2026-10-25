@@ -413,7 +413,7 @@ test("Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCA
   assert.equal(rings.length, 2);
   const r0 = rings[0].points, c0 = [600, 0, (r0[0][2] + r0[12][2]) / 2];
   assert.ok(r0.every((q) => Math.abs(Math.hypot(q[0] - c0[0], q[2] - c0[2]) - 150) < 1e-6 && Math.abs(q[1]) < 1e-9), "Kreis ⌀ 300 in der Feldebene");
-  assert.match(k.issues.map((x) => x.message).join(), /Öffnung \d+ mm größer als 120/, "Kreuz hält 120 mm nicht ein → Warnung");
+  assert.match(k.issues.map((x) => x.message).join(), /Öffnung \d+ mm über 120/, "Kreuz hält 120 mm nicht ein → Warnung");
   const open = Number(/Öffnung (\d+) mm/.exec(k.issues.map((x) => x.message).join())[1]);
   assert.ok(open < 580, `Inkreis kleiner als das halbe Feld (${open})`);
   assert.throws(() => plan({ runs: "2400", fill: "kreuz", ringD: "900" }), /Ring ⌀ 900 passt nicht/);
@@ -711,4 +711,26 @@ test("Gurte durch die Pfosten: ein Stück bis 5800 mm, Stoß im Pfosten, Durchbr
   const z = plan({ runs: "2400", beltMode: "zwischen" });
   assert.equal(z.members.filter((m) => /^Obergurt/.test(m.name)).length, 2);
   assert.equal(g.genValues("gelaender", { runs: "2000" }).beltMode, "zwischen");
+});
+
+test("Geländernorm Deutschland: Höhe, Öffnungen, Leitereffekt, Boden nach Nutzung", async () => {
+  const { defaultGenerator, resolveGenParams, GENERATORS } = await import("../src/core/generator.js");
+  const { normRules, railingIssues } = await import("../src/core/gelaendernorm.js");
+  assert.deepEqual([normRules("wohn", 3000).minH, normRules("wohn", 13000).minH, normRules("arbeit", 3000).minH, normRules("arbeit", 13000).minH, normRules("industrie", 0).minH], [900, 1100, 1000, 1100, 1100]);
+  const E = (x) => Number(String(x).replace(",", "."));
+  const run = (g, patch) => { const f = defaultGenerator(g); return GENERATORS[g].plan(resolveGenParams(g, { ...f.params, ...patch }, E)).issues; };
+  const msg = (is) => is.map((x) => `${x.key}:${x.message}`).join(" | ");
+  for (const g of ["gelaender", "treppe", "balkon", "spindel"]) assert.equal(run(g, {}).length, 0, `${g}: Standardwerte normgerecht – ${msg(run(g, {}))}`);
+  assert.match(msg(run("gelaender", { height: "950", fall: "13000" })), /height:Höhe 950 mm unter 1100 mm/, "Absturzhöhe über 12 m");
+  assert.match(msg(run("gelaender", { height: "950", use: "arbeit" })), /height:Höhe 950 mm unter 1000 mm \(ASR A2\.1\)/);
+  assert.match(msg(run("gelaender", { fill: "quer" })), /fill:Waagrechte Füllstäbe/, "Leitereffekt im Wohnbereich");
+  assert.doesNotMatch(msg(run("gelaender", { fill: "quer", use: "arbeit" })), /Waagrechte/);
+  assert.match(msg(run("gelaender", { gapMax: "150" })), /gapMax:Öffnung \d+ mm über 120 mm/);
+  assert.doesNotMatch(msg(run("gelaender", { gapMax: "150", use: "arbeit" })), /Öffnung/, "Arbeitsstätte: Stäbe bis 180 mm");
+  assert.match(msg(run("gelaender", { bottomZ: "250" })), /bottomZ:Abstand Boden bis Unterkante Geländer \d+ mm über 120 mm/);
+  assert.match(msg(run("gelaender", { use: "industrie" })), /use:Fußleiste ≥ 100 mm/);
+  assert.match(msg(run("treppe", { gelUse: "wohn" })), /gelFill:Waagrechte/, "Treppe mit Knieleisten im Wohnhaus");
+  assert.match(msg(run("balkon", { railH: "850" })), /railH:Höhe 850 mm unter 900 mm/);
+  assert.match(msg(run("spindel", { bars: "1" })), /post:Öffnung \d+ mm über 120 mm/, "ein Stab je Stufe reicht im Wohnhaus nicht");
+  assert.match(msg(railingIssues({ use: "wohn", height: 1000, fill: "staketen", gap: 100, rail: { kind: "rohr", geom: { width: 60.3 } } }, { rail: "rail" })), /rail:Handlauf Ø 60,3 mm/);
 });

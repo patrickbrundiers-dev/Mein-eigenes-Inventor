@@ -12,6 +12,7 @@
 import { fieldError } from "./generror.js";
 import { sectionGeometry } from "./sections.js";
 import { railAlong } from "./treppengelaender.js";
+import { normSchema, railingIssues } from "./gelaendernorm.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { holderSchema } from "./handlaufhalter.js";
 
@@ -44,6 +45,7 @@ export const TREPPE = {
     { key: "treadT", label: "Stufendicke", type: "num", default: "30", group: "Stufen" },
     { key: "gel", label: "Geländer (beim Hinaufgehen)", type: "select", options: [["beide", "beidseitig"], ["links", "links"], ["rechts", "rechts"], ["keine", "kein Geländer"]], default: "beide", missing: "keine", tiles: "top", group: "Geländer" },
     { key: "gelPodest", label: "Geländer ums Podest", type: "check", default: true, group: "Geländer", when: (p) => gel(p) && podest(p) },
+    ...normSchema((k) => "gel" + k[0].toUpperCase() + k.slice(1), "Geländer", gel, { def: "arbeit", fall: false }),
     { key: "gelH", label: "Höhe über Stufenvorderkante", type: "num", default: "1000", group: "Geländer", when: gel },
     { key: "gelFill", label: "Füllung", type: "select", options: [["quer", "Knieleisten"], ["staketen", "Staketen"], ["keine", "nur Handlauf"]], default: "quer", tiles: "front", group: "Geländer", when: gel },
     { key: "gelBars", label: "Anzahl Knieleisten", type: "num", unit: "Stk", default: "2", group: "Geländer", when: (p) => gel(p) && p.gelFill === "quer" },
@@ -256,7 +258,6 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
   const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100, holder: p.gelHolder !== "keine", holderGap: p.gelHolderGap, holderD: p.gelHolderD };
   if (!(o.H > 300)) throw fieldError("Geländerhöhe zu klein", "gelH");
   if (!(o.postMax > post)) throw fieldError("Pfostenabstand zu klein", "gelPostMax");
-  if (o.H < 900 - 1e-6) issues.push({ key: "gelH", level: "Warnung", message: `Geländerhöhe ${Math.round(o.H)} mm unter 900 mm – Landesbauordnung bzw. DIN 18065 prüfen` });
   const chains = [], members = [], plates = [], drills = [];
   let posts = 0, bars = 0, gapMax = 0;
   for (const [name, paths] of sides) {
@@ -269,7 +270,9 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
       posts += r.posts; bars += r.bars; gapMax = Math.max(gapMax, r.gapMax);
     });
   }
-  if (gapMax > 120 + 1e-6) issues.push({ key: "gelGap", level: p.gelFill === "quer" ? "Hinweis" : "Warnung", message: p.gelFill === "quer" ? `Knieleisten: Öffnung ${Math.round(gapMax)} mm – nur für Arbeitsstätten/Industrie (EN ISO 14122-3), nicht für Wohngebäude` : `Öffnung ${Math.round(gapMax)} mm größer als 120 mm` });
+  // Geländernorm nach Nutzung; Absturzhöhe höchstens die Geschosshöhe
+  issues.push(...railingIssues({ use: p.gelUse, fall: p.height, height: o.H, fill: p.gelFill, gap: gapMax, bottom: 0, open: o.H - p.gelRail.geom.height, rail: p.gelRail },
+    { height: "gelH", fill: "gelFill", gap: p.gelFill === "quer" ? "gelBars" : "gelGap", rail: "gelRail", use: "gelUse" }));
   const what = p.gelFill === "quer" ? `${bars} Knieleisten` : p.gelFill === "staketen" ? `${bars} Stäbe` : "nur Handlauf";
   return { chains, members, plates, drills, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` + (o.holder ? `, Handlaufhalter mit Bohrung Ø ${String(drills[0]?.d).replace(".", ",")}` : "") };
 }

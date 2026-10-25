@@ -12,6 +12,7 @@ import { platePlan } from "./anschluss.js";
 import { splitList } from "./expr.js";
 import { holderSchema, holderDrop, holderParts } from "./handlaufhalter.js";
 import { orientRot, rotExtent } from "./orient.js";
+import { normSchema, railingIssues } from "./gelaendernorm.js";
 
 const SEC = { rohr: "Rundrohr", vierkant: "Quadratrohr", rechteck: "Rechteckrohr", flach: "Flachstahl", rund: "Rundstahl", vierkantvoll: "Vierkantstahl" };
 
@@ -21,6 +22,7 @@ export const GELAENDER = {
     { key: "runs", label: "Läufe (Längen)", type: "list", default: "3000", group: "Lauflinie" },
     { key: "angle", label: "Eckwinkel", type: "num", unit: "°", default: "90", group: "Lauflinie", when: (p) => splitList(p.runs).length > 1 },
     { key: "height", label: "Höhe (OK Handlauf)", type: "num", default: "1000", group: "Lauflinie" },
+    ...normSchema(undefined, "Lauflinie"),
     { key: "post", label: "Pfosten", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Pfosten" },
     { key: "postMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Pfosten" },
     { key: "base", label: "Befestigung", type: "select", options: [["fussplatte", "Fußplatte"], ["keine", "ohne (eingespannt)"]], default: "fussplatte", group: "Pfosten" },
@@ -54,7 +56,6 @@ export const GELAENDER = {
     if (!runs.length || runs.some((x) => !(x > 0))) throw fieldError("Läufe: Längen > 0 angeben", "runs");
     const H = p.height, post = p.post, rail = p.rail;
     if (!(H > 200)) throw fieldError("Höhe zu klein", "height");
-    if (H < 900) issues.push({ key: "height", level: "Warnung", message: `Höhe ${H} mm unter 900 mm – Absturzsicherung nach Landesbauordnung prüfen` });
     if (!(p.postMax > post.geom.width)) throw fieldError("Pfostenabstand zu klein", "postMax");
     // Lauflinie in der Ebene
     const pts = [[0, 0]];
@@ -242,8 +243,10 @@ export const GELAENDER = {
         }
       });
     }
-    if (gapMaxSeen > 120 + 1e-6) issues.push({ key: "gapMax", level: "Warnung", message: `Öffnung ${Math.round(gapMaxSeen)} mm größer als 120 mm` });
-    if (p.fill === "keine" && (fillHi - fillLo) > 120) issues.push({ key: "fill", level: "Hinweis", message: "Ohne Füllung: Öffnungen größer als 120 mm" });
+    // Geländernorm: Höhe, Öffnungen, Abstand zum Boden nach Nutzung (gelaendernorm.js)
+    const bottomEdge = p.bottom ? zBot - beltExt([1, 0], [0, 0, 1]).high / 2 : ["blech", "glas", "rahmen"].includes(p.fill) ? fillLo + p.panelGap : 0;
+    const gapKey = ["staketen", "quer", "rahmen"].includes(p.fill) ? "gapMax" : ["blech", "glas"].includes(p.fill) ? "panelGap" : p.fill === "kreuz" ? (p.ring ? "ringD" : "fill") : "fill";
+    issues.push(...railingIssues({ use: p.use, fall: p.fall, height: H, fill: p.fill, gap: gapMaxSeen, bottom: bottomEdge, open: fillHi - fillLo, rail }, { height: "height", fill: "fill", gap: gapKey, bottom: p.bottom ? "bottomZ" : "fill", rail: "rail", use: "use" }));
     const total = runs.reduce((a, b) => a + b, 0);
     const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "");
     return { chains, members, plates, drills, info, issues, sections: SEC };

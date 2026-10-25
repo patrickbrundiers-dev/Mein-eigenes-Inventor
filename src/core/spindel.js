@@ -10,6 +10,7 @@ const DEG = Math.PI / 180;
 
 import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
+import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
 export const SPINDEL = {
   label: "Spindeltreppe",
   schema: [
@@ -24,7 +25,9 @@ export const SPINDEL = {
     { key: "tread", label: "Stufen", type: "select", options: [["blech", "Blech (Riffelblech)"], ["gitterrost", "Gitterrost"], ["holz", "Holz"]], default: "blech", group: "Stufen" },
     { key: "treadT", label: "Stufendicke", type: "num", default: "6", group: "Stufen" },
     { key: "railing", label: "Geländer außen", type: "check", default: true, group: "Geländer" },
+    ...normSchema(undefined, "Geländer", (p) => p.railing, { fall: false }),
     { key: "railH", label: "Geländerhöhe über Stufenvorderkante", type: "num", default: "900", group: "Geländer", when: (p) => p.railing },
+    { key: "bars", label: "Stäbe je Stufe (0 = nach Geländernorm)", type: "num", unit: "Stk", default: "0", missing: "1", group: "Geländer", when: (p) => p.railing },
     { key: "post", label: "Geländerstab", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => p.railing },
     { key: "rail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Geländer", when: (p) => p.railing },
   ],
@@ -58,6 +61,10 @@ export const SPINDEL = {
     const armRot = orientRot(arm, [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, 0, -1], legs: [0, 1, -1], stem: [0, 0, -1] });
     const postOff = p.railing ? Math.max(p.post.geom.width, p.post.geom.height) / 2 + 15 : 0;
     const railPts = [];
+    // Stäbe je Stufe: so viele, dass der lichte Abstand (waagrecht) die Geländernorm einhält
+    const barW = p.railing ? Math.max(p.post.geom.width, p.post.geom.height) : 0;
+    const chord = 2 * (R - postOff) * Math.sin((theta * DEG) / 2);
+    const perStep = !p.railing ? 0 : p.bars > 0 ? Math.round(p.bars) : Math.max(1, Math.ceil(chord / (normRules(p.use, H).gapV + barW) - 1e-9));
     for (let i = 1; i < n; i++) {
       // Stufe i: Vorderkante bei (i − 1)·θ, hinten um θ + Überdeckung weiter
       const a0 = sg * (i - 1) * theta, a1 = a0 + sg * (theta + ov);
@@ -73,13 +80,22 @@ export const SPINDEL = {
       if (p.railing) {
         const pa = a0 + sg * theta / 2;
         const top = z + p.railH;
-        members.push({ section: p.post, a: at(R - postOff, pa, z), b: at(R - postOff, pa, top), name: `Geländerstab ${i}`, up: [1, 0, 0] });
+        for (let j = 0; j < perStep; j++) {
+          // Handlauf steigt linear zwischen den Stufenmitten: Stab endet auf seiner Höhe
+          const f = (j + 0.5) / perStep - 0.5, aj = pa + sg * theta * f;
+          members.push({ section: p.post, a: at(R - postOff, aj, z), b: at(R - postOff, aj, top + f * s), name: `Geländerstab ${i}${perStep > 1 ? "." + (j + 1) : ""}`, up: [1, 0, 0] });
+        }
         railPts.push(at(R - postOff, pa, top + p.rail.geom.width / 2));
       }
     }
     if (p.railing && railPts.length >= 2) chains.push({ section: p.rail, points: railPts, name: "Handlauf", up: [0, 0, 1] });
+    if (p.railing) {
+      // Geländernorm: ein Stab je Stufe – lichter Abstand der Stäbe waagrecht gemessen
+      const clear = 2 * (R - postOff) * Math.sin((theta * DEG) / 2 / perStep) - barW;
+      issues.push(...railingIssues({ use: p.use, fall: H, height: p.railH, fill: "staketen", gap: clear, bottom: 0, rail: p.rail }, { height: "railH", gap: "post", rail: "rail", use: "use" }));
+    }
     const total = (n - 1) * theta;
-    const info = `${n} Steigungen à ${fmt(s)} mm, ${fmt(theta)}° je Stufe (Gehlinie ${fmt(ag)} mm, 2s + a = ${Math.round(step)} mm), Gesamtdrehung ${fmt(total)}°, Durchgangshöhe ${Math.round(head)} mm, Laufbreite ${Math.round(R - r0)} mm`;
+    const info = `${n} Steigungen à ${fmt(s)} mm, ${fmt(theta)}° je Stufe (Gehlinie ${fmt(ag)} mm, 2s + a = ${Math.round(step)} mm), Gesamtdrehung ${fmt(total)}°, Durchgangshöhe ${Math.round(head)} mm, Laufbreite ${Math.round(R - r0)} mm` + (p.railing ? `, ${perStep} Geländerstäbe je Stufe` : "");
     return { chains, members, plates, info, issues };
   },
 };

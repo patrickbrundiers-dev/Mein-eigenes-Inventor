@@ -7,6 +7,7 @@
 
 import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
+import { normSchema } from "./gelaendernorm.js";
 import { catalogToDims, sectionGeometry } from "./sections.js";
 import { splitList } from "./expr.js";
 import { GELAENDER } from "./gelaender.js";
@@ -33,6 +34,7 @@ export const BALKON = {
     { key: "deck", label: "Belag", type: "select", options: [["gitterrost", "Gitterrost"], ["holz", "Holz (Dielen)"], ["blech", "Blech (Riffelblech)"], ["keiner", "kein Belag"]], default: "gitterrost", group: "Belag" },
     { key: "deckT", label: "Belagdicke", type: "num", default: "30", group: "Belag", when: (p) => p.deck !== "keiner" },
     { key: "railing", label: "Geländer", type: "check", default: true, group: "Geländer" },
+    ...normSchema(undefined, "Geländer", (p) => p.railing, { fall: false }),
     { key: "railH", label: "Geländerhöhe über Belag", type: "num", default: "1000", group: "Geländer", when: (p) => p.railing },
     { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz mit Ring"], ["rahmen", "Rahmen mit Staketen"]], default: "staketen", tiles: "front", group: "Geländer", when: (p) => p.railing },
     { key: "railHolder", label: "Handlaufhalter (Stift, Bohrung im Handlauf)", type: "check", default: true, missing: false, group: "Geländer", when: (p) => p.railing },
@@ -98,10 +100,10 @@ export const BALKON = {
       const i = p.inset, yStart = y0 + 20;
       const side = T - i - yStart, front = W - 2 * i;
       if (!(side > 100 && front > 100)) throw fieldError("Geländer passt nicht – Abstand vom Rand prüfen", "inset");
-      const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill, holder: p.railHolder ? "stift" : "keine", overhang: p.railHolder ? 50 : 0,
+      const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill, use: p.use, fall: Hb, holder: p.railHolder ? "stift" : "keine", overhang: p.railHolder ? 50 : 0,
         post: sec({ kind: "vierkant", size: "40x3" }), belt: sec({ kind: "flach", size: "40x8" }), bar: sec({ kind: "vierkantvoll", size: "12" }), beltMode: "zwischen" }); // Balkon-Geländer wie bisher
       // Parameter des Geländers heißen hier anders: Meldungen auf die Balkon-Felder umschlüsseln
-      const KEY = { height: "railH", fill: "fill" };
+      const KEY = { height: "railH", fill: "fill", gapMax: "fill", panelGap: "fill", ringD: "fill", use: "use" };
       let g;
       try { g = GELAENDER.plan(gp); } catch (e) { throw fieldError(e.message, KEY[e.key] || "railing"); }
       // Geländer-Lage: Ursprung, +X entlang des ersten Laufs → hier +Y ab (i, yStart, Hb)

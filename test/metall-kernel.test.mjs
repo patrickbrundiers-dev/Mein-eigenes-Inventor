@@ -290,8 +290,8 @@ test("Spindeltreppe: Stufen als Ringausschnitt, Träger, Geländer, Prüfung Dur
   okAll(res);
   const by = (re) => res.bodies.filter((b) => re.test(b.name));
   const bb = (b) => b.shape.boundingBox.bounds;
-  // 2800 / 190 → 15 Steigungen à 186,7; 14 Stufen, 14 Träger, 14 Stäbe, Handlauf
-  assert.equal(by(/^Stufe /).length, 14); assert.equal(by(/^Stufenträger/).length, 14); assert.equal(by(/^Geländerstab/).length, 14);
+  // 2800 / 190 → 15 Steigungen à 186,7; 14 Stufen, 14 Träger, 4 Stäbe je Stufe, Handlauf
+  assert.equal(by(/^Stufe /).length, 14); assert.equal(by(/^Stufenträger/).length, 14); assert.equal(by(/^Geländerstab/).length, 14 * 4, "4 Stäbe je Stufe: lichter Abstand ≤ 120 mm (Geländernorm Wohngebäude)");
   assert.ok(by(/^Handlauf/).length >= 13);
   const sp = by(/^Spindel/)[0];
   near(bb(sp)[1][2], 2800 + 900, 0.01, "Spindel bis Handlaufhöhe über der Decke");
