@@ -142,6 +142,7 @@ export class App {
   withPartDefaults(p) {
     const mat = this.prefs.get("dokument.werkstoff");
     p.material = materialOf(mat).source === "fallback" ? "S235" : mat;
+    if (this.prefs.get("dokument.restwand") === false) p.restwand = false;
     const num = this.prefs.get("dokument.nummer");
     if (num) p.number = nextName(num, this.parts().map((d) => d.number).filter(Boolean), { projekt: this.project.name }, this.parts().length + 1);
     return p;

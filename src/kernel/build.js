@@ -12,7 +12,7 @@ import { pathChain, reverseChain, pathLength as chainLength, pathPatternStations
 import { sectionGeometry, sectionName, profileId, THREADS, loopLength } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
 import { planKnickrahmen, knickInput } from "../core/knickrahmen.js";
-import { planTubeCuts, atEnd as openAtEnd } from "../core/tubecuts.js";
+import { planTubeCuts, contourPolyline, atEnd as openAtEnd } from "../core/tubecuts.js";
 import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.js";
 import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
@@ -224,7 +224,10 @@ export function createKernel(R) {
    * Fläche (Normale n zur Rohrachse hin), bis zur Achse bzw. durchgehend bis hinter die Gegenwand extrudiert.
    * Seite wie im Rohr-Editor: oben = +v, vorne (90°, von Ende A gesehen rechts) = −u.
    */
-  function tubeCutTool(it, x, fr, geom) {
+  function tubeCutTool(it, x, fr, geom, prof) {
+    // über die Rundung (Eckrundung, Rundrohr in 2D bzw. über der Winkelkorrektur): eigene Werkzeuge je Abschnitt,
+    // durchgehend als gespiegelte Kontur auf der Gegenseite
+    if (it.wrap) return (it.through ? [it, opposite(it)] : [it]).flatMap((c) => wrapCutTools(c, x, fr, geom, prof));
     const a = (it.angle * Math.PI) / 180;
     const n = v3.add(v3.mul(fr.v, Math.cos(a)), v3.mul(fr.u, -Math.sin(a)));
     const normal = v3.mul(n, -1);
@@ -241,6 +244,11 @@ export function createKernel(R) {
       const len = it.through ? (2 * it.halfN + 2) / cosG : (it.wall + 1) / cosG + (it.d / 2) * tanG;
       return R.makeCylinder(it.d / 2, out + len, v3.sub(S, v3.mul(ax, out)), ax);
     }
+    // y der Ebene = normal × z: auf der Oberseite nach vorne (−u) – Versatz q wie im Rohr-Editor
+    return contourDrawing(it, geom).sketchOnPlane(new R.Plane(origin, fr.z, normal)).extrude(depth);
+  }
+  /** Umriss einer Kontur als Zeichnung: x längs um die Lage, y quer inkl. Versatz (+ = im Uhrzeigersinn von Ende A) */
+  function contourDrawing(it, geom) {
     let d;
     if (it.kind === "bohrung") d = R.drawCircle(it.d / 2);
     else if (it.kind === "polygon") {
@@ -256,8 +264,78 @@ export function createKernel(R) {
       const w = it.l + ext;
       d = R.drawRoundedRectangle(w, it.b, it.r || 0).translate(it.end === "A" ? (it.l - ext) / 2 : (ext - it.l) / 2, 0);
     } else d = R.drawRoundedRectangle(it.l, it.b, it.r || 0);
-    // y der Ebene = normal × z: auf der Oberseite nach vorne (−u) – Versatz q wie im Rohr-Editor
-    return d.translate(0, it.q).sketchOnPlane(new R.Plane(origin, fr.z, normal)).extrude(depth);
+    return d.translate(0, it.q);
+  }
+  /** Gegenseite einer durchgehenden Kontur: Winkel + 180°, quer gespiegelt */
+  const opposite = (it) => ({ ...it, angle: (it.angle + 180) % 360, q: -it.q, pts: it.pts && it.pts.map(([x, y, bu]) => [x, -y, -bu]) });
+
+  const WRAP_OUT = 0.3; // Überstand der Werkzeuge über Außen- und Innenwand
+  const DEG = Math.PI / 180;
+  /**
+   * Werkzeuge einer Kontur über die Rundung (Patrick, 25.10.2026): auf der ebenen Fläche bzw. am Rundrohr in 3D
+   * innerhalb der Winkelkorrektur als Prisma (parallele Wände), auf der Rundung als Fläche auf dem Zylinder,
+   * radial durch die Wand aufgedickt (Schnitt senkrecht zur Mantelfläche). Rechteckrohr und 2D: Maße auf der
+   * Abwicklung; Rundrohr in 3D: in der Draufsicht.
+   */
+  function wrapCutTools(it, x, fr, geom, prof) {
+    const a = (it.angle * Math.PI) / 180, round = prof.kind === "rohr", R0 = geom.width / 2;
+    const vec = (u, v) => v3.add(v3.mul(fr.u, u), v3.mul(fr.v, v));
+    const n0 = [-Math.sin(a), Math.cos(a)], tS = [-Math.cos(a), -Math.sin(a)]; // Flächennormale, Richtung +s
+    const N = vec(...n0), T = vec(...tS);
+    const lim = Math.min(prof.swivel ?? 45, 89) * DEG;
+    const d0 = contourDrawing(it, geom);
+    const [[, y0], [, y1]] = d0.boundingBox.bounds;
+    const X = 4 * (prof.L + geom.width + geom.height) + 100;
+    const band = (lo, hi) => R.drawRectangle(X, hi - lo).translate(0, (lo + hi) / 2);
+    const tools = [];
+    const flat = round ? (it.mode === "3D" ? R0 * Math.sin(lim) : 0) : it.faceHalf;
+    if (flat > 0 && y0 < flat && y1 > -flat) {
+      const origin = v3.add(v3.add(fr.origin, v3.mul(fr.z, x)), v3.mul(N, it.halfN + 1));
+      tools.push(...sketchesOf(d0.intersect(band(-flat, flat)).sketchOnPlane(new R.Plane(origin, fr.z, v3.mul(N, -1)))).map((sk) => sk.extrude(it.halfN + 1)));
+    }
+    if (!round) {
+      const r = prof.r, arc = (Math.PI * r) / 2 + 1;
+      for (const sg of [1, -1]) {
+        if (!(sg > 0 ? y1 > flat : y0 < -flat)) continue;
+        const part = d0.intersect(sg > 0 ? band(flat, flat + arc) : band(-flat - arc, -flat)).translate(0, -sg * flat);
+        tools.push(...radialTools(part, [n0[0] * (it.halfN - r) + tS[0] * sg * flat, n0[1] * (it.halfN - r) + tS[1] * sg * flat], r, N, T, x, fr, geom, prof));
+      }
+    } else if (it.mode === "2D") tools.push(...radialTools(d0, [0, 0], R0, N, T, x, fr, geom, prof));
+    else {
+      // über der Winkelkorrektur: Draufsicht → Abwicklung (Linienzug), dort senkrecht zur Mantelfläche
+      const pts = contourPolyline(it, 0, { ext: geom.width + geom.height + 10 }).map(([px, py]) => [px, R0 * Math.asin(Math.max(-1, Math.min(1, py / R0)))]);
+      let pen = R.draw(pts[0]);
+      for (const p of pts.slice(1)) pen = pen.lineTo(p);
+      const dw = pen.close(), wl = R0 * lim, arc = (Math.PI * R0) / 2;
+      for (const sg of [1, -1]) {
+        if (!(sg > 0 ? y1 > flat : y0 < -flat)) continue;
+        tools.push(...radialTools(dw.clone().intersect(sg > 0 ? band(wl, arc) : band(-arc, -wl)), [0, 0], R0, N, T, x, fr, geom, prof));
+      }
+    }
+    return tools;
+  }
+  const sketchesOf = (sk) => (sk.sketches ? sk.sketches : [sk]);
+  /**
+   * Zeichnung (x längs um die Lage, w = Bogenlänge auf dem Außenmantel ab der Bezugslinie) auf einen Zylinder um die
+   * Achse durch C (Profil-Koordinaten u, v) mit Außenradius Rs legen und radial durch die Wand aufdicken.
+   * N = Richtung der Bezugslinie (w = 0), T = Richtung wachsender w.
+   */
+  function radialTools(D, C, Rs, N, T, x, fr, geom, prof) {
+    const ext = geom.width + geom.height + 20, Rr = Rs + WRAP_OUT;
+    const axisP = v3.add(v3.add(fr.origin, v3.add(v3.mul(fr.u, C[0]), v3.mul(fr.v, C[1]))), v3.mul(fr.z, -ext));
+    const Hr = v3.add(v3.add(axisP, v3.mul(fr.z, ext + x)), v3.mul(N, Rr));
+    // Zylinder so drehen, dass die Bezugslinie bei u = π liegt (fern der Naht)
+    let cyl = R.makeCylinder(Rr, prof.L + 2 * ext, axisP, fr.z);
+    const latOf = (c) => c.faces.find((f) => f.geomType === "CYLINDRE");
+    const u0 = latOf(cyl).uvCoordinates(Hr)[0];
+    cyl = cyl.rotate(((Math.PI - u0) * 180) / Math.PI, axisP, fr.z);
+    let lat = latOf(cyl), [uH, vH] = lat.uvCoordinates(Hr);
+    if (Math.abs(uH - Math.PI) > 0.1) { cyl = cyl.rotate(((2 * (u0 - Math.PI)) * 180) / Math.PI, axisP, fr.z); lat = latOf(cyl); [uH, vH] = lat.uvCoordinates(Hr); }
+    // (x, w) → (Bogen auf Rr, Achse); u wächst in Richtung z × N
+    let D2 = D.mirror([1, 1], [0, 0], "plane").stretch(Rr / Rs, [0, 1], [0, 0]);
+    if (v3.dot(v3.cross(fr.z, N), T) < 0) D2 = D2.mirror([0, 1], [0, 0], "plane");
+    D2 = D2.translate(Rr * uH, vH);
+    return sketchesOf(D2.sketchOnFace(lat, "original")).map((sk) => thicken(sk.face(), -(prof.t + 2 * WRAP_OUT)));
   }
 
   /**
@@ -377,13 +455,15 @@ export function createKernel(R) {
     const datums = resolveDatums(feats, (x) => evaluate(x, scope));
     // 2D/3D und Winkelkorrektur je Profil bzw. Rahmen (gilt für alle Schnitte dieses Features)
     const cutCfg = (f) => {
-      const c = featureCutSettings(f);
+      const c = featureCutSettings(f, part);
       const sw = E(c.swivel, "Winkelkorrektur");
       if (!(sw >= 0 && sw <= 89)) throw new Error("Winkelkorrektur 0 bis 89°");
       return { mode: c.mode, swivel: sw };
     };
     const keys = [];
-    let acc = JSON.stringify(values) + (part.material || ""); // Werkstoff wählt die Biegetabelle
+    // Werkstoff wählt die Biegetabelle; Schnitt 2D/3D und Restwand am Bauteil gelten für alle Features
+    let acc = JSON.stringify(values) + (part.material || "") + JSON.stringify([part.cutMode, part.swivel, part.restwand]);
+    const keepWall = part.restwand !== false;
     for (const f of feats) { acc = hashString(acc + JSON.stringify(f)); keys.push(acc); }
     let startAt = 0;
     const cacheList = prefixCache.get(part.id) || [];
@@ -486,7 +566,18 @@ export function createKernel(R) {
               case "through": start = -BIG / 2; len = BIG; break;
               default: start = 0; len = d;
             }
-            const tool = extrudeRegions(regions, s.frame, start, len);
+            let tool = extrudeRegions(regions, s.frame, start, len);
+            if (keepWall && f.op === "cut" && f.mode !== "through") {
+              // Mindest-Restwand: Ende(n) fern der Skizze, symmetrisch/zweiseitig beide
+              const N = s.frame.normal, P = (z) => v3.add(s.frame.origin, v3.mul(N, z));
+              const top = f.mode === "reverse" ? 0 : restwandShorten(state.bodies, P(start + len), N, tool.boundingBox);
+              const bot = f.mode === "reverse" || f.mode === "symmetric" || f.mode === "twoSided" ? restwandShorten(state.bodies, P(start), v3.mul(N, -1), tool.boundingBox) : 0;
+              if (top || bot) {
+                if (!(len - top - bot > 1e-6)) throw new Error("Tiefe zu klein für die Mindest-Restwand 0,1 mm");
+                tool = extrudeRegions(regions, s.frame, start + bot, len - top - bot);
+                st.info = `Restwand ${round(RESTWAND)} mm stehen gelassen (Tiefe reichte bis auf die Wand)`;
+              }
+            }
             state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
             applyOp(f.op || "join", tool, f.id, f.name);
             break;
@@ -526,19 +617,22 @@ export function createKernel(R) {
             const depth = through ? BIG : E(f.depth, "Tiefe");
             if (!(depth > 0)) throw new Error("Tiefe muss > 0 sein");
             const dirSign = f.direction === "normal" ? 1 : -1;
-            let tool = null;
+            let tool = null, kept = 0;
             for (const c of centers) {
               const p = toWorld(s.frame, c[0], c[1]);
               const axisDirs = f.direction === "both" ? [1, -1] : [dirSign];
               for (const sg of axisDirs) {
                 const a = v3.mul(s.frame.normal, sg);
-                const t = holeTool(p, a, dia / 2, depth, f, E, through);
+                let t = holeTool(p, a, dia / 2, depth, f, E, through);
+                // Mindest-Restwand: Bohrgrund genau auf (oder knapp vor) der Rückseite der Wand
+                const sh = keepWall && !through ? restwandShorten(state.bodies, v3.add(p, v3.mul(a, depth)), a, t.boundingBox) : 0;
+                if (sh) { t = holeTool(p, a, dia / 2, depth - sh, f, E, through); kept++; }
                 tool = tool ? tool.fuse(t) : t;
               }
             }
             state.tools.set(f.id, { op: "cut", shapes: [{ shape: tool, kind: "tool" }] });
             applyOp("cut", tool, f.id, f.name);
-            st.info = `${centers.length} Bohrung(en) Ø${round(dia)}${f.thread ? " (" + f.thread + ")" : ""}`;
+            st.info = `${centers.length} Bohrung(en) Ø${round(dia)}${f.thread ? " (" + f.thread + ")" : ""}` + (kept ? `, ${kept}× Restwand ${round(RESTWAND)} mm stehen gelassen` : "");
             break;
           }
           case "emboss": {
@@ -599,9 +693,10 @@ export function createKernel(R) {
             const swivel = cut.swivel;
             if (notes.length) st.warning = notes.join("; ");
             // Konturen am Rohr (Rohr-Editor): ungültige werden übersprungen und gemeldet, das Profil bleibt
-            const tc = planTubeCuts(f.cuts, { kind: f.section, W: geom.width, H: geom.height, t: dims.t, r: dims.r ?? 0, L, swivel }, E);
+            const prof = { kind: f.section, W: geom.width, H: geom.height, t: dims.t, r: dims.r ?? 0, L, swivel, mode: cut.mode };
+            const tc = planTubeCuts(f.cuts, prof, E);
             if (tc.issues.length) st.warning = [st.warning, ...tc.issues.map((x) => x.message)].filter(Boolean).join("; ");
-            for (const it of tc.items) for (const x of it.xs) solid = solid.cut(tubeCutTool(it, x, fr, geom));
+            for (const it of tc.items) for (const x of it.xs) for (const tool of [].concat(tubeCutTool(it, x, fr, geom, prof))) solid = solid.cut(tool);
             if (tc.items.length) st.info = `${tc.pierces} Kontur(en), Schneidweg Innenkonturen ${round(tc.cutLength)} mm`;
             const name = sectionName(f.section, dims);
             const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z, sec: { kind: f.section, dims } };
@@ -1404,6 +1499,30 @@ export function createKernel(R) {
       return R.measureDistanceBetween(R.makeVertex(onPlane), face) > 0.01;
     });
     return { tool, face: "PLANE", wrapped: false, overEdge, body: hit.body };
+  }
+
+  const RESTWAND = 0.1;
+  /**
+   * Mindest-Restwand (Patrick, 25.10.2026): Endet eine Vertiefung genau auf der Rückseite einer Wand oder weniger als
+   * 0,1 mm davor, bleiben 0,1 mm stehen. P = Punkt der Endfläche, b = Richtung über das Ende hinaus, box = Hülle des
+   * Werkzeugs. Rückseite = ebene Fläche mit Außennormale in Richtung b, die das Werkzeug überdeckt.
+   * Ergebnis: um wie viel mm die Tiefe zu kürzen ist (0 = nichts).
+   */
+  function restwandShorten(bodies, P, b, box) {
+    let sh = 0;
+    const [lo, hi] = box.bounds;
+    const grown = { bounds: [lo.map((x) => x - 0.2), hi.map((x) => x + 0.2)] };
+    for (const body of bodies) {
+      if (!bboxOverlap(body.shape.boundingBox, grown)) continue;
+      for (const fc of body.shape.faces) {
+        if (fc.geomType !== "PLANE" || !bboxOverlap(fc.boundingBox, grown)) continue;
+        const c = tuple(fc.center), n = v3.norm(tuple(fc.normalAt(fc.center)));
+        if (v3.dot(n, b) < 0.9999) continue;
+        const d = v3.dot(v3.sub(c, P), b);
+        if (d > -1e-4 && d < RESTWAND - 1e-9) sh = Math.max(sh, RESTWAND - d);
+      }
+    }
+    return sh;
   }
 
   function holeTool(p, a, r, depth, f, E, through) {
