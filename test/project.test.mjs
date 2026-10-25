@@ -151,3 +151,37 @@ test("Öffnen: Prüfung verändert die Datei nicht", () => {
   const { project } = loadProject(text);
   assert.equal(serializeProject(project, new Date(project.saved)), text);
 });
+
+test("Verknüpfte Bauteile: Pfade, Suche, Übernahme, eigene Datei (MegaCAD-Abgleich M24)", async () => {
+  const { relPath, resolvePath, dirOf, baseName, linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, partContent } = await import("../src/core/links.js");
+  assert.equal(relPath("/home/p/projekte", "/home/p/teile/platte.wcad"), "../teile/platte.wcad");
+  assert.equal(relPath("/home/p", "/home/p/platte.wcad"), "platte.wcad");
+  assert.equal(relPath("C:\\Kunden\\Mueller", "c:\\Kunden\\Teile\\Pfosten.wcad"), "../Teile/Pfosten.wcad", "Windows: Groß/klein egal");
+  assert.equal(relPath("C:\\Kunden", "D:\\Teile\\x.wcad"), null, "anderes Laufwerk");
+  assert.equal(resolvePath("C:\\Kunden\\Mueller", "../Teile/Pfosten.wcad"), "C:\\Kunden\\Teile\\Pfosten.wcad");
+  assert.equal(resolvePath("/home/p/projekte", "../teile/platte.wcad"), "/home/p/teile/platte.wcad");
+  assert.equal(dirOf("/a/b/c.wcad"), "/a/b");
+  assert.equal(baseName("C:\\a\\b.wcad"), "b.wcad");
+  const link = makeLink("/alt/teile/platte.wcad", { id: "pl", name: "Platte", number: "FP-1" }, "/alt/projekt/gestell.wcad", new Date("2026-10-25T00:00:00Z"));
+  assert.equal(link.rel, "../teile/platte.wcad");
+  assert.deepEqual(linkCandidates(link, "/neu/projekt/gestell.wcad"), ["/neu/teile/platte.wcad", "/alt/teile/platte.wcad"], "erst relativ (Ordner umgezogen), dann absolut");
+  const remotePrj = { format: "werkcad", docs: [{ id: "x", kind: "part", name: "Andere" }, { id: "pl2", kind: "part", name: "Platte", number: "FP-1", material: "eigen1", features: [{ id: "f1" }] }], materials: [{ key: "eigen1", label: "Eigen", density: 7.8 }] };
+  const remote = findLinkedDoc(remotePrj, link);
+  assert.equal(remote.id, "pl2", "id fehlt → über die Teilenummer");
+  const prj = { docs: [] };
+  const local = { id: "loc", kind: "part", name: "Platte", features: [], link };
+  const { doc, changed } = applyLinked(prj, local, remotePrj, remote);
+  assert.ok(changed);
+  assert.equal(doc.id, "loc", "eigene id bleibt (Komponenten zeigen darauf)");
+  assert.equal(doc.link.docId, "pl2");
+  assert.equal(doc.link.rel, "../teile/platte.wcad");
+  assert.deepEqual(doc.features, [{ id: "f1" }]);
+  assert.deepEqual(prj.materials.map((m) => m.key), ["eigen1"], "eigener Werkstoff der Quelle übernommen");
+  assert.equal(applyLinked(prj, doc, remotePrj, remote).changed, false, "zweites Mal unverändert");
+  assert.equal(partContent({ ...doc, link: { path: "anders" } }), partContent(doc), "Verknüpfungsangaben zählen nicht zum Inhalt");
+  const own = partProject({ version: 1, materials: [{ key: "eigen1" }, { key: "x" }] }, { ...doc });
+  assert.equal(own.format, "werkcad");
+  assert.equal(own.docs.length, 1);
+  assert.equal(own.docs[0].link, undefined);
+  assert.deepEqual(own.materials.map((m) => m.key), ["eigen1"]);
+});

@@ -406,6 +406,42 @@ try {
   }, jc);
   await idle(60000);
   step("Drehgelenk und Explosion", kin.joint && kin.angle === 45 && kin.section && kin.anim === true && kin.cleared && kin.exploded && kin.back && kin.sweep?.join() === "0,45,90" && !undoKin.joint && undoKin.same, JSON.stringify({ kin, undoKin }));
+  // Bauteil als eigene Datei (MegaCAD-Abgleich M24): speichern, Schreibschutz, Quelle ändern → aktualisieren, in Baugruppe verknüpfen
+  const lk = await evalApp(async () => {
+    const a = window.__werkcad, f = a.files, asmId = a.activeId, fs = new Map();
+    const orig = { w: f.writeProjectFile, r: f.readLinkedFile, p: f.pickProjectFile };
+    f.writeProjectFile = async (name, text) => { const p = "/teile/" + name; fs.set(p, text); return p; };
+    f.readLinkedFile = async (p) => { if (!fs.has(p)) throw new Error("Datei nicht gefunden"); return fs.get(p); };
+    const r = {};
+    try {
+      const part = a.doc("beispiel_platte");
+      await f.savePartAsFile(part);
+      r.link = part.link?.path;
+      r.file = JSON.parse(fs.get(r.link)).docs.length;
+      r.blocked = a.edit("Name", () => { a.doc("beispiel_platte").name = "Geändert"; }) === false && a.doc("beispiel_platte").name === "Grundplatte";
+      a.openDoc("beispiel_platte");
+      const nf = part.features.length;
+      r.blocked = r.blocked && a.createSketch({ ref: "XY" }) === null && a.addFeature({ type: "extrude" }) === undefined && a.mode !== "sketch" && part.features.length === nf;
+      const src = JSON.parse(fs.get(r.link)), len0 = part.params.find((x) => x.name === "Länge").expr, len1 = `(${len0}) + 55`;
+      src.docs[0].params.find((x) => x.name === "Länge").expr = len1;
+      fs.set(r.link, JSON.stringify(src));
+      const res = await f.refreshLinks();
+      r.updated = res.updated.join();
+      r.len = a.doc("beispiel_platte").params.find((x) => x.name === "Länge").expr === len1;
+      f.pickProjectFile = async () => ({ path: r.link, text: fs.get(r.link) });
+      a.openDoc(asmId);
+      const n0 = a.activeDoc().components.length;
+      await f.linkPartFromFile();
+      r.comps = a.activeDoc().components.length - n0;
+      r.reused = a.project.docs.filter((d) => d.link).length === 1;
+      r.tree = [...document.querySelectorAll("#browser .node .label")].some((n) => n.textContent === "Grundplatte ↗");
+      a.undo(); a.undo(); a.undo();
+      r.undone = !a.doc("beispiel_platte").link && a.doc("beispiel_platte").params.find((x) => x.name === "Länge").expr === len0 && a.activeDoc().components.length === n0;
+    } finally { Object.assign(f, { writeProjectFile: orig.w, readLinkedFile: orig.r, pickProjectFile: orig.p }); }
+    return r;
+  });
+  await idle(60000);
+  step("Bauteil als eigene Datei verknüpft", lk.link === "/teile/BG-100-01.wcad" && lk.file === 1 && lk.blocked && lk.updated === "Grundplatte" && lk.len && lk.comps === 1 && lk.reused && lk.tree && lk.undone, JSON.stringify(lk));
   await shot("17b-abhaengigkeit");
 
   // Unterbaugruppen (MegaCAD-Abgleich M19): Beispiel-Baugruppe zweimal in eine neue Baugruppe, Mengen verdoppeln sich
