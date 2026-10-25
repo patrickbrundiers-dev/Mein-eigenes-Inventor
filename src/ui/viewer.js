@@ -25,7 +25,7 @@ export const VIEWS = {
 export class Viewer {
   constructor(container) {
     this.container = container;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, stencil: true });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.autoClear = false;
@@ -49,6 +49,9 @@ export class Viewer {
     this.displayMode = "kanten";
     this.clip = null; // {plane: THREE.Plane}
     this.renderer.localClippingEnabled = true;
+    this.fillSection = true; // Schnittflächen geschlossen zeigen (Stencil-Verfahren)
+    this.capGroup = new THREE.Group(); // Deckflächen in Weltkoordinaten, nicht in root (sonst Teil der Inhaltsbox)
+    this.scene.add(this.capGroup);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.95));
     this.scene.add(new THREE.HemisphereLight(0xf4f7fb, 0x5b6773, 0.55));
 
@@ -256,6 +259,10 @@ export class Viewer {
     this.showGrid = v["ansicht.raster"];
     if (!this.sketchFrame) this.grid.visible = this.showGrid;
     this.showCube = v["ansicht.viewcube"];
+    if (v["ansicht.schnittFuellen"] !== undefined && v["ansicht.schnittFuellen"] !== this.fillSection) {
+      this.fillSection = v["ansicht.schnittFuellen"];
+      this.updateCaps();
+    }
     const edge = new THREE.Color(v["ansicht.kantenfarbe"]).getHex();
     if (edge !== this.colors.edge) {
       this.colors.edge = edge;
@@ -388,7 +395,7 @@ export class Viewer {
   }
   contentBox() {
     const box = new THREE.Box3();
-    this.root.traverse((o) => { if (o.isMesh && !(o.userData.key !== undefined && this.isHidden(o.userData.key, o.userData.body))) box.expandByObject(o); });
+    this.root.traverse((o) => { if (o.isMesh && !o.userData.stencil && !(o.userData.key !== undefined && this.isHidden(o.userData.key, o.userData.body))) box.expandByObject(o); });
     this.sketchGroup.traverse((o) => { if (o.isLine || o.isPoints) box.expandByObject(o); });
     return box;
   }
@@ -398,6 +405,7 @@ export class Viewer {
     disposeTree(this.root);
     this.root.clear();
     this.pickables = [];
+    this.updateCaps();
     this.edgeCache = null;
     this.clearHover();
     this.render();
@@ -408,6 +416,7 @@ export class Viewer {
     this.clear();
     const g = this.makePartGroup(bodies, color, key, opacity);
     this.root.add(g);
+    this.updateCaps();
     this.render();
     return g;
   }
@@ -459,6 +468,7 @@ export class Viewer {
       this.root.add(g);
     }
     this.root.updateMatrixWorld(true);
+    this.updateCaps();
     this.render();
   }
 
@@ -571,6 +581,7 @@ export class Viewer {
     this.displayMode = mode;
     for (const pk of this.pickables) this.applyDisplay(pk.mesh, pk.lines);
     this.edgeCache = null;
+    this.updateCaps();
     this.render();
   }
   applyDisplay(mesh, lines) {
@@ -596,6 +607,7 @@ export class Viewer {
     this.hidden = new Set(set);
     for (const pk of this.pickables) this.applyDisplay(pk.mesh, pk.lines);
     this.edgeCache = null;
+    this.updateCaps();
     this.render();
   }
 
@@ -621,7 +633,58 @@ export class Viewer {
       pk.lines.material.needsUpdate = true;
     }
     this.edgeCache = null;
+    this.updateCaps();
     this.render();
+  }
+  /**
+   * Geschlossene Schnittflächen: je Körper zählen Rück- minus Vorderseiten im Stencil-Puffer,
+   * wo ein Rest bleibt, liegt die Ebene im Material; dort wird eine Deckfläche gezeichnet
+   * (Körperfarbe abgedunkelt) und der Stencil wieder genullt. Nur bei undurchsichtigen, sichtbaren Körpern.
+   */
+  updateCaps() {
+    for (const pk of this.pickables) {
+      if (pk.stencil) { for (const m of pk.stencil) { m.parent?.remove(m); m.material.dispose(); } pk.stencil = null; }
+    }
+    disposeTree(this.capGroup);
+    this.capGroup.clear();
+    if (!this.clip || !this.fillSection) return;
+    const plane = this.clip.plane;
+    const box = new THREE.Box3();
+    for (const pk of this.pickables) if (pk.mesh.visible) box.expandByObject(pk.mesh);
+    if (box.isEmpty()) return;
+    const size = box.getSize(new THREE.Vector3()).length() * 2 + 10;
+    const center = plane.projectPoint(box.getCenter(new THREE.Vector3()), new THREE.Vector3());
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), plane.normal);
+    const capGeo = new THREE.PlaneGeometry(size, size);
+    let order = 1;
+    for (const pk of this.pickables) {
+      const m = pk.mesh;
+      if (!m.visible || m.material.transparent) continue;
+      const base = { depthWrite: false, depthTest: false, colorWrite: false, stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc, clippingPlanes: [plane] };
+      const back = new THREE.Mesh(m.geometry, new THREE.MeshBasicMaterial({ ...base, side: THREE.BackSide, stencilZPass: THREE.IncrementWrapStencilOp, stencilFail: THREE.IncrementWrapStencilOp, stencilZFail: THREE.IncrementWrapStencilOp }));
+      const front = new THREE.Mesh(m.geometry, new THREE.MeshBasicMaterial({ ...base, side: THREE.FrontSide, stencilZPass: THREE.DecrementWrapStencilOp, stencilFail: THREE.DecrementWrapStencilOp, stencilZFail: THREE.DecrementWrapStencilOp }));
+      pk.stencil = [back, front];
+      for (const s of pk.stencil) {
+        s.userData = { stencil: true, sharedGeo: true };
+        s.raycast = () => {};
+        s.renderOrder = order;
+        m.add(s);
+      }
+      const color = (m.userData.baseColor || new THREE.Color(0x8d99a6)).clone().multiplyScalar(0.6);
+      const cap = new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({
+        color, metalness: 0.05, roughness: 0.7, side: THREE.DoubleSide,
+        stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc,
+        stencilFail: THREE.ZeroStencilOp, stencilZFail: THREE.ZeroStencilOp, stencilZPass: THREE.ZeroStencilOp,
+      }));
+      cap.position.copy(center);
+      cap.quaternion.copy(quat);
+      cap.renderOrder = order + 0.5;
+      cap.userData = { cap: true, key: pk.key, body: pk.body, sharedGeo: true };
+      cap.raycast = () => {};
+      this.capGroup.add(cap);
+      order++;
+    }
+    if (this.capGroup.children.length) this.capGroup.children[0].userData.sharedGeo = false;
   }
   clipped(worldPoint) { return !!this.clip && this.clip.plane.distanceToPoint(worldPoint) < -1e-6; }
 
