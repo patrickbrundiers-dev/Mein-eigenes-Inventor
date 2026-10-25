@@ -18,7 +18,7 @@ import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } fro
 import { classText } from "../core/tolerance.js";
 import { setUserBendTables, adoptProjectBendTables, projectBendTableCopies } from "../core/bendtable.js";
 import { newSketch } from "../core/sketch.js";
-import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir } from "../core/geom.js";
+import { v3, planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir } from "../core/geom.js";
 import { flattenAssembly } from "../core/subasm.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
@@ -33,6 +33,8 @@ import { nextName } from "../core/naming.js";
 import { BuildLog, buildEntry } from "../core/buildlog.js";
 import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generator.js";
 import { groupParts } from "../core/genteil.js";
+import { gestellPlan } from "../core/gestell.js";
+import { refreshAllGestelle, gestellPick, skeletonSegs } from "./gestell.js";
 
 const linkedMessage = (part) => `»${part.name}« ist mit ${baseName(part.link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`;
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
@@ -98,6 +100,8 @@ export class App {
     this.pick = null;
     this.viewer.clearPlanes();
     this.viewer.setHidden([]);
+    // Gestelle folgen ihrem Skelett (Skizze oder Profilzug wurde vielleicht geändert)
+    if (d.kind === "assembly") refreshAllGestelle(this);
     this.setMode(d.kind);
     this.fittedFor = null;
     this.refreshAll();
@@ -180,10 +184,10 @@ export class App {
    */
   syncGenAssembly(asm) {
     const g = asm.generator, gen = GENERATORS[g.gen];
-    // Zahlen auflösen: die Bauteile rechnen ohne die Parameter der Baugruppe
+    // Zahlen auflösen: die Bauteile rechnen ohne die Parameter der Baugruppe (Gestell: Eingabe liegt fertig vor)
     const scope = resolveParams(asm.params || []).values;
-    const params = Object.fromEntries(Object.entries(g.params).map(([k, v]) => [k, gen.schema.find((s) => s.key === k)?.type === "num" ? String(evaluate(String(v), scope)) : JSON.parse(JSON.stringify(v))]));
-    const groups = groupParts(gen.plan(resolveGenParams(g.gen, params, (x) => evaluate(String(x), scope))));
+    const params = g.gen === "gestell" ? JSON.parse(JSON.stringify(g.params)) : Object.fromEntries(Object.entries(g.params).map(([k, v]) => [k, gen.schema.find((s) => s.key === k)?.type === "num" ? String(evaluate(String(v), scope)) : JSON.parse(JSON.stringify(v))]));
+    const groups = groupParts(g.gen === "gestell" ? gestellPlan(params.input) : gen.plan(resolveGenParams(g.gen, params, (x) => evaluate(String(x), scope))));
     const old = this.project.docs.filter((d) => d.kind === "part" && d.genAsm === asm.id), used = new Set();
     const take = (pred) => { const p = old.find((d) => !used.has(d) && pred(d)); if (p) used.add(p); return p; };
     const parts = groups.map((gr) => {
@@ -433,6 +437,7 @@ export class App {
         void results;
         this.solveAssemblyConstraints(d);
         this.showAssembly(d);
+        this.showSketches3D();
       } else if (d.kind === "drawing") {
         await this.drawing.update();
       }
@@ -481,7 +486,7 @@ export class App {
   }
   showSketches3D() {
     const part = this.activeDoc();
-    if (!part || part.kind !== "part") { this.viewer.showDatums([]); return this.viewer.showSketches([]); }
+    if (!part || part.kind !== "part") { this.viewer.showDatums([]); return this.viewer.showSketches(part?.gestell ? this.skeletonSketches(part) : []); }
     const res = this.results.get(part.id);
     const scope = resolveParams(part.params).values;
     const list = [];
@@ -499,6 +504,18 @@ export class App {
     }
     this.viewer.showSketches(list);
     this.viewer.showDatums(this.mode === "part" || this.mode === "sketch" ? this.datumList(part) : []);
+  }
+  /** Stab anklicken während eines Gestell-Werkzeugs (Gehrung, Nuten …) */
+  gestellPick(hit) { return gestellPick(this, hit); }
+  /** Gestell-Referenzmodell: die Skelettlinien (Skizzen gelöst, Profilzüge als Stücke) in der Gestell-Baugruppe zeigen */
+  skeletonSketches(asm) {
+    const sk = this.doc(asm.gestell.skeleton);
+    if (!sk || asm.gestell.hideSkeleton) return [];
+    return skeletonSegs(this, sk).map((g) => {
+      const x = v3.norm(v3.sub(g.b, g.a)), y = v3.norm(v3.cross(Math.abs(x[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0], x));
+      const sketch = { points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: v3.dist(g.a, g.b), y: 0 }], entities: [{ id: "l", type: "line", p1: "a", p2: "b" }] };
+      return { sketch, frame: { origin: g.a, xDir: x, yDir: y, normal: v3.cross(x, y) }, active: false };
+    });
   }
   /** Arbeitsebene auf eine ebene Modellfläche legen */
   datumFacePick(id, hit) {
@@ -765,6 +782,7 @@ export class App {
     if (p?.kind === "faces") return this.toggleFeatureFace(p.feature, hit);
     if (p?.kind === "datumFace") return this.datumFacePick(p.feature, hit);
     if (p?.kind === "align") return this.alignPick(hit);
+    if (p?.kind === "gestell") return this.gestellPick(hit);
     if (this.mode === "assembly") {
       const cid = hit?.key?.startsWith("comp:") ? hit.key.slice(5) : null;
       this.sel = cid ? { type: "component", id: cid } : null;

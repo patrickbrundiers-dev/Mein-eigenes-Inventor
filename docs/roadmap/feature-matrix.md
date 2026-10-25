@@ -89,6 +89,7 @@ Status: **vorhanden** · **teilweise** · **fehlt** · **unklar** · **blockiert
 | Wandstärkenprüfung | vorhanden | „Wandstärke zu groß“ |
 | Einzelprofil mit Gehrung/Schrägschnitt | vorhanden | Feature `profile` |
 | Rahmen aus Skizze, Gehrung/Stumpf, T-Stoß, Sattelschnitt | vorhanden | Feature `frame`, `buildFrame` |
+| Gestell wie Inventor (Skelett → Baugruppe, je Stab ein Bauteil; Gehrung, Eckverbindung, Auf Gestell stutzen, Nuten, Verlängern/Kürzen, Ändern, Wiederverwenden, Gestell-Info) | vorhanden | `src/core/gestell.js`, `src/ui/gestell.js`, Feature `genteil` mit gen `gestell`; Endkappe, Stutzen an Fläche, Gleichteile: `src/core/rahmen.js` (Werkzeuge Stufe 40) |
 | Zuschnittliste (Profil-ID, Länge, Gehrungen, Gewicht) + CSV | vorhanden | `props.js:662` |
 | Profil-IDs wie Rohrlaser-Kalkulation | vorhanden | `profileId` |
 | Benutzerdefinierte Querschnitte | fehlt | |
