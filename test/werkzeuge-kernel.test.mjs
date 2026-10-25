@@ -215,3 +215,81 @@ test("Rahmen: Endkappe, Kürzen/Verlängern an Ebene (Stufe 40)", async () => {
   const par = await K.buildPart(part([prof, { id: "k", type: "kuerzen", target: "pr", plane: "XY", offset: "0" }]));
   assert.match(par.status.k.error, /parallel/);
 });
+
+test("Blech: Lasche, Teil-Lasche mit Freischnitt, Umschlag, Stirnlasche, Durchzug, Konturlasche (Stufe 41)", async () => {
+  const kt = { id: "k1", type: "kantteil", legs: "40; 100; 40", angles: "90; 90", ref: "aussen", t: "2", ri: "2", k: "0.33", length: "500" };
+  const build = async (feats) => { const res = await K.buildPart(part(feats)); okAll(res); const b = res.bodies.find((x) => x.meta?.sheet); assert.ok(K.shapeValid(b.shape), "Körper gültig"); return { res, b, sh: b.meta.sheet }; };
+  const plain = await build([kt]);
+  // ganze Lasche am Ende: Abwicklung länger um Lasche − Rücksprung + Biegezugabe, Volumen = Abwicklung × t (K-Faktor-Fehler klein)
+  const la = await build([kt, { id: "l1", type: "lasche", base: "k1", edge: "ende", length: "20", angle: "90", dir: "auf" }]);
+  assert.equal(la.sh.bends.length, 3);
+  assert.ok(la.sh.flat > plain.sh.flat + 14 && la.sh.flat < plain.sh.flat + 18, "Abwicklung mit Lasche");
+  // Lasche am Anfang: Schenkel 1 bleibt, wo er war (Grundfläche ab x = 0)
+  const ls = await build([kt, { id: "l1", type: "lasche", base: "k1", edge: "anfang", length: "20", angle: "90", dir: "auf" }]);
+  near(ls.b.shape.boundingBox.bounds[0][0], 0, 1e-6, "Anfang bleibt");
+  // Teil-Lasche 200 breit: Umriss mit Stufe und Freischnitten, Biegelinie nur über die Breite
+  const tp = await build([kt, { id: "l1", type: "lasche", base: "k1", edge: "ende", length: "20", angle: "90", dir: "ab", width: "200", offset: "100" }]);
+  assert.ok(tp.sh.flatModel.outer.length >= 12, "Umriss mit Lasche und Freischnitten");
+  const pb = tp.sh.flatModel.bends.at(-1);
+  near(pb.y0, 100, 1e-9); near(pb.y1, 300, 1e-9);
+  // Umschlag geschlossen: 180°-Biegung
+  const hem = await build([kt, { id: "u1", type: "umschlag", base: "k1", edge: "ende", kind: "geschlossen", length: "12", dir: "ab" }]);
+  near(hem.sh.bends.at(-1).angle, 180, 1e-9);
+  // Stirnlaschen vorne/hinten an Schenkel 2: Abwicklung wird länger, Eckfreischnitt nur vorne
+  const sl = await build([kt, { id: "s1", type: "lasche", base: "k1", edge: "vorne", leg: "2", length: "30", angle: "90", dir: "auf" }, { id: "s2", type: "lasche", base: "k1", edge: "hinten", leg: "2", length: "30", angle: "90", dir: "auf", relief: "keiner" }]);
+  assert.ok(sl.sh.length > 540 && sl.sh.length < 560, "Länge mit Stirnlaschen " + sl.sh.length);
+  // Durchzug: Kragen außen am Steg, Vorloch in der Abwicklung kleiner als innen
+  const dz = await build([kt, { id: "d1", type: "durchzug", base: "k1", leg: "2", s: "30; 60", y: "100; 100", d: "8", height: "4", dir: "ab" }]);
+  near(dz.b.shape.boundingBox.bounds[1][0], 42, 1e-6, "Kragen 2 mm über die Außenfläche");
+  assert.equal(dz.sh.flatModel.circles.length, 2);
+  assert.ok(dz.sh.flatModel.circles[0].d < 8 && dz.sh.flatModel.circles[0].d > 4);
+  // Blech-Features müssen direkt hinter dem Kantteil stehen
+  const bad = await K.buildPart(part([kt, { id: "c1", type: "chamfer", edges: [], distance: "1" }, { id: "l1", type: "lasche", base: "k1", edge: "ende", length: "20", angle: "90" }]));
+  assert.match(bad.status.l1.error || "", /direkt hinter/);
+  // Konturlasche aus offener Skizzenlinie, Material links: Außenmaß 100 × 82
+  const sk = { id: "s1", type: "sketch", plane: { ref: "XY" }, offset: "0", points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 50, y: 0 }, { id: "c", x: 50, y: 80 }, { id: "d", x: 100, y: 80 }],
+    entities: [{ id: "l1", type: "line", p1: "a", p2: "b" }, { id: "l2", type: "line", p1: "b", p2: "c" }, { id: "l3", type: "line", p1: "c", p2: "d" }], constraints: [] };
+  const kl = await build([sk, { id: "k2", type: "kantteil", src: "skizze", sketch: "s1", side: "links", extent: "normal", t: "2", ri: "2", k: "0.33", length: "300" }]);
+  const bb = kl.b.shape.boundingBox.bounds;
+  near(bb[1][1], 82, 1e-6); near(bb[1][2], 300, 1e-6); near(bb[0][1], 0, 1e-6);
+  // abgewickelt mit Stirnlasche und Durchzug: flach, Dicke t
+  const fl = await build([{ ...kt, view: "abgewickelt" }, { id: "s1", type: "lasche", base: "k1", edge: "vorne", leg: "2", length: "30", angle: "90" }, { id: "d1", type: "durchzug", base: "k1", leg: "2", s: "30", y: "100", d: "8", height: "4" }]);
+  const fb = fl.b.shape.boundingBox.bounds;
+  near(fb[1][2] - fb[0][2], 2, 1e-6, "flach");
+  assert.ok(fb[0][1] < -20, "Stirnlasche liegt vor y = 0");
+});
+
+test("3D-Skizze als Sweep-Pfad, abgeleitetes Bauteil gespiegelt und skaliert (Stufe 42)", async () => {
+  const { inlineDerived } = await import("../src/core/ableiten.js");
+  // Kreis Ø 20 auf YZ am Anfang des Pfads, Pfad 3D mit Radius
+  const prof = { id: "s1", type: "sketch", plane: { ref: "YZ" }, offset: "0", points: [{ id: "c", x: 0, y: 0 }, { id: "r", x: 10, y: 0 }], entities: [{ id: "k", type: "circle", c: "c", r: 10 }], constraints: [] };
+  const res = await K.buildPart(part([prof,
+    { id: "p3", type: "skizze3d", points: [{ x: "0", y: "0", z: "0" }, { x: "200", y: "0", z: "0" }, { x: "200", y: "0", z: "150" }], radius: "40" },
+    { id: "sw", type: "sweep", sketch: "s1", path: "p3", op: "new" }]));
+  okAll(res);
+  assert.equal(res.paths3d.length, 1);
+  const L = 160 + 110 + (Math.PI * 40) / 2;
+  near(vol(res), Math.PI * 100 * L, Math.PI * 100 * L * 0.01, "Volumen Rohr entlang Pfad");
+  // abgeleitet: Quader 10 × 20 × 30 bei x 0..10, gespiegelt an YZ und Maßstab 2
+  const src = part([rectSketchFeature("q", "XY", 0, 0, 0, "10", "20"), { id: "e", type: "extrude", sketch: "q", distance: "30" }]);
+  const der = inlineDerived(part([{ id: "a1", type: "abgeleitet", source: src.id, mirror: "YZ", scale: "2" }]), (id) => (id === src.id ? src : null));
+  const r2 = await K.buildPart(der);
+  okAll(r2);
+  const b = r2.bodies[0].shape.boundingBox.bounds;
+  near(b[0][0], -20, 1e-6); near(b[1][0], 0, 1e-6); near(b[1][2], 60, 1e-6);
+  near(vol(r2), 8 * 6000, 1e-3);
+});
+
+test("Regeln vor dem Aufbau: Parameter setzen, Feature unterdrücken, Meldung (Stufe 43)", async () => {
+  const p = part([rectSketchFeature("q", "XY", 0, 0, 0, "10", "10"), { id: "e", type: "extrude", sketch: "q", distance: "H" },
+    rectSketchFeature("q2", "XY", 0, 20, 0, "10", "10"), { id: "e2", type: "extrude", sketch: "q2", distance: "10" }]);
+  p.params = [{ name: "L", expr: "8000" }, { name: "H", expr: "10" }];
+  p.rules = [{ id: "a", kind: "setzen", when: "L > 6000", param: "H", value: "30" }, { id: "b", kind: "unterdruecken", when: "L > 6000", feature: "e2" }, { id: "c", kind: "pruefen", when: "L > 6000", message: "zu lang", level: "Hinweis" }];
+  const res = await K.buildPart(p);
+  near(vol(res), 3000, 1e-3, "nur der erste Quader, Höhe 30");
+  assert.deepEqual(res.ruleOff, ["e2"]);
+  assert.equal(res.rules[0].text, "zu lang");
+  p.params[0].expr = "1000";
+  const r2 = await K.buildPart(p);
+  near(vol(r2), 2000, 1e-3, "beide Quader, Höhe 10");
+});

@@ -627,6 +627,8 @@ export class Viewer {
         const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: d.active ? 0.18 : 0.08, side: THREE.DoubleSide, depthWrite: false }));
         this.datumGroup.add(m);
         this.datumGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]), new THREE.LineBasicMaterial({ color })));
+      } else if (d.kind === "path") {
+        this.datumGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(d.pts.map((p) => new THREE.Vector3(...p))), new THREE.LineBasicMaterial({ color: d.active ? 0xef7d1a : 0x2f6db5 })));
       } else if (d.kind === "axis") {
         const a = d.p.map((c, i) => c - d.d[i] * s), b = d.p.map((c, i) => c + d.d[i] * s);
         const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]), new THREE.LineDashedMaterial({ color, dashSize: 8, gapSize: 3 }));

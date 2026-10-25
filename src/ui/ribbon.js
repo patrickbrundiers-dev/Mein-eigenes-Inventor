@@ -8,6 +8,10 @@ import { defaultBiegerohr } from "../core/biegerohr.js";
 import { defaultRegelkoerper } from "../core/regelkoerper.js";
 import { defaultNormteil } from "../core/normteile.js";
 import { defaultKantteil } from "../core/blech.js";
+import { defaultLasche, defaultUmschlag, defaultDurchzug } from "../core/blechplus.js";
+import { derivableSources } from "../core/ableiten.js";
+import { t as t_ } from "../core/i18n.js";
+import { recordable } from "../core/makros.js";
 import { defaultPlatte, defaultRippe } from "../core/anschluss.js";
 import { DISPLAY } from "../core/settings.js";
 import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generator.js";
@@ -66,6 +70,25 @@ export class Ribbon {
       regelkoerper: () => app.addFeature(defaultRegelkoerper("zylinder")),
       normteil: () => app.addFeature(defaultNormteil("schraube4017")),
       kantteil: () => app.addFeature(defaultKantteil()),
+      konturlasche: () => {
+        const sk = app.lastSketchId();
+        if (!sk) return toast("Zuerst eine Skizze mit offener Linie zeichnen (Blechkante von der Seite gesehen)");
+        const { legs, angles, pos, ref, ...rest } = defaultKantteil();
+        const n = app.activeDoc().features.filter((g) => g.type === "kantteil" && g.src === "skizze").length + 1;
+        app.addFeature({ ...rest, src: "skizze", sketch: sk, side: "links", extent: "normal", length: "200", name: `Konturlasche ${n}` });
+      },
+      lasche: () => this.addSheetFeature(defaultLasche),
+      variants: () => app.props.variantDialog(),
+      rules: () => app.props.rulesDialog(),
+      macros: () => app.props.macroDialog(),
+      skizze3d: () => app.addFeature({ type: "skizze3d", points: [{ x: "0", y: "0", z: "0" }, { x: "500", y: "0", z: "0" }, { x: "500", y: "300", z: "200" }], radius: "50", closed: false }),
+      abgeleitet: () => {
+        const part = app.activeDoc(), srcs = derivableSources(app.project, part);
+        if (!srcs.length) return toast("Kein anderes Bauteil im Projekt, aus dem abgeleitet werden kann");
+        app.addFeature({ type: "abgeleitet", source: srcs[0].id, mirror: undefined, scale: "1" });
+      },
+      umschlag: () => this.addSheetFeature(defaultUmschlag),
+      durchzug: () => this.addSheetFeature(defaultDurchzug),
       platte: () => {
         const t = this.lastOf(["profile", "frame", "profilzug"]);
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
@@ -175,6 +198,16 @@ export class Ribbon {
       newDrawing: () => app.newDrawing(),
     };
   }
+  /** Blech-Feature am gewählten (sonst letzten) Kantteil, direkt hinter dessen Blech-Features eingefügt */
+  addSheetFeature(make) {
+    const app = this.app, part = app.activeDoc();
+    const sel = app.sel?.type === "feature" ? app.feature(app.sel.id) : null;
+    const baseId = sel?.type === "kantteil" ? sel.id : sel?.base && part.features.some((g) => g.id === sel.base && g.type === "kantteil") ? sel.base : part.features.filter((g) => g.type === "kantteil").at(-1)?.id;
+    if (!baseId) return toast("Zuerst ein Kantteil anlegen (Blech → Kantteil oder Konturlasche)");
+    let at = part.features.findIndex((g) => g.id === baseId) + 1;
+    while (at < part.features.length && ["lasche", "umschlag", "durchzug"].includes(part.features[at].type)) at++;
+    app.addFeature(make(baseId), { at });
+  }
   lastPatternSource() {
     const part = this.app.activeDoc();
     const sel = this.app.sel?.type === "feature" ? this.app.feature(this.app.sel.id) : null;
@@ -198,7 +231,13 @@ export class Ribbon {
     const list = part.features.filter((f) => types.includes(f.type) && !f.suppressed);
     return list.length ? list[list.length - 1].id : null;
   }
-  run(id) { const a = this.actions[id]; if (a) a(); }
+  run(id) {
+    const a = this.actions[id];
+    if (!a) return;
+    const rec = this.app.commands?.recording;
+    if (rec && recordable("part." + id)) { rec.push("part." + id); toast(`Aufgezeichnet: ${commandDef("part." + id).label} (${rec.length})`, { timeout: 1200 }); }
+    return a();
+  }
 
   tabsFor(mode) {
     const app = this.app;
@@ -259,16 +298,17 @@ export class Ribbon {
     if (mode === "part") {
       return [
         { id: "modell", label: "3D-Modell", groups: [
-          { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch")] },
+          { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch"), B("skizze3d", "3D-Skizze", "path3d")] },
           { label: "Arbeitselemente", buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
-          { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper"), B("kantteil", "Kantteil", "kantteil"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil")] },
+          { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil")] },
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend")] },
+          { label: "Blech", buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar")] },
           { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
           { label: "Körper", buttons: [B("kombinieren", "Kombinieren", "combine"), B("trennen", "Trennen", "split"), B("verschieben", "Verschieben", "move"), B("aufdicken", "Aufdicken", "thicken"), B("flaeche", "Fläche verschieben", "pushpull"), B("entformung", "Entformung", "draft")] },
           { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() })] },
-          { label: "Verwalten", buttons: [B("params", "Parameter", "params"), B("importStep", "STEP einfügen", "import"), B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
+          { label: "Verwalten", buttons: [B("params", "Parameter", "params"), B("importStep", "STEP einfügen", "import"), B("abgeleitet", "Abgeleitetes Bauteil", "derive"), B("variants", "Variantentabelle", "table"), B("rules", "Regeln", "rules"), B("macros", "Makros", "macro"), B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },
         ] },
         this.exportTab("part"),
@@ -306,7 +346,7 @@ export class Ribbon {
     if (mode === "assembly") {
       return [
         { id: "baugruppe", label: "Zusammenfügen", groups: [
-          { label: "Komponente", buttons: [B("place", "Platzieren", "place"), B("normteilAsm", "Normteil", "normteil"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() }), B("asmPattern", "Muster", "pattern")] },
+          { label: "Komponente", buttons: [B("place", "Platzieren", "place"), B("normteilAsm", "Normteil", "normteil"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() }), B("asmPattern", "Muster", "pattern"), B("asmMirror", "Spiegeln", "mirror", { run: () => app.props.mirrorComponent() })] },
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon")] },
           { label: "Stahlbau", buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband")] },
           { label: "Gestell", small: true, buttons: (() => {
@@ -431,7 +471,7 @@ export class Ribbon {
     if (mode === "sketch") this.tab = this.tab === "ansicht" ? "ansicht" : "skizze";
     const tabBar = h("div", { class: "rb-tabs" },
       h("button", { class: "rb-file", onclick: (e) => this.fileMenu(e) }, "Datei"),
-      ...tabs.map((t) => h("button", { class: "rb-tab" + (t.id === this.tab ? " active" : "") + (t.context ? " context" : ""), onclick: () => { this.tab = t.id; this.render(); } }, t.label)),
+      ...tabs.map((t) => h("button", { class: "rb-tab" + (t.id === this.tab ? " active" : "") + (t.context ? " context" : ""), onclick: () => { this.tab = t.id; this.render(); } }, t_(t.label))),
       h("div", { class: "rb-spacer" }),
       h("button", { class: "rb-search", title: `Befehl suchen (${this.kbd("app.search") || "Strg+K"})`, onclick: () => app.commands.exec("app.search") }, icon("search"), h("span", {}, "Befehl suchen"), this.kbd("app.search") ? h("span", { class: "kbd" }, this.kbd("app.search")) : null),
       h("button", { class: "icon-btn", title: "Rückgängig (Strg+Z)", disabled: !app.undoStack.length, onclick: () => app.undo() }, icon("undo")),
@@ -449,12 +489,12 @@ export class Ribbon {
           // Kleine Knöpfe in Spalten zu je 3
           for (let i = 0; i < g.buttons.length; i += 3) {
             btns.append(h("div", { class: "rb-stack" }, ...g.buttons.slice(i, i + 3).map((b) =>
-              h("button", { class: "rb-small" + (b.on ? " on" : ""), title: this.tip(b), onclick: b.run, disabled: b.disabled }, icon(b.icon), b.label))));
+              h("button", { class: "rb-small" + (b.on ? " on" : ""), title: this.tip(b), onclick: b.run, disabled: b.disabled }, icon(b.icon), t_(b.label)))));
           }
         } else {
-          for (const b of g.buttons) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, title: this.tip(b) }, icon(b.icon), h("span", {}, b.label)));
+          for (const b of g.buttons) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, title: this.tip(b) }, icon(b.icon), h("span", {}, t_(b.label))));
         }
-        panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns, h("div", { class: "rb-group-label" }, g.label)));
+        panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns, h("div", { class: "rb-group-label" }, t_(g.label))));
       }
       if (L.hidden.length) panel.append(h("button", { class: "rb-hidden", title: "Ausgeblendete Gruppen: " + L.hidden.join(", "), onclick: (e) => this.hiddenMenu(e, tab, L.hidden) }, "+" + L.hidden.length));
     } else if (mode === "start") {

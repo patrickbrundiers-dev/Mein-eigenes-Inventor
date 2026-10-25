@@ -1,7 +1,7 @@
 // Öffnen, Speichern, Import/Export – über die Electron-Brücke oder im Browser per Download
 import { toast, choiceDialog, downloadBlob, h, modal } from "./dom.js";
 import { sketchToDxf, DxfWriter } from "../core/dxf.js";
-import { planKantteil, kantteilFlatDxf, splitList } from "../core/blech.js";
+import { sheetFlatDxf } from "../core/blechplus.js";
 import { bendRule } from "../core/bendtable.js";
 import { evaluate } from "../core/expr.js";
 import { newPart, uid } from "../core/examples.js";
@@ -378,18 +378,10 @@ export class Files {
   async exportKantteilDxf(f) {
     const app = this.app, part = app.activeDoc();
     const sh = app.results.get(part?.id)?.bodies?.find((b) => b.fid === f.id)?.meta?.sheet;
-    if (!sh) return toast("Kantteil hat Fehler – erst korrigieren", { kind: "err" });
-    let plan;
-    try {
-      const sc = app.props.scope();
-      const E = (x) => evaluate(String(x), sc);
-      const t = E(f.t), ri = E(f.ri), k = E(f.k);
-      const br = bendRule({ rule: f.rule || "k", material: part.material || "S235", t, ri, k });
-      plan = planKantteil({ legs: splitList(f.legs).map(E), angles: splitList(f.angles).map(E), t, ri, k, kOf: br.kOf, ref: f.ref || "aussen" });
-    } catch (e) { return toast("Kantteil: " + e.message, { kind: "err" }); }
+    if (!sh?.flatModel) return toast("Kantteil hat Fehler – erst korrigieren", { kind: "err" });
     const name = `${safeName(part.number || part.name)}_${safeName(f.name || "Kantteil")}_${String(sh.t).replace(".", ",")}mm.dxf`.replace(/\s+/g, "_");
-    await this.saveText(kantteilFlatDxf(DxfWriter, plan, sh.length, { name: f.name || part.name, t: sh.t }), name, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
-    toast(`Abwicklung ${fmtNum(plan.flat, 1)} × ${fmtNum(sh.length, 1)} mm gespeichert`, { kind: "ok" });
+    await this.saveText(sheetFlatDxf(DxfWriter, sh.flatModel, { name: f.name || part.name }), name, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
+    toast(`Abwicklung ${fmtNum(sh.flat, 1)} × ${fmtNum(sh.length, 1)} mm gespeichert`, { kind: "ok" });
   }
   /** Bild der 3D-Ansicht als PNG (doppelte Auflösung, weißer Hintergrund) */
   /** Bild der Ansicht; photo: fotorealistisch (vorübergehend Fotodarstellung) in vierfacher Auflösung */

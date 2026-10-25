@@ -13,6 +13,10 @@ export const COMMANDS = [
   { id: "file.newAssembly", label: "Neue Baugruppe", group: "Datei", scope: "global" },
   { id: "file.importStep", label: "STEP als Bauteil importieren", group: "Datei", scope: "global" },
   { id: "app.settings", label: "Einstellungen", group: "Programm", scope: "global", key: "Strg+,", typing: true, keywords: "optionen konfiguration" },
+  { id: "app.macros", label: "Makros verwalten", group: "Programm", scope: "global", keywords: "makro befehlsfolge automatisieren ablauf" },
+  { id: "app.macroRecord", label: "Makro aufzeichnen ein/aus", group: "Programm", scope: "global", keywords: "makro aufzeichnen aufnahme recorder" },
+  { id: "part.variants", label: "Variantentabelle", group: "3D-Modell", scope: "part", keywords: "variante varianten tabelle ipart konfiguration familie baureihe größen" },
+  { id: "part.rules", label: "Regeln", group: "3D-Modell", scope: "part", keywords: "regel regeln ilogic bedingung wenn prüfen unterdrücken automatisch" },
   { id: "app.search", label: "Befehl suchen", group: "Programm", scope: "global", key: "Strg+K", typing: true, keywords: "werkzeugsuche palette" },
   { id: "edit.undo", label: "Rückgängig", group: "Bearbeiten", scope: "global", key: "Strg+Z" },
   { id: "edit.redo", label: "Wiederholen", group: "Bearbeiten", scope: "global", key: "Strg+Y" },
@@ -82,6 +86,12 @@ export const COMMANDS = [
   { id: "file.mappe", label: "Fertigungsmappe (PDF + Dateien als ZIP)", group: "Export", scope: "3d", keywords: "werkstatt mappe pdf zip zeichnungen laser paket" },
   { id: "part.naht", label: "Schweißnaht", group: "3D-Modell", scope: "part", keywords: "schweissen kehlnaht v-naht hv-naht iso 2553 a-maß nahtliste" },
   { id: "part.kantteil", label: "Kantteil (Blech)", group: "3D-Modell", scope: "part", keywords: "blech kantteil abkanten abwicklung biegen winkel u-profil z-profil kassette abdeckung laser dxf" },
+  { id: "part.konturlasche", label: "Konturlasche (Blech aus Skizze)", group: "3D-Modell", scope: "part", keywords: "blech konturlasche contour flange skizze linie kanten profil" },
+  { id: "part.lasche", label: "Lasche / Stirnlasche (Blech)", group: "3D-Modell", scope: "part", keywords: "blech lasche flange stirnlasche kassette freischnitt eckfreischnitt biegefreischnitt teil-lasche" },
+  { id: "part.skizze3d", label: "3D-Skizze (Punktzug im Raum)", group: "3D-Modell", scope: "part", keywords: "3d skizze pfad raum punktzug sweep handlauf draht" },
+  { id: "part.abgeleitet", label: "Abgeleitetes Bauteil", group: "3D-Modell", scope: "part", keywords: "abgeleitet derive ableiten spiegeln gespiegelt links rechts maßstab kopie verknüpft" },
+  { id: "part.umschlag", label: "Umschlag (Blech)", group: "3D-Modell", scope: "part", keywords: "blech umschlag falz hem 180 zugedrückt kante" },
+  { id: "part.durchzug", label: "Durchzug (Blech)", group: "3D-Modell", scope: "part", keywords: "blech durchzug kragen collar gewindeformer vorloch" },
   { id: "part.regelkoerper", label: "Regelkörper", group: "3D-Modell", scope: "part", keywords: "quader zylinder kugel kegel kegelstumpf torus ring pyramide grundkörper primitiv" },
   { id: "part.biegerohr", label: "Rohr gebogen (über Polygonzug)", group: "3D-Modell", scope: "part", keywords: "biegen bogen biegeradius biegeliste handlauf bügel rohrconnect" },
   { id: "part.profilzug", label: "Profilzug 3D", group: "3D-Modell", scope: "part", keywords: "räumlich eckpunkte polygonzug rahmen gehrung zwei ebenen" },
@@ -162,6 +172,7 @@ export const COMMANDS = [
   { id: "asm.alignAngle", label: "Winkel zwischen Flächen", group: "Baugruppe", scope: "assembly", keywords: "abhängigkeit winkel neigung" },
   { id: "asm.alignTangent", label: "Tangential (Zylinder an Fläche)", group: "Baugruppe", scope: "assembly", keywords: "abhängigkeit tangente rolle anliegen" },
   { id: "asm.pattern", label: "Komponentenmuster", group: "Baugruppe", scope: "assembly", keywords: "muster reihe kreis kopien verteilen" },
+  { id: "asm.mirror", label: "Komponente spiegeln", group: "Baugruppe", scope: "assembly", keywords: "spiegeln gespiegelt links rechts symmetrisch komponente" },
   { id: "asm.bom", label: "Stückliste", group: "Baugruppe", scope: "assembly" },
   { id: "asm.cutlist", label: "Zuschnittliste", group: "Baugruppe", scope: "assembly" },
   { id: "asm.collide", label: "Kollision prüfen", group: "Baugruppe", scope: "assembly" },
@@ -221,6 +232,12 @@ export function parseCombo(text) {
 const overlap = (a, b) => a === b || a === "global" || b === "global" || (a === "3d" && (b === "part" || b === "assembly")) || (b === "3d" && (a === "part" || a === "assembly"));
 
 /** Wirksame Belegung: Standard, überschrieben durch Benutzerwerte ("" = keine Taste) */
+/** Befehle, die erst zur Laufzeit entstehen (Makros): ersetzen die vorigen dynamischen Einträge */
+export function setDynamicCommands(list) {
+  for (let i = COMMANDS.length - 1; i >= 0; i--) if (COMMANDS[i].dynamic) { BY_ID.delete(COMMANDS[i].id); COMMANDS.splice(i, 1); }
+  for (const c of list) { const d = { ...c, dynamic: true }; COMMANDS.push(d); BY_ID.set(d.id, d); }
+}
+
 export function effectiveKeymap(user = {}) {
   const map = {};
   for (const c of COMMANDS) {
