@@ -34,7 +34,7 @@ test("Nächster freier Name", () => {
 });
 
 test("Einstellungen Dokument und Modell", () => {
-  assert.equal(CATEGORIES.find((c) => c.id === "dokument").status, "teilweise");
+  assert.equal(CATEGORIES.find((c) => c.id === "dokument").status, "aktiv");
   assert.equal(validateValue(settingDef("dokument.name.bauteil"), "{projekt}-{n:2}").ok, true);
   assert.equal(validateValue(settingDef("dokument.name.bauteil"), "{quelle}").ok, false);
   assert.equal(validateValue(settingDef("dokument.name.zeichnung"), "Z-{quelle}").ok, true);
