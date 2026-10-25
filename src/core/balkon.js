@@ -12,6 +12,11 @@ import { catalogToDims, sectionGeometry } from "./sections.js";
 import { splitList } from "./expr.js";
 import { GELAENDER } from "./gelaender.js";
 import { platePlan } from "./anschluss.js";
+import { mountSchema, mountConfig, sideOffset } from "./pfostenbefestigung.js";
+
+// Pfostenbefestigung des Balkongeländers: Felder mit Vorsilbe »rail« (railMRule, railOW …), im Geländer ohne Vorsilbe
+const rk = (k) => "rail" + k[0].toUpperCase() + k.slice(1);
+const railMount = (p) => (p.railing && (p.railMount === "oben" || p.railMount === "seitlich") ? p.railMount : null);
 
 const sec = (v) => {
   const dims = Object.fromEntries(Object.entries(catalogToDims(v.kind, v.size)).map(([k, x]) => [k, Number(x)]));
@@ -39,7 +44,9 @@ export const BALKON = {
     { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz mit Ring"], ["rahmen", "Rahmen mit Staketen"]], default: "staketen", tiles: "front", group: "Geländer", when: (p) => p.railing },
     { key: "railHolder", label: "Handlaufhalter (Stift, Bohrung im Handlauf)", type: "check", default: true, missing: false, group: "Geländer", when: (p) => p.railing },
     { key: "beltMode", label: "Gurte", type: "select", options: [["durch", "Rundrohr durch die Pfosten, Stäbe durch die Gurte"], ["zwischen", "Flachstahl zwischen den Pfosten"]], default: "durch", missing: "zwischen", group: "Geländer", when: (p) => p.railing && p.fill !== "blech" && p.fill !== "glas" },
-    { key: "inset", label: "Geländer vom Rand", type: "num", default: "60", group: "Geländer", when: (p) => p.railing },
+    { key: "inset", label: "Geländer vom Rand", type: "num", default: "40", group: "Geländer", when: (p) => p.railing && p.railMount !== "seitlich" },
+    { key: "railMount", label: "Pfostenbefestigung", type: "select", options: [["oben", "oben mit Fußplatte auf dem Belag, Bohrbild auch in den Rahmen"], ["seitlich", "seitlich mit Befestigungsblech an der Rahmenaußenseite"], ["fussplatte", "einfache Fußplatte auf dem Belag (bisher)"]], default: "oben", missing: "fussplatte", group: "Pfostenbefestigung", when: (p) => p.railing },
+    ...mountSchema(rk, "Pfostenbefestigung", railMount, { oW: "80", oL: "160", holes: "2l", d: "13.5", e: "25" }),
   ],
 
   plan(p) {
@@ -98,23 +105,39 @@ export const BALKON = {
     // Geländer: links (Wand → vorne), vorne, rechts (vorne → Wand); Bauplan des Geländer-Generators gedreht
     let railInfo = "";
     if (p.railing) {
-      const i = p.inset, yStart = y0 + 20;
+      // seitlich: Lauflinie außen vor dem Rahmen (Blech + Pfostenhälfte); sonst »vom Rand« über dem Rahmen
+      const mk = railMount(p), post = sec({ kind: "vierkant", size: "40x3" });
+      const i = mk === "seitlich" ? -sideOffset(mountConfig(p, rk, "seitlich"), post) : p.inset, yStart = y0 + 20;
       const side = T - i - yStart, front = W - 2 * i;
       if (!(side > 100 && front > 100)) throw fieldError("Geländer passt nicht – Abstand vom Rand prüfen", "inset");
       const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill, use: p.use, fall: Hb, holder: p.railHolder ? "stift" : "keine", overhang: p.railHolder ? 50 : 0,
-        post: sec({ kind: "vierkant", size: "40x3" }), bar: sec({ kind: "vierkantvoll", size: "12" }),
+        post, bar: sec({ kind: "vierkantvoll", size: "12" }),
         ...(p.beltMode === "durch" ? { beltMode: "durch" } : { belt: sec({ kind: "flach", size: "40x8" }), beltMode: "zwischen" }) }); // »zwischen«: Balkon-Geländer wie bisher
       // Parameter des Geländers heißen hier anders: Meldungen auf die Balkon-Felder umschlüsseln
       const KEY = { height: "railH", fill: "fill", gapMax: "fill", panelGap: "fill", ringD: "fill", use: "use" };
+      // Befestigung: Werte ohne Vorsilbe ins Geländer, Rahmen/Querträger und Belag in Geländer-Lage als Anschlussbauteile
+      const o = [i, yStart, Hb];
+      const Q = (w) => [w[1] - o[1], o[0] - w[0], w[2] - o[2]], Dq = (w) => [w[1], -w[0], w[2]];
+      const belag = plates.find((x) => x.name === "Belag");
+      const local = belag ? { ...belag, center: Q(belag.center), xDir: Dq(belag.xDir), normal: Dq(belag.normal) } : null;
+      if (mk) {
+        const plain = mountSchema().map((f) => f.key);
+        mountSchema(rk).forEach((f, j) => { gp[plain[j]] = p[f.key]; KEY[plain[j]] = f.key; });
+        const segs = chains[0].points.slice(1).map((b, k) => ({ name: "Rahmen", a: Q(chains[0].points[k]), b: Q(b), section: fr, up: [0, 0, 1], rot: frRot }));
+        const joists = members.filter((m) => /^Querträger/.test(m.name)).map((m) => ({ ...m, a: Q(m.a), b: Q(m.b), up: [0, 0, 1] }));
+        Object.assign(gp, { base: mk, supports: { members: [...segs, ...joists], plates: local ? [local] : [] } });
+      } else gp.base = "fussplatte";
+      KEY.mount = "railMount"; KEY.mTarget = "inset"; KEY.mProfile = "railMount";
       let g;
       try { g = GELAENDER.plan(gp); } catch (e) { throw fieldError(e.message, KEY[e.key] || "railing"); }
+      if (local?.holes) belag.holes = local.holes; // Gegenbohrungen im Belag
       // Geländer-Lage: Ursprung, +X entlang des ersten Laufs → hier +Y ab (i, yStart, Hb)
-      const o = [i, yStart, Hb];
       const P = (v) => [o[0] - v[1], o[1] + v[0], o[2] + v[2]], D = (v) => [-v[1], v[0], v[2]];
       for (const c of g.chains) chains.push({ ...c, points: c.points.map(P), up: c.up ? D(c.up) : [0, 0, 1], name: "Geländer " + c.name });
       for (const m of g.members) members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: "Geländer " + m.name, cuts: m.cuts && { start: m.cuts.start.map((c) => ({ p: P(c.p), n: D(c.n) })), end: m.cuts.end.map((c) => ({ p: P(c.p), n: D(c.n) })) } });
       for (const pl of g.plates) plates.push({ ...pl, center: P(pl.center), xDir: D(pl.xDir), normal: D(pl.normal), name: "Geländer " + pl.name });
-      for (const d of g.drills || []) drills.push({ ...d, p: P(d.p), dir: D(d.dir), target: "Geländer " + d.target });
+      const own = (t) => t === "Rahmen" || /^Querträger \d+$/.test(t); // Gegenbohrungen im Tragwerk behalten ihr Ziel
+      for (const d of g.drills || []) drills.push({ ...d, p: P(d.p), dir: D(d.dir), ...(d.xDir ? { xDir: D(d.xDir) } : {}), target: own(d.target) ? d.target : "Geländer " + d.target });
       issues.push(...g.issues.map(({ key, ...x }) => ({ ...x, key: KEY[key] || "railing" })));
       railInfo = `, Geländer: ${g.info}`;
     }

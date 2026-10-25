@@ -15,9 +15,12 @@ import { railAlong } from "./treppengelaender.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { holderSchema } from "./handlaufhalter.js";
+import { mountSchema, mountConfig, topMount, sideMount, sideOffset, findSideFace, planeFace, findMemberFace, findPlateFace, faceCoords, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
 const podest = (p) => p.form === "L" || p.form === "U";
 const gel = (p) => p.gel !== "keine";
+const gk = (k) => "gel" + k[0].toUpperCase() + k.slice(1);
+const gelMount = (p) => (gel(p) && (p.gelMount === "oben" || p.gelMount === "seitlich") ? p.gelMount : null);
 const gelThrough = (p) => gel(p) && p.gelFill !== "keine" && p.gelBeltMode !== "zwischen";
 
 export const TREPPE = {
@@ -60,7 +63,9 @@ export const TREPPE = {
     { key: "gelBelt", label: "Untergurt", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
     { key: "gelPost", label: "Pfosten", type: "section", default: { kind: "vierkant", size: "40x3" }, group: "Geländer", when: gel },
     { key: "gelPostMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Geländer", when: gel },
-    { key: "gelDown", label: "Pfosten unter Stufenkante (Befestigung)", type: "num", default: "150", group: "Geländer", when: gel },
+    { key: "gelMount", label: "Pfostenbefestigung", type: "select", options: [["seitlich", "seitlich mit Befestigungsblech an Wange bzw. Podestrahmen"], ["oben", "oben mit Fußplatte (Wange, Podestrahmen bzw. Stufe)"], ["aus", "neben der Wange, ohne Befestigung (bisher)"]], default: "seitlich", missing: "aus", group: "Pfostenbefestigung", when: gel },
+    ...mountSchema(gk, "Pfostenbefestigung", gelMount, { oW: "70", oL: "160", oT: "10", holes: "2l", sW: "160", sH: "160", sT: "10", sHoles: "4", d: "13.5", e: "25" }),
+    { key: "gelDown", label: "Pfosten unter Stufenkante (Befestigung)", type: "num", default: "150", group: "Geländer", when: (p) => gel(p) && !gelMount(p) },
     { key: "gelRail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Geländer", when: gel },
     ...holderSchema((k) => "gel" + k[0].toUpperCase() + k.slice(1), "Geländer", gel),
     { key: "gelAuslauf", label: "Auslauf oben (waagrecht)", type: "num", default: "300", group: "Geländer", when: gel },
@@ -184,7 +189,10 @@ export const TREPPE = {
     }
     if (fix.on) info += `, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø ${fix.d}, Lochabstand ${fix.e} mm)`;
     if (gel(p)) {
-      const r = railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off: (side ? thick : 0) + p.gelPost.geom.width / 2, rotZ });
+      // Pfostenachse: neben der Wange (bisher), oben mittig auf der Wange bzw. bei Holmen auf der Stufe
+      const mk = gelMount(p);
+      const off = !mk ? (side ? thick : 0) + p.gelPost.geom.width / 2 : mk === "seitlich" ? (side ? thick : 0) + sideOffset(mountConfig(p, gk, "seitlich"), p.gelPost) : side ? thick / 2 : -(Math.max(p.gelPost.geom.width, p.gelOW) / 2 + 10);
+      const r = railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports: { members, chains, plates } });
       chains.push(...r.chains);
       members.push(...r.members);
       plates.push(...r.plates);
@@ -232,7 +240,7 @@ export const TREPPE = {
  * eine Auftrittsbreite vor der ersten Stufenkante auf Podesthöhe (Schnitt mit der Podestebene), vom Boden aus an der
  * ersten Stufenkante.
  */
-function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
+function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports }) {
   const issues = [];
   const left = p.turn !== "rechts", form = podest(p) ? p.form : "gerade";
   const f1 = flights[0];
@@ -278,6 +286,69 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
   if (left ? wantLeft : wantRight) sides.push([left ? "links" : "rechts", inner]);
   const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100, holder: p.gelHolder !== "keine", holderGap: p.gelHolderGap, holderD: p.gelHolderD,
     through: gelThrough(p), allow: p.gelAllow || 0, beltMax: p.gelBeltMax, stab: p.gelStab, keys: { bar: "gelBar", belt: "gelBelt", stab: "gelStab", beltMax: "gelBeltMax" } };
+  // Pfostenbefestigung oben: Anschlussbauteil unter dem Pfosten = Wange, Holm bzw. Podestrahmen (nächste Achse) oder Stufe
+  const mounted = [];
+  if (gelMount(p)) {
+    const kind = gelMount(p), cfg = mountConfig(p, gk, kind), cfgTop = mountConfig(p, gk, "oben"), cfgSide = mountConfig(p, gk, "seitlich");
+    const segs = supports.chains.filter((c) => /^Podestrahmen/.test(c.name)).flatMap((c) => c.points.slice(1).map((b, k) => ({ name: c.name, a: c.points[k], b, section: c.section.geom ? c.section : { ...c.section, geom: p.podestRahmen.geom }, up: c.up, rot: c.rot })));
+    const beams = supports.members.filter((m) => /^Wange|^Holm|^Mittelholm/.test(m.name));
+    const onBeam = p.support === "flach" || p.support === "upn";
+    // Befestigung eines Pfostens; record = false: nur rechnen (Probe für die Endpfosten), nichts eintragen
+    const mountAt = ({ name, top, base, along }, record = true) => {
+      const fail = (message) => { if (record) issues.push({ key: "gelMount", level: "Fehler", message: `${name}: ${message} – Pfosten ohne Befestigung` }); return null; };
+      // oben: Wange, Holm bzw. Podestrahmen unter dem Pfosten, sonst Stufe/Podest, am Antritt bzw. Auslauf Boden/Decke
+      const onTop = () => {
+        let f = onBeam ? findMemberFace([...beams, ...segs], base, [0, 0, 1], 400) : null;
+        if (f?.cPhys) { const c = faceCoords(f, base)[1]; if (c < f.cPhys[0] - 1 || c > f.cPhys[1] + 1) f = null; } // Pfosten nicht über dem Profil (z. B. mitten auf dem Podest)
+        if (!f) f = findPlateFace(supports.plates.filter((x) => /^Stufe \d+$|^Podest$/.test(x.name)), top);
+        if (!f && Math.abs(base[2]) < 1) f = planeFace([0, 0, 0], [0, 0, 1], along, "Boden");
+        if (!f && Math.abs(base[2] - p.height) < 1) f = planeFace([0, 0, p.height], [0, 0, 1], along, "obere Decke");
+        return f ? { face: f, r: topMount(cfgTop, { name, post: o.post, top, along, face: f, plateName: `${name} Fußplatte` }) } : null;
+      };
+      // einzelne Pfosten abweichend (Feld »Einzelne Pfosten abweichend«): aus = wie ohne Befestigung
+      const ov = overrideFor(cfg.per, name), kindP = ov || kind;
+      if (ov === "aus") return null;
+      let face = null, r = null;
+      if (kindP === "seitlich") {
+        let why = null;
+        try { face = findSideFace(onBeam ? [...beams, ...segs] : segs, base, along, 600, 100 + cfg.gap); } catch (e) { why = e.message; }
+        if (face) r = sideMount(cfgSide, { name, post: o.post, top, base, along, face, plateName: `${name} Befestigungsblech` });
+        else {
+          // kein Bauteil daneben (Antritt, Auslauf, Pfosten über dem Podest): oben mit Fußplatte, wenn die passt
+          const t = onTop(), floor = Math.abs(base[2]) < 1 || Math.abs(base[2] - p.height) < 1;
+          if (!t || !(t.r.ok || floor)) return fail(why ? `${why} oder »oben mit Fußplatte« nehmen` : `kein Bauteil neben dem Pfosten (Wange oder Podestrahmen)${onBeam ? "" : " – Holmtreppe: Befestigung oben auf der Stufe wählen"}`);
+          ({ face, r } = t);
+          r.fallback = "oben"; // in der Info gezählt
+        }
+      } else {
+        const t = onTop();
+        // nichts darunter bzw. Platte passt nicht (Podest neben der Wangenflucht): seitlich am Bauteil daneben, wenn das passt
+        if (!t || !t.r.ok) {
+          try {
+            const f = findSideFace(onBeam ? [...beams, ...segs] : segs, base, along, 600);
+            const rs = f ? sideMount(cfgSide, { name, post: o.post, top, base, along, face: f, plateName: `${name} Befestigungsblech` }) : null;
+            if (rs?.ok) { face = f; r = rs; r.fallback = "seitlich"; }
+          } catch { /* keine passende Seitenfläche: bleibt bei oben */ }
+        }
+        if (!r && !t) return fail("kein Anschlussbauteil unter oder neben dem Pfosten (Wange, Podestrahmen oder Stufe)");
+        if (!r) ({ face, r } = t);
+      }
+      if (!record) return r;
+      applyTargetHoles(supports.plates, face, r.targetHoles);
+      issues.push(...r.issues);
+      mounted.push(r);
+      return r;
+    };
+    o.mount = (ctx) => mountAt(ctx);
+    // Endpfosten so weit zurück, dass Blech bzw. Fußplatte mittig zum Pfosten ganz auf dem Bauteil liegt
+    o.mountFit = (ctx) => {
+      const r = mountAt(ctx, false);
+      if (r?.pull) return dot3(r.pull, ctx.along); // Pfosten vor der Stirnseite: auf Anlage am Blech rücken
+      // Fußplatte: so weit, dass sie mittig zum Pfosten ganz auf dem Bauteil liegt (Pfosten an der Stufenkante)
+      const d = (r?.shifted || 0) + (r?.need || 0);
+      return d ? dot3(mul3(r.frame.x, d), ctx.along) : 0;
+    };
+  }
   if (!(o.H > 300)) throw fieldError("Geländerhöhe zu klein", "gelH");
   if (!(o.postMax > post)) throw fieldError("Pfostenabstand zu klein", "gelPostMax");
   const chains = [], members = [], plates = [], drills = [];
@@ -292,11 +363,14 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
       posts += r.posts; bars += r.bars; gapMax = Math.max(gapMax, r.gapMax); pieces += r.pieces || 0;
     });
   }
+  issues.push(...mountCollisions(mounted, { members: [...supports.members, ...members], plates: [...supports.plates, ...plates] }, "gelMount"));
   // Geländernorm nach Nutzung; Absturzhöhe höchstens die Geschosshöhe
   issues.push(...railingIssues({ use: p.gelUse, fall: p.height, height: o.H, fill: p.gelFill, gap: gapMax, bottom: 0, open: o.H - p.gelRail.geom.height, rail: p.gelRail },
     { height: "gelH", fill: "gelFill", gap: p.gelFill === "quer" ? "gelBars" : "gelGap", rail: "gelRail", use: "gelUse" }));
   const what = p.gelFill === "quer" ? `${bars} Knieleisten` : p.gelFill === "staketen" ? `${bars} Stäbe` : "nur Handlauf";
-  return { chains, members, plates, drills, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` + (o.holder ? `, Handlaufhalter mit Bohrung Ø ${fmt(o.holderD + 0.1)}` : "") + (o.through && pieces ? `, ${p.gelFill === "quer" ? "Knieleisten" : "Untergurt"} durch die Pfosten (${pieces} Stück, Aufmaß ${fmt(o.allow)} mm)` : "") };
+  return { chains, members, plates, drills, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` + (o.holder ? `, Handlaufhalter mit Bohrung Ø ${fmt(o.holderD + 0.1)}` : "") + (o.through && pieces ? `, ${p.gelFill === "quer" ? "Knieleisten" : "Untergurt"} durch die Pfosten (${pieces} Stück, Aufmaß ${fmt(o.allow)} mm)` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, gelMount(p) === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "") };
 }
 
 const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const mul3 = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
