@@ -487,6 +487,62 @@ try {
   const rk1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, vol: r.bodies[0]?.props?.volume, kind: a.activeDoc().features[0].kind }; });
   step("Regelkörper", rk0.bodies === 1 && Math.abs(rk0.vol - Math.PI / 4 * 2500 * 100) < 200 && rk1.kind === "kugel" && Math.abs(rk1.vol - Math.PI / 6 * 216000) < 200, JSON.stringify({ rk0, rk1 }));
 
+  // Stirnplatte und Rippe (MegaCAD-Abgleich M8): Profil, Platte am Ende, 2 Rippen, Bohrungen auf 2
+  await evalApp(() => window.__werkcad.newPart("Stirnplatte"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: "Rohr / Profil" }).click();
+  await idle();
+  await page.locator("#ribbon button", { hasText: "Stirn-/Fußplatte" }).click();
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Rippe$/ }).click();
+  await idle();
+  const sp0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, kinds: r.bodies.map((b) => b.kind).join(), bad: Object.values(r.status).filter((s) => !s.ok).length }; });
+  await evalApp(() => { const a = window.__werkcad; a.selectFeature(a.activeDoc().features.find((x) => x.type === "platte").id); });
+  await idle();
+  await page.locator("#props .seg button", { hasText: /^2$/ }).click();
+  await idle();
+  const sp1 = await evalApp(() => { const a = window.__werkcad; const f = a.activeDoc().features.find((x) => x.type === "platte"); return { holes: f.holes, info: a.results.get(a.activeId).status[f.id].info }; });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20d-stirnplatte");
+  step("Stirnplatte und Rippe", sp0.n === 4 && sp0.kinds === "member,solid,solid,solid" && sp0.bad === 0 && sp1.holes === "2" && /2 × Ø/.test(sp1.info), JSON.stringify({ sp0, sp1 }));
+
+  // Schweißnähte (MegaCAD-Abgleich M9): a-Maß an Platte und Rippe, Nahtliste, Symbole in der Zeichnung
+  const fillField = async (label, value) => { const inp = page.locator("#props .field", { hasText: label }).locator("input"); await inp.fill(value); await inp.press("Enter"); await idle(); };
+  await fillField("Kehlnaht a, umlaufend", "5");
+  await evalApp(() => { const a = window.__werkcad; a.selectFeature(a.activeDoc().features.find((x) => x.type === "rippe").id); });
+  await idle();
+  await fillField("Kehlnaht a, beidseitig", "4");
+  const wl = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.welds?.length, rows: [...document.querySelectorAll("#props table.grid tbody tr")].map((tr) => tr.textContent) }; });
+  const partId = await evalApp(() => window.__werkcad.activeId);
+  await evalApp((id) => window.__werkcad.newDrawing({ kind: "part", id }), partId);
+  await idle(120000);
+  await page.waitForTimeout(1000);
+  await idle(120000);
+  await evalApp(() => window.__werkcad.drawing.autoWelds());
+  await page.waitForTimeout(300);
+  const ws = await evalApp(() => { const dr = window.__werkcad.drawing; return { marks: dr.doc.welds?.length, texts: [...dr.svg.querySelectorAll("[data-weld] text")].map((t) => t.textContent) }; });
+  await shot("20e-schweissnaehte");
+  step("Schweißnähte: Nahtliste und Symbole", wl.n === 3 && wl.rows.length === 2 && ws.marks === 3 && ws.texts.includes("a5") && ws.texts.filter((t) => t === "a4").length === 4, JSON.stringify({ wl, ws }));
+
+  // Geländer-Generator (MegaCAD-Abgleich M10/M11): anlegen, über Eck, Füllung Glas, Zuschnittliste
+  await evalApp(() => window.__werkcad.newPart("Geländer"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Geländer$/ }).click();
+  await idle(120000);
+  const gl0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
+  const runs = page.locator("#props .field", { hasText: "Läufe" }).locator("input");
+  await runs.fill("3000; 1500");
+  await runs.press("Enter");
+  await idle(120000);
+  await page.locator("#props .field", { hasText: "Füllung" }).locator("select").selectOption("glas");
+  await idle(120000);
+  const gl1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, glass: r.bodies.filter((b) => b.meta?.glass).length, members: r.bodies.filter((b) => b.kind === "member").length, info: Object.values(r.status)[0]?.info }; });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20f-gelaender");
+  step("Geländer-Generator", gl0.ok && gl0.n > 30 && /Pfosten/.test(gl0.info) && gl1.glass === 5 && gl1.members === 6 + 2 + 10 && /6 Pfosten/.test(gl1.info), JSON.stringify({ gl0, gl1 }));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();
@@ -1326,6 +1382,34 @@ try {
     await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
     step("Panels andocken und Breite ziehen", /dock-left/.test(docked.parent) && docked.right <= 1 && Math.abs(widened.w - 340) < 3 && Math.abs((widened.saved?.wLeft || 0) - 340) < 3 && widened.saved?.props === "left" &&
       /dock-right/.test(reset.parent) && reset.cols === "260px minmax(0px, 1fr) 300px", JSON.stringify({ docked, widened, reset }));
+  }
+
+  // Skizze säubern (MegaCAD-Abgleich M7): lose Ecken, doppelte Linie, leicht schief → eine geschlossene Kontur
+  {
+    await evalApp(() => window.__werkcad.newPart("Saeubern"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    await evalApp(() => window.__werkcad.sketcher.commit("Fremddaten", (sk) => {
+      sk.points.push({ id: "qa", x: 10, y: 5 }, { id: "qb", x: 90, y: 5.2 }, { id: "qb2", x: 90.004, y: 5.2 }, { id: "qc", x: 90, y: 45 }, { id: "qc2", x: 90, y: 45.003 }, { id: "qd", x: 10, y: 45 }, { id: "qd2", x: 10.002, y: 45 }, { id: "qa2", x: 10, y: 5.001 });
+      sk.entities.push({ id: "q1", type: "line", p1: "qa", p2: "qb" }, { id: "q2", type: "line", p1: "qb2", p2: "qc" }, { id: "q3", type: "line", p1: "qc2", p2: "qd" }, { id: "q4", type: "line", p1: "qd2", p2: "qa2" }, { id: "q1x", type: "line", p1: "qb", p2: "qa" });
+    }));
+    await page.waitForTimeout(200);
+    const before = await evalApp(() => { const s = window.__werkcad.sketcher.sk; return { lines: s.entities.filter((e) => e.type === "line").length, pts: s.points.length }; });
+    await page.locator("#ribbon button", { hasText: /^Säubern$/ }).click();
+    await page.waitForTimeout(300);
+    const hint = await page.locator(".dialog .hint").last().textContent();
+    await page.locator(".dialog button", { hasText: /^Säubern$/ }).click();
+    await page.waitForTimeout(300);
+    const after = await evalApp(() => { const s = window.__werkcad.sketcher.sk; return { lines: s.entities.filter((e) => e.type === "line").length, pts: s.points.length, hor: s.constraints.filter((c) => c.type === "horizontal").length }; });
+    await shot("26f-skizze-gesaeubert");
+    await evalApp(() => window.__werkcad.undo());
+    await page.waitForTimeout(300);
+    const undone = await evalApp(() => window.__werkcad.sketcher.sk.entities.filter((e) => e.type === "line").length);
+    await page.keyboard.press("Escape");
+    step("Skizze säubern", before.lines === 5 && after.lines === 4 && after.pts === before.pts - 4 && after.hor === 1 && undone === 5 && /4 Punkt/.test(hint), JSON.stringify({ before, hint, after, undone }));
   }
 
   // Farbschema dunkel und gemerkte Werkzeugwerte

@@ -5,6 +5,7 @@ import { newPart, uid } from "../core/examples.js";
 import { serializeProject, loadProject, validateProject } from "../core/project.js";
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
+import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
 import { fmtNum } from "./dom.js";
 
 const PROJECT_FILTERS = [{ name: "PBCAD-Projekt", extensions: ["wcad"] }];
@@ -218,6 +219,13 @@ export class Files {
     const rows = cutListRows(collectCutSources(app, d));
     if (!rows.length) return toast("Keine Profile (Rohr / Rahmen) vorhanden");
     await this.saveText(cutListCsv(rows), safeName(d.number || d.name) + "_Zuschnitt.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
+  }
+  /** Nahtliste (Schweißnähte aus Bauteil bzw. allen Bauteilen der Baugruppe × Anzahl) */
+  async exportWeldList() {
+    const d = this.app.activeDoc();
+    const rows = weldRows(collectWelds(collectCutSources(this.app, d)));
+    if (!rows.length) return toast("Keine Schweißnähte vorhanden – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
+    await this.saveText(weldCsv(rows, d.name), safeName(d.number || d.name) + "_Nahtliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
   }
   async exportBom() {
     const app = this.app;

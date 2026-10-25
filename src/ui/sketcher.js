@@ -10,6 +10,7 @@ import { inferLine, inferCircle } from "../core/autoconstraints.js";
 import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities } from "../core/sketchshapes.js";
 import { splineSamples, splineNearest } from "../core/spline.js";
 import { autoDimension } from "../core/autodim.js";
+import { cleanSketch, cleanReportText, CLEAN_KINDS, CLEAN_DEFAULTS } from "../core/sketchclean.js";
 import { splineCtrl } from "../core/sketch.js";
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
@@ -436,6 +437,49 @@ export class Sketcher {
         if (!r.constraints.length) { toast("Keine Maße nötig"); return; }
         this.commit("Vollständig bemaßen", (sk) => sk.constraints.push(...r.constraints));
         toast(`${r.constraints.length} Maß(e) gesetzt` + (r.dofAfter ? `, ${r.dofAfter} Freiheitsgrad(e) bleiben` : " – Skizze voll bestimmt"), { kind: r.dofAfter ? "" : "ok" });
+      } }],
+    });
+  }
+  /** „Skizze säubern“ (MegaCAD-Abgleich M7): Vorschau der Änderungen, ein Rückgängig-Schritt */
+  cleanDialog() {
+    if (!this.sk) return;
+    const kinds = Object.fromEntries(Object.keys(CLEAN_KINDS).map((k) => [k, true]));
+    const opt = { tol: CLEAN_DEFAULTS.tol, angle: CLEAN_DEFAULTS.angle };
+    const info = h("p", { class: "hint" });
+    // auf einer Kopie säubern und lösen; widerspricht das Geradestellen der Bemaßung, ohne es
+    const run = () => {
+      const tryOnce = (straighten) => {
+        const work = JSON.parse(JSON.stringify(this.sk));
+        const rep = cleanSketch(work, { ...opt, kinds: { ...kinds, straighten: kinds.straighten && straighten }, uid });
+        return { work, rep, ok: solveSketch(work, this.scope()).ok !== false };
+      };
+      let r = tryOnce(true);
+      if (!r.ok && kinds.straighten) { const r2 = tryOnce(false); if (r2.ok) r = { ...r2, skipped: true }; }
+      return r;
+    };
+    const update = () => {
+      const r = run();
+      info.textContent = cleanReportText(r.rep) + (r.skipped ? ". Geradestellen widerspricht der Bemaßung und entfällt." : r.ok ? "." : ". Achtung: Skizze danach nicht lösbar.");
+    };
+    const num = (label, key, unit) => {
+      const inp = h("input", { class: "inp", value: String(opt[key]).replace(".", ","), onchange: () => { const v = Number(inp.value.replace(",", ".")); if (v >= 0) { opt[key] = v; update(); } } });
+      return h("div", { class: "field" }, h("label", {}, label), h("div", { class: "expr-wrap" }, inp, h("span", { class: "val" }, unit)));
+    };
+    const boxes = Object.entries(CLEAN_KINDS).map(([k, label]) => {
+      const cb = h("input", { type: "checkbox", checked: true, onchange: () => { kinds[k] = cb.checked; update(); } });
+      return h("label", { class: "chk" }, cb, label);
+    });
+    update();
+    modal({
+      title: "Skizze säubern",
+      body: h("div", {}, ...boxes, num("Fangabstand", "tol", "mm"), num("Winkeltoleranz", "angle", "°"),
+        h("p", { class: "hint" }, "Endpunkte näher als der Fangabstand werden ein Punkt, doppelte Elemente fallen weg (Maße gehen auf das verbliebene über), überlappende Linien werden eine. Linien, die weniger als die Winkeltoleranz schief liegen, bekommen „waagrecht“ bzw. „senkrecht“."), info),
+      buttons: [{ label: "Abbrechen", value: null }, { label: "Säubern", primary: true, run: () => {
+        const r = run();
+        if (!r.rep.total) { toast("Nichts zu säubern"); return; }
+        this.sel.clear();
+        this.commit("Skizze säubern", (sk) => { sk.points = r.work.points; sk.entities = r.work.entities; sk.constraints = r.work.constraints; });
+        toast(cleanReportText(r.rep), { kind: "ok" });
       } }],
     });
   }
