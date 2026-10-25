@@ -20,3 +20,4 @@ kein Programmcode geändert.
 | [architecture/einstellungen.md](architecture/einstellungen.md) | Einstellungscenter: Ablage, Regeln, Standardwerte |
 | [testing/baseline-2026-10-24.md](testing/baseline-2026-10-24.md) | Testergebnisse vor jeder Änderung |
 | [roadmap/rohrlaser-editor-abgleich.md](roadmap/rohrlaser-editor-abgleich.md) | Abgleich mit dem Editor der Rohrlaser-Kalkulation: Matrix, Übertragungen, Testplan |
+| [roadmap/megacad-metall-abgleich.md](roadmap/megacad-metall-abgleich.md) | Abgleich mit dem Funktionsumfang von MegaCAD Metall 3D: Status, Nutzen, Aufwand, Stufen M1–M24 |
