@@ -133,8 +133,13 @@ function readProjectFile(p) {
   const backup = fs.existsSync(bak) ? { time: fs.statSync(bak).mtimeMs } : null;
   try {
     const text = fs.readFileSync(p, "utf8");
+    // Speichern schreibt eine Temp-Datei im Ordner und benennt um: Ordner muss beschreibbar sein und die
+    // Datei darf nicht von einem anderen Programm gesperrt sein (r+ öffnet ohne zu ändern)
     let readOnly = false;
-    try { fs.accessSync(p, fs.constants.W_OK); } catch { readOnly = true; }
+    try {
+      fs.accessSync(path.dirname(p), fs.constants.W_OK);
+      fs.closeSync(fs.openSync(p, "r+"));
+    } catch { readOnly = true; }
     return { path: p, text, backup, readOnly };
   } catch (e) {
     const why = e.code === "ENOENT" ? "Datei nicht gefunden" : e.code === "EACCES" || e.code === "EPERM" ? "Kein Zugriff (gesperrt oder schreibgeschützt)" : e.message;
