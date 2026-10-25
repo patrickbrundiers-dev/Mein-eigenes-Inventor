@@ -8,6 +8,7 @@
 
 const DEG = Math.PI / 180;
 
+import { fieldError } from "./generror.js";
 export const SPINDEL = {
   label: "Spindeltreppe",
   schema: [
@@ -30,21 +31,21 @@ export const SPINDEL = {
   plan(p) {
     const issues = [];
     const H = p.height, R = p.D / 2;
-    if (!(H > 300)) throw new Error("Geschosshöhe zu klein");
+    if (!(H > 300)) throw fieldError("Geschosshöhe zu klein", "height");
     const r0 = p.spindle.geom.width / 2;
-    if (!(R > r0 + 300)) throw new Error("Außendurchmesser zu klein für eine Laufbreite ≥ 300 mm");
+    if (!(R > r0 + 300)) throw fieldError("Außendurchmesser zu klein für eine Laufbreite ≥ 300 mm", "D");
     const n = p.steps > 0 ? Math.round(p.steps) : Math.max(3, Math.round(H / 190));
     const s = H / n, tt = p.treadT;
-    if (!(tt > 0)) throw new Error("Stufendicke muss > 0 sein");
+    if (!(tt > 0)) throw fieldError("Stufendicke muss > 0 sein", "treadT");
     const rg = (r0 + R) / 2; // Gehlinie
     const theta = p.angle > 0 ? p.angle : ((630 - 2 * s) / rg) / DEG;
-    if (!(theta > 5 && theta < 90)) throw new Error(`Winkel je Stufe ${fmt(theta)}° unbrauchbar (5 … 90°)`);
+    if (!(theta > 5 && theta < 90)) throw fieldError(`Winkel je Stufe ${fmt(theta)}° unbrauchbar (5 … 90°)`, "angle");
     const ag = theta * DEG * rg, step = 2 * s + ag;
-    if (step < 590 - 1e-6 || step > 650 + 1e-6) issues.push({ level: "Warnung", message: `Schrittmaß auf der Gehlinie 2s + a = ${Math.round(step)} mm außerhalb 590 … 650 mm` });
-    if (s > 210 + 1e-6) issues.push({ level: "Warnung", message: `Steigung ${fmt(s)} mm über 210 mm` });
+    if (step < 590 - 1e-6 || step > 650 + 1e-6) issues.push({ key: "angle", level: "Warnung", message: `Schrittmaß auf der Gehlinie 2s + a = ${Math.round(step)} mm außerhalb 590 … 650 mm` });
+    if (s > 210 + 1e-6) issues.push({ key: "steps", level: "Warnung", message: `Steigung ${fmt(s)} mm über 210 mm` });
     const perRev = 360 / theta, head = perRev * s - tt;
-    if (head < 2000 - 1e-6) issues.push({ level: "Warnung", message: `Durchgangshöhe ${Math.round(head)} mm unter 2000 mm – größeren Durchmesser oder kleineren Winkel wählen` });
-    if (R - r0 < 600 - 1e-6) issues.push({ level: "Hinweis", message: `Nutzbare Laufbreite ${Math.round(R - r0)} mm unter 600 mm` });
+    if (head < 2000 - 1e-6) issues.push({ key: "angle", level: "Warnung", message: `Durchgangshöhe ${Math.round(head)} mm unter 2000 mm – größeren Durchmesser oder kleineren Winkel wählen` });
+    if (R - r0 < 600 - 1e-6) issues.push({ key: "D", level: "Hinweis", message: `Nutzbare Laufbreite ${Math.round(R - r0)} mm unter 600 mm` });
     const sg = p.dir === "rechts" ? -1 : 1;
     const ov = (p.overlap || 0) / rg / DEG; // Überdeckung als Winkel
     const members = [], plates = [], chains = [];

@@ -16,18 +16,18 @@ import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
 import { PLATE_HOLES, RIB_SIDES } from "../core/anschluss.js";
 import { GENERATORS, applyTemplate, genValues, resolveGenParams } from "../core/generator.js";
-import { sketchViews, VIEW_LABEL } from "../core/genskizze.js";
+import { sketchViews, VIEW_LABEL, fieldParts } from "../core/genskizze.js";
 import { sketchSvg, linkFieldToSketch } from "./genskizze.js";
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gentemplates.js";
 import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
-import { newPart } from "../core/examples.js";
+import { newPart, newAssembly } from "../core/examples.js";
 import { NORM_KINDS, NORM_SIZES, BOLT_LENGTHS, defaultNormteil, normDesignation, collectNorm } from "../core/normteile.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir } from "../core/geom.js";
-import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers } from "../core/kinematik.js";
+import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, jointUnit, jointLabel } from "../core/kinematik.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom } from "../core/subasm.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { FINISHES, RAL, finishOf, finishLabel, ralName } from "../core/oberflaeche.js";
@@ -177,6 +177,7 @@ export class Props {
   render() {
     const app = this.app;
     const d = app.activeDoc();
+    if (app.viewer.fieldGroup?.children.length) app.viewer.highlightBodies([]); // Feld-Hervorhebung gehört zum alten Feld
     const body = h("div", { class: "props-body" });
     let title = "Eigenschaften";
     if (app.mode === "start" || !d) {
@@ -616,6 +617,15 @@ export class Props {
         let svg = null;
         const sketch = this.genSketch(f, gen, P, planOf, (el) => { svg = el; });
         if (sketch) out.push(sketch);
+        // Fehler und Hinweise des Bauplans direkt am betroffenen Feld (V5)
+        let planErr = null, planIssues = [];
+        try { planIssues = planOf(f.params).issues || []; } catch (e) { planErr = e; }
+        const msgsFor = (key) => [...(planErr?.key === key ? [["err", planErr.message]] : []), ...planIssues.filter((x) => x.key === key).map((x) => [x.level === "Hinweis" ? "hint" : "warn", x.message])];
+        // Fokus auf einem Feld hebt die zugehörigen Körper im 3D-Fenster hervor
+        const markBodies = (key) => (on) => {
+          const rx = on && fieldParts(gen, key), bodies = rx ? app.results.get(part.id)?.bodies || [] : [];
+          app.viewer.highlightBodies(rx ? bodies.flatMap((b, i) => (b.fid === f.id && rx.test(b.name || "") ? [i] : [])) : []);
+        };
         const groups = [];
         for (const s of gen.schema) {
           if (s.when && !s.when(P)) continue;
@@ -633,9 +643,17 @@ export class Props {
             g.items.push(this.select(s.label, kinds.map((k) => [k, SECTION_KINDS[k].label]), v.kind, (k) => setP(s.key, { kind: k, size: CATALOG[k][Math.floor(CATALOG[k].length / 2)] }, s.label)));
             g.items.push(this.select("", (CATALOG[v.kind] || []).map((c) => [c, c.replace(/\./g, ",")]), v.size, (z) => setP(s.key, { kind: v.kind, size: z }, s.label)));
           }
-          for (const el of g.items.slice(n0)) linkFieldToSketch(el, s.key, () => svg);
+          for (const el of g.items.slice(n0)) linkFieldToSketch(el, s.key, () => svg, markBodies(s.key));
+          const msgs = msgsFor(s.key);
+          if (msgs.length) {
+            g.items.slice(n0).forEach((el) => el.classList?.add(msgs.some(([k]) => k === "err") ? "field-bad" : "field-warn"));
+            g.items.push(...msgs.map(([k, m]) => h("p", { class: "field-msg " + k }, m)));
+          }
         }
         for (const g of groups) out.push(this.section(g.name, ...g.items));
+        if (f.gen === "schiebetor") out.push(this.section("Baugruppe",
+          h("p", { class: "hint" }, "Legt Flügel und feste Teile als zwei Bauteile an und setzt sie in eine neue Baugruppe; der Flügel bekommt ein Schiebegelenk über die ganze Durchfahrt (öffnen, Bewegungsbereich prüfen, animieren)."),
+          h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.slidingGateAssembly(f, planOf) }, "Als Baugruppe mit Schiebegelenk"))));
         const tpls = listTemplates(f.gen);
         out.push(this.section("Vorlagen",
           tpls.length ? this.select("Vorlage laden", [["", "– wählen –"], ...tpls.map((t) => [t, t])], "", (name) => name && this.set(f, (x) => { x.params = applyTemplate(f.gen, x.params, getTemplate(f.gen, name)); }, "Vorlage " + name)) : null,
@@ -1134,51 +1152,75 @@ export class Props {
       this.jointSection(asm, c),
     ];
   }
-  /** Drehgelenk der Komponente (M23): Winkel live verstellen, Bereich, Bewegen, Kollision im Bereich */
+  /** Dreh- oder Schiebegelenk der Komponente (M23, E8): Wert live verstellen, Bereich, Bewegen, Kollision im Bereich */
   jointSection(asm, c) {
     const app = this.app, j = c.joint;
-    if (!j) return this.section("Drehgelenk", h("p", { class: "hint" }, "Für Tor-Flügel, Klappen, Deckel: Achse festlegen, dann im Winkelbereich bewegen."),
-      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.jointDialog(c) }, "Drehgelenk anlegen")));
-    const out = h("span", { class: "num" }, fmtNum(j.angle, 1) + "°");
-    const slider = h("input", { type: "range", class: "joint-angle", min: Math.min(j.min, j.max), max: Math.max(j.min, j.max), step: "0.5", value: j.angle, style: { width: "100%" } });
+    if (!j) return this.section("Gelenk", h("p", { class: "hint" }, "Drehgelenk für Tor-Flügel, Klappen, Deckel; Schiebegelenk für Schiebetore und Auszüge: Achse bzw. Richtung festlegen, dann im Bereich bewegen."),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.jointDialog(c) }, "Drehgelenk anlegen"), h("button", { class: "btn", onclick: () => this.jointDialog(c, "schiebe") }, "Schiebegelenk anlegen")));
+    const u = jointUnit(j), slide = isSlide(j);
+    const out = h("span", { class: "num" }, fmtNum(j.angle, 1) + " " + u);
+    const slider = h("input", { type: "range", class: "joint-angle", min: Math.min(j.min, j.max), max: Math.max(j.min, j.max), step: slide ? "5" : "0.5", value: j.angle, style: { width: "100%" } });
     const movers = [c.id, ...jointFollowers(asm, c.id)];
     slider.addEventListener("input", () => {
       const a = Number(slider.value);
-      out.textContent = fmtNum(a, 1) + "°";
+      out.textContent = fmtNum(a, 1) + " " + u;
       const d = jointDelta(j, a);
       app.viewer.setComponentDeltas(new Map(movers.map((id) => [id, d])));
     });
-    slider.addEventListener("change", () => app.edit("Gelenkwinkel", () => { setJointAngle(c, Number(slider.value), movers.slice(1).map((id) => asm.components.find((x) => x.id === id)).filter(Boolean)); }));
+    slider.addEventListener("change", () => app.edit(slide ? "Gelenkweg" : "Gelenkwinkel", () => { setJointAngle(c, Number(slider.value), movers.slice(1).map((id) => asm.components.find((x) => x.id === id)).filter(Boolean)); }));
     const lim = (label, key) => {
       const inp = h("input", { class: "inp", type: "number", step: "1", value: j[key] });
       inp.addEventListener("change", () => {
         const v = Number(inp.value);
         const next = { ...j, [key]: v };
-        if (!Number.isFinite(v) || !(Math.min(next.min, next.max) <= j.angle && j.angle <= Math.max(next.min, next.max))) { inp.classList.add("bad"); inp.title = "Bereich muss den aktuellen Winkel enthalten"; return; }
+        if (!Number.isFinite(v) || !(Math.min(next.min, next.max) <= j.angle && j.angle <= Math.max(next.min, next.max))) { inp.classList.add("bad"); inp.title = slide ? "Bereich muss den aktuellen Weg enthalten" : "Bereich muss den aktuellen Winkel enthalten"; return; }
         app.edit("Gelenkbereich", () => { j[key] = v; });
       });
-      return this.field(label, h("div", { class: "expr-wrap" }, inp, h("span", { class: "val" }, "°")));
+      return this.field(label, h("div", { class: "expr-wrap" }, inp, h("span", { class: "val" }, u)));
     };
     const f = (v) => v.map((x) => fmtNum(x, 1)).join(" / ");
-    return this.section("Drehgelenk",
-      this.field("Winkel", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, slider, out)),
+    return this.section(jointLabel(j),
+      this.field(slide ? "Weg" : "Winkel", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, slider, out)),
       lim("von", "min"), lim("bis", "max"),
-      h("dl", { class: "kv" }, h("dt", {}, "Achse durch"), h("dd", {}, f(j.p)), h("dt", {}, "Richtung"), h("dd", {}, f(j.d)),
+      h("dl", { class: "kv" }, slide ? null : h("dt", {}, "Achse durch"), slide ? null : h("dd", {}, f(j.p)), h("dt", {}, "Richtung"), h("dd", {}, f(j.d)),
         movers.length > 1 ? h("dt", {}, "Geht mit") : null, movers.length > 1 ? h("dd", {}, movers.slice(1).map((id) => asm.components.find((x) => x.id === id)?.name).join(", ")) : null),
       h("p", { class: "hint" }, "Abhängigkeiten verschieben diese Komponente nicht mehr; daran hängende Teile gehen mit."),
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => this.animateJoints([c.id]) }, "Bewegen"),
         h("button", { class: "btn", onclick: () => this.jointSweepCheck(c) }, "Kollision im Bereich prüfen"),
-        h("button", { class: "btn danger", onclick: () => app.edit("Drehgelenk entfernen", () => { delete c.joint; }) }, "Gelenk entfernen")));
+        h("button", { class: "btn danger", onclick: () => app.edit(jointLabel(j) + " entfernen", () => { delete c.joint; }) }, "Gelenk entfernen")));
+  }
+  /** Schiebegelenk anlegen: Richtung (±X, ±Y, ±Z), Weg von … bis in mm; 0 = heutige Lage */
+  slideDialog(c) {
+    const app = this.app;
+    const box = app.viewer.componentBox(c.id);
+    const st = { dir: "-x", min: 0, max: box ? Math.round(box[1][0] - box[0][0]) : 1000 };
+    const dirs = { "+x": [1, 0, 0], "-x": [-1, 0, 0], "+y": [0, 1, 0], "-y": [0, -1, 0], "+z": [0, 0, 1], "-z": [0, 0, -1] };
+    const seg = h("div", { class: "seg" });
+    const draw = () => seg.replaceChildren(...Object.keys(dirs).map((k) => h("button", { class: st.dir === k ? "on" : "", onclick: () => { st.dir = k; draw(); } }, k.toUpperCase())));
+    draw();
+    const num = (key) => { const i = h("input", { class: "inp", type: "number", step: "10", value: st[key] }); i.addEventListener("change", () => { st[key] = Number(i.value); }); return i; };
+    modal({ title: "Schiebegelenk anlegen", width: "480px", body: h("div", {},
+      h("p", {}, `Komponente »${c.name}« verschiebt sich entlang einer Richtung. Weg 0 ist die heutige Lage.`),
+      this.field("Richtung", seg),
+      this.field("Weg von", h("div", { class: "expr-wrap" }, num("min"), h("span", { class: "val" }, "mm"))),
+      this.field("Weg bis", h("div", { class: "expr-wrap" }, num("max"), h("span", { class: "val" }, "mm")))),
+    buttons: [{ label: "Abbrechen" }, { label: "Anlegen", primary: true, run: () => {
+      if (!(Math.min(st.min, st.max) <= 0 && Math.max(st.min, st.max) >= 0) || st.min === st.max) { toast("Der Bereich muss 0 (heutige Lage) enthalten", { kind: "err" }); return false; }
+      app.edit("Schiebegelenk", () => { c.joint = defaultJoint([0, 0, 0], dirs[st.dir], { min: st.min, max: st.max, kind: "schiebe" }); });
+      app.sel = { type: "component", id: c.id };
+      this.render();
+    } }] });
   }
   /** Drehgelenk anlegen: Achse an einer Kante der Komponente, an einer Konzentrisch-Abhängigkeit oder frei */
-  jointDialog(comp) {
+  jointDialog(comp, kind = "dreh") {
     const app = this.app, asm = app.activeDoc();
     if (asm?.kind !== "assembly") return;
     const c = comp || (app.sel?.type === "component" ? asm.components.find((x) => x.id === app.sel.id) : null);
     if (!c) return toast("Erst die Komponente wählen, die sich drehen soll (z. B. den Torflügel)");
-    if (c.joint) return toast(`${c.name} hat schon ein Drehgelenk`);
-    if (c.fixed) return toast("Fixierte Komponenten drehen sich nicht – Fixierung lösen");
+    if (c.joint) return toast(`${c.name} hat schon ein ${jointLabel(c.joint)}`);
+    if (c.fixed) return toast("Fixierte Komponenten bewegen sich nicht – Fixierung lösen");
+    if (kind === "schiebe") return this.slideDialog(c);
     const box = app.viewer.componentBox(c.id);
     if (!box) return toast("Komponente ist leer oder ausgeblendet");
     // Achse aus Konzentrisch-Abhängigkeit (Bolzen, Scharnier) in Baugruppen-Koordinaten
@@ -1260,11 +1302,12 @@ export class Props {
     if (silent) return rows;
     const name = (id) => asm.components.find((x) => x.id === id)?.name || id;
     const bad = rows.filter((r) => r.hits.length);
+    const u = jointUnit(c.joint), sl = isSlide(c.joint), what = sl ? "Stellungen" : "Winkeln";
     const body = bad.length
-      ? h("div", {}, h("p", {}, `Kollision bei ${bad.length} von ${rows.length} geprüften Winkeln.`),
-        h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Winkel"), h("th", {}, "Stößt an"))),
-          h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, fmtNum(r.angle, 1) + "°"), h("td", {}, r.hits.length ? [...new Set(r.hits.map((x) => name(movers.has(x.a) ? x.b : x.a)))].join(", ") : "frei"))))))
-      : h("p", {}, `Frei im ganzen Bereich ${fmtNum(c.joint.min, 1)}° … ${fmtNum(c.joint.max, 1)}° (${rows.length} Winkel geprüft). Berührende Flächen zählen nicht.`);
+      ? h("div", {}, h("p", {}, `Kollision bei ${bad.length} von ${rows.length} geprüften ${what}.`),
+        h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, sl ? "Weg" : "Winkel"), h("th", {}, "Stößt an"))),
+          h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, fmtNum(r.angle, 1) + " " + u), h("td", {}, r.hits.length ? [...new Set(r.hits.map((x) => name(movers.has(x.a) ? x.b : x.a)))].join(", ") : "frei"))))))
+      : h("p", {}, `Frei im ganzen Bereich ${fmtNum(c.joint.min, 1)} ${u} … ${fmtNum(c.joint.max, 1)} ${u} (${rows.length} ${what} geprüft). Berührende Flächen zählen nicht.`);
     modal({ title: `Bewegungsbereich – ${c.name}`, width: "520px", body, buttons: [{ label: "Schließen", primary: true }] });
     return rows;
   }
@@ -1336,6 +1379,32 @@ export class Props {
         });
       } }],
     });
+  }
+  /** Schiebetor (E8) als Baugruppe: Bauteil Flügel (Schiebegelenk −X, 0 … Durchfahrt) und Bauteil feste Teile */
+  slidingGateAssembly(f, planOf) {
+    const app = this.app, src = app.activeDoc();
+    let W;
+    try { W = resolveGenParams(f.gen, f.params, (x) => evaluate(String(x), this.scope())).width; planOf(f.params); } catch (e) { return toast("Schiebetor rechnet nicht: " + e.message, { kind: "err" }); }
+    const base = f.name || "Schiebetor";
+    const mk = (teil, label) => {
+      const p = app.withPartDefaults(newPart(`${base} ${label}`));
+      p.material = src.material || p.material;
+      p.color = src.color ?? null;
+      if (src.finish) p.finish = JSON.parse(JSON.stringify(src.finish));
+      p.params = JSON.parse(JSON.stringify(src.params || []));
+      p.features = [{ ...JSON.parse(JSON.stringify(f)), id: uid("f"), name: `${base} ${label}`, params: { ...f.params, teil } }];
+      return p;
+    };
+    const leaf = mk("fluegel", "Flügel"), fixed = mk("fest", "feste Teile");
+    const asm = newAssembly(app.docName("assembly"));
+    asm.name = base;
+    asm.components.push({ id: uid("c"), part: fixed.id, name: fixed.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+    asm.components.push({ id: uid("c"), part: leaf.id, name: leaf.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0], joint: defaultJoint([0, 0, 0], [-1, 0, 0], { min: 0, max: Math.round(W), kind: "schiebe" }) });
+    app.edit("Schiebetor als Baugruppe", () => { app.project.docs.push(leaf, fixed, asm); }, { rebuild: false });
+    app.openDoc(asm.id);
+    app.sel = { type: "component", id: asm.components[1].id };
+    this.render();
+    toast(`Baugruppe »${asm.name}« mit Schiebegelenk angelegt`, { kind: "ok" });
   }
   newPartForAssembly() {
     const app = this.app;

@@ -1,24 +1,32 @@
-// Kinematik in Baugruppen (MegaCAD-Abgleich M23): Drehgelenk an einer Komponente, Bewegung im Winkelbereich,
-// Explosionsdarstellung. Reine Rechnung; Anzeige und Animation in src/ui (viewer.js, props.js).
+// Kinematik in Baugruppen (MegaCAD-Abgleich M23, Schiebegelenk E8): Dreh- oder Schiebegelenk an einer Komponente,
+// Bewegung im Bereich, Explosionsdarstellung. Reine Rechnung; Anzeige und Animation in src/ui (viewer.js, props.js).
 //
-// Gelenk an der Komponente: c.joint = { p, d, angle, min, max } – Achse durch Punkt p mit Richtung d in
-// Baugruppen-Koordinaten, angle = aktueller Winkel. c.pos/c.rot sind immer die Lage beim aktuellen Winkel,
+// Gelenk an der Komponente: c.joint = { kind?, p, d, angle, min, max } – Achse durch Punkt p mit Richtung d in
+// Baugruppen-Koordinaten, angle = aktueller Wert: beim Drehgelenk (kind fehlt oder "dreh") Winkel in °, beim
+// Schiebegelenk (kind "schiebe") Weg in mm entlang d. c.pos/c.rot sind immer die Lage beim aktuellen Winkel,
 // damit Stückliste, Zeichnung, Export und Kollision unverändert damit rechnen. Eine Komponente mit Gelenk
 // wird von Abhängigkeiten nicht verschoben (wie fixiert); sie bewegt sich nur über den Gelenkwinkel.
 
 import { placementMatrix, rotationAbout, matMul, decomposePlacement, v3 } from "./geom.js";
 
 /** Neues Gelenk mit Achse (Punkt, Richtung); Winkel 0 = heutige Lage */
-export function defaultJoint(p = [0, 0, 0], d = [0, 0, 1], { min = 0, max = 90 } = {}) {
+export function defaultJoint(p = [0, 0, 0], d = [0, 0, 1], { min = 0, max = 90, kind = "dreh" } = {}) {
   if (!(Math.hypot(...d) > 1e-9)) throw new Error("Achsrichtung angeben");
-  return { p: p.map(Number), d: v3.norm(d), angle: 0, min, max };
+  return { ...(kind === "schiebe" ? { kind } : {}), p: p.map(Number), d: v3.norm(d), angle: 0, min, max };
 }
+
+export const isSlide = (j) => j?.kind === "schiebe";
+/** Einheit und Name des Gelenkwerts */
+export const jointUnit = (j) => (isSlide(j) ? "mm" : "°");
+export const jointLabel = (j) => (isSlide(j) ? "Schiebegelenk" : "Drehgelenk");
 
 export const clampAngle = (j, a) => Math.min(Math.max(a, Math.min(j.min, j.max)), Math.max(j.min, j.max));
 
-/** Drehung (4×4) vom aktuellen Gelenkwinkel zum Winkel a; Weltkoordinaten der Baugruppe */
+/** Bewegung (4×4) vom aktuellen Gelenkwert zum Wert a: Drehung um die Achse bzw. Verschiebung entlang d */
 export function jointDelta(j, a) {
-  return rotationAbout(j.p, j.d, clampAngle(j, a) - (j.angle || 0));
+  const t = clampAngle(j, a) - (j.angle || 0);
+  if (isSlide(j)) return placementMatrix(v3.mul(v3.norm(j.d), t), [0, 0, 0]);
+  return rotationAbout(j.p, j.d, t);
 }
 
 /** Lage {pos, rot} der Komponente beim Winkel a, ohne sie zu ändern */

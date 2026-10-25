@@ -72,3 +72,31 @@ export function sketchDims(gen, p, plan, view, sk = sketchView(plan, view)) {
 /** Ansichten, die ein Generator zeigt (erste = Standard) */
 export const sketchViews = (gen) => gen?.views || ["top", "front"];
 export const VIEW_LABEL = { top: "Grundriss", front: "Ansicht", side: "Seite" };
+
+// Körper zu einem Parameter (Hervorhebung im 3D-Fenster beim Fokus auf dem Feld): Generator-eigene Zuordnung
+// gen.parts[key], sonst nach üblichen Parameternamen
+const FILL = /Stab|Staket|Querstab|Knieleiste|Kreuz|Ring/;
+const DEFAULT_PARTS = [
+  [/^(gel)?[pP]ost(Max|Top|Down)?$|^embed$|^gelDown$/, /Pfosten/],
+  [/^(gel)?[rR]ail$|^overhang$|^gelAuslauf$|^railH$|^gelH$/, /Handlauf/],
+  [/^(gel)?[bB]ars?$|^gapMax$|^gelGap$|^(gel)?[fF]ill$|^ringD?$/, FILL],
+  [/^(gel)?[bB]elt$|^topGap$|^bottomZ$/, /gurt/i],
+  [/^base(Size|T)?$/, /Fußplatte/],
+  [/^beam$/, /Laufprofil/],
+  [/^roller/, /Rollenbock/],
+  [/^frame$/, /Rahmen|Riegel/],
+  [/^joist(Max)?$/, /Querträger/],
+  [/^column$|^stuetzen?$|^supportMax$/, /Stütze/],
+  [/^tread(T)?$|^going$|^nosing$/, /Stufe/],
+  [/^wange[HT]$|^upn$/, /Wange/],
+  [/^holm(Inset)?$/, /Holm/],
+  [/^spindle$/, /Spindel/],
+  [/^panel(T|Gap)$/, /Blech|Glas/],
+  [/^deck(T)?$/, /Belag/],
+  [/^wallPlate$/, /Wand/],
+];
+/** RegExp der Körpernamen zum Parameter key oder null */
+export function fieldParts(gen, key) {
+  if (gen?.parts && key in gen.parts) return gen.parts[key];
+  return DEFAULT_PARTS.find(([k]) => k.test(key))?.[1] || null;
+}

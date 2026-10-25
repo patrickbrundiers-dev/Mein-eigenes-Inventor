@@ -44,11 +44,11 @@ export function sketchSvg(plan, view, { gen = null, p = null, dims = true, cls =
   return svg;
 }
 
-/** Maße zum Feld hervorheben: el = Eingabe-Container mit data-key, svg = Skizze */
-export function linkFieldToSketch(el, key, getSvg) {
+/** Maße zum Feld hervorheben: el = Eingabe-Container mit data-key, svg = Skizze; onMark(on) z. B. für das 3D-Fenster */
+export function linkFieldToSketch(el, key, getSvg, onMark) {
   if (!key) return;
   el.dataset.key = key;
-  const mark = (on) => getSvg()?.querySelectorAll(`[data-key="${key}"]`).forEach((n) => n.classList.toggle("hi", on));
+  const mark = (on) => { getSvg()?.querySelectorAll(`[data-key="${key}"]`).forEach((n) => n.classList.toggle("hi", on)); onMark?.(on); };
   el.addEventListener("focusin", () => mark(true));
   el.addEventListener("focusout", () => mark(false));
   el.addEventListener("mouseenter", () => mark(true));

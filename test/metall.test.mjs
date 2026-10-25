@@ -506,3 +506,83 @@ test("Treppengeländer: Pfostenabstand entlang des schrägen Handlaufs ≤ Höch
     assert.ok(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) <= 1200 + 1e-6, `Feld ${i}`);
   }
 });
+
+test("Schiebetor-Plan: Gegengewicht, Rollenböcke unter dem Schwanz, Teile getrennt (E8)", async () => {
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const f = g.defaultGenerator("schiebetor");
+  const plan = (patch) => g.GENERATORS.schiebetor.plan(g.resolveGenParams("schiebetor", { ...f.params, ...patch }, E));
+  const all = plan({});
+  assert.equal(all.geo.T, 1600, "Gegengewicht 40 % von 4000");
+  const beam = all.members.find((m) => m.name === "Flügel Laufprofil");
+  assert.deepEqual([beam.a[0], beam.b[0]], [-1600, 4000]);
+  const rb = all.plates.filter((p) => /^Rollenbock/.test(p.name));
+  assert.equal(rb.length, 2);
+  // offen (um die Durchfahrt nach −X verschoben) liegt der Flügel weiter auf beiden Rollenböcken
+  for (const x of [0, -4000]) assert.ok(rb.every((p) => p.center[0] - p.W / 2 >= beam.a[0] + x - 1e-6 && p.center[0] + p.W / 2 <= beam.b[0] + x + 1e-6), `Verschiebung ${x}`);
+  assert.ok(rb.every((p) => Math.abs(p.center[2] + p.t - 60) < 1e-9), "Oberkante Rollenbock = Unterkante Laufprofil");
+  const bars = all.members.filter((m) => /Flügel Stab/.test(m.name));
+  assert.ok(bars.length > 20 && bars.every((m) => m.a[0] > 0 && m.a[0] < 4000), "Staketen nur in der Durchfahrt");
+  const leaf = plan({ teil: "fluegel" }), fixed = plan({ teil: "fest" });
+  assert.ok(leaf.members.every((m) => m.name.startsWith("Flügel")) && leaf.plates.length === 0);
+  assert.deepEqual(fixed.members.map((m) => m.name).sort(), ["Fangpfosten", "Führungspfosten"]);
+  assert.equal(leaf.members.length + fixed.members.length, all.members.length);
+  assert.throws(() => plan({ tail: "300" }), /Gegengewicht zu kurz/);
+  assert.ok(plan({ tail: "1000" }).issues.some((i) => /35 %/.test(i.message)));
+  const q = plan({ fill: "quer" });
+  assert.ok(q.members.some((m) => /Querstab/.test(m.name)));
+});
+
+test("Zaun-Plan: Felder, Pfosten, Gefälle und Stufung am Hang (E9)", async () => {
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const f = g.defaultGenerator("zaun");
+  const plan = (patch) => g.GENERATORS.zaun.plan(g.resolveGenParams("zaun", { ...f.params, ...patch }, E));
+  const e = plan({});
+  assert.equal(e.members.filter((m) => /^Pfosten/.test(m.name)).length, 5, "10 m bei max. 2,5 m: 4 Felder, 5 Pfosten");
+  assert.match(e.info, /4 Felder à 2440 mm/);
+  assert.ok(e.members.filter((m) => /Unterriegel/.test(m.name)).every((m) => m.a[2] === 80 + 20 && m.b[2] === 100), "eben: Unterriegel waagrecht");
+  // Gefälle: Riegel steigen mit dem Gelände (600 auf 10 m), schräg geschnitten
+  const s = plan({ terrain: "gefaelle" });
+  const u1 = s.members.find((m) => m.name === "Feld 1 Unterriegel");
+  assert.ok(Math.abs((u1.b[2] - u1.a[2]) / (u1.b[0] - u1.a[0]) - 0.06) < 1e-9 && u1.cuts);
+  const p5 = s.members.find((m) => m.name === "Pfosten 5");
+  assert.ok(Math.abs(p5.a[2] - (600 - 600)) < 1e-9 && Math.abs(p5.b[2] - (600 + 80 + 1200 + 50)) < 1e-9);
+  // gestuft: Felder waagrecht über dem höheren Ende; Pfosten bis über das höhere Feld
+  const st = plan({ terrain: "stufen" });
+  const r2 = st.members.filter((m) => /^Feld 2 /.test(m.name) && /riegel/.test(m.name));
+  assert.ok(r2.every((m) => Math.abs(m.a[2] - m.b[2]) < 1e-9 && !m.cuts));
+  assert.ok(Math.abs(st.members.find((m) => m.name === "Feld 2 Unterriegel").a[2] - (300 + 80 + 20)) < 1e-9);
+  assert.ok(Math.abs(st.members.find((m) => m.name === "Pfosten 2").b[2] - (300 + 80 + 1200 + 50)) < 1e-9);
+  assert.ok(!st.issues.length);
+  assert.ok(plan({ terrain: "stufen", rise: "1500" }).issues.some((i) => /Bodenluft/.test(i.message)));
+  // Füllungen
+  assert.ok(plan({ fill: "quer" }).members.some((m) => /Querstab/.test(m.name)));
+  const b = plan({ fill: "blech", terrain: "gefaelle", base: "fussplatte" });
+  assert.equal(b.plates.filter((x) => /Blech/.test(x.name)).length, 4);
+  assert.equal(b.plates.filter((x) => /Fußplatte/.test(x.name)).length, 5);
+  assert.throws(() => plan({ length: "100" }), /mindestens 500/);
+});
+
+test("Generator-Meldungen am Feld und Körper je Feld (V5)", async () => {
+  const g = await import("../src/core/generator.js");
+  const { fieldParts } = await import("../src/core/genskizze.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (gen, patch) => g.GENERATORS[gen].plan(g.resolveGenParams(gen, { ...g.defaultGenerator(gen).params, ...patch }, E));
+  const err = (gen, patch) => { try { plan(gen, patch); } catch (e) { return e.key; } return null; };
+  assert.equal(err("zaun", { length: "100" }), "length");
+  assert.equal(err("tor", { form: "stich", rise: "5000" }), "rise");
+  assert.equal(err("treppe", { height: "100" }), "height");
+  assert.equal(err("balkon", { railH: "100" }), "railH", "Geländer-Fehler auf das Balkon-Feld umgeschlüsselt");
+  assert.ok(plan("treppe", { going: "200" }).issues.some((x) => x.key === "going"));
+  assert.ok(plan("balkon", { railH: "800" }).issues.some((x) => x.key === "railH"));
+  // jeder Schlüssel einer Meldung gehört zu einem Parameter des Generators
+  for (const gen of Object.keys(g.GENERATORS)) {
+    const keys = new Set(g.GENERATORS[gen].schema.map((s) => s.key));
+    for (const x of plan(gen, {}).issues) assert.ok(!x.key || keys.has(x.key), `${gen}: ${x.key}`);
+  }
+  assert.ok(fieldParts(g.GENERATORS.zaun, "fieldMax").test("Pfosten 1") && fieldParts(g.GENERATORS.zaun, "groundGap") === null);
+  assert.ok(fieldParts(g.GENERATORS.zaun, "post").test("Pfosten 3"));
+  assert.ok(fieldParts(g.GENERATORS.treppe, "gelRail").test("Geländer links Handlauf"));
+  assert.ok(fieldParts(g.GENERATORS.schiebetor, "beam").test("Flügel Laufprofil"));
+});

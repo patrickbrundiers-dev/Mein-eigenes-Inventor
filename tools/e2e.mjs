@@ -663,6 +663,50 @@ try {
   await idle(120000);
   const tor1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
   step("Tor-Generator", tor0.ok && tor0.n > 30 && /Doppeltor/.test(tor0.info) && tor1.ok && /Scheitel 2750 mm/.test(tor1.info), JSON.stringify({ tor0, tor1 }));
+  // Schiebetor (E8): Generator, dann als Baugruppe mit Schiebegelenk, Flügel per Regler öffnen, Bereich prüfen
+  await evalApp(() => window.__werkcad.newPart("Schiebetor"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Schiebetor$/ }).click();
+  await idle(120000);
+  const st0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), tiles: document.querySelectorAll("#props .tile").length, dims: document.querySelectorAll("#props svg.gsk .dim").length }; });
+  await evalApp(() => { const a = window.__werkcad; a.activeDoc().finish = { kind: "pulver", ral: "6005" }; });
+  await page.locator("#props button", { hasText: "Als Baugruppe mit Schiebegelenk" }).click();
+  await idle(120000);
+  await evalApp(() => { const s = document.querySelector("#props input.joint-angle"); s.value = "2000"; s.dispatchEvent(new Event("input")); s.dispatchEvent(new Event("change")); });
+  await idle(120000);
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("front", { animate: false }); v.fit(); });
+  await shot("20g2-schiebetor-offen");
+  const st1 = await evalApp(async () => {
+    const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.joint);
+    const text = document.querySelector("#props")?.textContent || "";
+    const rows = await a.props.jointSweepCheck(c, { steps: 2, silent: true });
+    const fin = asm.components.map((x) => a.doc(x.part).finish?.ral).join();
+    return { fin, kind: asm.kind, comps: asm.components.length, slide: c.joint.kind, max: c.joint.max, pos: c.pos.map((x) => Math.round(x)), section: /Schiebegelenk/.test(text) && /mm/.test(text), sweep: rows?.map((r) => [r.angle, r.hits.length]) };
+  });
+  step("Schiebetor mit Schiebegelenk", st0.ok && st0.n > 30 && /Gegengewicht 1600/.test(st0.info) && st0.tiles >= 5 && st0.dims >= 4 && st1.fin === "6005,6005" && st1.kind === "assembly" && st1.comps === 2 && st1.slide === "schiebe" && st1.max === 4000 && st1.pos.join() === "-2000,0,0" && st1.section && st1.sweep?.every(([, n]) => n === 0), JSON.stringify({ st0, st1 }));
+  // Zaun (E9): Generator, Gelände per Bildkachel auf »gestuft«
+  await evalApp(() => window.__werkcad.newPart("Zaun"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Zaun$/ }).click();
+  await idle(120000);
+  const zn0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), dims: document.querySelectorAll("#props svg.gsk .dim").length }; });
+  await page.locator("#props .tile", { hasText: "gestuft" }).click();
+  await idle(120000);
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("front", { animate: false }); v.fit(); });
+  await shot("20g3-zaun-gestuft");
+  const zn1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), rise: !!document.querySelector('#props [data-key="rise"]') }; });
+  // V5: Fokus auf »Pfostenabstand« hebt die 5 Pfosten im 3D hervor; zu kurze Zaunlänge → Meldung direkt am Feld
+  await page.locator("#props .field", { hasText: "Pfostenabstand max." }).locator("input").focus();
+  const znHi = await evalApp(() => window.__werkcad.viewer.fieldGroup?.children.length || 0);
+  await page.locator("#props .field", { hasText: "Zaunlänge" }).locator("input").fill("100");
+  await page.locator("#props .field", { hasText: "Zaunlänge" }).locator("input").press("Enter");
+  await idle(120000);
+  const znErr = await evalApp(() => ({ msg: document.querySelector("#props .field-msg.err")?.textContent || "", bad: !!document.querySelector("#props .field-bad") }));
+  await evalApp(() => window.__werkcad.undo());
+  await idle(120000);
+  step("Zaun-Generator", zn0.ok && zn0.n > 40 && /4 Felder/.test(zn0.info) && zn0.dims >= 3 && zn1.ok && /gestuft 600 mm/.test(zn1.info) && zn1.rise && znHi === 5 && /mindestens 500/.test(znErr.msg) && znErr.bad, JSON.stringify({ zn0, zn1, znHi, znErr }));
 
   // Treppen-Generator (MegaCAD-Abgleich M13): Wangentreppe, dann zwei Holme
   await evalApp(() => window.__werkcad.newPart("Treppe"));

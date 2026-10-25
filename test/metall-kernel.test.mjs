@@ -439,3 +439,37 @@ test("Treppe mit Geländer: beidseitig, ums Podest, Knieleisten/Staketen, Höhe 
   const rO = await K.buildPart(part([old]));
   assert.equal(by(rO, /^Geländer/).length, 0);
 });
+
+test("Schiebetor: Flügel mit Gegengewicht, Rollenböcke, Pfosten; Teile Flügel/fest (E8)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const bb = (b) => b.shape.boundingBox.bounds;
+  const f = { id: "s", ...defaultGenerator("schiebetor") };
+  const r = await K.buildPart(part([f]));
+  okAll(r);
+  const all = r.bodies.map((b) => bb(b));
+  near(Math.min(...all.map((x) => x[0][0])), -1600, 1, "Gegengewicht hinten");
+  near(Math.max(...r.bodies.filter((b) => /^Flügel/.test(b.name)).map((b) => bb(b)[1][2])), 60 + 1400, 0.5, "Flügel-OK");
+  assert.equal(r.bodies.filter((b) => /Rollenbock/.test(b.name)).length, 2);
+  assert.match(r.status.s.info, /Gegengewicht 1600/);
+  const leaf = await K.buildPart(part([{ ...f, params: { ...f.params, teil: "fluegel" } }]));
+  const fixed = await K.buildPart(part([{ ...f, params: { ...f.params, teil: "fest" } }]));
+  okAll(leaf); okAll(fixed);
+  assert.equal(leaf.bodies.length + fixed.bodies.length, r.bodies.length);
+  assert.ok(fixed.bodies.every((b) => !/^Flügel/.test(b.name)));
+});
+
+test("Zaun: eben, Gefälle mit schrägen Riegeln, gestuft, Blech mit Fußplatten (E9)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const bb = (b) => b.shape.boundingBox.bounds;
+  for (const patch of [{}, { terrain: "gefaelle", fill: "quer" }, { terrain: "stufen" }, { terrain: "gefaelle", fill: "blech", base: "fussplatte" }]) {
+    const f = { id: "z", ...defaultGenerator("zaun") };
+    Object.assign(f.params, patch);
+    const r = await K.buildPart(part([f]));
+    okAll(r);
+    assert.equal(r.bodies.filter((b) => /^Pfosten/.test(b.name)).length, 5, JSON.stringify(patch));
+    if (patch.terrain === "gefaelle" && patch.fill === "quer") {
+      const u = r.bodies.find((b) => b.name === "Feld 4 Unterriegel");
+      near(bb(u)[1][2], 0.06 * 9970 + 80 + 40, 1, "Unterriegel folgt dem Gelände (OK am Pfosten 5)");
+    }
+  }
+});

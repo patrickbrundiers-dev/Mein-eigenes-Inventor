@@ -9,6 +9,7 @@
 // Geländer (wie MegaCAD): links, rechts oder beidseitig, ums Podest herum, Knieleisten oder Staketen, Auslauf oben;
 // Höhe über Stufenvorderkante. Ältere Treppen ohne diese Angabe bleiben ohne Geländer (missing: "keine").
 
+import { fieldError } from "./generror.js";
 import { sectionGeometry } from "./sections.js";
 import { railAlong } from "./treppengelaender.js";
 
@@ -57,19 +58,19 @@ export const TREPPE = {
   plan(p) {
     const issues = [];
     const H = p.height;
-    if (!(H > 300)) throw new Error("Geschosshöhe zu klein");
+    if (!(H > 300)) throw fieldError("Geschosshöhe zu klein", "height");
     const n = p.steps > 0 ? Math.round(p.steps) : Math.max(2, Math.round(H / 175));
-    if (n < 2) throw new Error("Mindestens 2 Steigungen");
+    if (n < 2) throw fieldError("Mindestens 2 Steigungen", "steps");
     const s = H / n;
     const a = p.going > 0 ? p.going : 630 - 2 * s;
-    if (!(a > 50)) throw new Error("Auftritt zu klein – weniger Steigungen wählen");
+    if (!(a > 50)) throw fieldError("Auftritt zu klein – weniger Steigungen wählen", "going");
     const u = p.nosing || 0, tt = p.treadT, B = p.width;
-    if (!(tt > 0 && B > 200)) throw new Error("Stufendicke und Laufbreite prüfen");
+    if (!(tt > 0 && B > 200)) throw fieldError("Stufendicke und Laufbreite prüfen", "width");
     const step = 2 * s + a;
-    if (step < 590 - 1e-6 || step > 650 + 1e-6) issues.push({ level: "Warnung", message: `Schrittmaß 2s + a = ${Math.round(step)} mm außerhalb 590 … 650 mm` });
-    if (s > 200 + 1e-6) issues.push({ level: "Warnung", message: `Steigung ${fmt(s)} mm über 200 mm` });
-    if (a < 230 - 1e-6) issues.push({ level: "Warnung", message: `Auftritt ${fmt(a)} mm unter 230 mm` });
-    if (a < 260 - 1e-6 && u < 30 - 1e-6) issues.push({ level: "Hinweis", message: "Auftritt unter 260 mm: Unterschneidung ≥ 30 mm vorsehen" });
+    if (step < 590 - 1e-6 || step > 650 + 1e-6) issues.push({ key: "going", level: "Warnung", message: `Schrittmaß 2s + a = ${Math.round(step)} mm außerhalb 590 … 650 mm` });
+    if (s > 200 + 1e-6) issues.push({ key: "steps", level: "Warnung", message: `Steigung ${fmt(s)} mm über 200 mm` });
+    if (a < 230 - 1e-6) issues.push({ key: "going", level: "Warnung", message: `Auftritt ${fmt(a)} mm unter 230 mm` });
+    if (a < 260 - 1e-6 && u < 30 - 1e-6) issues.push({ key: "nosing", level: "Hinweis", message: "Auftritt unter 260 mm: Unterschneidung ≥ 30 mm vorsehen" });
     const tanA = s / a, alpha = Math.atan(tanA), cosA = Math.cos(alpha), sinA = Math.sin(alpha);
     const members = [], plates = [], chains = [];
     // Tragwerk: Querschnitt, Ausdehnung senkrecht zur Achse in der Laufebene (depth), Dicke quer (thick), Drehung
@@ -92,9 +93,9 @@ export const TREPPE = {
       c = z1 - tanA * x1;
       // passen die Stufen in die Wange?
       const corner = Math.max(...[[-u, s - tt], [-u, s], [a, s - tt], [a, s]].map(([x, z]) => Math.abs((z - (tanA * x + c)) * cosA)));
-      if (corner > depth / 2 + 1e-6) throw new Error(`Wange zu niedrig für die Stufen: mindestens ${Math.ceil(2 * corner)} mm`);
+      if (corner > depth / 2 + 1e-6) throw fieldError(`Wange zu niedrig für die Stufen: mindestens ${Math.ceil(2 * corner)} mm`, "wangeH");
     } else c = -tt - depth / 2 / cosA;
-    if (p.support === "holm2" && !(B - 2 * p.holmInset > thick)) throw new Error("Holme zu weit innen");
+    if (p.support === "holm2" && !(B - 2 * p.holmInset > thick)) throw fieldError("Holme zu weit innen", "holmInset");
     const ys = side ? [-thick / 2, B + thick / 2] : p.support === "holm2" ? [p.holmInset, B - p.holmInset] : [B / 2];
     const sideNames = side ? ["Wange links", "Wange rechts"] : ys.length > 1 ? ["Holm links", "Holm rechts"] : ["Mittelholm"];
 
@@ -127,13 +128,13 @@ export const TREPPE = {
       info = `${n} Steigungen à ${fmt(s)} mm, Auftritt ${fmt(a)} mm, 2s + a = ${Math.round(step)} mm, Neigung ${fmt((alpha * 180) / Math.PI)}°, Lauflänge ${Math.round(xTop)} mm`;
     } else {
       const n1 = p.n1 > 0 ? Math.round(p.n1) : Math.floor(n / 2), n2 = n - n1;
-      if (n1 < 2 || n2 < 2) throw new Error("Jeder Lauf braucht mindestens 2 Steigungen – Steigungen bis Podest prüfen");
+      if (n1 < 2 || n2 < 2) throw fieldError("Jeder Lauf braucht mindestens 2 Steigungen – Steigungen bis Podest prüfen", "n1");
       zP = n1 * s;
       const left = p.turn !== "rechts";
       x1 = flight(n1, 0, rotZ(0, [0, 0, 0]), " Lauf 1", true, 0);
       const g = p.gap || 0;
       D = p.form === "U" ? (p.podestD > 0 ? p.podestD : B) : B;
-      if (p.form === "U" && D < B - 1e-6) issues.push({ level: "Warnung", message: `Podesttiefe ${fmt(D)} mm kleiner als die Laufbreite` });
+      if (p.form === "U" && D < B - 1e-6) issues.push({ key: "podestD", level: "Warnung", message: `Podesttiefe ${fmt(D)} mm kleiner als die Laufbreite` });
       // Podestfläche [x1, x1 + D] × [yLo, yHi] und Lage des zweiten Laufs
       let yLo = 0, yHi = B, T2;
       if (p.form === "L") T2 = left ? rotZ(90, [x1 + B, B, 0]) : rotZ(-90, [x1, 0, 0]);
@@ -151,7 +152,7 @@ export const TREPPE = {
       if (p.stuetzen !== "keine") {
         const st = p.stuetze, sw = Math.max(st.geom.width, st.geom.height) / 2;
         const zTop = zP - tt - fh;
-        if (!(zTop > 100)) throw new Error("Podest zu niedrig für Stützen");
+        if (!(zTop > 100)) throw fieldError("Podest zu niedrig für Stützen", "height");
         const corners = [[x1 + D - sw, yLo + sw], [x1 + D - sw, yHi - sw]];
         if (p.stuetzen === "alle") corners.push([x1 + sw, yLo + sw], [x1 + sw, yHi - sw]);
         corners.forEach(([x, y], i) => members.push({ section: st, a: [x, y, 0], b: [x, y, zTop], name: `Podeststütze ${i + 1}`, up: [1, 0, 0] }));
@@ -169,6 +170,7 @@ export const TREPPE = {
     return { chains, members, plates, info, issues, geo };
   },
 
+  parts: { support: /Wange|Holm/, stuetze: /Stütze/, podestRahmen: /Podest/, podestD: /Podest/, gel: /^Geländer/, gelPodest: /^Geländer/ },
   views: ["top", "front"],
   /** Maßlinien der Skizze im Eigenschaftenfeld (siehe genskizze.js); Lage wie der Bauplan */
   dims(p, plan, view) {
@@ -229,16 +231,16 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
       inner[1][0] = at(f2, yi, Math.max(-u, off + post));
     }
   } else if (form === "L") {
-    if (B - u - a < -off + post) throw new Error("Podest zu klein für das Geländer – Laufbreite prüfen");
+    if (B - u - a < -off + post) throw fieldError("Podest zu klein für das Geländer – Laufbreite prüfen", "width");
     outer = [[start(f1, yo), end(f1, yo), [x1 + B + off, -off, zP], start(f2, yo), end(f2, yo), ...aus(f2, yo)]];
     inner = [[start(f1, yi), at(f1, yi, Math.min((f1.nR - 1) * a - u, x1 - off - post))], [at(f2, yi, Math.max(-u, off + post)), end(f2, yi), ...aus(f2, yi)]];
   } else {
     const g = p.gap || 0, X = x1 + u + a;
-    if (X > x1 + D + off - post) throw new Error("Podest zu schmal für das Geländer – Podesttiefe prüfen");
+    if (X > x1 + D + off - post) throw fieldError("Podest zu schmal für das Geländer – Podesttiefe prüfen", "podestD");
     outer = [[start(f1, yo), end(f1, yo), [x1 + D + off, -off, zP], [x1 + D + off, 2 * B + g + off, zP], start(f2, yo), end(f2, yo), ...aus(f2, yo)]];
     // innen über das Treppenauge: zu schmal für zwei Geländer → eins in der Mitte
     const wi = g >= 2 * off + post ? off : g / 2;
-    if (wi < off) issues.push({ level: "Hinweis", message: `Treppenauge ${Math.round(g)} mm: inneres Geländer mittig im Auge` });
+    if (wi < off) issues.push({ key: "gap", level: "Hinweis", message: `Treppenauge ${Math.round(g)} mm: inneres Geländer mittig im Auge` });
     const y1 = B + wi, y2 = B + wi; // lokal; Lauf 2 liegt gedreht, global y = B + g − wi
     inner = [[start(f1, y1), end(f1, y1), [X, B + wi, zP], start(f2, y2), end(f2, y2), ...aus(f2, y2)]];
   }
@@ -249,9 +251,9 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
   if (left ? wantRight : wantLeft) sides.push([left ? "rechts" : "links", outer]);
   if (left ? wantLeft : wantRight) sides.push([left ? "links" : "rechts", inner]);
   const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100 };
-  if (!(o.H > 300)) throw new Error("Geländerhöhe zu klein");
-  if (!(o.postMax > post)) throw new Error("Pfostenabstand zu klein");
-  if (o.H < 900 - 1e-6) issues.push({ level: "Warnung", message: `Geländerhöhe ${Math.round(o.H)} mm unter 900 mm – Landesbauordnung bzw. DIN 18065 prüfen` });
+  if (!(o.H > 300)) throw fieldError("Geländerhöhe zu klein", "gelH");
+  if (!(o.postMax > post)) throw fieldError("Pfostenabstand zu klein", "gelPostMax");
+  if (o.H < 900 - 1e-6) issues.push({ key: "gelH", level: "Warnung", message: `Geländerhöhe ${Math.round(o.H)} mm unter 900 mm – Landesbauordnung bzw. DIN 18065 prüfen` });
   const chains = [], members = [];
   let posts = 0, bars = 0, gapMax = 0;
   for (const [name, paths] of sides) {
@@ -262,7 +264,7 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
       posts += r.posts; bars += r.bars; gapMax = Math.max(gapMax, r.gapMax);
     });
   }
-  if (gapMax > 120 + 1e-6) issues.push({ level: p.gelFill === "quer" ? "Hinweis" : "Warnung", message: p.gelFill === "quer" ? `Knieleisten: Öffnung ${Math.round(gapMax)} mm – nur für Arbeitsstätten/Industrie (EN ISO 14122-3), nicht für Wohngebäude` : `Öffnung ${Math.round(gapMax)} mm größer als 120 mm` });
+  if (gapMax > 120 + 1e-6) issues.push({ key: "gelGap", level: p.gelFill === "quer" ? "Hinweis" : "Warnung", message: p.gelFill === "quer" ? `Knieleisten: Öffnung ${Math.round(gapMax)} mm – nur für Arbeitsstätten/Industrie (EN ISO 14122-3), nicht für Wohngebäude` : `Öffnung ${Math.round(gapMax)} mm größer als 120 mm` });
   const what = p.gelFill === "quer" ? `${bars} Knieleisten` : p.gelFill === "staketen" ? `${bars} Stäbe` : "nur Handlauf";
   return { chains, members, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` };
 }
