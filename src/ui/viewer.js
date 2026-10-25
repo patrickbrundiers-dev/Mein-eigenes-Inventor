@@ -1129,6 +1129,14 @@ export class Viewer {
         m.matrix.copy(pk.mesh.matrixWorld);
         m.renderOrder = 15;
         group.add(m);
+      } else if (hit.kind === "body") {
+        // ganzer Körper (z. B. alle Pfosten zum gewählten Generator-Feld)
+        const m = new THREE.Mesh(pk.mesh.geometry, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false, side: THREE.DoubleSide }));
+        m.userData.sharedGeo = true;
+        m.matrixAutoUpdate = false;
+        m.matrix.copy(pk.mesh.matrixWorld);
+        m.renderOrder = 16;
+        group.add(m);
       } else if (hit.kind === "group") {
         // ganzes Bauteil/Komponente einfärben
         for (const p of this.pickables.filter((q) => q.key === hit.key)) {
@@ -1141,6 +1149,11 @@ export class Viewer {
       }
     }
     this.render();
+  }
+  /** Körper zu einem Eingabefeld hervorheben (V5); leere Liste löscht */
+  highlightBodies(bodies, key = "part") {
+    if (!this.fieldGroup) { this.fieldGroup = new THREE.Group(); this.scene.add(this.fieldGroup); }
+    this.highlight(bodies.map((body) => ({ kind: "body", key, body })), { group: this.fieldGroup, color: this.colors.sel, opacity: 0.45 });
   }
   /** Dauerhafte Auswahl-Hervorhebung */
   setSelectionHits(hits) {

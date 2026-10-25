@@ -6,6 +6,7 @@
 // Pfosten). Flügel = Öffnung abzüglich Spalt an den Pfosten (und in der Mitte). Bögen werden aus geraden,
 // gegehrten Stücken angenähert (Anzahl einstellbar); die Zuschnittliste zeigt diese Stücke.
 
+import { fieldError } from "./generror.js";
 export const TOR = {
   label: "Tor",
   schema: [
@@ -33,20 +34,20 @@ export const TOR = {
     const n = Number(p.leaves) === 1 ? 1 : 2;
     const W = p.width, H = p.height, g = p.gap, z0 = p.clearance;
     const fr = p.frame.geom, fw = fr.width, fh = fr.height; // Rahmen: Breite quer (Torebene), Tiefe = Höhe
-    if (!(W > 4 * fw + 3 * g)) throw new Error("Torbreite zu klein");
-    if (!(H > 4 * fw)) throw new Error("Höhe zu klein");
+    if (!(W > 4 * fw + 3 * g)) throw fieldError("Torbreite zu klein", "width");
+    if (!(H > 4 * fw)) throw fieldError("Höhe zu klein", "height");
     const leafW = (W - g * (n + 1)) / n;
     // Oberkante als Funktion von x über die ganze Öffnung (Rand = Höhe)
     let top = () => z0 + H, peak = z0 + H;
     if (p.form === "rund" || p.form === "stich" || p.form === "unten") {
       const span = W, rise = p.form === "rund" ? W / 2 : p.rise;
-      if (!(rise > 0)) throw new Error("Stich muss > 0 sein");
-      if (rise > span / 2 + 1e-6) throw new Error("Stich höchstens halbe Torbreite (Halbkreis)");
+      if (!(rise > 0)) throw fieldError("Stich muss > 0 sein", "rise");
+      if (rise > span / 2 + 1e-6) throw fieldError("Stich höchstens halbe Torbreite (Halbkreis)", "rise");
       const R = (rise * rise + (span / 2) ** 2) / (2 * rise), sg = p.form === "unten" ? -1 : 1;
       const cx = span / 2, cz = z0 + H + sg * rise - sg * R;
       top = (x) => cz + sg * Math.sqrt(Math.max(0, R * R - (x - cx) ** 2));
       peak = z0 + H + sg * rise;
-      if (p.form === "unten" && rise > H - 3 * fw - (p.mid ? p.midZ : 0)) throw new Error("Bogen nach unten zu tief für die Flügelhöhe");
+      if (p.form === "unten" && rise > H - 3 * fw - (p.mid ? p.midZ : 0)) throw fieldError("Bogen nach unten zu tief für die Flügelhöhe", "rise");
     }
     const members = [], chains = [], plates = [];
     const up = [0, -1, 0]; // Profilhöhe zeigt quer zur Torebene
@@ -88,7 +89,7 @@ export const TOR = {
       members.push({ section: p.post, a: P(-pw / 2, -p.embed), b: P(-pw / 2, zt), name: "Torpfosten links", up });
       members.push({ section: p.post, a: P(W + pw / 2, -p.embed), b: P(W + pw / 2, zt), name: "Torpfosten rechts", up });
     }
-    if (gapSeen > 120 + 1e-6) issues.push({ level: "Warnung", message: `Öffnung ${Math.round(gapSeen)} mm größer als 120 mm` });
+    if (gapSeen > 120 + 1e-6) issues.push({ key: "gapMax", level: "Warnung", message: `Öffnung ${Math.round(gapSeen)} mm größer als 120 mm` });
     const info = `${n === 1 ? "Einzeltor" : "Doppeltor"}, Flügel ${Math.round(leafW)} mm breit, ${nBars} Stäbe` + (p.form !== "gerade" ? `, Scheitel ${Math.round(peak)} mm` : "");
     return { chains, members, plates, info, issues };
   },

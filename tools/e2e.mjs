@@ -695,7 +695,16 @@ try {
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("front", { animate: false }); v.fit(); });
   await shot("20g3-zaun-gestuft");
   const zn1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), rise: !!document.querySelector('#props [data-key="rise"]') }; });
-  step("Zaun-Generator", zn0.ok && zn0.n > 40 && /4 Felder/.test(zn0.info) && zn0.dims >= 3 && zn1.ok && /gestuft 600 mm/.test(zn1.info) && zn1.rise, JSON.stringify({ zn0, zn1 }));
+  // V5: Fokus auf »Pfostenabstand« hebt die 5 Pfosten im 3D hervor; zu kurze Zaunlänge → Meldung direkt am Feld
+  await page.locator("#props .field", { hasText: "Pfostenabstand max." }).locator("input").focus();
+  const znHi = await evalApp(() => window.__werkcad.viewer.fieldGroup?.children.length || 0);
+  await page.locator("#props .field", { hasText: "Zaunlänge" }).locator("input").fill("100");
+  await page.locator("#props .field", { hasText: "Zaunlänge" }).locator("input").press("Enter");
+  await idle(120000);
+  const znErr = await evalApp(() => ({ msg: document.querySelector("#props .field-msg.err")?.textContent || "", bad: !!document.querySelector("#props .field-bad") }));
+  await evalApp(() => window.__werkcad.undo());
+  await idle(120000);
+  step("Zaun-Generator", zn0.ok && zn0.n > 40 && /4 Felder/.test(zn0.info) && zn0.dims >= 3 && zn1.ok && /gestuft 600 mm/.test(zn1.info) && zn1.rise && znHi === 5 && /mindestens 500/.test(znErr.msg) && znErr.bad, JSON.stringify({ zn0, zn1, znHi, znErr }));
 
   // Treppen-Generator (MegaCAD-Abgleich M13): Wangentreppe, dann zwei Holme
   await evalApp(() => window.__werkcad.newPart("Treppe"));

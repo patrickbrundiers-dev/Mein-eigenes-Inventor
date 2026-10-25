@@ -5,6 +5,7 @@
 // Lage: Hauswand in der XZ-Ebene (y = 0), Balkon ragt in +Y, Breite entlang +X ab x = 0, Gelände z = 0,
 // Oberkante Belag auf »Höhe«.
 
+import { fieldError } from "./generror.js";
 import { catalogToDims, sectionGeometry } from "./sections.js";
 import { splitList } from "./expr.js";
 import { GELAENDER } from "./gelaender.js";
@@ -39,14 +40,14 @@ export const BALKON = {
   plan(p) {
     const issues = [];
     const W = p.width, T = p.depth, Hb = p.height;
-    if (!(W > 500 && T > 300)) throw new Error("Breite und Tiefe prüfen");
+    if (!(W > 500 && T > 300)) throw fieldError("Breite und Tiefe prüfen", "width");
     const tt = p.deck === "keiner" ? 0 : p.deckT;
-    if (p.deck !== "keiner" && !(tt > 0)) throw new Error("Belagdicke muss > 0 sein");
+    if (p.deck !== "keiner" && !(tt > 0)) throw fieldError("Belagdicke muss > 0 sein", "deckT");
     // Rahmen und Querträger hochkant (größere Profilseite senkrecht)
     const fr = p.frame, frRot = fr.geom.width > fr.geom.height ? 90 : 0;
     const fw = Math.min(fr.geom.width, fr.geom.height), fh = Math.max(fr.geom.width, fr.geom.height);
     const tw = p.wallPlate || 0;
-    if (!(Hb > fh + tt + 200)) throw new Error("Höhe zu klein für den Rahmen");
+    if (!(Hb > fh + tt + 200)) throw fieldError("Höhe zu klein für den Rahmen", "height");
     const members = [], plates = [], chains = [];
     const zf = Hb - tt - fh / 2; // Achse Rahmen
     const y0 = tw; // Rahmen beginnt vor der Wandplatte
@@ -77,7 +78,7 @@ export const BALKON = {
       const col = p.column, cw = Math.max(col.geom.width, col.geom.height);
       const n = p.support === "auto" ? Math.max(2, Math.ceil(W / p.supportMax - 1e-9) + 1) : 2;
       const zTop = Hb - tt - fh, baseT = 15;
-      if (!(zTop > baseT + 100)) throw new Error("Zu niedrig für Stützen");
+      if (!(zTop > baseT + 100)) throw fieldError("Zu niedrig für Stützen", "height");
       for (let k = 0; k < n; k++) {
         const x = cw / 2 + ((W - cw) * k) / (n - 1), y = T - cw / 2;
         members.push({ section: col, a: [x, y, baseT], b: [x, y, zTop], name: `Stütze ${k + 1}`, up: [1, 0, 0] });
@@ -85,30 +86,34 @@ export const BALKON = {
         plates.push({ center: [x, y, 0], xDir: [1, 0, 0], normal: [0, 0, 1], W: pl.W, H: pl.H, t: baseT, holes: pl.holes, d: pl.d, name: `Fußplatte ${k + 1}` });
       }
     } else {
-      issues.push({ level: "Hinweis", message: "Kragarm ohne Stützen: Wandanker und Profile statisch nachweisen" });
-      if (T > 1500) issues.push({ level: "Warnung", message: `Auskragung ${T} mm ohne Stützen ist ungewöhnlich groß` });
+      issues.push({ key: "support", level: "Hinweis", message: "Kragarm ohne Stützen: Wandanker und Profile statisch nachweisen" });
+      if (T > 1500) issues.push({ key: "depth", level: "Warnung", message: `Auskragung ${T} mm ohne Stützen ist ungewöhnlich groß` });
     }
     // Geländer: links (Wand → vorne), vorne, rechts (vorne → Wand); Bauplan des Geländer-Generators gedreht
     let railInfo = "";
     if (p.railing) {
       const i = p.inset, yStart = y0 + 20;
       const side = T - i - yStart, front = W - 2 * i;
-      if (!(side > 100 && front > 100)) throw new Error("Geländer passt nicht – Abstand vom Rand prüfen");
+      if (!(side > 100 && front > 100)) throw fieldError("Geländer passt nicht – Abstand vom Rand prüfen", "inset");
       const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill });
-      const g = GELAENDER.plan(gp);
+      // Parameter des Geländers heißen hier anders: Meldungen auf die Balkon-Felder umschlüsseln
+      const KEY = { height: "railH", fill: "fill" };
+      let g;
+      try { g = GELAENDER.plan(gp); } catch (e) { throw fieldError(e.message, KEY[e.key] || "railing"); }
       // Geländer-Lage: Ursprung, +X entlang des ersten Laufs → hier +Y ab (i, yStart, Hb)
       const o = [i, yStart, Hb];
       const P = (v) => [o[0] - v[1], o[1] + v[0], o[2] + v[2]], D = (v) => [-v[1], v[0], v[2]];
       for (const c of g.chains) chains.push({ ...c, points: c.points.map(P), up: c.up ? D(c.up) : [0, 0, 1], name: "Geländer " + c.name });
       for (const m of g.members) members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: "Geländer " + m.name, cuts: m.cuts && { start: m.cuts.start.map((c) => ({ p: P(c.p), n: D(c.n) })), end: m.cuts.end.map((c) => ({ p: P(c.p), n: D(c.n) })) } });
       for (const pl of g.plates) plates.push({ ...pl, center: P(pl.center), xDir: D(pl.xDir), normal: D(pl.normal), name: "Geländer " + pl.name });
-      issues.push(...g.issues);
+      issues.push(...g.issues.map(({ key, ...x }) => ({ ...x, key: KEY[key] || "railing" })));
       railInfo = `, Geländer: ${g.info}`;
     }
     const info = `Balkon ${Math.round(W)} × ${Math.round(T)} mm auf ${Math.round(Hb)} mm, ${nJ} Querträger` + (p.support !== "keine" ? `, ${members.filter((m) => /^Stütze/.test(m.name)).length} Stützen` : ", ohne Stützen") + railInfo;
     return { chains, members, plates, info, issues };
   },
 
+  parts: { support: /Stütze/, railing: /^Geländer/, inset: /^Geländer/, fill: /^Geländer .*(Stab|Staket|Querstab|Kreuz|Ring|Blech|Glas)/ },
   views: ["top", "front"],
   /** Maßlinien: Grundriss (Breite, Tiefe), Ansicht (Höhe, Geländerhöhe) */
   dims(p, plan, view) {

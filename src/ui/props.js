@@ -16,7 +16,7 @@ import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
 import { PLATE_HOLES, RIB_SIDES } from "../core/anschluss.js";
 import { GENERATORS, applyTemplate, genValues, resolveGenParams } from "../core/generator.js";
-import { sketchViews, VIEW_LABEL } from "../core/genskizze.js";
+import { sketchViews, VIEW_LABEL, fieldParts } from "../core/genskizze.js";
 import { sketchSvg, linkFieldToSketch } from "./genskizze.js";
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gentemplates.js";
 import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
@@ -177,6 +177,7 @@ export class Props {
   render() {
     const app = this.app;
     const d = app.activeDoc();
+    if (app.viewer.fieldGroup?.children.length) app.viewer.highlightBodies([]); // Feld-Hervorhebung gehört zum alten Feld
     const body = h("div", { class: "props-body" });
     let title = "Eigenschaften";
     if (app.mode === "start" || !d) {
@@ -616,6 +617,15 @@ export class Props {
         let svg = null;
         const sketch = this.genSketch(f, gen, P, planOf, (el) => { svg = el; });
         if (sketch) out.push(sketch);
+        // Fehler und Hinweise des Bauplans direkt am betroffenen Feld (V5)
+        let planErr = null, planIssues = [];
+        try { planIssues = planOf(f.params).issues || []; } catch (e) { planErr = e; }
+        const msgsFor = (key) => [...(planErr?.key === key ? [["err", planErr.message]] : []), ...planIssues.filter((x) => x.key === key).map((x) => [x.level === "Hinweis" ? "hint" : "warn", x.message])];
+        // Fokus auf einem Feld hebt die zugehörigen Körper im 3D-Fenster hervor
+        const markBodies = (key) => (on) => {
+          const rx = on && fieldParts(gen, key), bodies = rx ? app.results.get(part.id)?.bodies || [] : [];
+          app.viewer.highlightBodies(rx ? bodies.flatMap((b, i) => (b.fid === f.id && rx.test(b.name || "") ? [i] : [])) : []);
+        };
         const groups = [];
         for (const s of gen.schema) {
           if (s.when && !s.when(P)) continue;
@@ -633,7 +643,12 @@ export class Props {
             g.items.push(this.select(s.label, kinds.map((k) => [k, SECTION_KINDS[k].label]), v.kind, (k) => setP(s.key, { kind: k, size: CATALOG[k][Math.floor(CATALOG[k].length / 2)] }, s.label)));
             g.items.push(this.select("", (CATALOG[v.kind] || []).map((c) => [c, c.replace(/\./g, ",")]), v.size, (z) => setP(s.key, { kind: v.kind, size: z }, s.label)));
           }
-          for (const el of g.items.slice(n0)) linkFieldToSketch(el, s.key, () => svg);
+          for (const el of g.items.slice(n0)) linkFieldToSketch(el, s.key, () => svg, markBodies(s.key));
+          const msgs = msgsFor(s.key);
+          if (msgs.length) {
+            g.items.slice(n0).forEach((el) => el.classList?.add(msgs.some(([k]) => k === "err") ? "field-bad" : "field-warn"));
+            g.items.push(...msgs.map(([k, m]) => h("p", { class: "field-msg " + k }, m)));
+          }
         }
         for (const g of groups) out.push(this.section(g.name, ...g.items));
         if (f.gen === "schiebetor") out.push(this.section("Baugruppe",

@@ -8,6 +8,7 @@
 
 const BAR_FILLS = ["staketen", "quer"];
 
+import { fieldError } from "./generror.js";
 export const ZAUN = {
   label: "Zaun",
   schema: [
@@ -33,10 +34,10 @@ export const ZAUN = {
   plan(p) {
     const issues = [];
     const L = p.length, H = p.height, gap = p.groundGap;
-    if (!(L > 500)) throw new Error("Zaunlänge mindestens 500 mm");
+    if (!(L > 500)) throw fieldError("Zaunlänge mindestens 500 mm", "length");
     const pw = p.post.geom.width, fh = p.frame.geom.width;
-    if (!(H > 2 * fh + 50)) throw new Error("Feldhöhe zu klein");
-    if (!(p.fieldMax > pw + 100)) throw new Error("Pfostenabstand zu klein");
+    if (!(H > 2 * fh + 50)) throw fieldError("Feldhöhe zu klein", "height");
+    if (!(p.fieldMax > pw + 100)) throw fieldError("Pfostenabstand zu klein", "fieldMax");
     const rise = p.terrain === "eben" ? 0 : p.rise;
     const ground = (x) => (rise * x) / L;
     const n = Math.max(1, Math.ceil(L / p.fieldMax - 1e-9));
@@ -95,12 +96,13 @@ export const ZAUN = {
         members.push({ section: p.post, a: P(x, g + p.baseT), b: P(x, top), name: `Pfosten ${i + 1}`, up });
       } else members.push({ section: p.post, a: P(x, g - p.embed), b: P(x, top), name: `Pfosten ${i + 1}`, up });
     });
-    if (p.terrain === "stufen" && airMax - gap > 150 + 1e-6) issues.push({ level: "Warnung", message: `Bodenluft unter den Stufen bis ${Math.round(airMax)} mm – mehr Felder oder Gefälle wählen` });
+    if (p.terrain === "stufen" && airMax - gap > 150 + 1e-6) issues.push({ key: "rise", level: "Warnung", message: `Bodenluft unter den Stufen bis ${Math.round(airMax)} mm – mehr Felder oder Gefälle wählen` });
     const fl = Math.round(L / n - pw);
     const info = `${n} Felder à ${fl} mm lichte Weite, ${n + 1} Pfosten` + (bars ? `, ${bars} Stäbe` : "") + (rise ? `, ${p.terrain === "stufen" ? "gestuft" : "Gefälle"} ${Math.round(rise)} mm` : "");
     return { chains: [], members, plates, info, issues, geo: { n, rise } };
   },
 
+  parts: { fieldMax: /^Pfosten/, postTop: /^Pfosten/, length: /^Pfosten/, height: /riegel|Stab/ },
   views: ["front", "top"],
   /** Maßlinien der Skizze (Ansicht: x, z; Grundriss: x, y) */
   dims(p, plan, view) {

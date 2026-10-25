@@ -563,3 +563,26 @@ test("Zaun-Plan: Felder, Pfosten, Gefälle und Stufung am Hang (E9)", async () =
   assert.equal(b.plates.filter((x) => /Fußplatte/.test(x.name)).length, 5);
   assert.throws(() => plan({ length: "100" }), /mindestens 500/);
 });
+
+test("Generator-Meldungen am Feld und Körper je Feld (V5)", async () => {
+  const g = await import("../src/core/generator.js");
+  const { fieldParts } = await import("../src/core/genskizze.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (gen, patch) => g.GENERATORS[gen].plan(g.resolveGenParams(gen, { ...g.defaultGenerator(gen).params, ...patch }, E));
+  const err = (gen, patch) => { try { plan(gen, patch); } catch (e) { return e.key; } return null; };
+  assert.equal(err("zaun", { length: "100" }), "length");
+  assert.equal(err("tor", { form: "stich", rise: "5000" }), "rise");
+  assert.equal(err("treppe", { height: "100" }), "height");
+  assert.equal(err("balkon", { railH: "100" }), "railH", "Geländer-Fehler auf das Balkon-Feld umgeschlüsselt");
+  assert.ok(plan("treppe", { going: "200" }).issues.some((x) => x.key === "going"));
+  assert.ok(plan("balkon", { railH: "800" }).issues.some((x) => x.key === "railH"));
+  // jeder Schlüssel einer Meldung gehört zu einem Parameter des Generators
+  for (const gen of Object.keys(g.GENERATORS)) {
+    const keys = new Set(g.GENERATORS[gen].schema.map((s) => s.key));
+    for (const x of plan(gen, {}).issues) assert.ok(!x.key || keys.has(x.key), `${gen}: ${x.key}`);
+  }
+  assert.ok(fieldParts(g.GENERATORS.zaun, "fieldMax").test("Pfosten 1") && fieldParts(g.GENERATORS.zaun, "groundGap") === null);
+  assert.ok(fieldParts(g.GENERATORS.zaun, "post").test("Pfosten 3"));
+  assert.ok(fieldParts(g.GENERATORS.treppe, "gelRail").test("Geländer links Handlauf"));
+  assert.ok(fieldParts(g.GENERATORS.schiebetor, "beam").test("Flügel Laufprofil"));
+});

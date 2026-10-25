@@ -59,7 +59,7 @@ zurückgestellt; umgesetzt sind V1, V2, E7 (#96) sowie V3, E3, E4 und E5.
 | V2 ✓ | **Oberflächentest stabil** | CI-Lauf zu #94 brach einmal am Tastenkürzel-Dialog ab (`tools/e2e.mjs:935`, Klick-Timeout); auf Sichtbarkeit warten statt sofort klicken | XS | P0 |
 | V3 ✓ | **Verknüpfte Bauteile bequemer**: Aktualisieren, Quelldatei öffnen, Verknüpfung lösen bzw. „Als eigene Datei speichern“ auch im Kontextmenü des Baums | im Eigenschaftenfeld gab es die Knöpfe schon, im Baum nicht; Aktualisieren beim Öffnen läuft schon (M24) | XS | P1 |
 | V4 | **Neuaufbau großer Generatoren schneller**: gleiche Stäbe (gleicher Querschnitt, gleiche Länge und Schnitte) nur einmal bauen und versetzen, erst Zeit messen | Feature-Zwischenspeicher gibt es schon (`build.js`, Präfix-Cache); ein Generator wird bei jeder Parameteränderung aber als Ganzes mit allen Stäben neu gebaut | M | P2 |
-| V5 ◐ | **Generator-Bedienung** – teilweise umgesetzt (25.10.2026, nach Recherche MegaCAD/HiCAD/Archicad): Skizze mit Maßlinien aus dem echten Bauplan (Grundriss/Ansicht) für Treppe, Geländer, Tor, Balkon, übrige mit Gesamtmaßen; Fokus auf einem Feld hebt sein Maß hervor; Varianten als Bildkacheln. Offen: Fehler direkt am Feld, Hervorheben im 3D-Fenster. Ursprünglich: Bemaßungsbild der Parameter im Eigenschaftenfeld (was ist „Gurtabstand“?), Fehler direkt am betroffenen Feld, Prüfhinweise (Öffnung, Steigung) farbig neben dem Wert | Modell rechnet bei jeder Änderung neu, Fehler und Hinweise erscheinen nur als Meldung bzw. Liste | M | P1 |
+| V5 ✓ | **Generator-Bedienung** – umgesetzt (25.10.2026, nach Recherche MegaCAD/HiCAD/Archicad): Skizze mit Maßlinien aus dem echten Bauplan (Grundriss/Ansicht) für Treppe, Geländer, Tor, Balkon, übrige mit Gesamtmaßen; Fokus auf einem Feld hebt sein Maß hervor; Varianten als Bildkacheln. Dazu Fehler und Hinweise direkt am betroffenen Feld (rot bzw. gelb) und Fokus auf einem Feld hebt die zugehörigen Körper im 3D-Fenster hervor. Ursprünglich: Bemaßungsbild der Parameter im Eigenschaftenfeld (was ist „Gurtabstand“?), Fehler direkt am betroffenen Feld, Prüfhinweise (Öffnung, Steigung) farbig neben dem Wert | Modell rechnet bei jeder Änderung neu, Fehler und Hinweise erscheinen nur als Meldung bzw. Liste | M | P1 |
 | V6 | **Kollision automatisch in den Gelenkbereich**: aus der Bewegungsprüfung den freien Bereich als min/max vorschlagen | Prüfung zeigt nur Treffer | S | P2 |
 | V7 | **Fotodarstellung**: Hintergrund (weiß, Verlauf, transparent für Angebote), Bildgröße wählbar, Kamera speichern | fester Hintergrund, Faktor 4 | S | P2 |
 | V8 | **Hilfe im Programm**: Kurzanleitung je Generator und Werkzeug (F1), Beispielprojekte je Generator auf der Startseite | ein Beispiel (Schweißrahmen) | S | P2 |
@@ -70,7 +70,7 @@ zurückgestellt; umgesetzt sind V1, V2, E7 (#96) sowie V3, E3, E4 und E5.
 | Block | Inhalt | Warum so |
 |---|---|---|
 | **F1 (P0)** | V1 ✓, V2 ✓, E7 ✓ (E1, E2 zurückgestellt) | zwei schnelle Fehlerbehebungen, dann Oberfläche |
-| **F2 (P1)** | E3 ✓, E4 ✓, E5 ✓, V3 ✓, V5, E8 ✓, E9 ✓ | Ausgabe für Werkstatt und Kunde, dann Bedienung, dann die zwei häufigsten neuen Generatoren |
+| **F2 (P1)** | E3 ✓, E4 ✓, E5 ✓, V3 ✓, V5 ✓, E8 ✓, E9 ✓ | Ausgabe für Werkstatt und Kunde, dann Bedienung, dann die zwei häufigsten neuen Generatoren |
 | **F3 (P2)** | E10, E11, E12, E13, E14, E15, V4, V6, V7, V8, V9, E6 | Ausbau nach Bedarf; Blech-Nesting zuletzt, weil am aufwendigsten |
 | **F4 (P3)** | E16 | nur bei konkretem Bedarf |
 

@@ -7,6 +7,7 @@
 // Längen in »Läufe«, jede Ecke dreht um »Eckwinkel« (positiv = nach links). Höhe = Oberkante Handlauf.
 // Hinweise nach üblicher Bauordnung: Höhe ≥ 900 mm (≥ 1100 mm bei Absturzhöhe > 12 m), Öffnungen ≤ 120 mm.
 
+import { fieldError } from "./generror.js";
 import { platePlan } from "./anschluss.js";
 import { splitList } from "./expr.js";
 
@@ -44,11 +45,11 @@ export const GELAENDER = {
   plan(p) {
     const issues = [];
     const runs = p.runs;
-    if (!runs.length || runs.some((x) => !(x > 0))) throw new Error("Läufe: Längen > 0 angeben");
+    if (!runs.length || runs.some((x) => !(x > 0))) throw fieldError("Läufe: Längen > 0 angeben", "runs");
     const H = p.height, post = p.post, rail = p.rail;
-    if (!(H > 200)) throw new Error("Höhe zu klein");
-    if (H < 900) issues.push({ level: "Warnung", message: `Höhe ${H} mm unter 900 mm – Absturzsicherung nach Landesbauordnung prüfen` });
-    if (!(p.postMax > post.geom.width)) throw new Error("Pfostenabstand zu klein");
+    if (!(H > 200)) throw fieldError("Höhe zu klein", "height");
+    if (H < 900) issues.push({ key: "height", level: "Warnung", message: `Höhe ${H} mm unter 900 mm – Absturzsicherung nach Landesbauordnung prüfen` });
+    if (!(p.postMax > post.geom.width)) throw fieldError("Pfostenabstand zu klein", "postMax");
     // Lauflinie in der Ebene
     const pts = [[0, 0]];
     let ang = 0;
@@ -57,7 +58,7 @@ export const GELAENDER = {
       const [x, y] = pts[pts.length - 1];
       pts.push([x + L * Math.cos(ang), y + L * Math.sin(ang)]);
     });
-    if (runs.length > 1 && !(Math.abs(p.angle) > 0 && Math.abs(p.angle) < 180)) throw new Error("Eckwinkel zwischen 0° und 180° angeben");
+    if (runs.length > 1 && !(Math.abs(p.angle) > 0 && Math.abs(p.angle) < 180)) throw fieldError("Eckwinkel zwischen 0° und 180° angeben", "angle");
     // Pfostenstellen je Lauf (Ecken einmal)
     const posts = [];
     const fields = [];
@@ -97,8 +98,8 @@ export const GELAENDER = {
     const zTop = H - railH - p.topGap, zBot = p.bottomZ;
     const fillLo = p.bottom ? zBot + beltH / 2 : zBase;
     const fillHi = p.top ? zTop - beltH / 2 : zPostTop;
-    if (p.top && p.bottom && zTop - zBot < 2 * beltH + 50) throw new Error("Ober- und Untergurt liegen zu dicht – Höhen prüfen");
-    if (p.fill !== "keine" && !(fillHi - fillLo > 20)) throw new Error("Kein Platz für die Füllung");
+    if (p.top && p.bottom && zTop - zBot < 2 * beltH + 50) throw fieldError("Ober- und Untergurt liegen zu dicht – Höhen prüfen", "topGap");
+    if (p.fill !== "keine" && !(fillHi - fillLo > 20)) throw fieldError("Kein Platz für die Füllung", "fill");
     let nBars = 0, gapMaxSeen = 0;
     fields.forEach((fd, i) => {
       const s0 = half, s1 = fd.len - half, clear = s1 - s0;
@@ -135,7 +136,7 @@ export const GELAENDER = {
         nBars += 2;
         if (p.ring) {
           const r = p.ringD / 2, bw = Math.max(p.bar.geom.width, p.bar.geom.height);
-          if (!(r > bw && 2 * r + bw < Math.min(clear, fillHi - fillLo))) throw new Error(`Ring ⌀ ${p.ringD} passt nicht ins Feld ${Math.round(clear)} × ${Math.round(fillHi - fillLo)} mm`);
+          if (!(r > bw && 2 * r + bw < Math.min(clear, fillHi - fillLo))) throw fieldError(`Ring ⌀ ${p.ringD} passt nicht ins Feld ${Math.round(clear)} × ${Math.round(fillHi - fillLo)} mm`, "ringD");
           const c = at((s0 + s1) / 2), zc = (fillLo + fillHi) / 2, N = 24;
           const ring = Array.from({ length: N + 1 }, (_, k) => { const t = (2 * Math.PI * k) / N; return [c[0] + fd.d[0] * r * Math.cos(t), c[1] + fd.d[1] * r * Math.cos(t), zc + r * Math.sin(t)]; });
           chains.push({ section: p.bar, points: ring, name: `Ring ${i + 1}`, up: n });
@@ -147,7 +148,7 @@ export const GELAENDER = {
         // Füllungsrahmen (gegehrt) mit Abstand zu Pfosten und Gurten, Staketen innen zwischen den Rahmenstäben
         const fr = p.frame, fw = fr.geom.width, g = p.panelGap; // Kette mit up = Feldnormale: Breite liegt in der Feldebene
         const fs0 = s0 + g + fw / 2, fs1 = s1 - g - fw / 2, fz0 = fillLo + g + fw / 2, fz1 = fillHi - g - fw / 2;
-        if (!(fs1 - fs0 > 3 * fw && fz1 - fz0 > 3 * fw)) throw new Error("Füllungsrahmen passt nicht ins Feld – Abstand oder Rahmenprofil prüfen");
+        if (!(fs1 - fs0 > 3 * fw && fz1 - fz0 > 3 * fw)) throw fieldError("Füllungsrahmen passt nicht ins Feld – Abstand oder Rahmenprofil prüfen", "frame");
         const n = [-fd.d[1], fd.d[0], 0];
         chains.push({ section: fr, points: [P3(at(fs0), fz0), P3(at(fs1), fz0), P3(at(fs1), fz1), P3(at(fs0), fz1), P3(at(fs0), fz0)], name: `Füllungsrahmen ${i + 1}`, up: n });
         const i0 = fs0 + fw / 2, i1 = fs1 - fw / 2, inner = i1 - i0, zl = fz0 + fw / 2, zh = fz1 - fw / 2;
@@ -162,15 +163,15 @@ export const GELAENDER = {
         nBars += m;
       } else if (p.fill === "blech" || p.fill === "glas") {
         const W = clear - 2 * p.panelGap, Hp = fillHi - fillLo - 2 * p.panelGap;
-        if (!(W > 0 && Hp > 0)) throw new Error("Füllung: Abstand zu groß für das Feld");
+        if (!(W > 0 && Hp > 0)) throw fieldError("Füllung: Abstand zu groß für das Feld", "panelGap");
         const n = [-fd.d[1], fd.d[0], 0];
         const c = at((s0 + s1) / 2);
         plates.push({ center: [c[0] - (n[0] * p.panelT) / 2, c[1] - (n[1] * p.panelT) / 2, (fillLo + fillHi) / 2], xDir: [fd.d[0], fd.d[1], 0], normal: n, W, H: Hp, t: p.panelT, name: `${p.fill === "glas" ? "Glas" : "Blech"} ${i + 1}`, glass: p.fill === "glas", vertical: true });
         gapMaxSeen = Math.max(gapMaxSeen, p.panelGap);
       }
     });
-    if (gapMaxSeen > 120 + 1e-6) issues.push({ level: "Warnung", message: `Öffnung ${Math.round(gapMaxSeen)} mm größer als 120 mm` });
-    if (p.fill === "keine" && (fillHi - fillLo) > 120) issues.push({ level: "Hinweis", message: "Ohne Füllung: Öffnungen größer als 120 mm" });
+    if (gapMaxSeen > 120 + 1e-6) issues.push({ key: "gapMax", level: "Warnung", message: `Öffnung ${Math.round(gapMaxSeen)} mm größer als 120 mm` });
+    if (p.fill === "keine" && (fillHi - fillLo) > 120) issues.push({ key: "fill", level: "Hinweis", message: "Ohne Füllung: Öffnungen größer als 120 mm" });
     const total = runs.reduce((a, b) => a + b, 0);
     const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm`;
     return { chains, members, plates, info, issues, sections: SEC };

@@ -8,6 +8,7 @@
 
 const isLeaf = (name) => name.startsWith("Flügel");
 
+import { fieldError } from "./generror.js";
 export const SCHIEBETOR = {
   label: "Schiebetor",
   schema: [
@@ -35,10 +36,10 @@ export const SCHIEBETOR = {
     const W = p.width, H = p.height, z0 = p.clearance;
     const T = p.tail > 0 ? p.tail : Math.round(W * 0.4);
     const fw = p.frame.geom.width, bh = p.beam.geom.width;
-    if (!(W > 1000)) throw new Error("Durchfahrt mindestens 1000 mm");
-    if (!(T >= 2 * p.rollerL + 2 * fw)) throw new Error(`Gegengewicht zu kurz für zwei Rollenböcke (mindestens ${Math.ceil(2 * p.rollerL + 2 * fw)} mm)`);
-    if (!(H > bh + 4 * fw)) throw new Error("Höhe zu klein");
-    if (T < W * 0.35) issues.push({ level: "Warnung", message: `Gegengewicht ${Math.round(T)} mm kürzer als 35 % der Öffnung – Flügel kippt leicht` });
+    if (!(W > 1000)) throw fieldError("Durchfahrt mindestens 1000 mm", "width");
+    if (!(T >= 2 * p.rollerL + 2 * fw)) throw fieldError(`Gegengewicht zu kurz für zwei Rollenböcke (mindestens ${Math.ceil(2 * p.rollerL + 2 * fw)} mm)`, "tail");
+    if (!(H > bh + 4 * fw)) throw fieldError("Höhe zu klein", "height");
+    if (T < W * 0.35) issues.push({ key: "tail", level: "Warnung", message: `Gegengewicht ${Math.round(T)} mm kürzer als 35 % der Öffnung – Flügel kippt leicht` });
     const members = [], chains = [], plates = [];
     const up = [0, -1, 0]; // Profilbreite in der Torebene, Profilhöhe quer dazu
     const P = (x, z) => [x, 0, z];
@@ -83,12 +84,13 @@ export const SCHIEBETOR = {
       members.push({ section: p.post, a: [-pw / 2, -side, -p.embed], b: [-pw / 2, -side, ztop], name: "Führungspfosten", up });
       members.push({ section: p.post, a: P(W + pw / 2, -p.embed), b: P(W + pw / 2, ztop), name: "Fangpfosten", up });
     }
-    if (gapSeen > 120 + 1e-6) issues.push({ level: "Warnung", message: `Öffnung ${Math.round(gapSeen)} mm größer als 120 mm` });
+    if (gapSeen > 120 + 1e-6) issues.push({ key: "gapMax", level: "Warnung", message: `Öffnung ${Math.round(gapSeen)} mm größer als 120 mm` });
     const pick = (list) => (p.teil === "fluegel" ? list.filter((x) => isLeaf(x.name)) : p.teil === "fest" ? list.filter((x) => !isLeaf(x.name)) : list);
     const info = `Flügel ${Math.round(W + T)} mm lang (Öffnung ${Math.round(W)} + Gegengewicht ${Math.round(T)}), ${nBars} Stäbe, Platz hinten offen ${Math.round(W + T)} mm`;
     return { chains: pick(chains), members: pick(members), plates: pick(plates), info, issues, geo: { T } };
   },
 
+  parts: { tail: /Diagonale|Strebe|Laufprofil/, tailForm: /Diagonale|Strebe|Rahmen/, posts: /pfosten/, post: /pfosten/, postTop: /pfosten/, embed: /pfosten/, width: /Stab|Laufprofil/ },
   views: ["front", "top"],
   /** Maßlinien der Skizze (Ansicht: x, z; Grundriss: x, y) */
   dims(p, plan, view) {
