@@ -28,6 +28,7 @@ import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir } fr
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers } from "../core/kinematik.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom } from "../core/subasm.js";
 import { materialOf, materialList } from "../core/materials.js";
+import { FINISHES, RAL, finishOf, finishLabel, ralName } from "../core/oberflaeche.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
 import { splineLength, splineDegree } from "../core/spline.js";
 
@@ -84,6 +85,17 @@ export class Props {
     sel.value = value ?? options[0]?.[0];
     sel.addEventListener("change", () => onChange(sel.value));
     return this.field(label, sel);
+  }
+  /** Oberfläche (E7): roh, verzinkt, pulver/duplex/lack mit RAL-Farbe */
+  finishSelect(part) {
+    const app = this.app, f = finishOf(part);
+    const setF = (next, label) => app.edit(label, () => { part.finish = next.kind === "roh" ? null : next; });
+    const kind = this.select("Oberfläche", Object.entries(FINISHES).map(([k, d]) => [k, d.label]), f.kind, (k) => setF({ kind: k, ral: FINISHES[k].ral ? f.ral || "7016" : undefined }, "Oberfläche"));
+    if (!f.def.ral) return kind;
+    const known = Object.keys(RAL);
+    const ral = this.select("RAL-Farbe", [...known.map((k) => [k, ralName(k)]), ...(f.ral && !RAL[f.ral] ? [[f.ral, ralName(f.ral)]] : [])], f.ral, (v) => setF({ kind: f.kind, ral: v }, "RAL-Farbe"));
+    const free = this.text("RAL frei", f.ral, (v) => setF({ kind: f.kind, ral: v.replace(/^RAL\s*/i, "").trim() }, "RAL-Farbe"), { placeholder: "z. B. 6029" });
+    return h("div", {}, kind, ral, free, part.color ? h("p", { class: "hint" }, "Eigene Farbe ist gesetzt und geht vor – »Wie Werkstoff« zeigt die RAL-Farbe.") : null);
   }
   /** Werkstoffauswahl: eingebaute und eigene in Gruppen; unbekannter Schlüssel mit Warnung */
   materialSelect(part) {
@@ -209,6 +221,7 @@ export class Props {
       this.text("Teilenummer", part.number, (v) => app.edit("Nummer", () => { part.number = v; }, { rebuild: false })),
       this.text("Beschreibung", part.description, (v) => app.edit("Beschreibung", () => { part.description = v; }, { rebuild: false }), { area: true }),
       this.materialSelect(part),
+      this.finishSelect(part),
       this.field("Farbe", h("div", { style: { display: "flex", gap: "6px" } },
         h("input", { type: "color", value: app.partColor(part), onchange: (e) => app.edit("Farbe", () => { part.color = e.target.value; }) }),
         part.color ? h("button", { class: "btn", onclick: () => app.edit("Farbe", () => { part.color = null; }) }, "Wie Werkstoff") : null))));
@@ -1473,7 +1486,7 @@ export function bomRows(app, asm) {
     if (r && r.bodies.length && !own.length) { norm.push({ bodies: r.bodies, qty: 1 }); continue; }
     if (r && own.length < r.bodies.length) norm.push({ bodies: r.bodies, qty: 1 });
     const mass = r ? bodiesMass(own, materialOf(p.material).density) : NaN;
-    const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: p.material ? materialOf(p.material).label : "", qty: 0, mass };
+    const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: p.material ? materialOf(p.material).label : "", finish: finishLabel(p), qty: 0, mass };
     row.qty++;
     map.set(p.id, row);
   }
@@ -1483,7 +1496,7 @@ export function bomRows(app, asm) {
 function bomTable(rows, compact = false) {
   return h("table", { class: "grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Benennung"), compact ? null : h("th", {}, "Nummer"), h("th", {}, "Menge"), compact ? null : h("th", {}, "Werkstoff"), h("th", {}, "Masse kg"))),
-    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, r.name), compact ? null : h("td", {}, r.number), h("td", { class: "num" }, String(r.qty)), compact ? null : h("td", {}, r.material), h("td", { class: "num" }, fmtNum(r.mass, 3))))));
+    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, r.name), compact ? null : h("td", {}, r.number), h("td", { class: "num" }, String(r.qty)), compact ? null : h("td", {}, [r.material, finishLabel({ finish: r.part?.finish }, { short: true })].filter(Boolean).join(" · ")), h("td", { class: "num" }, fmtNum(r.mass, 3))))));
 }
 function structureTable(rows, app) {
   return h("table", { class: "grid" },

@@ -7,7 +7,7 @@ import { WELD_KINDS, WELD_SIDES } from "./weld.js";
 const r = (x, d) => (Number.isFinite(x) ? Math.round(x * 10 ** d) / 10 ** d : null);
 
 /**
- * Blätter für buildXlsx; leere Listen entfallen. bom: [{pos, name, number, qty, material, mass}].
+ * Blätter für buildXlsx; leere Listen entfallen. bom: [{pos, name, number, qty, material, finish?, mass}].
  * Mit Unterbaugruppen (M19) zusätzlich structure: [{level, name, number, kind, qty, total}] und
  * modular: [{name, number, rows: [{pos, name, number, kind, qty}]}].
  */
@@ -15,9 +15,9 @@ export function listSheets({ cut = [], welds = [], bom = [], structure = [], mod
   const sheets = [];
   const art = (k) => (k === "assembly" ? "Baugruppe" : "Bauteil");
   if (bom.length) {
-    sheets.push({ name: "Stückliste", rows: [["Pos", "Benennung", "Teilenummer", "Menge", "Werkstoff", "Masse kg/Stk", "Masse kg gesamt"],
-      ...bom.map((b) => [b.pos, b.name, b.number || null, b.qty, b.material || null, r(b.mass, 3), r(b.mass * b.qty, 3)]),
-      [], ["Summe", null, null, bom.reduce((a, b) => a + b.qty, 0), null, null, r(bom.reduce((a, b) => a + b.mass * b.qty, 0), 3)]] });
+    sheets.push({ name: "Stückliste", rows: [["Pos", "Benennung", "Teilenummer", "Menge", "Werkstoff", "Oberfläche", "Masse kg/Stk", "Masse kg gesamt"],
+      ...bom.map((b) => [b.pos, b.name, b.number || null, b.qty, b.material || null, b.finish || null, r(b.mass, 3), r(b.mass * b.qty, 3)]),
+      [], ["Summe", null, null, bom.reduce((a, b) => a + b.qty, 0), null, null, null, r(bom.reduce((a, b) => a + b.mass * b.qty, 0), 3)]] });
   }
   if (structure.length) {
     sheets.push({ name: "Strukturstückliste", rows: [["Ebene", "Benennung", "Teilenummer", "Art", "Menge je Baugruppe", "Menge gesamt"],

@@ -23,6 +23,7 @@ import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCop
 import { resolveParams, evaluate } from "../core/expr.js";
 import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
 import { partContent, baseName } from "../core/links.js";
+import { finishColor } from "../core/oberflaeche.js";
 import { Docking } from "./layout.js";
 
 const linkedMessage = (part) => `»${part.name}« ist mit ${baseName(part.link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`;
@@ -292,12 +293,12 @@ export class App {
       toast("Fehler beim Berechnen: " + e.message, { kind: "err" });
     }
   }
-  partColor(part) { return part.color || materialOf(part.material).color; }
+  partColor(part) { return part.color || finishColor(part) || materialOf(part.material).color; }
   showPart(part, res) {
     if (this.mode === "sketch") {
       // im Skizzenmodus Modell halbtransparent hinter der Skizze
-      this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35, material: part.material });
-    } else this.viewer.showPart(res.bodies, { color: this.partColor(part), material: part.material });
+      this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35, material: part.material, finish: part.finish });
+    } else this.viewer.showPart(res.bodies, { color: this.partColor(part), material: part.material, finish: part.finish });
     this.showSketches3D();
     if (this.fittedFor !== part.id) {
       this.fittedFor = part.id;
@@ -315,9 +316,9 @@ export class App {
       const p = docOf(c.part);
       if (p?.kind === "assembly") {
         // Unterbaugruppe: jedes Bauteil mit Gesamt-Platzierung, Auswahl wirkt auf die ganze Komponente
-        return flattenAssembly({ id: asm.id, components: [c] }, docOf).map((o) => ({ id: c.id, partKey: o.part.id, bodies: this.results.get(o.part.id)?.bodies, color: this.partColor(o.part), material: o.part.material, matrix: o.matrix, inner: o.inner, leaf: o.part.id, opacity: 1 }));
+        return flattenAssembly({ id: asm.id, components: [c] }, docOf).map((o) => ({ id: c.id, partKey: o.part.id, bodies: this.results.get(o.part.id)?.bodies, color: this.partColor(o.part), material: o.part.material, finish: o.part.finish, matrix: o.matrix, inner: o.inner, leaf: o.part.id, opacity: 1 }));
       }
-      return [{ id: c.id, partKey: c.part, bodies: this.results.get(c.part)?.bodies, color: p ? this.partColor(p) : "#999", material: p?.material, pos: c.pos, rot: c.rot, opacity: 1 }];
+      return [{ id: c.id, partKey: c.part, bodies: this.results.get(c.part)?.bodies, color: p ? this.partColor(p) : "#999", material: p?.material, finish: p?.finish, pos: c.pos, rot: c.rot, opacity: 1 }];
     });
     this.viewer.showAssembly(comps);
     this.viewer.showSketches([]);
