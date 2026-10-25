@@ -419,6 +419,9 @@ try {
       r.link = part.link?.path;
       r.file = JSON.parse(fs.get(r.link)).docs.length;
       r.blocked = a.edit("Name", () => { a.doc("beispiel_platte").name = "Geändert"; }) === false && a.doc("beispiel_platte").name === "Grundplatte";
+      a.openDoc("beispiel_platte");
+      const nf = part.features.length;
+      r.blocked = r.blocked && a.createSketch({ ref: "XY" }) === null && a.addFeature({ type: "extrude" }) === undefined && a.mode !== "sketch" && part.features.length === nf;
       const src = JSON.parse(fs.get(r.link)), len0 = part.params.find((x) => x.name === "Länge").expr, len1 = `(${len0}) + 55`;
       src.docs[0].params.find((x) => x.name === "Länge").expr = len1;
       fs.set(r.link, JSON.stringify(src));

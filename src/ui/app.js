@@ -25,6 +25,7 @@ import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
 import { partContent, baseName } from "../core/links.js";
 import { Docking } from "./layout.js";
 
+const linkedMessage = (part) => `»${part.name}« ist mit ${baseName(part.link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`;
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
 const freeCount = (sk, free) => sk.entities.filter((e) => !e.origin && !e.construction && entityFree(e, free)).length;
 
@@ -206,7 +207,7 @@ export class App {
     try {
       fn();
       const hit = linked?.find(([d, before]) => this.project.docs.includes(d) && partContent(d) !== before);
-      if (hit) throw new Error(`»${hit[0].name}« ist mit ${baseName(hit[0].link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`);
+      if (hit) throw new Error(linkedMessage(hit[0]));
     } catch (e) {
       const st = this.undoStack.pop();
       this.redoStack = redo;
@@ -223,6 +224,12 @@ export class App {
       return false;
     }
     this.changed(opts);
+    return true;
+  }
+  /** Verknüpftes Bauteil (M24)? Dann Hinweis und true – Skizzen/Features dort nur in der Quelldatei */
+  linkedReadOnly(part) {
+    if (part?.kind !== "part" || !part.link) return false;
+    toast(linkedMessage(part), { kind: "err", timeout: 6000 });
     return true;
   }
   undo() { this.restore(this.undoStack, this.redoStack); }
@@ -344,7 +351,7 @@ export class App {
   /** Skizzenerstellung: Ebene wählen lassen */
   beginSketchCreation() {
     const part = this.activeDoc();
-    if (!part || part.kind !== "part") return;
+    if (!part || part.kind !== "part" || this.linkedReadOnly(part)) return;
     this.pick = { kind: "sketchPlane" };
     const bb = this.viewer.contentBox();
     const size = bb.isEmpty() ? 200 : Math.max(100, bb.getSize(new (bb.min.constructor)()).length() * 0.7);
@@ -358,6 +365,7 @@ export class App {
   }
   createSketch(plane, offset = "0") {
     const part = this.activeDoc();
+    if (this.linkedReadOnly(part)) return null;
     const n = part.features.filter((f) => f.type === "sketch").length + 1;
     const sk = newSketch(uid("s"), `Skizze ${n}`, plane);
     sk.offset = offset;
@@ -371,7 +379,7 @@ export class App {
   }
   editSketch(id) {
     const part = this.activeDoc();
-    if (!part?.features.some((f) => f.id === id)) return;
+    if (!part?.features.some((f) => f.id === id) || this.linkedReadOnly(part)) return;
     this.pick = null;
     this.viewer.clearPlanes();
     this.sel = { type: "feature", id };
@@ -426,7 +434,7 @@ export class App {
   }
   addFeature(f, { select = true } = {}) {
     const part = this.activeDoc();
-    if (!part || part.kind !== "part") return;
+    if (!part || part.kind !== "part" || this.linkedReadOnly(part)) return;
     f.id = f.id || uid("f");
     const n = part.features.filter((x) => x.type === f.type).length + 1;
     f.name = f.name || `${FEATURE_NAMES[f.type] || f.type} ${n}`;

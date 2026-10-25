@@ -169,7 +169,7 @@ export class Files {
       });
       if (!remote) return;
     }
-    const existing = app.project.docs.find((d) => d.kind === "part" && d.link && d.link.docId === remote.id && baseName(d.link.path) === baseName(f.path));
+    const existing = app.project.docs.find((d) => d.kind === "part" && d.link && d.link.docId === remote.id && d.link.path === f.path);
     app.edit("Bauteil verknüpfen", () => {
       let doc = existing;
       if (!doc) {
