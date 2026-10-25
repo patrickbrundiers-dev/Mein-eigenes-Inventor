@@ -95,7 +95,7 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 | H Blech | fehlt | ADR-0002 |
 | I Rohrlaser/Maschinen | teilweise | Grenzen einer Maschine für die Fertigungsprüfung (`src/core/dfm.js`); mehrere Maschinenprofile eigenes Format (P3) |
 | J Leistung | teilweise | Darstellungsqualität; Rest geplant |
-| K Dateien und Datensicherheit | vorhanden (Verhalten), Optionen fehlen | atomar + `.bak`, Autosave, Migration |
+| K Dateien und Datensicherheit | ja | atomar, Autosave, Migration; Stufe 27: Anzahl Sicherungen (.bak, .bak2 …), schreibgeschützt öffnen (auch automatisch bei gesperrter Datei), Projekt paketieren |
 | L Updates | vorhanden | jetzt im Center |
 | M Datenschutz | vorhanden | keine Telemetrie; Protokoll lokal |
 | N Darstellung | teilweise | Oberflächengröße, Animation, Farbschema hell/dunkel/wie Windows (Stufe 20) |
@@ -133,3 +133,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 24 | Eigene Werkstoffe: Bibliothek in den Einstellungen, wirksam in Masse, Trägheit, Zuschnittliste, Zeichnung und STEP-Farbe; Kopie in der Projektdatei | Unit-Test Prüfung, Austausch, Projekt ohne Bibliothekseintrag; Oberflächentest Cortenstahl |
 | 25 | Menüband selbst anordnen: Gruppen je Registerkarte aus-/einblenden und verschieben (Rechtsklick oder Einstellungscenter), „Beenden“ in der Skizze geschützt | Unit-Test `ribbonlayout.js`, Oberflächentest |
 | 26 | Dokument-Vorgaben: Namensregeln ({n}, {projekt}, {datum}, {quelle}), Sachnummer, Werkstoff neuer Bauteile, neues Projekt mit Bauteil/Baugruppe/leer | Unit-Test `naming.js`, Oberflächentest |
+| 27 | Dateien: Anzahl Sicherungen, schreibgeschützt öffnen, Projekt paketieren (verknüpfte Bauteile eingebettet) | Unit-Test Sicherungen/Paket, Desktop-Rauchtest, Oberflächentest |

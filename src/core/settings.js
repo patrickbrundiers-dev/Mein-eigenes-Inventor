@@ -27,7 +27,7 @@ export const CATEGORIES = [
   { id: "dokument", label: "Dokument und Modell", status: "teilweise", planned: ["Modelltoleranz"], note: "Gilt für neu angelegte Dokumente; vorhandene bleiben, wie sie sind. Platzhalter: {n} laufende Nummer ({n:3} = dreistellig), {projekt}, {datum}, bei Zeichnungen {quelle}." },
   { id: "material", label: "Materialien", status: "aktiv", note: "Eigene Werkstoffe gelten für Masse, Trägheit, Zuschnittliste und Zeichnung. Benutzte eigene Werkstoffe werden als Kopie in der Projektdatei gespeichert, damit sie auf anderen Rechnern stimmen." },
   { id: "kernel", label: "CAD-Kernel und Leistung", status: "geplant", planned: ["automatische Neuberechnung aus", "Berechnungsprotokoll/Debug-Modus"], note: "Kernel-Toleranzen werden nicht freigegeben, solange sie nicht abgesichert sind." },
-  { id: "dateien", label: "Dateien und Datensicherheit", status: "teilweise", planned: ["Anzahl Sicherungen", "Projekt paketieren", "schreibgeschützter Modus"], note: "Speichern ist immer atomar mit einer Sicherung (.bak) der vorherigen Fassung." },
+  { id: "dateien", label: "Dateien und Datensicherheit", status: "aktiv", note: "Speichern ist immer atomar: erst vollständig schreiben, dann umbenennen. Datei → Schreibgeschützt öffnen bzw. Projekt paketieren." },
   { id: "blech", label: "Blechparameter", status: "geplant", planned: ["Biegetabellen", "K-Faktor je Material"], note: "Keine allgemeine Blechfunktion (ADR-0002); Biegewerte des Knickrahmens stehen im Feature." },
   { id: "fertigung", label: "Rohrlaser und Fertigung", status: "teilweise", planned: ["mehrere Maschinenprofile (getrennt von den CAD-Einstellungen gespeichert)"], note: "Fertigungsprüfung der Zuschnittliste (Bauteil und Zuschnittliste). Startwerte aus den Beispielmaschinen der Rohrlaser-Kalkulation – bitte an die eigene Maschine anpassen. 0 = Regel aus." },
   { id: "updates", label: "Updates", status: "aktiv" },
@@ -111,6 +111,7 @@ export const SETTINGS = [
   { key: "material.eigene", cat: "material", label: "Eigene Werkstoffe", type: "materials", default: [], custom: true },
   { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },
+  { key: "dateien.sicherungen", cat: "dateien", label: "Sicherungen beim Speichern", type: "int", default: 1, min: 0, max: 9, help: "So viele frühere Fassungen bleiben neben der Datei: ».wcad.bak« ist die jüngste, dann ».bak2«, ».bak3« … 0 = keine neue Sicherung. Nur in der Desktop-Version." },
   { key: "darstellung.skalierung", cat: "darstellung", label: "Oberflächengröße", unit: "%", type: "enum", default: 100, options: [80, 90, 100, 110, 125, 150].map((v) => ({ value: v, label: v + " %" })), help: "Nur in der Desktop-Version; im Browser die Zoomfunktion des Browsers verwenden." },
 ];
 

@@ -112,7 +112,9 @@ function extras(app, cat) {
   if (cat === "dateien") {
     return [h("ul", { class: "hint" },
       h("li", {}, "Wiederherstellung: nach einem Absturz bietet der Startbildschirm die letzte automatische Sicherung an."),
-      h("li", {}, "Beim Speichern bleibt die vorige Fassung als ».wcad.bak« neben der Datei."),
+      h("li", {}, "Beim Speichern bleiben die vorigen Fassungen als ».wcad.bak«, ».bak2« … neben der Datei (Anzahl oben)."),
+      h("li", {}, "Schreibgeschützt öffnen (Datei-Menü): Ansehen und Ausprobieren, gespeichert wird nur unter neuem Namen. Gesperrte oder schreibgeschützte Dateien öffnen automatisch so."),
+      h("li", {}, "Projekt paketieren (Datei-Menü): eine Kopie, in der verknüpfte Bauteile ganz enthalten sind – zum Weitergeben ohne die Bauteil-Dateien."),
       h("li", {}, "Ältere Projektdateien werden beim Öffnen migriert; vorher wird eine Sicherung angelegt."))];
   }
   if (cat === "datenschutz") {

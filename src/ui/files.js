@@ -5,7 +5,7 @@ import { planKantteil, kantteilFlatDxf, splitList } from "../core/blech.js";
 import { evaluate } from "../core/expr.js";
 import { newPart, uid } from "../core/examples.js";
 import { serializeProject, loadProject, validateProject, parseProject } from "../core/project.js";
-import { linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, baseName } from "../core/links.js";
+import { linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, baseName, packProject } from "../core/links.js";
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
@@ -34,14 +34,15 @@ export class Files {
     if (r === "save") return await this.save(false);
     return r === "discard";
   }
-  async open(path) {
+  async open(path, { readOnly = false } = {}) {
     if (!(await this.confirmDiscard())) return;
     try {
-      let loaded, file;
+      let loaded, file, locked = false;
       if (this.bridge) {
         const r = path ? await this.bridge.readProject(path) : await this.bridge.openProject();
         if (!r) return;
         file = r.path;
+        locked = !!r.readOnly;
         try {
           if (r.error) throw new Error(r.error);
           loaded = this.parse(r.text);
@@ -54,7 +55,11 @@ export class Files {
       }
       const { project: prj, issues } = loaded;
       this.app.setProject(prj, file);
-      toast("Geöffnet: " + (file ? file.split(/[\\/]/).pop() : prj.name), { kind: "ok", timeout: 2000 });
+      if (file && (readOnly || locked)) {
+        this.app.readOnly = true;
+        this.app.updateTitle();
+        toast(`${file.split(/[\\/]/).pop()} ist schreibgeschützt geöffnet${locked && !readOnly ? " (Datei ist gesperrt oder schreibgeschützt)" : ""}. Änderungen gehen nur über »Speichern unter«.`, { timeout: 7000 });
+      } else toast("Geöffnet: " + (file ? file.split(/[\\/]/).pop() : prj.name), { kind: "ok", timeout: 2000 });
       showIssues(issues, "Beim Öffnen");
     } catch (e) {
       toast("Öffnen fehlgeschlagen: " + e.message, { kind: "err", timeout: 6000 });
@@ -80,15 +85,17 @@ export class Files {
   }
   async save(saveAs = false) {
     const app = this.app;
+    if (app.readOnly && !saveAs) { toast("Schreibgeschützt geöffnet – bitte unter neuem Namen speichern."); saveAs = true; }
     // Speichern nie blockieren (kein Datenverlust), aber auf Strukturfehler hinweisen
     showIssues(validateProject(app.project), "Beim Speichern");
     const text = this.serialize();
     const defaultName = safeName(app.project.name) + ".wcad";
     try {
       if (this.bridge) {
-        const r = await this.bridge.saveProject({ path: saveAs ? null : app.filePath, text, defaultName });
+        const r = await this.bridge.saveProject({ path: saveAs ? null : app.filePath, text, defaultName, backups: app.prefs.get("dateien.sicherungen") });
         if (!r) return false;
         app.filePath = r.path;
+        app.readOnly = false;
       } else {
         downloadBlob(new Blob([text], { type: "application/json" }), this.browserName || defaultName);
       }
@@ -101,6 +108,15 @@ export class Files {
       toast("Speichern fehlgeschlagen: " + e.message, { kind: "err", timeout: 6000 });
       return false;
     }
+  }
+  /** Projekt paketieren: eine Datei mit allen verknüpften Bauteilen als eigenem Inhalt, zum Weitergeben */
+  async packageProject() {
+    const app = this.app;
+    app.embedMaterials();
+    const { project, packed } = packProject(app.project);
+    const r = await this.saveText(serializeProject(project), safeName(app.project.name) + " (Paket).wcad", "application/json", PROJECT_FILTERS);
+    if (r && packed.length) toast(`${packed.length} verknüpfte(s) Bauteil(e) eingebettet (Stand der letzten Aktualisierung): ${packed.join(", ")}`, { timeout: 7000 });
+    return r ? { ...r, packed } : null;
   }
   autosave() {
     clearTimeout(this.autoTimer);

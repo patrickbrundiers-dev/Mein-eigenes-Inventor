@@ -83,3 +83,14 @@ export function partProject(prj, part, now = new Date()) {
 export function makeLink(filePath, remote, projectPath, now = new Date()) {
   return { path: filePath, rel: projectPath ? relPath(dirOf(projectPath), filePath) : null, docId: remote.id, number: remote.number || "", name: remote.name, time: now.toISOString() };
 }
+
+/**
+ * Projekt paketieren: Kopie, in der verknüpfte Bauteile ganz im Projekt stehen (Verknüpfung gelöst),
+ * damit die Datei allein weitergegeben werden kann. Das offene Projekt bleibt unverändert.
+ */
+export function packProject(prj) {
+  const copy = JSON.parse(JSON.stringify(prj));
+  const packed = [];
+  for (const d of copy.docs) if (d.kind === "part" && d.link) { packed.push(d.name); delete d.link; }
+  return { project: copy, packed };
+}
