@@ -22,6 +22,8 @@ import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/re
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
+import { decomposePlacement } from "../core/geom.js";
+import { flattenAssembly, partCounts, canInsert, structureBom, modularBom } from "../core/subasm.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
 import { splineLength, splineDegree } from "../core/spline.js";
@@ -1001,19 +1003,19 @@ export class Props {
     const app = this.app;
     const asm = app.activeDoc();
     if (asm?.kind !== "assembly") return;
-    const parts = app.parts();
+    const parts = [...app.parts(), ...app.project.docs.filter((x) => x.kind === "assembly" && canInsert(asm, x, (id) => app.doc(id)))];
     if (!parts.length) return toast("Im Projekt gibt es noch kein Bauteil");
     let chosen = parts[0].id;
     const qty = h("input", { class: "inp", type: "number", min: 1, value: 1 });
-    const list = h("div", {}, ...parts.map((p) => h("label", { class: "chk" }, h("input", { type: "radio", name: "pp", checked: p.id === chosen, onchange: () => { chosen = p.id; } }), p.name, p.number ? h("span", { class: "hint" }, " " + p.number) : null)));
+    const list = h("div", {}, ...parts.map((p) => h("label", { class: "chk" }, h("input", { type: "radio", name: "pp", checked: p.id === chosen, onchange: () => { chosen = p.id; } }), p.name, p.kind === "assembly" ? h("span", { class: "hint" }, " (Unterbaugruppe)") : null, p.number ? h("span", { class: "hint" }, " " + p.number) : null)));
     modal({
-      title: "Bauteil platzieren",
+      title: "Bauteil oder Unterbaugruppe platzieren",
       body: h("div", {}, list, this.field("Anzahl", qty)),
       buttons: [{ label: "Abbrechen" }, { label: "Platzieren", primary: true, run: () => {
         const n = Math.max(1, Math.min(100, Number(qty.value) || 1));
         const p = app.doc(chosen);
-        const r = app.results.get(chosen);
-        const bb = r ? unionBox(r.bodies.map((b) => b.props?.bbox).filter(Boolean)) : null;
+        const occ = p.kind === "assembly" ? flattenAssembly(p, (id) => app.doc(id)) : [{ part: p }];
+        const bb = unionBox(occ.flatMap((o) => (app.results.get(o.part.id)?.bodies || []).map((b) => b.props?.bbox).filter(Boolean)));
         const w = bb ? bb[1][0] - bb[0][0] + 20 : 100;
         app.edit("Platzieren", () => {
           const existing = asm.components.length;
@@ -1088,7 +1090,18 @@ export class Props {
     const app = this.app;
     const asm = app.activeDoc();
     const rows = bomRows(app, asm);
-    modal({ title: `Stückliste – ${asm.name}`, width: "760px", body: bomTable(rows), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportBom() }] });
+    const docOf = (id) => app.doc(id);
+    const nested = asm.components.some((c) => docOf(c.part)?.kind === "assembly");
+    const body = h("div", {});
+    const show = (form) => {
+      if (form === "struktur") body.replaceChildren(structureTable(structureBom(asm, docOf), app));
+      else if (form === "baukasten") body.replaceChildren(...modularBom(asm, docOf).map((x) => h("div", {}, h("h4", {}, x.asm.name), modularTable(x.rows, app))));
+      else body.replaceChildren(bomTable(rows));
+    };
+    const tabs = h("div", {});
+    const setForm = (v) => { tabs.replaceChildren(this.seg("", [["menge", "Mengen"], ["struktur", "Struktur"], ["baukasten", "Baukasten"]], v, setForm)); show(v); };
+    if (nested) setForm("menge"); else show("menge");
+    modal({ title: `Stückliste – ${asm.name}`, width: "760px", body: h("div", {}, tabs, body, nested ? h("p", { class: "hint" }, "Mengen: alle Bauteile summiert. Struktur: Baum mit Ebenen (Menge je übergeordneter Einheit, Gesamt). Baukasten: je Baugruppe nur die direkten Bestandteile. Alle drei stehen auch in »Listen (Excel)«.") : null), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportBom() }] });
   }
   cutListDialog() {
     const app = this.app;
@@ -1114,10 +1127,12 @@ export class Props {
     if (asm?.kind !== "assembly") return;
     const comps = asm.components.filter((c) => !c.hidden && app.doc(c.part));
     if (comps.length < 2) return toast("Mindestens zwei sichtbare Komponenten nötig");
+    // Unterbaugruppen: alle ihre Bauteile mit dem Schlüssel der Komponente (innere Kollisionen zählen hier nicht)
+    const items = comps.flatMap((c) => flattenAssembly({ id: asm.id, components: [c] }, (id) => app.doc(id)).map((o) => ({ key: c.id, part: o.part, ...decomposePlacement(o.matrix), name: c.name })));
     const name = (id) => { const c = asm.components.find((x) => x.id === id); return c?.name || app.doc(c?.part)?.name || id; };
     const busy = toast("Kollisionen werden geprüft …", { timeout: 0 });
     let res;
-    try { res = await app.kernel.call("collisions", { items: comps.map((c) => ({ key: c.id, part: app.doc(c.part), pos: c.pos, rot: c.rot, name: c.name })) }); }
+    try { res = (await app.kernel.call("collisions", { items })).filter((r) => r.a !== r.b); }
     catch (e) { busy.remove(); return toast("Kollisionsprüfung fehlgeschlagen: " + e.message, { kind: "err" }); }
     busy.remove();
     app.collisions = res;
@@ -1180,11 +1195,11 @@ export function unionBox(boxes) {
   for (const b of boxes) for (let k = 0; k < 3; k++) { o[0][k] = Math.min(o[0][k], b[0][k]); o[1][k] = Math.max(o[1][k], b[1][k]); }
   return o;
 }
+/** Mengenstückliste: alle Bauteile der Baugruppe einschließlich der Unterbaugruppen, summiert */
 export function bomRows(app, asm) {
   const map = new Map();
-  for (const c of asm.components) {
-    const p = app.doc(c.part);
-    if (!p) continue;
+  for (const o of flattenAssembly(asm, (id) => app.doc(id))) {
+    const p = o.part;
     const r = app.results.get(p.id);
     const mass = r ? bodiesMass(r.bodies, materialOf(p.material).density) : NaN;
     const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: p.material ? materialOf(p.material).label : "", qty: 0, mass };
@@ -1198,11 +1213,20 @@ function bomTable(rows, compact = false) {
     h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Benennung"), compact ? null : h("th", {}, "Nummer"), h("th", {}, "Menge"), compact ? null : h("th", {}, "Werkstoff"), h("th", {}, "Masse kg"))),
     h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, r.name), compact ? null : h("td", {}, r.number), h("td", { class: "num" }, String(r.qty)), compact ? null : h("td", {}, r.material), h("td", { class: "num" }, fmtNum(r.mass, 3))))));
 }
+function structureTable(rows, app) {
+  return h("table", { class: "grid" },
+    h("thead", {}, h("tr", {}, h("th", {}, "Ebene"), h("th", {}, "Benennung"), h("th", {}, "Nummer"), h("th", {}, "Menge"), h("th", {}, "Gesamt"), h("th", {}, "Art"))),
+    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, r.level), h("td", { style: { paddingLeft: 6 + r.depth * 14 + "px" } }, r.doc.name), h("td", {}, r.doc.number || ""), h("td", { class: "num" }, String(r.qty)), h("td", { class: "num" }, String(r.total)), h("td", {}, r.kind === "assembly" ? "Baugruppe" : "Bauteil")))));
+}
+function modularTable(rows) {
+  return h("table", { class: "grid" },
+    h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Benennung"), h("th", {}, "Nummer"), h("th", {}, "Menge"), h("th", {}, "Art"))),
+    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, r.doc.name), h("td", {}, r.doc.number || ""), h("td", { class: "num" }, String(r.qty)), h("td", {}, r.kind === "assembly" ? "Baugruppe" : "Bauteil")))));
+}
 export function collectCutSources(app, d) {
   if (d.kind === "part") { const r = app.results.get(d.id); return r ? [{ part: d, result: r, qty: 1 }] : []; }
   if (d.kind === "assembly") {
-    const counts = new Map();
-    for (const c of d.components) counts.set(c.part, (counts.get(c.part) || 0) + 1);
+    const counts = partCounts(d, (id) => app.doc(id));
     return [...counts].map(([pid, qty]) => ({ part: app.doc(pid), result: app.results.get(pid), qty })).filter((x) => x.part && x.result);
   }
   return [];

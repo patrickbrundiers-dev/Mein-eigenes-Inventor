@@ -85,3 +85,33 @@ test("Biegerohr in der Zuschnittliste: Abwicklungslänge, Kennzeichen gebogen", 
   assert.equal(b.qty, 2);
   assert.equal(endsText(b), "gerade, gebogen 2× R 100");
 });
+
+test("Excel-Export: gültiges ZIP mit Blättern, Zahlen als Zahlen (MegaCAD-Abgleich M18)", async () => {
+  const { buildXlsx, crc32, colName } = await import("../src/core/xlsx.js");
+  const { listSheets } = await import("../src/core/lists.js");
+  assert.equal(colName(0), "A"); assert.equal(colName(25), "Z"); assert.equal(colName(26), "AA"); assert.equal(colName(701), "ZZ");
+  assert.equal(crc32(new TextEncoder().encode("123456789")), 0xcbf43926);
+  const cut = cutListRows([src("Rahmen", [member("QR 40x40x3", 1000, 45, 45), member("QR 40x40x3", 1000, 45, 45)])]);
+  const sheets = listSheets({ cut, welds: [{ pos: 1, kind: "kehl", a: 4, side: "pfeil", around: true, field: false, count: 2, length: 320, mass: 0.04, parts: "Rahmen" }], bom: [] });
+  assert.deepEqual(sheets.map((s) => s.name), ["Zuschnitt", "Summen je Profil", "Nahtliste"]);
+  assert.equal(sheets[0].rows[1][3], 1000, "Länge als Zahl");
+  const nested = listSheets({ structure: [{ level: "1", name: "Feld", kind: "assembly", qty: 2, total: 2 }, { level: "1.1", name: "Pfosten", kind: "part", qty: 3, total: 6 }],
+    modular: [{ name: "Anlage", rows: [{ pos: 1, name: "Feld", kind: "assembly", qty: 2 }] }, { name: "Feld", rows: [{ pos: 1, name: "Pfosten", kind: "part", qty: 3 }] }] });
+  assert.deepEqual(nested.map((s) => s.name), ["Strukturstückliste", "Baukastenstückliste"]);
+  assert.deepEqual(nested[0].rows[2], ["1.1", "Pfosten", null, "Bauteil", 3, 6]);
+  assert.equal(nested[1].rows.length, 4, "Kopf, Anlage, Leerzeile, Feld");
+  const bytes = buildXlsx(sheets);
+  // ZIP lesen: lokale Kopfzeilen, CRC je Eintrag prüfen
+  const dv = new DataView(bytes.buffer), names = [];
+  for (let p = 0; dv.getUint32(p, true) === 0x04034b50;) {
+    const size = dv.getUint32(p + 18, true), nlen = dv.getUint16(p + 26, true);
+    const name = new TextDecoder().decode(bytes.subarray(p + 30, p + 30 + nlen));
+    const data = bytes.subarray(p + 30 + nlen, p + 30 + nlen + size);
+    assert.equal(crc32(data), dv.getUint32(p + 14, true), "CRC " + name);
+    names.push(name);
+    if (name === "xl/worksheets/sheet1.xml") assert.match(new TextDecoder().decode(data), /<c r="D2"><v>1000<\/v><\/c>/);
+    p += 30 + nlen + size;
+  }
+  assert.ok(names.includes("[Content_Types].xml") && names.includes("xl/worksheets/sheet3.xml"));
+  assert.equal(dv.getUint32(bytes.length - 22, true), 0x06054b50, "Endsatz");
+});

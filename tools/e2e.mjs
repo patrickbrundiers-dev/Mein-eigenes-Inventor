@@ -373,6 +373,27 @@ try {
   step("Kollisionsprüfung", col.ok === 0 && col.dlg && !col.open && col.bad.join() === "c1-c2,c1-c3", JSON.stringify(col));
   await shot("17b-abhaengigkeit");
 
+  // Unterbaugruppen (MegaCAD-Abgleich M19): Beispiel-Baugruppe zweimal in eine neue Baugruppe, Mengen verdoppeln sich
+  const inner = await evalApp(() => window.__werkcad.activeId);
+  await evalApp((id) => {
+    const a = window.__werkcad, top = a.newAssembly();
+    a.edit("Bauteil einfügen", () => { top.components.push({ id: "u1", part: id, name: "Feld:1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true }, { id: "u2", part: id, name: "Feld:2", pos: [0, 1500, 0], rot: [0, 0, 0] }); });
+  }, inner);
+  await idle(120000);
+  await shot("17c-unterbaugruppe");
+  const sub = await evalApp(async (id) => {
+    const a = window.__werkcad, top = a.activeDoc(), innerDoc = a.doc(id);
+    const groups = []; a.viewer.root.traverse((o) => { if (o.userData?.leaf) groups.push(o.userData.comp); });
+    const orig = a.files.saveBinary; let text = "";
+    a.files.saveBinary = async (buf) => { text = new TextDecoder().decode(buf); };
+    try { await a.files.exportListsXlsx(); } finally { a.files.saveBinary = orig; }
+    const tree = [...document.querySelectorAll("#browser .node .label")].map((n) => n.textContent);
+    return { leaves: groups.length, expected: 2 * innerDoc.components.filter((c) => !c.hidden).length, sheets: [...text.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1]), nested: tree.filter((t) => t === innerDoc.components[0].name).length, top: top.kind };
+  }, inner);
+  step("Unterbaugruppe", sub.leaves === sub.expected && sub.sheets.includes("Strukturstückliste") && sub.sheets.includes("Baukastenstückliste") && sub.nested >= 2, JSON.stringify(sub));
+  await evalApp((id) => window.__werkcad.openDoc(id), inner);
+  await idle();
+
   // Exporte als Download: STEP + Zuschnittliste, Platten-DXF
   const downloads = [];
   page.on("download", (dl) => downloads.push(dl));
@@ -570,6 +591,16 @@ try {
   await idle(120000);
   const tr1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { holme: r.bodies.filter((b) => /^Holm/.test(b.name)).length, ok: Object.values(r.status).every((s) => s.ok) }; });
   step("Treppen-Generator", tr0.ok && tr0.n === 17 && /16 Steigungen/.test(tr0.info) && tr1.ok && tr1.holme === 2, JSON.stringify({ tr0, tr1 }));
+
+  // Listen als Excel (MegaCAD-Abgleich M18): Arbeitsmappe der Treppe abfangen und prüfen
+  const xl = await evalApp(async () => {
+    const a = window.__werkcad, orig = a.files.saveBinary;
+    let got = null;
+    a.files.saveBinary = async (buf, name) => { got = { n: buf.length, name, head: Array.from(buf.slice(0, 2)), text: new TextDecoder().decode(buf) }; };
+    try { await a.files.exportListsXlsx(); } finally { a.files.saveBinary = orig; }
+    return got && { n: got.n, name: got.name, pk: got.head.join(), sheets: [...got.text.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1]) };
+  });
+  step("Listen als Excel", !!xl && xl.pk === "80,75" && /_Listen\.xlsx$/.test(xl.name) && xl.sheets.join() === "Zuschnitt,Summen je Profil", JSON.stringify(xl));
 
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));

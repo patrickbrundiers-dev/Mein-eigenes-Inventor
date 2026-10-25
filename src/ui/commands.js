@@ -12,6 +12,7 @@ export function commandRunners(app) {
     "file.save": () => app.files.save(false),
     "file.saveAs": () => app.files.save(true),
     "file.newPart": () => app.newPart(),
+    "file.listsXlsx": () => app.files.exportListsXlsx(),
     "file.newAssembly": () => app.newAssembly(),
     "file.importStep": () => app.files.importStepAsPart(),
     "app.settings": () => app.props.settingsDialog(),

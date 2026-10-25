@@ -104,14 +104,34 @@ export class Tree {
     if (!part.features.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Mit »Skizze erstellen« oder »Rohr / Profil« beginnen."));
     return ul;
   }
+  /** Inhalt einer Unterbaugruppe, nur zur Ansicht (bearbeitet wird sie in ihrem eigenen Dokument) */
+  subComponentList(asm, depth) {
+    const app = this.app;
+    const ul = h("ul");
+    for (const c of asm.components || []) {
+      const p = app.doc(c.part);
+      const sub = p?.kind === "assembly" && depth < 8;
+      const li = h("li");
+      ul.append(li);
+      li.append(this.node({
+        label: c.name || p?.name || "?", ic: p?.kind === "assembly" ? "assembly" : "part", cls: (c.hidden ? "suppressed" : "") + (!p ? " err" : ""),
+        onDbl: () => p && app.openDoc(p.id),
+      }));
+      if (sub) li.append(this.subComponentList(p, depth + 1));
+    }
+    return ul;
+  }
   componentList(asm) {
     const app = this.app;
     const ul = h("ul");
     for (const c of asm.components) {
       const p = app.doc(c.part);
       const sel = app.sel?.type === "component" && app.sel.id === c.id;
-      ul.append(h("li", {}, this.node({
-        label: c.name || p?.name || "?", ic: "part", cls: (sel ? "sel" : "") + (c.hidden ? " suppressed" : "") + (!p ? " err" : ""), meta: c.fixed ? "fixiert" : "",
+      const sub = p?.kind === "assembly";
+      const li = h("li");
+      ul.append(li);
+      li.append(this.node({
+        label: c.name || p?.name || "?", ic: sub ? "assembly" : "part", cls: (sel ? "sel" : "") + (c.hidden ? " suppressed" : "") + (!p ? " err" : ""), meta: [sub ? "Unterbaugruppe" : "", c.fixed ? "fixiert" : ""].filter(Boolean).join(" · "),
         onClick: () => { app.sel = { type: "component", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
         onDbl: () => p && app.openDoc(p.id),
         onMenu: (e) => contextMenu(e.clientX, e.clientY, [
@@ -122,7 +142,8 @@ export class Tree {
           "-",
           { label: "Entfernen", icon: "trash", run: () => app.props.deleteComponent(c.id) },
         ]),
-      })));
+      }));
+      if (sub) li.append(this.subComponentList(p, 1));
     }
     if (!asm.components.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Mit »Platzieren« Bauteile einfügen."));
     const cons = asm.constraints || [];

@@ -129,6 +129,8 @@ test("Prüfung: Hinweise, mit denen sich das Projekt öffnen lässt", () => {
   assert.deepEqual(codes(minimal({ docs: [{ id: "z", kind: "drawing", views: [], dims: [], source: { kind: "part", id: "weg" } }] })), ["warning:zeichnung-quelle"]);
   // Verweis auf etwas, das kein Bauteil ist, zählt auch als fehlend
   assert.deepEqual(codes(minimal({ docs: [{ id: "b", kind: "assembly", components: [{ id: "c", part: "b" }] }] })), ["warning:komponente-verweis"]);
+  // Unterbaugruppe (M19): Verweis auf eine andere Baugruppe ist gültig
+  assert.deepEqual(codes(minimal({ docs: [{ id: "b", kind: "assembly", components: [{ id: "c", part: "u" }] }, { id: "u", kind: "assembly", components: [] }] })), []);
 });
 
 test("Öffnen: Strukturfehler → verständliche Meldung, Warnungen → öffnen", () => {
