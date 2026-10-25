@@ -414,7 +414,7 @@ const PT_KEYS = ["p1", "p2", "c", "a", "p"];
  * op: { kind: "move", dx, dy } | { kind: "rotate", cx, cy, angle (°) } | { kind: "scale", cx, cy, factor }, copy.
  * Ohne Kopie werden die Punkte selbst bewegt: fixierte Punkte bleiben am neuen Ort fixiert, der Skizzenursprung
  * bleibt stehen (das Element löst sich von ihm), beim Drehen fallen horizontal/vertikal der bewegten Linien weg,
- * beim Skalieren wachsen Zahlenmaße innerhalb der Auswahl mit. Kopien sind frei (ohne Bedingungen).
+ * beim Skalieren wachsen Zahlenmaße (auch Versatz) innerhalb der Auswahl mit; Achswinkel gedrehter Ellipsen fallen weg. Kopien sind frei (ohne Bedingungen).
  */
 export function transformEntities(sk, entityIds, op, { uid }) {
   const ents = entityIds.map((id) => sk.entities.find((e) => e.id === id)).filter((e) => e && !e.origin && entityPoints(e).length);
@@ -469,9 +469,9 @@ export function transformEntities(sk, entityIds, op, { uid }) {
   const inSel = (c) => [c.p, c.q].filter(Boolean).every((x) => moved.has(x)) && [c.e, c.e1, c.e2].filter(Boolean).every((x) => ids.has(x));
   sk.constraints = sk.constraints.filter((c) => {
     if (c.type === "fix" && moved.has(c.p)) { const p = P.get(c.p); c.x = p.x; c.y = p.y; }
-    if (op.kind === "rotate" && (c.type === "horizontal" || c.type === "vertical") && inSel(c)) return false;
+    if (op.kind === "rotate" && (c.type === "horizontal" || c.type === "vertical" || c.type === "axisAngle") && inSel(c)) return false;
     if (op.kind === "rotate" && c.type === "distance" && c.dir && inSel(c)) delete c.dir;
-    if (k !== 1 && ["distance", "length", "diameter", "radius", "semiAxis"].includes(c.type) && inSel(c) && /^\s*\d+([.,]\d+)?\s*$/.test(String(c.value))) {
+    if (k !== 1 && ["distance", "length", "diameter", "radius", "semiAxis", "offset"].includes(c.type) && inSel(c) && /^\s*\d+([.,]\d+)?\s*$/.test(String(c.value))) {
       c.value = String(Math.round(Number(String(c.value).replace(",", ".")) * k * 1e6) / 1e6);
     }
     return true;

@@ -1657,6 +1657,8 @@ export class Props {
     const c = this.selectedComponent(kind === "move" ? "verschoben werden soll" : "gedreht werden soll");
     if (!c) return;
     if (c.fixed) return toast(`${c.name} ist fixiert – zuerst »Fixiert« abwählen`);
+    // Gelenkachse liegt in Baugruppen-Koordinaten: Verschieben/Drehen würde sie von der Komponente trennen
+    if (c.joint) return toast(`${c.name} hat ein ${jointLabel(c.joint)} – Lage über das Gelenk ändern oder das Gelenk zuerst entfernen`);
     const scope = this.scope();
     const inputs = kind === "move" ? [["dx", "X"], ["dy", "Y"], ["dz", "Z"]].map(([k, l]) => [k, l, h("input", { class: "inp", value: "0", spellcheck: "false" })]) : [["angle", "Winkel °", h("input", { class: "inp", value: "90", spellcheck: "false" })]];
     const axis = h("select", { class: "inp" }, ...["X", "Y", "Z"].map((a) => h("option", { value: a, selected: a === "Z" }, a)));

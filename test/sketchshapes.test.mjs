@@ -279,6 +279,14 @@ test("Verschieben, Drehen, Skalieren, Kopieren (Inventor Move/Rotate/Scale/Copy)
   const kk = k.entities.find((e) => e.id === out.entities[0]);
   near(P(k, kk.c).y, 40); near(P(k, "c").y, 10);
   assert.ok(solveSketch(k).ok);
+  // Versatz wächst beim Skalieren mit, Achswinkel einer gedrehten Ellipse fällt weg
+  const o = { points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 10, y: 0 }, { id: "c", x: 0, y: 5 }, { id: "d", x: 10, y: 5 }, { id: "ec", x: 30, y: 0 }, { id: "ea", x: 40, y: 0 }],
+    entities: [{ id: "L1", type: "line", p1: "a", p2: "b" }, { id: "L2", type: "line", p1: "c", p2: "d" }, { id: "E", type: "ellipse", c: "ec", a: "ea", r: 4 }],
+    constraints: [{ id: "of", type: "offset", e1: "L1", e2: "L2", k: 1, value: "5" }, { id: "aa", type: "axisAngle", e: "E", value: "0" }] };
+  transformEntities(o, ["L1", "L2"], { kind: "scale", cx: 0, cy: 0, factor: 3 }, { uid });
+  assert.equal(o.constraints.find((c) => c.id === "of").value, "15");
+  transformEntities(o, ["E"], { kind: "rotate", cx: 30, cy: 0, angle: 45 }, { uid });
+  assert.ok(!o.constraints.some((c) => c.id === "aa"));
   assert.throws(() => transformEntities(base(), [], { kind: "move", dx: 1, dy: 0 }, { uid }), /wählen/);
   assert.throws(() => transformEntities(base(), ["L"], { kind: "scale", cx: 0, cy: 0, factor: 0 }, { uid }), /Faktor/);
 });
