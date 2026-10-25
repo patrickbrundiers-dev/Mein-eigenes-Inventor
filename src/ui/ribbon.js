@@ -3,6 +3,7 @@ import { h, icon, toast, closeMenu } from "./dom.js";
 import { catalogToDims } from "../core/sections.js";
 import { defaultKnickrahmen } from "../core/knickrahmen.js";
 import { DISPLAY } from "../core/settings.js";
+import { commandDef, inScope } from "../core/commands.js";
 
 export class Ribbon {
   constructor(app) {
@@ -28,7 +29,7 @@ export class Ribbon {
         if (!sk) return;
         const r = app.results.get(app.activeId);
         const hasBody = r?.bodies?.length > 0;
-        app.addFeature({ type: "extrude", sketch: sk, distance: "10", mode: "normal", op: hasBody ? "join" : "join" });
+        app.addFeature({ type: "extrude", sketch: sk, distance: String(app.prefs.get("werkzeuge.std.extrusion") ?? 10), mode: "normal", op: hasBody ? "join" : "join" });
       },
       cutExtrude: () => {
         const sk = needSketch();
@@ -157,7 +158,7 @@ export class Ribbon {
             T("circle", "Kreis", "circle"), T("arc3", "Bogen", "arc"), T("arcc", "Bogen Mitte", "arcc"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"), T("point", "Punkt", "point"),
           ] },
           { label: "Ändern", buttons: [T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"), T("sfillet", "Rundung", "fillet"), T("offset", "Versatz", "offset"), T("mirror", "Spiegeln", "mirror")] },
-          { label: "Muster", buttons: [T("pattern", "Rechteckmuster", "pattern"), T("cpattern", "Kreismuster", "cpattern")] },
+          { label: "Muster", buttons: [T("pattern", "Rechteckmuster", "pattern"), T("cpattern", "Kreismuster", "circpattern")] },
           { label: "Übernehmen", buttons: [T("project", "Kante projizieren", "project"), B("constr", "Konstruktion", "construct", { on: !!sk.construction, run: () => sk.toggleConstruction() })] },
           { label: "Bemaßung", buttons: [T("dimension", "Bemaßung", "dimension")] },
           { label: "Abhängigkeiten", small: true, buttons: [
@@ -235,6 +236,19 @@ export class Ribbon {
     return { id: "export", label: "Export", groups };
   }
 
+  /** Schnellzugriff: angeheftete Befehle (Einstellung werkzeuge.schnellzugriff) */
+  quickAccess() {
+    const app = this.app;
+    const ids = app.prefs.get("werkzeuge.schnellzugriff") || [];
+    if (!ids.length) return null;
+    return h("div", { class: "rb-qa", role: "toolbar", "aria-label": "Schnellzugriff" }, ...ids.map((id) => {
+      const c = commandDef(id);
+      if (!c) return null;
+      const k = this.kbd(id);
+      return h("button", { class: "rb-qa-btn", "data-cmd": id, title: c.label + (k ? ` (${k})` : ""), disabled: !inScope(c, app.mode), onclick: () => app.commands.exec(id) }, c.label.replace(/^Skizze: /, ""));
+    }));
+  }
+
   render() {
     const app = this.app;
     const mode = app.mode;
@@ -248,6 +262,7 @@ export class Ribbon {
       h("button", { class: "rb-search", title: `Befehl suchen (${this.kbd("app.search") || "Strg+K"})`, onclick: () => app.commands.exec("app.search") }, icon("search"), h("span", {}, "Befehl suchen"), this.kbd("app.search") ? h("span", { class: "kbd" }, this.kbd("app.search")) : null),
       h("button", { class: "icon-btn", title: "Rückgängig (Strg+Z)", disabled: !app.undoStack.length, onclick: () => app.undo() }, icon("undo")),
       h("button", { class: "icon-btn", title: "Wiederholen (Strg+Y)", disabled: !app.redoStack.length, onclick: () => app.redo() }, icon("redo")),
+      this.quickAccess(),
       this.docLabel = h("div", { class: "rb-doc" }));
     this.renderDocLabel();
     const tab = tabs.find((t) => t.id === this.tab);

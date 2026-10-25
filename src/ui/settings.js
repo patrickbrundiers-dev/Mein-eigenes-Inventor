@@ -2,7 +2,7 @@
 import { h, modal, toast } from "./dom.js";
 import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings } from "../core/settings.js";
 import { MATERIALS } from "../core/sections.js";
-import { keymapEditor } from "./commands.js";
+import { keymapEditor, quickAccessEditor } from "./commands.js";
 
 const STATUS = { aktiv: "", teilweise: "teilweise", geplant: "geplant" };
 
@@ -93,7 +93,7 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
 /** Zusatzinhalte je Kategorie, die keine einfachen Optionen sind */
 function extras(app, cat) {
   if (cat === "updates") return [updatesSection(app)];
-  if (cat === "werkzeuge") return [keymapEditor(app)];
+  if (cat === "werkzeuge") return [quickAccessEditor(app), keymapEditor(app)];
   if (cat === "material") {
     return [h("table", { class: "grid" },
       h("thead", {}, h("tr", {}, h("th", {}, "Werkstoff"), h("th", {}, "Dichte g/cm³"))),

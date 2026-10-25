@@ -18,7 +18,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Anpassbare Tastaturkürzel | vorhanden | Befehlsliste `src/core/commands.js`, Editor im Einstellungscenter mit Konfliktprüfung je Arbeitsbereich; Esc, Entf, Ziffern/Komma/Tab bleiben fest (Stufe 3) |
 | Skalierbare Oberfläche | vorhanden (neu) | Einstellung „Oberflächengröße“, Desktop |
 | Protokollfenster / Fehlerdetails | teilweise | Fehlerprotokoll als Datei (`electron/log.cjs`), Ordner aus dem Center öffenbar |
-| Konfigurierbare Werkzeugleisten, gespeicherte Panelanordnung | fehlt | P3, erst nach Werkzeugsuche |
+| Konfigurierbare Werkzeugleisten, gespeicherte Panelanordnung | teilweise | Stufe 15: Schnellzugriffsleiste (anheften in der Befehlssuche, ordnen im Center); Menüband/Panels selbst anordnen: P3 |
 
 ## Auswahl, Navigation, Ansicht (Masterplan 3)
 
@@ -27,14 +27,14 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Auswahl Fläche/Kante, Mehrfachauswahl Strg/Umschalt | vorhanden | `App.viewerClick` |
 | Auswahlfilter (alles / nur Flächen / nur Kanten) | vorhanden | Ansicht → Auswahl, Anzeige in der Statusleiste (Stufe 5) |
 | Fensterauswahl in der Skizze, Alles auswählen | vorhanden | Stufe 9: im Leeren ziehen – nach rechts ganz innen, nach links berührend; Strg+A in der Skizze |
-| Fensterauswahl im 3D-Fenster, Auswahl invertieren | fehlt | geplant als Stufe 13 |
+| Fensterauswahl im 3D-Fenster, Auswahl invertieren | vorhanden | Stufe 13: im Bauteil links ziehen (nach rechts ganz innen, nach links berührend), folgt dem Auswahlfilter; Strg+A alles, Strg+I umkehren; verdeckte Elemente zählen mit; Baugruppe: Einzelauswahl wie bisher |
 | Ausblenden/Isolieren | vorhanden | Rechtsklick: Körper bzw. Komponente ausblenden/isolieren, „Alle einblenden“; nur Anzeige, keine Modelländerung (Stufe 5) |
 | Zoom auf alles | vorhanden | F6, `Viewer.fit` |
 | Zoom auf Auswahl | vorhanden | Ansicht → Zoom, Kontextmenü, Leiste unten rechts (Stufe 2) |
 | Ansichten Iso, Vorne, Oben, Rechts | vorhanden | `VIEWS` in `viewer.js` |
 | Ansichten Hinten, Links, Unten | vorhanden | Menüband Ansicht → Ausrichtung (Stufe 2) |
 | Normal zur gewählten Fläche | vorhanden | ebene Fläche wählen → Ansicht → Normal zur Fläche (Stufe 2) |
-| Orbit, Pan, Zoom, ViewCube | vorhanden | OrbitControls, Maustasten jetzt einstellbar |
+| Orbit, Pan, Zoom, ViewCube | vorhanden | OrbitControls, Maustasten einstellbar; Drehen um den Modellpunkt unter dem Mauszeiger (#62, abschaltbar) |
 | Perspektive | vorhanden | Umschalter + Einstellung; Skizzieren immer orthogonal (Stufe 2) |
 | Schnittansicht/Clipping im 3D-Fenster | vorhanden | Schnitt X/Y/Z mit Schieber, Seite wechseln; nur Anzeige, Schnittflächen nicht gefüllt (Stufe 2) |
 | Darstellungsmodi (schattiert, mit Kanten, Drahtmodell, transparent) | vorhanden | Auswahl folgt dem Sichtbaren (Drahtmodell: nur Kanten wählbar) (Stufe 2) |
@@ -57,7 +57,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Muster (rechteckig, kreisförmig) | vorhanden | Stufe 12: Kopien über Bedingung »pattern« an die Originale gebunden; Abstände/Winkelschritt in den Eigenschaften einer Kopie änderbar, »Muster auflösen« |
 | Projizieren, Konstruktionslinien | vorhanden | |
 | 12 Bedingungsarten, Bemaßung mit Formeln | vorhanden | `solver.js` |
-| Automatische Bedingungen beim Zeichnen | teilweise | horizontal/vertikal, auf Linie/Kreis, Mittelpunkt |
+| Automatische Bedingungen beim Zeichnen | vorhanden | horizontal/vertikal, auf Linie/Kreis, Mittelpunkt; Stufe 14: parallel/senkrecht, tangential am Bogenende, gleich lang/gleicher Radius (`src/core/autoconstraints.js`); Strg unterdrückt, je Art abschaltbar |
 | Raster, Rasterfang, Fangradius | vorhanden | Rasterweite und Fangradius jetzt einstellbar |
 | Status unter-/vollständig bestimmt | vorhanden | Freiheitsgrade im HUD |
 | Überbestimmt / widersprüchlich mit Ursache | vorhanden | Stufe 6: HUD nennt die nicht erfüllbaren Bedingungen, Maße/Symbole rot |
@@ -86,9 +86,9 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 |---|---|---|
 | A Allgemein | teilweise | Autosave-Wartezeit, Lösch-Rückfrage, Dezimalstellen; Sprache/Ordner geplant |
 | B Dokument und Modell | fehlt | gehört in die Projektdatei; erst mit Vorlagen |
-| C Skizzen | teilweise | Rasterfang, Rasterweite, Fangradius, Symbole |
+| C Skizzen | teilweise | Rasterfang, Rasterweite, Fangradius, Symbole, automatische Bedingungen je Art |
 | D 3D-Ansicht | teilweise | Projektion, Darstellungsmodus, Qualität, Maus, Zoom/Drehen, Raster, ViewCube, Farben |
-| E Werkzeuge und Tastatur | teilweise | Kürzel verwalten, Konflikte, Werkzeugsuche; Werkzeugleisten/Standardwerte je Werkzeug geplant |
+| E Werkzeuge und Tastatur | teilweise | Kürzel verwalten, Konflikte, Werkzeugsuche, Schnellzugriff, Standardwerte je Werkzeug (Stufe 15); Menüband anordnen geplant |
 | F Kernel | fehlt | bewusst: keine Toleranzen ohne Absicherung |
 | G Materialien | teilweise | eingebaute Liste sichtbar; eigene Werkstoffe P2 |
 | H Blech | fehlt | ADR-0002 |
@@ -118,6 +118,11 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 10 | Messen: Ecken anklicken, Lage und Δ X/Y/Z | Kernel-Test Ecke–Ecke/Ecke–Fläche, Oberflächentest |
 | 11 | Skizze: Verlängern, Teilen | Unit-Test `extendEntity`/`splitEntity`, Oberflächentest |
 | 12 | Skizze: Rechteck- und Kreismuster, Abstände nachträglich änderbar | Unit-Test `patternEntities` (Lage, Freiheitsgrade, Werte ändern), Oberflächentest |
-| 13 (geplant) | 3D-Fensterauswahl nach Auswahlfilter, Auswahl umkehren (Strg+I), Alles auswählen im Modell | Unit-Test Box-Logik, Oberflächentest |
-| 14 (geplant) | Automatische Skizzenbedingungen: parallel, senkrecht, tangential, konzentrisch, gleich; Strg unterdrückt; je Art abschaltbar | Unit-Tests Erkennung, Oberflächentest |
-| 15 (geplant) | Schnellzugriffsleiste (Befehle anheften) und Standardwerte je Werkzeug | Unit-Test Schema/Migration, Oberflächentest |
+| 13 | 3D-Fensterauswahl nach Auswahlfilter, Auswahl umkehren (Strg+I), Alles auswählen im Modell | Unit-Test Box-Logik, Oberflächentest |
+| 14 | Automatische Skizzenbedingungen: parallel, senkrecht, tangential, konzentrisch, gleich; Strg unterdrückt; je Art abschaltbar | Unit-Tests Erkennung, Oberflächentest |
+| 15 | Schnellzugriffsleiste (Befehle anheften) und Standardwerte je Werkzeug | Unit-Test Schema/Migration, Oberflächentest |
+| 16 (geplant) | Bestimmtheit der Skizze farbig (frei/bestimmt/Widerspruch) | Solver-Tests Nullraum, Oberflächentest |
+| 17 (geplant) | Trägheitsmomente aus dem Dreiecksnetz | Kernel-Test Quader/Zylinder/Rohr |
+| 18 (geplant) | Gefüllte Schnittflächen im 3D-Schnitt | Oberflächentest (Pixel) |
+| 19 (geplant) | Ellipse in der Skizze (Solver, Profil, DXF) | Solver-/Kernel-/Oberflächentest |
+| 20 (geplant) | Farbschema hell/dunkel, Werkzeugparameter merken | Unit-Test Schema, Oberflächentest |
