@@ -1,5 +1,6 @@
 // Zeichnungsableitung: Blatt, Ansichten (Projektionsmethode 1 / DIN ISO 5456-2), Bemaßung, Schriftfeld, Export
 import { h, svgEl, toast, modal, promptDialog, fmtNum, downloadBlob } from "./dom.js";
+import { classOf, toleranceText, validateTolerance, TOL_KINDS } from "../core/tolerance.js";
 import { bodiesMass } from "../core/mass.js";
 import { DxfWriter } from "../core/dxf.js";
 import { materialOf, materialList } from "../core/materials.js";
@@ -531,7 +532,7 @@ export class DrawingEditor {
     const g = svgEl("g", { "data-dim": m.id, class: interactive ? "dw-dimgrp" + (this.sel?.type === "dim" && this.sel.id === m.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
     const val = this.dimValue(m);
     const txt = (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m)
-      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? 1) + (m.suffix || "");
+      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + toleranceText(m.tol, val, classOf(d.title?.toleranz), m.kind === "rad" ? "rad" : "lin") + (m.suffix || "");
     const arrowHead = (x, y, ux, uy) => {
       const L = 3, w = 0.9;
       return svgEl("path", { d: `M${r3(x)} ${r3(y)}L${r3(x - ux * L + uy * w)} ${r3(y - uy * L - ux * w)}L${r3(x - ux * L - uy * w)} ${r3(y - uy * L + ux * w)}Z`, fill: "#111a24", stroke: "none" });
@@ -1010,18 +1011,30 @@ export class DrawingEditor {
   async editDimText(id) {
     const d = this.doc;
     const m = d.dims.find((x) => x.id === id);
+    const cls = classOf(d.title?.toleranz);
+    const showTol = () => { const a = document.getElementById("dm-tol")?.value; for (const el of document.querySelectorAll(".dm-tol-f")) el.style.display = el.dataset.art === a ? "" : "none"; };
+    setTimeout(showTol, 0);
     modal({
       title: "Maß bearbeiten",
       body: h("div", {},
         h("div", { class: "field" }, h("label", {}, "Wert"), h("div", {}, fmtNum(this.dimValue(m), 3) + " mm")),
-        h("div", { class: "field" }, h("label", {}, "Nachkommastellen"), h("input", { class: "inp", id: "dm-dec", type: "number", min: 0, max: 3, value: m.decimals ?? 1 })),
-        h("div", { class: "field" }, h("label", {}, "Zusatz (z. B. ±0,1)"), h("input", { class: "inp", id: "dm-suf", value: m.suffix || "" }))),
+        h("div", { class: "field" }, h("label", {}, "Nachkommastellen"), h("input", { class: "inp", id: "dm-dec", type: "number", min: 0, max: 3, value: m.decimals ?? d.nachkomma ?? 1 })),
+        h("div", { class: "field" }, h("label", {}, "Toleranz"), h("select", { class: "inp", id: "dm-tol", onchange: showTol }, ...TOL_KINDS.map((k) => h("option", { value: k.value, selected: (m.tol?.art || "") === k.value }, k.label)))),
+        h("div", { class: "field dm-tol-f", "data-art": "sym" }, h("label", {}, "±"), h("input", { class: "inp", id: "dm-sym", value: m.tol?.art === "sym" ? fmtNum(m.tol.v, 3) : "" })),
+        h("div", { class: "field dm-tol-f", "data-art": "abm" }, h("label", {}, "Oberes Abmaß"), h("input", { class: "inp", id: "dm-o", value: m.tol?.art === "abm" ? fmtNum(m.tol.o, 3) : "" })),
+        h("div", { class: "field dm-tol-f", "data-art": "abm" }, h("label", {}, "Unteres Abmaß"), h("input", { class: "inp", id: "dm-u", value: m.tol?.art === "abm" ? fmtNum(m.tol.u, 3) : "" })),
+        h("div", { class: "field dm-tol-f", "data-art": "pass" }, h("label", {}, "Passung"), h("input", { class: "inp", id: "dm-pass", value: m.tol?.art === "pass" ? m.tol.pass : "", placeholder: "H7" })),
+        h("p", { class: "hint dm-tol-f", "data-art": "allg" }, cls ? `ISO 2768-${cls}: ${toleranceText({ art: "allg" }, this.dimValue(m), cls, m.kind === "rad" ? "rad" : "lin") || "für dieses Maß keine Angabe in der Norm"}` : "Im Schriftfeld steht keine Klasse nach ISO 2768 – es wird nichts angezeigt."),
+        h("div", { class: "field" }, h("label", {}, "Zusatz (frei)"), h("input", { class: "inp", id: "dm-suf", value: m.suffix || "" }))),
       buttons: [{ label: "Löschen", danger: true, run: () => { this.app.edit("Maß löschen", () => { d.dims = d.dims.filter((x) => x.id !== id); }, { rebuild: false }); this.render(); } },
         { label: "Abbrechen" },
         { label: "OK", primary: true, run: () => {
           const dec = Number(document.getElementById("dm-dec").value);
           const suf = document.getElementById("dm-suf").value;
-          this.app.edit("Maß", () => { m.decimals = Math.max(0, Math.min(3, dec)); m.suffix = suf; if (m.auto) m.touched = true; }, { rebuild: false });
+          const val = (id) => document.getElementById(id).value;
+          const r = validateTolerance({ art: val("dm-tol"), v: val("dm-sym"), o: val("dm-o"), u: val("dm-u"), pass: val("dm-pass") });
+          if (!r.ok) { toast(r.error, { kind: "err" }); return false; }
+          this.app.edit("Maß", () => { m.decimals = Math.max(0, Math.min(3, dec)); m.suffix = suf; if (r.value) m.tol = r.value; else delete m.tol; if (m.auto) m.touched = true; }, { rebuild: false });
           this.render();
         } }],
     });

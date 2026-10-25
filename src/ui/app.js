@@ -15,6 +15,7 @@ import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
 import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./dom.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
+import { classText } from "../core/tolerance.js";
 import { newSketch } from "../core/sketch.js";
 import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir } from "../core/geom.js";
 import { flattenAssembly } from "../core/subasm.js";
@@ -134,11 +135,17 @@ export class App {
     if (num) p.number = nextName(num, this.parts().map((d) => d.number).filter(Boolean), { projekt: this.project.name }, this.parts().length + 1);
     return p;
   }
+  /** Allgemeintoleranz und Nachkommastellen neuer Zeichnungen aus den Einstellungen */
+  withDrawingDefaults(d) {
+    d.title.toleranz = classText(this.prefs.get("dokument.toleranzklasse"));
+    d.nachkomma = this.prefs.get("dokument.nachkomma");
+    return d;
+  }
   newAssembly() { return this.addDoc(newAssembly(this.docName("assembly"))); }
   newDrawing(source) {
     const src = source || (this.activeDoc() && this.activeDoc().kind !== "drawing" ? { kind: this.activeDoc().kind, id: this.activeId } : null);
     const name = this.docName("drawing", { quelle: src ? this.doc(src.id).name : "" });
-    const d = newDrawing(name, src);
+    const d = this.withDrawingDefaults(newDrawing(name, src));
     if (src) {
       const sd = this.doc(src.id);
       d.title.benennung = sd.name;
@@ -167,7 +174,7 @@ export class App {
     if (!todo.length) { if (!quiet) toast("Alle Positionen haben schon eine Zeichnung"); return []; }
     this.checkpoint("Einzelteilzeichnungen");
     const made = todo.map((r) => {
-      const d = newDrawing("Zeichnung " + r.part.name, { kind: "part", id: r.part.id });
+      const d = this.withDrawingDefaults(newDrawing("Zeichnung " + r.part.name, { kind: "part", id: r.part.id }));
       d.title.benennung = r.part.name;
       d.title.nummer = r.part.number || "";
       d.pendingAutoViews = true;
