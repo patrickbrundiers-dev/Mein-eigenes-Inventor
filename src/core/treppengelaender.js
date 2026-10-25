@@ -18,10 +18,11 @@ export function railAlong(path, o, label) {
     if (L < 1e-6) throw new Error(`${label}: senkrechter Abschnitt in der Lauflinie`);
     segs.push({ A, L, d: [(B[0] - A[0]) / L, (B[1] - A[1]) / L], slope: (B[2] - A[2]) / L });
   }
-  // Pfostenstellen je Abschnitt (Plan-Abstand ≤ postMax), Knicke nur einmal; zu dicht stehende entfallen
+  // Pfostenstellen je Abschnitt (Abstand entlang des Handlaufs ≤ postMax, auf schrägen Läufen also die wahre Länge),
+  // Knicke nur einmal; zu dicht stehende entfallen
   const posts = [];
   for (const [i, sg] of segs.entries()) {
-    const n = Math.max(1, Math.ceil(sg.L / o.postMax - 1e-9));
+    const n = Math.max(1, Math.ceil((sg.L * Math.hypot(1, sg.slope)) / o.postMax - 1e-9));
     sg.ts = [];
     for (let k = 0; k <= n; k++) {
       const t = (sg.L * k) / n;

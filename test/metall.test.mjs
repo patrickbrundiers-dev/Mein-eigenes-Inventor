@@ -493,3 +493,16 @@ test("Generator-Skizze: Ansicht und Maße je Generator, Maße gehören zu Parame
   assert.equal(g.genValues("treppe", { form: "L" }).gel, "keine");
   assert.equal(g.genValues("treppe", g.defaultGenerator("treppe").params).gel, "beide");
 });
+
+test("Treppengeländer: Pfostenabstand entlang des schrägen Handlaufs ≤ Höchstmaß", async () => {
+  const g = await import("../src/core/generator.js");
+  const { evaluate } = await import("../src/core/expr.js");
+  const f = g.defaultGenerator("treppe");
+  const p = g.resolveGenParams("treppe", f.params, (x) => evaluate(String(x), {}));
+  const plan = g.GENERATORS.treppe.plan(p);
+  const posts = plan.members.filter((m) => /^Geländer rechts Pfosten/.test(m.name)).map((m) => m.b);
+  for (let i = 1; i < posts.length; i++) {
+    const [a, b] = [posts[i - 1], posts[i]];
+    assert.ok(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) <= 1200 + 1e-6, `Feld ${i}`);
+  }
+});
