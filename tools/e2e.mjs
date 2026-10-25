@@ -950,6 +950,44 @@ try {
     await shot(file);
   }
   step("Stahlbau-Generatoren", Object.values(stb).every((x) => x.ok && x.norm > 0) && stb.Rahmenecke.norm === 24 && stb.Windverband.norm === 2, JSON.stringify(stb));
+  // Gestell wie in Inventor: Skelett-Bauteil → Gestell einfügen (Menüband) → je Stab ein Bauteil, Gehrung per Klick, Gestell-Info
+  await evalApp(() => {
+    const a = window.__werkcad, src = a.doc("beispiel_rahmen"), p = a.newPart("Gestell-Skelett");
+    p.params = JSON.parse(JSON.stringify(src.params));
+    p.features = [JSON.parse(JSON.stringify(src.features.find((f) => f.type === "sketch")))];
+    a.changed();
+  });
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Gestell einfügen$/ }).click();
+  await page.locator(".dialog .btn.primary", { hasText: "Einfügen" }).click();
+  await idle(180000);
+  const gs = async () => evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc(), parts = [...new Set(asm.components.map((c) => c.part))].map((id) => a.doc(id));
+    const st = parts.flatMap((p) => Object.values(a.results.get(p.id)?.status || {}));
+    const lens = parts.map((p) => Math.round(a.results.get(p.id)?.bodies?.[0]?.meta?.length || 0)).sort((x, y) => x - y);
+    return { gestell: !!asm.gestell, members: asm.gestell?.members.length, comps: asm.components.length, parts: parts.length, ok: st.length > 0 && st.every((x) => x.ok), lens, joints: asm.gestell?.joints.length, sketches: a.viewer.sketchGroup?.children?.length ?? null };
+  });
+  const gs0 = await gs();
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20o-gestell");
+  // Eckverbindung statt Gehrung zwischen Stab 1 und 2: Werkzeug starten, beide Stäbe »anklicken«
+  await evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc();
+    const comp = (no) => asm.components.find((c) => c.genKey && c.name.endsWith(" " + no));
+    a.ribbon.run("gestellCorner");
+    a.gestellPick({ key: "comp:" + comp(1).id });
+    a.gestellPick({ key: "comp:" + comp(2).id });
+  });
+  await idle(180000);
+  const gs1 = await gs();
+  await page.locator("#ribbon button", { hasText: /^Gestell-Info$/ }).click();
+  await page.waitForSelector(".dialog table.grid tbody tr", { timeout: 20000 });
+  const infoRows = await page.locator(".dialog table.grid tbody tr").count();
+  await shot("20p-gestell-info");
+  await page.locator(".dialog .btn", { hasText: "Schließen" }).click();
+  step("Gestell wie Inventor", gs0.gestell && gs0.sketches > 0 && gs0.members === 5 && gs0.comps === 5 && gs0.parts === 3 && gs0.ok && gs0.lens[0] === 560 && gs0.lens.at(-1) === 1040
+    && gs1.ok && gs1.joints === 1 && gs1.parts >= 4 && infoRows === 5, JSON.stringify({ gs0, gs1, infoRows }));
   // Kantteil (MegaCAD-Abgleich M17): U-Profil aus Blech, Abwicklung als DXF
   await evalApp(() => window.__werkcad.newPart("Kantteil"));
   await idle();

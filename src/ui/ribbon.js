@@ -10,6 +10,7 @@ import { defaultKantteil } from "../core/blech.js";
 import { defaultPlatte, defaultRippe } from "../core/anschluss.js";
 import { DISPLAY } from "../core/settings.js";
 import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generator.js";
+import { insertGestellDialog, startGestellTool, changeMemberDialog, lengthenDialog, gestellInfoDialog } from "./gestell.js";
 import { evaluate } from "../core/expr.js";
 import { commandDef, inScope } from "../core/commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
@@ -69,6 +70,16 @@ export class Ribbon {
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
         app.addFeature(defaultPlatte(t));
       },
+      // Gestell (Inventor Konstruktion → Gestell), siehe src/ui/gestell.js
+      gestellInsert: () => insertGestellDialog(app),
+      gestellChange: () => changeMemberDialog(app),
+      gestellMiter: () => startGestellTool(app, "gehrung"),
+      gestellCorner: () => startGestellTool(app, "ecke"),
+      gestellTrim: () => startGestellTool(app, "stutzen"),
+      gestellNotch: () => startGestellTool(app, "nuten"),
+      gestellLength: () => lengthenDialog(app),
+      gestellReuse: () => startGestellTool(app, "reuse"),
+      gestellInfo: () => gestellInfoDialog(app),
       gelaender: () => this.addGenerator("gelaender"),
       tor: () => this.addGenerator("tor"),
       schiebetor: () => this.addGenerator("schiebetor"),
@@ -226,7 +237,7 @@ export class Ribbon {
           { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch")] },
           { label: "Arbeitselemente", buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
           { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper"), B("kantteil", "Kantteil", "kantteil"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil")] },
-          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
+          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame")] },
           { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
           { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
@@ -272,6 +283,20 @@ export class Ribbon {
           { label: "Komponente", buttons: [B("place", "Platzieren", "place"), B("normteilAsm", "Normteil", "normteil"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() })] },
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon")] },
           { label: "Stahlbau", buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband")] },
+          { label: "Gestell", small: true, buttons: (() => {
+            const g = !!app.activeDoc()?.gestell, on = (t) => app.pick?.kind === "gestell" && app.pick.tool === t;
+            return [
+              B("gestellInsert", "Gestell einfügen", "frame"),
+              B("gestellChange", "Ändern", "edit", { disabled: !g }),
+              B("gestellMiter", "Gehrung", "frame", { disabled: !g, on: on("gehrung") }),
+              B("gestellCorner", "Eckverbindung", "frame", { disabled: !g, on: on("ecke") }),
+              B("gestellTrim", "Auf Gestell stutzen", "trim", { disabled: !g, on: on("stutzen") }),
+              B("gestellNotch", "Nuten", "cut", { disabled: !g, on: on("nuten") }),
+              B("gestellLength", "Verlängern/Kürzen", "extend", { disabled: !g }),
+              B("gestellReuse", "Wiederverwenden", "copy", { disabled: !g, on: on("reuse") }),
+              B("gestellInfo", "Gestell-Info", "info", { disabled: !g }),
+            ];
+          })() },
           { label: "Positionieren", buttons: [B("align", "Fläche an Fläche", "align", { on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "align", { on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" })] },
           { label: "Listen", buttons: [B("bom", "Stückliste", "bom"), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() })] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() })] },
