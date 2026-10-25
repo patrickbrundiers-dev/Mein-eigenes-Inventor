@@ -372,3 +372,23 @@ test("Kantteil: Mittellinie aus Außenmaßen, Abwicklung über Biegezugabe, Umri
   assert.ok((dxf.match(/\nBIEGUNG\r?\n/g) || []).length >= 3, "Layer-Tabelle + 2 Biegelinien");
   assert.match(dxf, /90%%d auf R2/);
 });
+
+test("Fotodarstellung: Oberflächen je Werkstoff und Körperart, Bühne aus der Inhaltsbox (MegaCAD-Abgleich M22)", async () => {
+  const { photoSurface, photoStage } = await import("../src/core/rendering.js");
+  const { MATERIALS } = await import("../src/core/sections.js");
+  for (const k of Object.keys(MATERIALS)) {
+    const s = photoSurface(k, null);
+    assert.ok(s.metalness >= 0 && s.metalness <= 1 && s.roughness > 0 && s.roughness <= 1, k);
+  }
+  assert.ok(photoSurface("1.4301").roughness < photoSurface("S235").roughness, "Edelstahl glänzender als Baustahl");
+  assert.equal(photoSurface("PE").metalness, 0);
+  assert.deepEqual(photoSurface("unbekannt"), { ...photoSurface("S235"), label: "unbekannt" });
+  const g = photoSurface("S235", { glass: true });
+  assert.ok(g.opacity < 1 && g.metalness === 0 && g.color);
+  assert.equal(photoSurface("S235", { tread: "holz" }).metalness, 0);
+  assert.ok(photoSurface("S235", { norm: { kind: "mutter" } }).color);
+  const st = photoStage([0, 0, 100], [1000, 500, 300]);
+  assert.ok(st.groundZ < 100 && st.groundZ > 95, "Boden knapp unter dem Modell");
+  assert.deepEqual(st.center, [500, 250, 200]);
+  assert.ok(st.sun[2] > 300 && st.shadowHalf > st.radius && st.shadowFar > 2 * st.radius);
+});

@@ -11,7 +11,7 @@ Der Plan verlangt vor jedem P2-Projekt eine Nutzen-/Kosten-/Risikoentscheidung u
 | FEM/Simulation | gering, Rahmen werden nach Erfahrung dimensioniert | Solver-Lizenz, Validierung, Haftung bei falschen Ergebnissen | zurückgestellt |
 | CAM/CNC-Postprozessor | gering, der Rohrlaser hat eigene Software (STEP/CSV-Import) | ungeprüfte Bahnen sind gefährlich | zurückgestellt; Übergabe bleibt STEP + Zuschnittliste |
 | Verschachtelung | mittel (Materialausnutzung) | Rohrlaser-Software verschachtelt selbst | zurückgestellt |
-| Fotorealistisches Rendering | gering | bremst die CAD-Ansicht | zurückgestellt |
+| Fotorealistisches Rendering | gering | bremst die CAD-Ansicht | ~~zurückgestellt~~ aufgehoben durch [ADR-0006](ADR-0006-fotodarstellung.md) (25.10.2026) |
 | PDM/Cloud/Mehrbenutzer | gering, ein Anwender | Datenschutz, Konflikte, Betrieb eines Servers | zurückgestellt |
 | ERP/MES | gering | Schnittstellenvertrag fehlt | zurückgestellt |
 

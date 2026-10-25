@@ -37,6 +37,7 @@ export const DISPLAY = [
   { value: "schattiert", label: "Schattiert" },
   { value: "draht", label: "Drahtmodell" },
   { value: "transparent", label: "Transparent" },
+  { value: "foto", label: "Fotorealistisch" },
 ];
 const QUAL = [{ value: "grob", label: "Schnell" }, { value: "normal", label: "Normal" }, { value: "fein", label: "Fein" }];
 

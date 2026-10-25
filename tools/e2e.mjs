@@ -668,6 +668,22 @@ try {
   await shot("20o-kantteil");
   step("Kantteil mit Abwicklung", kt.ok && /Abwicklung 172[.,]36 × 1000 mm/.test(kt.info) && /_2mm\.dxf$/.test(kt.dxf?.name || "") && kt.dxf.bend >= 3, JSON.stringify(kt));
 
+  // Fotorealistische Darstellung (MegaCAD-Abgleich M22): PBR, Umgebungslicht, Bodenschatten, Bild hoch aufgelöst
+  await evalApp(() => window.__werkcad.prefs.set("ansicht.darstellung", "foto"));
+  await idle();
+  await shot("20p-foto");
+  const ft = await evalApp(async () => {
+    const a = window.__werkcad, v = a.viewer;
+    const pk = v.pickables[0];
+    const st = { env: !!v.scene.environment, tone: v.renderer.toneMapping !== 0, shadow: v.renderer.shadowMap.enabled, stage: v.stage.children.length, ground: v.stage.children.some((o) => o.userData.ground), grid: v.grid.visible, lines: pk?.lines.visible, metal: pk?.mesh.material.metalness, cast: pk?.mesh.castShadow };
+    a.prefs.set("ansicht.darstellung", "kanten");
+    const orig = a.files.saveBinary; let got = null;
+    a.files.saveBinary = async (buf, name) => { got = { name, head: Array.from(buf.slice(0, 4)), n: buf.length }; };
+    try { await a.files.exportPng({ photo: true }); } finally { a.files.saveBinary = orig; }
+    return { ...st, png: got, after: { mode: v.displayMode, env: !!v.scene.environment, stage: v.stage.children.length, lines: pk?.lines.visible, metal: pk?.mesh.material.metalness } };
+  });
+  step("Fotorealistische Darstellung", ft.env && ft.tone && ft.shadow && ft.ground && !ft.grid && ft.lines === false && ft.metal > 0.5 && ft.cast && /_Render\.png$/.test(ft.png?.name || "") && ft.png.head.join() === "137,80,78,71" && ft.after.mode === "kanten" && !ft.after.env && ft.after.stage === 0 && ft.after.lines && ft.after.metal < 0.2, JSON.stringify(ft));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();

@@ -163,7 +163,7 @@ export class Ribbon {
           B("v_ortho", "Orthogonal", "view", { on: !app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "orthogonal") }),
           B("v_persp", "Perspektive", "view", { on: app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "perspektive") }),
         ] },
-        { label: "Modus", small: true, buttons: DISPLAY.map((d) => B("dm_" + d.value, d.label, d.value === "draht" ? "grid" : "eye", { on: app.viewer.displayMode === d.value, run: () => app.prefs.set("ansicht.darstellung", d.value) })) },
+        { label: "Modus", small: true, buttons: DISPLAY.map((d) => B("dm_" + d.value, d.label, d.value === "draht" ? "grid" : d.value === "foto" ? "camera" : "eye", { on: app.viewer.displayMode === d.value, run: () => app.prefs.set("ansicht.darstellung", d.value) })) },
         { label: "Auswahl", small: true, buttons: [
           B("sf_alles", "Alles wählbar", "view", { on: app.selFilter === "alles", run: () => app.setSelFilter("alles") }),
           B("sf_flaechen", "Nur Flächen", "plane", { on: app.selFilter === "flaechen", run: () => app.setSelFilter("flaechen") }),
@@ -284,11 +284,11 @@ export class Ribbon {
     const B = (id, label, ic, run) => ({ id, label, icon: ic, run });
     const groups = [];
     if (kind === "part") {
-      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng())] });
+      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
       groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers()), B("x_cut", "Zuschnittliste (CSV)", "cut", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
       groups.push({ label: "2D", buttons: [B("x_plate", "Platte als DXF", "drawing", () => f.exportPlateDxf()), B("x_dxf", "Skizze als DXF", "sketch", () => f.exportSketchDxf())] });
     } else if (kind === "assembly") {
-      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng())] });
+      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
       groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers())] });
       groups.push({ label: "Listen", buttons: [B("x_bom", "Stückliste (CSV)", "bom", () => f.exportBom()), B("x_cut", "Zuschnittliste (CSV)", "cut", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
     } else if (kind === "drawing") {

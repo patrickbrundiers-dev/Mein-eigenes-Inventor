@@ -283,8 +283,8 @@ export class App {
   showPart(part, res) {
     if (this.mode === "sketch") {
       // im Skizzenmodus Modell halbtransparent hinter der Skizze
-      this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35 });
-    } else this.viewer.showPart(res.bodies, { color: this.partColor(part) });
+      this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35, material: part.material });
+    } else this.viewer.showPart(res.bodies, { color: this.partColor(part), material: part.material });
     this.showSketches3D();
     if (this.fittedFor !== part.id) {
       this.fittedFor = part.id;
@@ -302,9 +302,9 @@ export class App {
       const p = docOf(c.part);
       if (p?.kind === "assembly") {
         // Unterbaugruppe: jedes Bauteil mit Gesamt-Platzierung, Auswahl wirkt auf die ganze Komponente
-        return flattenAssembly({ id: asm.id, components: [c] }, docOf).map((o) => ({ id: c.id, partKey: o.part.id, bodies: this.results.get(o.part.id)?.bodies, color: this.partColor(o.part), matrix: o.matrix, inner: o.inner, leaf: o.part.id, opacity: 1 }));
+        return flattenAssembly({ id: asm.id, components: [c] }, docOf).map((o) => ({ id: c.id, partKey: o.part.id, bodies: this.results.get(o.part.id)?.bodies, color: this.partColor(o.part), material: o.part.material, matrix: o.matrix, inner: o.inner, leaf: o.part.id, opacity: 1 }));
       }
-      return [{ id: c.id, partKey: c.part, bodies: this.results.get(c.part)?.bodies, color: p ? this.partColor(p) : "#999", pos: c.pos, rot: c.rot, opacity: 1 }];
+      return [{ id: c.id, partKey: c.part, bodies: this.results.get(c.part)?.bodies, color: p ? this.partColor(p) : "#999", material: p?.material, pos: c.pos, rot: c.rot, opacity: 1 }];
     });
     this.viewer.showAssembly(comps);
     this.viewer.showSketches([]);
