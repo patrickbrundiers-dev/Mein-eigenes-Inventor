@@ -18,6 +18,7 @@ import { holderSchema } from "./handlaufhalter.js";
 
 const podest = (p) => p.form === "L" || p.form === "U";
 const gel = (p) => p.gel !== "keine";
+const gelThrough = (p) => gel(p) && p.gelFill !== "keine" && p.gelBeltMode !== "zwischen";
 
 export const TREPPE = {
   label: "Treppe",
@@ -43,6 +44,7 @@ export const TREPPE = {
     { key: "stuetze", label: "Stützenprofil", type: "section", default: { kind: "vierkant", size: "80x4" }, group: "Podest", when: (p) => podest(p) && p.stuetzen !== "keine" },
     { key: "tread", label: "Stufen", type: "select", options: [["gitterrost", "Gitterrost"], ["blech", "Blech"], ["holz", "Holz"]], default: "gitterrost", group: "Stufen" },
     { key: "treadT", label: "Stufendicke", type: "num", default: "30", group: "Stufen" },
+    { key: "stepFix", label: "Stufenbefestigung", type: "select", options: [["din", "verschraubt nach DIN 24531 (Seitenbleche, M12)"], ["keine", "ohne (Stufe zwischen den Wangen)"]], default: "din", missing: "keine", group: "Stufen", when: (p) => p.support === "flach" || p.support === "upn" },
     { key: "gel", label: "Geländer (beim Hinaufgehen)", type: "select", options: [["beide", "beidseitig"], ["links", "links"], ["rechts", "rechts"], ["keine", "kein Geländer"]], default: "beide", missing: "keine", tiles: "top", group: "Geländer" },
     { key: "gelPodest", label: "Geländer ums Podest", type: "check", default: true, group: "Geländer", when: (p) => gel(p) && podest(p) },
     ...normSchema((k) => "gel" + k[0].toUpperCase() + k.slice(1), "Geländer", gel, { def: "arbeit", fall: false }),
@@ -50,8 +52,12 @@ export const TREPPE = {
     { key: "gelFill", label: "Füllung", type: "select", options: [["quer", "Knieleisten"], ["staketen", "Staketen"], ["keine", "nur Handlauf"]], default: "quer", tiles: "front", group: "Geländer", when: gel },
     { key: "gelBars", label: "Anzahl Knieleisten", type: "num", unit: "Stk", default: "2", group: "Geländer", when: (p) => gel(p) && p.gelFill === "quer" },
     { key: "gelGap", label: "Öffnung max.", type: "num", default: "110", group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
-    { key: "gelBar", label: "Knieleiste / Stab", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => gel(p) && p.gelFill !== "keine" },
-    { key: "gelBelt", label: "Untergurt", type: "section", default: { kind: "flach", size: "40x8" }, group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
+    { key: "gelBeltMode", label: "Knieleisten / Untergurt", type: "select", options: [["durch", "durch die Pfosten gesteckt (Stäbe durch den Gurt)"], ["zwischen", "zwischen den Pfosten"]], default: "durch", missing: "zwischen", group: "Geländer", when: (p) => gel(p) && p.gelFill !== "keine" },
+    { key: "gelBeltMax", label: "Am Stück bis (sonst Stoß im Pfosten)", type: "num", default: "5800", group: "Geländer", when: (p) => gelThrough(p) },
+    { key: "gelAllow", label: "Aufmaß der Bohrungen (auf Ø bzw. Maß)", type: "num", default: "1", group: "Geländer", when: (p) => gelThrough(p) },
+    { key: "gelBar", label: "Knieleiste / Stab", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => gel(p) && (p.gelFill === "quer" || (p.gelFill === "staketen" && !gelThrough(p))) },
+    { key: "gelStab", label: "Stab (durch den Untergurt)", type: "section", default: { kind: "rund", size: "12" }, group: "Geländer", when: (p) => gelThrough(p) && p.gelFill === "staketen" },
+    { key: "gelBelt", label: "Untergurt", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
     { key: "gelPost", label: "Pfosten", type: "section", default: { kind: "vierkant", size: "40x3" }, group: "Geländer", when: gel },
     { key: "gelPostMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Geländer", when: gel },
     { key: "gelDown", label: "Pfosten unter Stufenkante (Befestigung)", type: "num", default: "150", group: "Geländer", when: gel },
@@ -101,6 +107,11 @@ export const TREPPE = {
     const ys = side ? [-thick / 2, B + thick / 2] : p.support === "holm2" ? [p.holmInset, B - p.holmInset] : [B / 2];
     const sideNames = side ? ["Wange rechts", "Wange links"] : ys.length > 1 ? ["Holm rechts", "Holm links"] : ["Mittelholm"];
 
+    // Stufenbefestigung wie Gitterrost-/Blechstufen nach DIN 24531: Seitenbleche 5 mm, Höhe Stufendicke + 30 mm,
+    // vorne Bohrung, hinten Langloch Ø 14 (M12); Lochabstand nach Auftrittstiefe (240 → 120, 270 → 150, 305 → 180 mm)
+    const A = a + u, fix = { on: side && p.stepFix === "din", t: 0 };
+    if (fix.on) Object.assign(fix, { t: 5, h: tt + 30, d: 14, slot: 30, dz: 5, e: A <= 250 ? 120 : A <= 285 ? 150 : A <= 320 ? 180 : Math.round((A - 125) / 10) * 10 });
+    if (fix.on && A - fix.e < 60) throw fieldError(`Auftritt ${Math.round(A)} mm zu klein für die Stufenbefestigung`, "going");
     // Ein Lauf mit nR Steigungen in eigener Lage (Antritt x = 0, Höhe z0); T dreht um Z und verschiebt.
     // Unten: auf dem Boden waagrecht geschnitten, vom Podest aus senkrecht an der Podestkante; oben senkrecht.
     const flights = [];
@@ -113,8 +124,17 @@ export const TREPPE = {
       const cuts = { start: [fromFloor ? { p: T.p([0, 0, z0]), n: [0, 0, -1] } : { p: T.p([0, 0, z0]), n: T.d([-1, 0, 0]) }], end: [{ p: T.p([xTop, 0, z0]), n: T.d([1, 0, 0]) }] };
       ys.forEach((y, i) => members.push({ section: sec, a: T.p([x0, y, zAt(x0)]), b: T.p([x1, y, zAt(x1)]), name: sideNames[i] + label, up: T.d(upL), rot: rots[i], cuts }));
       for (let i = 1; i < nR; i++) {
-        const xa = (i - 1) * a - u, xb = i * a;
-        plates.push({ center: T.p([(xa + xb) / 2, B / 2, z0 + i * s - tt]), xDir: T.d([0, 1, 0]), normal: [0, 0, 1], W: B, H: xb - xa, t: tt, name: `Stufe ${stepNo0 + i}`, tread: p.tread });
+        const xa = (i - 1) * a - u, xb = i * a, k = stepNo0 + i;
+        plates.push({ center: T.p([(xa + xb) / 2, B / 2, z0 + i * s - tt]), xDir: T.d([0, 1, 0]), normal: [0, 0, 1], W: B - 2 * fix.t, H: xb - xa, t: tt, name: `Stufe ${k}`, tread: p.tread });
+        if (!fix.on) continue;
+        // Seitenbleche der Stufe mit Bohrung und Langloch, Wangen mit zwei Bohrungen Ø 14 (M12)
+        const cx = (xa + xb) / 2, zTop = z0 + i * s, zc = zTop - fix.h / 2, zh = zc - fix.dz;
+        [[0, [0, 1, 0], 1, "rechts"], [B, [0, -1, 0], -1, "links"]].forEach(([y, nrm, sy, nm]) => plates.push({ center: T.p([cx, y, zc]), xDir: T.d([1, 0, 0]), normal: T.d(nrm), W: xb - xa, H: fix.h, t: fix.t,
+          holes: [[-fix.e / 2, sy * fix.dz]], slots: [[fix.e / 2, sy * fix.dz, fix.slot]], d: fix.d, name: `Stufe ${k} Seitenblech ${nm}` }));
+        ys.forEach((y, j) => {
+          const out = j === 0 ? -1 : 1;
+          for (const x of [cx - fix.e / 2, cx + fix.e / 2]) drills.push({ target: sideNames[j] + label, p: T.p([x, y - out * (thick / 2 + 1), zh]), dir: T.d([0, out, 0]), d: fix.d, len: thick + 2 });
+        });
       }
       return xTop;
     };
@@ -162,6 +182,7 @@ export const TREPPE = {
       }
       info = `${n} Steigungen à ${fmt(s)} mm (${n1} + ${n2}), Auftritt ${fmt(a)} mm, 2s + a = ${Math.round(step)} mm, Neigung ${fmt((alpha * 180) / Math.PI)}°, Podest auf ${Math.round(zP)} mm (${fmt(PW)} × ${fmt(PH)} mm), Läufe ${Math.round(x1)} / ${Math.round(x2)} mm`;
     }
+    if (fix.on) info += `, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø ${fix.d}, Lochabstand ${fix.e} mm)`;
     if (gel(p)) {
       const r = railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off: (side ? thick : 0) + p.gelPost.geom.width / 2, rotZ });
       chains.push(...r.chains);
@@ -255,11 +276,12 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
   const sides = [];
   if (left ? wantRight : wantLeft) sides.push([left ? "rechts" : "links", outer]);
   if (left ? wantLeft : wantRight) sides.push([left ? "links" : "rechts", inner]);
-  const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100, holder: p.gelHolder !== "keine", holderGap: p.gelHolderGap, holderD: p.gelHolderD };
+  const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100, holder: p.gelHolder !== "keine", holderGap: p.gelHolderGap, holderD: p.gelHolderD,
+    through: gelThrough(p), allow: p.gelAllow || 0, beltMax: p.gelBeltMax, stab: p.gelStab, keys: { bar: "gelBar", belt: "gelBelt", stab: "gelStab", beltMax: "gelBeltMax" } };
   if (!(o.H > 300)) throw fieldError("Geländerhöhe zu klein", "gelH");
   if (!(o.postMax > post)) throw fieldError("Pfostenabstand zu klein", "gelPostMax");
   const chains = [], members = [], plates = [], drills = [];
-  let posts = 0, bars = 0, gapMax = 0;
+  let posts = 0, bars = 0, gapMax = 0, pieces = 0;
   for (const [name, paths] of sides) {
     paths.forEach((path, i) => {
       const r = railAlong(mirror(path), o, `Geländer ${name}${paths.length > 1 ? " " + (i + 1) : ""}`);
@@ -267,14 +289,14 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
       members.push(...r.members);
       plates.push(...r.plates);
       drills.push(...r.drills);
-      posts += r.posts; bars += r.bars; gapMax = Math.max(gapMax, r.gapMax);
+      posts += r.posts; bars += r.bars; gapMax = Math.max(gapMax, r.gapMax); pieces += r.pieces || 0;
     });
   }
   // Geländernorm nach Nutzung; Absturzhöhe höchstens die Geschosshöhe
   issues.push(...railingIssues({ use: p.gelUse, fall: p.height, height: o.H, fill: p.gelFill, gap: gapMax, bottom: 0, open: o.H - p.gelRail.geom.height, rail: p.gelRail },
     { height: "gelH", fill: "gelFill", gap: p.gelFill === "quer" ? "gelBars" : "gelGap", rail: "gelRail", use: "gelUse" }));
   const what = p.gelFill === "quer" ? `${bars} Knieleisten` : p.gelFill === "staketen" ? `${bars} Stäbe` : "nur Handlauf";
-  return { chains, members, plates, drills, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` + (o.holder ? `, Handlaufhalter mit Bohrung Ø ${String(drills[0]?.d).replace(".", ",")}` : "") };
+  return { chains, members, plates, drills, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` + (o.holder ? `, Handlaufhalter mit Bohrung Ø ${fmt(o.holderD + 0.1)}` : "") + (o.through && pieces ? `, ${p.gelFill === "quer" ? "Knieleisten" : "Untergurt"} durch die Pfosten (${pieces} Stück, Aufmaß ${fmt(o.allow)} mm)` : "") };
 }
 
 const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");

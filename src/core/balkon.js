@@ -38,6 +38,7 @@ export const BALKON = {
     { key: "railH", label: "Geländerhöhe über Belag", type: "num", default: "1000", group: "Geländer", when: (p) => p.railing },
     { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz mit Ring"], ["rahmen", "Rahmen mit Staketen"]], default: "staketen", tiles: "front", group: "Geländer", when: (p) => p.railing },
     { key: "railHolder", label: "Handlaufhalter (Stift, Bohrung im Handlauf)", type: "check", default: true, missing: false, group: "Geländer", when: (p) => p.railing },
+    { key: "beltMode", label: "Gurte", type: "select", options: [["durch", "Rundrohr durch die Pfosten, Stäbe durch die Gurte"], ["zwischen", "Flachstahl zwischen den Pfosten"]], default: "durch", missing: "zwischen", group: "Geländer", when: (p) => p.railing && p.fill !== "blech" && p.fill !== "glas" },
     { key: "inset", label: "Geländer vom Rand", type: "num", default: "60", group: "Geländer", when: (p) => p.railing },
   ],
 
@@ -101,7 +102,8 @@ export const BALKON = {
       const side = T - i - yStart, front = W - 2 * i;
       if (!(side > 100 && front > 100)) throw fieldError("Geländer passt nicht – Abstand vom Rand prüfen", "inset");
       const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill, use: p.use, fall: Hb, holder: p.railHolder ? "stift" : "keine", overhang: p.railHolder ? 50 : 0,
-        post: sec({ kind: "vierkant", size: "40x3" }), belt: sec({ kind: "flach", size: "40x8" }), bar: sec({ kind: "vierkantvoll", size: "12" }), beltMode: "zwischen" }); // Balkon-Geländer wie bisher
+        post: sec({ kind: "vierkant", size: "40x3" }), bar: sec({ kind: "vierkantvoll", size: "12" }),
+        ...(p.beltMode === "durch" ? { beltMode: "durch" } : { belt: sec({ kind: "flach", size: "40x8" }), beltMode: "zwischen" }) }); // »zwischen«: Balkon-Geländer wie bisher
       // Parameter des Geländers heißen hier anders: Meldungen auf die Balkon-Felder umschlüsseln
       const KEY = { height: "railH", fill: "fill", gapMax: "fill", panelGap: "fill", ringD: "fill", use: "use" };
       let g;

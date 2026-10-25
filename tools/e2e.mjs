@@ -744,7 +744,7 @@ try {
   await page.locator("#props .field", { hasText: "Tragwerk" }).locator(".tile", { hasText: "Zwei Holme" }).click();
   await idle(120000);
   const tr1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { holme: r.bodies.filter((b) => /^Holm/.test(b.name)).length, ok: Object.values(r.status).every((s) => s.ok) }; });
-  step("Treppen-Generator", tr0.ok && tr0.n === 17 && tr0.gel > 20 && /16 Steigungen/.test(tr0.info) && tr1.ok && tr1.holme === 2, JSON.stringify({ tr0, tr1 }));
+  step("Treppen-Generator", tr0.ok && tr0.n === 17 + 30 && tr0.gel > 20 && /16 Steigungen/.test(tr0.info) && /DIN 24531/.test(tr0.info) && /Knieleisten durch die Pfosten/.test(tr0.info) && tr1.ok && tr1.holme === 2, JSON.stringify({ tr0, tr1 }));
 
   // Listen als Excel (MegaCAD-Abgleich M18): Arbeitsmappe der Treppe abfangen und prüfen
   const xl = await evalApp(async () => {

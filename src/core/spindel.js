@@ -11,6 +11,7 @@ const DEG = Math.PI / 180;
 import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
 import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
+import { holderSchema, holderDrop, holderParts } from "./handlaufhalter.js";
 export const SPINDEL = {
   label: "Spindeltreppe",
   schema: [
@@ -28,6 +29,7 @@ export const SPINDEL = {
     ...normSchema(undefined, "Geländer", (p) => p.railing, { fall: false }),
     { key: "railH", label: "Geländerhöhe über Stufenvorderkante", type: "num", default: "900", group: "Geländer", when: (p) => p.railing },
     { key: "bars", label: "Stäbe je Stufe (0 = nach Geländernorm)", type: "num", unit: "Stk", default: "0", missing: "1", group: "Geländer", when: (p) => p.railing },
+    ...holderSchema(undefined, "Geländer", (p) => p.railing),
     { key: "post", label: "Geländerstab", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => p.railing },
     { key: "rail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Geländer", when: (p) => p.railing },
   ],
@@ -60,7 +62,8 @@ export const SPINDEL = {
     // Stufenträger hochkant, U/UPN offen nach unten, T mit dem Flansch oben
     const armRot = orientRot(arm, [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, 0, -1], legs: [0, 1, -1], stem: [0, 0, -1] });
     const postOff = p.railing ? Math.max(p.post.geom.width, p.post.geom.height) / 2 + 15 : 0;
-    const railPts = [];
+    const railPts = [], drills = [];
+    const holder = p.railing && p.holder !== "keine", drop = p.railing ? holderDrop(holder, p.post, p.holderGap) : 0;
     // Stäbe je Stufe: so viele, dass der lichte Abstand (waagrecht) die Geländernorm einhält
     const barW = p.railing ? Math.max(p.post.geom.width, p.post.geom.height) : 0;
     const clearOf = (k) => 2 * (R - postOff) * Math.sin((theta * DEG) / 2 / k) - barW;
@@ -82,12 +85,22 @@ export const SPINDEL = {
         const pa = a0 + sg * theta / 2;
         const top = z + p.railH;
         for (let j = 0; j < perStep; j++) {
-          // Handlauf steigt linear zwischen den Stufenmitten: Stab endet auf seiner Höhe
-          const f = (j + 0.5) / perStep - 0.5, aj = pa + sg * theta * f;
-          members.push({ section: p.post, a: at(R - postOff, aj, z), b: at(R - postOff, aj, top + f * s), name: `Geländerstab ${i}${perStep > 1 ? "." + (j + 1) : ""}`, up: [1, 0, 0] });
+          // Handlauf steigt gleichmäßig mit der Drehung; Handlaufpunkt über jedem Stab, Stab endet darunter
+          const f = (j + 0.5) / perStep - 0.5, aj = pa + sg * theta * f, zt = top + f * s, nm = `Geländerstab ${i}${perStep > 1 ? "." + (j + 1) : ""}`;
+          const q = at(R - postOff, aj, zt - drop);
+          members.push({ section: p.post, a: at(R - postOff, aj, z), b: q, name: nm, up: [1, 0, 0] });
+          railPts.push(at(R - postOff, aj, zt + p.rail.geom.width / 2));
+          if (!holder) continue;
+          const tg = [-Math.sin(aj * DEG) * sg, Math.cos(aj * DEG) * sg];
+          const hp = holderParts({ q, along: tg, axisZ: zt + p.rail.geom.width / 2, post: p.post, railH: p.rail.geom.height, d: p.holderD, slope: s / (theta * DEG * (R - postOff)), name: nm, target: "Handlauf" });
+          members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
         }
-        railPts.push(at(R - postOff, pa, top + p.rail.geom.width / 2));
       }
+    }
+    if (holder && railPts.length >= 2) {
+      // Handlauf 50 mm über den ersten und letzten Stab hinaus, damit die Bohrung ganz im Rohr liegt
+      const ext = (i, j) => { const d = railPts[i].map((x, k) => x - railPts[j][k]), l = Math.hypot(...d) || 1; railPts[i] = railPts[i].map((x, k) => x + (d[k] / l) * 50); };
+      ext(0, 1); ext(railPts.length - 1, railPts.length - 2);
     }
     if (p.railing && railPts.length >= 2) chains.push({ section: p.rail, points: railPts, name: "Handlauf", up: [0, 0, 1] });
     if (p.railing) {
@@ -95,8 +108,8 @@ export const SPINDEL = {
       issues.push(...railingIssues({ use: p.use, fall: H, height: p.railH, fill: "staketen", gap: clearOf(perStep), bottom: 0, rail: p.rail }, { height: "railH", gap: "post", rail: "rail", use: "use" }));
     }
     const total = (n - 1) * theta;
-    const info = `${n} Steigungen à ${fmt(s)} mm, ${fmt(theta)}° je Stufe (Gehlinie ${fmt(ag)} mm, 2s + a = ${Math.round(step)} mm), Gesamtdrehung ${fmt(total)}°, Durchgangshöhe ${Math.round(head)} mm, Laufbreite ${Math.round(R - r0)} mm` + (p.railing ? `, ${perStep} Geländerstäbe je Stufe` : "");
-    return { chains, members, plates, info, issues };
+    const info = `${n} Steigungen à ${fmt(s)} mm, ${fmt(theta)}° je Stufe (Gehlinie ${fmt(ag)} mm, 2s + a = ${Math.round(step)} mm), Gesamtdrehung ${fmt(total)}°, Durchgangshöhe ${Math.round(head)} mm, Laufbreite ${Math.round(R - r0)} mm` + (p.railing ? `, ${perStep} Geländerstäbe je Stufe` + (holder ? `, Handlaufhalter mit Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")}` : "") : "");
+    return { chains, members, plates, drills, info, issues };
   },
 };
 
