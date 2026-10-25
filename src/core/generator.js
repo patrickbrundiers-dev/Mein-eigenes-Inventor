@@ -15,8 +15,10 @@
 
 import { catalogToDims, sectionGeometry, CATALOG } from "./sections.js";
 import { GELAENDER } from "./gelaender.js";
+import { TOR } from "./tor.js";
+import { TREPPE } from "./treppe.js";
 
-export const GENERATORS = { gelaender: GELAENDER };
+export const GENERATORS = { gelaender: GELAENDER, tor: TOR, treppe: TREPPE };
 
 /** Neues Feature mit den Standardwerten des Generators */
 export function defaultGenerator(gen) {

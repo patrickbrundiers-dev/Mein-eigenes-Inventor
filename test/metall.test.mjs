@@ -212,3 +212,29 @@ test("Generator-Gerüst und Geländer-Plan: Parameter, Aufteilung, Öffnungen, V
   assert.equal(merged.height, "1100");
   assert.equal(merged.fremd, undefined);
 });
+
+test("Tor-Plan: Flügelbreite, Bogen, Stäbe, Prüfungen (MegaCAD-Abgleich M12)", async () => {
+  const { defaultGenerator, resolveGenParams, GENERATORS } = await import("../src/core/generator.js");
+  const f = defaultGenerator("tor");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (patch) => GENERATORS.tor.plan(resolveGenParams("tor", { ...f.params, ...patch }, E));
+  const g = plan({ form: "gerade", leaves: "1", width: "1000", mid: false });
+  assert.equal(g.chains.length, 1);
+  assert.equal(g.chains[0].points.length, 5, "Rechteck geschlossen");
+  const bars = g.members.filter((m) => /Stab/.test(m.name));
+  assert.ok(bars.every((m) => Math.abs(m.b[2] - (50 + 1200 - 40)) < 1e-9), "Stäbe bis Unterkante Oberriegel");
+  const r = plan({ form: "rund", width: "2000" });
+  assert.match(r.info, /Scheitel 2250 mm/, "Halbkreis: Stich = halbe Breite");
+  assert.throws(() => plan({ form: "stich", rise: "2000" }), /höchstens halbe Torbreite/);
+  assert.throws(() => plan({ width: "100" }), /Torbreite zu klein/);
+  const u = plan({ form: "unten", rise: "200" });
+  assert.match(u.info, /Scheitel 1050 mm/);
+});
+
+test("Masse mit eigener Dichte je Körper (Glas, Gitterrost, Holz)", async () => {
+  const { bodiesMass, hasOwnDensity } = await import("../src/core/mass.js");
+  const bodies = [{ props: { volume: 1e6 } }, { props: { volume: 1e6 }, meta: { density: 2.5 } }];
+  assert.ok(Math.abs(bodiesMass(bodies, 7.85) - 10.35) < 1e-9);
+  assert.equal(hasOwnDensity(bodies), true);
+  assert.equal(hasOwnDensity(bodies.slice(0, 1)), false);
+});

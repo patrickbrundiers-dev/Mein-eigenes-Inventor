@@ -1,5 +1,6 @@
 // Zeichnungsableitung: Blatt, Ansichten (Projektionsmethode 1 / DIN ISO 5456-2), Bemaßung, Schriftfeld, Export
 import { h, svgEl, toast, modal, promptDialog, fmtNum, downloadBlob } from "./dom.js";
+import { bodiesMass } from "../core/mass.js";
 import { DxfWriter } from "../core/dxf.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { uid } from "../core/examples.js";
@@ -711,7 +712,7 @@ export class DrawingEditor {
     let mass = "", material = "";
     if (src?.kind === "part") {
       const r = this.app.results.get(src.id);
-      if (r) mass = fmtNum((r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0) * materialOf(src.material).density) / 1e6, 2) + " kg";
+      if (r) mass = fmtNum(bodiesMass(r.bodies, materialOf(src.material).density), 2) + " kg";
       material = src.material ? materialOf(src.material).label : "";
     } else if (src?.kind === "assembly") {
       const rows = this.bomRowsOf(d);

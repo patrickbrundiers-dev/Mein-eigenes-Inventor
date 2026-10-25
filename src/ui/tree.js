@@ -94,7 +94,7 @@ export class Tree {
       const consumedBy = part.features.filter((g) => g.sketch === f.id);
       const meta = f.type === "sketch" && st?.dof > 0 ? `${st.dof} FG` : "";
       ul.append(h("li", {}, this.node({
-        label: f.name || FEATURE_NAMES[f.type], ic: FICON[f.type], cls: cls.join(" "), meta,
+        label: f.name || FEATURE_NAMES[f.type], ic: (f.type === "generator" && f.gen) || FICON[f.type], cls: cls.join(" "), meta,
         title: st?.error ? "Fehler: " + st.error : st?.warning ? "Hinweis: " + st.warning : f.name,
         onClick: () => app.selectFeature(f.id),
         onDbl: () => (f.type === "sketch" ? app.editSketch(f.id) : app.selectFeature(f.id)),

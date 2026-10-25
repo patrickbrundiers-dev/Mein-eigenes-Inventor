@@ -135,3 +135,53 @@ test("Geländer-Generator: Pfostenaufteilung, Staketen, Handlauf über Eck, Fuß
   near(top, 1000, 0.01, "OK Handlauf");
   assert.match(res.status.g.info, /6 Pfosten, 5 Feld/);
 });
+
+test("Tor-Generator: Doppeltor mit Stichbogen, Rahmen gegehrt, Stäbe bis unter den Bogen (MegaCAD-Abgleich M12)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const f = { id: "t", ...defaultGenerator("tor") };
+  const res = await K.buildPart(part([f]));
+  okAll(res);
+  const by = (re) => res.bodies.filter((b) => re.test(b.name));
+  const frameL = by(/^Flügel links Rahmen/);
+  assert.equal(frameL.length, 3 + 4, "unten, rechts, 4 Bogenstücke, links");
+  assert.ok(frameL.every((b) => Math.abs(b.meta.miterStart) > 0 && Math.abs(b.meta.miterEnd) > 0), "alle Ecken gegehrt");
+  assert.equal(by(/^Torpfosten/).length, 2);
+  const bb = (b) => b.shape.boundingBox.bounds;
+  // Scheitel in der Mitte = 50 + 1200 + 250 (Spalt in der Mitte → knapp darunter)
+  const top = Math.max(...frameL.map((b) => bb(b)[1][2]));
+  assert.ok(top > 1450 && top <= 1502, "Scheitel " + top); // Gehrungsecken der Bogenstücke stehen minimal über
+  // Stäbe berühren den Bogen nicht und laufen nicht darüber hinaus
+  const bars = by(/Stab/);
+  assert.ok(bars.length > 20);
+  assert.ok(bars.every((b) => bb(b)[1][2] < 1500), "Stäbe unter dem Bogen");
+  assert.match(res.status.t.info, /Doppeltor, Flügel 1478 mm/);
+});
+
+test("Treppen-Generator: Wangen unten waagrecht/oben senkrecht geschnitten, Stufen, Holme (MegaCAD-Abgleich M13)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const f = { id: "tr", ...defaultGenerator("treppe") };
+  const res = await K.buildPart(part([f]));
+  okAll(res);
+  const by = (re) => res.bodies.filter((b) => re.test(b.name));
+  assert.equal(by(/^Stufe/).length, 15, "2800 / 175 → 16 Steigungen, 15 Stufen");
+  const w = by(/^Wange/);
+  assert.equal(w.length, 2);
+  const bb = (b) => b.shape.boundingBox.bounds;
+  near(bb(w[0])[0][2], 0, 0.01, "Wange unten auf dem Boden");
+  near(bb(w[0])[1][0], 15 * 280, 0.01, "Wange oben an der Deckenstirn (x = 15 · 280)");
+  assert.ok(w[0].meta.miterStart > 50 && w[0].meta.miterEnd > 20, "Schnitte schräg zur Achse");
+  // oberste Stufe: Oberkante = 15 · 175
+  const top = Math.max(...by(/^Stufe/).map((b) => bb(b)[1][2]));
+  near(top, 15 * 175, 0.01, "OK oberste Stufe");
+  assert.match(res.status.tr.info, /16 Steigungen à 175 mm, Auftritt 280 mm, 2s \+ a = 630 mm/);
+  assert.equal(by(/^Stufe/)[0].meta.density, 1, "Gitterrost mit Ersatzdichte");
+  // Zwei Holme, aufgesattelt
+  const f2 = { id: "h", ...defaultGenerator("treppe") };
+  f2.params.support = "holm2";
+  const r2 = await K.buildPart(part([f2]));
+  okAll(r2);
+  const holme = r2.bodies.filter((b) => /^Holm/.test(b.name));
+  assert.equal(holme.length, 2);
+  // Holm liegt unter den Stufen: höchster Punkt des Holms ≤ Unterkante der obersten Stufe + Steigung
+  assert.ok(Math.max(...holme.map((b) => b.shape.boundingBox.bounds[1][2])) <= 15 * 175 - 30 + 1e-3);
+});

@@ -21,6 +21,7 @@ import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../cor
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
+import { bodiesMass, hasOwnDensity } from "../core/mass.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
 import { splineLength, splineDegree } from "../core/spline.js";
@@ -197,8 +198,8 @@ export class Props {
       const bb = unionBox(r.bodies.map((b) => b.props?.bbox).filter(Boolean));
       out.push(this.section("Masse-Eigenschaften", h("dl", { class: "kv" },
         h("dt", {}, "Volumen"), h("dd", {}, fmtNum(vol / 1000, 2) + " cm³"),
-        h("dt", {}, "Masse"), h("dd", {}, fmtNum((vol * dens) / 1e6, 3) + " kg"),
-        h("dt", {}, "Dichte"), h("dd", {}, fmtNum(dens, 2) + " g/cm³"),
+        h("dt", {}, "Masse"), h("dd", {}, fmtNum(bodiesMass(r.bodies, dens), 3) + " kg"),
+        h("dt", {}, "Dichte"), h("dd", {}, fmtNum(dens, 2) + " g/cm³" + (hasOwnDensity(r.bodies) ? " (Glas, Gitterrost, Holz eigene)" : "")),
         h("dt", {}, "Oberfläche"), h("dd", {}, fmtNum(r.bodies.reduce((s, b) => s + (b.props?.area || 0), 0) / 100, 2) + " cm²"),
         centerOf(r.bodies) ? [h("dt", {}, "Schwerpunkt"), h("dd", {}, centerOf(r.bodies).map((v) => fmtNum(v, 1)).join(" / ") + " mm")] : null,
         bb ? [h("dt", {}, "Abmessungen"), h("dd", {}, `${fmtNum(bb[1][0] - bb[0][0], 1)} × ${fmtNum(bb[1][1] - bb[0][1], 1)} × ${fmtNum(bb[1][2] - bb[0][2], 1)}`)] : null,
@@ -1185,8 +1186,7 @@ export function bomRows(app, asm) {
     const p = app.doc(c.part);
     if (!p) continue;
     const r = app.results.get(p.id);
-    const vol = r ? r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0) : NaN;
-    const mass = (vol * materialOf(p.material).density) / 1e6;
+    const mass = r ? bodiesMass(r.bodies, materialOf(p.material).density) : NaN;
     const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: p.material ? materialOf(p.material).label : "", qty: 0, mass };
     row.qty++;
     map.set(p.id, row);

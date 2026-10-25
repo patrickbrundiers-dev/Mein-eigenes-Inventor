@@ -543,6 +543,34 @@ try {
   await shot("20f-gelaender");
   step("Geländer-Generator", gl0.ok && gl0.n > 30 && /Pfosten/.test(gl0.info) && gl1.glass === 5 && gl1.members === 6 + 2 + 10 && /6 Pfosten/.test(gl1.info), JSON.stringify({ gl0, gl1 }));
 
+  // Tor-Generator (MegaCAD-Abgleich M12): Doppeltor mit Stichbogen, dann Rundbogen
+  await evalApp(() => window.__werkcad.newPart("Tor"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Tor$/ }).click();
+  await idle(120000);
+  const tor0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("front", { animate: false }); v.fit(); });
+  await shot("20g-tor");
+  await page.locator("#props .field", { hasText: "Oberkante" }).locator("select").selectOption("rund");
+  await idle(120000);
+  const tor1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
+  step("Tor-Generator", tor0.ok && tor0.n > 30 && /Doppeltor/.test(tor0.info) && tor1.ok && /Scheitel 2750 mm/.test(tor1.info), JSON.stringify({ tor0, tor1 }));
+
+  // Treppen-Generator (MegaCAD-Abgleich M13): Wangentreppe, dann zwei Holme
+  await evalApp(() => window.__werkcad.newPart("Treppe"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Treppe$/ }).click();
+  await idle(120000);
+  const tr0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20h-treppe");
+  await page.locator("#props .field", { hasText: "Tragwerk" }).locator("select").selectOption("holm2");
+  await idle(120000);
+  const tr1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { holme: r.bodies.filter((b) => /^Holm/.test(b.name)).length, ok: Object.values(r.status).every((s) => s.ok) }; });
+  step("Treppen-Generator", tr0.ok && tr0.n === 17 && /16 Steigungen/.test(tr0.info) && tr1.ok && tr1.holme === 2, JSON.stringify({ tr0, tr1 }));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();

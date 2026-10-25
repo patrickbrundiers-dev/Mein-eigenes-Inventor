@@ -38,6 +38,8 @@ const P = {
   emboss: '<path d="M3 17c3-2 6-2 9 0s6 2 9 0"/><path d="M7 6h10M12 6v8"/><path d="M9 14h6"/>',
   naht: '<path d="M3 20h18"/><path d="M3 20l9-9"/><path d="M6 17l3 3M9 14l3 3M12 11l3 3" stroke-width="1.4"/>',
   gelaender: '<path d="M3 21V7M12 21V7M21 21V7"/><path d="M2 6h20"/><path d="M6 9v10M9 9v10M15 9v10M18 9v10" stroke-width="1.2"/><path d="M3 19h18"/>',
+  tor: '<path d="M3 21V5M21 21V5"/><path d="M5 20V9q3.5-3 7-3t7 3v11z"/><path d="M12 6v14M8.5 8v12M15.5 8v12" stroke-width="1.2"/>',
+  treppe: '<path d="M3 21h4v-4h4v-4h4V9h4V5h2"/><path d="M3 17L19 3" stroke-width="1.2"/>',
   clean: '<path d="M14 4l6 6"/><path d="M12 6l6 6-7 7H6l-3-3z"/><path d="M8 20h13"/>',
   platte: '<path d="M4 4h6v16H4z"/><path d="M10 9h11v6H10"/><circle cx="7" cy="7" r="1"/><circle cx="7" cy="17" r="1"/>',
   rippe: '<path d="M4 3v18"/><path d="M4 21h17"/><path d="M4 7l13 14"/><path d="M4 10v-3"/>',
