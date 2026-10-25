@@ -193,6 +193,7 @@ export class Viewer {
       const s = 60 / this.pixelsPerUnit();
       this.triad.scale.setScalar(s);
       r.render(this.scene, this.camera);
+      this.placeMeasureLabel();
       // ViewCube
       if (!this.hideCube && this.showCube) {
         const cs = this.cubeSize;
@@ -435,7 +436,42 @@ export class Viewer {
   }
 
   /** Bauteil-Ergebnis anzeigen. bodies: Ergebnis des Workers */
+  /**
+   * Entformungsanalyse (Stufe 54): Netz des Bauteils je Ecke nach dem Entformungswinkel einfärben;
+   * colorOf(Normale in Weltkoordinaten) → [r, g, b]. null schaltet ab. Neu Anzeigen des Bauteils schaltet ebenfalls ab.
+   */
+  setDraftColors(colorOf) {
+    const nm = new THREE.Matrix3(), n = new THREE.Vector3();
+    for (const p of this.pickables) {
+      const mesh = p.mesh, geo = mesh.geometry, m = mesh.material;
+      if (!colorOf) {
+        if (geo.getAttribute("color") && mesh.userData.draft) geo.deleteAttribute("color");
+        mesh.userData.draft = false;
+        m.vertexColors = false;
+        if (mesh.userData.baseColor) m.color.copy(mesh.userData.baseColor);
+        m.needsUpdate = true;
+        continue;
+      }
+      if (!geo.getAttribute("normal")) geo.computeVertexNormals();
+      mesh.updateMatrixWorld();
+      nm.getNormalMatrix(mesh.matrixWorld);
+      const N = geo.getAttribute("normal"), cols = new Float32Array(N.count * 3);
+      for (let i = 0; i < N.count; i++) {
+        n.fromBufferAttribute(N, i).applyMatrix3(nm).normalize();
+        cols.set(colorOf([n.x, n.y, n.z]), i * 3);
+      }
+      geo.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+      mesh.userData.draft = true;
+      m.vertexColors = true;
+      m.color.set(0xffffff);
+      m.needsUpdate = true;
+    }
+    this.draftOn = !!colorOf;
+    this.render();
+  }
+
   showPart(bodies, { color = "#8d99a6", opacity = 1, key = "part", material, finish } = {}) {
+    this.draftOn = false;
     this.clear();
     const g = this.makePartGroup(bodies, color, key, opacity, null, material, finish);
     this.root.add(g);
@@ -721,7 +757,8 @@ export class Viewer {
     const m = mesh.material;
     m.metalness = surf ? surf.metalness : 0.08;
     m.roughness = surf ? surf.roughness : 0.5;
-    if (mesh.userData.baseColor) m.color.copy(surf?.color ? new THREE.Color(surf.color) : mesh.userData.baseColor);
+    if (mesh.userData.draft) m.color.set(0xffffff);
+    else if (mesh.userData.baseColor) m.color.copy(surf?.color ? new THREE.Color(surf.color) : mesh.userData.baseColor);
     mesh.castShadow = photo && op >= 1;
     mesh.receiveShadow = photo;
     m.transparent = op < 1;
@@ -1194,6 +1231,44 @@ export class Viewer {
   highlightBodies(bodies, key = "part") {
     if (!this.fieldGroup) { this.fieldGroup = new THREE.Group(); this.scene.add(this.fieldGroup); }
     this.highlight(bodies.map((body) => ({ kind: "body", key, body })), { group: this.fieldGroup, color: this.colors.sel, opacity: 0.45 });
+  }
+  /**
+   * Maß des Messwerkzeugs (Stufe 47): Linie zwischen a und b mit Endpunkten und Beschriftung; dims = gestrichelte
+   * Hilfslinien (z. B. Achsen). null löscht. Die Beschriftung ist ein HTML-Element, das der Kamera folgt.
+   */
+  showMeasure(spec) {
+    if (!this.measureGroup) { this.measureGroup = new THREE.Group(); this.measureGroup.renderOrder = 999; this.scene.add(this.measureGroup); }
+    disposeTree(this.measureGroup);
+    this.measureGroup.clear();
+    this.measureLabel?.remove();
+    this.measureLabel = null;
+    this.measureSpec = spec || null;
+    if (spec) {
+      const color = 0x1f4fa8, V = (p) => new THREE.Vector3(p[0], p[1], p[2]);
+      const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true });
+      this.measureGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(spec.a), V(spec.b)]), mat));
+      for (const l of spec.dims || []) {
+        const dl = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(l[0]), V(l[1])]), new THREE.LineDashedMaterial({ color, depthTest: false, transparent: true, dashSize: 3, gapSize: 2, opacity: 0.7 }));
+        dl.computeLineDistances();
+        this.measureGroup.add(dl);
+      }
+      const pts = new THREE.BufferGeometry().setFromPoints([V(spec.a), V(spec.b)]);
+      this.measureGroup.add(new THREE.Points(pts, new THREE.PointsMaterial({ color, size: 7, sizeAttenuation: false, depthTest: false, transparent: true })));
+      for (const o of this.measureGroup.children) o.renderOrder = 999;
+      const el = document.createElement("div");
+      el.className = "measure-label";
+      el.textContent = spec.text || "";
+      this.container.append(el);
+      this.measureLabel = el;
+    }
+    this.placeMeasureLabel();
+    this.render();
+  }
+  placeMeasureLabel() {
+    const sp = this.measureSpec, el = this.measureLabel;
+    if (!sp || !el) return;
+    const [x, y] = this.worldToScreen([(sp.a[0] + sp.b[0]) / 2, (sp.a[1] + sp.b[1]) / 2, (sp.a[2] + sp.b[2]) / 2]);
+    el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -130%)`;
   }
   /** Dauerhafte Auswahl-Hervorhebung */
   setSelectionHits(hits) {

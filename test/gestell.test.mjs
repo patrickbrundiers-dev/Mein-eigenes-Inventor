@@ -89,3 +89,37 @@ test("Gestell: Spalt der Automatik gilt für Ecken und T-Stöße, setJoint nimmt
   assert.equal(setJoint(g, "nuten", a.id, b.id, 3).gap, undefined, "Nuten ohne Spalt");
   assert.equal(setJoint(g, "stutzen", a.id, b.id, -1).gap, undefined, "negativer Spalt zählt nicht");
 });
+
+test("Gestell: Stecknasen von Hand, Schlitze als Durchbrüche im durchlaufenden Stab, Wiederverwenden nimmt sie mit", () => {
+  const segments = rect(), g = defaultGestell("sk", segments, { kind: "rechteck", size: "60x40x3" });
+  g.members[4].section = { kind: "rechteck", size: "30x20x2" };
+  g.steck = { count: 2, width: 5, edge: 3, clearance: 0.25 };
+  setJoint(g, "stecken", "gm1", "gm5");
+  const plan = gestellPlan({ ...g, segments });
+  const mid = plan.members.find((m) => m.gid === "gm5");
+  assert.equal(mid.tabs.length, 4, "nur am Ende an Stab 1 (anderes Ende: Automatik Stutzen)");
+  assert.ok(mid.tabs.every((t) => Math.abs(t.dir[1] + 1) < 1e-9 && t.h === 2), "Zapfen zeigen in Stab 1, Dicke = Wand");
+  const slots = plan.drills.filter((d) => d.target.endsWith(" 1"));
+  assert.equal(slots.length, 4);
+  near(slots[0].w, 5.5); near(slots[0].h, 2.5);
+  assert.ok(plan.rows.find((r) => r.no === 1).joints.some((t) => /4 Schlitze 5,5 × 2,5/.test(t)));
+  g.members[2].reuse = "gm1";
+  const p2 = gestellPlan({ ...g, segments });
+  assert.equal(p2.drills.filter((d) => d.target.endsWith(" 3")).length, 4, "Stab 3 übernimmt die Schlitze von Stab 1");
+});
+
+test("Gestell: Kopf- und Fußplatte am geraden Stabende, nicht an der Gehrung", () => {
+  const segments = rect(), g = defaultGestell("sk", segments);
+  g.members[4].plateA = { thickness: "8", overhang: "20", holes: "4", holeDia: "11", edge: "15" };
+  g.members[0].plateB = { thickness: "8" };
+  const plan = gestellPlan({ ...g, segments });
+  assert.equal(plan.plates.length, 1, "Ecke mit Gehrung bekommt keine Platte");
+  assert.ok(plan.issues.some((x) => /Stab 1: Platte an Ende B nur an geradem Ende/.test(x.message)));
+  const pl = plan.plates[0], mid = plan.members.find((m) => m.gid === "gm5");
+  near(pl.W, 80); near(pl.H, 80); near(pl.t, 8);
+  assert.equal(pl.holes.length, 4);
+  assert.deepEqual(pl.normal.map((x) => Math.round(x) + 0), [0, -1, 0], "außen am Ende A, zeigt vom Stab weg");
+  near(pl.center[0], mid.a[0], 1e-6, "Mitte auf der Stabachse");
+  near(pl.center[1], 20, 1e-6, "Ende A liegt an der Innenseite von Stab 1 (halbe Profilbreite)");
+  assert.ok(plan.rows.find((r) => r.no === 5).joints.some((t) => /Platte 80 × 80 × 8 an Ende A/.test(t)));
+});

@@ -3,8 +3,10 @@
 // Die Baugruppe hält die Einstellungen (asm.gestell, siehe src/core/gestell.js); jeder Stab ist ein Bauteil mit
 // Feature »genteil« (gen »gestell«), gleiche Stäbe teilen sich ein Bauteil (app.syncGenAssembly).
 import { h, toast, modal, fmtNum, downloadBlob } from "./dom.js";
-import { skeletonSegments, defaultGestell, addMember, removeMember, setJoint, gestellPlan, gestellCsv, JOINT_KINDS, GAP_KINDS, PLACES, CORNER_AUTO, TEE_AUTO } from "../core/gestell.js";
-import { planeFrame } from "../core/geom.js";
+import { skeletonSegments, defaultGestell, addMember, removeMember, setJoint, gestellPlan, gestellCsv, JOINT_KINDS, GAP_KINDS, PLACES, CORNER_AUTO, TEE_AUTO, STECK_FIELDS, steckOf } from "../core/gestell.js";
+import { planeFrame, placementMatrix, matApply } from "../core/geom.js";
+import { bodiesMass } from "../core/mass.js";
+import { materialOf } from "../core/materials.js";
 import { resolvePlane } from "../core/datums.js";
 import { resolveParams, evaluate } from "../core/expr.js";
 import { newAssembly, uid } from "../core/examples.js";
@@ -136,6 +138,10 @@ export function gestellSections(P, asm) {
     P.seg("T-Stöße", TEE_AUTO, g.tee || "stutzen", (v) => upd("T-Stöße", (G) => { G.tee = v; })),
     P.expr("Spalt", String(g.gap ?? 0), (v) => { try { const x = gapOf(v, P.scope()); upd("Spalt", (G) => { if (x) G.gap = x; else delete G.gap; }); } catch (e) { toast(e.message, { kind: "err" }); } }, { allowNeg: false }),
     h("p", { class: "hint" }, "Spalt zwischen den Stäben bei Gehrung, Eckverbindung und Stutzen – gilt für die Automatik und die Werkzeuge im Menüband."),
+    g.tee === "stecken" || g.joints.some((j) => j.kind === "stecken") ? h("div", {},
+      h("h4", {}, "Stecknasen"),
+      ...STECK_FIELDS.map(([k, label]) => P.expr(label, String(steckOf(g.steck)[k]), (v) => upd("Stecknasen", (G) => { G.steck = { ...steckOf(G.steck), [k]: Number(evaluate(v, {})) || 0 }; }), { unit: k === "count" ? "" : "mm", allowNeg: false })),
+      h("p", { class: "hint" }, "Zapfen sitzen an den Wänden des stoßenden Stabs, deren Kante längs zum durchlaufenden Stab liegt; Schlitze = Zapfen + 2 × Spiel, nur im ebenen Teil der Wand (nicht im Eckradius). Zapfenlänge = Wand des durchlaufenden Stabs + Überstand.")) : null,
     ...plan.issues.map((x) => h("div", { class: "msg warn" }, x.message)),
     free.length ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => upd("Stäbe einfügen", (G) => { for (const s of free) addMember(G, s.id); }) }, `${free.length} Linie(n) ohne Stab einfügen`)) : null,
     h("div", { class: "btn-row" },
@@ -183,11 +189,29 @@ export function memberSection(P, asm, comp) {
       P.text("Drehung ° (leer = wie Gestell)", m.rot == null ? "" : String(m.rot), (v) => upd("Drehung", (s) => { const t = v.trim().replace(",", "."); if (t === "") delete s.rot; else s.rot = Number(evaluate(t, {})) || 0; }), { placeholder: String(g.rot ?? 0) }),
       num("Versatz quer (u)", "offU"), num("Versatz hoch (v)", "offV"),
       num("Verlängern Ende A (− = kürzen)", "extA"), num("Verlängern Ende B (− = kürzen)", "extB"),
+      ...["A", "B"].flatMap((e) => plateFields(P, m, e, upd)),
     ],
     P.select("Wiederverwenden von", [["", "–"], ...g.members.filter((x) => x.id !== m.id && !x.reuse).map((x) => [x.id, memberLabel(x)])], m.reuse || "", (v) => upd("Wiederverwenden", (s) => { if (v) s.reuse = v; else delete s.reuse; })),
     h("div", { class: "btn-row" }, ...tools),
     h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => editGestell(app, asm, "Stab entfernen", (G) => removeMember(G, m.id)) }, "Stab entfernen")),
     h("p", { class: "hint" }, "Profil und Enden werden hier am Gestell geändert und gelten für das Bauteil des Stabs. Bohrungen und Ausschnitte im Bauteil selbst anhängen – sie bleiben beim Aktualisieren erhalten."))];
+}
+
+/** Kopf-/Fußplatte an Ende A oder B eines Stabs (Maße wie Anschlussblech; nur an geradem Ende) */
+const PLATE_DEFAULT = { thickness: "10", overhang: "40", holes: "4", holeDia: "13", edge: "25" };
+function plateFields(P, m, e, upd) {
+  const key = "plate" + e, st = m[key];
+  const set = (label, k) => (v) => upd(label, (x) => { x[key] = { ...(x[key] || PLATE_DEFAULT), [k]: String(v) }; });
+  return [
+    P.check(`Platte an Ende ${e} (Kopf-/Fußplatte)`, !!st, (on) => upd(`Platte Ende ${e}`, (x) => { if (on) x[key] = { ...PLATE_DEFAULT }; else delete x[key]; })),
+    ...(st ? [
+      P.expr("Plattendicke", st.thickness ?? "10", set("Plattendicke", "thickness"), { allowNeg: false, allowZero: false }),
+      P.expr("Überstand", st.overhang ?? "0", set("Überstand", "overhang"), { allowNeg: false }),
+      P.select("Bohrungen", [["0", "keine"], ["2", "2"], ["4", "4"]], String(st.holes ?? "0"), set("Bohrungen", "holes")),
+      Number(st.holes) ? P.expr("Bohrung Ø", st.holeDia ?? "13", set("Bohrung Ø", "holeDia"), { allowNeg: false, allowZero: false }) : null,
+      Number(st.holes) ? P.expr("Randabstand", st.edge ?? "25", set("Randabstand", "edge"), { allowNeg: false }) : null,
+    ] : []),
+  ];
 }
 
 // ---------- Menüband-Werkzeuge ----------
@@ -295,18 +319,27 @@ export async function gestellInfoDialog(app, asm = activeGestell(app)) {
   const plan = planOf(asm);
   await app.builtParts(asm);
   const byKey = new Map(asm.components.filter((c) => c.genKey).map((c) => [c.genKey, c]));
+  // Masse und Schwerpunkt (Welt) je Komponente aus den Körpern ihres Einzelteils, über die Lage der Komponente
+  const massOf = (c) => {
+    const part = c && app.doc(c.part), bodies = (part && app.results.get(part.id)?.bodies) || [];
+    const vol = bodies.reduce((s, x) => s + (x.props?.volume || 0), 0);
+    const cl = vol > 0 && bodies.every((x) => !(x.props?.volume > 0) || x.props.center) ? [0, 1, 2].map((k) => bodies.reduce((s, x) => s + (x.props?.volume > 0 ? x.props.center[k] * x.props.volume : 0), 0) / vol) : null;
+    return { part, bodies, mass: part ? bodiesMass(bodies, materialOf(part.material).density) : 0, cog: cl ? matApply(placementMatrix(c.pos, c.rot), cl) : null };
+  };
   const rows = plan.rows.map((r) => {
-    const c = byKey.get("m:" + r.name), part = c && app.doc(c.part);
-    const b = part && app.results.get(part.id)?.bodies?.find((x) => x.kind === "member");
-    return { ...r, part: part?.name || "", cut: b?.meta?.length };
+    const { part, bodies, mass, cog } = massOf(byKey.get("m:" + r.name));
+    return { ...r, part: part?.name || "", cut: bodies.find((x) => x.kind === "member")?.meta?.length, mass, cog };
   });
+  const all = asm.components.filter((c) => c.genKey).map(massOf); // mit Platten
+  const mTot = all.reduce((s, r) => s + (r.mass || 0), 0);
+  const cog = mTot > 0 && all.every((r) => !(r.mass > 0) || r.cog) ? [0, 1, 2].map((k) => all.reduce((s, r) => s + (r.mass > 0 ? r.cog[k] * r.mass : 0), 0) / mTot) : null;
   const csv = () => downloadBlob(new Blob(["﻿" + gestellCsv(rows)], { type: "text/csv" }), `${asm.name} Gestell-Info.csv`);
   const total = rows.reduce((s, r) => s + (r.cut || r.len), 0);
   modal({ title: `Gestell-Info – ${asm.name}`, width: "900px", body: h("div", {},
     h("table", { class: "grid" },
-      h("thead", {}, h("tr", {}, ...["Stab", "Profil", "Linie", "Achse mm", "Zuschnitt mm", "Schnitt A °", "Schnitt B °", "Verbindungen", "Bauteil"].map((t) => h("th", {}, t)))),
-      h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, r.name), h("td", {}, r.profile), h("td", {}, r.seg), h("td", { class: "num" }, fmtNum(r.len, 1)), h("td", { class: "num" }, r.cut ? fmtNum(r.cut, 1) : "–"), h("td", { class: "num" }, fmtNum(r.angA, 1)), h("td", { class: "num" }, fmtNum(r.angB, 1)), h("td", {}, r.joints.join("; ")), h("td", {}, r.part))))),
-    h("p", { class: "hint" }, `${rows.length} Stäbe, ${new Set(rows.map((r) => r.part)).size} Einzelteile, Zuschnitt gesamt ${fmtNum(total / 1000, 2)} m.`),
+      h("thead", {}, h("tr", {}, ...["Stab", "Profil", "Linie", "Achse mm", "Zuschnitt mm", "Schnitt A °", "Schnitt B °", "Masse kg", "Verbindungen", "Bauteil"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, r.name), h("td", {}, r.profile), h("td", {}, r.seg), h("td", { class: "num" }, fmtNum(r.len, 1)), h("td", { class: "num" }, r.cut ? fmtNum(r.cut, 1) : "–"), h("td", { class: "num" }, fmtNum(r.angA, 1)), h("td", { class: "num" }, fmtNum(r.angB, 1)), h("td", { class: "num" }, r.mass ? fmtNum(r.mass, 2) : "–"), h("td", {}, r.joints.join("; ")), h("td", {}, r.part))))),
+    h("p", { class: "hint" }, `${rows.length} Stäbe${plan.plates.length ? `, ${plan.plates.length} Platten` : ""}, ${new Set(rows.map((r) => r.part)).size} Einzelteile, Zuschnitt gesamt ${fmtNum(total / 1000, 2)} m, Masse gesamt ${fmtNum(mTot, 2)} kg${cog ? `, Schwerpunkt ${cog.map((v) => fmtNum(v, 1)).join(" / ")} mm` : ""}.`),
     ...plan.issues.map((x) => h("div", { class: "msg warn" }, x.message))),
-  buttons: [{ label: "Schließen" }, { label: "Als CSV", primary: true, run: () => { csv(); return false; } }] });
+  buttons: [{ label: "Schließen" }, { label: "Überschneidungen prüfen", run: async () => { if (app.activeDoc() !== asm) await app.openDoc(asm.id); app.props.collisionDialog(); } }, { label: "Als CSV", primary: true, run: () => { csv(); return false; } }] });
 }

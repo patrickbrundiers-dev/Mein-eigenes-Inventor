@@ -4,7 +4,7 @@ import { FEATURE_NAMES } from "./app.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { activeCount } from "../core/bauteilende.js";
 
-const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", lasche: "flange", umschlag: "hem", durchzug: "collar", skizze3d: "path3d", abgeleitet: "derive" };
+const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
 
 export class Tree {
   constructor(app) {
@@ -203,6 +203,37 @@ export class Tree {
         onClick: () => { app.sel = { type: "asmpattern", id: pm.id }; this.render(); app.props.render(); },
       })));
     }
+    for (const st of asm.steckverbindungen || []) {
+      const sel = app.sel?.type === "steck" && app.sel.id === st.id;
+      ul.append(h("li", {}, this.node({
+        label: st.name || "Stecksystem", ic: "tabslot", cls: (sel ? "sel" : "") + (st.error ? " err" : ""),
+        title: st.error ? "Fehler: " + st.error : st.info || st.name,
+        onClick: () => { app.sel = { type: "steck", id: st.id }; this.render(); app.props.render(); },
+      })));
+    }
+    const mots = asm.motions || [];
+    if (mots.length) {
+      const key = "mots:" + asm.id;
+      const open = !this.collapsed.has(key);
+      const li = h("li");
+      li.append(this.node({ label: `Bewegungen (${mots.length})`, ic: "motion", twist: open ? "▾" : "▸", onTwist: () => this.toggle(key), cls: "group" }));
+      if (open) {
+        const mu = h("ul");
+        for (const m of mots) {
+          const sel = app.sel?.type === "motion" && app.sel.id === m.id;
+          mu.append(h("li", {}, this.node({
+            label: m.name || "Bewegung", ic: "motion", cls: (sel ? "sel" : "") + (m.suppressed ? " suppressed" : ""), meta: (m.kind === "drehschiebung" ? `${m.ratio} mm/U` : `× ${m.ratio}`),
+            onClick: () => { app.sel = { type: "motion", id: m.id }; this.render(); app.props.render(); },
+            onMenu: (e) => contextMenu(e.clientX, e.clientY, [
+              { label: m.suppressed ? "Aktivieren" : "Unterdrücken", icon: "eyeoff", run: () => app.edit("Bewegung", () => { m.suppressed = !m.suppressed; }) },
+              { label: "Löschen", icon: "trash", run: () => app.edit("Bewegung löschen", () => { asm.motions = asm.motions.filter((x) => x.id !== m.id); if (app.sel?.id === m.id) app.sel = null; }) },
+            ]),
+          })));
+        }
+        li.append(mu);
+      }
+      ul.append(li);
+    }
     const cons = asm.constraints || [];
     if (cons.length) {
       const key = "cons:" + asm.id;
@@ -215,12 +246,13 @@ export class Tree {
           const err = app.asmErrors?.[c.id];
           const sel = app.sel?.type === "constraint" && app.sel.id === c.id;
           cu.append(h("li", {}, this.node({
-            label: c.name || (c.type === "buendig" ? "Bündig" : c.type === "konzentrisch" ? "Konzentrisch" : "Fläche an Fläche"), ic: { konzentrisch: "concentric", einfuegen: "insert", winkel: "angle", tangential: "tangent" }[c.type] || "align",
+            label: c.name || (c.type === "buendig" ? "Bündig" : c.type === "konzentrisch" ? "Konzentrisch" : "Fläche an Fläche"), ic: { konzentrisch: "concentric", einfuegen: "insert", winkel: "angle", tangential: "tangent", symmetrie: "mirror", starr: "fix", koordinaten: "origin", punkt: "point", punktflaeche: "point" }[c.type] || "align",
             cls: (sel ? "sel" : "") + (err ? " err" : "") + (c.suppressed ? " suppressed" : ""), title: err ? "Fehler: " + err : c.name,
             meta: c.type === "winkel" ? (c.angle ?? "90") + "°" : c.gap && c.gap !== "0" ? c.gap + " mm" : "",
             onClick: () => { app.sel = { type: "constraint", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
             onMenu: (e) => contextMenu(e.clientX, e.clientY, [
               { label: c.suppressed ? "Aktivieren" : "Unterdrücken", icon: "eyeoff", run: () => app.edit("Abhängigkeit", () => { c.suppressed = !c.suppressed; }) },
+              { label: "Bearbeiten …", icon: "edit", run: () => { app.sel = { type: "constraint", id: c.id }; this.render(); app.props.render(); } },
               { label: "Löschen", icon: "trash", run: () => app.props.deleteConstraint(c.id) },
             ]),
           })));

@@ -5,7 +5,9 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { solveSketch } from "../core/solver.js";
 import { extractProfiles, holeCenters, sketchLines } from "../core/sketch.js";
 import { partTextVars } from "../core/schrift.js";
-import { planeFrame, toWorld, v3 } from "../core/geom.js";
+import { planeFrame, toWorld, v3, decomposePlacement } from "../core/geom.js";
+import { beadSection, filletPair } from "../core/schweissbaugruppe.js";
+import { parseSections, shaftProfile, gearData, gearOutline, bearingGeometry, bearingDesignation, springData, springDesignation } from "../core/assistent.js";
 import { resolveDatums, resolvePlane, mirrorPlane, patternAxis, datumSummary } from "../core/datums.js";
 import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "../core/koerper.js";
 import { capPlan, trimPlan } from "../core/rahmen.js";
@@ -18,11 +20,14 @@ import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.
 import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
-import { kantteilOutline, splitList } from "../core/blech.js";
-import { planSheet, contourLegs, SHEET_FEATURES } from "../core/blechplus.js";
+import { kantteilOutline, planKantteil, splitList } from "../core/blech.js";
+import { toAxis, rollSide, gapAngle, rollAngle, rollFlat } from "../core/konturwalzen.js";
+import { clampStack, boltStack, boltHoles } from "../core/schraubverbindung.js";
+import { planSheet, contourLegs, punchOutline, SHEET_FEATURES } from "../core/blechplus.js";
 import { path3d } from "../core/ableiten.js";
 import { applyRules } from "../core/regeln.js";
 import { bendRule, ruleSummary } from "../core/bendtable.js";
+import { effectiveSheet } from "../core/blechregeln.js";
 import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims, boltSizeForHole, boltSet } from "../core/normteile.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
@@ -31,6 +36,7 @@ import { gestellPlan } from "../core/gestell.js";
 import { planBodies, localPlan } from "../core/genteil.js";
 import { FILL_DENSITY } from "../core/mass.js";
 import { activeCount } from "../core/bauteilende.js";
+import { tabLayout, wallFromDepths, slotSize } from "../core/stecksystem.js";
 
 const BIG = 20000;
 
@@ -411,6 +417,33 @@ export function createKernel(R) {
   // ---------- Kanten/Flächen-Auswahl ----------
   function edgeMid(e) { return tuple(e.pointAt(0.5)); }
 
+  /** Kehlnaht-Körper an einer geraden Kante: Flächen anderer Teile an der Kante suchen, Dreieck entlang ziehen */
+  function beadSolid(e, a, bodies) {
+    if (e.geomType !== "LINE") return null;
+    const S = tuple(e.startPoint), T = tuple(e.endPoint), L = v3.dist(S, T);
+    if (!(L > 1e-6)) return null;
+    const u = v3.norm(v3.sub(T, S)), mid = v3.mul(v3.add(S, T), 0.5), tol = 0.05;
+    const faces = [];
+    bodies.forEach((b, bi) => {
+      if (b.meta?.weld) return;
+      const bb = b.shape.boundingBox;
+      if (!pointInBox(mid, bb, 1)) return;
+      for (const fc of b.shape.faces) {
+        if (fc.geomType !== "PLANE") continue;
+        const n = v3.norm(tuple(fc.normalAt(mid)));
+        if (Math.abs(v3.dot(n, u)) > 1e-3 || Math.abs(v3.dot(n, v3.sub(mid, tuple(fc.center)))) > tol) continue;
+        if (!pointInBox(mid, fc.boundingBox, tol)) continue;
+        faces.push({ body: bi, n });
+      }
+    });
+    const pair = filletPair(faces);
+    if (!pair) return null;
+    const sec = beadSection(pair[0].n, pair[1].n, a);
+    const y = v3.cross(u, sec.tA);
+    const bx = v3.dot(sec.tB, sec.tA), by = v3.dot(sec.tB, y);
+    const shape = R.draw([0, 0]).lineTo([sec.z, 0]).lineTo([sec.z * bx, sec.z * by]).close().sketchOnPlane(makePlane({ origin: S, xDir: sec.tA, normal: u })).extrude(L);
+    return { shape, volume: sec.area * L };
+  }
   function matchEdges(shape, refs, tol) {
     const edges = shape.edges;
     const mids = edges.map((e) => ({ e, mid: edgeMid(e), type: e.geomType }));
@@ -538,10 +571,13 @@ export function createKernel(R) {
     /** Zahlen und Lage eines Kantteils (Querschnitt aus Maßen oder Konturlasche aus einer Skizze) */
     const sheetSpec = (f) => {
       const list = (x, label) => splitList(x).map((v, k) => E(v, `${label} ${k + 1}`));
-      const t = E(f.t ?? "2", "Blechdicke"), L = E(f.length ?? "1000", "Länge");
+      const L = E(f.length ?? "1000", "Länge");
       if (!(L > 0)) throw new Error("Länge muss > 0 sein");
-      const ri = E(f.ri ?? "0", "Innenradius"), K0 = E(f.k ?? "0.33", "K-Faktor");
-      const br = bendRule({ rule: f.rule || "k", material: part.material || "S235", t, ri, k: K0 });
+      // Blechregel (Stufe 44): Radius, Abwicklung und K aus der Regel, Dicke mit »Dicke aus Regel«
+      const eff = effectiveSheet(f, E, part.material || "S235");
+      const { t, ri, k: K0 } = eff;
+      if (!(t > 0)) throw new Error("Blechdicke muss > 0 sein");
+      const br = bendRule({ rule: eff.rule, material: eff.material, t, ri, k: K0 });
       const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];
       if (f.src === "skizze") {
         const sk = getSketch(f.sketch, "Skizze der Konturlasche");
@@ -553,13 +589,13 @@ export function createKernel(R) {
         let O = v3.add(toWorld(fr, c.start[0], c.start[1]), v3.mul(V, c.offset * h));
         if (dirMode === "normal") O = v3.add(O, v3.mul(N, L));
         else if (dirMode === "symmetrisch") O = v3.add(O, v3.mul(N, L / 2));
-        return { legs: c.legs, angles: c.angles, ref: c.ref, t, ri, k: K0, kOf: br.kOf, br, L, frame: { O, U, V, W: v3.mul(N, -1) }, flatFrame: { origin: v3.sub(fr.origin, v3.mul(fr.normal, h)), xDir: fr.xDir, normal: fr.normal } };
+        return { legs: c.legs, angles: c.angles, ref: c.ref, t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, frame: { O, U, V, W: v3.mul(N, -1) }, flatFrame: { origin: v3.sub(fr.origin, v3.mul(fr.normal, h)), xDir: fr.xDir, normal: fr.normal } };
       }
       const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Lage " + "XYZ"[k]));
-      return { legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), ref: f.ref || "aussen", t, ri, k: K0, kOf: br.kOf, br, L, frame: { O: pos, U: X, V: Z, W: Y }, flatFrame: { origin: v3.add(pos, [0, 0, -t / 2]), xDir: X, normal: Z } };
+      return { legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), ref: f.ref || "aussen", t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, frame: { O: pos, U: X, V: Z, W: Y }, flatFrame: { origin: v3.add(pos, [0, 0, -t / 2]), xDir: X, normal: Z } };
     };
     /** Zahlen eines Blech-Features */
-    const sheetExtra = (f) => {
+    const sheetExtra = (f, spec) => {
       const opt = (x, label) => (x === undefined || x === null || String(x).trim() === "" ? null : E(x, label));
       const sg = f.dir === "ab" ? "ab" : "auf";
       if (f.type === "umschlag") return { type: "umschlag", edge: f.edge === "anfang" ? "anfang" : "ende", kind: f.kind || "geschlossen", length: E(f.length ?? "15", "Länge"), gap: opt(f.gap, "Spalt") ?? 0, dir: sg };
@@ -567,7 +603,13 @@ export function createKernel(R) {
         const lst = (x, label) => splitList(String(x ?? "")).map((v, k) => E(v, `${label} ${k + 1}`));
         return { type: "durchzug", leg: E(f.leg ?? "1", "Schenkel"), s: lst(f.s ?? "20", "Lage entlang"), y: lst(f.y ?? "50", "Lage längs"), d: E(f.d ?? "8", "Innendurchmesser"), height: E(f.height ?? "6", "Kragenhöhe"), dir: sg, d0: opt(f.d0, "Vorloch") };
       }
-      return { type: "lasche", edge: f.edge || "ende", length: E(f.length ?? "30", "Länge"), angle: E(f.angle ?? "90", "Winkel"), dir: sg, ri: opt(f.ri, "Innenradius"), width: opt(f.width, "Breite"), offset: opt(f.offset, "Versatz") ?? 0, relief: f.relief || "rechteck", reliefW: opt(f.reliefW, "Freischnitt-Breite"), reliefD: opt(f.reliefD, "Freischnitt-Tiefe"), leg: opt(f.leg, "Schenkel") ?? 1 };
+      if (f.type === "eckeschliessen") return { type: "eckeschliessen", bend: E(f.bend ?? "1", "Biegung"), side: f.side === "hinten" ? "hinten" : "vorne", through: f.through === "b" ? "b" : "a", gap: opt(f.gap, "Spalt") ?? 0 };
+      if (f.type === "stanzung") {
+        const lst = (x, label) => splitList(String(x ?? "")).map((v, k) => E(v, `${label} ${k + 1}`));
+        const form = ["rechteck", "langloch"].includes(f.form) ? f.form : "rund";
+        return { type: "stanzung", leg: E(f.leg ?? "1", "Schenkel"), s: lst(f.s ?? "30", "Lage entlang"), y: lst(f.y ?? "50", "Lage längs"), form, d: form === "rund" ? E(f.d ?? "10", "Durchmesser") : 0, a: form === "rund" ? 0 : E(f.a ?? "30", "Länge entlang"), b: form === "rund" ? 0 : E(f.b ?? "10", "Breite längs") };
+      }
+      return { type: "lasche", edge: f.edge || "ende", length: E(f.length ?? "30", "Länge"), angle: E(f.angle ?? "90", "Winkel"), dir: sg, ri: opt(f.ri, "Innenradius"), width: opt(f.width, "Breite"), offset: opt(f.offset, "Versatz") ?? 0, relief: f.relief || spec?.relief?.relief || "rechteck", reliefW: opt(f.reliefW, "Freischnitt-Breite") ?? (spec?.relief?.reliefW || null), reliefD: opt(f.reliefD, "Freischnitt-Tiefe") ?? (spec?.relief?.reliefD || null), leg: opt(f.leg, "Schenkel") ?? 1 };
     };
     /** Körper eines Kantteils mit allen Blech-Features bis hierher */
     const sheetBuild = (f, spec, extras) => {
@@ -623,14 +665,16 @@ export function createKernel(R) {
         for (const e of S.ends) {
           const g = C[e.leg], front = e.side === "vorne";
           const D3 = v3.add(v3.mul(U, g.d[0]), v3.mul(V, g.d[1]));
-          const pl = new R.Plane(P3(g.a, 0), W, D3);
+          // Lage entlang des Schenkels (nach »Ecke schließen« verlängert oder gekürzt), weggeschnitten nur auf dem geraden Stück
+          const s0 = e.s0 ?? 0, s1 = e.s1 ?? g.len, c0 = Math.max(0, s0), c1 = Math.min(g.len, s1);
+          const plAt = (s) => new R.Plane(P3(add2(g.a, g.d, s), 0), W, D3);
           const S0 = e.cut + 1;
           const map = (q) => [front ? S0 - q[0] : L - S0 + q[0], q[1]];
           const o = kantteilOutline(e.two, t);
           const mo = { start: map(o.start), segs: o.segs.map((sg) => ({ ...sg, to: map(sg.to), mid: sg.mid && map(sg.mid) })) };
           const box = front ? [[-1, -h - 1], [e.cut, -h - 1], [e.cut, h + 1], [-1, h + 1]] : [[L - e.cut, -h - 1], [L + 1, -h - 1], [L + 1, h + 1], [L - e.cut, h + 1]];
-          solid = solid.cut(poly(box).sketchOnPlane(pl).extrude(g.len));
-          solid = solid.fuse(outlineDrawing(mo).sketchOnPlane(pl).extrude(g.len));
+          if (c1 - c0 > 1e-6) solid = solid.cut(poly(box).sketchOnPlane(plAt(c0)).extrude(c1 - c0));
+          solid = solid.fuse(outlineDrawing(mo).sketchOnPlane(plAt(s0)).extrude(s1 - s0));
           if (e.corner) {
             for (const bi of [e.leg - 1, e.leg]) {
               const bd = plan.bends[bi];
@@ -655,15 +699,68 @@ export function createKernel(R) {
           const ring = R.makeCylinder(hp.d / 2 + t, hp.H - t, v3.add(c3, v3.mul(N3, h)), N3).cut(R.makeCylinder(hp.d / 2, hp.H + 2, v3.sub(c3, v3.mul(N3, h + 1)), N3));
           solid = solid.fuse(ring);
         }
+        for (const pu of S.punch) {
+          const g = C[pu.leg];
+          const c3 = P3(add2(g.a, g.d, pu.s), pu.y);
+          const N3 = v3.add(v3.mul(U, g.n[0]), v3.mul(V, g.n[1])), D3 = v3.add(v3.mul(U, g.d[0]), v3.mul(V, g.d[1]));
+          const from = v3.sub(c3, v3.mul(N3, h + 1));
+          solid = solid.cut(pu.form === "rund" ? R.makeCylinder(pu.d / 2, t + 2, from, N3) : poly(punchOutline(pu.form, pu.a, pu.b)).sketchOnPlane(new R.Plane(from, D3, N3)).extrude(t + 2));
+        }
       }
       const fm = S.flat;
       const nB = fm.bends.length;
       const name = f.name || `${f.src === "skizze" ? "Konturlasche" : "Kantteil"} ${round(t)} mm, Abw. ${round(fm.width)} × ${round(fm.height)}`;
       const meta = { sheet: { t, flat: fm.width, length: fm.height, bends: fm.bends.map((b) => ({ angle: b.angle, r: b.ri, k: b.k })), bendLines: plan.bendLines, rule: ruleSummary(br), flatModel: fm } };
-      const feats2 = [S.parts.length && `${S.parts.length} Teil-Lasche(n)`, S.ends.length && `${S.ends.length} Stirnlasche(n)`, S.pierce.length && `${S.pierce.length} Durchzug/Durchzüge`].filter(Boolean);
-      const info = `Abwicklung ${round(fm.width)} × ${round(fm.height)} mm, ${nB} Biegung(en)` + (plan.bends.length ? `, Biegezugabe ${plan.flatParts.filter((_, k) => k % 2).map(round).join(" / ")} mm` : "") + (feats2.length ? ` · ${feats2.join(", ")}` : "") + (nB && (f.rule || "k") !== "k" ? ` · ${ruleSummary(br)}` : "") + (f.view === "abgewickelt" ? "" : " · Abwicklung als DXF in den Eigenschaften");
+      const nClosed = S.ends.reduce((n, e) => n + (e.closed?.length || 0), 0);
+      const feats2 = [S.parts.length && `${S.parts.length} Teil-Lasche(n)`, S.ends.length && `${S.ends.length} Stirnlasche(n)`, nClosed && `${nClosed} Ecke(n) geschlossen`, S.pierce.length && `${S.pierce.length} Durchzug/Durchzüge`, S.punch.length && `${S.punch.length} Stanzung(en)`].filter(Boolean);
+      const info = `Abwicklung ${round(fm.width)} × ${round(fm.height)} mm, ${nB} Biegung(en)` + (plan.bends.length ? `, Biegezugabe ${plan.flatParts.filter((_, k) => k % 2).map(round).join(" / ")} mm` : "") + (feats2.length ? ` · ${feats2.join(", ")}` : "") + (nB && spec.rule !== "k" ? ` · ${ruleSummary(br)}` : "") + (spec.ruleName ? ` · Blechregel ${spec.ruleName}` : "") + (f.view === "abgewickelt" ? "" : " · Abwicklung als DXF in den Eigenschaften");
       const warn = [...plan.issues.map((x) => x.message), ...new Set(br.warnings)];
       return { solid, meta, name, info, warn: warn.join("; ") };
+    };
+
+    /** Konturwalzen: offene Skizzenlinie als Blech (Biegungen mit Innenradius) um eine Skizzenachse gewalzt; cut = Trennfuge */
+    const rollBuild = (f, cut = null) => {
+      const eff = effectiveSheet(f, E, part.material || "S235");
+      const { t, ri, k } = eff, h = t / 2;
+      if (!(t > 0)) throw new Error("Blechdicke muss > 0 sein");
+      const br = bendRule({ rule: eff.rule, material: eff.material, t, ri, k });
+      const sk = getSketch(f.sketch, "Skizze der Konturwalze");
+      const c = contourLegs(pathChain(sk.sketch), f.side || "links");
+      const plan = planKantteil({ legs: c.legs, angles: c.angles, t, ri, k, kOf: br.kOf, ref: c.ref });
+      const U2 = [Math.cos(c.dir), Math.sin(c.dir)], V2 = [-Math.sin(c.dir), Math.cos(c.dir)];
+      const toSk = (q) => [c.start[0] + U2[0] * q[0] + V2[0] * (q[1] + c.offset * h), c.start[1] + U2[1] * q[0] + V2[1] * (q[1] + c.offset * h)];
+      const o = kantteilOutline(plan, t);
+      const axis = f.axis === "y" ? "y" : "x";
+      rollSide([o.start, ...o.segs.flatMap((sg) => [sg.to, sg.mid].filter(Boolean))].map(toSk), axis);
+      let d = R.draw(toSk(o.start)), cur = toSk(o.start);
+      for (const sg of o.segs) {
+        const to = toSk(sg.to);
+        if (Math.hypot(to[0] - cur[0], to[1] - cur[1]) < 1e-9) continue;
+        d = sg.t === "arc" ? d.threePointsArcTo(to, toSk(sg.mid)) : d.lineTo(to);
+        cur = to;
+      }
+      const fr = sk.frame, dir = axis === "y" ? fr.yDir : fr.xDir;
+      const angle = rollAngle(E(f.angle ?? "360", "Winkel"));
+      const ends = plan.center.flatMap((g) => [toAxis(axis, toSk(g.a)), toAxis(axis, toSk(g.b))]);
+      const rMean = ends.reduce((sum, p) => sum + Math.abs(p[1]), 0) / ends.length;
+      let ang = angle, start = 0;
+      if (cut) {
+        if (angle < 360 - 1e-9) throw new Error("Trennfuge nur an einer ganz (360°) gewalzten Kontur – sonst ist der Mantel schon offen");
+        const ga = gapAngle(cut.gap, rMean);
+        ang = 360 - ga; start = cut.pos + ga / 2;
+      }
+      const skt = d.close().sketchOnPlane(new R.Plane(fr.origin, fr.xDir, fr.normal));
+      let solid = ang >= 360 - 1e-9 ? skt.revolve(dir, { origin: fr.origin }) : R.revolution(skt.face(), fr.origin, dir, ang);
+      if (Math.abs(start) > 1e-9) solid = solid.rotate(start, fr.origin, dir);
+      let fm = null, note = "";
+      if (plan.bends.length) note = "Abwicklung nur bei einer geraden Linie (Zylinder, Kegel oder Ring)";
+      else if (ang >= 360 - 1e-9) note = "Für die Abwicklung eine Trennfuge setzen";
+      else fm = rollFlat(ends[0], ends[1], ang);
+      const kindName = { zylinder: "Zylindermantel", kegel: "Kegelmantel", ring: "Kreisring" }[fm?.roll.kind] || "Konturwalze";
+      const name = f.name || `${kindName} ${round(t)} mm` + (fm ? `, Abw. ${round(fm.width)} × ${round(fm.height)}` : "");
+      const meta = { sheet: { t, flat: fm?.width ?? 0, length: fm?.height ?? 0, bends: plan.bends.map((b) => ({ angle: Math.abs(b.angle), r: b.ri, k: br.kOf ? br.kOf(Math.abs(b.angle)) : k })), bendLines: [], rule: ruleSummary(br), flatModel: fm, roll: { angle: ang, rMean, note } } };
+      const info = `${kindName}, ${round(ang)}° gewalzt, mittlerer Radius ${round(rMean)} mm` + (cut ? `, Trennfuge ${round(cut.gap)} mm` : "") + (fm ? ` · Abwicklung ${round(fm.width)} × ${round(fm.height)} mm` + (fm.roll.psi ? ` (Kreisringausschnitt R ${round(fm.roll.R[0])} / ${round(fm.roll.R[1])}, ${round(fm.roll.psi)}°)` : "") : note ? ` · ${note}` : "");
+      return { solid, meta, name, info, warn: [...new Set(br.warnings)].join("; ") };
     };
 
     const applyOp = (op, tool, fid, label) => {
@@ -1021,7 +1118,10 @@ export function createKernel(R) {
                 const cl = v3.dist(c.a, c.b);
                 if (cl > 1e-6) solid = solid.cut(makeMember({ kind: c.section.kind, dims: c.section.dims }, cl, memberFrame(c.a, v3.sub(c.b, c.a), c.rot || 0, c.up), c.cuts || { start: [], end: [] }, { envelope: true }).solid);
               }
-              const ds = drillsOf(m.name, m.a, m.b, Math.max(m.section.geom.width, m.section.geom.height));
+              // angesetzte Zapfen (Gestell: Stecknasen), Quader w × h ab p in Richtung dir
+              for (const t of m.tabs || []) solid = solid.fuse(R.drawRectangle(t.w, t.h).sketchOnPlane(new R.Plane(t.p, t.xDir, v3.norm(t.dir))).extrude(t.len));
+              // einzelner Stab: alle Bohrungen am Umfang (auch Schlitze nahe der Ecken, daher Diagonale)
+              const ds = drillsOf(m.name, m.a, m.b, Math.hypot(m.section.geom.width, m.section.geom.height));
               add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), miterParts: { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) }, ...(m.copes?.length ? { coped: true } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }), m.name);
             }
             for (const pl of plan.plates) {
@@ -1054,6 +1154,7 @@ export function createKernel(R) {
             const refs = f.edges || [];
             if (!refs.length) throw new Error("Keine Kanten gewählt – Kanten im 3D-Fenster anklicken");
             let length = 0, miss = 0, p3 = null;
+            const found = [];
             for (const ref of refs) {
               let best = null, bd = Infinity;
               for (const b of state.bodies) {
@@ -1068,11 +1169,29 @@ export function createKernel(R) {
               if (!best || bd > 0.5) { miss++; continue; }
               length += R.measureLength(best);
               p3 = p3 || edgeMid(best);
+              found.push(best);
             }
             if (!p3) throw new Error("Gewählte Kanten nicht mehr gefunden");
             state.welds.push({ fid: f.id, kind: f.kind || "kehl", a, side: f.side || "pfeil", around: !!f.around, field: !!f.field, length, p3, name: f.name });
             st.info = `${WELD_KINDS[f.kind || "kehl"].dim}${round(a)}, ${round(length)} mm an ${refs.length - miss} Kante(n)`;
-            if (miss) st.warning = `${miss} Kante(n) nicht mehr gefunden`;
+            const warn = miss ? [`${miss} Kante(n) nicht mehr gefunden`] : [];
+            // Schweißbaugruppe (Stufe 53): Kehlnaht als Körper (Dreiecksquerschnitt in der Kehle zwischen zwei Teilen)
+            if (f.bead) {
+              if ((f.kind || "kehl") !== "kehl") throw new Error("Naht als Körper gibt es nur für Kehlnähte");
+              let bead = null, vol = 0, skip = 0;
+              for (const e of found) {
+                const r = beadSolid(e, a, state.bodies);
+                if (!r) { skip++; continue; }
+                bead = bead ? bead.fuse(r.shape) : r.shape;
+                vol += r.volume;
+              }
+              if (skip) warn.push(`${skip} Kante(n) ohne Kehle zwischen zwei Teilen (nur gerade Kanten) – dort kein Nahtkörper`);
+              if (bead) {
+                state.bodies.push({ shape: bead, kind: "solid", name: f.name || "Schweißnaht", fid: f.id, meta: { weld: true } });
+                st.info += `, Nahtkörper ${String(round(vol / 1000)).replace(".", ",")} cm³`;
+              }
+            }
+            if (warn.length) st.warning = warn.join("; ");
             break;
           }
           case "regelkoerper": {
@@ -1098,7 +1217,9 @@ export function createKernel(R) {
           }
           case "lasche":
           case "umschlag":
-          case "durchzug": {
+          case "durchzug":
+          case "eckeschliessen":
+          case "stanzung": {
             const bi = feats.findIndex((g) => g.id === f.base);
             const tool = state.tools.get(f.base);
             if (bi < 0 || bi > i || !tool?.sheet) throw new Error(missingRef(f.base, "Kantteil", f));
@@ -1106,10 +1227,96 @@ export function createKernel(R) {
             if (between) throw new Error(`Blech-Features direkt hinter das Kantteil stellen – »${between.name || between.type}« dazwischen verändert den Körper`);
             const body = state.bodies.find((b) => b.fid === f.base && b.meta?.sheet);
             if (!body) throw new Error("Körper des Kantteils fehlt");
-            const extras = [...tool.sheet.extras, sheetExtra(f)];
+            const extras = [...tool.sheet.extras, sheetExtra(f, tool.sheet.spec)];
             const r = sheetBuild(feats[bi], tool.sheet.spec, extras);
             body.shape = r.solid; body.meta = r.meta; body.name = r.name;
             state.tools.set(f.base, { ...tool, shapes: [{ shape: r.solid, kind: "solid", meta: r.meta, name: r.name }], sheet: { spec: tool.sheet.spec, extras } });
+            st.info = r.info;
+            if (r.warn) st.warning = r.warn;
+            break;
+          }
+          case "schraubverbindung": {
+            const s = getSketch(f.sketch, "Skizze mit Schraubenpunkten");
+            const centers = holeCenters(s.sketch);
+            if (!centers.length) throw new Error("Skizze enthält keine Punkte für die Schrauben (Werkzeug »Punkt«)");
+            const size = f.size || "M12", joint = f.joint === "gewinde" ? "gewinde" : "durchsteck";
+            const kind = f.bolt === "schraube4014" ? "schraube4014" : "schraube4017", grade = f.grade || "8.8";
+            const nutG = { "8.8": "8", "10.9": "10" }[grade] || grade, washG = /^A[24]/.test(grade) ? grade.slice(0, 2) : "200 HV";
+            const a = v3.mul(s.frame.normal, f.direction === "normal" ? 1 : -1);
+            const solids = state.bodies.filter((b) => (b.kind === "solid" || b.kind === "member") && !b.meta?.norm);
+            const list = [], rows = new Map(), warn = new Set();
+            for (const c of centers) {
+              const p = toWorld(s.frame, c[0], c[1]);
+              const needle = R.makeCylinder(0.02, 2 * BIG, v3.sub(p, v3.mul(a, BIG)), a);
+              const hits = [];
+              for (const b of solids) {
+                if (!bboxOverlap(b.shape.boundingBox, needle.boundingBox)) continue;
+                let common;
+                try { common = b.shape.intersect(needle); } catch { continue; }
+                if (isEmptyShape(common)) continue;
+                const [lo, hi] = common.boundingBox.bounds;
+                const ts = [];
+                for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) ts.push(v3.dot(v3.sub([x, y, z], p), a));
+                hits.push({ b, span: [Math.min(...ts), Math.max(...ts)] });
+              }
+              const stack = clampStack(hits.map((x) => x.span), joint);
+              const set = boltStack(size, stack.clamp, { kind, washerHead: f.washerHead !== false, washerNut: f.washerNut !== false, joint, grip: stack.grip });
+              for (const w of checkNorm(kind, size, set.length)) warn.add(w);
+              const O = v3.add(p, v3.mul(a, stack.start));
+              if (f.hole !== false) {
+                for (const hd of boltHoles(size, stack, set, joint)) {
+                  const tool = R.makeCylinder(hd.d / 2, hd.z1 - hd.z0, v3.add(O, v3.mul(a, hd.z0)), a);
+                  for (const x of hits) x.b.shape = x.b.shape.cut(tool);
+                }
+              }
+              for (const part of set.parts) {
+                const g = part.kind === "mutter" ? nutG : part.kind === "scheibe" ? washG : grade;
+                pushNorm(state, f, list, { kind: part.kind, size, length: part.length, grade: g, galv: !!f.galv }, v3.add(O, v3.mul(a, part.z0)), a);
+              }
+              const de = (x) => String(round(x)).replace(".", ",");
+              const key = `${size} x ${set.length}, Klemmlänge ${de(stack.clamp)} mm` + (joint === "gewinde" ? `, Einschraubtiefe ${de(set.engage)} mm` : "");
+              rows.set(key, (rows.get(key) || 0) + 1);
+            }
+            state.tools.set(f.id, { op: "new", shapes: list });
+            st.info = [...rows].map(([k, n]) => `${n} × ${k}`).join("; ") + ` · ${NORM_KINDS[kind].norm}` + (joint === "gewinde" ? ", Gewinde im letzten Teil" : ", mit Mutter ISO 4032") + (f.hole !== false ? ", Bohrungen gesetzt" : "");
+            if (warn.size) st.warning = [...warn].join("; ");
+            break;
+          }
+          case "konturwalzen": {
+            const r = rollBuild(f);
+            state.tools.set(f.id, { op: "new", shapes: [{ shape: r.solid, kind: "solid", meta: r.meta, name: r.name }], roll: true });
+            state.bodies.push({ shape: r.solid, kind: "solid", name: r.name, fid: f.id, meta: r.meta });
+            st.info = r.info;
+            if (r.warn) st.warning = r.warn;
+            break;
+          }
+          case "trennfuge": {
+            const bi = feats.findIndex((g) => g.id === f.base);
+            const tool = state.tools.get(f.base);
+            if (bi < 0 || bi > i || !tool?.roll) throw new Error(missingRef(f.base, "Konturwalze", f));
+            const between = feats.slice(bi + 1, i).find((g) => !g.suppressed && !["sketch", "arbeitsebene", "arbeitsachse", "arbeitspunkt"].includes(g.type));
+            if (between) throw new Error(`Trennfuge direkt hinter die Konturwalze stellen – »${between.name || between.type}« dazwischen verändert den Körper`);
+            const body = state.bodies.find((b) => b.fid === f.base && b.meta?.sheet);
+            if (!body) throw new Error("Körper der Konturwalze fehlt");
+            const r = rollBuild(feats[bi], { gap: E(f.gap ?? "1", "Breite"), pos: E(f.pos ?? "0", "Lage") });
+            body.shape = r.solid; body.meta = r.meta; body.name = r.name;
+            state.tools.set(f.base, { ...tool, shapes: [{ shape: r.solid, kind: "solid", meta: r.meta, name: r.name }] });
+            st.info = r.info;
+            if (r.warn) st.warning = r.warn;
+            break;
+          }
+          case "welle":
+          case "zahnrad":
+          case "lager":
+          case "feder": {
+            // Konstruktions-Assistent (Stufe 55): Körper in Achse Z am Ursprung bauen, dann an pos / axis drehen
+            const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Basispunkt " + "XYZ"[k]));
+            const dir = f.axis === "custom" ? (f.dir || ["0", "0", "1"]).map((x) => E(x, "Richtung")) : AXES[f.axis || "Z"];
+            const r = assistSolid(f, E);
+            const solid = orientZ(r.shape, dir, pos);
+            const body = { shape: solid, kind: "solid", name: f.name || r.name, fid: f.id, meta: r.meta };
+            state.bodies.push(body);
+            state.tools.set(f.id, { op: "new", shapes: [{ shape: solid, kind: r.meta?.norm ? "norm" : "solid", meta: r.meta, name: body.name }] });
             st.info = r.info;
             if (r.warn) st.warning = r.warn;
             break;
@@ -1391,6 +1598,28 @@ export function createKernel(R) {
             st.info = `${used.length} Werkzeugkörper ${op === "cut" ? "abgezogen" : op === "intersect" ? "geschnitten" : "vereinigt"}${f.keep ? ", Werkzeuge behalten" : ""}`;
             break;
           }
+          case "stecksystem": {
+            // Stufe 45: Zapfen am Zapfenteil, Schlitze im Schlitzteil entlang der Berührfläche
+            const A = state.bodies.find((b) => b.fid === f.tab && b.kind === "solid"), B = state.bodies.find((b) => b.fid === f.slot && b.kind === "solid");
+            if (!A) throw new Error(missingRef(f.tab, "Zapfenteil", f));
+            if (!B) throw new Error(missingRef(f.slot, "Schlitzteil", f));
+            if (A === B) throw new Error("Zapfenteil und Schlitzteil müssen verschiedene Körper sein");
+            const plan = tabSlotPlan(A.shape, B.shape, tabSlotParams(f, E));
+            A.shape = applyBoxes(A.shape, plan.tabs, "fuse");
+            B.shape = applyBoxes(B.shape, plan.slots, "cut");
+            st.info = plan.info;
+            break;
+          }
+          case "steckzapfen": case "steckschlitz": {
+            // Stufe 46: Zapfen bzw. Schlitze aus einem Stecksystem der Baugruppe (Quader im Bauteil-System)
+            const solidish = (b) => b.kind === "solid" || b.kind === "member";
+            const body = state.bodies.find((b) => solidish(b) && f.body && b.fid === f.body) || state.bodies.find(solidish);
+            if (!body) throw new Error("Kein Körper im Bauteil");
+            if (!Array.isArray(f.boxes) || !f.boxes.length) throw new Error("Keine Zapfen/Schlitze – Stecksystem in der Baugruppe aktualisieren");
+            body.shape = applyBoxes(body.shape, f.boxes, f.type === "steckzapfen" ? "fuse" : "cut");
+            st.info = `${f.boxes.length} ${f.type === "steckzapfen" ? "Zapfen" : "Schlitze"} aus »${f.source || "Baugruppe"}«`;
+            break;
+          }
           case "trennen": {
             const fr = planeOf(f.plane, E(f.offset || "0", "Abstand"), datums.map);
             const pl = makePlane(fr);
@@ -1477,6 +1706,24 @@ export function createKernel(R) {
             st.info = `${pts.length} Punkte, Länge ${String(Math.round(p.length * 10) / 10).replace(".", ",")} mm${f.closed ? ", geschlossen" : ""}${r > 0 ? `, Eckradius ${r}` : ""}`;
             break;
           }
+          case "schweissbaugruppe": {
+            if (f._srcError) throw new Error(f._srcError);
+            if (!f._src) throw new Error("Baugruppe fehlt");
+            if (feats.findIndex((g) => g.id === f.id) !== feats.findIndex((g) => !g.suppressed)) throw new Error("Die Schweißbaugruppe muss das erste Feature sein");
+            if (!f._src.items.length) throw new Error(`»${f._src.name}« hat keine Bauteile`);
+            const built = new Map();
+            let bad = 0;
+            for (const it of f._src.items) {
+              let sub = built.get(it.part);
+              if (!sub) { sub = await buildPart(f._src.parts[it.part]); built.set(it.part, sub); bad += Object.values(sub.status).filter((x) => !x.ok).length; }
+              const { pos, rot } = decomposePlacement(it.matrix);
+              for (const b of sub.bodies) state.bodies.push({ shape: placed(b.shape, pos, rot), kind: b.kind === "member" ? "member" : "solid", name: it.name, fid: f.id, meta: { ...(b.meta || {}), weldComp: it.name } });
+            }
+            state.tools.set(f.id, { op: "new", shapes: [] });
+            st.info = `${f._src.items.length} Teile aus »${f._src.name}« (${state.bodies.length} Körper)`;
+            if (bad) st.warning = `Bauteile der Baugruppe haben ${bad} fehlerhafte(s) Feature(s)`;
+            break;
+          }
           case "abgeleitet": {
             if (f._srcError) throw new Error(f._srcError);
             if (!f._src) throw new Error("Quellbauteil fehlt");
@@ -1554,6 +1801,42 @@ export function createKernel(R) {
   }
 
   /** Normteil als eigener Körper (Stückliste mit Normbezeichnung); n = { kind, size, length, grade, galv, name? } */
+  /** Körper des Konstruktions-Assistenten (Achse Z, Ursprung): Welle, Stirnrad, Rillenkugellager, Druckfeder */
+  function assistSolid(f, E) {
+    const poly = (pts, plane = "XY") => { let d = R.draw(pts[0]); for (const p of pts.slice(1)) d = d.lineTo(p); return d.close().sketchOnPlane(plane); };
+    if (f.type === "welle") {
+      const secs = parseSections(f.sections);
+      const pr = shaftProfile(secs, E(f.chamfer || "0", "Fase"));
+      const shape = poly(pr.pts, "XZ").revolve([0, 0, 1], { origin: [0, 0, 0] });
+      return { shape, name: "Welle", info: `Welle ${secs.length} Abschnitt(e), Länge ${round(pr.length)} mm, größter Ø ${round(Math.max(...secs.map((x) => x.d)))} mm`, meta: { assist: "welle" } };
+    }
+    if (f.type === "zahnrad") {
+      const g = gearData(E(f.m, "Modul"), Math.round(E(f.z, "Zähnezahl")), E(f.alpha || "20", "Eingriffswinkel"));
+      const b = E(f.b, "Breite"), bore = E(f.bore || "0", "Bohrung");
+      if (!(b > 0)) throw new Error("Zahnrad: Breite > 0 angeben");
+      if (bore >= g.df - 2 * g.m) throw new Error(`Zahnrad: Bohrung Ø ${round(bore)} zu groß für Fußkreis Ø ${round(g.df)}`);
+      let shape = poly(gearOutline(g)).extrude(b);
+      if (bore > 0) shape = shape.cut(R.makeCylinder(bore / 2, b + 2, [0, 0, -1], [0, 0, 1]));
+      const num = (x) => String(round(x)).replace(".", ",");
+      return { shape, name: `Stirnrad m${num(g.m)} z${g.z}`, info: `d ${num(g.d)}, da ${num(g.da)}, df ${num(g.df)} mm`, warn: g.undercut ? `z = ${g.z} unter der Grenzzähnezahl – Unterschnitt ohne Profilverschiebung` : "", meta: { assist: "zahnrad", gear: g } };
+    }
+    if (f.type === "lager") {
+      const L = bearingGeometry(f.series);
+      const ring = (ro, ri) => R.makeCylinder(ro, L.B, [0, 0, 0], [0, 0, 1]).cut(R.makeCylinder(ri, L.B + 2, [0, 0, -1], [0, 0, 1]));
+      let shape = ring(L.D / 2, L.outerIn / 2).fuse(ring(L.innerOut / 2, L.d / 2));
+      for (let i = 0; i < L.n; i++) { const t = (2 * Math.PI * i) / L.n; shape = shape.fuse(R.makeSphere(L.dw / 2).translate([(L.dm / 2) * Math.cos(t), (L.dm / 2) * Math.sin(t), L.B / 2])); }
+      const designation = bearingDesignation(f.series, f.seal);
+      return { shape, name: designation, info: `${designation}: d ${L.d}, D ${L.D}, B ${L.B} mm`, meta: { norm: { kind: "lager", size: f.series, length: 0, grade: "100Cr6", designation }, density: 7.81 } };
+    }
+    const sp = springData(E(f.d, "Draht-Ø"), E(f.D, "Mittlerer Ø"), E(f.n, "Federnde Windungen"), E(f.L0, "Länge"));
+    const helix = R.makeHelix(sp.pitch, sp.L0 - sp.d, sp.D / 2, [0, 0, sp.d / 2], [0, 0, 1], false);
+    const S = vecOf(helix.startPoint), T = vecOf(helix.tangentAt ? helix.tangentAt(0) : [0, 1, 0]);
+    const prof = R.drawCircle(sp.d / 2).sketchOnPlane(new R.Plane(S, v3.norm(v3.cross(T, [0, 0, 1])), v3.norm(T)));
+    const shape = R.genericSweep(prof.wire, helix, { frenet: true });
+    const num = (x, d = 1) => String(Math.round(x * 10 ** d) / 10 ** d).replace(".", ",");
+    const designation = springDesignation(sp);
+    return { shape, name: designation, info: `R = ${num(sp.rate, 2)} N/mm, Blocklänge ${num(sp.Lc)} mm, Fc ${num(sp.Fc, 0)} N, τkc ${num(sp.tauKc, 0)} N/mm²`, meta: { norm: { kind: "feder", size: designation, length: sp.L0, grade: "Federdraht EN 10270-1", designation }, spring: sp, density: 7.85 } };
+  }
   function pushNorm(state, f, list, n, pos, dir) {
     const solid = orientZ(normSolid(n.kind, n.size, n.length || 0), dir, pos);
     const designation = normDesignation(n);
@@ -2281,9 +2564,15 @@ export function createKernel(R) {
         const it = { kind, type, area: sp.area, center: sp.centerOfMass };
         if (type === "PLANE") it.normal = tuple(s.normalAt());
         if (type === "CYLINDER") { const ax = cylinderAxis(s); it.radius = ax.radius; it.axisD = ax.axisD; it.axisP = ax.axisP; }
+        // Stufe 47: Umfang (Außenkontur) und Gesamtkonturlänge (alle Konturen, ohne Nahtkanten von Zylindern)
+        try {
+          it.perimeter = R.measureLength(s.clone().outerWire()); // outerWire/innerWires geben die Fläche frei
+          it.loops = 1 + s.clone().innerWires().length;
+        } catch { /* Fläche ohne Kontur (z. B. Kugel) */ }
+        it.contour = s.edges.filter((e) => !R.getOC().BRep_Tool.IsClosed(e.wrapped, s.wrapped)).reduce((t, e) => t + R.measureLength(e), 0);
         return it;
       }
-      const it = { kind, type: s.geomType, length: R.measureLength(s), start: tuple(s.startPoint), end: tuple(s.endPoint) };
+      const it = { kind, type: s.geomType, length: R.measureLength(s), start: tuple(s.startPoint), end: tuple(s.endPoint), mid: tuple(s.pointAt(0.5)) };
       if (it.type === "LINE") {
         const d = it.end.map((v, k) => v - it.start[k]);
         const L = Math.hypot(...d) || 1;
@@ -2295,14 +2584,24 @@ export function createKernel(R) {
         it.radius = c.Radius();
         it.center = [l.X(), l.Y(), l.Z()];
         it.axisD = [ax.X(), ax.Y(), ax.Z()];
+        // Bogen: Öffnungswinkel aus Länge und Radius
+        if (Math.abs(it.length - 2 * Math.PI * it.radius) > 1e-6) it.arc = (it.length / it.radius) * 180 / Math.PI;
       }
       return it;
     });
     const out = { items };
     if (entries.length === 2) {
-      out.distance = R.measureDistanceBetween(entries[0].shape, entries[1].shape);
+      // Mindestabstand mit den beiden nächsten Punkten (für Δ X/Y/Z und das Maß im 3D-Fenster)
+      const ds = new (R.getOC().BRepExtrema_DistShapeShape)();
+      ds.LoadS1(entries[0].shape.wrapped); ds.LoadS2(entries[1].shape.wrapped); ds.Perform();
+      out.distance = ds.Value();
+      if (ds.NbSolution() > 0) {
+        const pt = (p) => [p.X(), p.Y(), p.Z()];
+        out.pa = pt(ds.PointOnShape1(1)); out.pb = pt(ds.PointOnShape2(1));
+        out.delta = out.pb.map((v, k) => v - out.pa[k]);
+      }
+      ds.delete?.();
       const [a, b] = items;
-      if (a.point && b.point) out.delta = b.point.map((v, k) => v - a.point[k]);
       const va = a.normal || a.dir || null, vb = b.normal || b.dir || null;
       if (va && vb) {
         const dot = Math.abs(va[0] * vb[0] + va[1] * vb[1] + va[2] * vb[2]);
@@ -2321,6 +2620,69 @@ export function createKernel(R) {
   }
 
   // ---------- Export ----------
+  // ---------- Stecksystem (Stufe 45/46): Berührfläche finden, Zapfen und Schlitze als Quader ----------
+  /** Zahlen eines Stecksystems aus den Ausdrücken */
+  function tabSlotParams(f, E) {
+    const len = String(f.length ?? "").trim();
+    return {
+      mode: f.mode || "anzahl", count: E(f.count ?? "3", "Anzahl"), spacing: E(f.spacing ?? "150", "Höchstabstand"),
+      width: E(f.width ?? "20", "Zapfenbreite"), edge: E(f.edge ?? "15", "Randabstand"), clearance: E(f.clearance ?? "0.2", "Spiel"),
+      length: len ? E(len, "Zapfenlänge") : null, over: E(f.over ?? "0", "Überstand"),
+    };
+  }
+  /**
+   * Zapfen und Schlitze für Körper A (steht auf) und B (Platte, Blech, Rohr), beide im selben System.
+   * Rückgabe { tabs, slots: [{ c, u, n, w, t, depth }], info } – Quader: Mitte c auf der Fläche, Breite w entlang u,
+   * Dicke t quer dazu, von c um depth entgegen n (n = Normale der Berührfläche, zeigt aus B heraus).
+   */
+  function tabSlotPlan(Ashape, Bshape, p) {
+    const eps = 0.05, big = 1e5;
+    const slabOn = (o, n, h) => R.drawRectangle(big, big).sketchOnPlane(new R.Plane(o, Math.abs(n[2]) < 0.9 ? v3.norm(v3.cross([0, 0, 1], n)) : [1, 0, 0], n)).extrude(h);
+    let best = null;
+    for (const fc of Bshape.faces) {
+      if (fc.geomType !== "PLANE") continue;
+      const n = v3.norm(tuple(fc.normalAt())), o = tuple(fc.center);
+      let reg;
+      try { reg = Ashape.clone().intersect(slabOn(o, n, eps)); } catch { continue; }
+      if (isEmptyShape(reg)) continue;
+      const pts = reg.edges.flatMap((e) => [tuple(e.startPoint), tuple(e.endPoint)]);
+      const lines = reg.edges.filter((e) => e.geomType === "LINE").map((e) => v3.sub(tuple(e.endPoint), tuple(e.startPoint))).filter((d) => Math.abs(v3.dot(v3.norm(d), n)) < 1e-6);
+      if (!lines.length) continue;
+      const u = v3.norm(lines.sort((x, y) => v3.len(y) - v3.len(x))[0]), w = v3.cross(n, u);
+      const us = pts.map((q) => v3.dot(v3.sub(q, o), u)), ws = pts.map((q) => v3.dot(v3.sub(q, o), w));
+      const L = Math.max(...us) - Math.min(...us), T = Math.max(...ws) - Math.min(...ws);
+      if (!best || L * T > best.L * best.T) best = { n, o, u, w, L, T, u0: Math.min(...us), w0: Math.min(...ws) };
+    }
+    if (!best) throw new Error("Zapfenteil berührt keine ebene Fläche des Schlitzteils – Teile aufeinanderstellen");
+    const { n, o, u, w, L, T } = best;
+    const centers = tabLayout(L, p);
+    // Wanddicke unter der Mitte der Berührlinie: Sonde ins Schlitzteil
+    const mid = v3.add(o, v3.add(v3.mul(u, best.u0 + L / 2), v3.mul(w, best.w0 + T / 2)));
+    const probe = R.drawRectangle(1, 1).sketchOnPlane(new R.Plane(mid, u, v3.mul(n, -1))).extrude(1e4);
+    const hit = Bshape.clone().intersect(probe);
+    const wall = wallFromDepths(hit.edges.flatMap((e) => [tuple(e.startPoint), tuple(e.endPoint)]).map((q) => -v3.dot(v3.sub(q, mid), n)));
+    const len = p.length != null ? p.length : wall + (p.over || 0);
+    if (!(len > 0)) throw new Error("Zapfenlänge muss > 0 sein");
+    const sl = slotSize(p.width, T, p.clearance);
+    const tabs = [], slots = [];
+    for (const x of centers) {
+      const c = v3.add(o, v3.add(v3.mul(u, best.u0 + x), v3.mul(w, best.w0 + T / 2)));
+      const ce = v3.add(c, v3.mul(n, eps));
+      tabs.push({ c: ce, u, n, w: p.width, t: T, depth: len + eps });
+      slots.push({ c: ce, u, n, w: sl.w, t: sl.t, depth: wall + 2 * eps });
+    }
+    return { tabs, slots, wall, len, info: `${centers.length} Zapfen ${round(p.width)} × ${round(T)} mm, Länge ${round(len)} mm · Schlitze ${round(sl.w)} × ${round(sl.t)} mm · Wand ${round(wall)} mm` };
+  }
+  /** Quader aus tabSlotPlan an einen Körper anfügen (fuse) oder ausschneiden (cut) */
+  function applyBoxes(shape, boxes, op) {
+    let out = shape;
+    for (const b of boxes) {
+      const solid = R.drawRectangle(b.w, b.t).sketchOnPlane(new R.Plane(b.c, b.u, v3.mul(b.n, -1))).extrude(b.depth);
+      out = op === "fuse" ? out.fuse(solid) : out.cut(solid);
+    }
+    return out;
+  }
+
   function placed(shape, pos, rot) {
     let s = shape.clone();
     if (rot[0]) s = s.rotate(rot[0], [0, 0, 0], [1, 0, 0]);
@@ -2478,7 +2840,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { buildPart, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

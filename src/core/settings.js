@@ -1,3 +1,4 @@
+import { validateSheetRules, DEFAULT_SHEET_RULES } from "./blechregeln.js";
 import { DEFAULT_LAYOUT, validateLayout } from "./layout.js";
 import { validateMacros } from "./makros.js";
 import { validateMaterialLib } from "./materials.js";
@@ -32,7 +33,7 @@ export const CATEGORIES = [
   { id: "material", label: "Materialien", status: "aktiv", note: "Eigene Werkstoffe gelten für Masse, Trägheit, Zuschnittliste und Zeichnung. Benutzte eigene Werkstoffe werden als Kopie in der Projektdatei gespeichert, damit sie auf anderen Rechnern stimmen." },
   { id: "kernel", label: "CAD-Kernel und Leistung", status: "aktiv", note: "Die Rechengenauigkeit des Kernels ist fest und bewusst nicht einstellbar: gröbere Werte können Körper beschädigen. Maßtoleranzen stehen unter Dokument und Modell. Neu berechnen: F5 oder Menüband 3D-Modell → Verwalten. Berechnungsprotokoll: Befehlssuche (Strg+K) → »Berechnungsprotokoll«." },
   { id: "dateien", label: "Dateien und Datensicherheit", status: "aktiv", note: "Speichern ist immer atomar: erst vollständig schreiben, dann umbenennen. Datei → Schreibgeschützt öffnen bzw. Projekt paketieren." },
-  { id: "blech", label: "Blechparameter", status: "aktiv", note: "Biegetabellen gelten für Kantteil und Knickrahmen, wenn dort als Biegeregel »Biegetabelle des Werkstoffs« gewählt ist. Benutzte Tabellen werden als Kopie in der Projektdatei gespeichert." },
+  { id: "blech", label: "Blechparameter", status: "aktiv", note: "Blechregeln bündeln Werkstoff, Dicke, Radius und Abwicklung für Kantteile. Biegetabellen gelten für Kantteil und Knickrahmen, wenn dort als Biegeregel »Biegetabelle des Werkstoffs« gewählt ist. Benutzte Tabellen werden als Kopie in der Projektdatei gespeichert." },
   { id: "fertigung", label: "Rohrlaser und Fertigung", status: "teilweise", planned: ["mehrere Maschinenprofile (getrennt von den CAD-Einstellungen gespeichert)"], note: "Fertigungsprüfung der Zuschnittliste (Bauteil und Zuschnittliste). Startwerte aus den Beispielmaschinen der Rohrlaser-Kalkulation – bitte an die eigene Maschine anpassen. 0 = Regel aus." },
   { id: "updates", label: "Updates", status: "aktiv" },
   { id: "datenschutz", label: "Datenschutz und Diagnose", status: "teilweise", note: "PBCAD sendet keine Diagnosedaten. Das Fehlerprotokoll bleibt lokal und enthält keine Projektdaten." },
@@ -56,6 +57,9 @@ export const SETTINGS = [
   { key: "allgemein.startAnsicht", cat: "allgemein", label: "Startseite: zuletzt verwendete Dateien als", type: "enum", default: "kacheln", options: [{ value: "kacheln", label: "Kacheln mit Vorschaubild" }, { value: "liste", label: "Liste" }], help: "Auch direkt auf der Startseite umschaltbar." },
   { key: "allgemein.startSortierung", cat: "allgemein", label: "Startseite: sortieren nach", type: "enum", default: "geaendert", options: [{ value: "geaendert", label: "Änderungsdatum" }, { value: "geoeffnet", label: "zuletzt geöffnet" }, { value: "name", label: "Name" }] },
   { key: "allgemein.dezimalstellen", cat: "allgemein", label: "Dezimalstellen für Messwerte", type: "int", default: 3, min: 0, max: 6, help: "Anzeige beim Messen (Abstand, Winkel). Gerechnet wird immer mit voller Genauigkeit." },
+  { key: "messen.winkelstellen", cat: "allgemein", label: "Dezimalstellen für Winkel beim Messen", type: "int", default: 2, min: 0, max: 6, help: "Winkelgenauigkeit im Messwerkzeug." },
+  { key: "messen.zweiteinheit", cat: "allgemein", label: "Zweiteinheit beim Messen", type: "enum", default: "", options: [{ value: "", label: "Kein(e)" }, { value: "in", label: "Zoll (in)" }, { value: "cm", label: "cm" }, { value: "m", label: "m" }], help: "Messwerte zusätzlich in dieser Einheit anzeigen, z. B. »88,000 mm (3,465 in)«." },
+  { key: "messen.anzeige3d", cat: "allgemein", label: "Maß beim Messen im 3D-Fenster zeigen", type: "bool", default: true },
 
   { key: "ansicht.qualitaet", cat: "ansicht", label: "Darstellungsqualität beim Start", type: "enum", default: "normal", options: QUAL, help: "Feinheit der Dreiecksvernetzung. Wirkt nur auf die Anzeige, nicht auf Export oder Masse." },
   { key: "ansicht.projektion", cat: "ansicht", label: "Projektion", type: "enum", default: "orthogonal", options: [{ value: "orthogonal", label: "Orthogonal" }, { value: "perspektive", label: "Perspektive" }], help: "Skizzieren ist immer orthogonal." },
@@ -124,6 +128,7 @@ export const SETTINGS = [
   { key: "dokument.toleranzklasse", cat: "dokument", label: "Allgemeintoleranz neuer Zeichnungen", type: "enum", default: "m", options: CLASSES.map((c) => ({ value: c.value, label: "ISO 2768-" + c.label })), help: "Steht im Schriftfeld. »Allgemeintoleranz anzeigen« am Maß nimmt das ± aus dieser Klasse (Längen, Radien und Fasen nach ISO 2768-1)." },
   { key: "zeichnung.vorlage", cat: "dokument", label: "Zeichnungsvorlage", type: "drawtemplate", default: { ...DEFAULT_TEMPLATE, extra: [] }, custom: true },
   { key: "dokument.nachkomma", cat: "dokument", label: "Nachkommastellen neuer Zeichnungsmaße", type: "int", default: 1, min: 0, max: 3, help: "Gilt für neue Zeichnungen; jedes Maß lässt sich einzeln ändern." },
+  { key: "blech.regeln", cat: "blech", label: "Blechregeln", type: "sheetrules", default: DEFAULT_SHEET_RULES.map((r) => ({ ...r })), custom: true, help: "Benannte Vorgaben für Kantteile: Werkstoff, Dicke, Innenradius, Abwicklungsregel und Freischnitt. Am Kantteil als »Blechregel« wählbar." },
   { key: "blech.biegetabellen", cat: "blech", label: "Biegetabellen", type: "bendtables", default: [], custom: true, help: "Je Werkstoff und Blechdicke ein Raster Biegewinkel × Innenradius mit Werten der Abkantpresse. Zwischen den Zellen wird interpoliert, außerhalb gilt der Ersatz-K-Faktor der Tabelle." },
   { key: "material.eigene", cat: "material", label: "Eigene Werkstoffe", type: "materials", default: [], custom: true },
   { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
@@ -183,6 +188,8 @@ export function validateValue(def, v) {
       return { ok: true, value: v.trim() };
     case "name":
       return validateNameTemplate(v, def.placeholders, { allowEmpty: !!def.allowEmpty });
+    case "sheetrules":
+      return validateSheetRules(v);
     case "bendtables":
       return validateBendTables(v);
     case "materialkey":

@@ -82,3 +82,36 @@ test("Gestell: Rundrohr am Rundrohr gestutzt bekommt den Sattelschnitt", async (
   // Sattel: oben und unten reicht das Rohr bis √(24,15² − 16,85²) ≈ 17,3 mm an die Achse des Gegenrohrs
   near(m.length, 600 - 2 * Math.sqrt(24.15 ** 2 - 16.85 ** 2), 0.6, "Länge über die Sattelspitzen");
 });
+
+test("Gestell: Stecknasen am T-Stoß – Zapfen am stoßenden Stab, Schlitze mit Spiel im durchlaufenden", async () => {
+  const mk = () => { const g = defaultGestell("sk", segments, { kind: "rechteck", size: "60x40x3" }); g.members[4].section = { kind: "rechteck", size: "30x20x2" }; return g; };
+  const g = mk();
+  g.tee = "stecken";
+  g.steck = { count: 2, width: 5, edge: 3, clearance: 0.25 };
+  const plan = gestellPlan({ ...g, segments });
+  assert.equal(plan.issues.length, 0, JSON.stringify(plan.issues));
+  const mid = plan.members.find((m) => m.gid === "gm5");
+  assert.equal(mid.tabs.length, 8, "2 Wände × 2 Zapfen an beiden Enden");
+  // gleich hohe Stäbe: oben/unten lägen die Schlitze im Eckradius, also an den Seitenwänden – dort zu kurz → Warnung
+  const g2 = defaultGestell("sk", segments, { kind: "rechteck", size: "60x40x3" });
+  g2.tee = "stecken";
+  g2.steck = { count: 2, width: 10, edge: 10, clearance: 0.25 };
+  assert.ok(gestellPlan({ ...g2, segments }).issues.some((x) => /Stecknasen/.test(x.message)));
+  const key = (gg, no) => groupParts(gestellPlan({ ...gg, segments })).find((x) => x.bodies.some((b) => b.name.endsWith(" " + no))).key;
+  const ref = mk();
+  const vMid = vol(await buildBody(g, key(g, 5))), vMid0 = vol(await buildBody(ref, key(ref, 5)));
+  near(vMid - vMid0, 8 * 5 * 2 * 3, 1, "Zapfenvolumen (Zapfenlänge = Wand 3 mm)");
+  const vLong = vol(await buildBody(g, key(g, 1))), vLong0 = vol(await buildBody(ref, key(ref, 1)));
+  near(vLong0 - vLong, 4 * 5.5 * 2.5 * 3, 1, "Schlitze durch die Wand (je Seite 0,25 Spiel)");
+});
+
+test("Gestell: Fußplatte wird ein eigenes Einzelteil mit Bohrungen", async () => {
+  const g = defaultGestell("sk", segments);
+  g.members[4].plateA = { thickness: "8", overhang: "20", holes: "4", holeDia: "11", edge: "15" };
+  const groups = groupParts(gestellPlan({ ...g, segments }));
+  const pg = groups.find((x) => x.key.startsWith("p:"));
+  assert.ok(pg, "Platte als eigene Gruppe");
+  const res = await buildBody(g, pg.key);
+  assert.equal(res.bodies.length, 1);
+  near(vol(res), 80 * 80 * 8 - 4 * Math.PI * 5.5 * 5.5 * 8, 5, "Platte 80 × 80 × 8 mit 4 × Ø 11");
+});

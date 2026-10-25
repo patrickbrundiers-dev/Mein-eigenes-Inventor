@@ -479,3 +479,422 @@ test("Varianten aus Tabelle, Regeln, Makros, Sprache (Stufe 43)", async () => {
   setLanguage("de");
   assert.equal(t("Skizze"), "Skizze");
 });
+
+test("Abhängigkeiten Stufe 44: Lösung, Grenzen, gerichteter Winkel, Symmetrie, Punkt/Kante, Zylinder an Zylinder, starr, Koordinatensystem", async () => {
+  const S = await import("../src/core/asmsolve.js");
+  const { placementMatrix: PM, matApply: MA, matApplyDir: MD } = await import("../src/core/geom.js");
+  const box = [{ type: "PLANE", normal: [0, 0, 1], point: [0, 0, 10] }, { type: "PLANE", normal: [0, 0, -1], point: [0, 0, 0] }, { type: "PLANE", normal: [1, 0, 0], point: [20, 0, 5] }, { type: "PLANE", normal: [-1, 0, 0], point: [0, 0, 5] }, { type: "CYLINDER", axisP: [5, 5, 0], axisD: [0, 0, 1], radius: 3 }];
+  const facesOf = () => box;
+  const F = () => ({ id: "F", part: "x", name: "F", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+  const M = (pos = [100, 50, 30], rot = [10, 20, 30]) => ({ id: "M", part: "x", name: "M", pos, rot });
+  const W = (c, p) => MA(PM(c.pos, c.rot), p), D = (c, d) => MD(PM(c.pos, c.rot), d);
+  // Achsen: ausgerichtet bzw. entgegengesetzt
+  for (const [sol, sign] of [["ausgerichtet", 1], ["entgegengesetzt", -1]]) {
+    const asm = { components: [F(), M()], constraints: [{ id: "k", type: "konzentrisch", solution: sol, a: S.axisRef("F", box[4]), b: S.axisRef("M", box[4]) }] };
+    assert.deepEqual(S.solveAssembly(asm, facesOf).errors, {});
+    near(D(asm.components[1], [0, 0, 1])[2], sign, 1e-9, sol);
+  }
+  // Grenzen: Versatz 50 auf 0…20 begrenzt; ohne Ruhelage bleibt eine Lage in den Grenzen stehen
+  const g = { components: [F(), M()], constraints: [{ id: "g", type: "gegen", gap: "50", limits: { min: 0, max: 20, rest: true }, a: S.faceRef("F", box[0]), b: S.faceRef("M", box[1]) }] };
+  const rg = S.solveAssembly(g, facesOf);
+  assert.deepEqual(rg.errors, {});
+  near(rg.values.g, 20, 1e-9);
+  near(W(g.components[1], [0, 0, 0])[2], 30, 1e-6);
+  g.constraints[0].limits.rest = false;
+  g.components[1].pos[2] = 25;
+  S.solveAssembly(g, facesOf);
+  near(g.components[1].pos[2], 25, 1e-6, "bleibt in den Grenzen stehen");
+  // Gerichteter Winkel 270° um Z (Referenzvektor = Oberseite der festen Komponente)
+  const w = { components: [F(), M([0, 0, 0], [0, 0, 0])], constraints: [{ id: "w", type: "winkel", angle: "270", refVec: { comp: "F", n: [0, 0, 1] }, a: S.faceRef("F", box[2]), b: S.faceRef("M", box[2]) }] };
+  assert.deepEqual(S.solveAssembly(w, facesOf).errors, {});
+  const nx = D(w.components[1], [1, 0, 0]);
+  near(S.signedAngle([1, 0, 0], nx, [0, 0, 1]), 270, 1e-6);
+  nearV(nx, [0, -1, 0], 1e-9);
+  // Symmetrie: rechte Seite von M liegt spiegelbildlich zur linken von F bezüglich x = 100 (Ebene einer dritten, festen Komponente)
+  const sym = { components: [F(), M([300, 0, 0], [0, 0, 0]), { id: "E", part: "e", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true }], constraints: [{ id: "s", type: "symmetrie", a: S.faceRef("F", box[3]), b: S.faceRef("M", box[2]), s: S.faceRef("E", { normal: [1, 0, 0], point: [100, 0, 0] }) }] };
+  const fe = (pid) => (pid === "e" ? [{ type: "PLANE", normal: [1, 0, 0], point: [100, 0, 0] }] : box);
+  assert.deepEqual(S.solveAssembly(sym, fe).errors, {});
+  near(W(sym.components[1], [20, 0, 5])[0], 200, 1e-6);
+  // Punkt an Punkt, Punkt auf Fläche, Kante auf Fläche
+  const pp = { components: [F(), M()], constraints: [{ id: "p", type: "punkt", a: S.pointRef("F", [20, 0, 10]), b: S.pointRef("M", [0, 0, 0]) }] };
+  assert.deepEqual(S.solveAssembly(pp, facesOf).errors, {});
+  nearV(W(pp.components[1], [0, 0, 0]), [20, 0, 10], 1e-6);
+  const pf = { components: [F(), M()], constraints: [{ id: "q", type: "punktflaeche", gap: "5", a: S.faceRef("F", box[0]), b: S.pointRef("M", [1, 2, 3]) }] };
+  assert.deepEqual(S.solveAssembly(pf, facesOf).errors, {});
+  near(W(pf.components[1], [1, 2, 3])[2], 15, 1e-6);
+  const kf = { components: [F(), M()], constraints: [{ id: "e", type: "kanteflaeche", gap: "0", a: S.faceRef("F", box[0]), b: S.edgeRef("M", [0, 0, 0], [1, 1, 0]) }] };
+  assert.deepEqual(S.solveAssembly(kf, facesOf).errors, {});
+  near(D(kf.components[1], [1, 1, 0])[2], 0, 1e-9);
+  near(W(kf.components[1], [0, 0, 0])[2], 10, 1e-6);
+  // Zylinder an Zylinder außen (3 + 3) und innen mit anderem Radius
+  const big = [{ type: "CYLINDER", axisP: [0, 0, 0], axisD: [0, 0, 1], radius: 10 }];
+  const tz = { components: [F(), M([50, 0, 0], [0, 0, 0])], constraints: [{ id: "t", type: "tangential", gap: "0", a: S.axisRef("F", big[0]), b: S.axisRef("M", box[4]) }] };
+  const fb = (pid) => (pid === "big" ? big : box);
+  tz.components[0].part = "big";
+  assert.deepEqual(S.solveAssembly(tz, fb).errors, {});
+  near(Math.hypot(...W(tz.components[1], [5, 5, 0]).slice(0, 2)), 13, 1e-6);
+  tz.constraints[0].solution = "innen";
+  assert.deepEqual(S.solveAssembly(tz, fb).errors, {});
+  near(Math.hypot(...W(tz.components[1], [5, 5, 0]).slice(0, 2)), 7, 1e-6);
+  // Starr und Koordinatensystem
+  const A = F(), B0 = M();
+  const st = { components: [A, B0], constraints: [{ id: "r", type: "starr", rel: S.rigidRelation(A, B0), a: S.frameRef("F"), b: S.frameRef("M") }] };
+  A.fixed = false; A.pos = [0, 0, 0];
+  B0.pos = [0, 0, 0]; B0.fixed = false;
+  const st2 = { ...st, components: [{ ...F(), pos: [10, 0, 0] }, { ...M(), pos: [0, 0, 0] }] };
+  assert.deepEqual(S.solveAssembly(st2, facesOf).errors, {});
+  nearV(st2.components[1].pos, [110, 50, 30], 1e-6);
+  const ko = { components: [{ ...F(), pos: [1, 2, 3], rot: [0, 0, 45] }, M()], constraints: [{ id: "c", type: "koordinaten", a: S.frameRef("F"), b: S.frameRef("M") }] };
+  assert.deepEqual(S.solveAssembly(ko, facesOf).errors, {});
+  nearV(ko.components[1].pos, [1, 2, 3], 1e-6);
+  near(ko.components[1].rot[2], 45, 1e-6);
+});
+
+test("Bewegung: Drehung und Drehung–Verschiebung koppeln Gelenke (Stufe 44)", async () => {
+  const K = await import("../src/core/kinematik.js");
+  const asm = { components: [
+    { id: "a", name: "Ritzel", pos: [0, 0, 0], rot: [0, 0, 0], joint: K.defaultJoint([0, 0, 0], [0, 0, 1], { min: -720, max: 720 }) },
+    { id: "b", name: "Rad", pos: [50, 0, 0], rot: [0, 0, 0], joint: K.defaultJoint([50, 0, 0], [0, 0, 1], { min: -720, max: 720 }) },
+    { id: "c", name: "Zahnstange", pos: [0, 50, 0], rot: [0, 0, 0], joint: K.defaultJoint([0, 50, 0], [1, 0, 0], { kind: "schiebe", min: -100, max: 30 }) },
+    { id: "d", name: "ohne Gelenk", pos: [0, 0, 0], rot: [0, 0, 0] },
+  ], motions: [{ id: "m1", kind: "drehung", a: "a", b: "b", ratio: "0.5", sense: "gegen" }, { id: "m2", kind: "drehschiebung", a: "b", b: "c", ratio: "60" }] };
+  const r = K.coupledJointValues(asm, "a", 90);
+  assert.equal(r.values.get("b"), -45);
+  assert.equal(r.values.get("c"), -7.5);
+  // rückwärts: Zahnstange schieben dreht das Rad
+  assert.equal(K.coupledJointValues(asm, "c", 30).values.get("b"), 180);
+  // Grenze erreicht
+  assert.deepEqual(K.coupledJointValues(asm, "a", -90).clamped, []);
+  assert.deepEqual(K.coupledJointValues(asm, "b", 300).clamped, ["Zahnstange"]);
+  assert.match(K.motionProblem(asm, { kind: "drehung", a: "a", b: "d", ratio: "1" }), /Dreh- oder Zylindergelenk/);
+  assert.match(K.motionProblem(asm, { kind: "drehschiebung", a: "a", b: "b", ratio: "1" }), /Schiebegelenk/);
+});
+
+test("Blechregeln: Prüfen, wirksame Werte, Regel lösen, veraltete Kopien (Stufe 44)", async () => {
+  const B = await import("../src/core/blechregeln.js");
+  assert.equal(B.validateSheetRules(B.DEFAULT_SHEET_RULES).ok, true);
+  assert.equal(B.validateSheetRules([...B.DEFAULT_SHEET_RULES, { ...B.DEFAULT_SHEET_RULES[0] }]).ok, false);
+  assert.match(B.validateSheetRule({ id: "x", name: "X", material: "S235", t: 0, ri: 1 }).error, /Dicke/);
+  const E = (x) => Number(x);
+  const rule = B.DEFAULT_SHEET_RULES[3];
+  const f = { type: "kantteil", t: "5", ri: "1", k: "0.5", rule: "k", sheetRule: { ...rule } };
+  const e1 = B.effectiveSheet(f, E, "S235");
+  assert.deepEqual([e1.t, e1.ri, e1.k, e1.material], [2, 3, 0.4, "AlMg3"]);
+  const e2 = B.effectiveSheet({ ...f, tFromRule: false, matFromRule: false }, E, "S235");
+  assert.deepEqual([e2.t, e2.material], [5, "S235"]);
+  assert.equal(B.effectiveSheet({ t: "4", ri: "2" }, E, "S355").t, 4);
+  const g = B.applySheetRule({ ...f }, null);
+  assert.equal(g.sheetRule, undefined);
+  assert.equal(g.t, "2");
+  const docs = [{ id: "p", features: [{ id: "k", type: "kantteil", sheetRule: { ...rule, k: 0.3 } }] }];
+  assert.equal(B.outdatedSheetRules(docs, B.DEFAULT_SHEET_RULES).length, 1);
+});
+
+test("Messen wie Inventor: Achsabstand, Summen, Zweiteinheit (Stufe 47)", async () => {
+  const M = await import("../src/core/messen.js");
+  const nearV = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≠ ${b}`);
+  // Kante (Gerade entlang Z bei x = 70) und Zylinderfläche (Achse Z durch den Ursprung): parallel, 70
+  const line = { kind: "edge", type: "LINE", start: [70, 0, 0], end: [70, 0, 30], dir: [0, 0, 1], mid: [70, 0, 15] };
+  const cyl = { kind: "face", type: "CYLINDER", axisP: [0, 0, -5], axisD: [0, 0, 1], radius: 15 };
+  const a1 = M.axisDistance(line, cyl);
+  assert.equal(a1.kind, "parallel"); nearV(a1.value, 70);
+  nearV(a1.a[2], 15); nearV(a1.b[0], 0); nearV(a1.b[2], 15);
+  // windschief: Achse X auf z = 0 und Achse Y auf z = 40
+  const cx = { kind: "edge", type: "CIRCLE", center: [5, 0, 0], axisD: [1, 0, 0] };
+  const cy = { kind: "face", type: "CYLINDER", axisP: [0, 3, 40], axisD: [0, 2, 0] };
+  const a2 = M.axisDistance(cx, cy);
+  assert.equal(a2.kind, "windschief"); nearV(a2.value, 40); nearV(a2.a[0], 0); nearV(a2.b[2], 40);
+  // Punkt zu Achse, beide Reihenfolgen
+  const pt = { kind: "vertex", type: "POINT", point: [3, 4, 9] };
+  nearV(M.axisDistance(pt, cyl).value, 5);
+  assert.equal(M.axisDistance(cyl, pt).kind, "punkt");
+  assert.equal(M.axisDistance({ kind: "face", type: "PLANE", normal: [0, 0, 1] }, pt), null);
+  // Summen
+  const S = M.measureSums([{ kind: "edge", length: 10 }, { kind: "edge", length: 5.5 }, { kind: "face", area: 100 }, pt]);
+  assert.deepEqual(S, { length: 15.5, area: 100, edges: 2, faces: 1 });
+  // Format: Tausenderpunkt, Komma, Zweiteinheit
+  const F = M.measureFormat({ dec: 3, angleDec: 2, second: "in" });
+  assert.equal(F.len(88), "88,000 mm (3,465 in)");
+  assert.equal(F.area(6597.345), "6.597,345 mm² (10,226 in²)");
+  assert.equal(F.angle(90), "90,00°");
+  assert.equal(M.measureFormat({ dec: 0 }).len(-0.2), "0 mm");
+  assert.equal(M.fmtFixed(1234567.891, 1), "1.234.567,9");
+});
+
+test("Blech: Ecke schließen, Stanzwerkzeug, Konturwalzen und Trennfuge (Stufe 48)", async () => {
+  const { planSheet, punchOutline, rectOutline } = await import("../src/core/blechplus.js");
+  const W = await import("../src/core/konturwalzen.js");
+  const base = { legs: [40, 100, 40], angles: [90, 90], t: 2, ri: 2, k: 0.33, ref: "aussen", L: 500 };
+  const st = (leg, extra = {}) => ({ type: "lasche", edge: "vorne", leg, length: 30, angle: 90, dir: "auf", relief: "rechteck", ...extra });
+  const close = (bend, extra = {}) => ({ type: "eckeschliessen", bend, side: "vorne", through: "a", gap: 0.5, ...extra });
+  // nur am Steg eine Stirnlasche: sie läuft an beiden Ecken bis 0,5 mm vor die Innenfläche der Seitenschenkel (ri − Spalt)
+  const one = planSheet(base, [st(2), close(1), close(2)]);
+  const e = one.ends[0];
+  near(e.s0, -1.5); near(e.s1, 92 + 1.5);
+  assert.deepEqual(e.closed.sort(), ["anfang", "ende"]);
+  near(one.flat.bends.at(-1).x1 - one.flat.bends.at(-1).x0, 95, 1e-9, "Biegelinie der Stirnlasche über die Ecken");
+  const open = planSheet(base, [st(2)]);
+  const area = (pts) => pts.reduce((s, p, i) => { const q = pts[(i + 1) % pts.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0) / 2;
+  near(area(one.flat.outer) - area(open.flat.outer), 2 * 1.5 * (open.ends[0].ba + open.ends[0].sF), 1e-6, "Abwicklung um die Verlängerung größer");
+  // an allen drei Schenkeln: durchlaufende Lasche bis an den Nachbarn, die andere endet mit Spalt an ihr (Höhe 29 ab Mitte)
+  const all = planSheet(base, [st(1), st(2), st(3), close(1), close(2, { through: "b" })]);
+  near(all.ends[0].H, 29, 1e-9);
+  near(all.ends[0].s1, 36 + 1.5); near(all.ends[1].s0, 29 - 3 + 0.5);
+  near(all.ends[2].s0, -1.5); near(all.ends[1].s1, 92 - 26.5);
+  // Fehler: nicht 90°, Lasche nach außen, ohne Eckfreischnitt, keine Stirnlasche, doppelt
+  assert.throws(() => planSheet({ ...base, angles: [60, 90] }, [st(2), close(1)]), /90°-Biegungen/);
+  assert.throws(() => planSheet(base, [st(2, { dir: "ab" }), close(1)]), /zeigt vom Nachbarschenkel weg/);
+  assert.throws(() => planSheet(base, [st(2, { relief: "keiner" }), close(1)]), /Eckfreischnitt/);
+  assert.throws(() => planSheet(base, [st(2), close(1, { side: "hinten" })]), /keine Stirnlasche/);
+  assert.throws(() => planSheet(base, [st(2), close(1), close(1)]), /schon geschlossen/);
+  assert.throws(() => planSheet(base, [st(2), close(5)]), /Biegung 5 gibt es nicht/);
+  // tops liegen über den Freischnitten
+  assert.equal(rectOutline([0, 10, 0, 10], [], [], [[4, 6, -1, 11]]).length, 2, "Freischnitt teilt");
+  assert.equal(rectOutline([0, 10, 0, 10], [], [], [[4, 6, -1, 11]], [[3, 7, 0, 2]]).length, 1, "Brücke darüber");
+
+  // Stanzwerkzeug: Langloch 30 × 10 mit Halbkreisen, Rechteck, rund als Kreis
+  const lo = punchOutline("langloch", 30, 10);
+  assert.equal(lo.length, 26);
+  near(Math.max(...lo.map((p) => p[0])), 15); near(Math.max(...lo.map((p) => p[1])), 5);
+  const hi = punchOutline("langloch", 10, 30, [5, 5]);
+  near(Math.max(...hi.map((p) => p[1])), 20); near(Math.min(...hi.map((p) => p[0])), 0);
+  assert.equal(punchOutline("rechteck", 10, 20).length, 4);
+  const pu = planSheet(base, [{ type: "stanzung", leg: 2, s: [30, 70], y: [100, 100], form: "langloch", a: 30, b: 10 }, { type: "stanzung", leg: 1, s: [20], y: [200], form: "rund", d: 10 }]);
+  assert.equal(pu.punch.length, 3);
+  assert.equal(pu.flat.holes.length, 2); assert.equal(pu.flat.circles.length, 1);
+  near(pu.flat.circles[0].c[0], 20); near(pu.flat.circles[0].d, 10);
+  near(Math.min(...pu.flat.holes[0].map((p) => p[0])), pu.plan.legX[1][0] + 15, 1e-9, "Langloch auf Schenkel 2");
+  assert.throws(() => planSheet(base, [{ type: "stanzung", leg: 2, s: [5], y: [100], form: "langloch", a: 30, b: 10 }]), /nicht auf dem geraden Stück/);
+  assert.throws(() => planSheet(base, [{ type: "stanzung", leg: 2, s: [30], y: [2], form: "rund", d: 10 }]), /außerhalb/);
+
+  // Konturwalzen: Seite der Achse, Fugenwinkel, Abwicklung Zylinder / Kegel / Ring
+  assert.equal(W.rollSide([[0, 50], [100, 50]], "x"), 1);
+  assert.equal(W.rollSide([[-20, 0], [-30, 100]], "y"), 1);
+  assert.throws(() => W.rollSide([[0, -10], [100, 50]], "x"), /Drehachse/);
+  near(W.gapAngle(2, 51), (2 / 51) * (180 / Math.PI));
+  assert.throws(() => W.gapAngle(0, 51), /Breite/);
+  assert.throws(() => W.rollAngle(400), /360/);
+  const cyl = W.rollFlat([0, 51], [100, 51], 360 - W.gapAngle(2, 51));
+  near(cyl.width, 2 * Math.PI * 51 - 2, 1e-9); near(cyl.height, 100, 1e-9);
+  assert.equal(cyl.roll.kind, "zylinder");
+  const cone = W.rollFlat([0, 30], [100, 60], 180);
+  const s = Math.hypot(30, 100);
+  near(cone.roll.R[0], s, 1e-9); near(cone.roll.R[1], 2 * s, 1e-9);
+  near(cone.roll.psi, (180 * 30) / s, 1e-9);
+  assert.equal(cone.roll.kind, "kegel");
+  const ring = W.rollFlat([0, 20], [0, 50], 90);
+  assert.equal(ring.roll.kind, "ring"); near(ring.roll.psi, 90, 1e-9); near(ring.roll.R[0], 20, 1e-9);
+  assert.ok(area(ring.outer) > 0, "gegen den Uhrzeigersinn");
+  near(area(ring.outer), (Math.PI / 4) * (50 * 50 - 20 * 20), 30, "Fläche Ringausschnitt (Sehnen)");
+  assert.throws(() => W.rollFlat([0, 51], [100, 51], 360), /Trennfuge/);
+});
+
+test("IGES: Bögen, Drehflächen, Randketten, Dateiformat (Stufe 49)", async () => {
+  const I = await import("../src/core/iges.js");
+  // Kreisbogen 0 … 270° in drei rationalen Abschnitten, Punkte genau auf dem Kreis
+  const P = (t) => [5 + 10 * Math.cos(t), 10 * Math.sin(t), 2];
+  const arc = I.conicCurve(P, 0, 1.5 * Math.PI);
+  assert.equal(arc.poles.length, 7); assert.equal(arc.knots.length, 10);
+  for (const t of [0.2, 1.1, 2.7]) { const p = I.evalCurve(arc, t); near(Math.hypot(p[0] - 5, p[1]), 10, 1e-12); near(p[2], 2, 1e-12); }
+  nearV(I.evalCurve(arc, 3), P(1.5 * Math.PI), 1e-12);
+  // Parameter des Bogens zum Winkel: genau
+  const d = 1.2, w = Math.cos(d / 2), q = I.conicCurve((t) => [Math.cos(t), Math.sin(t), 0], 0, d);
+  for (const phi of [0.1, 0.5, 1.0]) { const p = I.evalCurve(q, I.arcParam(phi, d)); near(Math.atan2(p[1], p[0]), phi, 1e-12); }
+  assert.ok(w > 0);
+  // Zylinder, Kugel, Torus als Drehflächen: Punkte auf der Fläche, Abbildung (Winkel, v) → Flächenparameter genau
+  const cyl = (u, v) => [10 * Math.cos(u), 10 * Math.sin(u), v];
+  const C = I.revolutionSurface(cyl, [0, 2 * Math.PI, 0, 30], "line");
+  assert.equal(C.poles.length, 9); assert.equal(C.poles[0].length, 2);
+  for (const [u, v] of [[0.3, 4], [2.5, 17], [5.9, 29]]) nearV(I.evalSurface(C, ...C.map(u, v)), cyl(u, v), 1e-9, "Zylinder");
+  const sph = (u, v) => [15 * Math.cos(v) * Math.cos(u), 15 * Math.cos(v) * Math.sin(u), 15 * Math.sin(v)];
+  const S = I.revolutionSurface(sph, [0, 2 * Math.PI, -Math.PI / 2, Math.PI / 2], "arc");
+  for (const [u, v] of [[0.3, -1.2], [3, 0.4], [6, 1.5]]) nearV(I.evalSurface(S, ...S.map(u, v)), sph(u, v), 1e-9, "Kugel");
+  const tor = (u, v) => [(20 + 5 * Math.cos(v)) * Math.cos(u), (20 + 5 * Math.cos(v)) * Math.sin(u), 5 * Math.sin(v)];
+  const T = I.revolutionSurface(tor, [0, Math.PI / 2, 0, 2 * Math.PI], "arc");
+  for (const [u, v] of [[0.3, 1], [1.2, 4], [1.5, 6]]) nearV(I.evalSurface(T, ...T.map(u, v)), tor(u, v), 1e-9, "Torus");
+  // Randkette mit Nahtkante (zweimal, gegenläufig): geschlossen ohne gleich zurückzulaufen
+  const top = I.conicCurve((t) => [10 * Math.cos(t), 10 * Math.sin(t), 30], 0, 2 * Math.PI), bot = I.conicCurve((t) => [10 * Math.cos(t), 10 * Math.sin(t), 0], 0, 2 * Math.PI);
+  const seam = I.lineCurve([10, 0, 30], [10, 0, 0]);
+  const ch = I.chainLoop([top, seam, I.reverseCurve(seam), bot]);
+  for (let i = 0; i < 4; i++) { const a = I.evalCurve(ch[i], ch[i].t1), b = I.evalCurve(ch[(i + 1) % 4], ch[(i + 1) % 4].t0); near(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]), 0, 1e-9, "Kette " + i); }
+  assert.equal(ch[2], bot, "nach der Naht erst der untere Kreis");
+  // Zahlen und Datei: 80 Zeichen je Zeile, Abschnitte, Zeiger auf Fläche und Randkurven
+  assert.equal(I.igesReal(1), "1."); assert.equal(I.igesReal(-0.5), "-0.5"); assert.equal(I.igesReal(1e-7), "1.E-7"); assert.equal(I.igesReal(0), "0.");
+  const plane = I.planeSurface((u, v) => [u, v, 0], [0, 100, 0, 50]);
+  const sq = [[0, 0, 0], [100, 0, 0], [100, 50, 0], [0, 50, 0]];
+  const loop = sq.map((p, i) => ({ ...I.lineCurve(p, sq[(i + 1) % 4]), pc: I.lineCurve(p, sq[(i + 1) % 4]) }));
+  const txt = I.writeIges([{ surface: plane, loops: [loop] }], { fileName: "t.igs", date: new Date(2026, 9, 25, 12, 0, 0) });
+  const rd = I.readIgesEntities(txt);
+  assert.deepEqual(rd.sections, { S: 1, G: rd.sections.G, D: 2 * rd.entities.length, P: rd.sections.P, T: 1 });
+  const types = rd.entities.map((e) => e.type);
+  assert.deepEqual([...new Set(types)].sort(), [102, 126, 128, 142, 144]);
+  assert.equal(types.filter((t) => t === 126).length, 8, "4 Raumkurven + 4 Parameterkurven");
+  const ts = rd.entities.find((e) => e.type === 144), cos = rd.entities.find((e) => e.type === 142);
+  assert.equal(Number(ts.params[0]), rd.entities.find((e) => e.type === 128).de);
+  assert.equal(Number(ts.params[3]), cos.de);
+  assert.equal(cos.params[4], "1", "Parameterkurve bevorzugt");
+  assert.equal(rd.entities.find((e) => e.type === 128).status, "00010000");
+  assert.ok(/20261025\.120000/.test(txt));
+  assert.ok(txt.split("\r\n")[1].includes("1H,,1H;,5HPBCAD,5Ht.igs"));
+});
+
+test("Schraubenverbindung: Klemmpaket, Länge, Teile, Bohrungen (Stufe 50)", async () => {
+  const S = await import("../src/core/schraubverbindung.js");
+  // zwei Teile mit Luft, durchgesteckt: Klemmlänge vom ersten bis zum letzten Teil
+  const st = S.clampStack([[13, 25], [0, 10]]);
+  assert.deepEqual([st.start, st.clamp, st.parts], [0, 25, 2]);
+  const g = S.clampStack([[0, 20], [23, 35]], "gewinde");
+  assert.deepEqual([g.clamp, g.grip], [23, 12], "das letzte Teil entlang der Achse hat das Gewinde");
+  assert.throws(() => S.clampStack([]), /kein Körper/);
+  assert.throws(() => S.clampStack([[0, 10]], "gewinde"), /mindestens zwei/);
+  // M12 mit Mutter: 25 + 2 · 2,5 + 10,8 + 2 · 1,75 = 44,3 → 45; ohne Scheiben 39,3 → 40
+  const b = S.boltStack("M12", 25);
+  assert.equal(b.length, 45);
+  assert.deepEqual(b.parts.map((p) => p.kind), ["schraube4017", "scheibe", "scheibe", "mutter"]);
+  near(b.parts.at(-1).z0, 27.5);
+  const n = S.boltStack("M12", 25, { washerHead: false, washerNut: false, kind: "schraube4014" });
+  assert.equal(n.length, 40); assert.equal(n.parts[0].kind, "schraube4014"); near(n.parts[0].z0, 0);
+  // Gewinde: Einschraubtiefe ≥ d, höchstens Dicke − 1 Gang
+  const t = S.boltStack("M12", 15, { joint: "gewinde", grip: 20 });
+  assert.equal(t.length, 30); near(t.engage, 12.5);
+  assert.throws(() => S.boltStack("M12", 15, { joint: "gewinde", grip: 5 }), /zu dünn/);
+  // Bohrungen
+  assert.deepEqual(S.boltHoles("M12", st, b).map((x) => x.d), [13.5]);
+  const hh = S.boltHoles("M12", { clamp: 15 }, t, "gewinde");
+  assert.deepEqual(hh.map((x) => x.d), [13.5, 10.2]);
+  near(hh[1].z1, 15 + 12.5 + 3.5);
+});
+
+test("Kontaktsatz: freier Bereich bis zum Anstoßen, Video-Format", async () => {
+  const K = await import("../src/core/kinematik.js");
+  const j = { type: "dreh", min: -90, max: 90, angle: 10 };
+  const r = await K.contactRange(j, async (a) => a > 37.3 || a < -60);
+  assert.ok(r.hitMin && r.hitMax);
+  assert.ok(r.max <= 37.3 && r.max > 37.3 - 0.5, "oben knapp vor dem Kontakt " + r.max);
+  assert.ok(r.min >= -60 && r.min < -59.5, "unten knapp vor dem Kontakt " + r.min);
+  // ohne Kontakt bleibt der ganze Bereich
+  assert.deepEqual(await K.contactRange(j, async () => false), { min: -90, max: 90, hitMin: false, hitMax: false });
+  // Stellung am Rand: nur in die andere Richtung prüfen
+  const seen = [];
+  const e = await K.contactRange({ ...j, angle: 90 }, async (a) => { seen.push(a); return false; });
+  assert.ok(seen.every((a) => a < 90)); assert.equal(e.max, 90);
+  assert.deepEqual(K.videoFormat((t) => t === "video/webm"), { type: "video/webm", ext: "webm" });
+  assert.deepEqual(K.videoFormat((t) => t.startsWith("video/mp4")), { type: "video/mp4;codecs=avc1", ext: "mp4" });
+  assert.equal(K.videoFormat(() => false), null);
+});
+
+test("iFeature: Auswahl mit Skizzen und Parametern, Bezüge nach außen, Datei prüfen", async () => {
+  const I = await import("../src/core/ifeature.js");
+  const sk = (id, name, plane = { ref: "XY" }) => ({ id, type: "sketch", name, plane, points: [], entities: [] });
+  const part = { params: [{ name: "d", expr: "10" }, { name: "t", expr: "d*2" }, { name: "x", expr: "5" }], features: [
+    sk("s0", "Basis"), { id: "e0", type: "extrude", name: "Platte", sketch: "s0", distance: "20" },
+    { ...sk("s1", "Loch"), offset: "20" }, { id: "h1", type: "hole", name: "Bohrung", sketch: "s1", diameter: "d", depth: "t", extent: "depth" },
+    { id: "f1", type: "fillet", name: "Rundung", mode: "edges", radius: "1", edges: [{ p: [10, 5, 20], type: "CIRCLE" }] },
+    { id: "w1", type: "arbeitsebene", name: "Ebene 1", mode: "versatz", base: "XY", distance: "5" }, sk("s2", "Auf Ebene", { ref: "datum", id: "w1" }),
+    { id: "sh", type: "shell", name: "Wandung", feature: "e0", thickness: "2" }] };
+  const v = I.extractIFeature(part, ["h1", "f1"], { name: "Senkloch" });
+  assert.deepEqual(v.features.map((f) => f.id), ["s1", "h1", "f1"]);
+  assert.deepEqual(v.params.map((p) => p.name), ["d", "t"], "t braucht d");
+  assert.deepEqual(v.anchor.origin, [0, 0, 20], "Lage = erste Skizze samt Abstand");
+  assert.ok(I.validateIFeature(JSON.parse(JSON.stringify(v))).ok);
+  assert.match(I.validateIFeature({ ...v, version: 2 }).error, /neueren/);
+  assert.match(I.validateIFeature({ format: "x" }).error, /Keine/);
+  assert.throws(() => I.extractIFeature(part, ["sh"]), /braucht »Platte«/);
+  assert.throws(() => I.extractIFeature(part, ["s2"]), /Arbeitsebene/);
+  assert.throws(() => I.extractIFeature(part, ["f1"]), /mindestens eine Skizze/);
+  assert.throws(() => I.extractIFeature(part, []), /auswählen/);
+  // Einsetzen auf XZ: Skizze und Kantenbezug wandern mit, d schon vorhanden → d_2
+  let k = 0;
+  const r = I.placeIFeature(v, I.targetFrame({ ref: "XZ" }), { values: { d: "12" }, params: [{ name: "d", expr: "3" }], names: ["Loch"], newId: () => "n" + k++ });
+  assert.deepEqual(r.features[0].plane, { ref: "face", origin: [0, 20, 0], xDir: [1, 0, 0], normal: [0, -1, 0] });
+  assert.equal(r.features[0].offset, "20"); assert.equal(r.features[0].name, "Loch 2");
+  assert.equal(r.features[1].sketch, "n0"); assert.equal(r.features[1].diameter, "d_2");
+  assert.deepEqual(r.features[2].edges[0].p, [10, 0, 5]);
+  assert.deepEqual(r.params, [{ name: "d_2", expr: "12" }, { name: "t", expr: "d_2*2" }]);
+  assert.match(I.ifeatureSummary(v), /3 Features \(1 Skizze\), Parameter: d, t/);
+});
+
+test("Schweißbaugruppe: Phasen, Kehlnaht-Querschnitt, Flächenpaar", async () => {
+  const W = await import("../src/core/schweissbaugruppe.js");
+  const fs = [{ id: "s", type: "schweissbaugruppe" }, { id: "c", type: "chamfer" }, { id: "x", type: "extrude", suppressed: true }, { id: "n", type: "naht" }, { id: "h", type: "hole" }, { id: "n2", type: "naht" }];
+  assert.deepEqual([...W.weldPhases(fs)], [["c", "vorbereitung"], ["n", "naht"], ["h", "nachbearbeitung"], ["n2", "naht"]]);
+  assert.deepEqual(W.phaseCounts(fs), { vorbereitung: 1, naht: 2, nachbearbeitung: 1 });
+  assert.equal(W.weldPhases([{ id: "e", type: "extrude" }]).size, 0);
+  // rechtwinklige Kehle: Schenkel a·√2, Fläche a²
+  const q = W.beadSection([-1, 0, 0], [0, 0, 1], 4);
+  near(q.z, 4 * Math.SQRT2, 1e-12); near(q.area, 16, 1e-9); near(q.theta, 90, 1e-9);
+  nearV(q.tA, [0, 0, 1]); nearV(q.tB, [-1, 0, 0]);
+  // 120°-Kehle: Schenkel a / cos 60° = 2a
+  const s = Math.sin(Math.PI / 3), c = Math.cos(Math.PI / 3);
+  near(W.beadSection([0, 0, 1], [s, 0, c], 3).z, 3 / Math.cos(Math.PI / 3), 1e-9);
+  assert.throws(() => W.beadSection([0, 0, 1], [0, 0, -1], 3), /keine Kehle/);
+  assert.throws(() => W.beadSection([0, 0, 1], [1, 0, 0], 0), /> 0/);
+  const pair = W.filletPair([{ body: 0, n: [0, 0, -1] }, { body: 0, n: [1, 0, 0] }, { body: 1, n: [0, 0, 1] }]);
+  assert.deepEqual(pair.map((x) => x.n), [[1, 0, 0], [0, 0, 1]]);
+  assert.equal(W.filletPair([{ body: 0, n: [0, 0, -1] }, { body: 1, n: [0, 0, 1] }]), null);
+});
+
+test("Bereichseigenschaften: Rechteck, Kreisring, gedrehtes Rechteck, Halbkreis", async () => {
+  const B = await import("../src/core/bereich.js");
+  const { rectSketchFeature } = await import("../src/core/examples.js");
+  const r = B.regionProperties(rectSketchFeature("s", "XY", 0, 0, 0, "100", "40")).total;
+  near(r.area, 4000, 1e-9); near(r.perimeter, 280, 1e-9); nearV(r.centroid, [50, 20], 1e-9);
+  near(r.Ix, (100 * 40 ** 3) / 12, 1e-6); near(r.Iy, (40 * 100 ** 3) / 12, 1e-6); near(r.Ixy, 0, 1e-6);
+  near(r.Wx, (100 * 40 ** 2) / 6, 1e-6); near(r.ix, 40 / Math.sqrt(12), 1e-9);
+  // Kreisring Ø 60 / Ø 40 um (10, 5): exakt
+  const ring = { points: [{ id: "c", x: 10, y: 5 }], entities: [{ id: "k1", type: "circle", c: "c", r: 30 }, { id: "k2", type: "circle", c: "c", r: 20 }], constraints: [] };
+  const k = B.regionProperties(ring).total;
+  near(k.area, Math.PI * (900 - 400), 1e-9); near(k.Ix, (Math.PI / 4) * (30 ** 4 - 20 ** 4), 1e-6); near(k.Ix, k.Iy, 1e-6);
+  nearV(k.centroid, [10, 5], 1e-9); near(k.perimeter, 2 * Math.PI * 50, 1e-9); assert.equal(k.holes, 1);
+  // gedrehtes Rechteck 60 × 20 unter 30°: Hauptmomente wie ungedreht, Achse von I1 (größtes Moment) quer dazu bei −60°
+  const c = Math.cos(Math.PI / 6), s = Math.sin(Math.PI / 6), P = (id, u, v) => ({ id, x: u * c - v * s, y: u * s + v * c });
+  const rot = { points: [P("a", 0, 0), P("b", 60, 0), P("c", 60, 20), P("d", 0, 20)], entities: [["a", "b"], ["b", "c"], ["c", "d"], ["d", "a"]].map(([p, q], i) => ({ id: "l" + i, type: "line", p1: p, p2: q })), constraints: [] };
+  const g = B.regionProperties(rot).total;
+  near(g.I2, (60 * 20 ** 3) / 12, 1e-6); near(g.I1, (20 * 60 ** 3) / 12, 1e-6); near(g.angle, -60, 1e-9);
+  // Halbkreis r = 10 (Bogen + Sehne): Schwerpunkt 4r/3π über der Sehne
+  const half = { points: [{ id: "m", x: 0, y: 0 }, { id: "p", x: 10, y: 0 }, { id: "q", x: -10, y: 0 }], entities: [{ id: "b", type: "arc", c: "m", p1: "p", p2: "q" }, { id: "l", type: "line", p1: "q", p2: "p" }], constraints: [] };
+  const hk = B.regionProperties(half).total;
+  near(hk.area, (Math.PI * 100) / 2, 1e-3); near(hk.centroid[1], 40 / (3 * Math.PI), 1e-4);
+  assert.throws(() => B.regionProperties({ points: [], entities: [], constraints: [] }), /Keine geschlossene/);
+});
+
+test("Entformungsanalyse: Winkel, Einteilung, Flächenanteile", async () => {
+  const D = await import("../src/core/entformanalyse.js");
+  near(D.draftAngle([0, 0, 1], [0, 0, 1]), 90, 1e-9); near(D.draftAngle([1, 0, 0], [0, 0, 1]), 0, 1e-9);
+  near(D.draftAngle([Math.cos(0.1), 0, Math.sin(0.1)], [0, 0, 1]), (0.1 * 180) / Math.PI, 1e-9);
+  assert.equal(D.draftClass(3, 1), "positiv"); assert.equal(D.draftClass(0.5, 1), "gering"); assert.equal(D.draftClass(-2, 1), "negativ"); assert.equal(D.draftClass(0, 0), "gering");
+  assert.throws(() => D.draftClass(1, 95), /Mindestwinkel/);
+  // Würfel 10 mm (12 Dreiecke): Deckel Zugseite, Boden Gegenseite, 4 Wände zu wenig Schräge
+  const V = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0], [0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]];
+  const F = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
+  const st = D.draftStats([{ positions: Float32Array.from(V.flat()), indices: Uint32Array.from(F.flat()) }], D.PULL_DIRS["Z+"], 1);
+  near(st.total, 600, 1e-6); near(st.area.positiv, 100, 1e-6); near(st.area.negativ, 100, 1e-6); near(st.area.gering, 400, 1e-6);
+});
+
+test("Konstruktions-Assistent: Wellenabschnitte, Verzahnung, Lager, Feder", async () => {
+  const A = await import("../src/core/assistent.js");
+  assert.deepEqual(A.parseSections("30x40; 40,5 × 80"), [{ d: 30, l: 40 }, { d: 40.5, l: 80 }]);
+  assert.throws(() => A.parseSections("30-40"), /Abschnitt 1/);
+  assert.throws(() => A.parseSections(""), /mindestens/);
+  const pr = A.shaftProfile([{ d: 30, l: 40 }, { d: 40, l: 80 }], 1);
+  assert.deepEqual(pr.pts, [[0, 0], [14, 0], [15, 1], [15, 40], [20, 40], [20, 119], [19, 120], [0, 120]]);
+  assert.throws(() => A.shaftProfile([{ d: 4, l: 10 }], 2), /Fase/);
+  const g = A.gearData(2, 24);
+  assert.deepEqual([g.d, g.da, g.df], [48, 52, 43]); near(g.db, 48 * Math.cos(Math.PI / 9), 1e-9); assert.equal(g.undercut, false);
+  assert.equal(A.gearData(1, 12).undercut, true, "unter 17 Zähnen Unterschnitt");
+  assert.throws(() => A.gearData(2, 5), /Zähnezahl/);
+  assert.equal(A.centerDistance(2, 24, 48), 72);
+  const o = A.gearOutline(g);
+  const rs = o.map((p) => Math.hypot(...p));
+  near(Math.max(...rs), 26, 1e-9); near(Math.min(...rs), 21.5, 1e-9);
+  let area = 0; for (let i = 0; i < o.length; i++) { const [a, b] = o[i], [c, d] = o[(i + 1) % o.length]; area += a * d - c * b; }
+  assert.ok(area > 0, "gegen den Uhrzeigersinn");
+  assert.deepEqual(A.bearingsForShaft(20), ["6004", "6204", "6304"]);
+  assert.throws(() => A.bearingGeometry("6999"), /DIN 625/);
+  const L = A.bearingGeometry("6204"); assert.ok(L.outerIn < 47 && L.innerOut > 20 && L.n >= 6);
+  const s = A.springData(2, 16, 6, 40);
+  near(s.rate, (81500 * 16) / (8 * 4096 * 6), 1e-9); assert.equal(s.Lc, 16); near(s.Fc, s.rate * 24, 1e-9);
+  assert.equal(A.springDesignation(s), "Druckfeder 2 x 18 x 40");
+  assert.throws(() => A.springData(2, 6, 6, 40), /Wickelverhältnis/);
+  assert.throws(() => A.springData(2, 16, 6, 15), /Blocklänge/);
+});

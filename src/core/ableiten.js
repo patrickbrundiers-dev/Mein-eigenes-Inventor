@@ -3,6 +3,7 @@
 
 import { v3 } from "./geom.js";
 import { featureRefs } from "./featurerefs.js";
+import { flattenAssembly } from "./subasm.js";
 
 const fmt = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
 
@@ -54,17 +55,29 @@ export function path3d(pts, { radius = 0, closed = false } = {}) {
  * (selbst wieder aufgelöst). Ringbezüge und fehlende Quellen werden als `_srcError` gemeldet.
  */
 export function inlineDerived(part, lookup, seen = []) {
-  if (!part?.features?.some((f) => f.type === "abgeleitet")) return part;
+  if (!part?.features?.some((f) => f.type === "abgeleitet" || f.type === "schweissbaugruppe")) return part;
   const chain = [...seen, part.id];
+  const copy = (src) => inlineDerived(JSON.parse(JSON.stringify({ id: src.id, kind: "part", name: src.name, number: src.number, material: src.material, params: src.params || [], features: src.features })), lookup, chain);
   return {
     ...part,
     features: part.features.map((f) => {
+      if (f.type === "schweissbaugruppe") {
+        // Schweißbaugruppe (Stufe 53): alle Bauteile der Baugruppe mit ihrer Lage
+        const { _src, _srcError, ...g } = f;
+        const asm = f.source && lookup(f.source);
+        if (!asm || asm.kind !== "assembly") return { ...g, _srcError: "Baugruppe fehlt (gelöscht?)" };
+        const items = flattenAssembly(asm, lookup);
+        if (items.some((it) => chain.includes(it.part.id))) return { ...g, _srcError: `Ringbezug: »${asm.name}« enthält dieses Bauteil` };
+        const parts = new Map();
+        for (const it of items) if (!parts.has(it.part.id)) parts.set(it.part.id, copy(it.part));
+        return { ...g, _src: { name: asm.name, parts: Object.fromEntries(parts), items: items.map((it) => ({ part: it.part.id, matrix: it.matrix, name: it.path.join(" / ") })) } };
+      }
       if (f.type !== "abgeleitet") return f;
       const { _src, _srcError, ...g } = f;
       const src = f.source && lookup(f.source);
       if (!src || src.kind !== "part") return { ...g, _srcError: "Quellbauteil fehlt (gelöscht?)" };
       if (chain.includes(src.id)) return { ...g, _srcError: `Ringbezug: »${src.name}« leitet sich (über Umwege) von diesem Bauteil ab` };
-      return { ...g, _src: inlineDerived(JSON.parse(JSON.stringify({ id: src.id, kind: "part", name: src.name, number: src.number, material: src.material, params: src.params || [], features: src.features })), lookup, chain) };
+      return { ...g, _src: copy(src) };
     }),
   };
 }
