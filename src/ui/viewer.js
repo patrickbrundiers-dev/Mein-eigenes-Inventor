@@ -425,16 +425,16 @@ export class Viewer {
   }
 
   /** Bauteil-Ergebnis anzeigen. bodies: Ergebnis des Workers */
-  showPart(bodies, { color = "#8d99a6", opacity = 1, key = "part", material } = {}) {
+  showPart(bodies, { color = "#8d99a6", opacity = 1, key = "part", material, finish } = {}) {
     this.clear();
-    const g = this.makePartGroup(bodies, color, key, opacity, null, material);
+    const g = this.makePartGroup(bodies, color, key, opacity, null, material, finish);
     this.root.add(g);
     this.updateCaps();
     this.render();
     return g;
   }
 
-  makePartGroup(bodies, color, key, opacity = 1, shared, material) {
+  makePartGroup(bodies, color, key, opacity = 1, shared, material, finish) {
     const g = new THREE.Group();
     g.userData.key = key;
     bodies.forEach((b, bi) => {
@@ -449,7 +449,7 @@ export class Viewer {
         clippingPlanes: this.clipPlanes(),
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.userData = { key, body: bi, faces: b.mesh.faces, baseColor: c.clone(), baseOpacity: opacity, material, meta: b.meta };
+      mesh.userData = { key, body: bi, faces: b.mesh.faces, baseColor: c.clone(), baseOpacity: opacity, material, finish, meta: b.meta };
       g.add(mesh);
       const edgeObjs = [];
       const eg = shared?.[bi]?.edgeGeo || edgeGeometry(b.mesh.edges);
@@ -474,7 +474,7 @@ export class Viewer {
         shared = c.bodies.map((b) => (b.mesh ? { geo: meshGeometry(b.mesh), edgeGeo: edgeGeometry(b.mesh.edges) } : null));
         geoCache.set(c.partKey, shared);
       }
-      const g = this.makePartGroup(c.bodies, c.color, "comp:" + c.id, c.opacity ?? 1, shared, c.material);
+      const g = this.makePartGroup(c.bodies, c.color, "comp:" + c.id, c.opacity ?? 1, shared, c.material, c.finish);
       g.matrixAutoUpdate = false;
       g.matrix.fromArray(c.matrix || placementMatrix(c.pos, c.rot));
       g.userData.comp = c.id;
@@ -674,7 +674,7 @@ export class Viewer {
     const mode = this.displayMode;
     const base = mesh.userData.baseOpacity ?? 1;
     const photo = mode === "foto";
-    const surf = photo ? photoSurface(mesh.userData.material, mesh.userData.meta) : null;
+    const surf = photo ? photoSurface(mesh.userData.material, mesh.userData.meta, mesh.userData.finish) : null;
     const op = mode === "transparent" ? Math.min(base, 0.3) : surf?.opacity != null ? Math.min(base, surf.opacity) : base;
     const m = mesh.material;
     m.metalness = surf ? surf.metalness : 0.08;

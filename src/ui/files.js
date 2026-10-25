@@ -392,8 +392,8 @@ export class Files {
     const d = app.activeDoc();
     if (d.kind !== "assembly") return;
     const rows = bomRows(app, d);
-    const head = ["Pos", "Benennung", "Teilenummer", "Menge", "Werkstoff", "Masse kg/Stk", "Masse kg gesamt"];
-    const lines = rows.map((r) => [r.pos, r.name, r.number, r.qty, r.material, num(r.mass, 3), num(r.mass * r.qty, 3)]);
+    const head = ["Pos", "Benennung", "Teilenummer", "Menge", "Werkstoff", "Oberfläche", "Masse kg/Stk", "Masse kg gesamt"];
+    const lines = rows.map((r) => [r.pos, r.name, r.number, r.qty, r.material, r.finish || "", num(r.mass, 3), num(r.mass * r.qty, 3)]);
     await this.saveText(csv([head, ...lines]), safeName(d.number || d.name) + "_Stueckliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
   }
   /** Platte/Blechteil als DXF 1:1 (Kontur und Bohrungen), z. B. für den Flachbettlaser */

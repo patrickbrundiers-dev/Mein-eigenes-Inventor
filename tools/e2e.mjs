@@ -754,6 +754,26 @@ try {
     return { ...st, png: got, after: { mode: v.displayMode, env: !!v.scene.environment, stage: v.stage.children.length, lines: pk?.lines.visible, metal: pk?.mesh.material.metalness } };
   });
   step("Fotorealistische Darstellung", ft.env && ft.tone && ft.shadow && ft.ground && !ft.grid && ft.lines === false && ft.metal > 0.5 && ft.cast && /_Render\.png$/.test(ft.png?.name || "") && ft.png.head.join() === "137,80,78,71" && ft.after.mode === "kanten" && !ft.after.env && ft.after.stage === 0 && ft.after.lines && ft.after.metal < 0.2, JSON.stringify(ft));
+  // Oberfläche und RAL-Farbe je Bauteil (E7): Auswahl im Eigenschaftenfeld, Farbe im Viewer, Text in der Stückliste
+  {
+    await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); });
+    const field = (label) => page.locator("#props .field", { has: page.locator(`label:text-is("${label}")`) }).locator("select");
+    await field("Oberfläche").selectOption("pulver");
+    await idle();
+    await field("RAL-Farbe").selectOption("3000");
+    await idle();
+    const fin = await evalApp(() => {
+      const a = window.__werkcad, part = a.activeDoc(), pk = a.viewer.pickables[0];
+      const col = "#" + pk.mesh.material.color.getHexString();
+      a.prefs.set("ansicht.darstellung", "foto");
+      const photo = { metal: pk.mesh.material.metalness, col: "#" + pk.mesh.material.color.getHexString() };
+      a.prefs.set("ansicht.darstellung", "kanten");
+      return { finish: part.finish, col, photo, field: !!document.querySelector("#props .field select") };
+    });
+    step("Oberfläche und RAL-Farbe", fin.finish?.kind === "pulver" && fin.finish.ral === "3000" && fin.col === "#a72920" && fin.photo.col === "#a72920" && fin.photo.metal < 0.3, JSON.stringify(fin));
+    await evalApp(() => window.__werkcad.edit("Oberfläche", () => { window.__werkcad.activeDoc().finish = null; }));
+    await idle();
+  }
 
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));

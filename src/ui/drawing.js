@@ -3,6 +3,7 @@ import { h, svgEl, toast, modal, promptDialog, fmtNum, downloadBlob } from "./do
 import { bodiesMass } from "../core/mass.js";
 import { DxfWriter } from "../core/dxf.js";
 import { materialOf, materialList } from "../core/materials.js";
+import { finishLabel } from "../core/oberflaeche.js";
 import { uid } from "../core/examples.js";
 import { scaleLabel } from "./tree.js";
 import { v3, matApply, decomposePlacement } from "../core/geom.js";
@@ -685,7 +686,7 @@ export class DrawingEditor {
     cols.forEach(([t], i) => cell(i, yb, t, 2.2));
     rows.forEach((r, k) => {
       const y = yb - rh * (k + 1);
-      [r.pos, r.name, r.number, r.qty, r.material, Number.isFinite(r.mass) ? fmtNum(r.mass, 2) : ""].forEach((s, i) => cell(i, y, s));
+      [r.pos, r.name, r.number, r.qty, [r.material, finishLabel({ finish: r.part?.finish }, { short: true })].filter(Boolean).join(" · "), Number.isFinite(r.mass) ? fmtNum(r.mass, 2) : ""].forEach((s, i) => cell(i, y, s));
     });
     return g;
   }

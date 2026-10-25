@@ -438,3 +438,29 @@ test("Generator-Listen: Ausdrücke mit Leerzeichen bleiben ganz (V1)", async () 
   assert.deepEqual(P.runs, [1500, 1200]);
   assert.deepEqual(resolveGenParams("gelaender", { ...f.params, runs: "1000 1200" }, Number).runs, [1000, 1200], "ohne ; weiter durch Leerzeichen");
 });
+
+test("Oberfläche und RAL-Farbe je Bauteil (E7)", async () => {
+  const { finishOf, finishLabel, finishColor, finishSurface, RAL } = await import("../src/core/oberflaeche.js");
+  const { photoSurface } = await import("../src/core/rendering.js");
+  const { listSheets } = await import("../src/core/lists.js");
+  assert.equal(finishOf({}).kind, "roh");
+  assert.equal(finishLabel({}), "");
+  assert.equal(finishColor({}), null, "roh: Werkstofffarbe");
+  const p = { finish: { kind: "duplex", ral: "RAL 7016" } };
+  assert.equal(finishOf(p).ral, "7016", "»RAL« vorne wird entfernt");
+  assert.equal(finishLabel(p), "verzinkt + pulverbeschichtet RAL 7016 Anthrazitgrau");
+  assert.equal(finishLabel(p, { short: true }), "tZn + pulver RAL 7016");
+  assert.equal(finishColor(p), RAL["7016"].hex);
+  assert.equal(finishColor({ finish: { kind: "verzinkt", ral: "7016" } }), "#a9b1b6", "verzinkt hat keine RAL-Farbe");
+  assert.equal(finishLabel({ finish: { kind: "pulver", ral: "6029" } }), "pulverbeschichtet RAL 6029", "unbekannte RAL-Nummer bleibt als Text");
+  assert.equal(finishSurface(undefined), null);
+  const s = photoSurface("S235", {}, p.finish);
+  assert.equal(s.color, RAL["7016"].hex);
+  assert.ok(s.metalness < 0.3, "Pulver ist nicht metallisch");
+  assert.equal(photoSurface("S235", { glass: true }, p.finish).label, "Glas", "Glas bleibt Glas");
+  assert.equal(photoSurface("S235", { norm: true }, p.finish).label, "Normteil verzinkt");
+  const sh = listSheets({ bom: [{ pos: 1, name: "Pfosten", qty: 2, material: "S235", finish: "feuerverzinkt", mass: 3 }] });
+  assert.deepEqual(sh[0].rows[0].slice(4, 6), ["Werkstoff", "Oberfläche"]);
+  assert.equal(sh[0].rows[1][5], "feuerverzinkt");
+  assert.equal(sh[0].rows.at(-1)[7], 6, "Summe in der letzten Spalte");
+});

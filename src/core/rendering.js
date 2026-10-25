@@ -4,6 +4,8 @@
 // Grundlage ist der Werkstoff des Bauteils (Stahl, Edelstahl, Aluminium, Messing, Kunststoff); Körper mit eigener
 // Bedeutung aus dem Generator (Glas, Holzbelag, Gitterrost, Riffelblech) und Normteile weichen davon ab.
 
+import { finishSurface } from "./oberflaeche.js";
+
 /** Oberfläche je Werkstoff-Schlüssel (sections.js MATERIALS); unbekannt → Baustahl */
 const BY_MATERIAL = {
   S235: { metalness: 0.75, roughness: 0.42 },
@@ -19,15 +21,18 @@ const BY_MATERIAL = {
 const STEEL = BY_MATERIAL.S235;
 
 /**
- * PBR-Werte eines Körpers. material: Werkstoff-Schlüssel des Bauteils, meta: Körper-Metadaten aus dem Kern.
+ * PBR-Werte eines Körpers. material: Werkstoff-Schlüssel des Bauteils, meta: Körper-Metadaten aus dem Kern,
+ * finish: Oberfläche des Bauteils (E7, verzinkt/pulver/RAL) – gilt nicht für Glas, Holz, Gitterrost, Riffelblech und Normteile.
  * Rückgabe { metalness, roughness, color?, opacity?, label } – color (Hex) nur, wenn die Körperfarbe ersetzt wird.
  */
-export function photoSurface(material, meta) {
+export function photoSurface(material, meta, finish) {
   if (meta?.glass) return { metalness: 0, roughness: 0.05, color: "#cfe3ea", opacity: 0.35, label: "Glas" };
   if (meta?.tread === "holz") return { metalness: 0, roughness: 0.75, color: "#a0703f", label: "Holz" };
   if (meta?.tread === "gitterrost") return { metalness: 0.85, roughness: 0.5, color: "#a9b1b6", label: "Gitterrost verzinkt" };
   if (meta?.tread === "blech") return { metalness: 0.8, roughness: 0.48, label: "Riffelblech" };
   if (meta?.norm) return { metalness: 0.9, roughness: 0.35, color: "#b4bcc2", label: "Normteil verzinkt" };
+  const fs = finishSurface(finish);
+  if (fs) return fs;
   const m = BY_MATERIAL[material] || STEEL;
   return { ...m, label: material || "S235" };
 }
