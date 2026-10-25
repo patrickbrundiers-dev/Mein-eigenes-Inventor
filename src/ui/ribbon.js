@@ -247,20 +247,20 @@ export class Ribbon {
       const C = (tool, label, ic) => T(tool, label, ic, { iconOnly: true });
       return [
         { id: "skizze", label: "Skizze", context: true, groups: [
-          { label: "Erstellen", big: 4, buttons: [
-            T("line", "Linie", "line"), T("circle", "Kreis", "circle"), T("arc3", "Bogen", "arc"), T("rect", "Rechteck", "rect"),
+          { label: "Erstellen", big: 3, buttons: [
+            T("line", "Linie", "line"), T("circle", "Kreis", "circle"), T("rect", "Rechteck", "rect"), T("arc3", "Bogen", "arc"),
             T("rectc", "Rechteck Mitte", "rectc"), T("arcc", "Bogen Mitte", "arcc"), T("spline", "Spline", "spline"),
             T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"),
             T("sfillet", "Rundung", "fillet"), T("point", "Punkt", "point"),
           ] },
-          { label: "Übernehmen", big: 1, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() })] },
+          { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() })] },
           { label: "Ändern", small: true, buttons: [
             T("smove", "Verschieben", "move"), T("scopy", "Kopieren", "copy"), T("srotate", "Drehen", "rotate"),
             T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"),
             T("sscale", "Skalieren", "scale"), T("offset", "Versatz", "offset"), B("sclean", "Säubern", "clean", { run: () => sk.cleanDialog() }),
           ] },
           { label: "Muster", small: true, buttons: [T("pattern", "Rechteckmuster", "pattern"), T("cpattern", "Kreismuster", "circpattern"), T("mirror", "Spiegeln", "mirror")] },
-          { label: "Bemaßung", big: 2, buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() }), B("params", "Parameter", "params")] },
+          { label: "Bemaßung", big: 1, buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() }), B("params", "Parameter", "params")] },
           { label: "Abhängigkeiten", small: true, buttons: [
             C("coincident", "Koinzident", "coincident"), C("collinear", "Kollinear", "collinear"), C("concentric", "Konzentrisch", "concentric"),
             C("fix", "Fixieren", "fix"), C("parallel", "Parallel", "parallel"), C("perpendicular", "Senkrecht", "perpendicular"),
@@ -268,9 +268,9 @@ export class Ribbon {
             C("midpoint", "Mittelpunkt", "midpoint"), C("symmetric", "Symmetrisch", "symmetric"), C("equal", "Gleich", "equal"),
           ] },
           { label: "Format", small: true, buttons: [
-            B("constr", "Konstruktion", "construct", { on: !!sk.construction, run: () => sk.toggleConstruction() }),
-            B("glyphs", "Symbole", "eye", { on: sk.showGlyphs, run: () => { sk.showGlyphs = !sk.showGlyphs; sk.render(); this.render(); } }),
-            B("gridsnap", "Rasterfang", "grid", { on: sk.gridSnap, run: () => { sk.gridSnap = !sk.gridSnap; sk.render(); this.render(); } }),
+            B("constr", "Konstruktion", "construct", { iconOnly: true, on: !!sk.construction, run: () => sk.toggleConstruction() }),
+            B("glyphs", "Symbole", "eye", { iconOnly: true, on: sk.showGlyphs, run: () => { sk.showGlyphs = !sk.showGlyphs; sk.render(); this.render(); } }),
+            B("gridsnap", "Rasterfang", "grid", { iconOnly: true, on: sk.gridSnap, run: () => { sk.gridSnap = !sk.gridSnap; sk.render(); this.render(); } }),
           ] },
           { label: "Beenden", buttons: [B("finishSketch", "Skizze fertig", "finish", { finish: true })] },
         ] },

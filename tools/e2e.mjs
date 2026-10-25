@@ -141,6 +141,8 @@ try {
   await page.locator("#props button", { hasText: "XY-Ebene" }).click();
   await page.waitForTimeout(800);
   await shot("08-skizze-leer");
+  const skFit = await evalApp(() => { const p = document.querySelector("#ribbon .rb-panel"); return { over: p.scrollWidth - p.clientWidth, groups: p.querySelectorAll(".rb-group").length, finish: !!p.querySelector(".rb-finish") }; });
+  step("Skizzen-Menüband passt (Inventor-Aufbau)", skFit.over <= 0 && skFit.groups >= 7 && skFit.finish, JSON.stringify(skFit));
   await page.locator("#ribbon button", { hasText: "Rechteck" }).first().click();
   const box = await page.locator("#viewer canvas").boundingBox();
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
