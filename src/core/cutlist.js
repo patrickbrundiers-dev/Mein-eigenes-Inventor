@@ -1,6 +1,6 @@
 // Zuschnittliste: Profil-Zuschnitte gruppieren, Enden beschreiben, CSV für die Rohrlaser-Kalkulation.
 // Rein fachlich (ohne Oberfläche), damit die Regeln getestet und offengelegt werden können.
-import { MATERIALS } from "./sections.js";
+import { MATERIALS, kgPerMeter } from "./sections.js";
 import { fmt as fmtNum } from "./expr.js";
 
 /** Verwendete Regeln – stehen im Zuschnittlisten-Dialog und in docs/ */
@@ -24,13 +24,30 @@ export function cutListRows(sources) {
       const pid = m.profileId || m.section;
       const key = [pid, L, ends.join("/"), m.coped ? "A" : "", m.butt ? "S" : "", m.cutSig || "", m.endCuts ? m.endCuts.A + m.endCuts.B : "", part.material].join("|");
       const dens = MATERIALS[part.material]?.density || 7.85;
-      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, d3: !!m.endCuts && (m.endCuts.A === "3D" || m.endCuts.B === "3D"), contours: m.contours && m.tube ? { items: m.contours, prof: m.tube } : null, knick: m.knicks ? { legs: m.legs || [], inPlane: m.inPlane, wall: m.wall } : null, qty: 0, kgm: (m.area * dens) / 1000, mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
+      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, d3: !!m.endCuts && (m.endCuts.A === "3D" || m.endCuts.B === "3D"), contours: m.contours && m.tube ? { items: m.contours, prof: m.tube } : null, knick: m.knicks ? { legs: m.legs || [], inPlane: m.inPlane, wall: m.wall } : null, qty: 0, kgm: kgPerMeter(m.area, dens), mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
       row.qty += qty;
       row.parts.add(part.name);
       map.set(key, row);
     }
   }
   return [...map.values()].sort((a, b) => a.profileId.localeCompare(b.profileId) || b.length - a.length).map((r, i) => ({ ...r, pos: i + 1, parts: [...r.parts].join(", ") }));
+}
+/**
+ * Summen je Profil und Werkstoff (Stück, Gesamtlänge, Gewicht) für Bestellung und Lager.
+ * Rückgabe {groups: [{profileId, material, kgm, qty, length, mass}], qty, length, mass}; Länge in mm, Masse in kg.
+ */
+export function cutListTotals(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = r.profileId + "|" + r.material;
+    const g = map.get(key) || { profileId: r.profileId, material: r.material, kgm: r.kgm, qty: 0, length: 0, mass: 0 };
+    g.qty += r.qty;
+    g.length += r.length * r.qty;
+    g.mass += r.mass * r.qty;
+    map.set(key, g);
+  }
+  const groups = [...map.values()];
+  return { groups, qty: groups.reduce((a, g) => a + g.qty, 0), length: groups.reduce((a, g) => a + g.length, 0), mass: groups.reduce((a, g) => a + g.mass, 0) };
 }
 /** Enden einer Zuschnitt-Zeile als Text: "45°/45°", "gerade", "ausgeklinkt" */
 export function endsText(r) {

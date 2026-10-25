@@ -47,3 +47,18 @@ test("CSV: Kopf unverändert (Rohrlaser-Import), deutsches Zahlenformat, Masse a
   assert.equal(cells[9], "0,969"); // 100 mm² · 1234,5 mm · 7,85 g/cm³
   assert.ok(CUT_RULES.length >= 4);
 });
+
+test("Summen je Profil: Stück, Gesamtlänge, Gewicht (Megacad-Abgleich M1)", async () => {
+  const { cutListTotals } = await import("../src/core/cutlist.js");
+  const { kgPerMeter } = await import("../src/core/sections.js");
+  const rows = cutListRows([src("R", [member("QR 40x40x3", 1000), member("QR 40x40x3", 500), member("RR 42,4x2", 600)], 2)]);
+  const t = cutListTotals(rows);
+  const qr = t.groups.find((g) => g.profileId === "QR 40x40x3");
+  assert.equal(qr.qty, 4);
+  assert.equal(qr.length, 3000);
+  assert.ok(Math.abs(qr.mass - (100 * 3000 * 7.85) / 1e6) < 1e-9);
+  assert.equal(t.qty, 6);
+  assert.equal(t.length, 4200);
+  assert.ok(Math.abs(qr.kgm - kgPerMeter(100, 7.85)) < 1e-12);
+  assert.ok(Math.abs(kgPerMeter(444, 7.85) - 3.4854) < 1e-9); // QR 40x40x3: 4,44 cm² → 3,49 kg/m
+});

@@ -173,6 +173,11 @@ export const MATERIALS = {
   POM: { label: "Kunststoff POM", density: 1.41, color: "#f2f0ea" },
 };
 
+/** Metergewicht in kg/m aus Querschnittsfläche (mm²) und Dichte (g/cm³) */
+export function kgPerMeter(area, density) {
+  return (area * density) / 1000;
+}
+
 // Metrische Regelgewinde: Kernlochbohrung
 export const THREADS = {
   M3: 2.5, M4: 3.3, M5: 4.2, M6: 5.0, M8: 6.8, M10: 8.5, M12: 10.2, M14: 12.0, M16: 14.0, M20: 17.5, M24: 21.0,
