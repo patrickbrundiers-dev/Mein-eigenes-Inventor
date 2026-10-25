@@ -880,7 +880,7 @@ test("Biegerohr über Polygonzug: Volumen = Fläche × Abwicklung, Biegeliste (M
 });
 
 // ---------- Konturen über die Rundung, 3D je Bauteil, Mindest-Restwand (Patrick, 25.10.2026) ----------
-test("Langloch 30 breit an QR 40x40x3: über die Eckrundung, dort senkrecht zur Mantelfläche", async () => {
+test("Langloch 30 breit an QR 40x40x3: über die Eckrundung (2D senkrecht zur Mantelfläche, 3D eben)", async () => {
   const qr = (cuts, extra = {}) => part([{ id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, length: "1000", start: ["0", "0", "0"], axis: "X", cuts, ...extra }]);
   const base = await K.buildPart(qr([]));
   const V0 = vol(base);
@@ -890,23 +890,37 @@ test("Langloch 30 breit an QR 40x40x3: über die Eckrundung, dort senkrecht zur 
   // Wand je mm Bogen außen (6² − 3²)/(2·6) = 2,25 statt 3
   const A = 900 + Math.PI * 225, seg = 225 * Math.acos(14 / 15) - 14 * Math.sqrt(29), Ac = 2 * (30 + seg);
   const cut = { kind: "langloch", x: "500", side: "oben", q: "0", pattern: "1", l: "60", b: "30" };
+  const removed = {};
   for (const mode of ["2D", "3D"]) {
     const res = await K.buildPart(qr([cut], { cutMode: mode }));
     okAll(res);
     assert.equal(res.status.pr.warning, undefined, mode);
-    near(V0 - vol(res), 3 * (A - Ac) + 2.25 * Ac, 1, `Langloch ${mode}`);
+    removed[mode] = V0 - vol(res);
+    // 2D radial; 3D eben (Draufsicht 30 breit, senkrecht durch die Rundung bis vor die Seitenwand)
+    if (mode === "2D") near(removed[mode], 3 * (A - Ac) + 2.25 * Ac, 1, "Langloch 2D");
+    else {
+      assert.ok(removed[mode] > removed["2D"] + 20 && removed[mode] < 3 * A + 20, `Langloch 3D ${removed[mode]}`);
+      // senkrecht: bei y 14,8 auch weiter innen weg (2D radial bleibt dort stehen); Seitenwand bleibt ganz
+      for (const y of [-14.8, 14.8]) assert.ok(probe(res, [500, y, 17.4], [10, 0.2, 0.4]) < 0.005, `3D senkrecht y ${y}`);
+      assert.ok(probe(res, [500, 18.5, 5], [20, 3, 4]) > 239.9, "Seitenwand ganz");
+    }
     // auf beiden Eckrundungen oben ist die Wand offen (vorher fehlte das Langloch ganz)
     // (radial: an der Außenseite der Rundung; weiter innen liegt derselbe Querwert schon außerhalb der Kontur)
     for (const y of [-14.5, 14.5]) assert.ok(probe(res, [500, y, 19.4], [10, 0.4, 0.6]) < 0.01 * probe(base, [500, y, 19.4], [10, 0.4, 0.6]), `${mode} Rundung y ${y}`);
     // daneben bleibt sie stehen
     assert.ok(probe(res, [500, 0, -18.5], [10, 4, 1]) > 39, "unten zu");
   }
+  // 3D über 0,1 mm vor der Seitenwand hinaus (34 breit): auf der Rundung radial, gemeldet
+  const wide = await K.buildPart(qr([{ ...cut, b: "34" }]));
+  assert.ok(wide.status.pr.ok);
+  assert.match(wide.status.pr.warning, /in 3D eben nur bis 0,1 mm vor die Seitenwand/);
+  assert.ok(vol(wide) < V0 - 4000);
   // durchgehend: oben und unten gleich
-  const both = await K.buildPart(qr([{ ...cut, through: true }]));
+  const both = await K.buildPart(qr([{ ...cut, through: true }], { cutMode: "2D" }));
   okAll(both);
   near(V0 - vol(both), 2 * (3 * (A - Ac) + 2.25 * Ac), 2, "durchgehend");
   // Versatz nach vorne: nur die vordere Rundung
-  const off = await K.buildPart(qr([{ ...cut, l: "40", b: "20", q: "6" }]));
+  const off = await K.buildPart(qr([{ ...cut, l: "40", b: "20", q: "6" }], { cutMode: "2D" }));
   okAll(off);
   assert.ok(probe(off, [500, -14.5, 19.4], [10, 0.4, 0.6]) < 0.01, "vorne offen");
   assert.ok(probe(off, [500, 14.5, 19.4], [10, 0.4, 0.6]) > 2, "hinten zu");

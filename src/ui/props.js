@@ -1172,7 +1172,7 @@ export class Props {
     return this.section("Schnitt 2D / 3D",
       this.seg("Für alle Profile", [["", "je Profil"], ["2D", "2D"], ["3D", "3D"]], mode, (v) => app.edit("Schnitt 2D/3D", () => { if (v) part.cutMode = v; else delete part.cutMode; })),
       mode ? this.expr("Winkelkorrektur ±", part.swivel ?? String(SWIVEL_DEFAULT), (v) => app.edit("Winkelkorrektur", () => { part.swivel = v; }), { unit: "°", allowNeg: false }) : null,
-      h("p", { class: "hint" }, "3D: alle Schnitte (Gehrungen, Konturen) mit geschwenktem Kopf, höchstens bis zur Winkelkorrektur (Vorgabe ±45°); was mehr braucht, wird auf die Grenze gesetzt und gemeldet. 2D: Strahl immer senkrecht zur Mantelfläche. Konturen über eine Eckrundung werden dort immer senkrecht zur Mantelfläche geschnitten. »je Profil« = Einstellung am einzelnen Profil, Rundrohre beginnen in 3D."),
+      h("p", { class: "hint" }, "3D: alle Schnitte (Gehrungen, Konturen) mit geschwenktem Kopf, höchstens bis zur Winkelkorrektur (Vorgabe ±45°); was mehr braucht, wird auf die Grenze gesetzt und gemeldet. 2D: Strahl immer senkrecht zur Mantelfläche. Konturen über eine Eckrundung: in 3D eben mit parallelen Wänden bis 0,1 mm vor die Seitenwand, in 2D (und darüber) senkrecht zur Mantelfläche. »je Profil« = Einstellung am einzelnen Profil, Rundrohre beginnen in 3D."),
       this.check("Mindest-Restwand 0,1 mm", part.restwand !== false, (v) => app.edit("Restwand", () => { part.restwand = v; })),
       h("p", { class: "hint" }, "Endet eine Extrusion (Schnitt), eine Bohrung mit Tiefe oder eine Skizzenkontur genau auf der Rückseite der Wand (Tiefe = Wandstärke) oder weniger als 0,1 mm davor, bleiben 0,1 mm stehen. Durchgehend schneiden: »Durch alles«."));
   }

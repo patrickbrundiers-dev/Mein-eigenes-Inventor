@@ -22,6 +22,7 @@ export const SIDES = [["oben", 0], ["vorne", 90], ["unten", 180], ["hinten", 270
 const fmt = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
 const DEG = Math.PI / 180;
 const WRAP_MAX = 80 * DEG; // Konturen höchstens 80° um eine Rundung
+const SIDE_REST = 0.1; // 3D eben: so viel bleibt von der Seitenwand stehen
 export const TILT_QUICK = [-45, -30, 0, 30, 45]; // Schnellwahl der Neigung wie im Rohr-Editor
 
 /** Vorgabe für eine neue Kontur */
@@ -180,7 +181,8 @@ export function planTubeCuts(cuts, prof, ev) {
         return err(`Eckradius 0 bis ${fmt(Math.min(it.l, it.b) / 2)} mm`);
       // Über die Eckrundung bzw. weit um das Rundrohr (Patrick, 25.10.2026): 2D senkrecht zur Mantelfläche, Maße auf
       // der Abwicklung; 3D am Rundrohr parallele Wände (Maße in der Draufsicht), höchstens bis zur Winkelkorrektur.
-      // Am Rechteckrohr liegt der Teil auf der Eckrundung immer senkrecht zur Mantelfläche. Grenze 80° um die Rundung.
+      // Rechteckrohr in 3D eben bis 0,1 mm vor die Seitenwand, sonst auf der Eckrundung senkrecht zur Mantelfläche.
+      // Grenze 80° um die Rundung.
       it.mode = prof.mode === "2D" ? "2D" : "3D";
       const ext = Math.abs(it.q) + it.b / 2, rr = prof.r || 0, lim = Math.min(prof.swivel ?? 45, 89), R0 = prof.W / 2;
       if (round && c.d3 && kind === "bohrung") {
@@ -194,9 +196,19 @@ export function planTubeCuts(cuts, prof, ev) {
         if (it.need > lim + 1e-9) { it.wrap = true; it.clampedFrom = it.need; }
       } else if (ext > it.faceHalf + 1e-6) {
         if ((c.d3 && kind === "bohrung") || !(rr > 0)) return err(`ragt über die ebene Fläche (|Versatz| + b/2 höchstens ${fmt(it.faceHalf)} mm)`);
-        if (rr < prof.t + 0.6 - 1e-9) return err(`über die Eckrundung nur ab Eckradius Wand + 0,6 mm (ebene Fläche: |Versatz| + b/2 höchstens ${fmt(it.faceHalf)} mm)`);
-        if (ext > it.faceHalf + rr * WRAP_MAX + 1e-6) return err(`ragt zu weit über die Eckrundung (|Versatz| + b/2 auf der Abwicklung höchstens ${fmt(it.faceHalf + rr * WRAP_MAX)} mm)`);
-        it.wrap = true;
+        // 3D: eben mit parallelen Wänden (Maße in der Draufsicht) über die Rundung, bis 0,1 mm vor die Innenseite der
+        // Seitenwand (Patrick, 25.10.2026); braucht die Rundung dort mehr als die Winkelkorrektur, wie 2D
+        const planar = (side ? prof.H : prof.W) / 2 - prof.t - SIDE_REST;
+        if (it.mode === "3D" && ext <= planar + 1e-6) {
+          it.need = Math.asin(Math.min(1, (ext - it.faceHalf) / rr)) / DEG;
+          if (it.need > lim + 1e-9) it.clampedFrom = it.need;
+        }
+        if (it.mode === "2D" || ext > planar + 1e-6 || it.clampedFrom) {
+          if (rr < prof.t + 0.6 - 1e-9) return err(`über die Eckrundung nur ab Eckradius Wand + 0,6 mm (ebene Fläche: |Versatz| + b/2 höchstens ${fmt(it.faceHalf)} mm${it.mode === "3D" ? `, in 3D eben bis ${fmt(planar)} mm` : ""})`);
+          if (ext > it.faceHalf + rr * WRAP_MAX + 1e-6) return err(`ragt zu weit über die Eckrundung (|Versatz| + b/2 auf der Abwicklung höchstens ${fmt(it.faceHalf + rr * WRAP_MAX)} mm)`);
+          it.wrap = true;
+          if (it.mode === "3D" && !it.clampedFrom) it.overPlanar = planar;
+        }
       }
       if (atEnd(kind)) {
         if (it.l >= prof.L - 1e-6) return err("länger als das Teil");
@@ -209,7 +221,8 @@ export function planTubeCuts(cuts, prof, ev) {
         if (lo < -1e-6 || hi > prof.L + 1e-6) return err(`liegt nicht ganz auf dem Teil (${fmt(lo)} bis ${fmt(hi)} mm, Teil 0 bis ${fmt(prof.L)} mm)`);
         if (count > 1 && spacing < it.l - 1e-6) return err("Konturen im Muster überlappen (Abstand kleiner als die Länge)");
       }
-      if (it.clampedFrom && it.wrap) issues.push({ index, warning: true, message: `${name}: braucht in 3D ${fmt(it.clampedFrom)}° Kopfschwenk, Winkelkorrektur auf ±${fmt(lim)}° – am Rand nicht parallel` });
+      if (it.overPlanar) issues.push({ index, warning: true, message: `${name}: in 3D eben nur bis 0,1 mm vor die Seitenwand (|Versatz| + b/2 höchstens ${fmt(it.overPlanar)} mm) – auf der Eckrundung senkrecht zur Mantelfläche geschnitten, Maße dort auf der Abwicklung` });
+      else if (it.clampedFrom && it.wrap) issues.push({ index, warning: true, message: `${name}: braucht in 3D ${fmt(it.clampedFrom)}° Kopfschwenk, Winkelkorrektur auf ±${fmt(lim)}° – am Rand nicht parallel` });
       else if (it.clampedFrom) issues.push({ index, warning: true, message: `${name}: Bohrung 3D braucht ${fmt(it.clampedFrom)}° Kopfschwenk, Winkelkorrektur auf ±${fmt(Math.min(prof.swivel ?? 45, 89))}° – nicht maßhaltig` });
       items.push(it);
     } catch (e) {

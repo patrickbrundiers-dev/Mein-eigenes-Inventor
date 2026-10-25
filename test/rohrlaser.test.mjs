@@ -270,7 +270,8 @@ test("Schlitz und Polygon: Lage, Schneidweg, Prüfregeln", () => {
   // breiter als die ebene Fläche: über die Eckrundung; zu breit auch dafür
   const wide = planTubeCuts([{ kind: "polygon", side: "oben", x: "100", q: "0", pattern: "1", punkte: "0,0; 10,0; 10,30" }], prof, ev);
   assert.deepEqual(wide.issues, []);
-  assert.equal(wide.items[0].wrap, true);
+  assert.equal(wide.items[0].wrap, undefined); // 3D: eben, 15 ≤ 16,9
+  assert.equal(planTubeCuts([{ kind: "polygon", side: "oben", x: "100", q: "0", pattern: "1", punkte: "0,0; 10,0; 10,30" }], { ...prof, mode: "2D" }, ev).items[0].wrap, true);
   const bad = planTubeCuts([{ kind: "polygon", side: "oben", x: "100", q: "0", pattern: "1", punkte: "0,0; 10,0; 10,50" }], prof, ev);
   assert.match(bad.issues[0].message, /ragt zu weit über die Eckrundung/);
 });
@@ -293,10 +294,19 @@ test("Schnitt 2D/3D: Bauteil gibt allen Profilen Art und Winkelkorrektur vor", (
 });
 
 test("Langloch 30 breit an QR 40x40x3 (Patricks Test): über die Eckrundung statt übersprungen", () => {
-  const p = planTubeCuts([{ kind: "langloch", x: "500", side: "oben", q: "0", pattern: "1", l: "60", b: "30" }], QR, ev);
+  const ll = (b) => [{ kind: "langloch", x: "500", side: "oben", q: "0", pattern: "1", l: "60", b }];
+  const p = planTubeCuts(ll("30"), { ...QR, mode: "2D" }, ev);
   assert.deepEqual(p.issues, []);
   assert.equal(p.items[0].wrap, true);
   assert.equal(p.items[0].faceHalf, 14);
+  // 3D: eben bis 0,1 mm vor die Seitenwand (20 − 3 − 0,1 = 16,9), Kopfschwenk auf der Rundung asin(1/6)
+  const p3 = planTubeCuts(ll("30"), QR, ev);
+  assert.deepEqual(p3.issues, []);
+  assert.equal(p3.items[0].wrap, undefined);
+  near(p3.items[0].need, Math.asin(1 / 6) / (Math.PI / 180), 1e-9);
+  const p4 = planTubeCuts(ll("34"), QR, ev);
+  assert.equal(p4.items[0].wrap, true);
+  assert.match(p4.issues[0].message, /in 3D eben nur bis 0,1 mm vor die Seitenwand \(\|Versatz\| \+ b\/2 höchstens 16,9 mm\)/);
   // auf der ebenen Fläche bleibt alles wie bisher
   const n = planTubeCuts([{ kind: "langloch", x: "500", side: "oben", q: "0", pattern: "1", l: "60", b: "28" }], QR, ev);
   assert.equal(n.items[0].wrap, undefined);
