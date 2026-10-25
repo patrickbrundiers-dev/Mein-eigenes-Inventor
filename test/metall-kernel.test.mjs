@@ -136,6 +136,26 @@ test("Geländer-Generator: Pfostenaufteilung, Staketen, Handlauf über Eck, Fuß
   assert.match(res.status.g.info, /6 Pfosten, 5 Feld/);
 });
 
+test("Geländer Stufe 2: Kreuz mit Ring und Rahmen mit Staketen bauen (MegaCAD-Abgleich M11)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const bb = (b) => b.shape.boundingBox.bounds;
+  const k = { id: "k", ...defaultGenerator("gelaender") };
+  Object.assign(k.params, { runs: "1200", fill: "kreuz" });
+  const rk = await K.buildPart(part([k]));
+  okAll(rk);
+  const diag = rk.bodies.filter((b) => /^Diagonale/.test(b.name));
+  assert.equal(diag.length, 2);
+  for (const d of diag) { near(bb(d)[0][0], 20, 0.01, "Diagonale an Pfostenfläche"); near(bb(d)[1][0], 1180, 0.01, "Diagonale an Pfostenfläche"); }
+  const ring = rk.bodies.filter((b) => /^Ring 1/.test(b.name));
+  assert.equal(ring.length, 24, "Ring aus 24 gegehrten Stücken");
+  const k2 = { id: "r", ...defaultGenerator("gelaender") };
+  Object.assign(k2.params, { runs: "1200", fill: "rahmen" });
+  const rr = await K.buildPart(part([k2]));
+  okAll(rr);
+  assert.equal(rr.bodies.filter((b) => /^Füllungsrahmen/.test(b.name)).length, 4, "Rahmen aus 4 gegehrten Stäben");
+  assert.ok(rr.bodies.filter((b) => /^Stab /.test(b.name)).length >= 8);
+});
+
 test("Tor-Generator: Doppeltor mit Stichbogen, Rahmen gegehrt, Stäbe bis unter den Bogen (MegaCAD-Abgleich M12)", async () => {
   const { defaultGenerator } = await import("../src/core/generator.js");
   const f = { id: "t", ...defaultGenerator("tor") };
