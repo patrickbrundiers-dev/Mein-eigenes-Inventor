@@ -429,3 +429,12 @@ test("Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCA
   assert.ok(gaps.every((g) => g > 0 && g <= 110 + 1e-9), gaps.join());
   assert.ok(r.members.filter((m) => /^Stab/.test(m.name)).every((m) => m.a[2] > fr.points[0][2] && m.b[2] < fr.points[2][2]), "Staketen innerhalb des Rahmens");
 });
+
+test("Generator-Listen: Ausdrücke mit Leerzeichen bleiben ganz (V1)", async () => {
+  const { defaultGenerator, resolveGenParams } = await import("../src/core/generator.js");
+  const { evaluate } = await import("../src/core/expr.js");
+  const f = defaultGenerator("gelaender");
+  const P = resolveGenParams("gelaender", { ...f.params, runs: "L + 500; 1200" }, (x) => evaluate(x, { L: 1000 }));
+  assert.deepEqual(P.runs, [1500, 1200]);
+  assert.deepEqual(resolveGenParams("gelaender", { ...f.params, runs: "1000 1200" }, Number).runs, [1000, 1200], "ohne ; weiter durch Leerzeichen");
+});

@@ -6,6 +6,7 @@
 // Oberkante Belag auf »Höhe«.
 
 import { catalogToDims, sectionGeometry } from "./sections.js";
+import { splitList } from "./expr.js";
 import { GELAENDER } from "./gelaender.js";
 import { platePlan } from "./anschluss.js";
 
@@ -114,7 +115,7 @@ function gelaenderParams(over) {
   const out = {};
   for (const s of GELAENDER.schema) {
     const v = s.default;
-    out[s.key] = s.type === "num" ? Number(v) : s.type === "section" ? sec(v) : s.type === "list" ? String(v).split(/[;\s]+/).map(Number) : v;
+    out[s.key] = s.type === "num" ? Number(v) : s.type === "section" ? sec(v) : s.type === "list" ? splitList(v).map(Number) : v;
   }
   return { ...out, ...over };
 }

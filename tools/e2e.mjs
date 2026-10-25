@@ -930,8 +930,15 @@ try {
     // Kürzel G für Rundung im Einstellungscenter, E (belegt) wird abgelehnt
     await page.keyboard.press("Control+,");
     await page.locator(".set-search input").fill("tastatur");
-    await page.locator(".km input[type=search]").fill("rundung");
     const row = page.locator('.km-row[data-cmd="part.fillet"] .km-key');
+    // Liste wird bei jeder Eingabe neu gebaut; auf die Zeile warten, einmal neu filtern, falls sie fehlt (CI-Abbruch #94)
+    for (let k = 0; k < 2; k++) {
+      await page.locator(".km input[type=search]").fill("rundung");
+      try { await row.waitFor({ state: "visible", timeout: 8000 }); break; } catch (e) {
+        if (k) throw new Error(`Kürzelzeile fehlt: ${await page.locator(".km").innerText().catch(() => "kein .km")}`.slice(0, 600));
+        await idle();
+      }
+    }
     await row.click();
     await page.keyboard.press("e");
     const conflict = await page.locator(".km .set-err").textContent();

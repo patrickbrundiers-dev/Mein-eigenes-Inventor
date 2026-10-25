@@ -17,6 +17,7 @@
 //            info, issues: [{ level, message }] }
 
 import { catalogToDims, sectionGeometry, CATALOG } from "./sections.js";
+import { splitList } from "./expr.js";
 import { GELAENDER } from "./gelaender.js";
 import { TOR } from "./tor.js";
 import { TREPPE } from "./treppe.js";
@@ -41,7 +42,7 @@ export function resolveGenParams(gen, params, E) {
   for (const s of g.schema) {
     const v = params?.[s.key] ?? s.default;
     if (s.type === "num") out[s.key] = E(String(v), s.label);
-    else if (s.type === "list") out[s.key] = String(v).split(/[;\s]+/).filter(Boolean).map((x, i) => E(x, `${s.label} ${i + 1}`));
+    else if (s.type === "list") out[s.key] = splitList(v).map((x, i) => E(x, `${s.label} ${i + 1}`));
     else if (s.type === "section") out[s.key] = sectionOf(v, s.label);
     else if (s.type === "check") out[s.key] = !!v;
     else out[s.key] = v;
