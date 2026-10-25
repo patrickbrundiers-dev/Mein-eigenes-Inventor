@@ -25,19 +25,22 @@ export function catalogEntries(kinds = Object.keys(SECTION_KINDS)) {
   }
   return out;
 }
+// Hohlprofile zuerst: „40x3“ meint wie in der Rohrlaser-Kalkulation QR 40x40x3, nicht RR 40x3 oder FL 40x3
+const FIRST = ["vierkant", "rechteck"];
+const searchOrder = (kinds = Object.keys(SECTION_KINDS)) => [...FIRST.filter((k) => kinds.includes(k)), ...kinds.filter((k) => !FIRST.includes(k))];
 const numDims = (d) => Object.fromEntries(Object.entries(d).map(([k, v]) => [k, Number(v)]));
 
 /**
  * Normgrößen zur Eingabe, beste zuerst: gleiche Maße (doppelte dürfen fehlen: 40x3 = 40x40x3), dann Maße am Anfang
  * (40 → 40x40x3, 40x20x2 …), dann Text irgendwo in der ID. Buchstaben vorne (QR, RE …) müssen am Anfang der ID stehen.
  */
-export function profileMatches(text, kinds, max = 8) {
+export function profileMatches(text, kinds, max = 12) {
   const t = kurz(text);
   if (!t) return [];
   const vorne = t.match(/^[a-zäöü]+/)?.[0] || "";
   const z = zahlen(t);
   const [same, start, other] = [[], [], []];
-  for (const e of catalogEntries(kinds)) {
+  for (const e of catalogEntries(searchOrder(kinds))) {
     const k = kurz(e.id);
     if (vorne && !k.startsWith(vorne)) continue;
     const nz = zahlen(k), od = ohneDoppelte(nz);

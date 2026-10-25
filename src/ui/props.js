@@ -4,6 +4,7 @@ import { h, icon, toast, modal, fmtNum, confirmDialog, promptDialog } from "./do
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
 import { SECTION_KINDS, fieldLabel, CATALOG, catalogToDims, profileId, sectionGeometry, kgPerMeter, THREADS, CLEARANCE } from "../core/sections.js";
 import { profileMatches, resolveProfile } from "../core/profilesearch.js";
+import { LIB_GROUPS, groupOfMaterial, groupKinds, mainSizes, wallsFor, wallLabel, hasWall, findEntry, pickEntry, defaultEntry, mainOfDims } from "../core/profillib.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
@@ -843,11 +844,9 @@ export class Props {
   sectionEditor(f, kinds = Object.keys(SECTION_KINDS)) {
     const kind = f.section || "vierkant";
     const def = SECTION_KINDS[kind];
-    const cat = CATALOG[kind] || [];
     return this.section("Querschnitt",
       this.profileQuick(f, kinds),
-      this.select("Profilart", kinds.map((k) => [k, SECTION_KINDS[k].label]), kind, (v) => this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart")),
-      this.select("Normgröße", [["", "– eigene Maße –"], ...cat.map((c) => [c, c.replace(/\./g, ",")])], matchCatalog(kind, f.dims) || "", (v) => v && this.set(f, (x) => { x.dims = catalogToDims(kind, v); }, "Normgröße")),
+      ...this.profileLibrary(f, kinds),
       ...def.fields.map((k) => this.expr(fieldLabel(kind, k), f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, fieldLabel(kind, k)), { allowNeg: false })),
       this.meterWeightInfo(f));
   }
@@ -876,6 +875,52 @@ export class Props {
         h("dt", {}, "Fläche A"), h("dd", {}, fmtNum(area, 1) + " mm²"),
         h("dt", {}, "Metergewicht"), h("dd", { title: mat.label }, fmtNum(kgPerMeter(area, mat.density), 2) + " kg/m"));
     } catch { return null; }
+  }
+
+  /**
+   * Profilbibliothek in Schritten (src/core/profillib.js): Werkstoff des Bauteils → Profilart → Abmessung → Wandstärke.
+   * Angeboten wird nur, was es in der Werkstoffgruppe nach Norm gibt; eigene Maße bleiben über die Felder darunter möglich.
+   */
+  profileLibrary(f, kinds) {
+    const app = this.app, kind = f.section || "vierkant";
+    const part = app.activeDoc();
+    const isPart = part?.kind === "part";
+    const group = groupOfMaterial(materialOf(part?.material));
+    const lib = group ? LIB_GROUPS[group] : null;
+    let d = null;
+    try {
+      const scope = this.scope();
+      d = Object.fromEntries(Object.entries(f.dims || {}).map(([k, v]) => [k, evaluate(String(v), scope)]));
+    } catch { /* Maß mit Fehler: gilt als eigene Maße */ }
+    const groups = group ? [group] : Object.keys(LIB_GROUPS);
+    const hit = d && groups.map((g) => findEntry(g, kind, d)).find(Boolean);
+    const g = hit?.group || groups.find((x) => LIB_GROUPS[x].kinds[kind]) || null;
+    const setEntry = (e, label) => e && this.set(f, (x) => { x.section = e.kind; x.dims = { ...e.dims }; }, label);
+    const out = [];
+    if (isPart) out.push(this.materialSelect(part));
+    const offered = groupKinds(group, kinds);
+    const kindOpts = (offered.includes(kind) ? offered : [kind, ...offered]).map((k) => [k, SECTION_KINDS[k].label]);
+    out.push(this.select("Profilart", kindOpts, kind, (v) => {
+      const e = groups.map((x) => defaultEntry(x, v)).find(Boolean);
+      if (e) setEntry(e, "Profilart");
+      else this.set(f, (x) => { x.section = v; x.dims = catalogToDims(v, CATALOG[v][Math.floor(CATALOG[v].length / 2)]); }, "Profilart");
+    }));
+    if (!g) {
+      out.push(h("p", { class: "hint" }, `${SECTION_KINDS[kind].label} gibt es für ${lib ? lib.label : "diesen Werkstoff"} nicht in der Normliste – Maße unten frei eingeben.`));
+      return out;
+    }
+    const main = hit?.main ?? (d ? mainOfDims(kind, d) : null);
+    const mains = mainSizes(g, kind);
+    const known = mains.some(([m]) => m === main);
+    out.push(this.select("Abmessung", [...(known ? [] : [["", "– eigene Maße –"]]), ...mains], known ? main : "", (v) => v && setEntry(pickEntry(g, kind, v, Number(d?.t)), "Abmessung")));
+    if (hasWall(kind) && known) {
+      const walls = wallsFor(g, kind, main);
+      out.push(this.select(wallLabel(kind), [...(hit ? [] : [["", "– eigene –"]]), ...walls], hit ? hit.wall : "", (v) => v && setEntry(pickEntry(g, kind, main, Number(v)), wallLabel(kind))));
+    }
+    out.push(h("p", { class: "hint" }, hit
+      ? `${hit.norm} · ${LIB_GROUPS[hit.group].label}`
+      : `Eigene Maße – nicht in der Normliste für ${LIB_GROUPS[g].label}.`));
+    return out;
   }
 
   /** Profil-Schnelleingabe: Profil-ID oder Kurzform tippen ("40x3", "RE 70x50x4"), Treffer darunter zum Anklicken */
@@ -1655,13 +1700,5 @@ function cutListTotalsTable(t) {
     h("thead", {}, h("tr", {}, h("th", {}, "Profil"), h("th", {}, "Werkstoff"), h("th", {}, "Stk"), h("th", {}, "Länge gesamt m"), h("th", {}, "kg/m"), h("th", {}, "kg gesamt"))),
     h("tbody", {}, ...t.groups.map((g) => h("tr", {}, h("td", { style: { whiteSpace: "nowrap" } }, g.profileId), h("td", {}, g.material), h("td", { class: "num" }, String(g.qty)), h("td", { class: "num" }, fmtNum(g.length / 1000, 2)), h("td", { class: "num" }, fmtNum(g.kgm, 2)), h("td", { class: "num" }, fmtNum(g.mass, 2)))),
       h("tr", { class: "sum" }, h("td", {}, h("b", {}, "Summe")), h("td", {}), h("td", { class: "num" }, String(t.qty)), h("td", { class: "num" }, fmtNum(t.length / 1000, 2)), h("td", {}), h("td", { class: "num" }, h("b", {}, fmtNum(t.mass, 2))))));
-}
-function matchCatalog(kind, dims) {
-  if (!dims) return null;
-  for (const c of CATALOG[kind] || []) {
-    const d = catalogToDims(kind, c);
-    if (Object.keys(d).every((k) => String(d[k]) === String(dims[k]))) return c;
-  }
-  return null;
 }
 export { FEATURE_NAMES, scaleLabel, cutListRows, endsText };
