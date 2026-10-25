@@ -29,6 +29,8 @@ import { finishColor } from "../core/oberflaeche.js";
 import { Docking } from "./layout.js";
 import { nextName } from "../core/naming.js";
 import { BuildLog, buildEntry } from "../core/buildlog.js";
+import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generator.js";
+import { groupParts } from "../core/genteil.js";
 
 const linkedMessage = (part) => `»${part.name}« ist mit ${baseName(part.link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`;
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
@@ -143,6 +145,64 @@ export class App {
     return d;
   }
   newAssembly() { return this.addDoc(newAssembly(this.docName("assembly"))); }
+  /** Generator als Feature im aktiven Bauteil (Schiebetor; ältere Arbeitsweise) */
+  addGeneratorFeature(gen) {
+    const part = this.activeDoc();
+    const n = (part?.features || []).filter((x) => x.gen === gen).length + 1;
+    return this.addFeature({ ...defaultGenerator(gen), name: `${GENERATORS[gen].label} ${n}` });
+  }
+  /**
+   * Generator als Baugruppe mit Einzelteilen: die Baugruppe hält die Einstellungen (asm.generator), jedes Teil des
+   * Bauplans wird ein Bauteil mit Feature »genteil« (gleiche Teile einmal), die Komponenten setzen sie an ihre Stelle.
+   */
+  generatorAssembly(gen, { params, name, from } = {}) {
+    const n = this.project.docs.filter((d) => d.kind === "assembly" && d.generator?.gen === gen).length + 1;
+    const asm = newAssembly(name || `${GENERATORS[gen].label} ${n}`);
+    asm.generator = { gen, params: JSON.parse(JSON.stringify(params || defaultGenerator(gen).params)) };
+    if (from?.kind === "part") asm.genMaterial = { material: from.material, color: from.color ?? null, finish: from.finish ? JSON.parse(JSON.stringify(from.finish)) : undefined };
+    this.edit(`${GENERATORS[gen].label} als Baugruppe`, () => {
+      this.project.docs.push(asm);
+      this.syncGenAssembly(asm);
+    }, { rebuild: false });
+    this.openDoc(asm.id);
+    toast(`Baugruppe »${asm.name}« mit ${new Set(asm.components.map((c) => c.part)).size} Einzelteilen angelegt`, { kind: "ok" });
+    return asm;
+  }
+  /**
+   * Einzelteile einer Generator-Baugruppe an die Einstellungen anpassen: Bauteile wiederverwenden (gleiche Geometrie,
+   * sonst gleicher Name), angehängte Features behalten, fehlende anlegen, nicht mehr gebrauchte entfernen.
+   */
+  syncGenAssembly(asm) {
+    const g = asm.generator, gen = GENERATORS[g.gen];
+    // Zahlen auflösen: die Bauteile rechnen ohne die Parameter der Baugruppe
+    const scope = resolveParams(asm.params || []).values;
+    const params = Object.fromEntries(Object.entries(g.params).map(([k, v]) => [k, gen.schema.find((s) => s.key === k)?.type === "num" ? String(evaluate(String(v), scope)) : JSON.parse(JSON.stringify(v))]));
+    const groups = groupParts(gen.plan(resolveGenParams(g.gen, params, (x) => evaluate(String(x), scope))));
+    const old = this.project.docs.filter((d) => d.kind === "part" && d.genAsm === asm.id), used = new Set();
+    const take = (pred) => { const p = old.find((d) => !used.has(d) && pred(d)); if (p) used.add(p); return p; };
+    const parts = groups.map((gr) => {
+      let p = take((d) => d.genSig === gr.sig) || take((d) => d.genName === gr.name);
+      if (!p) {
+        p = this.withPartDefaults(newPart(`${asm.name} ${gr.name}`));
+        if (asm.genMaterial) Object.assign(p, Object.fromEntries(Object.entries(asm.genMaterial).filter(([, v]) => v !== undefined)));
+        p.genAsm = asm.id;
+        p.features = [{ id: uid("f"), type: "genteil", name: gr.name }];
+        this.project.docs.push(p);
+      }
+      const f = p.features.find((x) => x.type === "genteil");
+      Object.assign(f, { gen: g.gen, params: JSON.parse(JSON.stringify(params)), key: gr.key, body: gr.name });
+      p.genSig = gr.sig;
+      p.genName = gr.name;
+      return p;
+    });
+    // nicht mehr gebrauchte Einzelteile entfernen, Komponenten neu setzen (Kennung je Körper bleibt)
+    const gone = new Set(old.filter((d) => !used.has(d)).map((d) => d.id));
+    this.project.docs = this.project.docs.filter((d) => !gone.has(d.id));
+    const prev = new Map(asm.components.filter((c) => c.genKey).map((c) => [c.genKey, c]));
+    const own = asm.components.filter((c) => !c.genKey && !gone.has(c.part));
+    asm.components = [...groups.flatMap((gr, i) => gr.bodies.map((b) => ({ id: prev.get(b.key)?.id || uid("c"), part: parts[i].id, name: b.name, pos: b.pos, rot: b.rot, fixed: true, genKey: b.key, ...(prev.get(b.key)?.hidden ? { hidden: true } : {}) }))), ...own];
+    asm.constraints = (asm.constraints || []).filter((c) => asm.components.some((x) => x.id === c.a?.comp) && asm.components.some((x) => x.id === c.b?.comp));
+  }
   newDrawing(source) {
     const src = source || (this.activeDoc() && this.activeDoc().kind !== "drawing" ? { kind: this.activeDoc().kind, id: this.activeId } : null);
     const name = this.docName("drawing", { quelle: src ? this.doc(src.id).name : "" });
@@ -1152,7 +1212,7 @@ export class App {
 
 export const CONSTRAINT_NAMES = { gegen: "Fläche an Fläche", buendig: "Bündig", konzentrisch: "Konzentrisch" };
 export const FEATURE_NAMES = {
-  sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", emboss: "Prägen",
+  sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
 };
 

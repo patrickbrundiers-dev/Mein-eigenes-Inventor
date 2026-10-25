@@ -777,3 +777,35 @@ test("Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, 
   assert.equal(plan({ stepFix: "keine" }).plates.filter((p) => /Seitenblech/.test(p.name)).length, 0);
   assert.equal(plan({ support: "holm2" }).plates.filter((p) => /Seitenblech/.test(p.name)).length, 0, "nur bei Wangen");
 });
+
+test("Generator als Baugruppe: Einzelteile in eigener Lage, Platzierung führt zurück, gleiche Teile einmal", async () => {
+  const { defaultGenerator, resolveGenParams, GENERATORS } = await import("../src/core/generator.js");
+  const { planBodies, localPlan, groupParts, eulerOf } = await import("../src/core/genteil.js");
+  const { placementMatrix, matApply } = await import("../src/core/geom.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-4); // 0,1 µm
+  for (const g of Object.keys(GENERATORS)) {
+    const plan = GENERATORS[g].plan(resolveGenParams(g, defaultGenerator(g).params, E));
+    const bodies = planBodies(plan);
+    assert.equal(new Set(bodies.map((b) => b.key)).size, bodies.length, `${g}: Schlüssel eindeutig`);
+    for (const b of bodies) {
+      const lp = localPlan(plan, b), M = placementMatrix(b.frame.o, eulerOf(b.frame));
+      if (b.kind === "member") {
+        const m = plan.members[b.index], l = lp.members[0];
+        assert.ok(near(matApply(M, l.a), m.a) && near(matApply(M, l.b), m.b), `${g} ${b.name}: Platzierung`);
+        assert.ok(Math.abs(l.b[1]) < 1e-9 && Math.abs(l.b[2]) < 1e-9 && l.b[0] > 0, `${g} ${b.name}: liegt auf X`);
+        for (const d of lp.drills) assert.ok(near(matApply(M, d.p), plan.drills.find((x) => x.target === m.name && near(x.dir, x.dir) && Math.abs(Math.hypot(...x.p) - Math.hypot(...matApply(M, d.p))) < 1e-6)?.p || [NaN]), `${g} ${b.name}: Bohrung`);
+      } else if (b.kind === "chain") {
+        const c = lp.chains[0], s = c.onlySeg, w = plan.chains[b.index].points;
+        assert.ok(near(matApply(M, c.points[s]), w[b.seg]) && near(matApply(M, c.points[s + 1]), w[b.seg + 1]), `${g} ${b.name}: Stück am Platz`);
+      } else if (b.kind === "plate") {
+        assert.ok(near(matApply(M, [0, 0, 0]), plan.plates[b.index].center), `${g} ${b.name}: Platte`);
+      }
+    }
+    const parts = groupParts(plan);
+    assert.equal(parts.reduce((n, p) => n + p.bodies.length, 0), bodies.length, `${g}: jeder Körper genau einmal eingesetzt`);
+    assert.equal(new Set(parts.map((p) => p.name)).size, parts.length, `${g}: Teilenamen eindeutig`);
+  }
+  const zaun = groupParts(GENERATORS.zaun.plan(resolveGenParams("zaun", defaultGenerator("zaun").params, E)));
+  assert.ok(zaun.find((p) => p.name === "Pfosten").bodies.length === 5, "5 gleiche Pfosten = ein Bauteil");
+});

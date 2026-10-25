@@ -119,6 +119,69 @@ export class Props {
     return label ? this.field(label, wrap) : wrap;
   }
   /** Skizze der Generator-Einstellungen mit Ansichtswahl; null, wenn der Bauplan gerade nicht rechnet */
+  /**
+   * Einstellungen eines Generators (Skizze, Felder mit Meldungen, Vorlagen). f: { gen, params, name }; part: Bauteil
+   * oder Baugruppe (Werkstoffgruppe, Hervorhebung nur im Bauteil); update(fn, label) ändert f mit Rückgängig.
+   */
+  genFields(f, part, update) {
+    const app = this.app, out = [];
+    const gen = GENERATORS[f.gen];
+    const P = genValues(f.gen, f.params);
+    const setP = (key, v, label) => update((x) => { x.params = { ...x.params, [key]: v }; }, label);
+    // Skizze mit Maßen (Bebilderung der Einstellungen); Fokus auf einem Feld hebt sein Maß hervor
+    const scope = this.scope();
+    const planOf = (params) => gen.plan(resolveGenParams(f.gen, params, (x) => evaluate(String(x), scope)));
+    let svg = null;
+    const sketch = this.genSketch(f, gen, P, planOf, (el) => { svg = el; });
+    if (sketch) out.push(sketch);
+    // Fehler und Hinweise des Bauplans direkt am betroffenen Feld (V5)
+    let planErr = null, planIssues = [];
+    try { planIssues = planOf(f.params).issues || []; } catch (e) { planErr = e; }
+    const msgsFor = (key) => [...(planErr?.key === key ? [["err", planErr.message]] : []), ...planIssues.filter((x) => x.key === key).map((x) => [x.level === "Hinweis" ? "hint" : "warn", x.message])];
+    // Fokus auf einem Feld hebt die zugehörigen Körper im 3D-Fenster hervor
+    const markBodies = (key) => (on) => {
+      const rx = on && part.kind === "part" && fieldParts(gen, key), bodies = rx ? app.results.get(part.id)?.bodies || [] : [];
+      app.viewer.highlightBodies(rx ? bodies.flatMap((b, i) => (b.fid === f.id && rx.test(b.name || "") ? [i] : [])) : []);
+    };
+    const groups = [];
+    for (const s of gen.schema) {
+      if (s.when && !s.when(P)) continue;
+      let g = groups.find((x) => x.name === (s.group || ""));
+      if (!g) groups.push((g = { name: s.group || "", items: [] }));
+      const v = P[s.key];
+      const n0 = g.items.length;
+      if (s.type === "num") g.items.push(this.expr(s.label, String(v), (x) => setP(s.key, x, s.label), { unit: s.unit || "mm" }));
+      else if (s.type === "list") g.items.push(this.text(s.label + " (mm, mit ; trennen)", String(v), (x) => setP(s.key, x, s.label), { placeholder: "3000; 1500" }));
+      else if (s.type === "check") g.items.push(this.check(s.label, !!v, (x) => setP(s.key, x, s.label)));
+      else if (s.type === "select" && s.tiles) g.items.push(this.genTiles(s, v, P, planOf, (x) => setP(s.key, x, s.label)));
+      else if (s.type === "select") g.items.push(this.select(s.label, s.options, v, (x) => setP(s.key, x, s.label)));
+      else if (s.type === "section") {
+        g.items.push(...this.genSectionPicker(s, v, part, (x) => setP(s.key, x, s.label)));
+      }
+      for (const el of g.items.slice(n0)) linkFieldToSketch(el, s.key, () => svg, markBodies(s.key));
+      const msgs = msgsFor(s.key);
+      if (msgs.length) {
+        g.items.slice(n0).forEach((el) => el.classList?.add(msgs.some(([k]) => k === "err") ? "field-bad" : "field-warn"));
+        g.items.push(...msgs.map(([k, m]) => h("p", { class: "field-msg " + k }, m)));
+      }
+    }
+    for (const g of groups) out.push(this.section(g.name, ...g.items));
+    const tpls = listTemplates(f.gen);
+    out.push(this.section("Vorlagen",
+      tpls.length ? this.select("Vorlage laden", [["", "– wählen –"], ...tpls.map((t) => [t, t])], "", (name) => name && update((x) => { x.params = applyTemplate(f.gen, x.params, getTemplate(f.gen, name)); }, "Vorlage " + name)) : null,
+      h("div", { class: "btn-row" },
+        h("button", { class: "btn", onclick: async () => {
+          const name = await promptDialog("Vorlage speichern", "Name der Vorlage", f.name || gen.label);
+          if (!name) return;
+          if (saveTemplate(f.gen, name.trim(), f.params)) { toast(`Vorlage „${name.trim()}“ gespeichert`, { kind: "ok" }); this.render(); } else toast("Vorlage konnte nicht gespeichert werden", { kind: "err" });
+        } }, "Als Vorlage speichern"),
+        tpls.length ? h("button", { class: "btn", onclick: async () => {
+          const name = await promptDialog("Vorlage löschen", "Name der Vorlage", tpls[0]);
+          if (name && tpls.includes(name.trim())) { deleteTemplate(f.gen, name.trim()); this.render(); }
+        } }, "Vorlage löschen") : null),
+      h("p", { class: "hint" }, "Vorlagen merken sich alle Werte dieses Generators auf diesem Rechner. Das Modell rechnet bei jeder Änderung neu; Zuschnittliste, Gewicht und STEP enthalten alle Stäbe.")));
+    return out;
+  }
   genSketch(f, gen, P, planOf, setSvg) {
     let plan;
     try { plan = planOf(f.params); } catch { return null; }
@@ -611,65 +674,22 @@ export class Props {
         break;
       }
       case "generator": {
-        const gen = GENERATORS[f.gen];
-        if (!gen) break;
-        const P = genValues(f.gen, f.params);
-        const setP = (key, v, label) => this.set(f, (x) => { x.params = { ...x.params, [key]: v }; }, label);
-        // Skizze mit Maßen (Bebilderung der Einstellungen); Fokus auf einem Feld hebt sein Maß hervor
-        const scope = this.scope();
-        const planOf = (params) => gen.plan(resolveGenParams(f.gen, params, (x) => evaluate(String(x), scope)));
-        let svg = null;
-        const sketch = this.genSketch(f, gen, P, planOf, (el) => { svg = el; });
-        if (sketch) out.push(sketch);
-        // Fehler und Hinweise des Bauplans direkt am betroffenen Feld (V5)
-        let planErr = null, planIssues = [];
-        try { planIssues = planOf(f.params).issues || []; } catch (e) { planErr = e; }
-        const msgsFor = (key) => [...(planErr?.key === key ? [["err", planErr.message]] : []), ...planIssues.filter((x) => x.key === key).map((x) => [x.level === "Hinweis" ? "hint" : "warn", x.message])];
-        // Fokus auf einem Feld hebt die zugehörigen Körper im 3D-Fenster hervor
-        const markBodies = (key) => (on) => {
-          const rx = on && fieldParts(gen, key), bodies = rx ? app.results.get(part.id)?.bodies || [] : [];
-          app.viewer.highlightBodies(rx ? bodies.flatMap((b, i) => (b.fid === f.id && rx.test(b.name || "") ? [i] : [])) : []);
-        };
-        const groups = [];
-        for (const s of gen.schema) {
-          if (s.when && !s.when(P)) continue;
-          let g = groups.find((x) => x.name === (s.group || ""));
-          if (!g) groups.push((g = { name: s.group || "", items: [] }));
-          const v = P[s.key];
-          const n0 = g.items.length;
-          if (s.type === "num") g.items.push(this.expr(s.label, String(v), (x) => setP(s.key, x, s.label), { unit: s.unit || "mm" }));
-          else if (s.type === "list") g.items.push(this.text(s.label + " (mm, mit ; trennen)", String(v), (x) => setP(s.key, x, s.label), { placeholder: "3000; 1500" }));
-          else if (s.type === "check") g.items.push(this.check(s.label, !!v, (x) => setP(s.key, x, s.label)));
-          else if (s.type === "select" && s.tiles) g.items.push(this.genTiles(s, v, P, planOf, (x) => setP(s.key, x, s.label)));
-          else if (s.type === "select") g.items.push(this.select(s.label, s.options, v, (x) => setP(s.key, x, s.label)));
-          else if (s.type === "section") {
-            g.items.push(...this.genSectionPicker(s, v, part, (x) => setP(s.key, x, s.label)));
-          }
-          for (const el of g.items.slice(n0)) linkFieldToSketch(el, s.key, () => svg, markBodies(s.key));
-          const msgs = msgsFor(s.key);
-          if (msgs.length) {
-            g.items.slice(n0).forEach((el) => el.classList?.add(msgs.some(([k]) => k === "err") ? "field-bad" : "field-warn"));
-            g.items.push(...msgs.map(([k, m]) => h("p", { class: "field-msg " + k }, m)));
-          }
-        }
-        for (const g of groups) out.push(this.section(g.name, ...g.items));
+        if (!GENERATORS[f.gen]) break;
+        out.push(...this.genFields(f, part, (fn, label) => this.set(f, fn, label)));
         if (f.gen === "schiebetor") out.push(this.section("Baugruppe",
           h("p", { class: "hint" }, "Legt Flügel und feste Teile als zwei Bauteile an und setzt sie in eine neue Baugruppe; der Flügel bekommt ein Schiebegelenk über die ganze Durchfahrt (öffnen, Bewegungsbereich prüfen, animieren)."),
-          h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.slidingGateAssembly(f, planOf) }, "Als Baugruppe mit Schiebegelenk"))));
-        const tpls = listTemplates(f.gen);
-        out.push(this.section("Vorlagen",
-          tpls.length ? this.select("Vorlage laden", [["", "– wählen –"], ...tpls.map((t) => [t, t])], "", (name) => name && this.set(f, (x) => { x.params = applyTemplate(f.gen, x.params, getTemplate(f.gen, name)); }, "Vorlage " + name)) : null,
-          h("div", { class: "btn-row" },
-            h("button", { class: "btn", onclick: async () => {
-              const name = await promptDialog("Vorlage speichern", "Name der Vorlage", f.name || gen.label);
-              if (!name) return;
-              if (saveTemplate(f.gen, name.trim(), f.params)) { toast(`Vorlage „${name.trim()}“ gespeichert`, { kind: "ok" }); this.render(); } else toast("Vorlage konnte nicht gespeichert werden", { kind: "err" });
-            } }, "Als Vorlage speichern"),
-            tpls.length ? h("button", { class: "btn", onclick: async () => {
-              const name = await promptDialog("Vorlage löschen", "Name der Vorlage", tpls[0]);
-              if (name && tpls.includes(name.trim())) { deleteTemplate(f.gen, name.trim()); this.render(); }
-            } }, "Vorlage löschen") : null),
-          h("p", { class: "hint" }, "Vorlagen merken sich alle Werte dieses Generators auf diesem Rechner. Das Modell rechnet bei jeder Änderung neu; Zuschnittliste, Gewicht und STEP enthalten alle Stäbe.")));
+          h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.slidingGateAssembly(f, (params) => GENERATORS[f.gen].plan(resolveGenParams(f.gen, params, (x) => evaluate(String(x), this.scope())))) }, "Als Baugruppe mit Schiebegelenk"))));
+        else out.push(this.section("Baugruppe",
+          h("p", { class: "hint" }, "Legt eine Baugruppe an, in der jedes Rohr, jeder Stab und jedes Blech ein eigenes Bauteil ist (gleiche Teile einmal, mehrfach eingesetzt). Die Maße bleiben in der Baugruppe einstellbar; in den Bauteilen kann man weiter bearbeiten (Bohrung, Ausschnitt …)."),
+          h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.generatorAssembly(f.gen, { params: f.params, name: f.name, from: part }) }, "Als Baugruppe mit Einzelteilen"))));
+        break;
+      }
+      case "genteil": {
+        const asm = app.project.docs.find((d) => d.id === part.genAsm);
+        out.push(this.section("Teil aus Generator",
+          h("p", {}, `${f.body || f.key} aus ${GENERATORS[f.gen]?.label || f.gen}${asm ? ` in der Baugruppe »${asm.name}«` : ""}.`),
+          h("p", { class: "hint" }, "Maße und Profile werden in der Baugruppe eingestellt und gelten für alle Teile. Hier weitere Features anhängen (Bohrung, Ausschnitt, Fase …) – sie bleiben beim Aktualisieren erhalten."),
+          asm ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { app.openDoc(asm.id); app.sel = null; this.render(); } }, "Baugruppe öffnen")) : null));
         break;
       }
       case "naht": {
@@ -1196,6 +1216,11 @@ export class Props {
       this.text("Name", asm.name, (v) => app.edit("Name", () => { asm.name = v; }, { rebuild: false })),
       this.text("Nummer", asm.number, (v) => app.edit("Nummer", () => { asm.number = v; }, { rebuild: false })),
       this.text("Beschreibung", asm.description, (v) => app.edit("Beschreibung", () => { asm.description = v; }, { rebuild: false }), { area: true })));
+    // Generator-Baugruppe: Einstellungen hier, Einzelteile folgen (syncGenAssembly)
+    if (asm.generator && GENERATORS[asm.generator.gen]) {
+      out.push(this.section(GENERATORS[asm.generator.gen].label, h("p", { class: "hint" }, "Jedes Rohr, jeder Stab und jedes Blech ist ein eigenes Bauteil (gleiche Teile einmal, mehrfach eingesetzt). Änderungen hier passen alle Einzelteile an; Features, die in einem Bauteil angehängt wurden, bleiben erhalten.")));
+      out.push(...this.genFields(asm.generator, asm, (fn, label) => app.edit(label, () => { fn(asm.generator); app.syncGenAssembly(asm); })));
+    }
     const rows = bomRows(app, asm);
     const total = rows.reduce((s, r) => s + (r.mass || 0) * r.qty, 0);
     out.push(this.section("Stückliste", bomTable(rows, true), h("dl", { class: "kv", style: { marginTop: "6px" } }, h("dt", {}, "Gesamtmasse"), h("dd", {}, fmtNum(total, 2) + " kg")),
