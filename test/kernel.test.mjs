@@ -842,3 +842,21 @@ test("Spline extrudieren: geschlossene Kurve und Spline mit Linie", async () => 
   area /= 2;
   near(vol(res), Math.abs(area) * 10, 1, "Spline mit Linie");
 });
+
+test("Biegerohr über Polygonzug: Volumen = Fläche × Abwicklung, Biegeliste (MegaCAD-Abgleich M4)", async () => {
+  const f = { id: "br", type: "biegerohr", section: "rohr", dims: { D: "48.3", t: "2.6" }, radius: "100",
+    points: [{ x: "0", y: "0", z: "0" }, { x: "600", y: "0", z: "0", rel: true }, { x: "0", y: "400", z: "0", rel: true }, { x: "0", y: "0", z: "300", rel: true }] };
+  const res = await K.buildPart(part([f]));
+  okAll(res);
+  assert.equal(res.bodies.length, 1);
+  const m = res.bodies[0].meta;
+  const L = 900 + Math.PI * 100;
+  near(m.length, L, 1e-6, "Abwicklung");
+  assert.equal(m.bends.length, 2);
+  const A = Math.PI / 4 * (48.3 ** 2 - (48.3 - 5.2) ** 2);
+  near(vol(res), A * L, A * L * 0.002, "Volumen (Pappus)");
+  log("Biegerohr", JSON.stringify({ L: m.length.toFixed(2), bends: m.bends.map((b) => [b.straight, b.rotation, b.angle]) }));
+  // Rundstahl, Radius zu groß für das Segment
+  const bad = await K.buildPart(part([{ ...f, section: "rund", dims: { D: "20" }, radius: "700" }]));
+  assert.match(bad.status.br.error, /zu kurz für den Biegeradius/);
+});

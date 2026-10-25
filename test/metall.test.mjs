@@ -41,3 +41,33 @@ test("Profilzug: Umkehr am Punkt wird gemeldet, neuer Punkt quer zum letzten Seg
   assert.deepEqual(nextPointDefault([[0, 0, 0], [0, 800, 0]]), { x: "500", y: "0", z: "0", rel: true });
   assert.equal(nextPointDefault([]).y, "500");
 });
+
+test("Biegerohr: Geraden, Bögen, Biegeliste L-R-A und Abwicklungslänge (MegaCAD-Abgleich M4)", async () => {
+  const { planBends, bendListCsv } = await import("../src/core/biegerohr.js");
+  // Bügel: 600 in X, 400 in Y, 300 in Z, R = 100 → zwei 90°-Biegungen in verschiedenen Ebenen
+  const pts = [[0, 0, 0], [600, 0, 0], [600, 400, 0], [600, 400, 300]];
+  const p = planBends(pts, 100, 48.3);
+  assert.equal(p.bends.length, 2);
+  assert.deepEqual(p.bends.map((b) => Math.round(b.angle)), [90, 90]);
+  assert.ok(Math.abs(p.bends[0].straight - 500) < 1e-9);
+  assert.ok(Math.abs(p.bends[1].straight - 200) < 1e-9);
+  assert.ok(Math.abs(p.last - 200) < 1e-9);
+  assert.equal(Math.abs(p.bends[1].rotation), 90, "Biegeebene um 90° gedreht");
+  assert.ok(Math.abs(p.length - (900 + 2 * 100 * Math.PI / 2)) < 1e-9);
+  assert.equal(p.pieces.filter((x) => x.t === "arc").length, 2);
+  assert.equal(p.issues.length, 0);
+  // in einer Ebene: Drehung 0 oder 180
+  const flat = planBends([[0, 0, 0], [500, 0, 0], [500, 500, 0], [1000, 500, 0]], 50, 20);
+  assert.equal(Math.abs(flat.bends[1].rotation), 180);
+  assert.match(bendListCsv(p, "Bügel"), /Abwicklungslänge mm;1214,2/);
+});
+
+test("Biegerohr: zu kurzes Segment, Umkehr, kleiner Radius, kurze Spannlänge", async () => {
+  const { planBends } = await import("../src/core/biegerohr.js");
+  assert.throws(() => planBends([[0, 0, 0], [80, 0, 0], [80, 500, 0]], 100, 30), /Segment 1 .* zu kurz/);
+  assert.throws(() => planBends([[0, 0, 0], [500, 0, 0], [200, 0, 0]], 50, 30), /kehrt an Punkt 2 um/);
+  assert.match(planBends([[0, 0, 0], [500, 0, 0], [500, 500, 0]], 20, 30).issues[0].message, /kleiner als Rohr-Ø/);
+  const short = planBends([[0, 0, 0], [500, 0, 0], [500, 210, 0], [0, 210, 0]], 100, 30);
+  assert.match(short.issues.map((x) => x.message).join(), /Spannlänge/);
+  assert.equal(planBends([[0, 0, 0], [500, 0, 0], [900, 0, 0]], 50, 30).bends.length, 0, "gerade weiter = keine Biegung");
+});

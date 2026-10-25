@@ -76,3 +76,12 @@ test("Gehrung in zwei Ebenen: Anteile Breite/Höhe, Kennzeichen und Kopf unverä
   assert.equal(partsText(r2), "Ende B: 41,8° Breite / 24,1° Höhe");
   assert.equal(cutListCsv(rows).replace(/^\ufeff/, "").split("\r\n")[0].split(";").length, 13, "CSV-Kopf bleibt gleich");
 });
+
+test("Biegerohr in der Zuschnittliste: Abwicklungslänge, Kennzeichen gebogen", () => {
+  const bends = [{ straight: 500, rotation: 0, angle: 90 }, { straight: 200, rotation: 90, angle: 90 }];
+  const rows = cutListRows([src("Bügel", [member("RR 48,3x2,6", 1214.16, 0, 0, { bends, bendRadius: 100 }), member("RR 48,3x2,6", 1214.16, 0, 0, { bends, bendRadius: 100 }), member("RR 48,3x2,6", 1214.16)])]);
+  assert.equal(rows.length, 2);
+  const b = rows.find((r) => r.bent);
+  assert.equal(b.qty, 2);
+  assert.equal(endsText(b), "gerade, gebogen 2× R 100");
+});
