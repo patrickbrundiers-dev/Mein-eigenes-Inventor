@@ -33,7 +33,8 @@ export class Tree {
           const err = r && Object.values(r.status).some((s) => !s.ok);
           const dli = h("li");
           dli.append(this.node({
-            label: d.name, ic, cls: (active ? "active-doc sel" : "") + (err ? " err" : ""), meta: d.number || "",
+            label: d.name + (d.link ? " ↗" : ""), ic, cls: (active ? "active-doc sel" : "") + (err ? " err" : ""), meta: d.number || "",
+            title: d.link ? `${d.name} – verknüpft mit ${d.link.path}` : undefined,
             onClick: () => app.openDoc(d.id),
             onDbl: () => this.rename(d),
             onMenu: (e) => this.docMenu(e, d),

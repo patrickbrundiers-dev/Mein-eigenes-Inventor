@@ -18,6 +18,7 @@ kein Programmcode geändert.
 | [decisions/ADR-0004-p2-zurueckgestellt.md](decisions/ADR-0004-p2-zurueckgestellt.md) | P2-Themen zurückgestellt (Rendering aufgehoben durch ADR-0006) |
 | [decisions/ADR-0005-blech-kantteile.md](decisions/ADR-0005-blech-kantteile.md) | Blech: Kantteile mit Abwicklung und DXF |
 | [decisions/ADR-0006-fotodarstellung.md](decisions/ADR-0006-fotodarstellung.md) | Fotorealistische Darstellung als eigener Anzeigemodus |
+| [decisions/ADR-0007-verknuepfte-bauteile.md](decisions/ADR-0007-verknuepfte-bauteile.md) | Bauteile als eigene Dateien verknüpfen |
 | [roadmap/werkzeuge-einstellungen.md](roadmap/werkzeuge-einstellungen.md) | Werkzeug-/Einstellungsmatrix und Stufen (Masterplan Werkzeuge) |
 | [architecture/einstellungen.md](architecture/einstellungen.md) | Einstellungscenter: Ablage, Regeln, Standardwerte |
 | [testing/baseline-2026-10-24.md](testing/baseline-2026-10-24.md) | Testergebnisse vor jeder Änderung |

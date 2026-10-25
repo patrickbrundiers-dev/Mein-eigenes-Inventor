@@ -1,10 +1,11 @@
 // Öffnen, Speichern, Import/Export – über die Electron-Brücke oder im Browser per Download
-import { toast, choiceDialog, downloadBlob, h } from "./dom.js";
+import { toast, choiceDialog, downloadBlob, h, modal } from "./dom.js";
 import { sketchToDxf, DxfWriter } from "../core/dxf.js";
 import { planKantteil, kantteilFlatDxf } from "../core/blech.js";
 import { evaluate } from "../core/expr.js";
 import { newPart, uid } from "../core/examples.js";
-import { serializeProject, loadProject, validateProject } from "../core/project.js";
+import { serializeProject, loadProject, validateProject, parseProject } from "../core/project.js";
+import { linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, baseName } from "../core/links.js";
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
@@ -124,6 +125,111 @@ export class Files {
     let fromStorage = null;
     try { fromStorage = read(JSON.parse(localStorage.getItem(AUTOSAVE_KEY))); } catch { /* */ }
     return [fromFile, fromStorage].filter(Boolean).sort((a, b) => b.time - a.time)[0] || null;
+  }
+
+  // ---------- Verknüpfte Bauteile (M24) ----------
+  /** Datei einer Verknüpfung lesen → Text; wirft mit Grund (Desktop-App nötig) */
+  async readLinkedFile(path) {
+    if (!this.bridge?.readLinked) throw new Error("Verknüpfte Dateien lassen sich nur in der Desktop-App lesen");
+    const r = await this.bridge.readLinked(path);
+    if (!r || r.error) throw new Error(r?.error || "nicht lesbar");
+    return r.text;
+  }
+  /** .wcad-Datei wählen → { path, text } oder null */
+  async pickProjectFile() {
+    if (this.bridge) {
+      const r = await this.bridge.openFile({ filters: PROJECT_FILTERS });
+      return r ? { path: r.path, text: r.data } : null;
+    }
+    const f = await pickFile(".wcad,application/json");
+    return f ? { path: f.name, text: await f.text() } : null;
+  }
+  /** Bauteil-Datei schreiben (Speichern-Dialog) → Pfad oder null */
+  async writeProjectFile(name, text) {
+    if (this.bridge) { const r = await this.bridge.saveFile({ defaultName: name, filters: PROJECT_FILTERS, data: text }); return r?.path || null; }
+    downloadBlob(new Blob([text], { type: "application/json" }), name);
+    return name;
+  }
+  /** Assembly: Bauteil aus einer anderen .wcad-Datei verknüpft einfügen */
+  async linkPartFromFile() {
+    const app = this.app, asm = app.activeDoc();
+    if (asm?.kind !== "assembly") return toast("Erst eine Baugruppe öffnen");
+    const f = await this.pickProjectFile();
+    if (!f) return;
+    let remotePrj;
+    try { remotePrj = parseProject(f.text); } catch (e) { return toast("Datei nicht lesbar: " + e.message, { kind: "err" }); }
+    const parts = remotePrj.docs.filter((d) => d.kind === "part");
+    if (!parts.length) return toast(`${baseName(f.path)} enthält kein Bauteil`);
+    let remote = parts[0];
+    if (parts.length > 1) {
+      remote = await new Promise((res) => {
+        const sel = h("select", { class: "inp" }, ...parts.map((p, i) => h("option", { value: i }, (p.number ? p.number + " – " : "") + p.name)));
+        modal({ title: "Bauteil wählen", width: "460px", body: h("div", {}, h("p", {}, `${baseName(f.path)} enthält ${parts.length} Bauteile.`), sel),
+          buttons: [{ label: "Abbrechen", value: null }, { label: "Verknüpfen", primary: true, run: () => parts[Number(sel.value)] }], onClose: (v) => res(v || null) });
+      });
+      if (!remote) return;
+    }
+    const existing = app.project.docs.find((d) => d.kind === "part" && d.link && d.link.docId === remote.id && baseName(d.link.path) === baseName(f.path));
+    app.edit("Bauteil verknüpfen", () => {
+      let doc = existing;
+      if (!doc) {
+        doc = applyLinked(app.project, { id: uid("p"), link: makeLink(f.path, remote, app.filePath) }, remotePrj, remote).doc;
+        app.project.docs.push(doc);
+      }
+      const n = asm.components.filter((c) => c.part === doc.id).length;
+      asm.components.push({ id: uid("c"), part: doc.id, name: `${doc.name}:${n + 1}`, pos: [0, 0, 0], rot: [0, 0, 0], fixed: asm.components.length === 0 });
+    }, { link: true });
+    app.syncMaterials?.();
+    toast(`${remote.name} aus ${baseName(f.path)} verknüpft`, { kind: "ok" });
+  }
+  /** Bauteil als eigene Datei speichern und im Projekt damit verknüpfen */
+  async savePartAsFile(part) {
+    const app = this.app;
+    if (part.link) return toast(`${part.name} liegt schon in ${baseName(part.link.path)}`);
+    this.app.embedMaterials();
+    const text = serializeProject(partProject(app.project, part));
+    const path = await this.writeProjectFile(safeName(part.number || part.name) + ".wcad", text);
+    if (!path) return;
+    app.edit("Als eigene Datei", () => { part.link = makeLink(path, part, app.filePath); }, { link: true, rebuild: false });
+    toast(`${part.name} gespeichert als ${baseName(path)} – im Projekt jetzt verknüpft`, { kind: "ok" });
+  }
+  /**
+   * Verknüpfte Bauteile aus ihren Dateien neu laden. Fehlende Dateien: letzte Kopie bleibt, Hinweis.
+   * interactive = false beim Öffnen (kein Rückgängig-Punkt). Rückgabe { updated, same, missing: [Text] }
+   */
+  async refreshLinks({ interactive = true } = {}) {
+    const app = this.app, prj = app.project;
+    const linked = prj.docs.filter((d) => d.kind === "part" && d.link);
+    const res = { updated: [], same: 0, missing: [] };
+    if (!linked.length) { if (interactive) toast("Keine verknüpften Bauteile im Projekt"); return res; }
+    const loaded = [];
+    for (const d of linked) {
+      let text = null, why = "";
+      for (const p of linkCandidates(d.link, app.filePath)) {
+        try { text = await this.readLinkedFile(p); break; } catch (e) { why = e.message; }
+      }
+      if (text == null) { res.missing.push(`${d.name}: ${baseName(d.link.path)} – ${why}`); continue; }
+      try {
+        const rp = parseProject(text), remote = findLinkedDoc(rp, d.link);
+        if (!remote) { res.missing.push(`${d.name}: Bauteil in ${baseName(d.link.path)} nicht mehr gefunden`); continue; }
+        loaded.push({ d, rp, remote });
+      } catch (e) { res.missing.push(`${d.name}: ${e.message}`); }
+    }
+    const apply = () => {
+      for (const { d, rp, remote } of loaded) {
+        const { doc, changed } = applyLinked(prj, d, rp, remote);
+        if (!changed) { res.same++; continue; }
+        for (const k of Object.keys(d)) delete d[k];
+        Object.assign(d, doc);
+        app.results.delete(d.id);
+        res.updated.push(d.name);
+      }
+    };
+    if (interactive) app.edit("Verknüpfungen aktualisieren", apply, { link: true });
+    else { apply(); if (res.updated.length) { app.dirty = true; app.updateTitle(); app.syncMaterials?.(); app.rebuild(); app.tree.render(); } }
+    if (res.updated.length || interactive) toast(res.updated.length ? `Aktualisiert: ${res.updated.join(", ")}` : `Verknüpfte Bauteile sind aktuell (${res.same})`, { kind: "ok", timeout: 4000 });
+    if (res.missing.length) toast("Nicht aktualisiert – letzte Kopie wird verwendet: " + res.missing.join("; "), { timeout: 10000 });
+    return res;
   }
 
   // ---------- Hilfen ----------

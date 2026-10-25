@@ -22,6 +22,7 @@ import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
 import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
+import { partContent, baseName } from "../core/links.js";
 import { Docking } from "./layout.js";
 
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
@@ -165,6 +166,7 @@ export class App {
     if (first) this.openDoc(first.id);
     else { this.setMode("start"); this.refreshAll(); }
     this.updateTitle();
+    if (filePath && prj.docs.some((d) => d.link)) this.files.refreshLinks({ interactive: false }).catch((e) => toast("Verknüpfungen: " + e.message, { kind: "err" }));
   }
   async newProject() {
     if (!(await this.files.confirmDiscard())) return;
@@ -199,8 +201,12 @@ export class App {
   edit(label, fn, opts) {
     const redo = this.redoStack;
     this.checkpoint(label);
+    // Verknüpfte Bauteile (M24) sind schreibgeschützt – geändert wird in ihrer Datei
+    const linked = opts?.link ? null : this.project.docs.filter((d) => d.kind === "part" && d.link).map((d) => [d, partContent(d)]);
     try {
       fn();
+      const hit = linked?.find(([d, before]) => this.project.docs.includes(d) && partContent(d) !== before);
+      if (hit) throw new Error(`»${hit[0].name}« ist mit ${baseName(hit[0].link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`);
     } catch (e) {
       const st = this.undoStack.pop();
       this.redoStack = redo;

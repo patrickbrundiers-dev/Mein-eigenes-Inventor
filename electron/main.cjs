@@ -187,6 +187,12 @@ ipcMain.handle("project:read", async (_e, p) => {
   if (!r.error) addRecent(p);
   return r;
 });
+// Verknüpfte Bauteil-Datei lesen (M24): nur .wcad, nicht in »Zuletzt geöffnet«
+ipcMain.handle("link:read", async (_e, p) => {
+  if (!isProjectPath(p)) return { path: p, error: "Keine PBCAD-Projektdatei" };
+  try { return { path: p, text: fs.readFileSync(p, "utf8"), time: fs.statSync(p).mtimeMs }; }
+  catch (e) { return { path: p, error: e.code === "ENOENT" ? "Datei nicht gefunden" : e.message }; }
+});
 ipcMain.handle("project:readBackup", async (_e, p) => {
   if (!isProjectPath(p)) return null;
   try { return { path: p, text: fs.readFileSync(p + ".bak", "utf8") }; } catch (e) { return { path: p, error: e.message }; }

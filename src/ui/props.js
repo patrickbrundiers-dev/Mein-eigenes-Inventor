@@ -184,11 +184,26 @@ export class Props {
     this.el.replaceChildren(h("div", { class: "pane-head" }, h("span", { class: "grow" }, title)), body);
   }
 
+  /** Bauteil als eigene Datei (M24): Verknüpfung anzeigen, aktualisieren, lösen – oder Datei anlegen */
+  linkSection(part) {
+    const app = this.app, l = part.link;
+    if (!l) return this.section("Datei", h("p", { class: "hint" }, "Bauteil liegt in diesem Projekt. Als eigene Datei kann es in mehreren Projekten und Baugruppen verwendet und getrennt bearbeitet werden."),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.savePartAsFile(part) }, "Als eigene Datei speichern")));
+    const when = l.time ? new Date(l.time).toLocaleString("de-DE") : "–";
+    return this.section("Verknüpft",
+      h("div", { class: "msg info" }, `Dieses Bauteil kommt aus ${l.path.split(/[\\/]/).pop()} und ist hier schreibgeschützt. Ändern in der Quelldatei, dann »Aktualisieren«.`),
+      h("dl", { class: "kv" }, h("dt", {}, "Datei"), h("dd", { title: l.path, style: { wordBreak: "break-all" } }, l.path), h("dt", {}, "Stand"), h("dd", {}, when)),
+      h("div", { class: "btn-row" },
+        h("button", { class: "btn primary", onclick: () => app.files.refreshLinks() }, "Aktualisieren"),
+        app.files.bridge ? h("button", { class: "btn", onclick: () => app.files.open(l.path) }, "Quelldatei öffnen") : null,
+        h("button", { class: "btn", onclick: () => app.edit("Verknüpfung lösen", () => { delete part.link; }, { link: true, rebuild: false }) }, "Verknüpfung lösen")));
+  }
+
   // ---------- Bauteil ----------
   partProps(part) {
     const app = this.app;
     const r = app.results.get(part.id);
-    const out = [];
+    const out = [this.linkSection(part)];
     out.push(this.section("Allgemein",
       this.text("Name", part.name, (v) => app.edit("Name", () => { part.name = v; }, { rebuild: false })),
       this.text("Teilenummer", part.number, (v) => app.edit("Nummer", () => { part.number = v; }, { rebuild: false })),

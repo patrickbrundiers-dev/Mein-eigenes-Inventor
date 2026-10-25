@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("werkcad", {
   openProject: () => ipcRenderer.invoke("project:open"),
   readProject: (path) => ipcRenderer.invoke("project:read", path),
   readProjectBackup: (path) => ipcRenderer.invoke("project:readBackup", path),
+  readLinked: (path) => ipcRenderer.invoke("link:read", path),
   writeAutosave: (data) => ipcRenderer.invoke("autosave:write", data),
   readAutosave: () => ipcRenderer.invoke("autosave:read"),
   saveProject: (opts) => ipcRenderer.invoke("project:save", opts),
