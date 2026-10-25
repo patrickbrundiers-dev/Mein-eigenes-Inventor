@@ -239,7 +239,7 @@ test("Treppe L- und U-Form mit Podest, Rahmen und Stützen (MegaCAD-Abgleich M14
   near(bb(s15)[1][1], 1000 + 7 * 280, 0.01, "letzte Stufe endet an der Deckenstirn");
   assert.match(rL.status.l.info, /\(8 \+ 8\).*Podest auf 1400 mm/);
   // Stützen stehen auf dem Boden und tragen den Rahmen
-  for (const s of by(rL, /^Podeststütze/)) { near(bb(s)[0][2], 0, 0.01); near(bb(s)[1][2], 1400 - 30 - 50, 0.01); }
+  for (const s of by(rL, /^Podeststütze/)) { near(bb(s)[0][2], 0, 0.01); near(bb(s)[1][2], 1400 - 30 - 100, 0.01); }
   // U rechts mit Treppenauge 200, zwei Holme
   const fU = { id: "u", ...defaultGenerator("treppe") };
   Object.assign(fU.params, { form: "U", turn: "rechts", gap: "200", support: "holm2", stuetzen: "alle", n1: "6" });
@@ -283,4 +283,35 @@ test("Spindeltreppe: Stufen als Ringausschnitt, Träger, Geländer, Prüfung Dur
   const small = GENERATORS.spindel.plan({ ...P, D: 1300 });
   assert.ok(small.issues.some((x) => /Durchgangshöhe/.test(x.message)), JSON.stringify(small.issues));
   assert.throws(() => GENERATORS.spindel.plan({ ...P, D: 600 }), /Außendurchmesser zu klein/);
+});
+
+test("Balkon-Generator: Rahmen, Querträger, Belag, Stützen, Wandplatten, Geländer an drei Seiten (MegaCAD-Abgleich M16)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const f = { id: "bk", ...defaultGenerator("balkon") };
+  const res = await K.buildPart(part([f]));
+  okAll(res);
+  const by = (re) => res.bodies.filter((b) => re.test(b.name));
+  const bb = (b) => b.shape.boundingBox.bounds;
+  const belag = by(/^Belag$/)[0];
+  near(bb(belag)[1][2], 2800, 0.01, "OK Belag"); near(bb(belag)[0][1], 15, 0.01, "vor der Wandplatte"); near(bb(belag)[1][1], 1500, 0.01); near(bb(belag)[1][0], 3000, 0.01);
+  assert.equal(by(/^Rahmen/).length, 4, "vier gegehrte Rahmenstäbe");
+  assert.equal(by(/^Querträger/).length, 4, "lichte 2720 / 600 → 5 Felder, 4 Träger");
+  assert.equal(by(/^Stütze/).length, 2); assert.equal(by(/^Fußplatte/).length, 2); assert.equal(by(/^Wandplatte/).length, 6);
+  for (const s of by(/^Stütze/)) { near(bb(s)[0][2], 15, 0.01); near(bb(s)[1][2], 2800 - 30 - 140, 0.01, "Stütze unter dem Rahmen"); }
+  for (const w of by(/^Wandplatte/)) { near(bb(w)[0][1], 0, 0.01, "Wandplatte an der Wand"); }
+  // Geländer: Pfosten auf dem Belag, an drei Seiten innerhalb der Fläche, Handlauf auf 2800 + 1000
+  const posts = by(/^Geländer Pfosten/);
+  assert.ok(posts.length >= 7, "Pfosten " + posts.length);
+  for (const p of posts) { assert.ok(bb(p)[0][0] > 0 && bb(p)[1][0] < 3000 && bb(p)[1][1] < 1500, "innerhalb"); assert.ok(bb(p)[0][2] >= 2800 - 1e-6); }
+  const rail = by(/^Geländer Handlauf/);
+  near(Math.max(...rail.map((b) => bb(b)[1][2])), 3800, 0.01, "OK Handlauf");
+  assert.match(res.status.bk.info, /Balkon 3000 × 1500 mm auf 2800 mm, 4 Querträger, 2 Stützen, Geländer/);
+  // ohne Stützen: Hinweis
+  const f2 = { id: "k", ...defaultGenerator("balkon") };
+  Object.assign(f2.params, { support: "keine", railing: false, deck: "holz" });
+  const r2 = await K.buildPart(part([f2]));
+  okAll(r2);
+  assert.match(r2.status.k.warning || "", /Kragarm/);
+  assert.equal(r2.bodies.filter((b) => /^Stütze|^Geländer/.test(b.name)).length, 0);
+  assert.equal(r2.bodies.find((b) => b.name === "Belag").meta.density, 0.7, "Holz");
 });

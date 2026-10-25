@@ -121,9 +121,10 @@ export const TREPPE = {
       // Podestbelag, Rahmen darunter (bündig mit dem Belagrand), Stützen
       const PW = D, PH = yHi - yLo, cx = x1 + D / 2, cy = (yLo + yHi) / 2;
       plates.push({ center: [cx, cy, zP - tt], xDir: [1, 0, 0], normal: [0, 0, 1], W: PW, H: PH, t: tt, name: "Podest", tread: p.tread });
-      const fr = p.podestRahmen, fw = fr.geom.width, fh = fr.geom.height, zf = zP - tt - fh / 2;
+      const fr = p.podestRahmen, frRot = fr.geom.width > fr.geom.height ? 90 : 0; // hochkant
+      const fw = Math.min(fr.geom.width, fr.geom.height), fh = Math.max(fr.geom.width, fr.geom.height), zf = zP - tt - fh / 2;
       const rx0 = x1 + fw / 2, rx1 = x1 + D - fw / 2, ry0 = yLo + fw / 2, ry1 = yHi - fw / 2;
-      chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[rx0, ry0, zf], [rx1, ry0, zf], [rx1, ry1, zf], [rx0, ry1, zf], [rx0, ry0, zf]], name: "Podestrahmen", up: [0, 0, 1] });
+      chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[rx0, ry0, zf], [rx1, ry0, zf], [rx1, ry1, zf], [rx0, ry1, zf], [rx0, ry0, zf]], name: "Podestrahmen", up: [0, 0, 1], rot: frRot });
       if (p.stuetzen !== "keine") {
         const st = p.stuetze, sw = Math.max(st.geom.width, st.geom.height) / 2;
         const zTop = zP - tt - fh;

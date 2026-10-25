@@ -631,6 +631,15 @@ try {
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20j-spindeltreppe");
   step("Treppe L-Form und Spindeltreppe", trL.ok && trL.holme === 4 && trL.podest >= 6 && /Podest auf/.test(trL.info) && sp.ok && sp.n > 40 && /Durchgangshöhe/.test(sp.info), JSON.stringify({ trL, sp }));
+  // Balkon-Generator (MegaCAD-Abgleich M16)
+  await evalApp(() => window.__werkcad.newPart("Balkon"));
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Balkon$/ }).click();
+  await idle(120000);
+  const bk = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), warn: Object.values(r.status)[0]?.warning || "" }; });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20k-balkon");
+  step("Balkon-Generator", bk.ok && bk.n > 40 && /Balkon 3000 × 1500 mm/.test(bk.info) && !bk.warn, JSON.stringify(bk));
 
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));

@@ -8,7 +8,7 @@
 //   type "check"   Ja/Nein
 //   type "section" Profil aus dem Katalog { kind, size }, kinds = erlaubte Profilarten
 //   type "list"    Zahlenliste, z. B. Längen "3000; 1500"
-// Bauplan: { chains: [{ section, points, name, up? }],   – zusammenhängende Stäbe mit Gehrung an den Ecken
+// Bauplan: { chains: [{ section, points, name, up?, rot? }], – zusammenhängende Stäbe mit Gehrung an den Ecken
 //            members: [{ section, a, b, name, up?, rot? }], – einzelne Stäbe, Enden gerade
 //            plates: [{ center, xDir, normal, W, H, t, holes?, d?, r?, poly?, name }], – Platten (Mitte der Unterseite;
 //              poly = Umriss [[x, y]…] in der Plattenebene statt Rechteck W × H)
@@ -19,8 +19,9 @@ import { GELAENDER } from "./gelaender.js";
 import { TOR } from "./tor.js";
 import { TREPPE } from "./treppe.js";
 import { SPINDEL } from "./spindel.js";
+import { BALKON } from "./balkon.js";
 
-export const GENERATORS = { gelaender: GELAENDER, tor: TOR, treppe: TREPPE, spindel: SPINDEL };
+export const GENERATORS = { gelaender: GELAENDER, tor: TOR, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON };
 
 /** Neues Feature mit den Standardwerten des Generators */
 export function defaultGenerator(gen) {
