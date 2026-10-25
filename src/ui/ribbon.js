@@ -5,6 +5,7 @@ import { defaultKnickrahmen } from "../core/knickrahmen.js";
 import { defaultProfilzug } from "../core/profilzug.js";
 import { defaultBiegerohr } from "../core/biegerohr.js";
 import { defaultRegelkoerper } from "../core/regelkoerper.js";
+import { defaultNormteil } from "../core/normteile.js";
 import { defaultPlatte, defaultRippe } from "../core/anschluss.js";
 import { defaultGenerator, GENERATORS } from "../core/generator.js";
 import { DISPLAY } from "../core/settings.js";
@@ -58,6 +59,7 @@ export class Ribbon {
       knickrahmen: () => app.addFeature(defaultKnickrahmen(catalogToDims("rechteck", "60x40x3"))),
       profilzug: () => app.addFeature(defaultProfilzug(catalogToDims("vierkant", "40x3"))),
       regelkoerper: () => app.addFeature(defaultRegelkoerper("zylinder")),
+      normteil: () => app.addFeature(defaultNormteil("schraube4017")),
       platte: () => {
         const t = this.lastOf(["profile", "frame", "profilzug"]);
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
@@ -93,6 +95,7 @@ export class Ribbon {
       finishSketch: () => app.finishSketch(),
       // Baugruppe
       place: () => app.props.placeComponentDialog(),
+      normteilAsm: () => app.props.normteilDialog(),
       align: () => app.beginAlign("gegen"),
       alignFlush: () => app.beginAlign("buendig"),
       alignConc: () => app.beginAlign("konzentrisch"),
@@ -104,7 +107,7 @@ export class Ribbon {
   lastPatternSource() {
     const part = this.app.activeDoc();
     const sel = this.app.sel?.type === "feature" ? this.app.feature(this.app.sel.id) : null;
-    const ok = (f) => ["extrude", "revolve", "hole", "emboss", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "import"].includes(f.type);
+    const ok = (f) => ["extrude", "revolve", "hole", "emboss", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "import"].includes(f.type);
     if (sel && ok(sel)) return sel.id;
     const list = part.features.filter(ok);
     return list.length ? list[list.length - 1].id : null;
@@ -187,7 +190,7 @@ export class Ribbon {
           { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper")] },
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("treppe", "Treppe", "treppe")] },
-          { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht")] },
+          { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
           { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() })] },
@@ -229,7 +232,7 @@ export class Ribbon {
     if (mode === "assembly") {
       return [
         { id: "baugruppe", label: "Zusammenfügen", groups: [
-          { label: "Komponente", buttons: [B("place", "Platzieren", "place"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() })] },
+          { label: "Komponente", buttons: [B("place", "Platzieren", "place"), B("normteilAsm", "Normteil", "normteil"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() })] },
           { label: "Positionieren", buttons: [B("align", "Fläche an Fläche", "align", { on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "align", { on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" })] },
           { label: "Listen", buttons: [B("bom", "Stückliste", "bom"), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() })] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() })] },

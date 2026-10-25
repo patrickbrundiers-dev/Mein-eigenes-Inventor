@@ -46,6 +46,7 @@ export function commandRunners(app) {
     "sketch.clean": () => app.sketcher.cleanDialog(),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
+    "asm.normteil": r("normteilAsm"),
     "asm.align": r("align"),
     "asm.alignFlush": r("alignFlush"),
     "asm.alignConc": r("alignConc"),

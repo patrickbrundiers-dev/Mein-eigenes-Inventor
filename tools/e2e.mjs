@@ -391,6 +391,21 @@ try {
     return { leaves: groups.length, expected: 2 * innerDoc.components.filter((c) => !c.hidden).length, sheets: [...text.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1]), nested: tree.filter((t) => t === innerDoc.components[0].name).length, top: top.kind };
   }, inner);
   step("Unterbaugruppe", sub.leaves === sub.expected && sub.sheets.includes("Strukturstückliste") && sub.sheets.includes("Baukastenstückliste") && sub.nested >= 2, JSON.stringify(sub));
+  // Normteil (MegaCAD-Abgleich M20): Dialog in der Baugruppe, 4 × M12 x 40 → eigene Zeile in der Stückliste
+  await page.locator("#ribbon button", { hasText: /^Normteil$/ }).first().click();
+  await page.locator("#modal-root .dialog input[type=number]").last().fill("4");
+  await page.locator("#modal-root .dialog footer .btn", { hasText: "Einfügen" }).click();
+  await idle(60000);
+  const nt = await evalApp(async () => {
+    const a = window.__werkcad, top = a.activeDoc();
+    const orig = a.files.saveBinary; let text = "";
+    a.files.saveBinary = async (buf) => { text = new TextDecoder().decode(buf); };
+    try { await a.files.exportListsXlsx(); } finally { a.files.saveBinary = orig; }
+    const p = a.parts().find((x) => x.normDesignation);
+    const r = p && a.results.get(p.id);
+    return { comps: top.components.filter((c) => c.part === p?.id).length, body: r?.bodies?.[0]?.name, ok: r && Object.values(r.status).every((x) => x.ok), inXlsx: text.includes("Sechskantschraube ISO 4017 - M12 x 40 - 8.8"), partRow: text.includes(">" + p?.name + "<") };
+  });
+  step("Normteil in der Baugruppe", nt.comps === 4 && nt.ok && nt.body === "Sechskantschraube ISO 4017 - M12 x 40 - 8.8" && nt.inXlsx, JSON.stringify(nt));
   await evalApp((id) => window.__werkcad.openDoc(id), inner);
   await idle();
 

@@ -6,6 +6,7 @@ import { serializeProject, loadProject, validateProject } from "../core/project.
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
+import { collectNorm } from "../core/normteile.js";
 import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
 import { decomposePlacement } from "../core/geom.js";
 import { buildXlsx } from "../core/xlsx.js";
@@ -241,7 +242,8 @@ export class Files {
     // Struktur- und Baukastenliste nur, wenn es Unterbaugruppen gibt – sonst wären sie gleich der Stückliste
     const nested = asm && d.components.some((c) => app.doc(c.part)?.kind === "assembly");
     const sheets = listSheets({
-      cut: cutListRows(src), welds: weldRows(collectWelds(src)), bom: asm ? bomRows(app, d) : [],
+      cut: cutListRows(src), welds: weldRows(collectWelds(src)),
+      bom: asm ? bomRows(app, d) : collectNorm(src.map((s) => ({ bodies: s.result.bodies, qty: s.qty }))).map((x, i) => ({ ...x, pos: i + 1, number: "" })),
       structure: nested ? structureBom(d, docOf).map((x) => ({ level: x.level, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty, total: x.total })) : [],
       modular: nested ? modularBom(d, docOf).map((m) => ({ name: m.asm.name, number: m.asm.number, rows: m.rows.map((x) => ({ pos: x.pos, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty })) })) : [],
     });

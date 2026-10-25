@@ -238,3 +238,24 @@ test("Masse mit eigener Dichte je Körper (Glas, Gitterrost, Holz)", async () =>
   assert.equal(hasOwnDensity(bodies), true);
   assert.equal(hasOwnDensity(bodies.slice(0, 1)), false);
 });
+
+test("Normteile: Bezeichnung, Prüfung, Tabellen (MegaCAD-Abgleich M20)", async () => {
+  const { normDesignation, checkNorm, NORM_THREADS, NORM_KINDS, threadLength4014, normDensity, collectNorm } = await import("../src/core/normteile.js");
+  assert.equal(normDesignation({ kind: "schraube4017", size: "M12", length: 40, grade: "8.8" }), "Sechskantschraube ISO 4017 - M12 x 40 - 8.8");
+  assert.equal(normDesignation({ kind: "schraube4014", size: "M16", length: 120, grade: "10.9", galv: true }), "Sechskantschraube ISO 4014 - M16 x 120 - 10.9 - tZn");
+  assert.equal(normDesignation({ kind: "mutter", size: "M12", grade: "A2-70", galv: true }), "Sechskantmutter ISO 4032 - M12 - A2-70", "nichtrostend nie verzinkt");
+  assert.equal(normDesignation({ kind: "scheibe", size: "M12", grade: "200 HV" }), "Scheibe ISO 7089 - 12 - 200 HV");
+  assert.equal(normDesignation({ kind: "gewindestange", size: "M10", length: 1000, grade: "4.8" }), "Gewindestange DIN 976-1 - M10 x 1000 - 4.8");
+  assert.deepEqual(checkNorm("schraube4017", "M12", 40), []);
+  assert.match(checkNorm("schraube4017", "M12", 42)[0], /Vorzugslänge/);
+  assert.match(checkNorm("schraube4014", "M12", 30).join(), /ISO 4017/);
+  assert.throws(() => checkNorm("schraube4017", "M13", 40), /Gewindegröße/);
+  assert.throws(() => checkNorm("gewindestange", "M12", 0), /Länge/);
+  assert.equal(threadLength4014(12, 100), 30); assert.equal(threadLength4014(12, 150), 36); assert.equal(threadLength4014(12, 220), 49);
+  for (const [k, t] of Object.entries(NORM_THREADS)) assert.ok(t.s > t.d && t.d2 > t.d1 && t.d1 > t.d && t.m < t.d, k);
+  assert.equal(normDensity("A4-70"), 7.9); assert.equal(normDensity("8.8"), 7.85);
+  assert.ok(Object.values(NORM_KINDS).every((d) => d.grades.length));
+  const rows = collectNorm([{ bodies: [{ meta: { norm: { designation: "B", grade: "8.8" }, density: 7.85 }, props: { volume: 1000 } }, { meta: {} }], qty: 3 }, { bodies: [{ meta: { norm: { designation: "A", grade: "A2" } }, props: { volume: 0 } }] }]);
+  assert.deepEqual(rows.map((r) => [r.name, r.qty]), [["A", 1], ["B", 3]]);
+  assert.equal(rows[1].mass, 0.00785);
+});

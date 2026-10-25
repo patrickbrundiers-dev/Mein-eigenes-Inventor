@@ -56,6 +56,7 @@ export const COMMANDS = [
   { id: "part.profile", label: "Rohr / Profil", group: "3D-Modell", scope: "part" },
   { id: "part.frame", label: "Rahmen aus Skizze", group: "3D-Modell", scope: "part" },
   { id: "part.knickrahmen", label: "Knickrahmen", group: "3D-Modell", scope: "part" },
+  { id: "part.normteil", label: "Normteil", group: "3D-Modell", scope: "part", keywords: "schraube mutter scheibe gewindestange spannschloss iso 4014 4017 4032 7089 din 976 1480 sechskant verbindungselement" },
   { id: "part.platte", label: "Stirn-/Fußplatte", group: "3D-Modell", scope: "part", keywords: "kopfplatte fussplatte stirnplatte anschlussblech platte bohrbild stahlbau" },
   { id: "part.rippe", label: "Rippe (Steife)", group: "3D-Modell", scope: "part", keywords: "steife rippe knotenblech versteifung stahlbau" },
   { id: "part.gelaender", label: "Geländer (Generator)", group: "3D-Modell", scope: "part", keywords: "geländer pfosten handlauf staketen füllung brüstung generator" },
@@ -117,6 +118,7 @@ export const COMMANDS = [
   { id: "sketch.gridsnap", label: "Skizze: Rasterfang ein/aus", group: "Skizze", scope: "sketch" },
   { id: "sketch.finish", label: "Skizze fertig", group: "Skizze", scope: "sketch", keywords: "beenden" },
 
+  { id: "asm.normteil", label: "Normteil einfügen", group: "Baugruppe", scope: "assembly", keywords: "schraube mutter scheibe gewindestange spannschloss iso din verbindungselement" },
   { id: "asm.place", label: "Bauteil platzieren", group: "Baugruppe", scope: "assembly", keywords: "komponente einfügen" },
   { id: "asm.align", label: "Fläche an Fläche", group: "Baugruppe", scope: "assembly", keywords: "abhängigkeit" },
   { id: "asm.alignFlush", label: "Bündig", group: "Baugruppe", scope: "assembly", keywords: "abhängigkeit" },
