@@ -7,10 +7,10 @@
 // o: { H, post, postMax, postDown, rail, fill ("quer" | "staketen" | "keine"), bar, bars, gap, belt, bottomZ,
 //      holder, holderGap, holderD, through, allow, beltMax, stab, keys } – mit holder endet der Pfosten unter dem Handlauf,
 //      Stift + Bohrung (handlaufhalter.js); mit through gehen Knieleisten bzw. Untergurt durch die Pfosten (Durchbruch
-//      mit Aufmaß allow), die Staketen (Profil stab) durch Bohrungen im Untergurt; Stück bis beltMax, Stoß im Pfosten.
+//      mit Aufmaß allow), die Staketen (Profil stab) durch Bohrungen in der oberen Wand des Untergurts; Stück bis beltMax, Stoß im Pfosten.
 //      keys: Feldschlüssel für Fehlermeldungen { bar, belt, stab, beltMax }.
 
-import { holderDrop, holderParts } from "./handlaufhalter.js";
+import { holderDrop, holderParts, entryWall } from "./handlaufhalter.js";
 import { fieldError } from "./generror.js";
 
 const ROUND = new Set(["rohr", "rund"]);
@@ -143,7 +143,8 @@ function through(segs, o, label, { top, half, postName }) {
         }
         if (o.fill !== "staketen") return;
         // Staketen je Feld dieses Stücks, durch den Gurt bis an seine Unterseite
-        const rv = (rail.geom.height / 2) * k3, sw = stab.geom.height;
+        // Stab nur durch die obere Gurtwand, Ende innen auf der unteren Wand (Vollprofil: Sackloch bis zur Mitte)
+        const rv = (rail.geom.height / 2) * k3, wv = entryWall(rail, rail.geom.height) * k3, sw = stab.geom.height;
         for (let k = from; k < to; k++) {
           const s0 = ts[k] + half, s1 = ts[k + 1] - half, clear = s1 - s0;
           fno++;
@@ -153,8 +154,8 @@ function through(segs, o, label, { top, half, postName }) {
           gapMax = Math.max(gapMax, gap, o.bottomZ - rv);
           for (let q = 0; q < m; q++) {
             const sb = s0 + gap * (q + 1) + sw * q + sw / 2;
-            members.push({ section: stab, a: at(sb, h - rv), b: at(sb, top), name: `${label} Stab ${fno}.${q + 1}`, up: [sg.d[0], sg.d[1], 0] });
-            drills.push({ target: name, p: at(sb, h + rv + 1), dir: [0, 0, -1], len: 2 * rv + 2, ...holeFor(stab, allow, [sg.d[0], sg.d[1], 0]) });
+            members.push({ section: stab, a: at(sb, h - rv + wv), b: at(sb, top), name: `${label} Stab ${fno}.${q + 1}`, up: [sg.d[0], sg.d[1], 0] });
+            drills.push({ target: name, p: at(sb, h + rv + 1), dir: [0, 0, -1], len: wv + 2, ...holeFor(stab, allow, [sg.d[0], sg.d[1], 0]) });
           }
           bars += m;
         }

@@ -693,13 +693,14 @@ test("Gurte durch die Pfosten: ein Stück bis 5800 mm, Stoß im Pfosten, Durchbr
   assert.equal(pd.filter((d) => d.target === "Pfosten 1").length, 2, "Ober- und Untergurt");
   assert.ok(pd.filter((d) => d.target === "Pfosten 2").every((d) => Math.abs(d.len - (42.4 + 2)) < 1e-9), "durchgehend");
   assert.ok(pd.filter((d) => d.target === "Pfosten 1").every((d) => Math.abs(d.len - (21.2 + 1)) < 1e-9 && d.dir[0] === 1), "einseitig nach innen");
-  // Stäbe: durch beide Gurte bis bündig außen, je Stab eine Bohrung Ø 13 in jedem Gurt
+  // Stäbe: nur durch die innere Gurtwand, Ende innen an der gegenüberliegenden Wand (Rohr 26,9 × 2,3); je Stab eine Bohrung Ø 13 in jedem Gurt
   const bars = a.members.filter((m) => /^Stab /.test(m.name));
   const zTop = 1000 - 42.4 - 100, zBot = 100;
-  assert.ok(bars.every((m) => Math.abs(m.a[2] - (zBot - 26.9 / 2)) < 1e-9 && Math.abs(m.b[2] - (zTop + 26.9 / 2)) < 1e-9));
+  assert.ok(bars.every((m) => Math.abs(m.a[2] - (zBot - 26.9 / 2 + 2.3)) < 1e-9 && Math.abs(m.b[2] - (zTop + 26.9 / 2 - 2.3)) < 1e-9));
   const sd = a.drills.filter((d) => /gurt/.test(d.target));
   assert.equal(sd.length, 2 * bars.length);
-  assert.ok(sd.every((d) => d.d === 13 && d.dir[2] === -1));
+  assert.ok(sd.every((d) => d.d === 13 && Math.abs(d.len - (2.3 + 2)) < 1e-9), "nur eine Wand");
+  assert.ok(sd.filter((d) => /^Obergurt/.test(d.target)).every((d) => d.dir[2] === 1 && d.p[2] < zTop) && sd.filter((d) => /^Untergurt/.test(d.target)).every((d) => d.dir[2] === -1 && d.p[2] > zBot), "von der Füllungsseite");
   // 9000 mm: Stoß in einem Pfosten (Stücke ≤ 5800), dort durchgehender Durchbruch für beide Stücke
   const b = plan({ runs: "9000" });
   const pieces = b.members.filter((m) => /^Obergurt/.test(m.name));
@@ -759,7 +760,7 @@ test("Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, 
   const belts = st.members.filter((m) => /Untergurt/.test(m.name)), stabs = st.members.filter((m) => / Stab \d+\.\d+$/.test(m.name));
   assert.ok(belts.length === 4 && stabs.length > 10, `${belts.length} ${stabs.length}`);
   assert.equal(st.drills.filter((d) => /Untergurt/.test(d.target)).length, stabs.length);
-  assert.ok(st.drills.filter((d) => /Untergurt/.test(d.target)).every((d) => d.d === 13 && d.dir[2] === -1));
+  assert.ok(st.drills.filter((d) => /Untergurt/.test(d.target)).every((d) => d.d === 13 && d.dir[2] === -1 && d.len < 2.3 * 1.25 + 2), "nur durch die obere Gurtwand");
   assert.ok(new Set(stabs.map((m) => m.name)).size === stabs.length, "Stabnamen eindeutig");
   assert.throws(() => plan({ gelFill: "staketen", gelStab: { kind: "rohr", size: "26.9x2.3" } }), (e) => e.key === "gelStab");
   assert.throws(() => plan({ gelBar: { kind: "rohr", size: "42.4x2.6" } }), (e) => e.key === "gelBar");
@@ -775,4 +776,36 @@ test("Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, 
   assert.match(t.info, new RegExp(`Lochabstand ${A <= 250 ? 120 : A <= 285 ? 150 : A <= 320 ? 180 : "\\d+"} mm`));
   assert.equal(plan({ stepFix: "keine" }).plates.filter((p) => /Seitenblech/.test(p.name)).length, 0);
   assert.equal(plan({ support: "holm2" }).plates.filter((p) => /Seitenblech/.test(p.name)).length, 0, "nur bei Wangen");
+});
+
+test("Generator als Baugruppe: Einzelteile in eigener Lage, Platzierung führt zurück, gleiche Teile einmal", async () => {
+  const { defaultGenerator, resolveGenParams, GENERATORS } = await import("../src/core/generator.js");
+  const { planBodies, localPlan, groupParts, eulerOf } = await import("../src/core/genteil.js");
+  const { placementMatrix, matApply } = await import("../src/core/geom.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-4); // 0,1 µm
+  for (const g of Object.keys(GENERATORS)) {
+    const plan = GENERATORS[g].plan(resolveGenParams(g, defaultGenerator(g).params, E));
+    const bodies = planBodies(plan);
+    assert.equal(new Set(bodies.map((b) => b.key)).size, bodies.length, `${g}: Schlüssel eindeutig`);
+    for (const b of bodies) {
+      const lp = localPlan(plan, b), M = placementMatrix(b.frame.o, eulerOf(b.frame));
+      if (b.kind === "member") {
+        const m = plan.members[b.index], l = lp.members[0];
+        assert.ok(near(matApply(M, l.a), m.a) && near(matApply(M, l.b), m.b), `${g} ${b.name}: Platzierung`);
+        assert.ok(Math.abs(l.b[1]) < 1e-9 && Math.abs(l.b[2]) < 1e-9 && l.b[0] > 0, `${g} ${b.name}: liegt auf X`);
+        for (const d of lp.drills) assert.ok(near(matApply(M, d.p), plan.drills.find((x) => x.target === m.name && near(x.dir, x.dir) && Math.abs(Math.hypot(...x.p) - Math.hypot(...matApply(M, d.p))) < 1e-6)?.p || [NaN]), `${g} ${b.name}: Bohrung`);
+      } else if (b.kind === "chain") {
+        const c = lp.chains[0], s = c.onlySeg, w = plan.chains[b.index].points;
+        assert.ok(near(matApply(M, c.points[s]), w[b.seg]) && near(matApply(M, c.points[s + 1]), w[b.seg + 1]), `${g} ${b.name}: Stück am Platz`);
+      } else if (b.kind === "plate") {
+        assert.ok(near(matApply(M, [0, 0, 0]), plan.plates[b.index].center), `${g} ${b.name}: Platte`);
+      }
+    }
+    const parts = groupParts(plan);
+    assert.equal(parts.reduce((n, p) => n + p.bodies.length, 0), bodies.length, `${g}: jeder Körper genau einmal eingesetzt`);
+    assert.equal(new Set(parts.map((p) => p.name)).size, parts.length, `${g}: Teilenamen eindeutig`);
+  }
+  const zaun = groupParts(GENERATORS.zaun.plan(resolveGenParams("zaun", defaultGenerator("zaun").params, E)));
+  assert.ok(zaun.find((p) => p.name === "Pfosten").bodies.length === 5, "5 gleiche Pfosten = ein Bauteil");
 });

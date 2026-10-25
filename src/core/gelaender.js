@@ -10,7 +10,7 @@
 import { fieldError } from "./generror.js";
 import { platePlan } from "./anschluss.js";
 import { splitList } from "./expr.js";
-import { holderSchema, holderDrop, holderParts } from "./handlaufhalter.js";
+import { holderSchema, holderDrop, holderParts, entryWall } from "./handlaufhalter.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
 
@@ -125,8 +125,9 @@ export const GELAENDER = {
       if (!(Math.max(e.high, e.wide) + allow < inner - 2)) throw fieldError(`Gurt ${Math.round(Math.max(e.high, e.wide))} mm passt nicht durch den Pfosten (${Math.round(inner)} mm) – kleineren Gurt oder größeren Pfosten wählen`, "belt");
       if (p.fill === "staketen" && !(Math.min(p.bar.geom.width, p.bar.geom.height) + allow < Math.min(e.high, e.wide) - 2)) throw fieldError("Stab passt nicht durch den Gurt – kleineren Stab oder größeren Gurt wählen", "bar");
     }
-    const beltHalf = beltExt([1, 0], [0, 0, 1]).high / 2;
-    const barLo = through && p.bottom ? zBot - beltHalf : fillLo, barHi = through && p.top ? zTop + beltHalf : fillHi;
+    // Stäbe nur durch die innere Gurtwand, Ende innen an der gegenüberliegenden Wand (Vollprofil: Sackloch bis zur Mitte)
+    const beltHalf = beltExt([1, 0], [0, 0, 1]).high / 2, wall = through ? entryWall(belt, 2 * beltHalf) : 0;
+    const barLo = through && p.bottom ? zBot - beltHalf + wall : fillLo, barHi = through && p.top ? zTop + beltHalf - wall : fillHi;
     const barHoles = []; // [{ x, y, field }] Stellen der Stäbe für die Gurtbohrungen
     let nBars = 0, gapMaxSeen = 0;
     fields.forEach((fd, i) => {
@@ -237,7 +238,7 @@ export const GELAENDER = {
               const sb = (b.q[0] - a[0]) * d[0] + (b.q[1] - a[1]) * d[1];
               if (sb < st[f0].s || sb > st[f1].s) continue;
               const bh = p.bar.kind === "rohr" || p.bar.kind === "rund" ? { d: p.bar.geom.width + allow } : { w: p.bar.geom.width + allow, h: p.bar.geom.height + allow, xDir };
-              drills.push({ target: name, p: P3(b.q, zc + e.high / 2 + 1), dir: [0, 0, -1], len: e.high + 2, ...bh });
+              drills.push({ target: name, p: P3(b.q, zc + open[2] * (e.high / 2 + 1)), dir: [0, 0, -open[2]], len: entryWall(belt, e.high) + 2, ...bh });
             }
           }
         }

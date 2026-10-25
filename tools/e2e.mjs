@@ -730,7 +730,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Geländer"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-  await page.locator("#ribbon button", { hasText: /^Geländer$/ }).click();
+  await evalApp(() => window.__werkcad.addGeneratorFeature("gelaender")); // Generator im Bauteil (Baugruppe: eigener Schritt)
   await idle(120000);
   const gl0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
   const runs = page.locator("#props .field", { hasText: "Läufe" }).locator("input");
@@ -748,7 +748,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Tor"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-  await page.locator("#ribbon button", { hasText: /^Tor$/ }).click();
+  await evalApp(() => window.__werkcad.addGeneratorFeature("tor")); // Generator im Bauteil (Baugruppe: eigener Schritt)
   await idle(120000);
   const tor0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("front", { animate: false }); v.fit(); });
@@ -783,7 +783,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Zaun"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-  await page.locator("#ribbon button", { hasText: /^Zaun$/ }).click();
+  await evalApp(() => window.__werkcad.addGeneratorFeature("zaun")); // Generator im Bauteil (Baugruppe: eigener Schritt)
   await idle(120000);
   const zn0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), dims: document.querySelectorAll("#props svg.gsk .dim").length }; });
   await page.locator("#props .tile", { hasText: "gestuft" }).click();
@@ -806,7 +806,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Treppe"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-  await page.locator("#ribbon button", { hasText: /^Treppe$/ }).click();
+  await evalApp(() => window.__werkcad.addGeneratorFeature("treppe")); // Generator im Bauteil (Baugruppe: eigener Schritt)
   await idle(120000);
   const tr0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.filter((b) => !/^Geländer/.test(b.name)).length, gel: r.bodies.filter((b) => /^Geländer/.test(b.name)).length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
@@ -843,7 +843,7 @@ try {
   await shot("20i-treppe-l");
   await evalApp(() => window.__werkcad.newPart("Spindeltreppe"));
   await idle();
-  await page.locator("#ribbon button", { hasText: /^Spindeltreppe$/ }).click();
+  await evalApp(() => window.__werkcad.addGeneratorFeature("spindel")); // Generator im Bauteil (Baugruppe: eigener Schritt)
   await idle(120000);
   const sp = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
@@ -852,18 +852,51 @@ try {
   // Balkon-Generator (MegaCAD-Abgleich M16)
   await evalApp(() => window.__werkcad.newPart("Balkon"));
   await idle();
-  await page.locator("#ribbon button", { hasText: /^Balkon$/ }).click();
+  await evalApp(() => window.__werkcad.addGeneratorFeature("balkon")); // Generator im Bauteil (Baugruppe: eigener Schritt)
   await idle(120000);
   const bk = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), warn: Object.values(r.status)[0]?.warning || "" }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20k-balkon");
   step("Balkon-Generator", bk.ok && bk.n > 40 && /Balkon 3000 × 1500 mm/.test(bk.info) && !bk.warn, JSON.stringify(bk));
+  // Generator als Baugruppe mit Einzelteilen: Treppe über das Menüband → Baugruppe, jedes Teil ein Bauteil in eigener Lage
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Treppe$/ }).click();
+  await idle(180000);
+  const ga = async () => evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc();
+    const parts = [...new Set(asm.components.map((c) => c.part))].map((id) => a.doc(id));
+    const st = parts.map((p) => a.results.get(p.id)?.status || {}).flatMap((s) => Object.values(s));
+    const wange = parts.find((p) => /Wange rechts$/.test(p.name)), wb = a.results.get(wange?.id)?.bodies?.[0]?.props?.bbox;
+    return { kind: asm.kind, gen: asm.generator?.gen, comps: asm.components.length, parts: parts.length, genteil: parts.every((p) => p.features[0]?.type === "genteil"),
+      ok: st.length > 0 && st.every((x) => x.ok), posts: asm.components.filter((c) => /Pfosten \d+$/.test(c.name)).length, postParts: new Set(asm.components.filter((c) => /Pfosten \d+$/.test(c.name)).map((c) => c.part)).size,
+      wangeAlongX: wb ? wb[1][0] - wb[0][0] > 3000 && Math.abs(wb[0][1] + wb[1][1]) < 20 : false, wangeId: wange?.id, fields: document.querySelectorAll("#props .field").length };
+  });
+  const ga0 = await ga();
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20k2-treppe-baugruppe");
+  const bw = page.locator("#props .field", { hasText: "Laufbreite" }).locator("input");
+  await bw.fill("1200");
+  await bw.press("Enter");
+  await idle(180000);
+  const ga1 = await ga();
+  step("Generator als Baugruppe mit Einzelteilen", ga0.kind === "assembly" && ga0.gen === "treppe" && ga0.comps > 80 && ga0.parts >= 10 && ga0.parts < ga0.comps && ga0.genteil && ga0.ok && ga0.posts > 6 && ga0.postParts * 2 <= ga0.posts && ga0.wangeAlongX && ga0.fields > 20
+    && ga1.ok && ga1.wangeId === ga0.wangeId && ga1.comps >= ga0.comps, JSON.stringify({ ga0, ga1 }));
+  // Umwandeln eines Generator-Features, dessen Maß einen Teileparameter nutzt: Parameter gehen mit in die Baugruppe
+  const gconv = await evalApp(() => {
+    const a = window.__werkcad, p = a.newPart("Zaun mit Parameter");
+    p.params = [{ name: "L", expr: "4000", comment: "" }];
+    const f = a.addGeneratorFeature("zaun");
+    f.params.length = "L";
+    const asm = a.generatorAssembly("zaun", { params: f.params, name: "Zaun aus Teil", from: p });
+    return { kind: asm.kind, params: asm.params?.length, comps: asm.components.length, len: asm.generator.params.length };
+  });
+  step("Generator mit Parameter als Baugruppe", gconv.kind === "assembly" && gconv.params === 1 && gconv.comps > 5 && gconv.len === "L", JSON.stringify(gconv));
   // Stahlbau-Generatoren (MegaCAD-Abgleich M15): Rahmenecke, Pfette, Windverband – je ein Bauteil, Normteile in der Liste
   const stb = {};
   for (const [label, file] of [["Rahmenecke", "20l-rahmenecke"], ["Pfette", "20m-pfette"], ["Windverband", "20n-windverband"]]) {
     await evalApp((n) => window.__werkcad.newPart(n), label);
     await idle();
-    await page.locator("#ribbon button", { hasText: new RegExp("^" + label + "$") }).click();
+    await evalApp((g) => window.__werkcad.addGeneratorFeature(g), { Rahmenecke: "rahmenecke", Pfette: "pfette", Windverband: "windverband" }[label]);
     await idle(120000);
     stb[label] = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, norm: r.bodies.filter((b) => b.meta?.norm).length, ok: Object.values(r.status).every((s) => s.ok), info: Object.values(r.status)[0]?.info }; });
     await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });

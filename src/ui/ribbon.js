@@ -8,7 +8,6 @@ import { defaultRegelkoerper } from "../core/regelkoerper.js";
 import { defaultNormteil } from "../core/normteile.js";
 import { defaultKantteil } from "../core/blech.js";
 import { defaultPlatte, defaultRippe } from "../core/anschluss.js";
-import { defaultGenerator, GENERATORS } from "../core/generator.js";
 import { DISPLAY } from "../core/settings.js";
 import { commandDef, inScope } from "../core/commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
@@ -123,9 +122,9 @@ export class Ribbon {
     return list.length ? list[list.length - 1].id : null;
   }
   addGenerator(gen) {
-    const part = this.app.activeDoc();
-    const n = (part?.features || []).filter((x) => x.gen === gen).length + 1;
-    this.app.addFeature({ ...defaultGenerator(gen), name: `${GENERATORS[gen].label} ${n}` });
+    // Generatoren legen eine Baugruppe mit Einzelteilen an; das Schiebetor bleibt im Bauteil (eigene Baugruppe mit Gelenk)
+    if (gen !== "schiebetor") return this.app.generatorAssembly(gen);
+    this.app.addGeneratorFeature(gen);
   }
   /** gewähltes Feature eines der Typen, sonst das letzte im Bauteil */
   lastOf(types) {

@@ -19,6 +19,7 @@ import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, thre
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
 import { GENERATORS, resolveGenParams } from "../core/generator.js";
+import { planBodies, localPlan } from "../core/genteil.js";
 import { FILL_DENSITY } from "../core/mass.js";
 
 const BIG = 20000;
@@ -672,10 +673,16 @@ export function createKernel(R) {
             st.info = `${list.length} Rippe(n) ${round(o.length)} mm lang, ${round(o.thickness)} mm dick`;
             break;
           }
+          case "genteil": // Einzelteil eines Generators (Baugruppe mit Einzelteilen): ein Körper des Bauplans in eigener Lage
           case "generator": {
             const gen = GENERATORS[f.gen];
             if (!gen) throw new Error("Unbekannter Generator");
-            const plan = gen.plan(resolveGenParams(f.gen, f.params, E));
+            let plan = gen.plan(resolveGenParams(f.gen, f.params, E));
+            if (f.type === "genteil") {
+              const body = planBodies(plan).find((b) => b.key === f.key);
+              if (!body) throw new Error(`Teil »${f.body || f.key}« gibt es im Generator nicht mehr`);
+              plan = { ...localPlan(plan, body), info: body.name };
+            }
             const list = [];
             const cut = cutCfg(f);
             const add = (solid, meta, name) => { pushMember(state, solid, f, meta, name); list.push({ shape: solid, kind: "member", meta, name }); };
@@ -694,8 +701,9 @@ export function createKernel(R) {
               const ms = buildMembers(segs, { kind: ch.section.kind, dims: ch.section.dims }, { corner: "gehrung", align: "mitte", rotation: String(ch.rot || 0) }, E, cut, () => ch.up || [0, 0, 1], ch.name);
               const size = Math.max(ch.section.geom?.width || 0, ch.section.geom?.height || 0);
               ms.forEach((m, i) => {
+                if (ch.onlySeg != null && i !== ch.onlySeg) return;
                 const ds = segs[i] ? drillsOf(ch.name, segs[i].a, segs[i].b, size) : [];
-                add(drill(m.solid, ds), { ...m.meta, generator: f.gen, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }, ms.length > 1 ? m.name : ch.name);
+                add(drill(m.solid, ds), { ...m.meta, generator: f.gen, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }, ch.segName || (ms.length > 1 ? m.name : ch.name));
               });
             }
             for (const m of plan.members) {
