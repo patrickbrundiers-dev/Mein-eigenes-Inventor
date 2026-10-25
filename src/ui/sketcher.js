@@ -14,6 +14,8 @@ import { splineSamples, splineNearest } from "../core/spline.js";
 import { autoDimension } from "../core/autodim.js";
 import { cleanSketch, cleanReportText, CLEAN_KINDS, CLEAN_DEFAULTS } from "../core/sketchclean.js";
 import { splineCtrl } from "../core/sketch.js";
+import { defaultText, textBox, textPolylines, partTextVars, TEXT_STYLES } from "../core/schrift.js";
+import { imageCorners, newImageEntity, rescaleImage } from "../core/skizzenbild.js";
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
@@ -31,6 +33,8 @@ export const SKETCH_TOOLS = {
   arcc: "Bogen um Mittelpunkt: Mitte, Anfang, Ende (gegen Uhrzeigersinn)",
   point: "Punkt / Bohrungsmitte setzen",
   slot: "Langloch: erster Mittelpunkt, zweiter Mittelpunkt, dann Breite klicken",
+  text: "Text: Anfangspunkt auf der Grundlinie klicken, dann Text und Schrifthöhe eingeben. Platzhalter: {teilenummer}, {name}, {werkstoff}, {datum}",
+  image: "Bild: linke untere Ecke klicken, dann Bild (PNG/JPG) wählen und Breite in mm eingeben. Das Bild ist nur Vorlage zum Nachzeichnen",
   polygon: "Polygon: Mittelpunkt, dann eine Ecke klicken – danach Anzahl der Ecken eingeben",
   offset: "Versatz: Kontur anklicken (oder vorher Elemente wählen), dann die Seite klicken und den Abstand eingeben",
   pattern: "Rechteckmuster: vorher Elemente wählen, dann ins Bild klicken und Anzahl/Abstände in X und Y eingeben",
@@ -178,7 +182,7 @@ export class Sketcher {
     if (!sk) return null;
     const r = solveSketch(sk, this.scope(), { extra, free: this.prefs?.["skizze.bestimmtheit"] !== false });
     this.lastSolve = r;
-    this.profiles = extractProfiles(sk);
+    this.profiles = extractProfiles(sk, { vars: this.textVars() });
     this.app.updateSketchStatus(r, this.profiles);
     return r;
   }
@@ -245,6 +249,13 @@ export class Sketcher {
         } else if (e.type === "ellipse") {
           const [lx, ly] = this.L(sx, sy);
           d = ellipseNearest(this.ellG(e, P), lx, ly).d * this.M.scale;
+        } else if (e.type === "text") {
+          const b = textBox(e, P.get(e.p), this.textVars());
+          if (b && insidePoly([sx, sy], b.map(([x, y]) => this.S(x, y)))) d = CURVE_R - 1;
+        } else if (e.type === "image") {
+          // Bild liegt hinten: nur wählbar, wenn nichts anderes näher ist
+          const b = imageCorners(e, P.get(e.p));
+          if (b && insidePoly([sx, sy], b.map(([x, y]) => this.S(x, y)))) d = CURVE_R - 0.5;
         }
         if (d < bd) { bd = d; best = { kind: "entity", id: e.id }; }
       }
@@ -592,6 +603,92 @@ export class Sketcher {
       sk.entities.push({ id: uid("pt"), type: "point", p: id, construction: false });
       sk.constraints.push(...cons);
     });
+  }
+
+  /** Platzhalter für Text: Teilenummer, Name und Werkstoff des Bauteils, Datum heute */
+  textVars() { return partTextVars(this.part); }
+  /** Text setzen (FU1): Dialog für Text und Schrifthöhe, Anfangspunkt ist ein normaler Skizzenpunkt */
+  addText(sn) {
+    this.textDialog({ ...defaultText(), h: this.lastTextH || defaultText().h }, (vals) => {
+      this.lastTextH = vals.h;
+      this.commit("Text", (sk) => {
+        const cons = [];
+        const id = this.usePoint(sk, sn, cons);
+        sk.entities.push({ id: uid("tx"), type: "text", p: id, ...vals, construction: !!this.construction });
+        sk.constraints.push(...cons);
+      });
+    });
+  }
+  /** Dialog Text bearbeiten; onOk({text, h, angle, style, align, spacing}) */
+  textDialog(e, onOk) {
+    const ta = h("textarea", { class: "inp", rows: 2, style: { width: "100%", fontSize: "14px" } });
+    ta.value = e.text ?? "";
+    const num = (v, step) => h("input", { class: "inp", type: "number", step, value: v });
+    const hi = num(e.h, "0.5"), an = num(e.angle || 0, "1"), sp = num(e.spacing || 0, "0.1");
+    const st = h("select", { class: "inp" }, ...TEXT_STYLES.map((o) => h("option", { value: o.value, selected: o.value === (e.style || "normal") }, o.label)));
+    const al = h("select", { class: "inp" }, ...[["links", "Links"], ["mitte", "Mitte"], ["rechts", "Rechts"]].map(([v, l]) => h("option", { value: v, selected: v === (e.align || "links") }, l)));
+    const f = (label, el) => h("div", { class: "field" }, h("label", {}, label), el);
+    modal({ title: "Text", width: "440px",
+      body: h("div", { class: "text-dialog" }, f("Text", ta), f("Schrifthöhe (mm)", hi), f("Winkel (°)", an), f("Schrift", st), f("Ausrichtung", al), f("Zeichenabstand (mm)", sp),
+        h("p", { class: "hint" }, "Mehrere Zeilen mit Enter. Platzhalter: {teilenummer}, {name}, {werkstoff}, {datum}. Für den Laser genügt meist Gravieren mit 0,2–0,5 mm Tiefe.")),
+      buttons: [{ label: "Abbrechen" }, { label: "OK", primary: true, run: () => {
+        const H = Number(hi.value);
+        if (!ta.value.trim()) { toast("Bitte einen Text eingeben"); return false; }
+        if (!(H > 0)) { toast("Schrifthöhe muss > 0 sein"); return false; }
+        onOk({ text: ta.value, h: H, angle: Number(an.value) || 0, style: st.value, align: al.value, spacing: Number(sp.value) || 0 });
+      } }] });
+    setTimeout(() => ta.select(), 30);
+  }
+  /** Gewählten Text bearbeiten */
+  /** Bild einfügen (FU2): Datei wählen, verkleinern, im Projekt ablegen, Breite abfragen */
+  async addImage(sn) {
+    const img = await this.app.files.pickImage();
+    if (!img) return;
+    const w0 = Math.round((this.lastImageW || 200) * 10) / 10;
+    this.imageDialog({ w: w0, h: (w0 * img.px[1]) / img.px[0], angle: 0, opacity: 0.5 }, img.px, (vals) => {
+      this.lastImageW = vals.w;
+      const prj = this.app.project;
+      const imgId = uid("bild");
+      this.commit("Bild", (sk) => {
+        prj.images = prj.images || {};
+        prj.images[imgId] = { src: img.src, name: img.name, px: img.px };
+        const cons = [];
+        const id = this.usePoint(sk, sn, cons);
+        sk.entities.push({ ...newImageEntity(uid("im"), id, imgId, img.px, vals.w), ...vals });
+        sk.constraints.push(...cons);
+      });
+    });
+  }
+  /** Dialog Breite, Winkel, Deckkraft, Maßstab über bekannte Strecke; Höhe folgt dem Seitenverhältnis */
+  imageDialog(e, px, onOk) {
+    const num = (v, step) => h("input", { class: "inp", type: "number", step, value: Math.round(v * 1000) / 1000 });
+    const wi = num(e.w, "1"), an = num(e.angle || 0, "1"), op = num(Math.round((e.opacity ?? 0.5) * 100), "5");
+    const meas = num(0, "0.1"), real = num(0, "0.1");
+    const f = (label, el) => h("div", { class: "field" }, h("label", {}, label), el);
+    modal({ title: "Bild", width: "440px",
+      body: h("div", { class: "image-dialog" }, f("Breite (mm)", wi), f("Winkel (°)", an), f("Deckkraft (%)", op),
+        h("p", { class: "hint" }, "Maßstab über eine bekannte Strecke: im Bild messen (z. B. mit einer Konstruktionslinie), dann beide Werte eintragen."),
+        f("Strecke im Bild (mm)", meas), f("Wirkliche Länge (mm)", real)),
+      buttons: [{ label: "Abbrechen" }, { label: "OK", primary: true, run: () => {
+        let w = Number(wi.value);
+        const sc = rescaleImage({ w, h: 1 }, Number(meas.value), Number(real.value));
+        if (sc) w = sc.w;
+        if (!(w > 0)) { toast("Breite muss > 0 sein"); return false; }
+        const o = Math.min(100, Math.max(5, Number(op.value) || 50)) / 100;
+        onOk({ w, h: (w * px[1]) / px[0], angle: Number(an.value) || 0, opacity: o });
+      } }] });
+  }
+  editImage(id) {
+    const e = this.entity(id);
+    const im = e && this.app.project.images?.[e.img];
+    if (!e) return;
+    const px = im?.px || [e.w, e.h];
+    this.imageDialog(e, px, (vals) => this.commit("Bild ändern", (sk) => Object.assign(sk.entities.find((x) => x.id === id), vals)));
+  }
+  editText(id) {
+    const e = this.entity(id);
+    if (!e) return;
+    this.textDialog(e, (vals) => this.commit("Text ändern", (sk) => Object.assign(sk.entities.find((x) => x.id === id), vals)));
   }
 
   // ---------- Bedingungen / Bemaßung ----------
@@ -1118,6 +1215,12 @@ export class Sketcher {
       case "point":
         this.addPoint(sn);
         break;
+      case "text":
+        this.addText(sn);
+        break;
+      case "image":
+        this.addImage(sn);
+        break;
       case "slot":
         if (!this.state) this.state = { pts: [sn] };
         else if (this.state.pts.length === 1) { if (Math.hypot(sn.x - this.state.pts[0].x, sn.y - this.state.pts[0].y) * this.M.scale > 2) this.state.pts.push(sn); }
@@ -1240,12 +1343,13 @@ export class Sketcher {
         e.r = r;
         const res = solveSketch(sk, this.scope(), { computeDof: false });
         if (!res.ok) e.r = before;
-        this.profiles = extractProfiles(sk);
+        this.profiles = extractProfiles(sk, { vars: this.textVars() });
         return;
       } else if (e.type === "arc") targets = [e.c, e.p1, e.p2].map((p) => ({ p, x: O.get(p).x + dx, y: O.get(p).y + dy }));
       else if (e.type === "spline") targets = [...new Set(e.pts)].map((p) => ({ p, x: O.get(p).x + dx, y: O.get(p).y + dy }));
       else if (e.type === "ellipse") targets = [e.c, e.a].map((p) => ({ p, x: O.get(p).x + dx, y: O.get(p).y + dy }));
       else if (e.type === "point") targets = [{ p: e.p, x: lx, y: ly }];
+      else if (e.type === "text" || e.type === "image") targets = [{ p: e.p, x: O.get(e.p).x + dx, y: O.get(e.p).y + dy }];
     }
     const keep = JSON.stringify(sk.points.concat(sk.entities.filter((x) => x.type === "circle" || x.type === "ellipse").map((x) => ({ id: x.id, r: x.r }))));
     const extra = targets.map((t, i) => ({ id: "drag" + i, type: "target", p: t.p, x: t.x, y: t.y, w: 0.05 }));
@@ -1257,7 +1361,7 @@ export class Sketcher {
       for (const p of sk.points) { const o = m.get(p.id); if (o) { p.x = o.x; p.y = o.y; } }
       for (const c of sk.entities) if ((c.type === "circle" || c.type === "ellipse") && m.get(c.id)) c.r = m.get(c.id).r;
     }
-    this.profiles = extractProfiles(sk);
+    this.profiles = extractProfiles(sk, { vars: this.textVars() });
   }
   pointerUp(e) {
     if (!this.active) return;
@@ -1289,6 +1393,13 @@ export class Sketcher {
     if (this.tool === "spline" && this.state?.pts) { this.finishSpline(false); return; }
     const hit = this.hitTest(sx, sy);
     if (hit?.kind === "dim") this.editDimension(hit.id, sx, sy);
+    else if (hit?.kind === "entity" && this.entity(hit.id)?.type === "text") this.editText(hit.id);
+    else if (hit?.kind === "entity" && this.entity(hit.id)?.type === "image") this.editImage(hit.id);
+    else if (hit?.kind === "point") {
+      // Ankerpunkt eines Textes: ebenfalls Text bearbeiten
+      const t = this.sk.entities.find((x) => (x.type === "text" || x.type === "image") && x.p === hit.id);
+      if (t) (t.type === "text" ? this.editText(t.id) : this.editImage(t.id));
+    }
   }
   key(e) {
     if (!this.active || this.inputBox) return false;
@@ -1385,8 +1496,21 @@ export class Sketcher {
       svg.append(svgEl("rect", { class: "sk-box" + (b.x1 < b.x0 ? " cross" : ""), x: Math.min(b.x0, b.x1), y: Math.min(b.y0, b.y1), width: Math.abs(b.x1 - b.x0), height: Math.abs(b.y1 - b.y0) }));
     }
     const openPts = new Set(this.profiles?.openPoints || []);
+    // Bilder (FU2) ganz hinten: Einheitsquadrat per Matrix auf die gedrehten Ecken
+    for (const e of sk.entities) {
+      if (e.type !== "image") continue;
+      const c = imageCorners(e, P.get(e.p));
+      if (!c) continue;
+      const [BL, BR, , TL] = c.map(([x, y]) => S(x, y));
+      const src = this.app.project.images?.[e.img]?.src;
+      const sel = isSel("e:" + e.id) || (hov?.kind === "entity" && hov.id === e.id);
+      if (src) g.append(svgEl("image", { href: src, x: 0, y: 0, width: 1, height: 1, preserveAspectRatio: "none", opacity: e.opacity ?? 0.5,
+        transform: `matrix(${BR[0] - BL[0]},${BR[1] - BL[1]},${BL[0] - TL[0]},${BL[1] - TL[1]},${TL[0]},${TL[1]})`, class: "sk-image" }));
+      if (!src || sel) g.append(svgEl("path", { d: "M" + c.map(([x, y]) => S(x, y).join(",")).join("L") + "Z", class: "sk-ctrl" + (src ? "" : " missing") }));
+    }
     // Elemente
     for (const e of sk.entities) {
+      if (e.type === "image") continue;
       const key = "e:" + e.id;
       const cls = ["sk-line"];
       if (e.construction) cls.push("constr");
@@ -1411,6 +1535,13 @@ export class Sketcher {
         }
       } else if (e.type === "ellipse") {
         d = "M" + ellipseSamples(this.ellG(e, P), 96).map((q) => S(q[0], q[1]).join(",")).join("L") + "Z";
+      } else if (e.type === "text") {
+        const vars = this.textVars();
+        d = textPolylines(e, P.get(e.p), vars, 6).map((pl) => "M" + pl.map((q) => S(q[0], q[1]).join(",")).join("L") + "Z").join("") || null;
+        if (cls.includes("sel") || cls.includes("hover")) {
+          const b = textBox(e, P.get(e.p), vars);
+          if (b) g.append(svgEl("path", { d: "M" + b.map((q) => S(q[0], q[1]).join(",")).join("L") + "Z", class: "sk-ctrl" }));
+        }
       } else if (e.type === "arc") {
         const c = P.get(e.c), p1 = P.get(e.p1), p2 = P.get(e.p2);
         const geo = arcGeometry(c, p1, p2);
@@ -1833,3 +1964,13 @@ function slotRadius(a, b, m) {
   return Math.abs(dx * (m.y - a.y) - dy * (m.x - a.x)) / L;
 }
 function safeEval(e, scope) { try { return evaluate(e, scope); } catch { return 0; } }
+
+/** Punkt in Polygon (Bildschirmkoordinaten) */
+function insidePoly([x, y], poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}

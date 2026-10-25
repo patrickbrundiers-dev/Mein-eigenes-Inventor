@@ -4,6 +4,7 @@
 import { evaluate, resolveParams } from "../core/expr.js";
 import { solveSketch } from "../core/solver.js";
 import { extractProfiles, holeCenters, sketchLines } from "../core/sketch.js";
+import { partTextVars } from "../core/schrift.js";
 import { planeFrame, toWorld, v3 } from "../core/geom.js";
 import { resolveDatums, resolvePlane, mirrorPlane, patternAxis, datumSummary } from "../core/datums.js";
 import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "../core/koerper.js";
@@ -26,6 +27,7 @@ import { GENERATORS, resolveGenParams } from "../core/generator.js";
 import { gestellPlan } from "../core/gestell.js";
 import { planBodies, localPlan } from "../core/genteil.js";
 import { FILL_DENSITY } from "../core/mass.js";
+import { activeCount } from "../core/bauteilende.js";
 
 const BIG = 20000;
 
@@ -450,7 +452,9 @@ export function createKernel(R) {
       try { return evaluate(expr, scope); } catch (e) { throw new Error(`${label}: ${e.message}`); }
     };
     let state = { bodies: [], tools: new Map(), sketches: new Map(), status: {}, welds: [] };
-    const feats = part.features || [];
+    // Bauteilende (FU5): nur die Features vor der Markierung werden gerechnet
+    const feats = (part.features || []).slice(0, activeCount(part));
+    const rolledBack = (part.features || []).slice(feats.length);
     // Arbeitselemente: reine Lagen, unabhängig vom Zwischenspeicher
     const datums = resolveDatums(feats, (x) => evaluate(x, scope));
     // 2D/3D und Winkelkorrektur je Profil bzw. Rahmen (gilt für alle Schnitte dieses Features)
@@ -460,9 +464,12 @@ export function createKernel(R) {
       if (!(sw >= 0 && sw <= 89)) throw new Error("Winkelkorrektur 0 bis 89°");
       return { mode: c.mode, swivel: sw };
     };
+    // Platzhalter in Skizzentexten ({teilenummer} …); nur dann Teil des Zwischenspeicher-Schlüssels
+    const textVars = partTextVars(part);
+    const usesVars = feats.some((f) => f.type === "sketch" && (f.entities || []).some((e) => e.type === "text" && /\{\w+\}/.test(e.text || "")));
     const keys = [];
-    // Werkstoff wählt die Biegetabelle; Schnitt 2D/3D und Restwand am Bauteil gelten für alle Features
-    let acc = JSON.stringify(values) + (part.material || "") + JSON.stringify([part.cutMode, part.swivel, part.restwand]);
+    // Werkstoff wählt die Biegetabelle; Schnitt 2D/3D und Restwand am Bauteil gelten für alle Features; Textplatzhalter nur wenn benutzt
+    let acc = JSON.stringify(values) + (part.material || "") + JSON.stringify([part.cutMode, part.swivel, part.restwand]) + (usesVars ? JSON.stringify(textVars) : "");
     const keepWall = part.restwand !== false;
     for (const f of feats) { acc = hashString(acc + JSON.stringify(f)); keys.push(acc); }
     let startAt = 0;
@@ -542,7 +549,7 @@ export function createKernel(R) {
             const r = solveSketch(sk, scope, { computeDof: true });
             if (!r.ok) throw new Error(r.error || "Skizze nicht lösbar (widersprüchliche Bemaßung)");
             const frame = planeFrame(resolvePlane(sk.plane, datums.map), E(sk.offset || "0", "Ebenen-Abstand"));
-            const prof = extractProfiles(sk);
+            const prof = extractProfiles(sk, { vars: textVars });
             state.sketches.set(f.id, { sketch: sk, frame, prof, dof: r.dof });
             st.dof = r.dof;
             if (prof.errors.length) st.info = prof.errors.join("; ");
@@ -1344,6 +1351,7 @@ export function createKernel(R) {
       const merged = [...kept, ...newCache.filter((c) => c.state)];
       prefixCache.set(part.id, merged.slice(-8));
     }
+    for (const f of rolledBack) state.status[f.id] = { ok: true, rolledBack: true };
     for (const [k, msg] of Object.entries(paramErrors)) state.status["param:" + k] = { ok: false, error: msg };
     // Körperprüfung des Endergebnisses: nur Hinweis am erzeugenden Feature, blockiert nichts.
     // Statusobjekt ersetzen statt ändern – es kann mit dem Zwischenspeicher geteilt sein.

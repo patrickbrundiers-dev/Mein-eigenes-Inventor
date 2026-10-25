@@ -2,6 +2,7 @@
 
 import { ellipseGeom, ellipseSamples } from "./ellipse.js";
 import { splineBeziers } from "./spline.js";
+import { textLoops, textBox } from "./schrift.js";
 
 /** Kontrollpunkte eines Splines als [[x,y]…] (fehlende Punkte → null) */
 export function splineCtrl(e, pts) {
@@ -103,9 +104,10 @@ function pointInPoly(pt, poly) {
  * Findet geschlossene Konturen in einer Skizze.
  * Rückgabe: {regions: [{outer, holes:[]}], loops, errors:[], openPoints:[ids]}
  * Segmente: {t:'line',to} | {t:'arc',to,mid} | {t:'bez',c1,c2,to} (Spline als kubische Bézier-Abschnitte)
+ * Text (FU1): jede Kontur eines Zeichens ist eine eigene Kontur; Innenkonturen (o, A) werden Löcher. vars: Platzhalter.
  * loop: {kind:'circle', c:[x,y], r} | {kind:'ellipse', c, a, b, rot (Bogenmaß, Richtung der Halbachse a)} | {kind:'path', start:[x,y], segs:[{t:'line',to}|{t:'arc',to,mid}]}
  */
-export function extractProfiles(sketch) {
+export function extractProfiles(sketch, { vars } = {}) {
   const pts = new Map(sketch.points.map((p) => [p.id, p]));
   const errors = [];
   // Punkte vereinigen (Koinzidenz-Bedingung oder gleiche Lage)
@@ -145,6 +147,8 @@ export function extractProfiles(sketch) {
       const a = find(e.p1), b = find(e.p2);
       if (a === b) continue;
       edges.push({ e, a, b });
+    } else if (e.type === "text") {
+      loops.push(...textLoops(e, pts.get(e.p), vars));
     }
   }
   // Adjazenz
@@ -290,6 +294,7 @@ export function sketchBounds(sketch) {
   for (const p of sketch.points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   // Splines liegen in der konvexen Hülle ihrer Kontrollpunkte – die Punkte oben genügen
   for (const e of sketch.entities) if (e.type === "ellipse") { const c = pts.get(e.c), m = Math.max(Math.hypot(pts.get(e.a).x - c.x, pts.get(e.a).y - c.y), e.r); x0 = Math.min(x0, c.x - m); x1 = Math.max(x1, c.x + m); y0 = Math.min(y0, c.y - m); y1 = Math.max(y1, c.y + m); }
+  for (const e of sketch.entities) if (e.type === "text") for (const [x, y] of textBox(e, pts.get(e.p)) || []) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
   for (const e of sketch.entities) if (e.type === "circle") { const c = pts.get(e.c); x0 = Math.min(x0, c.x - e.r); x1 = Math.max(x1, c.x + e.r); y0 = Math.min(y0, c.y - e.r); y1 = Math.max(y1, c.y + e.r); }
   if (!Number.isFinite(x0)) return null;
   return { x0, y0, x1, y1 };

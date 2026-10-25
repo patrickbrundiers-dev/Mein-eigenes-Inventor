@@ -95,3 +95,32 @@ export function modularBom(asm, docOf) {
   visit(asm, 0);
   return out;
 }
+
+/**
+ * Komponente ersetzen (Fusion-Abgleich FU7): ids der Komponenten bekommen das Dokument newDoc. Lage, Fixierung,
+ * Sichtbarkeit, Gelenk und Abhängigkeiten bleiben; die Flächen der Abhängigkeiten sucht der Löser im neuen Bauteil
+ * neu (gleiche Normale, nächster Abstand). Namen nach dem Muster »Alt:3« werden zu »Neu:3«.
+ * Rückgabe { replaced, constraints (betroffene Abhängigkeiten), error }
+ */
+export function replaceComponents(asm, ids, newDoc, docOf) {
+  if (!canInsert(asm, newDoc, docOf)) return { replaced: 0, constraints: 0, error: newDoc?.id === asm.id ? "Baugruppe kann sich nicht selbst enthalten" : "Würde einen Kreisbezug ergeben" };
+  const set = new Set(ids);
+  let replaced = 0;
+  for (const c of asm.components || []) {
+    if (!set.has(c.id) || c.part === newDoc.id) continue;
+    const old = docOf(c.part);
+    const m = old && typeof c.name === "string" ? c.name.match(/^(.*):(\d+)$/) : null;
+    if (!c.name || (m && m[1] === old.name)) c.name = `${newDoc.name}:${m ? m[2] : 1}`;
+    else if (old && c.name === old.name) c.name = newDoc.name;
+    c.part = newDoc.id;
+    replaced++;
+  }
+  const constraints = (asm.constraints || []).filter((k) => set.has(k.a?.comp) || set.has(k.b?.comp)).length;
+  return { replaced, constraints, error: null };
+}
+
+/** Alle Komponenten der Baugruppe, die auf dasselbe Dokument zeigen wie die Komponente id */
+export function sameOccurrences(asm, id) {
+  const c = (asm.components || []).find((x) => x.id === id);
+  return c ? asm.components.filter((x) => x.part === c.part).map((x) => x.id) : [];
+}

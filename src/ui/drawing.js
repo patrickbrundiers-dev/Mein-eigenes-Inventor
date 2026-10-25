@@ -1,4 +1,6 @@
 // Zeichnungsableitung: Blatt, Ansichten (Projektionsmethode 1 / DIN ISO 5456-2), Bemaßung, Schriftfeld, Export
+import { templateOf, extraFields, LINE_GROUPS, DIM_TEXT_SIZES, MAX_EXTRA, validateTemplate } from "../core/zeichnungsvorlage.js";
+import { chainDims, alignRows, clockwiseOrder, alignBalloons, arcLength } from "../core/bemassung.js";
 import { h, svgEl, toast, modal, promptDialog, fmtNum, downloadBlob } from "./dom.js";
 import { classOf, toleranceText, validateTolerance, TOL_KINDS } from "../core/tolerance.js";
 import { bodiesMass } from "../core/mass.js";
@@ -938,7 +940,12 @@ export class DrawingEditor {
     }
   }
   /** Erzeugt das Blatt als SVG (mm). interactive: Auswahl-/Trefferflächen */
+  /** Zeichnungsvorlage des Projekts (FU12) */
+  template() { return templateOf(this.app.project.drawingTemplate); }
   renderSheet(d, { interactive = false } = {}) {
+    const tpl = this.template();
+    Object.assign(LW, LINE_GROUPS[tpl.lineGroup]);
+    this.dimText = tpl.dimText;
     const [W, H] = this.sheetSize(d);
     const svg = svgEl("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: `0 0 ${W} ${H}`, width: W + "mm", height: H + "mm", "font-family": "Bahnschrift, 'DIN Alternate', Arial, sans-serif" });
     const defs = svgEl("defs");
@@ -954,7 +961,13 @@ export class DrawingEditor {
     svg.append(frame);
     svg.append(this.titleBlock(d, W, H));
     for (const v of d.views) svg.append(this.renderView(d, v, interactive));
+    const cm = this.renderCenterMarks(d);
+    if (cm) svg.append(cm);
     for (const m of d.dims || []) { const g = this.renderDim(d, m, interactive); if (g) svg.append(g); }
+    if (interactive && this.pendingChain) {
+      const v = d.views.find((x) => x.id === this.pendingChain.view);
+      if (v) for (const p of this.pendingChain.pts) { const [x, y] = this.viewXf(v).to(...p); svg.append(svgEl("circle", { cx: x, cy: y, r: 1, fill: "#ef7d1a" })); }
+    }
     if (interactive && this.pendingDim?.ready) {
       const g = this.renderDim(d, this.pendingDim.m, false);
       if (g) { g.setAttribute("opacity", "0.55"); svg.append(g); }
@@ -1044,6 +1057,7 @@ export class DrawingEditor {
     return g;
   }
   dimValue(m) {
+    if (m.kind === "arc") return arcLength(m.circle.r, m.sweep);
     if (m.kind === "dia") return m.circle.r * 2;
     if (m.kind === "rad") return m.circle.r;
     const [a, b] = [m.p1, m.p2];
@@ -1060,16 +1074,41 @@ export class DrawingEditor {
     const tol = toleranceText(m.tol, val, classOf(d.title?.toleranz), m.kind === "rad" ? "rad" : "lin");
     // Bohrungs- und Teilungsangaben bleiben, wie sie sind (Nennmaße der Bohrung); die Toleranz kommt dahinter
     const txt = (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m) + tol
-      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + tol + (m.suffix || "");
+      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : m.kind === "arc" ? "⌒" : "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + tol + (m.suffix || "");
     const arrowHead = (x, y, ux, uy) => {
       const L = 3, w = 0.9;
       return svgEl("path", { d: `M${r3(x)} ${r3(y)}L${r3(x - ux * L + uy * w)} ${r3(y - uy * L - ux * w)}L${r3(x - ux * L - uy * w)} ${r3(y - uy * L + ux * w)}Z`, fill: "#111a24", stroke: "none" });
     };
     const text = (x, y, rot) => {
-      const t = svgEl("text", { x: r3(x), y: r3(y), "text-anchor": "middle", "font-size": 3.5, fill: "#111a24", stroke: "none", transform: rot ? `rotate(${r3(rot)} ${r3(x)} ${r3(y)})` : undefined, class: interactive ? "dw-dimtext" : undefined });
+      const t = svgEl("text", { x: r3(x), y: r3(y), "text-anchor": "middle", "font-size": this.dimText || 3.5, fill: "#111a24", stroke: "none", transform: rot ? `rotate(${r3(rot)} ${r3(x)} ${r3(y)})` : undefined, class: interactive ? "dw-dimtext" : undefined });
       t.textContent = txt;
       return t;
     };
+    if (m.kind === "arc") {
+      // Bogenlänge (DIN 406): Maßbogen konzentrisch, Hilfslinien radial, Bogenzeichen vor der Zahl
+      const R = m.circle.r * v.scale + (m.off ?? 8);
+      const at = (a, rr) => { const q = xf.to(m.circle.cx + Math.cos(a) * (rr / v.scale), m.circle.cy + Math.sin(a) * (rr / v.scale)); return q; };
+      const a0 = m.a0, a1 = m.a0 + m.sweep;
+      const E0 = at(a0, m.circle.r * v.scale + 1), E1 = at(a1, m.circle.r * v.scale + 1), D0 = at(a0, R + 2), D1 = at(a1, R + 2);
+      const M0 = at(a0, R), M1 = at(a1, R);
+      const [cx, cy] = xf.to(m.circle.cx, m.circle.cy);
+      const cross = (M0[0] - cx) * (M1[1] - cy) - (M0[1] - cy) * (M1[0] - cx);
+      // Maßbogen als Linienzug (auch für den DXF-Export, der nur Linien liest)
+      const steps = Math.max(8, Math.ceil(m.sweep * 24));
+      const arcPts = Array.from({ length: steps + 1 }, (_, i) => at(a0 + (m.sweep * i) / steps, R));
+      g.append(svgEl("path", { d: `M${r3(E0[0])} ${r3(E0[1])}L${r3(D0[0])} ${r3(D0[1])}M${r3(E1[0])} ${r3(E1[1])}L${r3(D1[0])} ${r3(D1[1])}M` + arcPts.map((q) => `${r3(q[0])} ${r3(q[1])}`).join("L") }));
+      // Pfeile tangential an den Enden
+      const tang = (P, sgn) => { const rx = P[0] - cx, ry = P[1] - cy, L = Math.hypot(rx, ry) || 1; return [(-ry / L) * sgn, (rx / L) * sgn]; };
+      const sgn = cross > 0 ? 1 : -1;
+      const t0 = tang(M0, sgn), t1 = tang(M1, sgn);
+      g.append(arrowHead(M0[0], M0[1], -t0[0], -t0[1]), arrowHead(M1[0], M1[1], t1[0], t1[1]));
+      const Mid = at(a0 + m.sweep / 2, R + 2.5);
+      let rot = (Math.atan2(Mid[1] - cy, Mid[0] - cx) * 180) / Math.PI + 90;
+      if (rot > 90) rot -= 180;
+      if (rot <= -90) rot += 180;
+      g.append(text(Mid[0], Mid[1], rot));
+      return g;
+    }
     if (m.kind === "dia" || m.kind === "rad") {
       const [cx, cy] = xf.to(m.circle.cx, m.circle.cy);
       const r = m.circle.r * v.scale;
@@ -1095,7 +1134,7 @@ export class DrawingEditor {
     else { const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1; const n = [-dy / L, dx / L]; A1 = [A[0] + n[0] * off, A[1] + n[1] * off]; B1 = [B[0] + n[0] * off, B[1] + n[1] * off]; }
     if (m.ord) {
       // Koordinatenmaß: nur Hilfslinie bis zur Maßreihe, Wert am Ende (Nullpunkt „0“)
-      const sg = Math.sign(off) || 1, tw = textWidth(txt);
+      const sg = Math.sign(off) || 1, tw = textWidth(txt) * ((this.dimText || 3.5) / 3.5);
       const P = m.kind === "h" ? [B[0], B1[1]] : [B1[0], B[1]];
       const d0 = Math.hypot(P[0] - B[0], P[1] - B[1]);
       if (d0 > 0.5) { const ex = (P[0] - B[0]) / d0, ey = (P[1] - B[1]) / d0; g.append(svgEl("path", { d: `M${r3(B[0] + ex)} ${r3(B[1] + ey)}L${r3(P[0])} ${r3(P[1])}` })); }
@@ -1111,7 +1150,7 @@ export class DrawingEditor {
     const dx = B1[0] - A1[0], dy = B1[1] - A1[1], L = Math.hypot(dx, dy) || 1;
     const ux = dx / L, uy = dy / L;
     // enge Maße (DIN 406-11): Pfeile von außen, Text neben die Maßlinie
-    const tight = L < 7, tw = textWidth(txt), outside = L < tw + 7;
+    const tight = L < 7, tw = textWidth(txt) * ((this.dimText || 3.5) / 3.5), outside = L < tw + 7;
     const tail = tight ? 4 : 0, far = outside ? tw + 3 : 0;
     const P0 = [A1[0] - ux * tail, A1[1] - uy * tail], P1 = [B1[0] + ux * Math.max(tail, far), B1[1] + uy * Math.max(tail, far)];
     g.append(svgEl("path", { d: ext(A, A1) + ext(B, B1) + `M${r3(P0[0])} ${r3(P0[1])}L${r3(P1[0])} ${r3(P1[1])}` }));
@@ -1128,7 +1167,12 @@ export class DrawingEditor {
   // ---------- Positionsnummern und Stückliste (nur Baugruppen) ----------
   bomRowsOf(d = this.doc) {
     const src = d?.source && this.app.doc(d.source.id);
-    return src?.kind === "assembly" ? bomRows(this.app, src) : [];
+    if (src?.kind !== "assembly") return [];
+    const rows = bomRows(this.app, src);
+    if (!d.posOrder?.length) return rows;
+    // eigene Reihenfolge der Zeichnung (neu nummeriert); unbekannte Zeilen und Normteile dahinter
+    const rank = (r) => { const i = r.part ? d.posOrder.indexOf(r.part.id) : -1; return i < 0 ? Infinity : i; };
+    return rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map(({ r }, i) => ({ ...r, pos: i + 1 }));
   }
   /** Ein Kreis je Stücklisten-Position in der gewählten Ansicht (sonst Isometrie), rund um die Ansicht verteilt */
   autoBalloons() {
@@ -1220,7 +1264,8 @@ export class DrawingEditor {
   /** Stückliste über dem Schriftfeld (DIN-Art: Kopf unten, Pos. 1 direkt darüber) */
   bomTableSvg(rows, W, H) {
     const cols = [["Pos", 12], ["Benennung", 64], ["Sachnummer", 34], ["Menge", 14], ["Werkstoff", 36], ["Masse kg", 20]];
-    const rh = 6, x0 = W - 10 - 180, yb = H - 10 - 46;
+    // über dem Schriftfeld; mit Zusatzfeldern der Vorlage (FU12) eine Zeile höher
+    const rh = 6, x0 = W - 10 - 180, yb = H - 10 - 46 - (this.template().extra.length ? 9 : 0);
     const g = svgEl("g", { "data-bom": "1", fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
     const top = yb - rh * (rows.length + 1);
     g.append(svgEl("rect", { x: x0, y: r3(top), width: 180, height: r3(rh * (rows.length + 1)), "stroke-width": LW.frame }));
@@ -1276,7 +1321,20 @@ export class DrawingEditor {
       material = mats.length === 1 ? mats[0] : mats.length ? "siehe Stückliste" : "";
     }
     const halbzeug = t.halbzeug || this.profileOf(d)?.text || "";
-    label(x0, y0, "Firma"); value(x0, y0 + 8.4, t.firma, 3);
+    const tpl = this.template();
+    // Firmenlogo (FU12) links im Feld »Firma«, Firmenname rechts daneben
+    if (tpl.logo) g.append(svgEl("image", { href: tpl.logo, x: x0 + 1, y: y0 + 2.6, width: 16, height: 7, preserveAspectRatio: "xMinYMid meet" }));
+    label(x0, y0, "Firma"); value(x0 + (tpl.logo ? 16 : 0), y0 + 8.4, (t.firma || "").split("\n")[0], 3);
+    // Zusatzfelder der Vorlage als Zeile über dem Schriftfeld
+    const extra = extraFields(tpl, t);
+    if (extra.length) {
+      const wx = 180 / extra.length;
+      g.append(svgEl("rect", { x: x0, y: y0 - 9, width: 180, height: 9, "stroke-width": LW.frame }));
+      extra.forEach((f, i) => {
+        if (i) line(x0 + i * wx, y0 - 9, x0 + i * wx, y0);
+        label(x0 + i * wx, y0 - 9, f.label); value(x0 + i * wx, y0 - 1.6, f.value, 3);
+      });
+    }
     label(x0 + 50, y0, "Halbzeug"); value(x0 + 50, y0 + 8.4, halbzeug, halbzeug.length > 38 ? 2.5 : 3);
     label(x0 + 120, y0, "Werkstoff"); value(x0 + 120, y0 + 8.4, t.werkstoff && !autoLabels.has(t.werkstoff) ? t.werkstoff : material || t.werkstoff, 3);
     label(x0, y0 + 10, "Allgemeintoleranz"); value(x0, y0 + 18.4, t.toleranz || "ISO 2768-m", 3);
@@ -1352,9 +1410,10 @@ export class DrawingEditor {
   setTool(t) {
     this.tool = t;
     this.pendingDim = null;
+    this.pendingChain = null;
     if (t !== "aux") this.pendingAux = null;
     if (t !== "breakout") this.pendingBo = null;
-    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : "");
+    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : t === "chain" ? "Kettenmaß: Punkte der Reihe nach anklicken, nach dem zweiten Punkt die Lage der Maßreihe; Esc beendet" : t === "base" ? "Bezugsmaß: Bezugspunkt, dann weitere Punkte anklicken, nach dem zweiten Punkt die Lage; Esc beendet" : t === "arclen" ? "Bogenlänge: Bogen in einer Ansicht anklicken" : t === "center" ? "Mittelpunkt: Kreis oder Bogen anklicken (nochmal klicken entfernt)" : "");
     this.app.ribbon.render();
     this.render();
   }
@@ -1379,6 +1438,9 @@ export class DrawingEditor {
       if (e.button === 1 || e.button === 2) { drag = { kind: "pan", x: e.clientX, y: e.clientY, pan: [...this.pan] }; st.setPointerCapture(e.pointerId); e.preventDefault(); return; }
       if (e.button !== 0) return;
       if (this.tool === "dim") return this.dimClick(sx, sy);
+      if (this.tool === "chain" || this.tool === "base") return this.chainClick(sx, sy);
+      if (this.tool === "arclen") return this.arcLenClick(sx, sy);
+      if (this.tool === "center") return this.centerClick(sx, sy);
       if (this.tool === "text") return this.textClick(sx, sy);
       if (this.tool === "detail") return this.detailClick(sx, sy);
       if (this.tool === "aux") return this.auxClick(sx, sy);
@@ -1461,6 +1523,11 @@ export class DrawingEditor {
         this.render();
         return;
       }
+      if (this.tool === "chain" || this.tool === "base") {
+        const s = this.snapAt(sx, sy);
+        this.snapMark = s ? s.s : null;
+        this.render();
+      }
       if (this.tool === "dim") {
         const s = this.snapAt(sx, sy);
         this.snapMark = s ? s.s : null;
@@ -1485,6 +1552,143 @@ export class DrawingEditor {
       const symEl = e.target.closest("[data-symbol]");
       if (symEl) { const y = this.doc.symbols.find((x) => x.id === symEl.getAttribute("data-symbol")); if (y) this.symbolDialog(y, false); }
     });
+  }
+  /** Ketten- und Bezugsmaß (FU11): Punkte sammeln, nach dem zweiten die Lage der Reihe, dann laufend ergänzen */
+  chainClick(sx, sy) {
+    const d = this.doc;
+    const pc = this.pendingChain;
+    const mode = this.tool === "base" ? "bezug" : "kette";
+    if (pc?.placing) {
+      const v = d.views.find((x) => x.id === pc.view);
+      pc.off = this.offsetFor({ kind: pc.kind, p1: pc.pts[0], p2: pc.pts[1] }, this.viewXf(v), sx, sy) || 10;
+      pc.placing = false;
+      this.updateChain(mode);
+      return;
+    }
+    const s = this.snapAt(sx, sy);
+    if (!s) return;
+    if (!pc) { this.pendingChain = { view: s.view, pts: [s.p], ids: [] }; this.render(); return; }
+    if (s.view !== pc.view) { toast("Alle Punkte müssen in derselben Ansicht liegen"); return; }
+    pc.pts.push(s.p);
+    if (pc.pts.length === 2) {
+      const [a, b] = pc.pts;
+      pc.kind = Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? "h" : "v";
+      pc.placing = true;
+      this.app.setHint("Lage der Maßreihe klicken");
+      this.render();
+      return;
+    }
+    this.updateChain(mode);
+  }
+  /** Maße der laufenden Kette neu erzeugen (ersetzt die bisher erzeugten) */
+  updateChain(mode) {
+    const d = this.doc, pc = this.pendingChain;
+    const list = chainDims(pc.pts, { kind: pc.kind, mode, off: pc.off }).map((m) => ({ id: uid("m"), view: pc.view, ...m, fixedKind: true }));
+    this.app.edit(mode === "bezug" ? "Bezugsmaß" : "Kettenmaß", () => {
+      d.dims = (d.dims || []).filter((m) => !pc.ids.includes(m.id)).concat(list);
+    }, { rebuild: false });
+    pc.ids = list.map((m) => m.id);
+    this.app.setHint((mode === "bezug" ? "Bezugsmaß" : "Kettenmaß") + ": weitere Punkte anklicken, Esc beendet");
+    this.render();
+  }
+  /** Bogen unter dem Mauszeiger (auch Teilbögen) mit Winkeln in Ansichtskoordinaten */
+  arcAt(sx, sy) {
+    const d = this.doc;
+    for (const v of d.views) {
+      if (v.type === "iso") continue;
+      const p = this.viewGeom(v);
+      if (!p) continue;
+      const xf = this.viewXf(v);
+      for (const a of p.arcs || []) {
+        const [x, y] = xf.to(a.cx, a.cy);
+        if (Math.abs(Math.hypot(x - sx, y - sy) - a.r * v.scale) < 1.5 / this.zoom) return { view: v, arc: a };
+      }
+    }
+    return null;
+  }
+  arcLenClick(sx, sy) {
+    const hit = this.arcAt(sx, sy);
+    if (!hit) return;
+    const { view, arc } = hit;
+    if (arc.full) return toast("Vollkreis: Durchmesser bemaßen");
+    const a0 = Number.isFinite(arc.a0) ? arc.a0 : 0, a1 = Number.isFinite(arc.a1) ? arc.a1 : a0 + (arc.sweep || 0);
+    const d = this.doc;
+    const m = { id: uid("m"), view: view.id, kind: "arc", circle: { cx: arc.cx, cy: arc.cy, r: arc.r }, a0: Math.min(a0, a1), sweep: Math.abs(a1 - a0), off: 8 };
+    this.app.edit("Bogenlänge", () => { (d.dims = d.dims || []).push(m); }, { rebuild: false });
+    this.render();
+  }
+  /** Mittelpunktmarkierung von Hand (auch für Bögen), zweiter Klick entfernt sie */
+  centerClick(sx, sy) {
+    const hit = this.arcAt(sx, sy);
+    if (!hit) return;
+    const d = this.doc, { view, arc } = hit;
+    const same = (c) => c.view === view.id && Math.hypot(c.cx - arc.cx, c.cy - arc.cy) < 1e-6;
+    this.app.edit("Mittelpunkt", () => {
+      if ((d.centerMarks || []).some(same)) { d.centerMarks = d.centerMarks.filter((c) => !same(c)); if (!d.centerMarks.length) delete d.centerMarks; }
+      else (d.centerMarks = d.centerMarks || []).push({ id: uid("cm"), view: view.id, cx: arc.cx, cy: arc.cy, r: arc.r });
+    }, { rebuild: false });
+    this.render();
+  }
+  renderCenterMarks(d) {
+    const parts = [];
+    for (const c of d.centerMarks || []) {
+      const v = d.views.find((x) => x.id === c.view);
+      if (!v || !this.proj.get(v.id)) continue;
+      const [x, y] = this.viewXf(v).to(c.cx, c.cy);
+      const r = c.r * v.scale + 2;
+      parts.push(`M${r3(x - r)} ${r3(y)}H${r3(x + r)}M${r3(x)} ${r3(y - r)}V${r3(y + r)}`);
+    }
+    return parts.length ? svgEl("path", { d: parts.join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.thin, "stroke-dasharray": "6 1 1 1" }) : null;
+  }
+  /** Waagrechte und senkrechte Maße je Ansicht in Reihen ausrichten (DIN 406: 10 mm, dann 7 mm) */
+  alignDims() {
+    const d = this.doc;
+    const changes = new Map();
+    for (const v of d.views) {
+      const xf = this.viewXf(v);
+      for (const kind of ["h", "v"]) {
+        const k = kind === "h" ? 1 : 0, along = 1 - k;
+        const items = (d.dims || []).filter((m) => m.view === v.id && m.kind === kind && !m.ord && m.p1 && m.p2).map((m) => {
+          const A = xf.to(...m.p1), B = xf.to(...m.p2), side = (m.off ?? 10) >= 0 ? 1 : -1;
+          return { id: m.id, side, edge: side > 0 ? Math.max(A[k], B[k]) : Math.min(A[k], B[k]), lo: Math.min(A[along], B[along]), hi: Math.max(A[along], B[along]) };
+        });
+        const pos = alignRows(items);
+        for (const it of items) changes.set(it.id, pos.get(it.id) - it.edge);
+      }
+    }
+    if (!changes.size) return toast("Keine waagrechten oder senkrechten Maße zum Ausrichten");
+    this.app.edit("Maße ausrichten", () => { for (const m of d.dims) if (changes.has(m.id)) m.off = Math.round(changes.get(m.id) * 100) / 100; }, { rebuild: false });
+    this.render();
+    toast(`${changes.size} Maße in Reihen ausgerichtet`, { kind: "ok" });
+  }
+  /** Positionsnummern im Uhrzeigersinn neu nummerieren (Reihenfolge gilt für Stückliste dieser Zeichnung) */
+  renumberBalloons() {
+    const d = this.doc;
+    if (!d.balloons?.length) return toast("Erst Positionsnummern setzen");
+    const v = d.views.find((x) => x.id === d.balloons[0].view);
+    const xf = v && this.viewXf(v);
+    const c = xf ? xf.to((xf.bb.x0 + xf.bb.x1) / 2, (xf.bb.y0 + xf.bb.y1) / 2) : [0, 0];
+    const order = clockwiseOrder(d.balloons.map((b) => ({ key: b.part, at: b.at })), c);
+    this.app.edit("Positionen neu nummerieren", () => { d.posOrder = order; }, { rebuild: false });
+    this.render();
+    toast("Positionen im Uhrzeigersinn neu nummeriert – die Stückliste der Zeichnung folgt", { kind: "ok" });
+  }
+  /** Positionsnummern an den Seiten der Ansicht in Reihen ausrichten */
+  alignBalloonRows() {
+    const d = this.doc;
+    if (!d.balloons?.length) return toast("Erst Positionsnummern setzen");
+    const [W, H] = this.sheetSize(d);
+    const moved = new Map();
+    for (const v of d.views) {
+      const list = d.balloons.filter((b) => b.view === v.id);
+      if (!list.length) continue;
+      const xf = this.viewXf(v);
+      const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
+      const pos = alignBalloons(list.map((b) => ({ key: b.id, at: b.at })), { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) });
+      for (const [k, [x, y]] of pos) moved.set(k, [Math.min(W - 15, Math.max(25, x)), Math.min(H - 15, Math.max(15, y))]);
+    }
+    this.app.edit("Positionsnummern ausrichten", () => { for (const b of d.balloons) if (moved.has(b.id)) b.at = moved.get(b.id); }, { rebuild: false });
+    this.render();
   }
   offsetFor(m, xf, sx, sy) {
     const A = xf.to(...m.p1), B = xf.to(...m.p2);
@@ -1677,7 +1881,7 @@ export class DrawingEditor {
     this.app.tree.render();
   }
   key(e) {
-    if (e.key === "Escape") { if (this.tool || this.pendingDim) { this.setTool(null); return true; } if (this.sel) { this.select(null); return true; } return false; }
+    if (e.key === "Escape") { if (this.tool || this.pendingDim || this.pendingChain) { this.setTool(null); return true; } if (this.sel) { this.select(null); return true; } return false; }
     if (e.key === "Delete" && this.sel) {
       const d = this.doc;
       if (this.sel.type === "view") this.deleteView(this.sel.id);
@@ -1691,6 +1895,46 @@ export class DrawingEditor {
       return true;
     }
     return false;
+  }
+  /** Eigene Zeichnungsvorlage (FU12): gilt als Vorgabe für neue Zeichnungen und für dieses Projekt */
+  templateDialog() {
+    const app = this.app;
+    const cur = templateOf(app.project.drawingTemplate || app.prefs.get("zeichnung.vorlage"));
+    const v = { ...cur, extra: cur.extra.map((f) => ({ ...f })) };
+    const inp = (val, ph) => h("input", { class: "inp", value: val || "", placeholder: ph || "" });
+    const firma = h("textarea", { class: "inp", rows: 2, placeholder: "Firma (erste Zeile steht im Schriftfeld)" });
+    firma.value = v.firma;
+    const erst = inp(v.ersteller, "Kürzel oder Name");
+    const lg = h("select", { class: "inp" }, ...Object.keys(LINE_GROUPS).map((k) => h("option", { value: k, selected: k === v.lineGroup }, `Liniengruppe ${k.replace(".", ",")}${k === "0.5" ? " (Standard)" : ""}`)));
+    const dt = h("select", { class: "inp" }, ...DIM_TEXT_SIZES.map((x) => h("option", { value: x, selected: x === v.dimText }, String(x).replace(".", ",") + " mm")));
+    const logoBox = h("div", { class: "btn-row" });
+    const drawLogo = () => logoBox.replaceChildren(
+      v.logo ? h("img", { src: v.logo, style: { height: "28px", border: "1px solid var(--steel-2)" } }) : h("span", { class: "hint" }, "kein Logo"),
+      h("button", { class: "btn", onclick: async () => { const im = await app.files.pickImage(); if (im) { v.logo = await shrinkLogo(im.src); drawLogo(); } } }, "Logo wählen…"),
+      v.logo ? h("button", { class: "btn", onclick: () => { v.logo = null; drawLogo(); } }, "Entfernen") : null);
+    drawLogo();
+    const rows = Array.from({ length: MAX_EXTRA }, (_, i) => [inp(v.extra[i]?.label, "Bezeichnung, z. B. Auftrag"), inp(v.extra[i]?.value, "Vorgabewert")]);
+    const f = (label, el) => h("div", { class: "field wide" }, h("label", {}, label), el);
+    modal({ title: "Zeichnungsvorlage", width: "560px",
+      body: h("div", { class: "template-dialog" },
+        h("p", { class: "hint" }, "Gilt für neue Zeichnungen und wird mit dem Projekt gespeichert. Logo und Zusatzfelder erscheinen im Schriftfeld."),
+        f("Firma", firma), f("Gezeichnet", erst), f("Logo", logoBox), f("Linienbreiten", lg), f("Maßzahlhöhe", dt),
+        h("h4", {}, "Zusatzfelder im Schriftfeld"), ...rows.map(([a, b]) => h("div", { class: "btn-row" }, a, b))),
+      buttons: [{ label: "Abbrechen" }, { label: "Speichern", primary: true, run: () => {
+        const val = { firma: firma.value, ersteller: erst.value.trim(), logo: v.logo, lineGroup: lg.value, dimText: Number(dt.value),
+          extra: rows.map(([a, b]) => ({ label: a.value.trim(), value: b.value })).filter((x) => x.label) };
+        const r = validateTemplate(val);
+        if (!r.ok) { toast(r.error, { kind: "err" }); return false; }
+        app.prefs.set("zeichnung.vorlage", r.value);
+        app.edit("Zeichnungsvorlage", () => {
+          app.project.drawingTemplate = r.value;
+          // Firma und Ersteller in Zeichnungen ohne eigenen Eintrag übernehmen
+          for (const x of app.project.docs) if (x.kind === "drawing") { x.title.firma = x.title.firma || r.value.firma; x.title.ersteller = x.title.ersteller || r.value.ersteller; }
+        }, { rebuild: false });
+        this.render();
+        app.props.render();
+        toast("Zeichnungsvorlage gespeichert", { kind: "ok" });
+      } }] });
   }
   fitSheet() {
     const d = this.doc;
@@ -1768,7 +2012,9 @@ export class DrawingEditor {
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.chooseSource() }, "Quelle wählen"), h("button", { class: "btn", onclick: () => this.autoViews() }, "Grundansichten neu"))));
     const t = d.title;
     const T = (label, key, area) => P.text(label, t[key], (v) => app.edit(label, () => { t[key] = v; }, { rebuild: false }), { area });
-    out.push(P.section("Schriftfeld", T("Benennung", "benennung"), T("Zeichnungsnr.", "nummer"), T("Halbzeug", "halbzeug"), T("Werkstoff", "werkstoff"), T("Masse", "masse"), h("p", { class: "hint" }, "Halbzeug, Werkstoff und Masse leer lassen: sie kommen dann automatisch aus dem Modell."), T("Maßstab", "massstab"), T("Allgemeintol.", "toleranz"), T("Firma", "firma"), T("Gezeichnet", "ersteller"), T("Datum", "datum"), T("Revision", "revision"), T("Blatt", "blatt")));
+    out.push(P.section("Schriftfeld", T("Benennung", "benennung"), T("Zeichnungsnr.", "nummer"), T("Halbzeug", "halbzeug"), T("Werkstoff", "werkstoff"), T("Masse", "masse"), h("p", { class: "hint" }, "Halbzeug, Werkstoff und Masse leer lassen: sie kommen dann automatisch aus dem Modell."), T("Maßstab", "massstab"), T("Allgemeintol.", "toleranz"), T("Firma", "firma"), T("Gezeichnet", "ersteller"), T("Datum", "datum"), T("Revision", "revision"), T("Blatt", "blatt"),
+      ...extraFields(this.template(), t).map((f) => P.text(f.label, f.value, (v) => app.edit(f.label, () => { t.extra = { ...(t.extra || {}), [f.label]: v }; }, { rebuild: false }))),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.templateDialog() }, "Zeichnungsvorlage…"))));
     const revs = d.revisions || [];
     out.push(P.section("Änderungen",
       revs.length ? h("dl", { class: "kv" }, ...revs.flatMap((r, i) => [h("dt", {}, r.rev), h("dd", {}, `${r.text} (${r.datum || "–"}) `, h("button", { class: "btn", title: "Zeile löschen", onclick: () => { app.edit("Änderung löschen", () => { d.revisions = revs.filter((_, k) => k !== i); }, { rebuild: false }); this.render(); app.props.render(); } }, "×"))]))
@@ -1870,6 +2116,13 @@ export class DrawingEditor {
         w.line(x - r, Y(y), x + r, Y(y), "MITTELLINIE").line(x, Y(y - r), x, Y(y + r), "MITTELLINIE");
       }
     }
+    for (const c of d.centerMarks || []) {
+      const v = d.views.find((x) => x.id === c.view);
+      if (!v || !this.proj.get(v.id)) continue;
+      const [x, y] = this.viewXf(v).to(c.cx, c.cy);
+      const r = c.r * v.scale + 2;
+      w.line(x - r, Y(y), x + r, Y(y), "MITTELLINIE").line(x, Y(y - r), x, Y(y + r), "MITTELLINIE");
+    }
     // Maße als Linien + Text (aus SVG-Geometrie)
     for (const m of d.dims) {
       const g = this.renderDim(d, m, false);
@@ -1923,3 +2176,13 @@ export class DrawingEditor {
 }
 const r3 = (x) => Math.round(x * 1000) / 1000;
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
+
+/** Logo auf höchstens 600 Pixel Breite verkleinern (PNG), damit Vorlage und Projektdatei klein bleiben */
+async function shrinkLogo(src) {
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  const k = Math.min(1, 600 / img.naturalWidth, 240 / img.naturalHeight);
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(img.naturalWidth * k)); cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+  cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+  return cv.toDataURL("image/png");
+}

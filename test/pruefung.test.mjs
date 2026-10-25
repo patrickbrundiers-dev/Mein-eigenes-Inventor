@@ -18,6 +18,8 @@ test("Featurefehler und -warnungen mit Feature-Namen", () => {
   ]);
   assert.equal(featureProblems(p, { bodies: [], status: {} })[0].text, "Bauteil hat keinen Körper");
   assert.deepEqual(featureProblems(p, undefined), []);
+  assert.deepEqual(featureProblems(p, { bodies: [{}], status: { x: { ok: true, rolledBack: true }, y: { ok: true, rolledBack: true } } }).map((x) => [x.level, x.text]),
+    [[WARNUNG, "Bauteilende zurückgezogen – 2 Features werden nicht gerechnet"]]);
 });
 
 test("Problemliste des Projekts: fehlende Verweise, Features, Fertigungsprüfung; Fehler zuerst", () => {

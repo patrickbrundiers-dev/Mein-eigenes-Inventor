@@ -1,5 +1,6 @@
 // 3D-Ansicht: Darstellung, Kamera, ViewCube, Auswahl von Flächen/Kanten
 import * as THREE from "three";
+import { textPolylines } from "../core/schrift.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { placementMatrix, toWorld } from "../core/geom.js";
@@ -592,6 +593,8 @@ export class Viewer {
           if (!c || !a) continue;
           const q = ellipseSamples(ellipseGeom(c, a, e.r), 64);
           for (let i = 0; i < q.length; i++) { const u = q[i], v = q[(i + 1) % q.length]; target.push(W(u[0], u[1]), W(v[0], v[1])); }
+        } else if (e.type === "text") {
+          for (const q of textPolylines(e, pts.get(e.p), null, 4)) for (let i = 0; i + 1 < q.length; i++) target.push(W(q[i][0], q[i][1]), W(q[i + 1][0], q[i + 1][1]));
         } else if (e.type === "point" && !e.construction) {
           const p = pts.get(e.p);
           const s = 3 / Math.max(0.01, this.pixelsPerUnit());

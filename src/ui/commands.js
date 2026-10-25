@@ -2,6 +2,7 @@
 import { h, toast } from "./dom.js";
 import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
 import { problemsDialog } from "./pruefung.js";
+import { saveVersion, versionsDialog } from "./versionen.js";
 
 /** id → Funktion. Ribbon-Aktionen werden wiederverwendet, damit Knopf und Kürzel dasselbe tun. */
 export function commandRunners(app) {
@@ -12,6 +13,8 @@ export function commandRunners(app) {
     "file.open": () => app.files.open(),
     "file.save": () => app.files.save(false),
     "file.saveAs": () => app.files.save(true),
+    "file.versionSave": () => saveVersion(app),
+    "file.versions": () => versionsDialog(app),
     "file.newPart": () => app.newPart(),
     "file.listsXlsx": () => app.files.exportListsXlsx(),
     "file.mappe": () => app.files.exportMappe(),
@@ -35,6 +38,7 @@ export function commandRunners(app) {
     "view.normal": () => app.viewNormalToFace(),
     "view.saveNamed": () => app.saveNamedView(),
     "view.named": () => app.namedViewsMenu(),
+    "view.compColors": () => app.toggleCompColors(),
     "view.perspective": () => app.prefs.set("ansicht.projektion", app.viewer.perspective ? "orthogonal" : "perspektive"),
     "view.clipX": () => app.toggleClip("X"),
     "view.clipY": () => app.toggleClip("Y"),
@@ -59,6 +63,7 @@ export function commandRunners(app) {
     "sketch.importDxf": () => app.sketcher.importDxfDialog(),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
+    "asm.replace": () => (app.sel?.type === "component" ? app.props.replaceComponentDialog(app.sel.id) : toast("Erst eine Komponente im Baum wählen")),
     "asm.normteil": r("normteilAsm"),
     "asm.align": r("align"),
     "asm.alignFlush": r("alignFlush"),

@@ -1,4 +1,5 @@
 // Öffnen, Speichern, Import/Export – über die Electron-Brücke oder im Browser per Download
+import { pruneImages } from "../core/skizzenbild.js";
 import { toast, choiceDialog, downloadBlob, h, modal } from "./dom.js";
 import { sketchToDxf, DxfWriter } from "../core/dxf.js";
 import { planKantteil, kantteilFlatDxf, splitList } from "../core/blech.js";
@@ -16,6 +17,7 @@ import { decomposePlacement } from "../core/geom.js";
 import { buildXlsx, zipFiles } from "../core/xlsx.js";
 import { mappeHtml, listPages, mappeName } from "../core/mappe.js";
 import { checkBeforeMappe, openPointsPage } from "./pruefung.js";
+import { partTextVars } from "../core/schrift.js";
 import { releaseText } from "../core/pruefung.js";
 import { angebotPage } from "../core/angebot.js";
 import { bendListCsv } from "../core/biegerohr.js";
@@ -33,7 +35,16 @@ export class Files {
   get bridge() { return window.werkcad || null; }
 
   // ---------- Projekt ----------
-  serialize() { this.app.embedMaterials(); return serializeProject(this.app.project); }
+  serialize() {
+    this.app.embedMaterials();
+    // Skizzenbilder (FU2), die keine Skizze mehr nutzt, nicht mitspeichern – im Speicher bleiben sie für Rückgängig
+    const prj = this.app.project, imgs = prj.images;
+    if (!imgs) return serializeProject(prj);
+    const copy = { images: { ...imgs }, docs: prj.docs };
+    pruneImages(copy);
+    if (copy.images) prj.images = copy.images; else delete prj.images;
+    try { return serializeProject(prj); } finally { prj.images = imgs; }
+  }
   /** Datei lesen, prüfen, ggf. migrieren; Hinweise (keine Fehler) kommen in `issues` */
   parse(text) { return loadProject(text); }
   async confirmDiscard() {
@@ -184,16 +195,14 @@ export class Files {
     downloadBlob(new Blob([text], { type: "application/json" }), name);
     return name;
   }
-  /** Assembly: Bauteil aus einer anderen .wcad-Datei verknüpft einfügen */
-  async linkPartFromFile() {
-    const app = this.app, asm = app.activeDoc();
-    if (asm?.kind !== "assembly") return toast("Erst eine Baugruppe öffnen");
+  /** Bauteil aus einer anderen .wcad-Datei wählen → { f, remotePrj, remote } oder null */
+  async pickLinkedPart() {
     const f = await this.pickProjectFile();
-    if (!f) return;
+    if (!f) return null;
     let remotePrj;
-    try { remotePrj = parseProject(f.text); } catch (e) { return toast("Datei nicht lesbar: " + e.message, { kind: "err" }); }
+    try { remotePrj = parseProject(f.text); } catch (e) { toast("Datei nicht lesbar: " + e.message, { kind: "err" }); return null; }
     const parts = remotePrj.docs.filter((d) => d.kind === "part");
-    if (!parts.length) return toast(`${baseName(f.path)} enthält kein Bauteil`);
+    if (!parts.length) { toast(`${baseName(f.path)} enthält kein Bauteil`); return null; }
     let remote = parts[0];
     if (parts.length > 1) {
       remote = await new Promise((res) => {
@@ -201,15 +210,28 @@ export class Files {
         modal({ title: "Bauteil wählen", width: "460px", body: h("div", {}, h("p", {}, `${baseName(f.path)} enthält ${parts.length} Bauteile.`), sel),
           buttons: [{ label: "Abbrechen", value: null }, { label: "Verknüpfen", primary: true, run: () => parts[Number(sel.value)] }], onClose: (v) => res(v || null) });
       });
-      if (!remote) return;
+      if (!remote) return null;
     }
+    return { f, remotePrj, remote };
+  }
+  /** Dokument zu einer Auswahl aus pickLinkedPart: vorhandene Verknüpfung oder neu (innerhalb von app.edit aufrufen) */
+  linkedDoc({ f, remotePrj, remote }) {
+    const app = this.app;
     const existing = app.project.docs.find((d) => d.kind === "part" && d.link && d.link.docId === remote.id && d.link.path === f.path);
+    if (existing) return existing;
+    const doc = applyLinked(app.project, { id: uid("p"), link: makeLink(f.path, remote, app.filePath) }, remotePrj, remote).doc;
+    app.project.docs.push(doc);
+    return doc;
+  }
+  /** Assembly: Bauteil aus einer anderen .wcad-Datei verknüpft einfügen */
+  async linkPartFromFile() {
+    const app = this.app, asm = app.activeDoc();
+    if (asm?.kind !== "assembly") return toast("Erst eine Baugruppe öffnen");
+    const pick = await this.pickLinkedPart();
+    if (!pick) return;
+    const { f, remote } = pick;
     app.edit("Bauteil verknüpfen", () => {
-      let doc = existing;
-      if (!doc) {
-        doc = applyLinked(app.project, { id: uid("p"), link: makeLink(f.path, remote, app.filePath) }, remotePrj, remote).doc;
-        app.project.docs.push(doc);
-      }
+      const doc = this.linkedDoc(pick);
       const n = asm.components.filter((c) => c.part === doc.id).length;
       asm.components.push({ id: uid("c"), part: doc.id, name: `${doc.name}:${n + 1}`, pos: [0, 0, 0], rot: [0, 0, 0], fixed: asm.components.length === 0 });
     }, { link: true });
@@ -561,7 +583,7 @@ export class Files {
     const sid = id || (app.sel?.type === "feature" && app.feature(app.sel.id)?.type === "sketch" ? app.sel.id : app.mode === "sketch" ? app.sketcher.sketchId : app.lastSketchId());
     const sk = part.features.find((f) => f.id === sid);
     if (!sk) return toast("Keine Skizze gewählt");
-    await this.saveText(sketchToDxf(sk), `${safeName(part.name)}_${safeName(sk.name)}.dxf`, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
+    await this.saveText(sketchToDxf(sk, { vars: partTextVars(part) }), `${safeName(part.name)}_${safeName(sk.name)}.dxf`, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
   }
 
   // ---------- Import ----------
@@ -571,6 +593,34 @@ export class Files {
     if (!f) return null;
     const isStl = /\.stl$/i.test(f.name);
     return { name: f.name, data: isStl ? bytesToBase64(new Uint8Array(await f.arrayBuffer())) : await f.text(), binary: isStl };
+  }
+  /**
+   * Bild für die Skizze wählen (FU2) → { name, src (data-URL), px: [Breite, Höhe] } oder null.
+   * Große Bilder werden auf höchstens 2000 Pixel verkleinert, damit die Projektdatei klein bleibt.
+   */
+  async pickImage() {
+    const f = await pickFile(".png,.jpg,.jpeg,image/png,image/jpeg");
+    if (!f) return null;
+    const url = URL.createObjectURL(f);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Bild nicht lesbar")); i.src = url; });
+      const k = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * k)), hh = Math.max(1, Math.round(img.naturalHeight * k));
+      const cv = document.createElement("canvas");
+      cv.width = w; cv.height = hh;
+      cv.getContext("2d").drawImage(img, 0, 0, w, hh);
+      const jpg = /\.jpe?g$/i.test(f.name) || f.type === "image/jpeg";
+      return { name: f.name, src: cv.toDataURL(jpg ? "image/jpeg" : "image/png", 0.85), px: [w, hh] };
+    } catch (e) {
+      toast(`${f.name}: ${e.message}`, { kind: "err" });
+      return null;
+    } finally { URL.revokeObjectURL(url); }
+  }
+  /** CSV-Datei wählen → { name, text } */
+  async pickCsv() {
+    if (this.bridge) { const f = await this.bridge.openFile({ filters: [{ name: "CSV", extensions: ["csv", "txt"] }] }); return f && { name: f.name, text: f.data }; }
+    const f = await pickFile(".csv,.txt,text/csv");
+    return f && { name: f.name, text: await f.text() };
   }
   /** DXF-Datei wählen → { name, text } */
   async pickDxf() {

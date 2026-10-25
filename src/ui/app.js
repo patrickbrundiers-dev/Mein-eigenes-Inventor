@@ -37,6 +37,9 @@ import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generato
 import { groupParts } from "../core/genteil.js";
 import { gestellPlan } from "../core/gestell.js";
 import { refreshAllGestelle, gestellPick, skeletonSegs } from "./gestell.js";
+import { insertFeature, beforeDelete, setEnd } from "../core/bauteilende.js";
+import { colorMap } from "../core/komponentenfarben.js";
+import { templateOf, isCustomTemplate } from "../core/zeichnungsvorlage.js";
 
 const linkedMessage = (part) => `»${part.name}« ist mit ${baseName(part.link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`;
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
@@ -150,6 +153,11 @@ export class App {
   /** Allgemeintoleranz und Nachkommastellen neuer Zeichnungen aus den Einstellungen */
   withDrawingDefaults(d) {
     d.title.toleranz = classText(this.prefs.get("dokument.toleranzklasse"));
+    // Zeichnungsvorlage (FU12): Firma und Ersteller; Logo, Zusatzfelder und Linien kommen einmal ins Projekt
+    const tpl = templateOf(this.prefs.get("zeichnung.vorlage"));
+    d.title.firma = d.title.firma || tpl.firma;
+    d.title.ersteller = d.title.ersteller || tpl.ersteller;
+    if (isCustomTemplate(tpl) && !this.project.drawingTemplate) this.project.drawingTemplate = JSON.parse(JSON.stringify(tpl));
     d.nachkomma = this.prefs.get("dokument.nachkomma");
     return d;
   }
@@ -292,6 +300,7 @@ export class App {
     this.filePath = filePath;
     this.readOnly = false;
     this.previewDue = filePath || null;
+    this.versionView = null;
     const matIssues = adoptProjectMaterials(prj);
     adoptProjectBendTables(prj);
     this.syncMaterials();
@@ -484,6 +493,11 @@ export class App {
       }
       return [{ id: c.id, partKey: c.part, bodies: this.results.get(c.part)?.bodies, color: p ? this.partColor(p) : "#999", material: p?.material, finish: p?.finish, pos: c.pos, rot: c.rot, opacity: 1 }];
     });
+    // Komponentenfarben (FU16): je Bauteil eine eigene Farbe, ohne Werkstoff- und Oberflächenbild
+    if (this.compColors) {
+      const cm = colorMap(comps.map((c) => c.leaf || c.partKey));
+      for (const c of comps) { c.color = cm.get(c.leaf || c.partKey); c.material = undefined; c.finish = undefined; }
+    }
     this.viewer.showAssembly(comps);
     this.viewer.showSketches([]);
     if (this.fittedFor !== asm.id && comps.length) {
@@ -578,12 +592,13 @@ export class App {
     const sk = newSketch(uid("s"), `Skizze ${n}`, plane);
     sk.offset = offset;
     this.checkpoint("Skizze erstellen");
-    // vor dem Ende-Marker bzw. hinter dem gewählten Feature einfügen
-    part.features.push(sk);
+    // an der Bauteilende-Markierung einfügen (FU5)
+    insertFeature(part, sk);
     this.pick = null;
     this.viewer.clearPlanes();
     this.changed({ rebuild: false });
     this.editSketch(sk.id);
+    return sk;
   }
   editSketch(id) {
     const part = this.activeDoc();
@@ -656,7 +671,7 @@ export class App {
     const n = part.features.filter((x) => x.type === f.type).length + 1;
     f.name = f.name || `${FEATURE_NAMES[f.type] || f.type} ${n}`;
     this.checkpoint(f.name + " hinzufügen");
-    part.features.push(f);
+    insertFeature(part, f);
     if (select) this.selectFeature(f.id);
     this.changed();
     return f;
@@ -687,10 +702,24 @@ export class App {
     const gone = dependents(part.features, id);
     const deps = part.features.filter((g) => g.id !== id && gone.has(g.id));
     this.edit(`${f.name} löschen`, () => {
+      beforeDelete(part, [id, ...deps.map((d) => d.id)]);
       part.features = part.features.filter((g) => g.id !== id && !deps.includes(g));
       if (this.sel?.id === id) this.sel = null;
     });
     if (deps.length) toast(`Abhängige Features ebenfalls gelöscht: ${deps.map((d) => d.name).join(", ")}`);
+  }
+  /** Komponentenfarben ein/aus (nur Anzeige, wird nicht gespeichert) */
+  toggleCompColors() {
+    this.compColors = !this.compColors;
+    const d = this.activeDoc();
+    if (d?.kind === "assembly") this.showAssembly(d);
+    this.ribbon.render();
+  }
+  /** Bauteilende-Markierung setzen (FU5): hinter Feature id, null = ans Ende, "" = vor alle */
+  setPartEnd(id) {
+    const part = this.activeDoc();
+    if (part?.kind !== "part" || this.linkedReadOnly(part)) return;
+    this.edit("Bauteilende", () => setEnd(part, id));
   }
   moveFeature(id, delta) {
     const part = this.activeDoc();
@@ -1101,7 +1130,8 @@ export class App {
   }
   updateTitle() {
     const name = this.filePath ? this.filePath.split(/[\\/]/).pop() : this.project.name;
-    document.title = `${this.dirty ? "• " : ""}${name}${this.readOnly ? " [schreibgeschützt]" : ""} – PBCAD`;
+    const ver = this.versionView ? ` (Version ${this.versionView.n})` : "";
+    document.title = `${this.dirty ? "• " : ""}${name}${ver}${this.readOnly ? " [schreibgeschützt]" : ""} – PBCAD`;
     window.werkcad?.setTitle?.(document.title);
     this.ribbon.renderDocLabel?.();
   }
@@ -1193,6 +1223,9 @@ export class App {
     const d = this.namedViewsDoc();
     if (!d) return toast("Benannte Ansichten gibt es im Bauteil und in der Baugruppe (nicht beim Skizzieren)");
     const st = this.viewer.viewState();
+    // benannter Schnitt (FU18): aktiver 3D-Schnitt wird mit der Ansicht gespeichert
+    const c = this.viewer.clip;
+    if (c) st.clip = { axis: c.axis, offset: c.offset, flip: !!c.flip, min: c.min, max: c.max };
     const list = d.namedViews || [];
     const name = await promptDialog("Ansicht speichern", "Name", `Ansicht ${list.length + 1}`, { ok: "Speichern", validate: (v) => (v ? null : "Bitte einen Namen eingeben") });
     if (!name) return;
@@ -1202,12 +1235,17 @@ export class App {
       if (i >= 0) arr[i] = { name, ...st }; else arr.push({ name, ...st });
     }, { rebuild: false });
     this.ribbon.render();
-    toast(`Ansicht »${name}« gespeichert`);
+    toast(`Ansicht »${name}« gespeichert${st.clip ? ` mit Schnitt ${st.clip.axis} = ${String(st.clip.offset).replace(".", ",")} mm` : ""}`);
   }
   showNamedView(name) {
     const v = this.namedViewsDoc()?.namedViews?.find((x) => x.name === name);
-    if (v) this.viewer.applyViewState(v);
-    return !!v;
+    if (!v) return false;
+    this.viewer.applyViewState(v);
+    // Schnitt mit der Ansicht wiederherstellen; Ansicht ohne Schnitt hebt einen offenen Schnitt auf
+    this.viewer.setClip(v.clip ? { ...v.clip } : null);
+    this.renderClipBar();
+    this.ribbon.render();
+    return true;
   }
   deleteNamedView(name) {
     const d = this.namedViewsDoc();
@@ -1220,9 +1258,9 @@ export class App {
     const list = d?.namedViews || [];
     const r = e?.currentTarget?.getBoundingClientRect?.() || { left: innerWidth / 2, bottom: 120 };
     contextMenu(r.left, r.bottom + 2, [
-      ...list.map((v) => ({ label: v.name, icon: "view", run: () => this.showNamedView(v.name) })),
+      ...list.map((v) => ({ label: v.name + (v.clip ? ` (Schnitt ${v.clip.axis})` : ""), icon: v.clip ? "cut" : "view", run: () => this.showNamedView(v.name) })),
       list.length ? "-" : null,
-      { label: "Aktuelle Ansicht speichern…", icon: "plus", disabled: !d, run: () => this.saveNamedView() },
+      { label: this.viewer.clip ? "Aktuelle Ansicht mit Schnitt speichern…" : "Aktuelle Ansicht speichern…", icon: "plus", disabled: !d, run: () => this.saveNamedView() },
       ...list.map((v) => ({ label: `»${v.name}« löschen`, icon: "trash", run: () => this.deleteNamedView(v.name) })),
     ]);
   }
