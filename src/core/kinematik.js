@@ -10,15 +10,34 @@
 import { placementMatrix, rotationAbout, matMul, decomposePlacement, v3 } from "./geom.js";
 
 /** Neues Gelenk mit Achse (Punkt, Richtung); Winkel 0 = heutige Lage */
-export function defaultJoint(p = [0, 0, 0], d = [0, 0, 1], { min = 0, max = 90, kind = "dreh" } = {}) {
+export function defaultJoint(p = [0, 0, 0], d = [0, 0, 1], { min = 0, max = 90, kind = "dreh", smin = 0, smax = 100 } = {}) {
   if (!(Math.hypot(...d) > 1e-9)) throw new Error("Achsrichtung angeben");
-  return { ...(kind === "schiebe" ? { kind } : {}), p: p.map(Number), d: v3.norm(d), angle: 0, min, max };
+  const base = { ...(kind === "schiebe" || kind === "zylinder" ? { kind } : {}), p: p.map(Number), d: v3.norm(d), angle: 0, min, max };
+  // Zylindergelenk (Werkzeuge Stufe 39): Drehung um die Achse und zusätzlich Weg s entlang der Achse
+  return kind === "zylinder" ? { ...base, s: 0, smin, smax } : base;
 }
 
 export const isSlide = (j) => j?.kind === "schiebe";
+export const isCylinder = (j) => j?.kind === "zylinder";
 /** Einheit und Name des Gelenkwerts */
 export const jointUnit = (j) => (isSlide(j) ? "mm" : "°");
-export const jointLabel = (j) => (isSlide(j) ? "Schiebegelenk" : "Drehgelenk");
+export const jointLabel = (j) => (isSlide(j) ? "Schiebegelenk" : isCylinder(j) ? "Zylindergelenk" : "Drehgelenk");
+
+const clampSlide = (j, s) => Math.min(Math.max(s, Math.min(j.smin, j.smax)), Math.max(j.smin, j.smax));
+/** Zylindergelenk: Verschiebung (4×4) vom aktuellen Weg zum Weg s entlang der Achse */
+export function slideDelta(j, s) {
+  return placementMatrix(v3.mul(v3.norm(j.d), clampSlide(j, s) - (j.s || 0)), [0, 0, 0]);
+}
+/** Zylindergelenk: Weg setzen; Achspunkt wandert mit, damit die Drehung um die verschobene Achse geht */
+export function setJointSlide(c, s, followers = []) {
+  const j = c.joint;
+  const t = clampSlide(j, Number(s) || 0);
+  const D = slideDelta(j, t);
+  for (const f of [c, ...followers]) Object.assign(f, decomposePlacement(matMul(D, placementMatrix(f.pos, f.rot))));
+  j.p = v3.add(j.p, v3.mul(v3.norm(j.d), t - (j.s || 0)));
+  j.s = t;
+  return t;
+}
 
 export const clampAngle = (j, a) => Math.min(Math.max(a, Math.min(j.min, j.max)), Math.max(j.min, j.max));
 

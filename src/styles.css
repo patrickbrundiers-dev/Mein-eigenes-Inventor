@@ -454,3 +454,10 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .field-msg.hint { color: var(--steel-4); border-color: var(--steel-4); }
 .field-bad input, .field-bad select { border-color: var(--err); }
 .field-warn input, .field-warn select { border-color: var(--warn); }
+
+/* Mehrfachauswahl (Körper) und Querschnittliste der Erhebung */
+.checks { display: flex; flex-direction: column; gap: 2px; max-height: 140px; overflow: auto; }
+.checks .check { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.loft-list { margin: 4px 0 6px 18px; padding: 0; }
+.loft-list li { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+.loft-list li .btn { padding: 0 6px; min-width: 0; }
