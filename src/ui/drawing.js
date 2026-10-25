@@ -40,7 +40,24 @@ export class DrawingEditor {
     this.pan = [20, 20];
     this.bindEvents();
   }
-  get doc() { return this.app.activeDoc()?.kind === "drawing" ? this.app.activeDoc() : null; }
+  get doc() { return this.offscreen || (this.app.activeDoc()?.kind === "drawing" ? this.app.activeDoc() : null); }
+  /**
+   * Blatt einer beliebigen Zeichnung als SVG- und DXF-Text, ohne sie zu öffnen (Fertigungsmappe). Fehlende Grundansichten und
+   * Hauptmaße (pendingAutoViews/pendingAutoDims) werden dabei erzeugt.
+   */
+  async sheetExport(d) {
+    const keep = this.proj;
+    this.offscreen = d;
+    this.proj = new Map();
+    try {
+      await this.update();
+      const [width, height] = this.sheetSize(d);
+      return { svg: this.exportSvgString(), dxf: this.dxfString(), width, height, name: this.fileBase() };
+    } finally {
+      this.offscreen = null;
+      this.proj = keep;
+    }
+  }
   sheetSize(d = this.doc) {
     const [a, b] = SHEETS[d.sheet.format] || SHEETS.A3;
     return d.sheet.orientation === "hoch" ? [b, a] : [a, b];
@@ -68,7 +85,12 @@ export class DrawingEditor {
     if (!d) return;
     const items = this.sourceItems(d);
     if (!items || !items.length) { this.render(); return; }
-    if (d.pendingAutoViews) { delete d.pendingAutoViews; await this.autoViews({ silentUndo: true }); return; }
+    if (d.pendingAutoViews) {
+      delete d.pendingAutoViews;
+      await this.autoViews({ silentUndo: true });
+      if (d.pendingAutoDims) { delete d.pendingAutoDims; this.autoDims({ silent: true }); }
+      return;
+    }
     const views = d.views.filter((v) => v.type !== "detail").map((v) => { const c = this.viewCam(d, v); return { key: v.id, dir: c.dir, up: c.up, cut: c.cut, hidden: v.hidden !== false && v.type !== "iso" }; });
     if (!views.length) { this.render(); return; }
     this.loading = true;
@@ -373,7 +395,7 @@ export class DrawingEditor {
   // ---------- Darstellung ----------
   render() {
     const d = this.doc;
-    if (!d) return;
+    if (!d || this.offscreen) return;
     const [W, H] = this.sheetSize(d);
     this.pxPerMm = 3.78;
     const svg = this.renderSheet(d, { interactive: true });
@@ -1004,7 +1026,7 @@ export class DrawingEditor {
         } }],
     });
   }
-  autoDims() {
+  autoDims({ silent = false } = {}) {
     const d = this.doc;
     // Vorderansicht zuerst, damit Breite und Höhe dort stehen; jede Raumrichtung und jeder Bohrungs-Ø nur einmal
     const order = (v) => (v.type === "front" ? 0 : v.type === "section" ? 2 : 1);
@@ -1034,12 +1056,14 @@ export class DrawingEditor {
     const add = planAutoDims(views, used).map((m) => ({ id: uid("m"), ...m, auto: true }));
     const keepNotes = (d.notes || []).filter((n) => !(n.auto && !n.touched));
     const notes = []; // Profilangabe steht im Schriftfeld (Halbzeug)
-    if (!add.length && !notes.length && keep.length === d.dims.length) return toast("Keine weiteren Hauptmaße gefunden");
+    if (!add.length && !notes.length && keep.length === d.dims.length) return silent ? undefined : toast("Keine weiteren Hauptmaße gefunden");
     layoutAutoDims(add, this.sheetRects(d), { ...this.sheetObstacles(d, keep), notes });
-    this.app.edit("Hauptmaße", () => {
+    const apply = () => {
       d.dims = [...keep, ...add];
       d.notes = [...keepNotes, ...notes.map((n) => ({ id: uid("n"), x: n.x, y: n.y, text: n.text, size: 3.5, auto: true }))];
-    }, { rebuild: false });
+    };
+    if (silent) { apply(); this.app.changed({ rebuild: false }); }
+    else this.app.edit("Hauptmaße", apply, { rebuild: false });
     this.render();
   }
   /** Profilangabe des Quellteils (Halbzeug), Länge wie in der Zuschnittliste */
@@ -1194,6 +1218,9 @@ export class DrawingEditor {
     setTimeout(() => w.print(), 300);
   }
   async exportDxf() {
+    await this.app.files.saveText(this.dxfString(), this.fileBase() + ".dxf", "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
+  }
+  dxfString() {
     const d = this.doc;
     const [, H] = this.sheetSize(d);
     const w = new DxfWriter().layer("KONTUR", 7).layer("VERDECKT", 8, "DASHED").layer("MITTELLINIE", 1, "CENTER").layer("MASSE", 3).layer("RAHMEN", 7).layer("TEXT", 7).layer("SCHRAFFUR", 8);
@@ -1295,7 +1322,7 @@ export class DrawingEditor {
       for (const el of g.querySelectorAll("polygon, polyline")) w.polyline(el.getAttribute("points").trim().split(/\s+/).map((q) => { const [x, y] = q.split(",").map(Number); return [x, Y(y)]; }), "MASSE", el.tagName === "polygon");
       for (const el of g.querySelectorAll("text")) if (el.textContent) w.text(+el.getAttribute("x"), Y(+el.getAttribute("y")), +el.getAttribute("font-size"), el.textContent, "TEXT", { align: { middle: "center", end: "right" }[el.getAttribute("text-anchor")] || "left" });
     }
-    await this.app.files.saveText(w.toString(), this.fileBase() + ".dxf", "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
+    return w.toString();
   }
 }
 const r3 = (x) => Math.round(x * 1000) / 1000;

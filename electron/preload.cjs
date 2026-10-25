@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("werkcad", {
   saveFiles: (opts) => ipcRenderer.invoke("file:saveMany", opts),
   openFile: (opts) => ipcRenderer.invoke("file:open", opts),
   printPdf: (opts) => ipcRenderer.invoke("pdf:print", opts),
+  renderPdf: (html) => ipcRenderer.invoke("pdf:render", html),
   setTitle: (t) => ipcRenderer.send("app:title", t),
   onOpenFile: (cb) => ipcRenderer.on("app:open-file", (_e, p) => cb(p)),
   onCloseRequest: (cb) => ipcRenderer.on("app:close-request", () => cb()),

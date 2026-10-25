@@ -328,3 +328,77 @@ test("Profilangabe nennt die Zuschnittlänge (Gehrung: Außenlänge wie in der Z
   assert.equal(profileSpec(feats, Number, 1018.83).text, "Quadratrohr 40x40x3 – L = 1018,8");
   assert.equal(profileSpec(feats, Number).text, "Quadratrohr 40x40x3 – L = 1000", "ohne gebautes Teil: Länge des Features");
 });
+
+// ---------- Fertigungsmappe (E3) ----------
+import { mappeHtml, listPages, mappeName } from "../src/core/mappe.js";
+import { zipFiles } from "../src/core/xlsx.js";
+
+test("Fertigungsmappe: jede Seite behält ihr Blattformat, Listen auf A4 mit Folgeseiten", () => {
+  const html = mappeHtml([
+    { svg: '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"/>', width: 420, height: 297 },
+    { svg: "<svg/>", width: 297, height: 210 },
+    { svg: "<svg/>", width: 420, height: 297 },
+  ], { title: "Mappe <A>" });
+  assert.match(html, /@page f0\{size:420mm 297mm;margin:0\}@page f1\{size:297mm 210mm;margin:0\}/);
+  assert.equal((html.match(/class="pg"/g) || []).length, 3);
+  assert.equal((html.match(/page:f0/g) || []).length, 2);
+  assert.ok(!html.includes("<?xml"), "XML-Kopf der SVGs entfällt");
+  assert.match(html, /<title>Mappe &lt;A&gt;<\/title>/);
+
+  const bom = Array.from({ length: 50 }, (_, i) => ({ pos: i + 1, name: `Teil <${i}>`, number: "", qty: 2, material: "S235", finish: "", mass: 1.5 }));
+  const cut = [{ pos: 1, section: "QR 40x3", length: 1000, qty: 4, miters: [45, 45], material: "S235", mass: 3.2, parts: "Rahmen" }];
+  const pages = listPages({ title: "Tor", number: "T-1", bom, cut });
+  assert.equal(pages.length, 3, "50 Zeilen Stückliste = 2 Seiten, Zuschnitt 1 Seite");
+  assert.ok(pages.every((p) => p.width === 210 && p.height === 297));
+  assert.match(pages[0].html, /Stückliste \(1\/2\)/);
+  assert.ok(!pages[0].html.includes("<tfoot>") && pages[1].html.includes("<tfoot>"), "Summe nur auf der letzten Seite");
+  assert.match(pages[1].html, />150</, "Summe 50 × 2 × 1,5 kg");
+  assert.match(pages[0].html, /Teil &lt;0&gt;/);
+  assert.match(pages[2].html, /45° \/ 45°/);
+  assert.deepEqual(listPages({ bom: [], cut: [] }), []);
+  assert.equal(mappeName('Tor 3/4: "A"'), "Tor_3_4_A_");
+});
+
+test("ZIP: Einträge aus Text und Bytes, gültige Signaturen", () => {
+  const z = zipFiles([["a.txt", "Hallo"], ["Ordner/b.bin", new Uint8Array([1, 2, 3])]]);
+  const dv = new DataView(z.buffer);
+  assert.equal(dv.getUint32(0, true), 0x04034b50);
+  assert.equal(dv.getUint32(z.length - 22, true), 0x06054b50);
+  assert.equal(dv.getUint16(z.length - 22 + 10, true), 2);
+  assert.ok(new TextDecoder().decode(z).includes("Ordner/b.bin"));
+});
+
+// ---------- Angebotsblatt (E4) ----------
+import { angebotPage, priceLines, parsePrice, money } from "../src/core/angebot.js";
+
+test("Angebotsblatt: Preis von Hand, MwSt., Fakten aus dem Modell", () => {
+  assert.equal(parsePrice("1.234,50 €"), 1234.5);
+  assert.equal(parsePrice("1234.5"), 1234.5);
+  assert.equal(parsePrice("1.000"), 1000);
+  assert.ok(Number.isNaN(parsePrice("")) && Number.isNaN(parsePrice("viel")));
+  assert.equal(money(2938.11), "2.938,11 €");
+  const p = priceLines({ qty: 2, price: "1.234,50", vat: 19 });
+  assert.equal(p.net, 2469);
+  assert.equal(money(p.gross), "2.938,11 €");
+  assert.equal(priceLines({ price: "" }), null);
+  const pg = angebotPage({ firma: "Metallbau <M>\nHauptstr. 1", kunde: "Frau Muster", nummer: "A-17", betreff: "Angebot: Tor", qty: 2, price: "1.234,50", vat: 19,
+    dims: [3000, 40, 1800], materials: ["S235JR"], finishes: ["tZn + pulver RAL 7016"], mass: 84.4, positions: 5, image: "data:image/png;base64,AAAA" });
+  assert.equal(pg.width, 210);
+  assert.match(pg.html, /Metallbau &lt;M&gt;<br>Hauptstr\. 1/);
+  assert.match(pg.html, /3\.000 × 40 × 1\.800 mm/);
+  assert.match(pg.html, /84 kg/);
+  assert.match(pg.html, /Angebot Nr\. A-17/);
+  assert.match(pg.html, /Gesamtbetrag<\/td><td class="n">2\.938,11 €/);
+  assert.match(pg.html, /<img src="data:image\/png;base64,AAAA"/);
+  const leer = angebotPage({ qty: 3, price: "" });
+  assert.match(leer.html, /3 × Einzelpreis netto<\/td><td class="n"><\/td>/, "ohne Preis bleibt das Feld zum Eintragen");
+  assert.match(leer.html, /Oberfläche<\/td><td>roh/);
+});
+
+test("Fertigungsmappe: Biegeliste je Rohr", () => {
+  const pages = listPages({ bends: [{ name: "Handlauf – Rohr", bends: [{ straight: 300, rotation: 0, angle: 90, arc: 157.1 }, { straight: 500, rotation: 180, angle: 45, arc: 78.5 }], last: 200, length: 1235.6 }] });
+  assert.equal(pages.length, 1);
+  assert.match(pages[0].html, /<h1>Biegeliste<\/h1>/);
+  assert.match(pages[0].html, /Handlauf – Rohr – Abwicklung 1\.235,6 mm/);
+  assert.match(pages[0].html, /<td class="n">Ende<\/td><td class="n">200<\/td>/);
+});

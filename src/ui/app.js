@@ -5,7 +5,7 @@ import { Sketcher } from "./sketcher.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
 import { Tree } from "./tree.js";
-import { Props } from "./props.js";
+import { Props, bomRows } from "./props.js";
 import { DrawingEditor } from "./drawing.js";
 import { Files } from "./files.js";
 import { StartScreen } from "./start.js";
@@ -144,6 +144,44 @@ export class App {
       d.pendingAutoViews = true;
     }
     return this.addDoc(d);
+  }
+  /** Bauteile einer Baugruppe (ohne doppelte, auch ausgeblendete), fertig berechnet */
+  async builtParts(asm) {
+    const parts = asm.kind === "part" ? [asm] : [...new Map(flattenAssembly(asm, (id) => this.doc(id), { includeHidden: true }).map((o) => [o.part.id, o.part])).values()];
+    for (const p of parts) if (!this.results.has(p.id)) await this.buildPart(p);
+    return parts;
+  }
+  /**
+   * Einzelteilzeichnungen (E5): je Position der Baugruppe eine Zeichnung mit Grundansichten, Hauptmaßen und Schriftfeld.
+   * Bauteile mit vorhandener Zeichnung und reine Normteile bleiben aus; für ein Bauteil entsteht höchstens seine eine. Gibt die neuen Zeichnungen zurück.
+   */
+  async partDrawings(asmId, { quiet = false } = {}) {
+    const asm = this.doc(asmId);
+    if (asm?.kind !== "assembly" && asm?.kind !== "part") return [];
+    await this.builtParts(asm);
+    const has = (id) => this.project.docs.some((x) => x.kind === "drawing" && x.source?.kind === "part" && x.source.id === id);
+    const todo = (asm.kind === "part" ? [{ part: asm }] : bomRows(this, asm)).filter((r) => r.part && !has(r.part.id));
+    if (!todo.length) { if (!quiet) toast("Alle Positionen haben schon eine Zeichnung"); return []; }
+    this.checkpoint("Einzelteilzeichnungen");
+    const made = todo.map((r) => {
+      const d = newDrawing("Zeichnung " + r.part.name, { kind: "part", id: r.part.id });
+      d.title.benennung = r.part.name;
+      d.title.nummer = r.part.number || "";
+      d.pendingAutoViews = true;
+      d.pendingAutoDims = true;
+      return d;
+    });
+    this.project.docs.push(...made);
+    const t = quiet ? null : toast(`Einzelteilzeichnungen: 0 / ${made.length} …`, { timeout: 0 });
+    try {
+      for (const [i, d] of made.entries()) {
+        await this.drawing.sheetExport(d);
+        if (t) t.firstChild.textContent = `Einzelteilzeichnungen: ${i + 1} / ${made.length} …`;
+      }
+    } finally { t?.remove(); }
+    this.changed({ rebuild: false });
+    if (!quiet) toast(`${made.length} Einzelteilzeichnung${made.length === 1 ? "" : "en"} erzeugt`, { kind: "ok" });
+    return made;
   }
   async deleteDoc(id) {
     const d = this.doc(id);

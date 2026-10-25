@@ -215,6 +215,14 @@ export class Tree {
       { label: "Umbenennen", icon: "edit", run: () => this.rename(d) },
       { label: "Duplizieren", icon: "copy", run: () => app.duplicateDoc(d.id) },
       d.kind !== "drawing" ? { label: "Zeichnung ableiten", icon: "drawing", run: () => app.newDrawing({ kind: d.kind, id: d.id }) } : null,
+      d.kind === "assembly" ? { label: "Einzelteilzeichnungen", icon: "drawing", run: () => app.partDrawings(d.id) } : null,
+      d.kind !== "drawing" ? { label: "Fertigungsmappe", icon: "pdf", run: () => app.files.exportMappe(d) } : null,
+      // Bauteile als eigene Dateien (M24, V3)
+      ...(d.kind !== "part" ? [] : d.link
+        ? ["-", { label: "Aus Datei aktualisieren", icon: "update", run: () => app.files.refreshLinks() },
+          app.files.bridge ? { label: "Quelldatei öffnen", icon: "open", run: () => app.files.open(d.link.path) } : null,
+          { label: "Verknüpfung lösen", icon: "cut", run: () => app.edit("Verknüpfung lösen", () => { delete d.link; }, { link: true, rebuild: false }) }]
+        : [{ label: "Als eigene Datei speichern", icon: "save", run: () => app.files.savePartAsFile(d) }]),
       "-",
       { label: "Löschen", icon: "trash", run: () => app.deleteDoc(d.id) },
     ]);
