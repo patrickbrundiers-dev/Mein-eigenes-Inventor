@@ -16,6 +16,11 @@ import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
 import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./dom.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
+import { moveProblem, copyFeatures } from "../core/ableiten.js";
+import { syncVariants } from "../core/varianten.js";
+import { setDynamicCommands } from "../core/commands.js";
+import { macroCommands } from "../core/makros.js";
+import { setLanguage, language } from "../core/i18n.js";
 import { classText } from "../core/tolerance.js";
 import { setUserBendTables, adoptProjectBendTables, projectBendTableCopies } from "../core/bendtable.js";
 import { newSketch } from "../core/sketch.js";
@@ -41,7 +46,9 @@ import { insertFeature, beforeDelete, setEnd } from "../core/bauteilende.js";
 import { colorMap } from "../core/komponentenfarben.js";
 import { templateOf, isCustomTemplate } from "../core/zeichnungsvorlage.js";
 
-const linkedMessage = (part) => `»${part.name}« ist mit ${baseName(part.link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`;
+const linkedMessage = (part, docOf = () => null) => (part.variant && !part.link
+  ? `»${part.name}« ist eine Variante von »${docOf(part.variant.of)?.name || "?"}« – dort in der Variantentabelle ändern`
+  : `»${part.name}« ist mit ${baseName(part.link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`);
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
 const freeCount = (sk, free) => sk.entities.filter((e) => !e.origin && !e.construction && entityFree(e, free)).length;
 
@@ -69,6 +76,7 @@ export class App {
     this.statusEl = document.getElementById("status");
     this.hud = document.getElementById("hud");
     this.kernel = new KernelClient((busy, msg) => this.setBusy(busy, msg));
+    this.kernel.lookup = (id) => this.doc(id);
     this.docking = new Docking(this);
     this.viewer = new Viewer(document.getElementById("viewer"));
     this.sketcher = new Sketcher(this);
@@ -368,11 +376,13 @@ export class App {
     const redo = this.redoStack;
     this.checkpoint(label);
     // Verknüpfte Bauteile (M24) sind schreibgeschützt – geändert wird in ihrer Datei
-    const linked = opts?.link ? null : this.project.docs.filter((d) => d.kind === "part" && d.link).map((d) => [d, partContent(d)]);
+    const linked = opts?.link ? null : this.project.docs.filter((d) => d.kind === "part" && (d.link || d.variant)).map((d) => [d, partContent(d)]);
     try {
       fn();
       const hit = linked?.find(([d, before]) => this.project.docs.includes(d) && partContent(d) !== before);
-      if (hit) throw new Error(linkedMessage(hit[0]));
+      if (hit) throw new Error(linkedMessage(hit[0], (id) => this.doc(id)));
+      // Varianten folgen dem Werksbauteil (Stufe 43)
+      for (const d of this.project.docs) if (d.kind === "part" && d.variants?.rows?.length && this.project.docs.some((m) => m.variant?.of === d.id)) this.project.docs = syncVariants(this.project.docs, d, () => uid("p")).docs;
     } catch (e) {
       const st = this.undoStack.pop();
       this.redoStack = redo;
@@ -393,8 +403,8 @@ export class App {
   }
   /** Verknüpftes Bauteil (M24)? Dann Hinweis und true – Skizzen/Features dort nur in der Quelldatei */
   linkedReadOnly(part) {
-    if (part?.kind !== "part" || !part.link) return false;
-    toast(linkedMessage(part), { kind: "err", timeout: 6000 });
+    if (part?.kind !== "part" || !(part.link || part.variant)) return false;
+    toast(linkedMessage(part, (id) => this.doc(id)), { kind: "err", timeout: 6000 });
     return true;
   }
   undo() { this.restore(this.undoStack, this.redoStack); }
@@ -561,7 +571,9 @@ export class App {
     const map = this.datumMap(part);
     const bb = this.viewer.contentBox();
     const size = bb.isEmpty() ? 120 : Math.max(60, bb.getSize(new (bb.min.constructor)()).length() * 0.5);
-    return part.features.filter((f) => map.has(f.id) && !f.hidden).map((f) => ({ id: f.id, name: f.name, size, active: this.sel?.type === "feature" && this.sel.id === f.id, ...map.get(f.id) }));
+    const active = (id) => this.sel?.type === "feature" && this.sel.id === id;
+    const paths = (this.results.get(part.id)?.paths3d || []).filter((p) => part.features.some((f) => f.id === p.id && !f.hidden)).map((p) => ({ id: p.id, kind: "path", pts: p.pts, size, active: active(p.id) }));
+    return [...part.features.filter((f) => map.has(f.id) && !f.hidden).map((f) => ({ id: f.id, name: f.name, size, active: active(f.id), ...map.get(f.id) })), ...paths];
   }
 
   // ---------- Skizzen ----------
@@ -664,14 +676,15 @@ export class App {
     const selected = this.sel?.type === "feature" && sks.find((s) => s.id === this.sel.id);
     return (selected || unused[unused.length - 1] || sks[sks.length - 1])?.id || null;
   }
-  addFeature(f, { select = true } = {}) {
+  addFeature(f, { select = true, at = null } = {}) {
     const part = this.activeDoc();
     if (!part || part.kind !== "part" || this.linkedReadOnly(part)) return;
     f.id = f.id || uid("f");
     const n = part.features.filter((x) => x.type === f.type).length + 1;
     f.name = f.name || `${FEATURE_NAMES[f.type] || f.type} ${n}`;
     this.checkpoint(f.name + " hinzufügen");
-    insertFeature(part, f);
+    if (at != null && at >= 0 && at <= part.features.length) part.features.splice(at, 0, f);
+    else insertFeature(part, f); // am Bauteilende (FU5)
     if (select) this.selectFeature(f.id);
     this.changed();
     return f;
@@ -724,12 +737,46 @@ export class App {
   moveFeature(id, delta) {
     const part = this.activeDoc();
     const i = part.features.findIndex((f) => f.id === id);
-    const j = i + delta;
-    if (i < 0 || j < 0 || j >= part.features.length) return;
+    this.moveFeatureTo(id, i + delta);
+  }
+  /** Feature an Index j verschieben; nicht vor seine Bezüge und nicht hinter Features, die es brauchen */
+  moveFeatureTo(id, j) {
+    const part = this.activeDoc();
+    if (part?.kind !== "part" || this.linkedReadOnly(part)) return;
+    const i = part.features.findIndex((f) => f.id === id);
+    if (i < 0 || j < 0 || j >= part.features.length || i === j) return;
+    const why = moveProblem(part.features, i, j);
+    if (why) return toast(why, { kind: "err", timeout: 5000 });
     this.edit("Reihenfolge", () => {
       const [f] = part.features.splice(i, 1);
       part.features.splice(j, 0, f);
     });
+  }
+  /** Feature in die Zwischenablage (mit Stand des Bauteils, damit Bezüge beim Einfügen mitkommen) */
+  copyFeature(id) {
+    const part = this.activeDoc();
+    const f = part?.features?.find((g) => g.id === id);
+    if (!f) return;
+    this.featureClip = { doc: part.id, features: JSON.parse(JSON.stringify(part.features)), ids: [id], label: f.name };
+    toast(`»${f.name}« kopiert – in diesem oder einem anderen Bauteil einfügen`);
+  }
+  pasteFeatures({ after = null } = {}) {
+    const part = this.activeDoc(), clip = this.featureClip;
+    if (!clip || part?.kind !== "part" || this.linkedReadOnly(part)) return;
+    const same = clip.doc === part.id;
+    const copies = copyFeatures(clip.features, clip.ids, { newId: () => uid("f"), sameDoc: same, names: part.features.map((g) => g.name) });
+    this.edit("Einfügen", () => {
+      const at = after ? part.features.findIndex((g) => g.id === after) + 1 : part.features.length;
+      part.features.splice(at > 0 ? at : part.features.length, 0, ...copies);
+    });
+    this.selectFeature(copies.at(-1).id);
+    if (copies.length > 1) toast(`Mit Bezügen eingefügt: ${copies.map((g) => g.name).join(", ")}`);
+  }
+  duplicateFeature(id) {
+    const keep = this.featureClip;
+    this.copyFeature(id);
+    this.pasteFeatures({ after: id });
+    this.featureClip = keep;
   }
 
   // ---------- Auswahl im 3D-Fenster ----------
@@ -1092,6 +1139,8 @@ export class App {
     if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);
     if (keys?.includes("ansicht.qualitaet") && this.quality !== p.get("ansicht.qualitaet")) { this.quality = p.get("ansicht.qualitaet"); this.ribbon.render(); this.rebuild(); }
     if (!keys || keys.includes("werkzeuge.kuerzel")) this.commands.update();
+    if (!keys || keys.includes("werkzeuge.makros")) setDynamicCommands(macroCommands(p.get("werkzeuge.makros") || []));
+    if (!keys || keys.includes("allgemein.sprache")) { setLanguage(p.get("allgemein.sprache")); document.documentElement.lang = language(); if (keys) { this.tree.render(); this.ribbon.render(); this.props.render(); } }
     if (keys) { this.refreshSelectionHits(); this.props.render(); this.updateStatus(); this.ribbon.render(); }
   }
 
@@ -1329,7 +1378,7 @@ export const CONSTRAINT_NAMES = CONSTRAINT_TYPES;
 export const FEATURE_NAMES = {
   sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
-  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale",
+  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", skizze3d: "3D-Skizze", abgeleitet: "Abgeleitet",
   endkappe: "Endkappe", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", trennen: "Trennen", verschieben: "Körper verschieben", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung",
 };
 

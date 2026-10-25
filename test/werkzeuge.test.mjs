@@ -335,3 +335,147 @@ test("Stecksystem zwischen Baugruppen-Teilen: prüfen, schreiben, löschen (Stuf
   assert.equal(docs[0].features.length, 1);
   assert.equal(docs[1].features.length, 0);
 });
+
+test("Blech: Rücksprung, Abwicklungsumriss, Konturlasche, Durchzug-Vorloch (Stufe 41)", async () => {
+  const { planKantteil, bendCut } = await import("../src/core/blech.js");
+  const { planSheet, rectOutline, contourLegs, durchzugVorloch, sheetFlatView } = await import("../src/core/blechplus.js");
+  // Rücksprung bei 90°: außen ri + t, innen ri; 180° (Umschlag) bis zur Falzkante
+  assert.equal(Math.round(bendCut(90, 2, 2, "aussen") * 1e9) / 1e9, 4);
+  assert.equal(Math.round(bendCut(90, 2, 2, "innen") * 1e9) / 1e9, 2);
+  assert.equal(bendCut(180, 1, 2, "aussen"), 3);
+  assert.equal(Math.round(bendCut(90, 2, 2, "links") * 1e9), 2e9, "links bei Biegung nach links = innen");
+  // Plan unverändert gegenüber dem bisherigen Kantteil (U 40/100/40, außen): Abwicklung 172,36
+  const u = planKantteil({ legs: [40, 100, 40], angles: [90, 90], t: 2, ri: 2, k: 0.33 });
+  assert.equal(Math.round(u.flat * 100) / 100, 172.36);
+  // Umriss aus Rechtecken: Grundfläche mit angesetzter Lasche und zwei Freischnitten
+  const loops = rectOutline([0, 100, 0, 50], [[90, 101, 10, 30]], [[90, 120, 10, 30]], [[88, 101, 8, 10], [88, 101, 30, 32]]);
+  assert.equal(loops.length, 1);
+  assert.ok(loops[0].area > 0);
+  assert.equal(loops[0].pts.length, 12);
+  // ganze Lasche + Teil-Lasche am Anfang, Stirnlasche, Durchzug
+  const base = { legs: [40, 100, 40], angles: [90, 90], t: 2, ri: 2, k: 0.33, ref: "aussen", L: 500 };
+  const S = planSheet(base, [
+    { type: "lasche", edge: "ende", length: 20, angle: 90, dir: "auf", width: null, offset: 0 },
+    { type: "lasche", edge: "anfang", length: 15, angle: 90, dir: "ab", width: 100, offset: 50, relief: "rechteck" },
+    { type: "lasche", edge: "vorne", leg: 2, length: 30, angle: 90, dir: "auf", relief: "rechteck" },
+    { type: "durchzug", leg: 2, s: [30], y: [200], d: 8, height: 4, dir: "auf" },
+  ]);
+  assert.equal(S.plan.bends.length, 3);
+  assert.equal(S.flat.bends.length, 5);
+  assert.ok(S.flat.bbox.x0 < 0, "Teil-Lasche am Anfang liegt vor x = 0");
+  assert.ok(S.flat.bbox.y0 < 0, "Stirnlasche liegt vor y = 0");
+  assert.equal(S.flat.circles.length, 1);
+  const fv = sheetFlatView(S.flat);
+  assert.equal(fv.arcs.length, 1);
+  assert.equal(fv.bends[0].x, S.flat.bends[0].x0);
+  // Teil-Lasche hinter einer ganzen am selben Ende ist erlaubt, umgekehrt nicht
+  assert.throws(() => planSheet(base, [{ type: "lasche", edge: "ende", length: 20, angle: 90, width: 100, offset: 0 }, { type: "lasche", edge: "ende", length: 20, angle: 90 }]), /Teil-Lasche/);
+  // Konturlasche: Ecke zu Ecke, Winkel mit Vorzeichen, Material links → Maße an der rechten Fläche
+  const c = contourLegs({ closed: false, pieces: [{ t: "line", a: [0, 0], b: [50, 0] }, { t: "line", a: [50, 0], b: [50, 80] }, { t: "line", a: [50, 80], b: [0, 80] }] }, "links");
+  assert.deepEqual(c.legs, [50, 80, 50]);
+  assert.deepEqual(c.angles, [90, 90]);
+  assert.equal(c.ref, "rechts");
+  assert.throws(() => contourLegs({ closed: false, pieces: [{ t: "arc" }] }), /nur Linien/);
+  // Vorloch: kleiner als innen, zu hoher Kragen wird abgelehnt
+  const d0 = durchzugVorloch(8, 4, 2);
+  assert.ok(d0 > 6 && d0 < 7, String(d0));
+  assert.throws(() => durchzugVorloch(8, 8, 2), /zu hoch/);
+});
+
+test("3D-Skizze, abgeleitetes Bauteil, Komponente spiegeln, Feature kopieren/verschieben (Stufe 42)", async () => {
+  const { path3d, inlineDerived, derivableSources, eulerMatrix, mirrorPlacement, copyFeatures, moveProblem } = await import("../src/core/ableiten.js");
+  // L-Zug 100 + 100 mit Radius 10: zwei Geraden à 90 und ein Viertelkreis
+  const p = path3d([[0, 0, 0], [100, 0, 0], [100, 100, 0]], { radius: 10 });
+  assert.deepEqual(p.pieces.map((q) => q.t), ["line", "arc", "line"]);
+  assert.ok(Math.abs(p.length - (180 + (Math.PI * 10) / 2)) < 1e-9, String(p.length));
+  assert.ok(Math.abs(Math.hypot(p.pieces[1].m[0] - 90, p.pieces[1].m[1] - 10) - 10) < 1e-9, "Bogenmitte auf dem Radius");
+  assert.throws(() => path3d([[0, 0, 0], [10, 0, 0], [10, 10, 0]], { radius: 20 }), /zu groß/);
+  const pc = path3d([[0, 0, 0], [100, 0, 0], [100, 100, 0], [0, 100, 0]], { radius: 5, closed: true });
+  assert.equal(pc.pieces.filter((q) => q.t === "arc").length, 4);
+  // Ableiten: Quelle eingebettet, Ringbezug erkannt
+  const A = { id: "A", kind: "part", name: "A", features: [{ id: "x", type: "extrude" }] };
+  const B = { id: "B", kind: "part", name: "B", features: [{ id: "d", type: "abgeleitet", source: "A" }] };
+  const docs = { A, B };
+  const inl = inlineDerived(B, (id) => docs[id]);
+  assert.equal(inl.features[0]._src.id, "A");
+  const C = { id: "C", kind: "part", name: "C", features: [{ id: "d2", type: "abgeleitet", source: "C" }] };
+  assert.match(inlineDerived(C, (id) => ({ C })[id]).features[0]._srcError, /Ringbezug/);
+  assert.deepEqual(derivableSources({ docs: [A, B] }, A).map((d) => d.id), [], "A kann nicht von B ableiten (B kommt von A)");
+  // Spiegeln: Lage gespiegelt, Drehung bleibt, lokale Normale = Rᵀ n
+  const R = eulerMatrix([0, 0, 90]);
+  assert.ok(Math.abs(R[1][0] - 1) < 1e-12, "X → Y bei 90° um Z");
+  const m = mirrorPlacement([100, 20, 0], [0, 0, 90], [1, 0, 0], 0);
+  assert.deepEqual(m.pos, [-100, 20, 0]);
+  assert.deepEqual(m.normal, [0, -1, 0]);
+  // Kopieren: Skizze kommt beim Kopieren in ein anderes Bauteil mit, Bezug auf die Kopie
+  let n = 0;
+  const feats = [{ id: "s1", type: "sketch", name: "Skizze 1" }, { id: "e1", type: "extrude", name: "Extrusion 1", sketch: "s1" }];
+  const cp = copyFeatures(feats, ["e1"], { newId: () => "n" + ++n, sameDoc: false });
+  assert.equal(cp.length, 2);
+  assert.equal(cp[1].sketch, cp[0].id);
+  const same = copyFeatures(feats, ["e1"], { newId: () => "m1", sameDoc: true, names: ["Extrusion 1"] });
+  assert.equal(same.length, 1);
+  assert.equal(same[0].sketch, "s1");
+  assert.equal(same[0].name, "Extrusion 1 (Kopie)");
+  // Verschieben: nicht vor die eigene Skizze, Skizze nicht hinter ihren Verbraucher
+  assert.match(moveProblem(feats, 1, 0), /braucht/);
+  assert.match(moveProblem(feats, 0, 1), /braucht/);
+  assert.equal(moveProblem([...feats, { id: "f", type: "fillet", name: "R" }], 2, 1), null);
+});
+
+test("Varianten aus Tabelle, Regeln, Makros, Sprache (Stufe 43)", async () => {
+  const { checkVariants, syncVariants, variantPart } = await import("../src/core/varianten.js");
+  const { applyRules, defaultRule } = await import("../src/core/regeln.js");
+  const { validateMacros, recordable, macroCommands } = await import("../src/core/makros.js");
+  const { setLanguage, t, hasTranslation } = await import("../src/core/i18n.js");
+  // Varianten: Werksbauteil mit zwei Zeilen, leere Zelle übernimmt den Wert des Werksbauteils
+  const F = { id: "F", kind: "part", name: "Lasche", number: "100", params: [{ name: "L", expr: "100" }, { name: "B", expr: "L / 2" }], features: [],
+    variants: { columns: ["L", "B"], rows: [{ id: "r1", name: "L-200", number: "", values: { L: "200", B: "" } }, { id: "r2", name: "L-300", number: "X-3", values: { L: "300", B: "40" } }] } };
+  assert.deepEqual(checkVariants(F), []);
+  const v1 = variantPart(F, F.variants.rows[0], "p1");
+  assert.equal(v1.number, "100-L-200");
+  assert.equal(v1.params.find((p) => p.name === "B").expr, "L / 2");
+  assert.equal(v1.variants, undefined);
+  let n = 0;
+  const s1 = syncVariants([F], F, () => "v" + ++n);
+  assert.equal(s1.created, 2);
+  assert.equal(s1.docs[2].number, "X-3");
+  // zweiter Lauf ändert nichts; geänderte Zeile aktualisiert dieselbe ID; gelöschte Zeile bleibt als Waise stehen
+  assert.equal(syncVariants(s1.docs, F, () => "neu").created, 0);
+  const F2 = { ...F, variants: { ...F.variants, rows: [{ ...F.variants.rows[0], values: { L: "250" } }] } };
+  const s2 = syncVariants(s1.docs, F2, () => "neu");
+  assert.equal(s2.updated, 1);
+  assert.equal(s2.docs[1].id, "v1");
+  assert.deepEqual(s2.orphans, ["L-300"]);
+  assert.match(checkVariants({ ...F, variants: { columns: ["X"], rows: [{ id: "a", name: "" }] } }).join(" "), /kein Parameter.*Name fehlt/);
+  // Regeln: setzen mit Bedingung, unterdrücken, prüfen, Fehler in Regel
+  const P = { params: [{ name: "L", expr: "7000" }, { name: "n", expr: "2" }], features: [{ id: "f1", type: "extrude" }, { id: "f2", type: "hole" }],
+    rules: [{ ...defaultRule("setzen", "a"), when: "L > 6000", param: "n", value: "ceil(L / 2000)" },
+      { ...defaultRule("unterdruecken", "b"), when: "L > 6000", feature: "f2" },
+      { ...defaultRule("pruefen", "c"), when: "L > 6000", message: "Länge über Stangenlänge", level: "Fehler" },
+      { ...defaultRule("setzen", "d"), param: "fehlt", value: "1" }] };
+  const r = applyRules(P);
+  assert.equal(r.part.params.find((p) => p.name === "n").expr, "wenn(L > 6000; ceil(L / 2000); 2)");
+  assert.deepEqual(r.suppressed, ["f2"]);
+  assert.equal(r.part.features[1].ruleOff, true);
+  assert.deepEqual(r.messages.map((m) => m.level), ["Fehler", "Fehler"]);
+  assert.match(r.messages[1].text, /Länge über Stangenlänge/);
+  const r0 = applyRules({ ...P, params: [{ name: "L", expr: "3000" }, { name: "n", expr: "2" }] });
+  assert.deepEqual(r0.suppressed, []);
+  assert.equal(applyRules({ params: [], features: [] }).messages.length, 0);
+  // Makros: prüfen, keine Makros in Makros, Aufzeichnung ohne Suche/Rückgängig
+  assert.equal(validateMacros([{ id: "m1", name: "Export", steps: ["file.save"] }]).ok, true);
+  assert.equal(validateMacros([{ id: "m1", name: "X", steps: ["gibt.esnicht"] }]).ok, false);
+  assert.equal(validateMacros([{ id: "m1", name: "X", steps: [] }]).ok, false);
+  assert.equal(validateMacros([{ id: "m1", name: "X", steps: ["file.save"] }, { id: "m2", name: "X", steps: ["file.save"] }]).ok, false);
+  assert.equal(recordable("edit.undo"), false);
+  assert.equal(recordable("file.save"), true);
+  assert.equal(macroCommands([{ id: "m1", name: "Export", steps: ["file.save"] }])[0].id, "macro.m1");
+  // Sprache: Deutsch bleibt, Englisch übersetzt, Unbekanntes bleibt stehen
+  setLanguage("en");
+  assert.equal(t("Skizze"), "Sketch");
+  assert.equal(t("Gibt es nicht 123"), "Gibt es nicht 123");
+  assert.ok(hasTranslation("Extrusion"));
+  setLanguage("de");
+  assert.equal(t("Skizze"), "Skizze");
+});

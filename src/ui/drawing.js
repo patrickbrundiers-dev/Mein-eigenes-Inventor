@@ -18,7 +18,8 @@ import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
 import { bomRows } from "./props.js";
 import { evaluate, resolveParams } from "../core/expr.js";
-import { planKantteil, kantteilFlatView, bendNote, bendTableCells, splitList } from "../core/blech.js";
+import { bendNote, bendTableCells } from "../core/blech.js";
+import { sheetFlatView } from "../core/blechplus.js";
 import { bendRule } from "../core/bendtable.js";
 import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
 import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange } from "../core/bruch.js";
@@ -317,16 +318,8 @@ export class DrawingEditor {
   }
   flatOf(d, v) {
     const src = d.source && this.app.doc(d.source.id);
-    const f = src?.features.find((x) => x.id === v.feature);
-    const sh = f && this.app.results.get(src.id)?.bodies?.find((b) => b.fid === f.id)?.meta?.sheet;
-    if (!sh) return null;
-    try {
-      const scope = resolveParams(src.params || []).values, E = (x) => evaluate(String(x), scope);
-      const t = E(f.t), ri = E(f.ri), k = E(f.k);
-      const br = bendRule({ rule: f.rule || "k", material: src.material || "S235", t, ri, k });
-      const plan = planKantteil({ legs: splitList(f.legs).map(E), angles: splitList(f.angles).map(E), t, ri, k, kOf: br.kOf, ref: f.ref || "aussen" });
-      return kantteilFlatView(plan, sh.length, { t, k, kOf: br.kOf });
-    } catch { return null; }
+    const sh = src && this.app.results.get(src.id)?.bodies?.find((b) => b.fid === v.feature)?.meta?.sheet;
+    return sh?.flatModel ? sheetFlatView(sh.flatModel) : null;
   }
   deriveFlats(d = this.doc) {
     for (const v of d?.views || []) {
@@ -360,10 +353,13 @@ export class DrawingEditor {
     const xf = this.viewXf(v);
     const g = svgEl("g", { fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
     const txt = (x, y, s, size = 2.5, rot = 0, anchor = "start") => { const e = svgEl("text", { x: r3(x), y: r3(y), "font-size": size, "text-anchor": anchor, fill: "#111a24", stroke: "none", transform: rot ? `rotate(${rot} ${r3(x)} ${r3(y)})` : undefined }); e.textContent = s; g.append(e); };
+    const e = 2 / v.scale;
     for (const b of p.bends) {
-      const [x, y0] = xf.to(b.x, p.length + 2 / v.scale), [, y1] = xf.to(b.x, -2 / v.scale);
-      g.append(svgEl("line", { x1: r3(x), y1: r3(y0), x2: r3(x), y2: r3(y1), "stroke-dasharray": "8 1.2 1 1.2 1 1.2" }));
-      txt(x - 1, y1 - 2, bendNote(b), 2.5, -90);
+      const vert = b.x1 == null || Math.abs(b.x1 - b.x0) < 1e-9;
+      const [ax, ay] = vert ? xf.to(b.x, (b.y1 ?? p.length) + e) : xf.to(b.x0 - e, b.y0);
+      const [bx, by] = vert ? xf.to(b.x, (b.y0 ?? 0) - e) : xf.to(b.x1 + e, b.y1);
+      g.append(svgEl("line", { x1: r3(ax), y1: r3(ay), x2: r3(bx), y2: r3(by), "stroke-dasharray": "8 1.2 1 1.2 1 1.2" }));
+      if (vert) txt(bx - 1, by - 2, bendNote(b), 2.5, -90); else txt(ax - 2, ay + 1, bendNote(b), 2.5, 0, "end");
     }
     if (v.bendTable !== false && p.bends.length) {
       const cells = bendTableCells(p.bends), cols = [10, 16, 16, 12, 12, 18], rh = 5, Wt = cols.reduce((a, b) => a + b, 0);

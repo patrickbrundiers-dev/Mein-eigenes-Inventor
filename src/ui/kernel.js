@@ -1,4 +1,5 @@
 // Verbindung zum Geometrie-Worker mit Neustart nach Absturz und Zusammenfassung von Bau-Aufträgen
+import { inlineDerived } from "../core/ableiten.js";
 
 export class KernelClient {
   constructor(onState) {
@@ -38,7 +39,17 @@ export class KernelClient {
     this.onState(0, msg);
     this.spawn();
   }
+  /** Abgeleitete Bauteile bekommen ihre Quelle mit (der Kern kennt nur das einzelne Bauteil) */
+  withSources(args) {
+    if (!this.lookup || !args) return args;
+    const fix = (p) => (p?.kind === "part" ? inlineDerived(p, this.lookup) : p);
+    let out = args;
+    if (args.part) out = { ...out, part: fix(args.part) };
+    if (Array.isArray(args.items)) out = { ...out, items: args.items.map((it) => (it?.part ? { ...it, part: fix(it.part) } : it)) };
+    return out;
+  }
   call(cmd, args) {
+    args = this.withSources(args);
     const id = ++this.seq;
     this.busy++;
     this.onState(this.busy);

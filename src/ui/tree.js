@@ -4,7 +4,7 @@ import { FEATURE_NAMES } from "./app.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { activeCount } from "../core/bauteilende.js";
 
-const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft" };
+const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", lasche: "flange", umschlag: "hem", durchzug: "collar", skizze3d: "path3d", abgeleitet: "derive" };
 
 export class Tree {
   constructor(app) {
@@ -112,16 +112,24 @@ export class Tree {
       if (app.sel?.type === "feature" && app.sel.id === f.id) cls.push("sel");
       if (st && !st.ok) cls.push("err");
       else if (st?.warning) cls.push("warn");
-      if (f.suppressed || i >= endAt) cls.push("suppressed");
+      if (f.suppressed || i >= endAt || r?.ruleOff?.includes(f.id)) cls.push("suppressed");
       const consumedBy = part.features.filter((g) => sketchRefs(g).includes(f.id));
       const meta = f.type === "sketch" && st?.dof > 0 ? `${st.dof} FG` : "";
-      ul.append(dropTarget(h("li", {}, this.node({
+      const nd = this.node({
         label: f.name || FEATURE_NAMES[f.type], ic: (f.type === "generator" && f.gen) || FICON[f.type], cls: cls.join(" "), meta,
         title: i >= endAt ? "Hinter dem Bauteilende – wird nicht gerechnet" : st?.error ? "Fehler: " + st.error : st?.warning ? "Hinweis: " + st.warning : f.name,
         onClick: () => app.selectFeature(f.id),
         onDbl: () => (f.type === "sketch" ? app.editSketch(f.id) : app.selectFeature(f.id)),
         onMenu: (e) => this.featureMenu(e, part, f, consumedBy),
-      })), f.id));
+      });
+      // Ziehen im Baum: Feature an eine andere Stelle (Bezüge werden geprüft)
+      nd.draggable = true;
+      nd.dataset.fid = f.id;
+      nd.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/x-pbcad-feature", f.id); e.dataTransfer.effectAllowed = "move"; });
+      nd.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("text/x-pbcad-feature")) { e.preventDefault(); nd.classList.add("drop"); } });
+      nd.addEventListener("dragleave", () => nd.classList.remove("drop"));
+      nd.addEventListener("drop", (e) => { nd.classList.remove("drop"); const id = e.dataTransfer.getData("text/x-pbcad-feature"); if (!id) return; e.preventDefault(); e.stopPropagation(); if (id !== f.id) app.moveFeatureTo(id, part.features.findIndex((g) => g.id === f.id)); });
+      ul.append(dropTarget(h("li", {}, nd), f.id));
       if (i === endAt - 1 && endAt > 0) ul.append(endNode());
     }
     if (!part.features.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Mit »Skizze erstellen« oder »Rohr / Profil« beginnen."));
@@ -177,6 +185,7 @@ export class Tree {
           { label: c.fixed ? "Fixierung lösen" : "Fixieren", icon: "fix", run: () => app.edit("Fixieren", () => { c.fixed = !c.fixed; }) },
           { label: "Duplizieren", icon: "copy", run: () => app.props.duplicateComponent(c.id) },
           { label: "Ersetzen…", icon: "update", run: () => app.props.replaceComponentDialog(c.id) },
+          { label: "Spiegeln …", icon: "mirror", run: () => app.props.mirrorComponent(c.id) },
           "-",
           { label: "Entfernen", icon: "trash", run: () => app.props.deleteComponent(c.id) },
         ]),
@@ -252,6 +261,10 @@ export class Tree {
       { label: "Nach oben", icon: "up", run: () => app.moveFeature(f.id, -1) },
       { label: "Nach unten", icon: "down", run: () => app.moveFeature(f.id, 1) },
       { label: "Bauteilende hierher", icon: "finish", run: () => app.setPartEnd(f.id) },
+      "-",
+      { label: "Duplizieren", icon: "copy", run: () => app.duplicateFeature(f.id) },
+      { label: "Kopieren", icon: "copy", run: () => app.copyFeature(f.id) },
+      app.featureClip ? { label: `Einfügen (${app.featureClip.label})`, icon: "copy", run: () => app.pasteFeatures() } : null,
       "-",
       { label: "Löschen", icon: "trash", kbd: "Entf", run: () => app.deleteFeature(f.id) });
     contextMenu(e.clientX, e.clientY, items);

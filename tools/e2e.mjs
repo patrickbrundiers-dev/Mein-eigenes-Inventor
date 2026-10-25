@@ -1431,7 +1431,7 @@ try {
     await idle();
     const n0 = await evalApp(() => window.__werkcad.activeDoc().features.length);
     await page.locator("#viewer canvas").click({ position: { x: 5, y: 300 } });
-    await page.keyboard.press("Control+k");
+    await evalApp(() => window.__werkcad.commands.exec("app.search"));
     await page.locator(".cmd-palette input").fill("fase");
     await shot("23-befehlssuche");
     const first = await page.locator(".cmd-item.on .cmd-label").textContent();
@@ -1920,7 +1920,7 @@ try {
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
     await idle();
-    await page.keyboard.press("Control+k");
+    await evalApp(() => window.__werkcad.commands.exec("app.search"));
     await page.locator(".cmd-palette input").fill("Ansicht Oben");
     await page.locator(".cmd-item").first().locator(".cmd-pin").click();
     await page.keyboard.press("Escape");
@@ -2783,6 +2783,154 @@ try {
   const eqp = await evalApp(() => [...document.querySelectorAll("#props .section h3")].some((x) => x.textContent === "Gleichteile"));
   await shot("32-rahmen-endkappe");
   step("Endkappe, Kürzen, Gleichteile", rk.st.every((x) => x.ok) && rk.caps === 2 && rk.lens.sort().join() === "700,800" && !eqp, JSON.stringify({ rk, eqp }));
+
+  // Blech-Features (Werkzeuge Stufe 41): Lasche, Stirnlasche mit Eckfreischnitt, Durchzug, Umschlag am Kantteil; Konturlasche aus Skizze
+  {
+    await evalApp(() => window.__werkcad.newPart("Blech"));
+    await idle();
+    await page.locator("#ribbon button", { hasText: /^Kantteil$/ }).click();
+    await idle(60000);
+    for (const label of ["Lasche", "Umschlag", "Durchzug"]) {
+      await page.locator("#ribbon button", { hasText: new RegExp("^" + label + "$") }).click();
+      await idle(60000);
+    }
+    // Stirnlasche: Lasche auf »vorne« am Steg stellen
+    const bl0 = await evalApp(async () => {
+      const a = window.__werkcad, d = a.activeDoc();
+      const la = d.features.find((f) => f.type === "lasche");
+      a.edit("Stirnlasche", () => { la.edge = "vorne"; la.leg = "2"; });
+      await a.rebuildNow?.();
+      return d.features.map((f) => f.type).join(",");
+    });
+    await idle(60000);
+    const bl = await evalApp(async () => {
+      const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId);
+      const sh = r.bodies.find((b) => b.meta?.sheet)?.meta.sheet;
+      const orig = a.files.saveText; let got = null;
+      a.files.saveText = async (text, name) => { got = { name, circles: (text.match(/\nCIRCLE\r?\n/g) || []).length, bend: (text.match(/\nBIEGUNG\r?\n/g) || []).length }; };
+      try { await a.files.exportKantteilDxf(d.features[0]); } finally { a.files.saveText = orig; }
+      return { ok: Object.values(r.status).every((s) => s.ok), err: Object.values(r.status).filter((s) => !s.ok).map((s) => s.error), bends: sh?.flatModel?.bends.length, circles: sh?.flatModel?.circles.length, y0: sh?.flatModel?.bbox.y0, dxf: got, tree: document.querySelectorAll("#tree .node").length };
+    });
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await shot("41-blech-features");
+    // Konturlasche aus offener Linie
+    const kl = await evalApp(async () => {
+      const a = window.__werkcad, d = a.activeDoc();
+      a.edit("Skizze", () => d.features.push({ id: "skKL", type: "sketch", name: "Kontur", plane: { ref: "XY" }, offset: "0", points: [{ id: "q1", x: 0, y: 300 }, { id: "q2", x: 60, y: 300 }, { id: "q3", x: 60, y: 380 }], entities: [{ id: "m1", type: "line", p1: "q1", p2: "q2" }, { id: "m2", type: "line", p1: "q2", p2: "q3" }], constraints: [] }));
+      return true;
+    });
+    await idle(60000);
+    await page.locator("#ribbon button", { hasText: /^Konturlasche$/ }).click();
+    await idle(60000);
+    const kl2 = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId); const f = d.features.at(-1); return { type: f.type, src: f.src, ok: r.status[f.id]?.ok, info: r.status[f.id]?.info, bodies: r.bodies.length }; });
+    step("Blech: Lasche, Umschlag, Durchzug, Stirnlasche, Konturlasche", bl.ok && bl.bends === 4 && bl.circles === 1 && bl.y0 < 0 && bl.dxf?.circles === 1 && kl && kl2.ok && kl2.src === "skizze" && kl2.bodies === 2 && /1 Biegung/.test(kl2.info || ""), JSON.stringify({ bl0, bl, kl2 }));
+  }
+
+  // Werkzeuge Stufe 42: abgeleitetes Bauteil gespiegelt, 3D-Skizze, Feature duplizieren/ziehen, Komponente spiegeln
+  {
+    const q = await evalApp(async () => {
+      const a = window.__werkcad;
+      const A = a.newPart("Winkel links");
+      a.edit("Quader", () => A.features.push(
+        { id: "qs", type: "sketch", name: "Skizze 1", plane: { ref: "XY" }, offset: "0", points: [{ id: "q1", x: 0, y: 0 }, { id: "q2", x: 40, y: 0 }, { id: "q3", x: 40, y: 20 }, { id: "q4", x: 0, y: 20 }], entities: [{ id: "l1", type: "line", p1: "q1", p2: "q2" }, { id: "l2", type: "line", p1: "q2", p2: "q3" }, { id: "l3", type: "line", p1: "q3", p2: "q4" }, { id: "l4", type: "line", p1: "q4", p2: "q1" }], constraints: [] },
+        { id: "qe", type: "extrude", name: "Extrusion 1", sketch: "qs", distance: "10" }));
+      return A.id;
+    });
+    await idle(60000);
+    await evalApp(() => window.__werkcad.newPart("Winkel rechts"));
+    await idle();
+    await page.locator("#ribbon button", { hasText: /^Abgeleitetes Bauteil$/ }).click();
+    await idle(60000);
+    const der = await evalApp(async (srcId) => {
+      const a = window.__werkcad, d = a.activeDoc(), f = d.features[0];
+      a.edit("Quelle", () => { f.source = srcId; f.mirror = "YZ"; });
+      return f.id;
+    }, q);
+    await idle(60000);
+    await page.locator("#ribbon button", { hasText: /^3D-Skizze$/ }).click();
+    await idle(60000);
+    const s42 = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(d.id);
+      const before = d.features.map((f) => f.id).join();
+      a.moveFeatureTo(d.features[1].id, 0); // 3D-Skizze vor das abgeleitete Teil: erlaubt
+      const moved = d.features[0].type;
+      a.duplicateFeature(d.features[1].id);
+      return { ok: Object.values(r.status).every((x) => x.ok), info: r.status[d.features.find((f) => f.type === "abgeleitet").id]?.info, paths: (r.paths3d || []).length, moved, n: d.features.length, before };
+    });
+    await idle(60000);
+    const s42b = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(d.id); return { bodies: r.bodies.length, ok: Object.values(r.status).every((x) => x.ok) }; });
+    await shot("42-abgeleitet");
+    // Komponente spiegeln in einer Baugruppe
+    await evalApp((srcId) => { const a = window.__werkcad; const asm = a.newAssembly(); a.edit("Bauteil", () => asm.components.push({ id: "cm1", part: srcId, name: "Winkel links:1", pos: [100, 0, 0], rot: [0, 0, 0] })); a.sel = { type: "component", id: "cm1" }; }, q);
+    await idle(60000);
+    await evalApp(() => window.__werkcad.props.mirrorComponent("cm1"));
+    await page.locator(".dialog button", { hasText: /^an YZ$/ }).click();
+    await idle(60000);
+    const mc = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); const c = asm.components.at(-1), p = a.doc(c.part); return { n: asm.components.length, pos: c.pos, part: p?.name, type: p?.features?.[0]?.type, normal: p?.features?.[0]?.mirrorN }; });
+    await shot("42-komponente-gespiegelt");
+    step("Abgeleitet, 3D-Skizze, Feature duplizieren/ziehen, Komponente spiegeln", !!der && s42.ok && /gespiegelt/.test(s42.info || "") && s42.paths === 1 && s42.moved === "skizze3d" && s42.n === 3 && s42b.ok && mc.n === 2 && mc.pos[0] === -100 && mc.type === "abgeleitet" && /gespiegelt/.test(mc.part), JSON.stringify({ s42, s42b, mc }));
+  }
+
+  // ---- Stufe 43: Variantentabelle, Regeln, Makros, Sprache ----
+  {
+    const fid = await evalApp(() => {
+      const a = window.__werkcad;
+      const F = a.newPart("Lasche T");
+      a.edit("Quader", () => {
+        F.params = [{ name: "L", expr: "40" }, { name: "H", expr: "10" }];
+        F.features.push(
+          { id: "ts", type: "sketch", name: "Skizze 1", plane: { ref: "XY" }, offset: "0", points: [{ id: "t1", x: 0, y: 0 }, { id: "t2", x: 40, y: 0 }, { id: "t3", x: 40, y: 20 }, { id: "t4", x: 0, y: 20 }], entities: [{ id: "u1", type: "line", p1: "t1", p2: "t2" }, { id: "u2", type: "line", p1: "t2", p2: "t3" }, { id: "u3", type: "line", p1: "t3", p2: "t4" }, { id: "u4", type: "line", p1: "t4", p2: "t1" }], constraints: [] },
+          { id: "te", type: "extrude", name: "Extrusion 1", sketch: "ts", distance: "H" });
+      });
+      return F.id;
+    });
+    await idle(60000);
+    await page.locator("#ribbon button", { hasText: /^Variantentabelle$/ }).click();
+    await page.locator(".dialog button", { hasText: /^Zeile hinzufügen$/ }).click();
+    await page.locator(".dialog .var-table tbody tr").nth(1).locator("td").nth(3).locator("input").fill("25");
+    await page.locator(".dialog .var-table tbody tr").nth(1).locator("td").nth(3).locator("input").press("Tab");
+    await shot("43-variantentabelle");
+    await page.locator(".dialog button", { hasText: /^Übernehmen und Varianten erzeugen$/ }).click();
+    await idle(60000);
+    const v43 = await evalApp((fid) => {
+      const a = window.__werkcad;
+      const vs = a.project.docs.filter((d) => d.variant?.of === fid);
+      const blocked = !a.edit("Variante ändern", () => { vs[0].params[1].expr = "99"; });
+      a.edit("Name ändern", () => { a.doc(fid).features[1].name = "Grundkörper"; });
+      const after = a.project.docs.filter((d) => d.variant?.of === fid);
+      return { n: vs.length, names: vs.map((d) => d.name), h2: vs[1]?.params[1].expr, blocked, follow: after[0].features[1].name };
+    }, fid);
+    // Regeln: Dialog öffnet, Regel per Modell, Meldung in den Eigenschaften
+    await evalApp((fid) => window.__werkcad.openDoc(fid), fid);
+    await idle(60000);
+    await page.locator("#ribbon button", { hasText: /^Regeln$/ }).click();
+    await page.locator(".dialog button", { hasText: /Prüfen und melden/ }).click();
+    const ruleRows = await page.locator(".dialog .rule").count();
+    await page.locator(".dialog button", { hasText: /^Abbrechen$/ }).click();
+    await evalApp((fid) => { const a = window.__werkcad; a.edit("Regel", () => { a.doc(fid).rules = [{ id: "rg1", kind: "pruefen", when: "L > 30", message: "Lasche zu lang", level: "Hinweis" }, { id: "rg2", kind: "unterdruecken", when: "H > 9", feature: "te" }]; }); a.sel = null; a.props.render(); }, fid);
+    await idle(60000);
+    const r43 = await evalApp((fid) => { const a = window.__werkcad, r = a.results.get(fid); return { msg: r?.rules?.map((m) => m.text), off: r?.ruleOff, props: document.querySelector("#props")?.textContent.includes("Lasche zu lang") }; }, fid);
+    await shot("43-regeln");
+    // Makro: anlegen, über die Befehlssuche finden und ausführen
+    const m43 = await evalApp(() => {
+      const a = window.__werkcad;
+      const ok = a.prefs.set("werkzeuge.makros", [{ id: "mtest", name: "Ansicht Test", steps: ["view.iso", "view.fit"] }]).ok;
+      return ok;
+    });
+    await evalApp(() => window.__werkcad.commands.exec("app.search"));
+    await page.locator(".cmd-palette input").fill("Makro: Ansicht Test");
+    const palHit = await page.locator(".cmd-palette").textContent();
+    await page.keyboard.press("Escape");
+    await page.locator("#ribbon button", { hasText: /^Makros$/ }).click();
+    const macroDlg = await page.locator(".dialog .macro").count();
+    await page.locator(".dialog button", { hasText: /^Schließen$/ }).click();
+    // Sprache Englisch: Menüband übersetzt, zurück auf Deutsch
+    await evalApp(() => window.__werkcad.prefs.set("allgemein.sprache", "en"));
+    const en = await page.locator("#ribbon").textContent();
+    await evalApp(() => window.__werkcad.prefs.set("allgemein.sprache", "de"));
+    const de = await page.locator("#ribbon").textContent();
+    step("Variantentabelle, Regeln, Makros, Sprache", v43.n === 2 && v43.h2 === "25" && v43.blocked && v43.follow === "Grundkörper" && ruleRows === 1 && r43.msg?.[0] === "Lasche zu lang" && r43.off?.[0] === "te" && r43.props && m43 && /Ansicht Test/.test(palHit) && macroDlg === 1 && /3D model/.test(en) && /3D-Modell/.test(de) && !/3D model/.test(de), JSON.stringify({ v43, ruleRows, r43, m43, macroDlg, en: en.slice(0, 80) }));
+  }
 
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
