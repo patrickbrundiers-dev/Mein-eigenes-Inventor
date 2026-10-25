@@ -1255,6 +1255,31 @@ try {
     step("Skizze vollständig bemaßen", after.ok && after.dof === 0 && after.n - n0 === 7 && undone === n0 && /7 Maß/.test(hint), JSON.stringify({ n0, hint, after, undone }));
   }
 
+  // Panels: Eigenschaften nach links andocken, Breite am Rand ziehen, gespeichert, zurücksetzen
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    await page.locator("#ribbon .rb-tab", { hasText: "Ansicht" }).click();
+    await page.locator("#ribbon button", { hasText: /^Eigenschaften links$/ }).click();
+    await page.waitForTimeout(200);
+    const docked = await evalApp(() => ({ parent: document.getElementById("props").parentElement.className, right: document.querySelector(".dock-right").getBoundingClientRect().width, cols: document.getElementById("workspace").style.gridTemplateColumns }));
+    const grip = await page.locator(".dock-left .dock-grip").boundingBox();
+    await page.mouse.move(grip.x + 2, grip.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + 50, grip.y + 200, { steps: 4 });
+    await page.mouse.move(grip.x + 82, grip.y + 200, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    const widened = await evalApp(() => ({ w: document.querySelector(".dock-left").getBoundingClientRect().width, saved: JSON.parse(window.__werkcad.prefs.exportText()).values["oberflaeche.layout"], canvas: document.querySelector("#viewer canvas").getBoundingClientRect().width }));
+    await shot("26f-panels-links");
+    await page.locator("#ribbon button", { hasText: /^Anordnung zurücksetzen$/ }).click();
+    await page.waitForTimeout(200);
+    const reset = await evalApp(() => ({ parent: document.getElementById("props").parentElement.className, cols: document.getElementById("workspace").style.gridTemplateColumns }));
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    step("Panels andocken und Breite ziehen", /dock-left/.test(docked.parent) && docked.right <= 1 && Math.abs(widened.w - 340) < 3 && Math.abs((widened.saved?.wLeft || 0) - 340) < 3 && widened.saved?.props === "left" &&
+      /dock-right/.test(reset.parent) && reset.cols === "260px minmax(0px, 1fr) 300px", JSON.stringify({ docked, widened, reset }));
+  }
+
   // Farbschema dunkel und gemerkte Werkzeugwerte
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));

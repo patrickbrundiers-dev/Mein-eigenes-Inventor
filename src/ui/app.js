@@ -20,6 +20,7 @@ import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlace
 import { MATERIALS } from "../core/sections.js";
 import { resolveParams, evaluate } from "../core/expr.js";
 import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
+import { Docking } from "./layout.js";
 
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
 const freeCount = (sk, free) => sk.entities.filter((e) => !e.origin && !e.construction && entityFree(e, free)).length;
@@ -46,6 +47,7 @@ export class App {
     this.statusEl = document.getElementById("status");
     this.hud = document.getElementById("hud");
     this.kernel = new KernelClient((busy, msg) => this.setBusy(busy, msg));
+    this.docking = new Docking(this);
     this.viewer = new Viewer(document.getElementById("viewer"));
     this.sketcher = new Sketcher(this);
     this.files = new Files(this);
@@ -95,7 +97,7 @@ export class App {
     document.getElementById("start").hidden = !start;
     document.getElementById("overlay").style.display = mode === "sketch" ? "" : "none";
     this.viewTools.hidden = draw || start;
-    document.getElementById("workspace").classList.toggle("no-browser", start);
+    this.docking.setModeHidden(start ? ["browser"] : []);
     if (start) this.start.render();
     if (draw) this.drawing.open(this.activeDoc());
     else this.drawing.close();
@@ -783,6 +785,7 @@ export class App {
   applyPrefs(keys) {
     const p = this.prefs;
     if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
+    if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
     this.viewer.applyPrefs(p.values);
     this.sketcher.applyPrefs(p.values);
     if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);

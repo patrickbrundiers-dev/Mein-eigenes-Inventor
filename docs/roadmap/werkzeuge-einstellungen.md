@@ -18,7 +18,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Anpassbare Tastaturkürzel | vorhanden | Befehlsliste `src/core/commands.js`, Editor im Einstellungscenter mit Konfliktprüfung je Arbeitsbereich; Esc, Entf, Ziffern/Komma/Tab bleiben fest (Stufe 3) |
 | Skalierbare Oberfläche | vorhanden (neu) | Einstellung „Oberflächengröße“, Desktop |
 | Protokollfenster / Fehlerdetails | teilweise | Fehlerprotokoll als Datei (`electron/log.cjs`), Ordner aus dem Center öffenbar |
-| Konfigurierbare Werkzeugleisten, gespeicherte Panelanordnung | teilweise | Stufe 15: Schnellzugriffsleiste (anheften in der Befehlssuche, ordnen im Center); Menüband/Panels selbst anordnen: P3 |
+| Konfigurierbare Werkzeugleisten, gespeicherte Panelanordnung | ja | Stufe 15: Schnellzugriffsleiste (anheften in der Befehlssuche, ordnen im Center); Stufe 23: Modellbrowser und Eigenschaften links/rechts andocken, Breite ziehen, ein-/ausblenden, gespeichert. Menüband selbst umbauen: P3 |
 
 ## Auswahl, Navigation, Ansicht (Masterplan 3)
 
@@ -129,3 +129,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 20 | Farbschema hell/dunkel, letzte Werkzeugwerte über die Sitzung hinaus merken | Unit-Test Schema, Oberflächentest |
 | 21 | Spline in der Skizze (Kontrollpunkte, tangential, Profil, DXF) | Unit-, Kernel-, Oberflächentest |
 | 22 | Skizze vollständig bemaßen | Unit-Test Rechteck mit Bohrung, Oberflächentest |
+| 23 | Panels andocken (links/rechts, untereinander), Breite ziehen, ein-/ausblenden, gespeichert | Unit-Test Anordnung, Oberflächentest |
