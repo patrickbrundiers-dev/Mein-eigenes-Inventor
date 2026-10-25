@@ -24,3 +24,5 @@ kein Programmcode geändert.
 | [testing/baseline-2026-10-24.md](testing/baseline-2026-10-24.md) | Testergebnisse vor jeder Änderung |
 | [roadmap/rohrlaser-editor-abgleich.md](roadmap/rohrlaser-editor-abgleich.md) | Abgleich mit dem Editor der Rohrlaser-Kalkulation: Matrix, Übertragungen, Testplan |
 | [roadmap/megacad-metall-abgleich.md](roadmap/megacad-metall-abgleich.md) | Abgleich mit dem Funktionsumfang von MegaCAD Metall 3D: Status, Nutzen, Aufwand, Stufen M1–M24 |
+| [roadmap/pfostenbefestigung.md](roadmap/pfostenbefestigung.md) | Pfostenbefestigung an Geländern: Bestand, Entscheidungen, Etappen 1–7 |
+| [anwender/pfostenbefestigung.md](anwender/pfostenbefestigung.md) | Anleitung Pfostenbefestigung (oben, seitlich, Flacheisen, Prüfungen, Grenzen) |

@@ -146,6 +146,12 @@ export class Props {
       const rx = on && part.kind === "part" && fieldParts(gen, key), bodies = rx ? app.results.get(part.id)?.bodies || [] : [];
       app.viewer.highlightBodies(rx ? bodies.flatMap((b, i) => (b.fid === f.id && rx.test(b.name || "") ? [i] : [])) : []);
     };
+    // Meldung »Pfosten 3: …« hebt diesen Pfosten samt Blech, Fußplatte, Flacheisen im 3D-Fenster hervor (Plan 7.2)
+    const markMsg = (m, on) => {
+      const who = on && part.kind === "part" ? /^([^:]{1,80}):/.exec(m)?.[1] : null, bodies = who ? app.results.get(part.id)?.bodies || [] : [];
+      const hit = (n = "") => n === who || n.startsWith(who + " ") || n.endsWith(" " + who) || n.includes(" " + who + " ");
+      app.viewer.highlightBodies(who ? bodies.flatMap((b, i) => (b.fid === f.id && hit(b.name) ? [i] : [])) : []);
+    };
     const groups = [];
     for (const s of gen.schema) {
       if (s.when && !s.when(P)) continue;
@@ -156,6 +162,7 @@ export class Props {
       if (s.type === "num") g.items.push(this.expr(s.label, String(v), (x) => setP(s.key, x, s.label), { unit: s.unit || "mm" }));
       else if (s.type === "list") g.items.push(this.text(s.label + " (mm, mit ; trennen)", String(v), (x) => setP(s.key, x, s.label), { placeholder: "3000; 1500" }));
       else if (s.type === "check") g.items.push(this.check(s.label, !!v, (x) => setP(s.key, x, s.label)));
+      else if (s.type === "text") g.items.push(this.text(s.label, String(v ?? ""), (x) => setP(s.key, x, s.label)));
       else if (s.type === "select" && s.tiles) g.items.push(this.genTiles(s, v, P, planOf, (x) => setP(s.key, x, s.label)));
       else if (s.type === "select") g.items.push(this.select(s.label, s.options, v, (x) => setP(s.key, x, s.label)));
       else if (s.type === "section") {
@@ -165,7 +172,7 @@ export class Props {
       const msgs = msgsFor(s.key);
       if (msgs.length) {
         g.items.slice(n0).forEach((el) => el.classList?.add(msgs.some(([k]) => k === "err") ? "field-bad" : "field-warn"));
-        g.items.push(...msgs.map(([k, m]) => h("p", { class: "field-msg " + k }, m)));
+        g.items.push(...msgs.map(([k, m]) => h("p", { class: "field-msg " + k, onmouseenter: () => markMsg(m, true), onmouseleave: () => markMsg(m, false) }, m)));
       }
     }
     for (const g of groups) out.push(this.section(g.name, ...g.items));

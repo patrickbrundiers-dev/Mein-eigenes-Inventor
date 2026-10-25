@@ -728,7 +728,8 @@ export function createKernel(R) {
             for (const ch of plan.chains) {
               const segs = ch.points.slice(1).map((b, i) => ({ id: "s" + (i + 1), a: ch.points[i], b }));
               const ms = buildMembers(segs, { kind: ch.section.kind, dims: ch.section.dims }, { corner: "gehrung", align: "mitte", rotation: String(ch.rot || 0) }, E, cut, () => ch.up || [0, 0, 1], ch.name);
-              const size = Math.max(ch.section.geom?.width || 0, ch.section.geom?.height || 0);
+              const g = ch.section.geom || sectionGeometry(ch.section.kind, ch.section.dims); // Kette oft nur mit kind/dims
+              const size = Math.max(g?.width || 0, g?.height || 0);
               ms.forEach((m, i) => {
                 if (ch.onlySeg != null && i !== ch.onlySeg) return;
                 const ds = segs[i] ? drillsOf(ch.name, segs[i].a, segs[i].b, size) : [];
@@ -753,8 +754,9 @@ export function createKernel(R) {
               let d;
               if (pl.poly) { d = R.draw(pl.poly[0]); for (const q of pl.poly.slice(1)) d = d.lineTo(q); d = d.close(); }
               else d = R.drawRoundedRectangle(pl.W, pl.H, pl.r || 0);
-              for (const [x, y] of pl.holes || []) d = d.cut(R.drawCircle(pl.d / 2).translate(x, y));
+              for (const [x, y, hd] of pl.holes || []) d = d.cut(R.drawCircle((hd || pl.d) / 2).translate(x, y)); // [x, y, Ø?] – eigener Ø je Loch (Gegenbohrung)
               for (const [x, y, len] of pl.slots || []) d = d.cut(R.drawRoundedRectangle(len, pl.d, pl.d / 2 - 0.01).translate(x, y)); // Langloch entlang xDir
+              for (const [x, y, w, hh] of pl.rects || []) d = d.cut(R.drawRectangle(w, hh).translate(x, y)); // Rechteckausschnitt (Steckschlitz)
               const solid = d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t);
               const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length, ...(pl.slots?.length ? { slots: pl.slots.length } : {}), d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
               const dens = pl.glass ? FILL_DENSITY.glas : FILL_DENSITY[pl.tread];
