@@ -123,13 +123,18 @@ test("Geländer-Generator: Pfostenaufteilung, Staketen, Handlauf über Eck, Fuß
   assert.equal(by(/^Fußplatte/).length, 6);
   assert.equal(by(/^Handlauf/).length, 2, "zwei Handlaufstäbe, an der Ecke gegehrt");
   assert.ok(Math.abs(by(/^Handlauf/)[0].meta.miterEnd) > 40, "Gehrung 45° an der Ecke");
-  assert.equal(by(/^Obergurt/).length, 5);
+  assert.equal(by(/^Obergurt/).length, 2, "je Lauf ein durchgesteckter Gurt (≤ 5800 mm)");
+  // Durchbrüche: Pfosten 2 (zwischen) für Ober- und Untergurt; Gurte mit je einer Bohrung pro Stab
+  assert.equal(by(/^Pfosten 2$/)[0].meta.drills, 2);
+  near(by(/^Pfosten 2$/)[0].meta.drillD, 27.9, 1e-9, "Gurt 26,9 + 1 mm Aufmaß");
+  const og = by(/^Obergurt/);
+  assert.equal(og.reduce((n, b) => n + (b.meta.drills || 0), 0), by(/^Stab /).length, "Bohrung Ø 13 je Stab");
   const bars = by(/^Stab /);
   assert.ok(bars.length > 20);
   // Öffnung zwischen Pfostenfläche und erstem Stab ≤ 110 mm
   const bb = (b) => b.shape.boundingBox.bounds;
   const firstBar = bars.filter((b) => Math.abs(bb(b)[0][1] + bb(b)[1][1]) < 1 && bb(b)[1][0] < 1000).sort((a, b) => bb(a)[0][0] - bb(b)[0][0])[0];
-  assert.ok(bb(firstBar)[0][0] - 20 <= 110 + 1e-6, "Öffnung am ersten Pfosten");
+  assert.ok(bb(firstBar)[0][0] - 21.2 <= 110 + 1e-6, "Öffnung am ersten Pfosten");
   // Oberkante Handlauf = 1000
   const top = Math.max(...res.bodies.map((b) => bb(b)[1][2]));
   near(top, 1000, 0.01, "OK Handlauf");
@@ -145,7 +150,7 @@ test("Geländer Stufe 2: Kreuz mit Ring und Rahmen mit Staketen bauen (MegaCAD-A
   okAll(rk);
   const diag = rk.bodies.filter((b) => /^Diagonale/.test(b.name));
   assert.equal(diag.length, 2);
-  for (const d of diag) { near(bb(d)[0][0], 20, 0.01, "Diagonale an Pfostenfläche"); near(bb(d)[1][0], 1180, 0.01, "Diagonale an Pfostenfläche"); }
+  for (const d of diag) { near(bb(d)[0][0], 21.2, 0.01, "Diagonale an Pfostenfläche"); near(bb(d)[1][0], 1178.8, 0.01, "Diagonale an Pfostenfläche"); }
   const ring = rk.bodies.filter((b) => /^Ring 1/.test(b.name));
   assert.equal(ring.length, 24, "Ring aus 24 gegehrten Stücken");
   const k2 = { id: "r", ...defaultGenerator("gelaender") };

@@ -672,7 +672,7 @@ try {
   const gl1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, glass: r.bodies.filter((b) => b.meta?.glass).length, members: r.bodies.filter((b) => b.kind === "member").length, info: Object.values(r.status)[0]?.info }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20f-gelaender");
-  step("Geländer-Generator", gl0.ok && gl0.n > 30 && /Pfosten/.test(gl0.info) && gl1.glass === 5 && gl1.members === 6 + 2 + 10 + 6 && /6 Pfosten/.test(gl1.info) && /6 Handlaufhalter \(Bohrung Ø 12,1\)/.test(gl1.info), JSON.stringify({ gl0, gl1 }));
+  step("Geländer-Generator", gl0.ok && gl0.n > 30 && /Pfosten/.test(gl0.info) && gl1.glass === 5 && gl1.members === 6 + 2 + 4 + 6 && /6 Pfosten/.test(gl1.info) && /6 Handlaufhalter \(Bohrung Ø 12,1\)/.test(gl1.info), JSON.stringify({ gl0, gl1 }));
 
   // Tor-Generator (MegaCAD-Abgleich M12): Doppeltor mit Stichbogen, dann Rundbogen
   await evalApp(() => window.__werkcad.newPart("Tor"));

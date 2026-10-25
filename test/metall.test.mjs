@@ -194,7 +194,9 @@ test("Generator-Gerüst und Geländer-Plan: Parameter, Aufteilung, Öffnungen, V
   const f = defaultGenerator("gelaender");
   assert.equal(f.type, "generator");
   const E = (x) => Number(String(x).replace(",", "."));
-  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...patch }, E));
+  // frühere Standardprofile (Maße unten darauf gerechnet)
+  const OLD_GEL = { post: { kind: "vierkant", size: "40x3" }, bar: { kind: "vierkantvoll", size: "12" }, belt: { kind: "flach", size: "40x8" }, beltMode: "zwischen" };
+  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...OLD_GEL, ...patch }, E));
   const p1 = plan({ runs: "2500" });
   assert.equal(p1.members.filter((m) => /^Pfosten \d+$/.test(m.name)).length, 4, "2500 / 1200 → 3 Felder, 4 Pfosten");
   const bars = p1.members.filter((m) => /^Stab 1\./.test(m.name)).map((m) => m.a[0]).sort((a, b) => a - b);
@@ -399,7 +401,9 @@ test("Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCA
   const { defaultGenerator, resolveGenParams, GENERATORS } = await import("../src/core/generator.js");
   const f = defaultGenerator("gelaender");
   const E = (x) => Number(String(x).replace(",", "."));
-  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...patch }, E));
+  // frühere Standardprofile (Maße unten darauf gerechnet)
+  const OLD_GEL = { post: { kind: "vierkant", size: "40x3" }, bar: { kind: "vierkantvoll", size: "12" }, belt: { kind: "flach", size: "40x8" }, beltMode: "zwischen" };
+  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...OLD_GEL, ...patch }, E));
   const k = plan({ runs: "2400", fill: "kreuz" });
   const diag = k.members.filter((m) => /^Diagonale/.test(m.name));
   assert.equal(diag.length, 4, "2 Felder × 2 Diagonalen");
@@ -649,15 +653,16 @@ test("Handlaufhalter: Pfosten endet unter dem Handlauf, Endkappe, Stift, Bohrung
   assert.ok(Math.abs(post.b[2] - (1000 - 42.4 - 60 - 4)) < 1e-9, "60 mm frei + 4 mm Endkappe");
   assert.ok(p.plates.some((x) => x.name === "Pfosten 1 Endkappe" && x.t === 4));
   assert.deepEqual([pin.section.kind, pin.section.dims.D, pin.a[2], pin.b[2]], ["rund", 12, 1000 - 42.4 - 60, 1000 - 42.4 / 2]);
-  assert.equal(p.drills.length, 4);
-  assert.deepEqual([p.drills[0].target, p.drills[0].d, p.drills[0].dir], ["Handlauf", 12.1, [0, 0, -1]]);
+  const hd = p.drills.filter((d) => d.target === "Handlauf");
+  assert.equal(hd.length, 4);
+  assert.deepEqual([hd[0].d, hd[0].dir], [12.1, [0, 0, -1]]);
   assert.match(p.info, /4 Handlaufhalter \(Bohrung Ø 12,1\)/);
   // ohne Halter (auch ältere Features): Pfosten bis unter den Handlauf
   const o = plan("gelaender", { runs: "2500", holder: "keine" });
-  assert.ok(Math.abs(o.members.find((m) => m.name === "Pfosten 1").b[2] - (1000 - 42.4)) < 1e-9 && !o.drills.length);
+  assert.ok(Math.abs(o.members.find((m) => m.name === "Pfosten 1").b[2] - (1000 - 42.4)) < 1e-9 && !o.drills.some((d) => d.target === "Handlauf"));
   assert.equal(g.genValues("gelaender", { runs: "2000" }).holder, "keine");
   // massiver Pfosten (Flachstahl): ohne Endkappe
-  const fl = plan("gelaender", { runs: "2500", post: { kind: "flach", size: "40x10" } });
+  const fl = plan("gelaender", { runs: "2500", post: { kind: "flach", size: "40x10" }, beltMode: "zwischen" });
   assert.ok(!fl.plates.some((x) => /Endkappe/.test(x.name)) && Math.abs(fl.members.find((m) => m.name === "Pfosten 1").b[2] - (1000 - 42.4 - 60)) < 1e-9);
   // Treppe: Halter an jedem Pfosten, Bohrung im Handlauf desselben Zugs; Balkon reicht durch
   const t = plan("treppe", {});
@@ -667,4 +672,43 @@ test("Handlaufhalter: Pfosten endet unter dem Handlauf, Endkappe, Stift, Bohrung
   const b = plan("balkon", {});
   assert.ok(b.drills.length > 0 && b.drills.every((d) => d.target === "Geländer Handlauf"));
   assert.equal(plan("balkon", { railHolder: false }).drills.length, 0);
+});
+
+test("Gurte durch die Pfosten: ein Stück bis 5800 mm, Stoß im Pfosten, Durchbrüche und Stabbohrungen mit Aufmaß", async () => {
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (patch) => g.GENERATORS.gelaender.plan(g.resolveGenParams("gelaender", { ...g.defaultGenerator("gelaender").params, ...patch }, E));
+  const a = plan({ runs: "4800" });
+  const og = a.members.filter((m) => /^Obergurt/.test(m.name)), ug = a.members.filter((m) => /^Untergurt/.test(m.name));
+  assert.deepEqual([og.length, ug.length], [1, 1], "4800 mm: je ein Stück");
+  assert.deepEqual([og[0].a[0], og[0].b[0]], [0, 4800], "von Pfostenmitte zu Pfostenmitte");
+  // Durchbrüche im Pfosten: Ø Gurt 26,9 + 1 = 27,9; Endpfosten einseitig, dazwischen durchgehend
+  const pd = a.drills.filter((d) => /^Pfosten \d+$/.test(d.target));
+  assert.ok(pd.every((d) => Math.abs(d.d - 27.9) < 1e-9));
+  assert.equal(pd.filter((d) => d.target === "Pfosten 1").length, 2, "Ober- und Untergurt");
+  assert.ok(pd.filter((d) => d.target === "Pfosten 2").every((d) => Math.abs(d.len - (42.4 + 2)) < 1e-9), "durchgehend");
+  assert.ok(pd.filter((d) => d.target === "Pfosten 1").every((d) => Math.abs(d.len - (21.2 + 1)) < 1e-9 && d.dir[0] === 1), "einseitig nach innen");
+  // Stäbe: durch beide Gurte bis bündig außen, je Stab eine Bohrung Ø 13 in jedem Gurt
+  const bars = a.members.filter((m) => /^Stab /.test(m.name));
+  const zTop = 1000 - 42.4 - 100, zBot = 100;
+  assert.ok(bars.every((m) => Math.abs(m.a[2] - (zBot - 26.9 / 2)) < 1e-9 && Math.abs(m.b[2] - (zTop + 26.9 / 2)) < 1e-9));
+  const sd = a.drills.filter((d) => /gurt/.test(d.target));
+  assert.equal(sd.length, 2 * bars.length);
+  assert.ok(sd.every((d) => d.d === 13 && d.dir[2] === -1));
+  // 9000 mm: Stoß in einem Pfosten (Stücke ≤ 5800), dort durchgehender Durchbruch für beide Stücke
+  const b = plan({ runs: "9000" });
+  const pieces = b.members.filter((m) => /^Obergurt/.test(m.name));
+  assert.equal(pieces.length, 2);
+  assert.ok(pieces.every((m) => Math.abs(m.b[0] - m.a[0]) <= 5800 + 1e-6));
+  assert.equal(pieces[0].b[0], pieces[1].a[0], "Stoß in Pfostenmitte");
+  // Gurt zu dick für den Pfosten → Meldung am Feld
+  assert.throws(() => plan({ belt: { kind: "rohr", size: "48.3x2.6" } }), (e) => e.key === "belt");
+  // Vierkant-Gurt: rechteckiger Durchbruch mit Aufmaß
+  const v = plan({ runs: "2000", belt: { kind: "vierkant", size: "20x2" }, post: { kind: "vierkant", size: "40x3" } });
+  const vd = v.drills.find((d) => d.target === "Pfosten 1");
+  assert.deepEqual([vd.w, vd.h], [21, 21]);
+  // zwischen den Pfosten (ältere Features): Gurte je Feld wie bisher
+  const z = plan({ runs: "2400", beltMode: "zwischen" });
+  assert.equal(z.members.filter((m) => /^Obergurt/.test(m.name)).length, 2);
+  assert.equal(g.genValues("gelaender", { runs: "2000" }).beltMode, "zwischen");
 });

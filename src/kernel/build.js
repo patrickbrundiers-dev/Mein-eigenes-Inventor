@@ -683,16 +683,18 @@ export function createKernel(R) {
             const drillsOf = (name, A, B, size) => (plan.drills || []).filter((d) => {
               if (d.target !== name) return false;
               const ab = v3.sub(B, A), L2 = v3.dot(ab, ab), t = Math.max(0, Math.min(1, v3.dot(v3.sub(d.p, A), ab) / (L2 || 1)));
-              return v3.dist(d.p, v3.add(A, v3.mul(ab, t))) <= size / 2 + 1;
+              return v3.dist(d.p, v3.add(A, v3.mul(ab, t))) <= size / 2 + 5;
             });
-            const drill = (solid, list) => list.reduce((sh, d) => sh.cut(R.makeCylinder(d.d / 2, d.len, d.p, v3.norm(d.dir))), solid);
+            // rund (d) oder rechteckig (w quer entlang xDir × h), z. B. Durchbruch für einen Gurt im Pfosten
+            const drillTool = (d) => (d.w ? R.drawRectangle(d.w, d.h).sketchOnPlane(new R.Plane(d.p, d.xDir, v3.norm(d.dir))).extrude(d.len) : R.makeCylinder(d.d / 2, d.len, d.p, v3.norm(d.dir)));
+            const drill = (solid, list) => list.reduce((sh, d) => sh.cut(drillTool(d)), solid);
             for (const ch of plan.chains) {
               const segs = ch.points.slice(1).map((b, i) => ({ id: "s" + (i + 1), a: ch.points[i], b }));
               const ms = buildMembers(segs, { kind: ch.section.kind, dims: ch.section.dims }, { corner: "gehrung", align: "mitte", rotation: String(ch.rot || 0) }, E, cut, () => ch.up || [0, 0, 1], ch.name);
               const size = Math.max(ch.section.geom?.width || 0, ch.section.geom?.height || 0);
               ms.forEach((m, i) => {
                 const ds = segs[i] ? drillsOf(ch.name, segs[i].a, segs[i].b, size) : [];
-                add(drill(m.solid, ds), { ...m.meta, generator: f.gen, ...(ds.length ? { drills: ds.length, drillD: ds[0].d } : {}) }, ms.length > 1 ? m.name : ch.name);
+                add(drill(m.solid, ds), { ...m.meta, generator: f.gen, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }, ms.length > 1 ? m.name : ch.name);
               });
             }
             for (const m of plan.members) {
@@ -702,7 +704,7 @@ export function createKernel(R) {
               const cuts = m.cuts || { start: [], end: [] };
               const { solid } = memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts, cut);
               const ds = drillsOf(m.name, m.a, m.b, Math.max(m.section.geom.width, m.section.geom.height));
-              add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), ...(ds.length ? { drills: ds.length, drillD: ds[0].d } : {}) }), m.name);
+              add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }), m.name);
             }
             for (const pl of plan.plates) {
               let d;

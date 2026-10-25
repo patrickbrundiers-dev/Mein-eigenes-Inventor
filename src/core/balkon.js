@@ -98,7 +98,8 @@ export const BALKON = {
       const i = p.inset, yStart = y0 + 20;
       const side = T - i - yStart, front = W - 2 * i;
       if (!(side > 100 && front > 100)) throw fieldError("Geländer passt nicht – Abstand vom Rand prüfen", "inset");
-      const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill, holder: p.railHolder ? "stift" : "keine" });
+      const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill, holder: p.railHolder ? "stift" : "keine", overhang: p.railHolder ? 50 : 0,
+        post: sec({ kind: "vierkant", size: "40x3" }), belt: sec({ kind: "flach", size: "40x8" }), bar: sec({ kind: "vierkantvoll", size: "12" }), beltMode: "zwischen" }); // Balkon-Geländer wie bisher
       // Parameter des Geländers heißen hier anders: Meldungen auf die Balkon-Felder umschlüsseln
       const KEY = { height: "railH", fill: "fill" };
       let g;
