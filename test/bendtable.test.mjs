@@ -90,6 +90,8 @@ test("Projektkopien und verknüpfte Bauteile", () => {
     { kind: "part", material: "S235", features: [{ type: "knickrahmen", bendRule: "tabelle", dims: { t: "2" } }] },
   ] };
   assert.deepEqual(bendTableUses(prj), [["S235", 2], ["S235", 2]]);
+  const withParam = { docs: [{ kind: "part", material: "S235", params: [{ name: "blech", expr: "1+1" }], features: [{ type: "kantteil", rule: "tabelle", t: "blech" }] }] };
+  assert.deepEqual(bendTableUses(withParam), [["S235", 2]], "Dicke als Parameter");
   setUserBendTables([T2, { ...T2, t: 3 }]);
   assert.deepEqual(projectBendTableCopies(prj).map((x) => x.t), [2], "nur benutzte, ohne Doppelte");
   setUserBendTables([]);

@@ -7,6 +7,8 @@
 // (wie Maßbezug »außen« am Kantteil), daher BZ = v + 2·(ri + t)·tan(θ/2).
 // Winkelbezug: "biege" = Biegewinkel (90 = rechtwinklig gekantet), "oeffnung" = Öffnungswinkel (180 − Biegewinkel).
 
+import { evaluate, resolveParams } from "./expr.js";
+
 const DEG = Math.PI / 180;
 export const MODES = Object.freeze([
   { value: "verkuerzung", label: "Verkürzung v (mm)" },
@@ -109,10 +111,15 @@ export function bendTableUses(prj) {
   const out = [];
   for (const d of prj?.docs || []) {
     if (d?.kind !== "part") continue;
+    // Dicke kann ein Parameter oder eine Formel sein (wie im Kernel ausgewertet)
+    let scope = null;
+    const val = (x) => {
+      try { scope ??= resolveParams(d.params || []).values; return evaluate(String(x ?? ""), scope); } catch { return NaN; }
+    };
     for (const f of d.features || []) {
       if (f.suppressed) continue;
-      if (f.type === "kantteil" && f.rule === "tabelle") out.push([d.material || "S235", num(f.t)]);
-      if (f.type === "knickrahmen" && f.bendRule === "tabelle") out.push([d.material || "S235", num(f.dims?.t)]);
+      if (f.type === "kantteil" && f.rule === "tabelle") out.push([d.material || "S235", val(f.t ?? "2")]);
+      if (f.type === "knickrahmen" && f.bendRule === "tabelle") out.push([d.material || "S235", val(f.dims?.t)]);
     }
   }
   return out.filter(([, t]) => t > 0);
