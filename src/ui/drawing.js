@@ -1,7 +1,7 @@
 // Zeichnungsableitung: Blatt, Ansichten (Projektionsmethode 1 / DIN ISO 5456-2), Bemaßung, Schriftfeld, Export
 import { h, svgEl, toast, modal, promptDialog, fmtNum, downloadBlob } from "./dom.js";
 import { DxfWriter } from "../core/dxf.js";
-import { MATERIALS } from "../core/sections.js";
+import { materialOf, materialList } from "../core/materials.js";
 import { uid } from "../core/examples.js";
 import { scaleLabel } from "./tree.js";
 import { v3 } from "../core/geom.js";
@@ -665,12 +665,12 @@ export class DrawingEditor {
     const src = d.source && this.app.doc(d.source.id);
     // Werkstoff und Masse folgen dem Modell, solange im Schriftfeld nichts eingetragen ist
     // (ältere Zeichnungen haben die Werkstoff-Bezeichnung beim Anlegen kopiert: die gilt ebenfalls als automatisch)
-    const autoLabels = new Set(Object.values(MATERIALS).map((m) => m.label));
+    const autoLabels = new Set(materialList().map((m) => m.label));
     let mass = "", material = "";
     if (src?.kind === "part") {
       const r = this.app.results.get(src.id);
-      if (r) mass = fmtNum((r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0) * (MATERIALS[src.material]?.density || 7.85)) / 1e6, 2) + " kg";
-      material = MATERIALS[src.material]?.label || src.material || "";
+      if (r) mass = fmtNum((r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0) * materialOf(src.material).density) / 1e6, 2) + " kg";
+      material = src.material ? materialOf(src.material).label : "";
     } else if (src?.kind === "assembly") {
       const rows = this.bomRowsOf(d);
       if (rows.length) mass = fmtNum(rows.reduce((s, r) => s + r.mass * r.qty, 0), 2) + " kg";

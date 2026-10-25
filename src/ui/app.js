@@ -17,7 +17,7 @@ import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./do
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { newSketch } from "../core/sketch.js";
 import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, alignFaces, matApply, matApplyDir } from "../core/geom.js";
-import { MATERIALS } from "../core/sections.js";
+import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
 import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
 import { Docking } from "./layout.js";
@@ -151,6 +151,9 @@ export class App {
     if (this.mode === "sketch") this.finishSketch(true);
     this.project = prj;
     this.filePath = filePath;
+    const matIssues = adoptProjectMaterials(prj);
+    this.syncMaterials();
+    for (const i of matIssues) toast(i.message, { timeout: 8000 });
     this.dirty = false;
     this.undoStack = [];
     this.redoStack = [];
@@ -274,7 +277,7 @@ export class App {
       toast("Fehler beim Berechnen: " + e.message, { kind: "err" });
     }
   }
-  partColor(part) { return part.color || MATERIALS[part.material]?.color || "#8d99a6"; }
+  partColor(part) { return part.color || materialOf(part.material).color; }
   showPart(part, res) {
     if (this.mode === "sketch") {
       // im Skizzenmodus Modell halbtransparent hinter der Skizze
@@ -786,6 +789,7 @@ export class App {
     const p = this.prefs;
     if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
     if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
+    if (!keys || keys.includes("material.eigene")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte neu
     this.viewer.applyPrefs(p.values);
     this.sketcher.applyPrefs(p.values);
     if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);
@@ -794,6 +798,17 @@ export class App {
     if (keys) { this.refreshSelectionHits(); this.props.render(); this.updateStatus(); this.ribbon.render(); }
   }
 
+  /** Eigene Werkstoffe an Rechnung und Kernel geben (Farbe im STEP) */
+  syncMaterials() {
+    const user = this.prefs.get("material.eigene") || [];
+    setUserMaterials(user);
+    this.kernel?.call("materials", { user, project: this.project?.materials || [] }).catch(() => {});
+  }
+  /** Eigene Werkstoffe, die das Projekt benutzt, als Kopie in die Datei */
+  embedMaterials() {
+    const copies = projectMaterialCopies(this.project);
+    if (copies.length) this.project.materials = copies; else delete this.project.materials;
+  }
   /** Farbschema setzen (hell/dunkel/wie System); „System“ folgt Windows auch während der Sitzung */
   applyTheme() {
     const mode = this.prefs.get("darstellung.schema");
@@ -836,7 +851,7 @@ export class App {
       const r = this.results.get(d.id);
       if (r) {
         const vol = r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0);
-        const dens = MATERIALS[d.material]?.density || 7.85;
+        const dens = materialOf(d.material).density;
         parts.push(h("span", {}, "Masse ", h("span", { class: "num" }, fmtNum((vol * dens) / 1e6, 3) + " kg")));
         parts.push(h("span", {}, "Körper ", h("span", { class: "num" }, String(r.bodies.length))));
         const errs = Object.values(r.status).filter((s) => !s.ok).length;

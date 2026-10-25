@@ -91,7 +91,7 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 | D 3D-Ansicht | teilweise | Projektion, Darstellungsmodus, Qualität, Maus, Zoom/Drehen, Raster, ViewCube, Farben |
 | E Werkzeuge und Tastatur | teilweise | Kürzel verwalten, Konflikte, Werkzeugsuche, Schnellzugriff, Standardwerte je Werkzeug (Stufe 15); Menüband anordnen geplant |
 | F Kernel | fehlt | bewusst: keine Toleranzen ohne Absicherung |
-| G Materialien | teilweise | eingebaute Liste sichtbar; eigene Werkstoffe P2 |
+| G Materialien | ja | Stufe 24: eigene Werkstoffe (Name, Kürzel, Dichte, Farbe, Werkstoffnummer) anlegen, bearbeiten, duplizieren, löschen; Import/Export als JSON; benutzte eigene Werkstoffe als Kopie in der Projektdatei |
 | H Blech | fehlt | ADR-0002 |
 | I Rohrlaser/Maschinen | teilweise | Grenzen einer Maschine für die Fertigungsprüfung (`src/core/dfm.js`); mehrere Maschinenprofile eigenes Format (P3) |
 | J Leistung | teilweise | Darstellungsqualität; Rest geplant |
@@ -130,3 +130,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 21 | Spline in der Skizze (Kontrollpunkte, tangential, Profil, DXF) | Unit-, Kernel-, Oberflächentest |
 | 22 | Skizze vollständig bemaßen | Unit-Test Rechteck mit Bohrung, Oberflächentest |
 | 23 | Panels andocken (links/rechts, untereinander), Breite ziehen, ein-/ausblenden, gespeichert | Unit-Test Anordnung, Oberflächentest |
+| 24 | Eigene Werkstoffe: Bibliothek in den Einstellungen, wirksam in Masse, Trägheit, Zuschnittliste, Zeichnung und STEP-Farbe; Kopie in der Projektdatei | Unit-Test Prüfung, Austausch, Projekt ohne Bibliothekseintrag; Oberflächentest Cortenstahl |

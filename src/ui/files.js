@@ -5,7 +5,6 @@ import { newPart, uid } from "../core/examples.js";
 import { serializeProject, loadProject, validateProject } from "../core/project.js";
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
-import { MATERIALS } from "../core/sections.js";
 import { fmtNum } from "./dom.js";
 
 const PROJECT_FILTERS = [{ name: "PBCAD-Projekt", extensions: ["wcad"] }];
@@ -16,7 +15,7 @@ export class Files {
   get bridge() { return window.werkcad || null; }
 
   // ---------- Projekt ----------
-  serialize() { return serializeProject(this.app.project); }
+  serialize() { this.app.embedMaterials(); return serializeProject(this.app.project); }
   /** Datei lesen, prüfen, ggf. migrieren; Hinweise (keine Fehler) kommen in `issues` */
   parse(text) { return loadProject(text); }
   async confirmDiscard() {
@@ -305,7 +304,6 @@ function csv(rows) {
   const esc = (v) => { const s = String(v ?? ""); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   return "﻿" + rows.map((r) => r.map(esc).join(";")).join("\r\n") + "\r\n";
 }
-export { MATERIALS };
 
 /** Prüfhinweise als Meldung zeigen; reine Info (z. B. Migration) nur in der Konsole */
 function showIssues(issues, context) {

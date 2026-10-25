@@ -1,7 +1,7 @@
 // Einstellungscenter: Kategorien links, Suche oben, Optionen rechts. Gültige Änderungen wirken sofort.
-import { h, modal, toast } from "./dom.js";
+import { h, modal, toast, confirmDialog } from "./dom.js";
 import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings } from "../core/settings.js";
-import { MATERIALS } from "../core/sections.js";
+import { materialList, validateMaterial, exportMaterialLib, importMaterialLib, usedMaterialKeys } from "../core/materials.js";
 import { keymapEditor, quickAccessEditor } from "./commands.js";
 
 const STATUS = { aktiv: "", teilweise: "teilweise", geplant: "geplant" };
@@ -98,11 +98,7 @@ function extras(app, cat) {
     const forget = h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: !Object.keys(memo).length, onclick: (e) => { app.prefs.reset(["werkzeuge.letzte"]); e.currentTarget.disabled = true; toast("Werkzeuge starten wieder mit den Standardwerten"); } }, "Letzte Werkzeugwerte vergessen"));
     return [forget, quickAccessEditor(app), keymapEditor(app)];
   }
-  if (cat === "material") {
-    return [h("table", { class: "grid" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Werkstoff"), h("th", {}, "Dichte g/cm³"))),
-      h("tbody", {}, ...Object.values(MATERIALS).map((m) => h("tr", {}, h("td", {}, m.label), h("td", { class: "num" }, String(m.density).replace(".", ","))))))];
-  }
+  if (cat === "material") return [materialsEditor(app)];
   if (cat === "dateien") {
     return [h("ul", { class: "hint" },
       h("li", {}, "Wiederherstellung: nach einem Absturz bietet der Startbildschirm die letzte automatische Sicherung an."),
@@ -146,10 +142,77 @@ function updatesSection(app) {
   return box;
 }
 
-async function pickText(app) {
+const dens = (v) => String(v).replace(".", ",");
+
+/** Werkstofftabelle: eingebaute (fest), eigene (anlegen, bearbeiten, duplizieren, löschen), Import/Export */
+function materialsEditor(app) {
+  const prefs = app.prefs;
+  const wrap = h("div", { class: "mat-editor" });
+  const lib = () => [...(prefs.get("material.eigene") || [])];
+  const save = (next) => { const r = prefs.set("material.eigene", next); if (!r.ok) toast(r.error, { kind: "err", timeout: 6000 }); render(); return r.ok; };
+  const edit = (m, { isNew = false } = {}) => {
+    const f = {
+      label: h("input", { class: "inp", value: m.label || "", "aria-label": "Name" }),
+      key: h("input", { class: "inp", value: m.key || "", "aria-label": "Kürzel", disabled: isNew ? undefined : true }),
+      density: h("input", { class: "inp", value: m.density ? dens(m.density) : "", inputmode: "decimal", "aria-label": "Dichte" }),
+      color: h("input", { type: "color", value: m.color || "#8d99a6", "aria-label": "Farbe" }),
+      number: h("input", { class: "inp", value: m.number || "", "aria-label": "Werkstoffnummer" }),
+    };
+    const err = h("div", { class: "set-err", role: "alert" });
+    const row = (label, el) => h("div", { class: "field wide" }, h("label", {}, label), el);
+    modal({
+      title: isNew ? "Werkstoff anlegen" : "Werkstoff bearbeiten", width: "420px",
+      body: h("div", { class: "mat-form" }, row("Name", f.label), row("Kürzel", f.key), row("Dichte (g/cm³)", f.density), row("Farbe", f.color), row("Werkstoffnummer (optional)", f.number), err),
+      buttons: [{ label: "Abbrechen" }, { label: "Übernehmen", primary: true, run: () => {
+        const v = validateMaterial({ label: f.label.value, key: f.key.value, density: f.density.value, color: f.color.value, number: f.number.value });
+        if (!v.ok) { err.textContent = v.error; return false; }
+        const list = lib();
+        const i = list.findIndex((x) => x.key === (isNew ? v.value.key : m.key));
+        if (isNew && i >= 0) { err.textContent = `Kürzel »${v.value.key}« gibt es schon`; return false; }
+        if (i >= 0) list[i] = v.value; else list.push(v.value);
+        return save(list) ? true : false;
+      } }],
+    });
+  };
+  const freeKey = (base) => { const keys = new Set(materialList().map((m) => m.key)); let k = base.slice(0, 17) + "-2", n = 2; while (keys.has(k)) k = base.slice(0, 17) + "-" + ++n; return k; };
+  const remove = async (m) => {
+    if (usedMaterialKeys(app.project).has(m.key)) return toast(`»${m.label}« wird im offenen Projekt benutzt und kann nicht gelöscht werden.`, { kind: "err", timeout: 6000 });
+    if (await confirmDialog("Werkstoff löschen", `»${m.label}« aus der Bibliothek löschen?`, { ok: "Löschen", danger: true })) save(lib().filter((x) => x.key !== m.key));
+  };
+  const exportLib = () => app.files.saveText(exportMaterialLib(lib()), "PBCAD-Werkstoffe.json", "application/json", [{ name: "PBCAD-Werkstoffe", extensions: ["json"] }]);
+  const importLib = async () => {
+    const text = await pickText(app, "PBCAD-Werkstoffe");
+    if (text === null) return;
+    const r = importMaterialLib(text, lib());
+    if (!r.ok) return toast("Import fehlgeschlagen: " + r.error, { kind: "err", timeout: 6000 });
+    if (save(r.value)) toast(`Werkstoffe importiert: ${r.added} neu, ${r.replaced} ersetzt`, { kind: "ok" });
+  };
+  const render = () => {
+    const used = usedMaterialKeys(app.project);
+    const btn = (label, run, attrs = {}) => h("button", { class: "btn", onclick: run, ...attrs }, label);
+    const rows = materialList().map((m) => h("tr", { "data-key": m.key },
+      h("td", {}, h("span", { class: "mat-swatch", style: { background: m.color } }), m.label, m.source === "project" ? h("span", { class: "hint" }, " (nur in dieser Projektdatei)") : null),
+      h("td", {}, m.source === "builtin" ? m.key : h("b", {}, m.key)),
+      h("td", { class: "num" }, dens(m.density)),
+      h("td", { class: "mat-actions" },
+        m.source === "user" ? [btn("Bearbeiten", () => edit(m)), btn("Duplizieren", () => edit({ ...m, key: freeKey(m.key), label: m.label + " (Kopie)" }, { isNew: true })),
+          btn("Löschen", () => remove(m), used.has(m.key) ? { disabled: true, title: "Wird im offenen Projekt benutzt" } : {})]
+          : m.source === "project" ? btn("In Bibliothek übernehmen", () => { const { source, ...c } = m; save([...lib(), c]); })
+          : btn("Duplizieren", () => edit({ ...m, key: freeKey(m.key), label: m.label + " (eigen)" }, { isNew: true })))));
+    wrap.replaceChildren(
+      h("div", { class: "btn-row" }, btn("Werkstoff anlegen …", () => edit({}, { isNew: true })), btn("Importieren …", importLib), btn("Exportieren …", exportLib, lib().length ? {} : { disabled: true })),
+      h("table", { class: "grid" },
+        h("thead", {}, h("tr", {}, h("th", {}, "Werkstoff"), h("th", {}, "Kürzel"), h("th", {}, "Dichte g/cm³"), h("th", {}, ""))),
+        h("tbody", {}, ...rows)));
+  };
+  render();
+  return wrap;
+}
+
+async function pickText(app, filterName = "PBCAD-Einstellungen") {
   const bridge = window.werkcad;
   if (bridge?.openFile) {
-    const r = await bridge.openFile({ filters: [{ name: "PBCAD-Einstellungen", extensions: ["json"] }] });
+    const r = await bridge.openFile({ filters: [{ name: filterName, extensions: ["json"] }] });
     return r ? (r.data ?? null) : null;
   }
   return new Promise((res) => {

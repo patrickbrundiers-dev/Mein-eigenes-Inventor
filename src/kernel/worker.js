@@ -2,7 +2,7 @@
 import * as R from "replicad";
 import ocInit from "replicad-opencascadejs";
 import { createKernel, hashString, errorText } from "./build.js";
-import { MATERIALS } from "../core/sections.js";
+import { materialOf, setUserMaterials, setProjectMaterials } from "../core/materials.js";
 import { svgPathSegments } from "../core/svgpath.js";
 import { segmentsToDxf } from "../core/dxf.js";
 
@@ -36,7 +36,7 @@ async function getBuilt(part) {
 }
 
 function partColor(part) {
-  return part.color || MATERIALS[part.material]?.color || "#8d99a6";
+  return part.color || materialOf(part.material).color;
 }
 
 /** Name eines Körpers im STEP: Bauteil (+ Profil-ID und laufende Nummer bei Profilen) */
@@ -59,6 +59,8 @@ async function placedShapes(items) {
 }
 
 const handlers = {
+  // eigene Werkstoffe (Farbe im STEP) – die Oberfläche schickt sie bei jeder Änderung
+  materials({ user, project }) { setUserMaterials(user); setProjectMaterials(project); return true; },
   async build({ part, quality = "normal" }) {
     const t0 = performance.now();
     const res = await getBuilt(part);
