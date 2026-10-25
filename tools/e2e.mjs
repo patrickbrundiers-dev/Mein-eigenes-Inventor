@@ -457,6 +457,24 @@ try {
   const pzKgm = await page.locator("#props dd", { hasText: "kg/m" }).first().textContent().catch(() => "");
   step("3D-Profilzug", pz0.bodies === 3 && pz0.errors === 0 && pz1.bodies === 4 && pz1.errors === 0 && /kg\/m/.test(pzKgm), JSON.stringify({ pz0, pz1, pzKgm }));
 
+  // Rohr über Polygonzug (MegaCAD-Abgleich M4): Biegeliste, Radius ändern
+  await evalApp(() => window.__werkcad.newPart("Biegerohr"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: "Rohr gebogen" }).click();
+  await idle();
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20c-biegerohr");
+  const br0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, len: r.bodies[0]?.meta?.length, errors: Object.values(r.status).filter((s) => !s.ok).length }; });
+  const brRows = await page.locator("#props table.grid tbody tr").count();
+  const radIn = page.locator("#props .field", { hasText: "Biegeradius" }).locator("input").first();
+  await radIn.fill("150");
+  await radIn.press("Enter");
+  await idle();
+  const br1 = await evalApp(() => { const a = window.__werkcad; return a.results.get(a.activeId).bodies[0]?.meta?.length; });
+  // R 100 → 900 + π·100; R 150: Geraden −4·150 + 2·(π/2)·150 statt −4·100 + π·100
+  step("Rohr gebogen (Biegeliste)", br0.bodies === 1 && br0.errors === 0 && Math.abs(br0.len - (900 + Math.PI * 100)) < 1e-6 && brRows === 3 && Math.abs(br1 - (700 + Math.PI * 150)) < 1e-6, JSON.stringify({ br0, brRows, br1 }));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();

@@ -11,6 +11,7 @@ import { planKnickrahmen, knickInput } from "../core/knickrahmen.js";
 import { planTubeCuts, atEnd as openAtEnd } from "../core/tubecuts.js";
 import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.js";
 import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
+import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 
 const BIG = 20000;
 
@@ -580,6 +581,21 @@ export function createKernel(R) {
             if (members.warnings?.length) st.warning = members.warnings.join("; ");
             break;
           }
+          case "biegerohr": {
+            const dims = {};
+            for (const [k, v] of Object.entries(f.dims || {})) dims[k] = E(v, k);
+            if (!BIEGEROHR_SECTIONS.includes(f.section)) throw new Error("Biegerohr: nur Rundrohr oder Rundstahl");
+            const geom = sectionGeometry(f.section, dims);
+            const plan = planBends(resolvePathPoints(f.points, E), E(f.radius, "Biegeradius"), geom.width);
+            const solid = sweepTube(plan.pieces, geom);
+            const name = sectionName(f.section, dims);
+            const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: plan.length, miterStart: 0, miterEnd: 0, bends: plan.bends.map((b) => ({ ...b })), lastStraight: plan.last, bendRadius: E(f.radius, "Biegeradius") };
+            state.tools.set(f.id, { op: f.op || "member", shapes: [{ shape: solid, kind: "member", meta, name: f.name || name }] });
+            pushMember(state, solid, f, meta, f.name || name);
+            st.info = `Abwicklung ${round(plan.length)} mm, ${plan.bends.length} Biegung(en)`;
+            if (plan.issues.length) st.warning = plan.issues.map((x) => x.message).join("; ");
+            break;
+          }
           case "knickrahmen": {
             const kr = buildKnickrahmen(f, E);
             // ein Bauteil (eine Zuschnittzeile in Abwicklungslänge); gefaltet mit sichtbarer Gehrungslinie
@@ -897,6 +913,17 @@ export function createKernel(R) {
         out.push((s) => s.translate(t));
       }
     return out;
+  }
+
+  // ---------- Biegerohr: Kreis(ring) entlang der Mittellinie aus Geraden und Bögen ----------
+  function sweepTube(pieces, geom) {
+    const edges = pieces.map((p) => (p.t === "line" ? R.makeLine(p.a, p.b) : R.makeThreePointArc(p.a, p.m, p.b)));
+    const spine = R.assembleWire(edges);
+    const p0 = pieces[0], dir = v3.norm(v3.sub(p0.t === "line" ? p0.b : p0.m, p0.a));
+    const rod = (r) => R.genericSweep(R.assembleWire([R.makeCircle(r, p0.a, dir)]), spine, { transitionMode: "right" });
+    let solid = rod(geom.outer.r);
+    if (geom.holes.length) solid = solid.cut(rod(geom.holes[0].r));
+    return solid;
   }
 
   // ---------- Rahmen aus Skizzenlinien ----------

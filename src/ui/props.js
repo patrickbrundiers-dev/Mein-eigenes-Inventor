@@ -13,6 +13,7 @@ import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, 
 import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
+import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
@@ -367,17 +368,9 @@ export class Props {
         if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(f, "alle Gehrungen dieses Rahmens")));
         break;
       case "profilzug": {
-        const pts = f.points || [];
-        const setPt = (i, patch, label) => this.set(f, (x) => { x.points[i] = { ...x.points[i], ...patch }; }, label);
-        const rows = pts.map((p, i) => h("div", { class: "pz-point" },
-          this.vec3(`Punkt ${i + 1}` + (p.rel && i ? " (Δ)" : ""), [p.x, p.y, p.z], (v) => setPt(i, { x: v[0], y: v[1], z: v[2] }, `Punkt ${i + 1}`)),
-          h("div", { class: "pz-opts" },
-            i ? this.check("relativ zum vorigen", !!p.rel, (v) => setPt(i, { rel: v }, `Punkt ${i + 1} relativ`)) : h("span", { class: "hint" }, "Startpunkt"),
-            pts.length > 2 ? h("button", { class: "btn", title: "Punkt entfernen", onclick: () => this.set(f, (x) => { x.points.splice(i, 1); if (x.points[0]) x.points[0] = { ...x.points[0], rel: false }; }, "Punkt entfernen") }, "Entfernen") : null),
-          i < pts.length - (f.closed ? 0 : 1) ? this.text(`Drehung Segment ${i + 1} °`, p.roll || "", (v) => setPt(i, { roll: v }, `Segment ${i + 1} Drehung`), { placeholder: "0" }) : null));
+        const rows = this.pathPointsEditor(f, true);
         out.push(this.section("Profilzug",
           ...rows,
-          h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.set(f, (x) => { let w = []; try { const sc = this.scope(); w = resolvePathPoints(x.points, (v) => evaluate(String(v), sc)); } catch { /* ungültig: Vorschlag entlang X */ } x.points.push(nextPointDefault(w)); }, "Punkt hinzufügen") }, "+ Punkt")),
           this.check("Geschlossen (letzter Punkt zurück zum ersten)", !!f.closed, (v) => this.set(f, "closed", v, "Geschlossen")),
           this.seg("Ecken", [["gehrung", "Gehrung"], ["stumpf", "Stumpf"]], f.corner || "gehrung", (v) => this.set(f, "corner", v, "Ecken")),
           this.seg("Lage zur Linie", [["mitte", "Mitte"], ["links", "Links"], ["rechts", "Rechts"]], f.align || "mitte", (v) => this.set(f, "align", v, "Lage")),
@@ -386,6 +379,25 @@ export class Props {
           h("p", { class: "hint" }, "Eckpunkte im Raum eingeben (absolut oder als Δ zum vorigen Punkt). Jedes Segment wird ein Profil; an den Ecken auf der Winkelhalbierenden gegehrt – auch wenn die Ecke in zwei Ebenen abknickt. Läuft ein Segment parallel zur gewählten Höhenrichtung, zeigt die Höhe nach Y (bzw. Z).")));
         out.push(this.sectionEditor(f));
         if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(f, "alle Gehrungen dieses Profilzugs")));
+        break;
+      }
+      case "biegerohr": {
+        const meta = r?.bodies?.find((b) => b.fid === f.id)?.meta;
+        out.push(this.section("Rohr über Polygonzug", ...this.pathPointsEditor(f, false),
+          E("Biegeradius (Mitte)", "radius", { allowNeg: false, allowZero: false }),
+          h("p", { class: "hint" }, "Eckpunkte des Polygonzugs eingeben; an jedem Eckpunkt wird mit dem Biegeradius (Mittellinie) gebogen. Die Zuschnittliste nennt die Abwicklungslänge (Geraden + Bögen).")));
+        out.push(this.sectionEditor(f, BIEGEROHR_SECTIONS));
+        if (meta?.bends) {
+          const n1 = (x) => fmtNum(x, 1);
+          out.push(this.section("Biegeliste",
+            h("table", { class: "grid" },
+              h("thead", {}, h("tr", {}, h("th", {}, "Nr"), h("th", {}, "Gerade vor"), h("th", {}, "Drehung °"), h("th", {}, "Winkel °"))),
+              h("tbody", {}, ...meta.bends.map((b, i) => h("tr", {}, h("td", { class: "num" }, String(i + 1)), h("td", { class: "num" }, n1(b.straight)), h("td", { class: "num" }, n1(b.rotation)), h("td", { class: "num" }, n1(b.angle)))),
+                h("tr", {}, h("td", {}, "Ende"), h("td", { class: "num" }, n1(meta.lastStraight)), h("td", {}), h("td", {})))),
+            h("dl", { class: "kv" }, h("dt", {}, "Abwicklungslänge"), h("dd", {}, n1(meta.length) + " mm")),
+            h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.saveText(bendListCsv({ bends: meta.bends, last: meta.lastStraight, length: meta.length }, f.name || "Biegerohr"), (f.name || "Biegerohr").replace(/[^\w\-äöüÄÖÜß ]+/g, "_") + "_Biegeliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]) }, "Biegeliste CSV")),
+            h("p", { class: "hint" }, "Gerade vor = Länge vom vorigen Bogenende bis zum Bogenanfang. Drehung = Drehung der Biegeebene gegenüber der vorigen Biegung (für die Biegemaschine).")));
+        }
         break;
       }
       case "knickrahmen": {
@@ -469,7 +481,7 @@ export class Props {
         break;
       }
       case "pattern": {
-        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "import"].includes(g.type) && g.id !== f.id);
+        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "biegerohr", "import"].includes(g.type) && g.id !== f.id);
         const axisSeg = (label, key, def) => this.seg(label, [["X", "X"], ["Y", "Y"], ["Z", "Z"], ["-X", "−X"], ["-Y", "−Y"], ["-Z", "−Z"]], f[key] || def, (v) => this.set(f, key, v, label));
         out.push(this.section(f.kind === "circular" ? "Kreismuster" : "Rechteckmuster",
           this.select("Feature", srcs.map((s) => [s.id, s.name]), f.feature, (v) => this.set(f, "feature", v, "Feature")),
@@ -515,6 +527,19 @@ export class Props {
       this.select("Normgröße", [["", "– eigene Maße –"], ...cat.map((c) => [c, c.replace(/\./g, ",")])], matchCatalog(kind, f.dims) || "", (v) => v && this.set(f, (x) => { x.dims = catalogToDims(kind, v); }, "Normgröße")),
       ...def.fields.map((k) => this.expr(FIELD_LABELS[k], f.dims?.[k] ?? "", (v) => this.set(f, (x) => { x.dims = { ...x.dims, [k]: v }; }, FIELD_LABELS[k]), { allowNeg: false })),
       this.meterWeightInfo(f));
+  }
+  /** Punkte eines räumlichen Zugs (Profilzug, Biegerohr): absolut oder relativ, mit Drehung je Segment (rolls) */
+  pathPointsEditor(f, rolls) {
+    const pts = f.points || [];
+    const setPt = (i, patch, label) => this.set(f, (x) => { x.points[i] = { ...x.points[i], ...patch }; }, label);
+    const rows = pts.map((p, i) => h("div", { class: "pz-point" },
+      this.vec3(`Punkt ${i + 1}` + (p.rel && i ? " (Δ)" : ""), [p.x, p.y, p.z], (v) => setPt(i, { x: v[0], y: v[1], z: v[2] }, `Punkt ${i + 1}`)),
+      h("div", { class: "pz-opts" },
+        i ? this.check("relativ zum vorigen", !!p.rel, (v) => setPt(i, { rel: v }, `Punkt ${i + 1} relativ`)) : h("span", { class: "hint" }, "Startpunkt"),
+        pts.length > 2 ? h("button", { class: "btn", title: "Punkt entfernen", onclick: () => this.set(f, (x) => { x.points.splice(i, 1); if (x.points[0]) x.points[0] = { ...x.points[0], rel: false }; }, "Punkt entfernen") }, "Entfernen") : null),
+      rolls && i < pts.length - (f.closed ? 0 : 1) ? this.text(`Drehung Segment ${i + 1} °`, p.roll || "", (v) => setPt(i, { roll: v }, `Segment ${i + 1} Drehung`), { placeholder: "0" }) : null));
+    rows.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.set(f, (x) => { let w = []; try { const sc = this.scope(); w = resolvePathPoints(x.points, (v) => evaluate(String(v), sc)); } catch { /* ungültig: Vorschlag entlang X */ } x.points.push(nextPointDefault(w)); }, "Punkt hinzufügen") }, "+ Punkt")));
+    return rows;
   }
   /** Fläche und Metergewicht des Querschnitts mit dem Werkstoff des Bauteils */
   meterWeightInfo(f) {

@@ -973,7 +973,7 @@ export class DrawingEditor {
     const src = d.source && this.app.doc(d.source.id);
     used.profile = this.profileOf(d);
     // Wandstärke nur bei einem einzelnen Hohlkörper, nicht bei Rahmen/Schweißbaugruppen aus mehreren Profilen
-    if (src?.kind !== "part" || src.features.some((f) => !f.suppressed && ["frame", "profilzug", "knickrahmen", "profile"].includes(f.type))) used.wall = true;
+    if (src?.kind !== "part" || src.features.some((f) => !f.suppressed && ["frame", "profilzug", "biegerohr", "knickrahmen", "profile"].includes(f.type))) used.wall = true;
     const views = cands.filter((v) => !keep.some((m) => m.view === v.id && m.auto)).map((v) => {
       const c = this.viewCam(d, v), p = this.proj.get(v.id);
       return { id: v.id, axes: viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, lines: p.visible, holes };

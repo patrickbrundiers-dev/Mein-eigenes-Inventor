@@ -8,6 +8,7 @@ export const CUT_RULES = [
   "Zuschnittlänge = größte Ausdehnung des Profils entlang seiner Achse (Außenmaß, Spitze zu Spitze bei Gehrung), auf 0,1 mm gerundet.",
   "Gehrung = Winkel der Schnittebene zur Senkrechten auf die Achse (0° = gerader Schnitt); „(3D)“ = Kopf geschwenkt, sonst 2D (Strahl senkrecht zur Oberfläche).",
   "Gehrung in zwei Ebenen (räumliche Ecke): Gesamtwinkel wie oben, dazu Anteil über die Breite und über die Höhe des Profils (Kennzeichen »2 Ebenen« in der Liste; CSV-Spalten bleiben für den Rohrlaser-Import gleich, die Schnittfläche liefert der STEP).",
+  "Biegerohr: eine Zeile in Abwicklungslänge (Geraden + Bögen auf der Mittellinie), Biegeliste im Bauteil.",
   "Knickrahmen: eine Zeile in Abwicklungslänge (gerades Rohr vor dem Biegen, inkl. Biegezugabe).",
   "Gleiches Profil, gleiche Länge, gleiche Enden und gleicher Werkstoff = eine Zeile mit Anzahl. Keine Verschnitt-Optimierung.",
   "Masse aus dem Volumen des Körpers (mit Ausklinkungen und Bohrungen) und der Werkstoffdichte.",
@@ -24,9 +25,9 @@ export function cutListRows(sources) {
       const ends = [m.miterStart || 0, m.miterEnd || 0].map((x) => Math.round(x * 10) / 10).sort((a, c) => a - c);
       const pid = m.profileId || m.section;
       const parts2 = twoPlaneParts(m.miterParts);
-      const key = [pid, L, ends.join("/"), parts2 ? JSON.stringify(parts2) : "", m.coped ? "A" : "", m.butt ? "S" : "", m.cutSig || "", m.endCuts ? m.endCuts.A + m.endCuts.B : "", part.material].join("|");
+      const key = [pid, L, ends.join("/"), parts2 ? JSON.stringify(parts2) : "", m.coped ? "A" : "", m.butt ? "S" : "", m.cutSig || "", m.endCuts ? m.endCuts.A + m.endCuts.B : "", m.bends ? JSON.stringify(m.bends.map((b) => [b.straight, b.rotation, b.angle].map((x) => Math.round(x * 10) / 10))) : "", part.material].join("|");
       const dens = MATERIALS[part.material]?.density || 7.85;
-      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, miterParts: parts2, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, d3: !!m.endCuts && (m.endCuts.A === "3D" || m.endCuts.B === "3D"), contours: m.contours && m.tube ? { items: m.contours, prof: m.tube } : null, knick: m.knicks ? { legs: m.legs || [], inPlane: m.inPlane, wall: m.wall } : null, qty: 0, kgm: kgPerMeter(m.area, dens), mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
+      const row = map.get(key) || { section: m.section, profileId: pid, length: L, miters: ends, miterParts: parts2, coped: !!m.coped, butt: !!m.butt, material: MATERIALS[part.material]?.label || part.material, d3: !!m.endCuts && (m.endCuts.A === "3D" || m.endCuts.B === "3D"), contours: m.contours && m.tube ? { items: m.contours, prof: m.tube } : null, bent: m.bends ? { count: m.bends.length, radius: m.bendRadius } : null, knick: m.knicks ? { legs: m.legs || [], inPlane: m.inPlane, wall: m.wall } : null, qty: 0, kgm: kgPerMeter(m.area, dens), mass: b.props?.volume ? (b.props.volume * dens) / 1e6 : (m.area * L * dens) / 1e6, parts: new Set() };
       row.qty += qty;
       row.parts.add(part.name);
       map.set(key, row);
@@ -70,7 +71,7 @@ export function partsText(r) {
 /** Enden einer Zuschnitt-Zeile als Text: "45°/45°", "gerade", "ausgeklinkt" */
 export function endsText(r) {
   const m = r.miters.some((x) => x) ? r.miters.map((x) => fmtNum(x, 1) + "°").join("/") : "gerade";
-  return m + (r.miterParts ? " · 2 Ebenen" : "") + (r.d3 ? " (3D)" : "") + (r.coped ? ", ausgeklinkt" : "");
+  return m + (r.miterParts ? " · 2 Ebenen" : "") + (r.bent && r.bent.count ? `, gebogen ${r.bent.count}× R ${fmtNum(r.bent.radius, 1)}` : "") + (r.d3 ? " (3D)" : "") + (r.coped ? ", ausgeklinkt" : "");
 }
 export function cutListCsv(rows) {
   const head = ["Pos", "Profil-ID", "Profil", "Zuschnittlänge mm", "Menge", "Gehrung Anfang °", "Gehrung Ende °", "Ausgeklinkt", "kg/m", "kg/Stk", "kg gesamt", "Werkstoff", "Bauteil"];
