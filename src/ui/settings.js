@@ -3,6 +3,7 @@ import { h, modal, toast, confirmDialog } from "./dom.js";
 import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings } from "../core/settings.js";
 import { materialList, validateMaterial, exportMaterialLib, importMaterialLib, usedMaterialKeys } from "../core/materials.js";
 import { keymapEditor, quickAccessEditor } from "./commands.js";
+import { orderedLabels, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
 
 const STATUS = { aktiv: "", teilweise: "teilweise", geplant: "geplant" };
 
@@ -96,7 +97,7 @@ function extras(app, cat) {
   if (cat === "werkzeuge") {
     const memo = app.prefs.get("werkzeuge.letzte") || {};
     const forget = h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: !Object.keys(memo).length, onclick: (e) => { app.prefs.reset(["werkzeuge.letzte"]); e.currentTarget.disabled = true; toast("Werkzeuge starten wieder mit den Standardwerten"); } }, "Letzte Werkzeugwerte vergessen"));
-    return [forget, quickAccessEditor(app), keymapEditor(app)];
+    return [forget, quickAccessEditor(app), ribbonEditor(app), keymapEditor(app)];
   }
   if (cat === "material") return [materialsEditor(app)];
   if (cat === "dateien") {
@@ -109,6 +110,42 @@ function extras(app, cat) {
     return window.werkcad?.openLogFolder ? [h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => window.werkcad.openLogFolder() }, "Protokollordner öffnen"))] : [];
   }
   return [];
+}
+
+/** Menüband anordnen: Karte wählen, Gruppen ein-/ausblenden und verschieben */
+function ribbonEditor(app) {
+  const prefs = app.prefs;
+  const tabs = app.ribbon.catalog();
+  const box = h("div", { class: "rb-editor" });
+  let tabId = tabs.find((t) => t.id === "modell")?.id || tabs[0]?.id;
+  const cfg = () => prefs.get("werkzeuge.menueband") || {};
+  const set = (r) => {
+    if (!r.ok) { toast(r.error, { kind: "err" }); return; }
+    const s = prefs.set("werkzeuge.menueband", r.value);
+    if (!s.ok) toast(s.error, { kind: "err" });
+    render();
+  };
+  const render = () => {
+    const t = tabs.find((x) => x.id === tabId);
+    const c = cfg(), hide = new Set(c[tabId]?.hide || []);
+    const order = t ? orderedLabels(tabId, t.labels, c) : [];
+    const pick = h("select", { class: "inp", "aria-label": "Registerkarte", onchange: (e) => { tabId = e.target.value; render(); } },
+      ...tabs.map((x) => h("option", { value: x.id, selected: x.id === tabId }, x.label)));
+    box.replaceChildren(h("h3", {}, "Menüband anordnen"),
+      h("div", { class: "btn-row" }, pick,
+        h("button", { class: "btn", disabled: !c[tabId], onclick: () => set({ ok: true, value: resetRibbonLayout(cfg(), tabId) }) }, "Karte zurücksetzen"),
+        h("button", { class: "btn", disabled: !Object.keys(c).length, onclick: () => set({ ok: true, value: resetRibbonLayout(cfg()) }) }, "Alles zurücksetzen")),
+      h("ol", { class: "qa-list rb-list" }, ...order.map((label, i) => {
+        const locked = (PROTECTED[tabId] || []).includes(label);
+        return h("li", { "data-group": label },
+          h("label", { class: "chk grow" }, h("input", { type: "checkbox", checked: !hide.has(label), disabled: locked, "aria-label": label + " sichtbar", onchange: (e) => set(setGroupHidden(cfg(), tabId, label, !e.target.checked, t.labels)) }), label, locked ? h("span", { class: "hint" }, " (immer sichtbar)") : null),
+          h("button", { class: "icon-btn", title: "Nach links", disabled: i === 0, onclick: () => set(moveGroup(cfg(), tabId, label, -1, t.labels)) }, "↑"),
+          h("button", { class: "icon-btn", title: "Nach rechts", disabled: i === order.length - 1, onclick: () => set(moveGroup(cfg(), tabId, label, +1, t.labels)) }, "↓"));
+      })),
+      h("p", { class: "hint" }, "Auch im Menüband: Rechtsklick auf eine Gruppe. Ausgeblendete Befehle bleiben über die Befehlssuche (Strg+K) erreichbar."));
+  };
+  render();
+  return box;
 }
 
 function updatesSection(app) {
