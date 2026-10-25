@@ -8,6 +8,7 @@
 
 const BAR_FILLS = ["staketen", "quer"];
 
+import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
 export const ZAUN = {
   label: "Zaun",
@@ -17,16 +18,16 @@ export const ZAUN = {
     { key: "groundGap", label: "Bodenabstand", type: "num", default: "80", group: "Zaun" },
     { key: "terrain", label: "Gelände", type: "select", options: [["eben", "eben"], ["gefaelle", "Gefälle (Felder schräg)"], ["stufen", "gestuft (Felder waagrecht)"]], default: "eben", tiles: "front", group: "Zaun" },
     { key: "rise", label: "Höhenunterschied (+ steigt)", type: "num", default: "600", group: "Zaun", when: (p) => p.terrain !== "eben" },
-    { key: "post", label: "Pfostenprofil", type: "section", kinds: ["vierkant", "rechteck", "rohr"], default: { kind: "vierkant", size: "60x3" }, group: "Pfosten" },
+    { key: "post", label: "Pfostenprofil", type: "section", default: { kind: "vierkant", size: "60x3" }, group: "Pfosten" },
     { key: "fieldMax", label: "Pfostenabstand max.", type: "num", default: "2500", group: "Pfosten" },
     { key: "postTop", label: "Pfosten über Feld", type: "num", default: "50", group: "Pfosten" },
     { key: "base", label: "Befestigung", type: "select", options: [["beton", "einbetoniert"], ["fussplatte", "Fußplatte"]], default: "beton", group: "Pfosten" },
     { key: "embed", label: "Einbetonieren (unter Gelände)", type: "num", default: "600", group: "Pfosten", when: (p) => p.base === "beton" },
     { key: "baseSize", label: "Fußplatte Größe", type: "num", default: "150", group: "Pfosten", when: (p) => p.base === "fussplatte" },
     { key: "baseT", label: "Fußplatte Dicke", type: "num", default: "10", group: "Pfosten", when: (p) => p.base === "fussplatte" },
-    { key: "frame", label: "Riegel", type: "section", kinds: ["vierkant", "rechteck", "flach"], default: { kind: "vierkant", size: "40x3" }, group: "Feld und Füllung" },
+    { key: "frame", label: "Riegel", type: "section", default: { kind: "vierkant", size: "40x3" }, group: "Feld und Füllung" },
     { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["keine", "keine"]], default: "staketen", tiles: "front", group: "Feld und Füllung" },
-    { key: "bar", label: "Stab", type: "section", kinds: ["vierkant", "vierkantvoll", "rund", "rohr", "flach"], default: { kind: "vierkant", size: "20x2" }, group: "Feld und Füllung", when: (p) => BAR_FILLS.includes(p.fill) },
+    { key: "bar", label: "Stab", type: "section", default: { kind: "vierkant", size: "20x2" }, group: "Feld und Füllung", when: (p) => BAR_FILLS.includes(p.fill) },
     { key: "gapMax", label: "Öffnung max.", type: "num", default: "100", group: "Feld und Füllung", when: (p) => BAR_FILLS.includes(p.fill) },
     { key: "panelT", label: "Blechdicke", type: "num", default: "2", group: "Feld und Füllung", when: (p) => p.fill === "blech" },
   ],
@@ -35,7 +36,7 @@ export const ZAUN = {
     const issues = [];
     const L = p.length, H = p.height, gap = p.groundGap;
     if (!(L > 500)) throw fieldError("Zaunlänge mindestens 500 mm", "length");
-    const pw = p.post.geom.width, fh = p.frame.geom.width;
+    const pw = p.post.geom.width, fh = rotExtent(p.frame, orientRot(p.frame, [1, 0, 0], [0, -1, 0], { open: [0, 0, 1], legs: [0, 1, 1], stem: [0, 0, -1] })).wide;
     if (!(H > 2 * fh + 50)) throw fieldError("Feldhöhe zu klein", "height");
     if (!(p.fieldMax > pw + 100)) throw fieldError("Pfostenabstand zu klein", "fieldMax");
     const rise = p.terrain === "eben" ? 0 : p.rise;
@@ -59,12 +60,14 @@ export const ZAUN = {
       airMax = Math.max(airMax, zb(xs[k]) - ground(xs[k]), zb(xs[k + 1]) - ground(xs[k + 1]));
       const f = k + 1;
       const cut = (a, b) => ({ start: [{ p: a, n: [-1, 0, 0] }], end: [{ p: b, n: [1, 0, 0] }] });
-      const rail = (h, name, section = p.frame) => {
+      // Riegel: U/UPN offen zu den Stäben (Unterriegel nach oben, Oberriegel nach unten)
+      const rail = (h, name, section = p.frame, open) => {
         const a = P(x0, zb(x0) + h), b = P(x1, zb(x1) + h);
-        members.push({ section, a, b, name, up, ...(rise && p.terrain === "gefaelle" ? { cuts: cut(a, b) } : {}) });
+        const rot = open ? orientRot(section, [b[0] - a[0], 0, b[2] - a[2]], up, { open, legs: [0, 1, open[2]], stem: [0, 0, -open[2]] }) : 0;
+        members.push({ section, a, b, name, up, rot, ...(rise && p.terrain === "gefaelle" ? { cuts: cut(a, b) } : {}) });
       };
-      rail(fh / 2, `Feld ${f} Unterriegel`);
-      rail(H - fh / 2, `Feld ${f} Oberriegel`);
+      rail(fh / 2, `Feld ${f} Unterriegel`, p.frame, [0, 0, 1]);
+      rail(H - fh / 2, `Feld ${f} Oberriegel`, p.frame, [0, 0, -1]);
       const lo = (x) => zb(x) + fh, hi = (x) => zb(x) + H - fh;
       if (p.fill === "staketen") {
         const bw = p.bar.geom.height, clear = x1 - x0;
