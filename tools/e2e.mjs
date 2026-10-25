@@ -2517,6 +2517,95 @@ try {
       JSON.stringify({ csv: csvOut.slice(0, 80), prm, end, col, cut, img }));
   }
 
+  // Fusion-Abgleich G4: Positionsdarstellungen (FU8), Explosion in Schritten (FU9), Baugruppenparameter (FU4)
+  {
+    await evalApp(() => { const a = window.__werkcad; a.dirty = false; return a.openExample(); });
+    await idle(120000);
+    // Drehgelenk an einer Komponente, zwei Stellungen speichern, umschalten
+    const pos = await evalApp(async () => {
+      const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => !x.fixed && !x.joint && !x.pat);
+      a.edit("Gelenk", () => { c.joint = { p: [...c.pos], d: [0, 0, 1], angle: 0, min: 0, max: 90 }; });
+      return { id: c.id };
+    });
+    await rbClick("Positionen");
+    await page.locator(".dialog input").fill("Zu");
+    await page.locator(".dialog footer .btn.primary").click();
+    await idle();
+    await evalApp((id) => { const a = window.__werkcad; a.sel = { type: "component", id }; a.props.render(); }, pos.id);
+    await evalApp(() => { const s = document.querySelector("#props input.joint-angle"); s.value = "60"; s.dispatchEvent(new Event("input")); s.dispatchEvent(new Event("change")); });
+    await idle();
+    await rbClick("Positionen");
+    await page.locator(".dialog input").fill("Offen 60");
+    await page.locator(".dialog footer .btn.primary").click();
+    await idle();
+    await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); });
+    await page.locator("#props .pos-row .btn", { hasText: "Zu" }).click();
+    await idle();
+    const p1 = await evalApp((id) => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === id); return { n: asm.positions?.length, angle: c.joint.angle, pos: c.pos.map((x) => Math.round(x)).join(";"), on: document.querySelector("#props .pos-row.on .btn")?.textContent }; }, pos.id);
+    await page.locator("#props .pos-row .btn", { hasText: "Offen 60" }).click();
+    await idle();
+    const p2 = await evalApp((id) => { const a = window.__werkcad, c = a.activeDoc().components.find((x) => x.id === id); return { angle: c.joint.angle, on: document.querySelector("#props .pos-row.on .btn")?.textContent }; }, pos.id);
+    // Explosion: automatisch, übernehmen, Anzeige verschoben, Abspielen
+    await rbClick("Explosion");
+    await page.locator(".dialog button", { hasText: "Automatisch" }).click();
+    await page.waitForTimeout(200);
+    const nSteps = await page.locator(".dialog .explode-step").count();
+    await page.locator(".dialog footer .btn.primary", { hasText: "Übernehmen" }).click();
+    await page.waitForTimeout(200);
+    await shot("g4-explosion");
+    const ex = await evalApp(async () => {
+      const a = window.__werkcad, v = a.viewer, asm = a.activeDoc();
+      const moved = v.root.children.filter((x) => x.userData.comp).some((x) => !x.matrix.equals(x.userData.baseMatrix));
+      const fixedStay = v.root.children.filter((x) => asm.components.find((c) => c.id === x.userData.comp)?.fixed).every((x) => x.matrix.equals(x.userData.baseMatrix));
+      return { steps: asm.explosion?.steps?.length, moved, fixedStay, flag: a.explodeSteps > 0, section: !!document.querySelector("#props")?.textContent.includes("Explodiert zeigen") || !!document.querySelector("#props")?.textContent.includes("Zusammenbauen") };
+    });
+    // Zeichnung der Baugruppe: eine Ansicht in »Offen 60« und explodiert, mit Positionsnummern
+    await evalApp(() => window.__werkcad.newDrawing({ kind: "assembly", id: "beispiel_bg" }));
+    await idle(120000);
+    await page.waitForTimeout(1000);
+    await idle(120000);
+    const dr = await evalApp(async () => {
+      const a = window.__werkcad, dr = a.drawing, d = dr.doc, src = a.doc("beispiel_bg");
+      const iso = d.views.find((v) => v.type === "iso");
+      const box0 = JSON.stringify(dr.proj.get(iso.id)?.bbox);
+      a.edit("Darstellung", () => { iso.state = { position: src.positions.find((p) => p.name === "Offen 60").id, explode: true }; });
+      await dr.update();
+      const box1 = JSON.stringify(dr.proj.get(iso.id)?.bbox);
+      dr.sel = { type: "view", id: iso.id };
+      dr.autoBalloons();
+      a.props.render();
+      const ui = [...document.querySelectorAll("#props label")].some((l) => l.textContent === "Explodiert");
+      return { changed: box0 !== box1 && !!box1, balloons: d.balloons?.length || 0, ui, front: !!dr.proj.get(d.views.find((v) => v.type === "front").id) };
+    });
+    await shot("g4-zeichnung-explosion");
+    // Parameter der Baugruppe an die Platte weitergeben: Dicke 10 → 14
+    await evalApp(() => { const a = window.__werkcad; a.openDoc("beispiel_bg"); a.edit("Parameter", () => { a.activeDoc().params = [{ name: "Dicke", expr: "14", comment: "" }]; }); });
+    await idle();
+    await evalApp(() => window.__werkcad.props.paramsDialog());
+    await page.locator(".dialog button", { hasText: "An Bauteile weitergeben" }).click();
+    await page.locator(".dialog footer .btn.primary", { hasText: "Verknüpfen" }).click();
+    await page.waitForTimeout(300);
+    await page.locator(".dialog footer .btn", { hasText: "Abbrechen" }).click();
+    await idle(60000);
+    const prm = await evalApp(async () => {
+      const a = window.__werkcad, pl = a.doc("beispiel_platte");
+      await a.builtParts(a.doc("beispiel_bg"));
+      const bb = (r) => { const b = r?.bodies?.[0]?.props?.bbox; return b ? Math.round((b[1]?.[2] ?? b.max?.[2]) - (b[0]?.[2] ?? b.min?.[2])) : null; };
+      const link = pl.params.find((p) => p.name === "Dicke")?.link;
+      const z1 = bb(a.results.get(pl.id));
+      a.edit("Parameter", () => { a.doc("beispiel_bg").params[0].expr = "16"; });
+      a.results.delete(pl.id);
+      await a.builtParts(a.doc("beispiel_bg"));
+      return { link: link && link.asm + "." + link.name, z1, z2: bb(a.results.get(pl.id)) };
+    });
+    step("Positionsdarstellungen, Explosion in Schritten, Zeichnung explodiert, Baugruppenparameter",
+      p1.n === 2 && p1.angle === 0 && p1.on === "Zu" && p2.angle === 60 && p2.on === "Offen 60"
+      && nSteps > 0 && ex.steps === nSteps && ex.moved && ex.fixedStay && ex.flag
+      && dr.changed && dr.balloons > 0 && dr.ui && dr.front
+      && prm.link === "beispiel_bg.Dicke" && prm.z1 === 14 && prm.z2 === 16,
+      JSON.stringify({ p1, p2, nSteps, ex, dr, prm }));
+  }
+
   // Kernel (Werkzeuge Stufe 28): automatisches Neuberechnen aus → F5, Berechnungsprotokoll
   {
     await evalApp(() => { const app = window.__werkcad; app.newPart("Kernprobe"); app.ribbon.run("profile"); });

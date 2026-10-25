@@ -531,7 +531,7 @@ export class Viewer {
     this.root.updateMatrixWorld(true);
     this.compDeltas = new Map();
     this.explodeCenters = null;
-    if (this.explode > 0) this.applyCompMatrices();
+    if (this.explode > 0 || this.stepOffs?.size) this.applyCompMatrices();
     this.updateCaps();
     this.render();
   }
@@ -560,6 +560,11 @@ export class Viewer {
     this.explode = Math.max(0, Number(factor) || 0);
     this.applyCompMatrices();
   }
+  /** Explosion in Schritten (FU9, nur Anzeige): Map compId → Verschiebung [dx, dy, dz] oder null */
+  setStepOffsets(offs) {
+    this.stepOffs = offs && offs.size ? offs : null;
+    this.applyCompMatrices();
+  }
   applyCompMatrices() {
     const groups = this.root.children.filter((g) => g.userData.comp && g.userData.baseMatrix);
     if (!groups.length) return;
@@ -586,6 +591,8 @@ export class Viewer {
       if (d) m.premultiply(D.fromArray(d));
       const o = offs?.get(g.userData.comp);
       if (o) m.premultiply(T.makeTranslation(o[0], o[1], o[2]));
+      const so = this.stepOffs?.get(g.userData.comp);
+      if (so) m.premultiply(T.makeTranslation(so[0], so[1], so[2]));
     }
     this.root.updateMatrixWorld(true);
     this.edgeCache = null;

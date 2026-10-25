@@ -205,7 +205,9 @@ export const COMMANDS = [
   { id: "asm.contactSolver", label: "Kontaktlöser ein/aus", group: "Baugruppe", scope: "assembly", keywords: "kontakt anschlag kollision bewegung stoppen" },
   { id: "asm.contactSet", label: "Auswahl in den Kontaktsatz", group: "Baugruppe", scope: "assembly", keywords: "kontaktsatz kontakt anschlag kollision" },
   { id: "asm.motionVideo", label: "Bewegung als Video speichern", group: "Baugruppe", scope: "assembly", keywords: "video mp4 webm film aufnahme animation" },
-  { id: "asm.explode", label: "Explosionsdarstellung", group: "Baugruppe", scope: "assembly", keywords: "explosion explodiert auseinander montage" },
+  { id: "asm.explode", label: "Explosion in Schritten", group: "Baugruppe", scope: "assembly", keywords: "explosion explodiert auseinander montage schritte" },
+  { id: "asm.positionSave", label: "Positionsdarstellung speichern", group: "Baugruppe", scope: "assembly", keywords: "position stellung tor offen zu gelenk darstellung" },
+  { id: "asm.params", label: "Parameter der Baugruppe", group: "Baugruppe", scope: "assembly", keywords: "parameter top-down weitergeben verknüpfen maß" },
 ];
 
 const BY_ID = new Map(COMMANDS.map((c) => [c.id, c]));

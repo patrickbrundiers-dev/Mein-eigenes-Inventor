@@ -562,3 +562,13 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .measure-list .shown { outline: 1px solid var(--dye); }
 .measure-list .sub { padding-left: 14px; }
 details.measure-more > summary { cursor: pointer; color: var(--ink-soft); margin: 2px 0; }
+
+/* Positionsdarstellungen und Explosion in Schritten (FU8, FU9) */
+.pos-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.pos-row { display: flex; align-items: center; gap: 4px; }
+.pos-row > .btn { flex: 1; justify-content: flex-start; }
+.explode-steps { display: flex; flex-direction: column; gap: 4px; max-height: 45vh; overflow: auto; margin: 6px 0; }
+.explode-step { display: flex; align-items: center; gap: 6px; }
+.explode-step .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explode-pick { max-height: 40vh; overflow: auto; columns: 2; margin-bottom: 8px; }
+.pos-row > .btn.on, .section .btn.on { background: var(--laser-soft); border-color: #f3c08f; }
