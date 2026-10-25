@@ -1356,7 +1356,8 @@ try {
       a.zoomToSelection();
       const half1 = vw.visibleHalf();
       a.viewNormalToFace();
-      await new Promise((r) => setTimeout(r, 400));
+      // Kamerafahrt abwarten (unter Last dauert sie länger als die nominellen 400 ms)
+      for (let t = 0; t < 30 && (t < 4 || vw.anim); t++) await new Promise((r) => setTimeout(r, 100));
       const dir = vw.camera.getWorldDirection(new (vw.camera.position.constructor)()).toArray();
       return { persp, ppuRatio: ppu1 / ppu0, hit0: !!hit0, hit1: !!hit1, wire, hitWire: !!hitWire, transp, orthoAgain, clipOn, hitClipped: !!hitClipped, clipOff, half0, half1, n: fh?.info?.normal, dir };
     });
@@ -1437,7 +1438,7 @@ try {
     await page.mouse.click(pt[0], pt[1]);
     await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 2 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
     await shot("24-messen");
-    const two = await evalApp(() => ({ r: window.__werkcad.measure.result, text: document.querySelector("#props").textContent }));
+    const two = await evalApp(() => ({ r: window.__werkcad.measure.result, text: document.querySelector("#props").textContent, label: document.querySelector("#viewer .measure-label")?.textContent || "" }));
     // Ecken: beide Enden einer geraden oberen Kante anklicken → Abstand = Kantenlänge
     const ends = await evalApp(() => {
       const v = window.__werkcad.viewer;
@@ -1459,12 +1460,24 @@ try {
     await page.mouse.click(ends.b[0], ends.b[1]);
     await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 2 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
     const vx = await evalApp(() => { const r = window.__werkcad.measure.result; return { types: r.items.map((i) => i.type), d: r.distance, delta: r.delta, text: document.querySelector("#props").textContent }; });
+    // Stufe 47: Zweiteinheit Zoll im Maß, Strg-Klick nimmt ein drittes Element dazu (Summen)
+    await page.locator("#props details.measure-more > summary", { hasText: "Erweiterte Einstellungen" }).click();
+    await page.locator("#props .field", { hasText: "Zweiteinheiten" }).locator("select").selectOption("in");
+    const inch = await evalApp(() => document.querySelector("#viewer .measure-label")?.textContent || "");
+    await page.keyboard.down("Control");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.keyboard.up("Control");
+    await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 3 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
+    const sum = await evalApp(() => ({ text: document.querySelector("#props").textContent, label: !!document.querySelector("#viewer .measure-label") }));
+    await evalApp(() => window.__werkcad.prefs.set("messen.zweiteinheit", ""));
     await page.keyboard.press("Escape");
-    const off = await evalApp(() => !window.__werkcad.pick && !window.__werkcad.measure);
+    const off = await evalApp(() => !window.__werkcad.pick && !window.__werkcad.measure && !document.querySelector("#viewer .measure-label"));
     const it = two.r.items[1];
     step("Messen", one.type === "PLANE" && one.area > 1000 && it.type === "CIRCLE" && Math.abs(it.radius * 2 - 11) < 0.6 && Math.abs(two.r.distance) < 1e-6 && /Durchmesser/.test(two.text) && off
-      && vx.types.join() === "POINT,POINT" && Math.abs(vx.d - ends.L) < 0.05 && /Δ X\/Y\/Z/.test(vx.text),
-      JSON.stringify({ one: { type: one.type, area: one.area }, two: { type: it.type, r: it.radius, d: two.r.distance }, off, vx: { types: vx.types, d: vx.d, L: ends.L } }));
+      && /Mindestabstand/.test(two.text) && /Umfang/.test(two.text) && /Erweiterte Einstellungen/.test(two.text) && /mm/.test(two.label)
+      && vx.types.join() === "POINT,POINT" && Math.abs(vx.d - ends.L) < 0.05 && /X-Abstand/.test(vx.text) && / in\)/.test(inch)
+      && /Gesamtlänge \(2 Kanten\)|Gesamtfläche/.test(sum.text) && !sum.label,
+      JSON.stringify({ one: { type: one.type, area: one.area }, two: { type: it.type, r: it.radius, d: two.r.distance, label: two.label }, off, vx: { types: vx.types, d: vx.d, L: ends.L }, inch, sum }));
   }
 
   // Auswahlfilter und Körper ausblenden/isolieren (Rahmen hat mehrere Körper)
@@ -2562,6 +2575,208 @@ try {
     step("Blech: Lasche, Umschlag, Durchzug, Stirnlasche, Konturlasche", bl.ok && bl.bends === 4 && bl.circles === 1 && bl.y0 < 0 && bl.dxf?.circles === 1 && kl && kl2.ok && kl2.src === "skizze" && kl2.bodies === 2 && /1 Biegung/.test(kl2.info || ""), JSON.stringify({ bl0, bl, kl2 }));
   }
 
+  // Werkzeuge Stufe 48: Ecke schließen an der Stirnlasche, Stanzwerkzeug, Konturwalzen mit Trennfuge (Abwicklung als DXF)
+  {
+    await evalApp(() => window.__werkcad.newPart("Blech 48"));
+    await idle();
+    await page.locator("#ribbon button", { hasText: /^Kantteil$/ }).click();
+    await idle(60000);
+    await page.locator("#ribbon button", { hasText: /^Lasche$/ }).click();
+    await idle(60000);
+    await evalApp(async () => {
+      const a = window.__werkcad, la = a.activeDoc().features.find((f) => f.type === "lasche");
+      a.edit("Stirnlasche", () => { la.edge = "vorne"; la.leg = "2"; });
+      await a.rebuildNow?.();
+    });
+    await idle(60000);
+    for (const label of ["Ecke schließen", "Stanzwerkzeug"]) {
+      await page.locator("#ribbon button", { hasText: new RegExp("^" + label + "$") }).click();
+      await idle(60000);
+    }
+    const ec = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId);
+      const sh = r.bodies.find((b) => b.meta?.sheet)?.meta.sheet;
+      return { types: d.features.map((f) => f.type).join(","), ok: Object.values(r.status).every((s) => s.ok), err: Object.values(r.status).filter((s) => !s.ok).map((s) => s.error), holes: sh?.flatModel?.holes.length, info: r.status[d.features.at(-1).id]?.info, panel: [...document.querySelectorAll("#props .section h3")].map((x) => x.textContent) };
+    });
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await shot("48-blech-ecke-stanzung");
+    await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc();
+      a.edit("Skizze", () => d.features.push({ id: "skKW", type: "sketch", name: "Mantel", plane: { ref: "XY" }, offset: "0", points: [{ id: "w1", x: 0, y: 50 }, { id: "w2", x: 100, y: 50 }], entities: [{ id: "wl", type: "line", p1: "w1", p2: "w2" }], constraints: [] }));
+    });
+    await idle(60000);
+    await page.locator("#ribbon button", { hasText: /^Konturwalzen$/ }).click();
+    await idle(60000);
+    const kw0 = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features.at(-1); return { type: f.type, ok: r.status[f.id]?.ok, info: r.status[f.id]?.info }; });
+    await page.locator("#ribbon button", { hasText: /^Trennfuge$/ }).click();
+    await idle(60000);
+    const kw = await evalApp(async () => {
+      const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId);
+      const w = d.features.find((f) => f.type === "konturwalzen"), tf = d.features.find((f) => f.type === "trennfuge");
+      const orig = a.files.saveText; let got = null;
+      a.files.saveText = async (text, name) => { got = { name, poly: (text.match(/\nPOLYLINE\r?\n/g) || []).length }; };
+      try { await a.files.exportKantteilDxf(w); } finally { a.files.saveText = orig; }
+      const sh = r.bodies.find((b) => b.fid === w.id)?.meta.sheet;
+      return { next: d.features[d.features.indexOf(w) + 1]?.type, ok: r.status[tf.id]?.ok, info: r.status[tf.id]?.info, width: sh?.flatModel?.width, dxf: got };
+    });
+    await shot("48-konturwalzen");
+    step("Blech: Ecke schließen, Stanzwerkzeug, Konturwalzen, Trennfuge", ec.ok && /eckeschliessen,stanzung$/.test(ec.types) && ec.holes === 1 && /1 Ecke\(n\) geschlossen/.test(ec.info || "") && kw0.type === "konturwalzen" && kw0.ok && /Trennfuge setzen/.test(kw0.info || "") && kw.next === "trennfuge" && kw.ok && Math.abs(kw.width - (2 * Math.PI * 51 - 1)) < 1e-6 && !!kw.dxf && kw.dxf.poly >= 1, JSON.stringify({ ec, kw0, kw }));
+  }
+
+  // Werkzeuge Stufe 49: IGES-Export über den Reiter Export (Blechteil mit Konturwalze von oben)
+  {
+    await evalApp(() => { const a = window.__werkcad; a.__iges = null; a.__igesSave = a.files.saveText; a.files.saveText = async (text, name) => { a.__iges = { name, lines: text.split("\r\n").filter(Boolean), t144: (text.match(/^\s*144\s/gm) || []).length }; }; });
+    await page.locator("#ribbon .rb-tab", { hasText: /^Export$/ }).click();
+    await page.locator("#ribbon button", { hasText: /^IGES$/ }).click();
+    await idle(60000);
+    await page.waitForFunction(() => window.__werkcad.__iges, null, { timeout: 60000 });
+    const ig = await evalApp(() => { const a = window.__werkcad, g = a.__iges; a.files.saveText = a.__igesSave; return { name: g.name, n: g.lines.length, all80: g.lines.every((l) => l.length === 80), last: g.lines.at(-1).slice(72), t144: g.t144 }; });
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    step("IGES-Export", /\.igs$/.test(ig.name) && ig.all80 && ig.last === "T      1" && ig.t144 > 10, JSON.stringify(ig));
+  }
+
+  // Werkzeuge Stufe 50: Schraubenverbindung durch zwei Platten über das Menüband, Stückliste mit Normbezeichnung
+  {
+    await evalApp(() => {
+      const a = window.__werkcad;
+      a.newPart("Verschraubt");
+      const P = (id, x, y) => ({ id, x, y });
+      const rect = (id, z) => ({ type: "sketch", id, name: id, plane: { ref: "XY" }, offset: String(z), points: [P(id + 1, 0, 0), P(id + 2, 100, 0), P(id + 3, 100, 60), P(id + 4, 0, 60)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: id + "l" + p, type: "line", p1: id + p, p2: id + q })), constraints: [] });
+      a.addFeature(rect("sv1", 0), { select: false });
+      a.addFeature({ type: "extrude", id: "sve1", sketch: "sv1", distance: "10", op: "new" }, { select: false });
+      a.addFeature(rect("sv2", 10), { select: false });
+      a.addFeature({ type: "extrude", id: "sve2", sketch: "sv2", distance: "15", op: "new" }, { select: false });
+      a.addFeature({ type: "sketch", id: "svp", name: "Schraubenpunkte", plane: { ref: "XY" }, offset: "25", points: [P("q1", 20, 30), P("q2", 80, 30)], entities: [{ id: "qe1", type: "point", p: "q1" }, { id: "qe2", type: "point", p: "q2" }], constraints: [] }, { select: false });
+    });
+    await idle(60000);
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    await page.locator("#ribbon button", { hasText: /^Schraubenverbindung$/ }).click();
+    await idle(60000);
+    const sv = await evalApp(() => {
+      const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features.at(-1);
+      return { type: f.type, sketch: f.sketch, st: r.status[f.id], norm: r.bodies.filter((b) => b.meta?.norm).map((b) => b.meta.norm.designation), panel: [...document.querySelectorAll("#props .section h3")].map((x) => x.textContent) };
+    });
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await shot("50-schraubenverbindung");
+    step("Schraubenverbindung", sv.type === "schraubverbindung" && sv.sketch === "svp" && sv.st.ok && /2 × M12 x 45, Klemmlänge 25 mm/.test(sv.st.info) && sv.norm.length === 8 && sv.norm.includes("Sechskantschraube ISO 4017 - M12 x 45 - 8.8") && sv.panel.includes("Schraubenverbindung"), JSON.stringify(sv));
+  }
+
+  // Werkzeuge Stufe 51: Kontaktsatz mit Kontaktlöser – Klotz am Drehgelenk hält am festen Klotz an; Bewegung als Video
+  {
+    await evalApp(() => {
+      const a = window.__werkcad;
+      a.newPart("Klotz");
+      const P = (id, x, y) => ({ id, x, y });
+      a.addFeature({ type: "sketch", id: "kk", name: "kk", plane: { ref: "XY" }, points: [P("k1", 0, 0), P("k2", 20, 0), P("k3", 20, 20), P("k4", 0, 20)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: "kl" + p, type: "line", p1: "k" + p, p2: "k" + q })), constraints: [] }, { select: false });
+      a.addFeature({ type: "extrude", id: "kke", sketch: "kk", distance: "20", op: "new" }, { select: false });
+      const part = a.activeId, asm = a.newAssembly();
+      a.edit("Komponenten", () => {
+        asm.components.push({ id: "kf", part, name: "Klotz:1", pos: [10, 40, 0], rot: [0, 0, 0], fixed: true });
+        asm.components.push({ id: "kb", part, name: "Klotz:2", pos: [30, 0, 0], rot: [0, 0, 0], joint: { p: [0, 0, 0], d: [0, 0, 1], angle: 0, min: 0, max: 90 } });
+      });
+      a.sel = { type: "component", id: "kf", ids: ["kb"] };
+    });
+    await idle(120000);
+    await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+    await page.locator("#ribbon button", { hasText: /^Kontaktsatz$/ }).click();
+    await page.locator("#ribbon button", { hasText: /^Kontaktlöser$/ }).click();
+    const ks = await evalApp(async () => {
+      const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === "kb");
+      const r = { set: asm.components.filter((x) => x.contact).map((x) => x.id).join(), solver: !!asm.contactSolver };
+      const lim = await a.props.contactLimits(asm, c);
+      r.max = lim && Math.round(lim.max * 10) / 10; r.hit = lim?.hitMax; r.min = lim?.min;
+      r.anim = await a.props.animateJoints(null, { duration: 300 });
+      const orig = a.files.saveBinary; let saved = null;
+      a.files.saveBinary = async (buf, name) => { saved = { name, size: buf.length }; };
+      try { r.video = await a.props.recordMotion({ duration: 800 }); } finally { a.files.saveBinary = orig; }
+      r.saved = saved;
+      return r;
+    });
+    await shot("51-kontaktsatz");
+    step("Kontaktsatz und Bewegung als Video", ks.set === "kf,kb" && ks.solver && ks.hit === true && ks.max > 5 && ks.max < 85 && ks.min === 0 && ks.anim === true && !!ks.video && /_Bewegung\.(mp4|webm)$/.test(ks.saved?.name || "") && ks.saved.size > 1000, JSON.stringify(ks));
+  }
+  // Werkzeuge Stufe 52: iFeature aus einem Bauteil erstellen und über das Menüband in ein anderes einsetzen
+  {
+    const mk = (h) => evalApp((h) => {
+      const a = window.__werkcad;
+      a.newPart("iFeature " + h);
+      const P = (id, x, y) => ({ id, x, y });
+      const rect = (id, name, x, y, w, hh, off) => ({ type: "sketch", id, name, plane: { ref: "XY" }, offset: String(off), points: [P(id + 1, x, y), P(id + 2, x + w, y), P(id + 3, x + w, y + hh), P(id + 4, x, y + hh)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: id + "l" + p, type: "line", p1: id + p, p2: id + q })), constraints: [] });
+      a.addFeature(rect("ib", "Basis", 0, 0, 100, 50, 0), { select: false });
+      a.addFeature({ type: "extrude", id: "ibe", name: "Block", sketch: "ib", distance: String(h), op: "new" }, { select: false });
+      return a.activeId;
+    }, h);
+    await mk(20);
+    await evalApp(() => {
+      const a = window.__werkcad;
+      a.edit("Parameter", () => { a.activeDoc().params = [{ name: "tt", expr: "5" }]; });
+      const P = (id, x, y) => ({ id, x, y });
+      a.addFeature({ type: "sketch", id: "it", name: "Taschenskizze", plane: { ref: "XY" }, offset: "20", points: [P("t1", 10, 10), P("t2", 30, 10), P("t3", 30, 20), P("t4", 10, 20)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: "tl" + p, type: "line", p1: "t" + p, p2: "t" + q })), constraints: [] }, { select: false });
+      a.addFeature({ type: "extrude", id: "ite", name: "Tasche", sketch: "it", distance: "tt", mode: "reverse", op: "cut" });
+      try { localStorage.removeItem("pbcad.ifeatures"); } catch {}
+    });
+    await idle(60000);
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    await page.locator("#ribbon button", { hasText: /^iFeature erstellen$/ }).click();
+    await page.locator("#modal-root .dialog .field", { hasText: "Name" }).locator("input").fill("Tasche 20x10");
+    const exInfo = await evalApp(() => document.querySelector("#modal-root .dialog p.muted")?.textContent || "");
+    await page.locator("#modal-root .dialog footer .btn", { hasText: "In Bibliothek speichern" }).click();
+    await mk(30);
+    await idle(60000);
+    await page.locator("#ribbon button", { hasText: /^iFeature einfügen$/ }).click();
+    await page.locator("#modal-root .dialog .field", { hasText: "Abstand" }).locator("input").fill("30");
+    await page.locator("#modal-root .dialog .field", { hasText: /^tt/ }).locator("input").fill("8");
+    await page.locator("#modal-root .dialog .field", { hasText: /^tt/ }).locator("input").dispatchEvent("change");
+    await page.locator("#modal-root .dialog footer .btn", { hasText: "Einfügen" }).click();
+    await idle(60000);
+    const ifx = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId);
+      return { lib: JSON.parse(localStorage.getItem("pbcad.ifeatures") || "[]").map((v) => v.name), names: d.features.map((f) => f.name), params: d.params, ok: Object.values(r.status).every((s) => s.ok), vol: Math.round(r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0)), open: !!document.querySelector("#modal-root .dialog") };
+    });
+    await shot("52-ifeature");
+    step("iFeature erstellen und einfügen", /2 Features \(1 Skizze\), Parameter: tt/.test(exInfo) && ifx.lib.join() === "Tasche 20x10" && ifx.names.join() === "Basis,Block,Taschenskizze,Tasche" && ifx.params?.[0]?.expr === "8" && ifx.ok && ifx.vol === 100 * 50 * 30 - 20 * 10 * 8 && !ifx.open, JSON.stringify({ exInfo, ifx }));
+  }
+  // Werkzeuge Stufe 53: Schweißbaugruppe aus einer Baugruppe (T-Stoß), Kehlnähte als Körper, Bohrung als Nachbearbeitung
+  {
+    await evalApp(() => {
+      const a = window.__werkcad;
+      const P = (id, x, y) => ({ id, x, y });
+      const rect = (id, w, hh) => ({ type: "sketch", id, name: id, plane: { ref: "XY" }, offset: "0", points: [P(id + 1, 0, 0), P(id + 2, w, 0), P(id + 3, w, hh), P(id + 4, 0, hh)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: id + "l" + p, type: "line", p1: id + p, p2: id + q })), constraints: [] });
+      const mkPart = (name, w, hh, t) => { a.newPart(name); a.addFeature(rect("w" + name, w, hh), { select: false }); a.addFeature({ type: "extrude", id: "we" + name, sketch: "w" + name, distance: String(t), op: "new" }, { select: false }); return a.activeId; };
+      const pl = mkPart("Grundplatte", 100, 60, 10), st = mkPart("Steg", 10, 60, 50);
+      const asm = a.newAssembly();
+      a.edit("Komponenten", () => {
+        asm.name = "Konsole";
+        asm.components.push({ id: "wc1", part: pl, name: "Grundplatte:1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+        asm.components.push({ id: "wc2", part: st, name: "Steg:1", pos: [45, 0, 10], rot: [0, 0, 0] });
+      });
+    });
+    await idle(120000);
+    await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+    await page.locator("#ribbon button", { hasText: /^Schweißbaugruppe$/ }).click();
+    await idle(120000);
+    const wb0 = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId); return { kind: d.kind, name: d.name, first: d.features[0]?.type, st: r?.status[d.features[0].id], bodies: r?.bodies.length }; });
+    await evalApp(() => {
+      const a = window.__werkcad;
+      a.addFeature({ type: "naht", name: "Kehlnähte", kind: "kehl", a: "4", side: "beide", bead: true, edges: [{ p: [45, 30, 10], type: "LINE" }, { p: [55, 30, 10], type: "LINE" }] }, { select: false });
+      a.addFeature({ type: "sketch", id: "wbs", name: "Bohrbild", plane: { ref: "XY" }, offset: "0", points: [{ id: "wq", x: 20, y: 30 }], entities: [{ id: "wqe", type: "point", p: "wq" }], constraints: [] }, { select: false });
+      a.addFeature({ type: "hole", name: "Bohrung", sketch: "wbs", diameter: "10", extent: "through", direction: "both" });
+    });
+    await idle(120000);
+    const wb = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId);
+      a.selectFeature(d.features[0].id); a.props.render();
+      return { ok: Object.values(r.status).every((s) => s.ok), bodies: r.bodies.length, weld: r.bodies.filter((b) => b.meta?.weld).length, vol: Math.round(r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0)), info: r.status[d.features[1].id]?.info, panel: document.querySelector("#props")?.textContent || "" };
+    });
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await shot("53-schweissbaugruppe");
+    const z = 4 * Math.SQRT2, expect = Math.round(100 * 60 * 10 + 10 * 60 * 50 + 60 * z * z - Math.PI * 25 * 10);
+    step("Schweißbaugruppe", wb0.kind === "part" && wb0.name === "Konsole geschweißt" && wb0.first === "schweissbaugruppe" && wb0.st?.ok && wb0.bodies === 2 && wb.ok && wb.bodies === 3 && wb.weld === 1 && Math.abs(wb.vol - expect) <= 2 && /Nahtkörper 1,92 cm³/.test(wb.info || "") && /Schweißnähte1 Feature/.test(wb.panel) && /Nachbearbeitung2 Features/.test(wb.panel), JSON.stringify({ wb0, wb: { ...wb, panel: wb.panel.slice(0, 300) }, expect }));
+  }
+
+
+
+
   // Werkzeuge Stufe 42: abgeleitetes Bauteil gespiegelt, 3D-Skizze, Feature duplizieren/ziehen, Komponente spiegeln
   {
     const q = await evalApp(async () => {
@@ -2666,6 +2881,121 @@ try {
     await evalApp(() => window.__werkcad.prefs.set("allgemein.sprache", "de"));
     const de = await page.locator("#ribbon").textContent();
     step("Variantentabelle, Regeln, Makros, Sprache", v43.n === 2 && v43.h2 === "25" && v43.blocked && v43.follow === "Grundkörper" && ruleRows === 1 && r43.msg?.[0] === "Lasche zu lang" && r43.off?.[0] === "te" && r43.props && m43 && /Ansicht Test/.test(palHit) && macroDlg === 1 && /3D model/.test(en) && /3D-Modell/.test(de) && !/3D model/.test(de), JSON.stringify({ v43, ruleRows, r43, m43, macroDlg, en: en.slice(0, 80) }));
+  }
+
+  // ---- Stufe 44: Abhängigkeit platzieren, Bewegung, Blechregel ----
+  {
+    await evalApp(() => {
+      const a = window.__werkcad;
+      const asm = a.newAssembly();
+      a.edit("Komponenten", () => {
+        asm.components.push({ id: "q1", part: "beispiel_platte", name: "Platte:1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+        asm.components.push({ id: "q2", part: "beispiel_platte", name: "Platte:2", pos: [0, 0, 500], rot: [0, 0, 0] });
+        asm.components.push({ id: "q3", part: "beispiel_rohr", name: "Rad:1", pos: [800, 0, 0], rot: [0, 0, 0], joint: { p: [800, 0, 0], d: [0, 0, 1], angle: 0, min: -360, max: 360 } });
+        asm.components.push({ id: "q4", part: "beispiel_rohr", name: "Rad:2", pos: [1200, 0, 0], rot: [0, 0, 0], joint: { p: [1200, 0, 0], d: [0, 0, 1], angle: 0, min: -360, max: 360 } });
+      });
+    });
+    await idle(120000);
+    await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+    await page.locator("#ribbon button", { hasText: /^Abhängigkeit$/ }).click();
+    const panel = await page.locator("#props").textContent();
+    const p44 = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc();
+      const top = a.planarFaces("beispiel_platte").find((f) => f.normal[2] > 0.99);
+      a.align.solution = "fluchtend"; a.align.gap = "20";
+      a.alignPick({ kind: "face", key: "comp:q2", info: top });
+      a.alignPick({ kind: "face", key: "comp:q1", info: top });
+      const c = asm.constraints.at(-1);
+      return { type: c?.type, z: asm.components.find((x) => x.id === "q2").pos[2], sel: a.sel?.type, err: a.asmErrors?.[c?.id] || null };
+    });
+    await idle(60000);
+    const editor = await page.locator("#props").textContent();
+    await shot("44-abhaengigkeit");
+    // Bewegung: Rad 1 treibt Rad 2 mit Übersetzung 2
+    const m44 = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc();
+      const f = a.planarFaces("beispiel_rohr")[0];
+      a.beginPlace({ tab: "bewegung", motion: "drehung", ratio: "2", sense: "gleich" });
+      a.alignPick({ kind: "face", key: "comp:q3", info: f });
+      a.alignPick({ kind: "face", key: "comp:q4", info: f });
+      a.sel = { type: "component", id: "q3" };
+      a.tree.render(); a.props.render();
+      return { motions: (asm.motions || []).length, tree: [...document.querySelectorAll("#browser .node .label")].some((x) => /^Bewegungen \(1\)$/.test(x.textContent)) };
+    });
+    await page.locator("#props input.joint-angle").evaluate((el) => { el.value = "45"; el.dispatchEvent(new Event("change")); });
+    await idle(60000);
+    const j44 = await evalApp(() => { const asm = window.__werkcad.activeDoc(); return asm.components.filter((c) => c.joint).map((c) => c.joint.angle); });
+    // Blechregel am Kantteil
+    await evalApp(() => { const a = window.__werkcad; a.newPart("Blech T"); a.addFeature({ type: "kantteil", legs: "40; 100; 40", angles: "90; 90", ref: "aussen", t: "2", ri: "2", k: "0.33", length: "300", pos: ["0", "0", "0"], view: "gefaltet" }); });
+    await idle(60000);
+    const ruleSel = page.locator("#props .field", { hasText: "Blechregel" }).locator("select");
+    const alu = await ruleSel.locator("option", { hasText: "Alu 2 mm" }).getAttribute("value");
+    await ruleSel.selectOption(alu);
+    await idle(60000);
+    const b44 = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), f = d.features.find((x) => x.type === "kantteil"); return { rule: f.sheetRule?.name, mat: d.material, info: a.results.get(d.id)?.status?.[f.id]?.info || "" }; });
+    step("Abhängigkeit platzieren, Bewegung, Blechregel", /Abhängigkeit platzieren/.test(panel) && /Passend/.test(panel) && p44.type === "buendig" && Math.abs(p44.z - 20) < 1e-6 && p44.sel === "constraint" && p44.err === null && /Auswahl neu/.test(editor) && /Grenzen verwenden/.test(editor)
+      && m44.motions === 1 && m44.tree && j44[0] === 45 && j44[1] === 90 && b44.rule === "Alu 2 mm" && b44.mat === "AlMg3" && /Blechregel Alu 2 mm/.test(b44.info), JSON.stringify({ p44, m44, j44, b44 }));
+  }
+
+  // ---- Stufe 45: Stecksystem (Rippe auf Platte) über das Menüband ----
+  {
+    await evalApp(() => {
+      const a = window.__werkcad;
+      a.newPart("Steckteil");
+      const R = (id, off, x, y, w, hh) => ({ id, type: "sketch", name: id, plane: { ref: "XY" }, offset: String(off), points: [{ id: id + 1, x, y }, { id: id + 2, x: x + w, y }, { id: id + 3, x: x + w, y: y + hh }, { id: id + 4, x, y: y + hh }], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: id + "l" + p, type: "line", p1: id + p, p2: id + q })), constraints: [] });
+      a.addFeature(R("sp", 0, 0, 0, 200, 100), { select: false });
+      a.addFeature({ type: "extrude", sketch: "sp", distance: "5", op: "new" }, { select: false });
+      a.addFeature(R("sr", 5, 20, 48, 160, 4), { select: false });
+      a.addFeature({ type: "extrude", sketch: "sr", distance: "50", op: "new" }, { select: false });
+    });
+    await idle(60000);
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    await page.locator("#ribbon button", { hasText: /^Stecksystem$/ }).click();
+    await idle(60000);
+    const s45 = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), f = d.features.at(-1), r = a.results.get(d.id); return { type: f.type, info: r?.status?.[f.id]?.info || r?.status?.[f.id]?.error || "", props: document.querySelector("#props")?.textContent.includes("Zapfenteil") }; });
+    await shot("45-stecksystem");
+    step("Stecksystem", s45.type === "stecksystem" && /3 Zapfen 20 × 4 mm/.test(s45.info) && s45.props, JSON.stringify(s45));
+  }
+
+  // ---- Stufe 46: Stecksystem zwischen zwei Bauteilen einer Baugruppe ----
+  {
+    const ids = await evalApp(() => {
+      const a = window.__werkcad;
+      const R = (id, x, y, w, hh) => ({ id, type: "sketch", name: id, plane: { ref: "XY" }, offset: "0", points: [{ id: id + 1, x, y }, { id: id + 2, x: x + w, y }, { id: id + 3, x: x + w, y: y + hh }, { id: id + 4, x, y: y + hh }], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: id + "l" + p, type: "line", p1: id + p, p2: id + q })), constraints: [] });
+      const pl = a.newPart("Platte S");
+      a.addFeature(R("sp", 0, 0, 200, 200), { select: false });
+      a.addFeature({ type: "extrude", sketch: "sp", distance: "5", op: "new" }, { select: false });
+      const ri = a.newPart("Rippe S");
+      a.addFeature(R("sr", 0, 0, 160, 4), { select: false });
+      a.addFeature({ type: "extrude", sketch: "sr", distance: "50", op: "new" }, { select: false });
+      const asm = a.newAssembly();
+      a.edit("Bauteile", () => {
+        asm.components.push({ id: "s1", part: ri.id, name: "Rippe S:1", pos: [100, 20, 5], rot: [0, 0, 90] });
+        asm.components.push({ id: "s2", part: pl.id, name: "Platte S:1", pos: [0, 0, 0], rot: [0, 0, 0] });
+      });
+      a.sel = { type: "component", id: "s1" };
+      a.tree.render(); a.props.render(); a.ribbon.render();
+      return { pl: pl.id, ri: ri.id };
+    });
+    await idle(60000);
+    await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+    await page.locator("#ribbon button", { hasText: /^Stecksystem$/ }).click();
+    await page.locator("#props button", { hasText: "Zapfen und Schlitze erzeugen" }).click();
+    await idle(60000);
+    const s46 = await evalApp(async ({ pl, ri }) => {
+      const a = window.__werkcad, asm = a.activeDoc(), st = asm.steckverbindungen?.[0];
+      const P = a.doc(pl), Q = a.doc(ri);
+      const rp = await a.kernel.build(P, "normal"), rq = await a.kernel.build(Q, "normal");
+      const fz = Q.features.at(-1), fs = P.features.at(-1);
+      return { info: st?.info || st?.error || "", z: fz?.type, s: fs?.type, zs: rq.status?.[fz?.id]?.ok, ss: rp.status?.[fs?.id]?.info || rp.status?.[fs?.id]?.error,
+        tree: [...document.querySelectorAll("#browser .node .label")].some((x) => x.textContent === "Stecksystem 1") };
+    }, ids);
+    await shot("46-stecksystem-baugruppe");
+    // Löschen entfernt die Features in beiden Bauteilen
+    await page.locator("#props button", { hasText: /^Löschen$/ }).click();
+    await idle(60000);
+    const d46 = await evalApp(({ pl, ri }) => { const a = window.__werkcad; return [a.doc(pl), a.doc(ri)].map((d) => d.features.filter((f) => f.steck).length); }, ids);
+    step("Stecksystem in der Baugruppe", /3 Zapfen 20 × 4 mm/.test(s46.info) && s46.z === "steckzapfen" && s46.s === "steckschlitz" && s46.zs === true && /3 Schlitze aus/.test(s46.ss || "") && s46.tree && d46[0] === 0 && d46[1] === 0, JSON.stringify({ s46, d46 }));
   }
 
 } catch (e) {

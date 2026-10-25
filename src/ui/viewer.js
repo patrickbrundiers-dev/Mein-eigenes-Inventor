@@ -192,6 +192,7 @@ export class Viewer {
       const s = 60 / this.pixelsPerUnit();
       this.triad.scale.setScalar(s);
       r.render(this.scene, this.camera);
+      this.placeMeasureLabel();
       // ViewCube
       if (!this.hideCube && this.showCube) {
         const cs = this.cubeSize;
@@ -1191,6 +1192,44 @@ export class Viewer {
   highlightBodies(bodies, key = "part") {
     if (!this.fieldGroup) { this.fieldGroup = new THREE.Group(); this.scene.add(this.fieldGroup); }
     this.highlight(bodies.map((body) => ({ kind: "body", key, body })), { group: this.fieldGroup, color: this.colors.sel, opacity: 0.45 });
+  }
+  /**
+   * Maß des Messwerkzeugs (Stufe 47): Linie zwischen a und b mit Endpunkten und Beschriftung; dims = gestrichelte
+   * Hilfslinien (z. B. Achsen). null löscht. Die Beschriftung ist ein HTML-Element, das der Kamera folgt.
+   */
+  showMeasure(spec) {
+    if (!this.measureGroup) { this.measureGroup = new THREE.Group(); this.measureGroup.renderOrder = 999; this.scene.add(this.measureGroup); }
+    disposeTree(this.measureGroup);
+    this.measureGroup.clear();
+    this.measureLabel?.remove();
+    this.measureLabel = null;
+    this.measureSpec = spec || null;
+    if (spec) {
+      const color = 0x1f4fa8, V = (p) => new THREE.Vector3(p[0], p[1], p[2]);
+      const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true });
+      this.measureGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(spec.a), V(spec.b)]), mat));
+      for (const l of spec.dims || []) {
+        const dl = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(l[0]), V(l[1])]), new THREE.LineDashedMaterial({ color, depthTest: false, transparent: true, dashSize: 3, gapSize: 2, opacity: 0.7 }));
+        dl.computeLineDistances();
+        this.measureGroup.add(dl);
+      }
+      const pts = new THREE.BufferGeometry().setFromPoints([V(spec.a), V(spec.b)]);
+      this.measureGroup.add(new THREE.Points(pts, new THREE.PointsMaterial({ color, size: 7, sizeAttenuation: false, depthTest: false, transparent: true })));
+      for (const o of this.measureGroup.children) o.renderOrder = 999;
+      const el = document.createElement("div");
+      el.className = "measure-label";
+      el.textContent = spec.text || "";
+      this.container.append(el);
+      this.measureLabel = el;
+    }
+    this.placeMeasureLabel();
+    this.render();
+  }
+  placeMeasureLabel() {
+    const sp = this.measureSpec, el = this.measureLabel;
+    if (!sp || !el) return;
+    const [x, y] = this.worldToScreen([(sp.a[0] + sp.b[0]) / 2, (sp.a[1] + sp.b[1]) / 2, (sp.a[2] + sp.b[2]) / 2]);
+    el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -130%)`;
   }
   /** Dauerhafte Auswahl-Hervorhebung */
   setSelectionHits(hits) {

@@ -595,6 +595,13 @@ test("Messen: exakte Werte für Flächen, Kanten, Abstand, Winkel, Schwerpunkt",
   near(Math.hypot(...r7.delta), 100, 1e-9, "Δ");
   const r8 = K.measure([{ ...va, kind: "vertex" }, { shape: faces[top], kind: "face" }]);
   near(r8.distance, Math.abs(va.point[2] - 20) < 1e-9 ? 0 : 20, 1e-9, "Ecke–Deckfläche");
+  // Stufe 47: Umfang, Gesamtkonturlänge (ohne Naht), nächste Punkte, Kantenmitte
+  near(r1.items[0].perimeter, 280, 1e-6, "Umfang Außenkontur"); assert.equal(r1.items[0].loops, 2);
+  near(r1.items[0].contour, 280 + Math.PI * 10, 1e-6, "Gesamtkontur mit Bohrung");
+  near(r4.items[0].contour, 2 * Math.PI * 10, 1e-6, "Bohrung: zwei Kreise, Naht nicht gezählt");
+  near(r2.pa[2] - r2.pb[2], 20, 1e-6, "nächste Punkte"); near(Math.abs(r2.delta[2]), 20, 1e-6);
+  near(r6.items[0].mid[0], (r6.items[0].start[0] + r6.items[0].end[0]) / 2, 1e-9, "Kantenmitte");
+  assert.equal(r5.items[0].arc, undefined, "Vollkreis ohne Bogenwinkel");
 });
 
 test("Konturen am Rohr (Rohr-Editor): Bohrung, Langloch, Ausklinkung, Seite und Muster", async () => {

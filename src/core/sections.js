@@ -307,7 +307,7 @@ export function kgPerMeter(area, density) {
 
 // Metrische Regelgewinde: Kernlochbohrung
 export const THREADS = {
-  M3: 2.5, M4: 3.3, M5: 4.2, M6: 5.0, M8: 6.8, M10: 8.5, M12: 10.2, M14: 12.0, M16: 14.0, M20: 17.5, M24: 21.0,
+  M3: 2.5, M4: 3.3, M5: 4.2, M6: 5.0, M8: 6.8, M10: 8.5, M12: 10.2, M14: 12.0, M16: 14.0, M20: 17.5, M24: 21.0, M27: 24.0, M30: 26.5,
 };
 // Durchgangsbohrungen mittel (ISO 273)
-export const CLEARANCE = { M3: 3.4, M4: 4.5, M5: 5.5, M6: 6.6, M8: 9, M10: 11, M12: 13.5, M14: 15.5, M16: 17.5, M20: 22, M24: 26 };
+export const CLEARANCE = { M3: 3.4, M4: 4.5, M5: 5.5, M6: 6.6, M8: 9, M10: 11, M12: 13.5, M14: 15.5, M16: 17.5, M20: 22, M24: 26, M27: 30, M30: 33 };

@@ -1,4 +1,5 @@
 // Befehle ausführen, Tastaturkürzel verteilen, Befehlssuche (Strg+K) und Kürzel-Editor
+import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
 import { h, toast } from "./dom.js";
 import { t } from "../core/i18n.js";
 import { recordable } from "../core/makros.js";
@@ -19,6 +20,7 @@ export function commandRunners(app) {
     "file.mappe": () => app.files.exportMappe(),
     "file.angebot": () => app.files.exportAngebot(),
     "file.png": () => app.files.exportPng(),
+    "file.iges": () => app.files.exportIges(),
     "file.linkPart": () => app.files.linkPartFromFile(),
     "file.savePartFile": () => { const d = app.activeDoc(); if (d?.kind === "part") app.files.savePartAsFile(d); },
     "file.refreshLinks": () => app.files.refreshLinks(),
@@ -64,6 +66,8 @@ export function commandRunners(app) {
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
     "asm.normteil": r("normteilAsm"),
+    "asm.constraint": r("constraint"),
+    "asm.stecksystem": r("steckAsm"),
     "asm.align": r("align"),
     "asm.alignFlush": r("alignFlush"),
     "asm.alignConc": r("alignConc"),
@@ -77,6 +81,12 @@ export function commandRunners(app) {
     "asm.collide": () => app.props.collisionDialog(),
     "asm.joint": () => app.props.jointDialog(),
     "asm.animate": () => app.props.animateJoints(),
+    "part.ifeatExtract": () => ifeatExtractDialog(app),
+    "part.ifeatInsert": () => ifeatInsertDialog(app),
+    "asm.weldment": () => app.props.makeWeldment(),
+    "asm.contactSolver": () => app.props.toggleContactSolver(),
+    "asm.contactSet": () => app.props.toggleContactSet(),
+    "asm.motionVideo": () => app.props.recordMotion(),
     "asm.explode": () => app.props.explodeDialog(),
   };
   for (const v of ["iso", "front", "back", "left", "right", "top", "bottom"]) run["view." + v] = () => app.viewer.setView(v);

@@ -6,6 +6,9 @@ import { materialOf, setUserMaterials, setProjectMaterials } from "../core/mater
 import { setUserBendTables, setProjectBendTables } from "../core/bendtable.js";
 import { svgPathSegments } from "../core/svgpath.js";
 import { segmentsToDxf } from "../core/dxf.js";
+import { writeIges } from "../core/iges.js";
+import { igesFaces } from "./igesocc.js";
+import { placementMatrix, matInvertRigid, matApply, matApplyDir } from "../core/geom.js";
 
 let K = null;
 const ready = (async () => {
@@ -119,6 +122,15 @@ const handlers = {
     return await blob.text();
   },
 
+  async exportIges({ items, fileName = "export.igs" }) {
+    const shapes = await placedShapes(items);
+    if (!shapes.length) throw new Error("Nichts zu exportieren");
+    const faces = [];
+    let approx = 0;
+    for (const s of shapes) { const r = igesFaces(R, s.shape); faces.push(...r.faces); approx += r.approx; }
+    return { text: writeIges(faces, { fileName }), faces: faces.length, approx };
+  },
+
   async exportStl({ items, quality = "fein" }) {
     const shapes = await placedShapes(items);
     if (!shapes.length) throw new Error("Nichts zu exportieren");
@@ -212,6 +224,26 @@ const handlers = {
     const list = [];
     for (const it of items) for (const s of await placedShapes([it])) list.push({ key: it.key, shape: s.shape });
     return K.collisions(list, { tol });
+  },
+  /**
+   * Stecksystem zwischen zwei Komponenten (Stufe 46): beide Bauteile bauen, in die Baugruppe legen, Zapfen und
+   * Schlitze planen und die Quader ins jeweilige Bauteil-System zurückrechnen.
+   * tab/slot = { part, pos, rot, body? (fid) }; Rückgabe { tabs, slots, info, tabBody, slotBody }
+   */
+  async tabSlot({ tab, slot, params }) {
+    await ready;
+    const pick = async (it, label) => {
+      const res = await getBuilt(it.part);
+      const solids = res.bodies.filter((b) => b.kind === "solid" || b.kind === "member");
+      const b = (it.body && solids.find((x) => x.fid === it.body)) || solids.map((x) => [x, R.measureVolume(x.shape)]).sort((x, y) => y[1] - x[1])[0]?.[0];
+      if (!b) throw new Error(`${label}: kein Körper`);
+      const M = placementMatrix(it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
+      return { b, M, inv: matInvertRigid(M), shape: K.placed(b.shape, it.pos || [0, 0, 0], it.rot || [0, 0, 0]) };
+    };
+    const A = await pick(tab, "Zapfenteil"), B = await pick(slot, "Schlitzteil");
+    const plan = K.tabSlotPlan(A.shape, B.shape, params);
+    const local = (inv) => (bx) => ({ ...bx, c: matApply(inv, bx.c), u: matApplyDir(inv, bx.u), n: matApplyDir(inv, bx.n) });
+    return { tabs: plan.tabs.map(local(A.inv)), slots: plan.slots.map(local(B.inv)), info: plan.info, tabBody: A.b.fid, slotBody: B.b.fid };
   },
   async ping() { return "ok"; },
 };
