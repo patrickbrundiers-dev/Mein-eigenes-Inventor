@@ -67,14 +67,25 @@ export function endCutEdge(kind, dims, plane, mode, swivel = SWIVEL_DEFAULT, { t
 }
 
 /**
- * 2D oder 3D je Profil bzw. Rahmen, gilt für alle Schnitte dieses Profils (beide Enden), dazu die Winkelkorrektur
- * (Patrick, 24.10.2026). Ältere Profile mit Angabe je Ende (#48): 2D, wenn ein Ende 2D war; ohne Angabe 3D.
- * Ergebnis: { mode: "2D" | "3D", swivel: Ausdruck (Text) }
+ * 2D oder 3D je Profil bzw. Rahmen, gilt für alle Schnitte dieses Profils (Enden und Konturen), dazu die
+ * Winkelkorrektur (Patrick, 24.10.2026). Ältere Profile mit Angabe je Ende (#48): 2D, wenn ein Ende 2D war; ohne
+ * Angabe 3D. Ist am Bauteil 2D oder 3D gewählt (part.cutMode, Patrick 25.10.2026), gilt das samt Winkelkorrektur
+ * für alle Profile des Bauteils.
+ * Ergebnis: { mode: "2D" | "3D", swivel: Ausdruck (Text), fromPart }
  */
-export function featureCutSettings(f) {
-  const mode = f?.cutMode === "2D" || f?.cutMode === "3D" ? f.cutMode : f?.endCuts?.A === "2D" || f?.endCuts?.B === "2D" ? "2D" : "3D";
-  const swivel = f?.swivel !== undefined && f.swivel !== "" ? f.swivel : String(SWIVEL_DEFAULT);
-  return { mode, swivel: String(swivel) };
+export function featureCutSettings(f, part) {
+  const fromPart = isCutMode(part?.cutMode);
+  const src = fromPart ? part : f;
+  const mode = isCutMode(src?.cutMode) ? src.cutMode : f?.endCuts?.A === "2D" || f?.endCuts?.B === "2D" ? "2D" : "3D";
+  const swivel = src?.swivel !== undefined && src.swivel !== "" ? src.swivel : String(SWIVEL_DEFAULT);
+  return { mode, swivel: String(swivel), fromPart };
+}
+const isCutMode = (m) => m === "2D" || m === "3D";
+
+/** Rundrohr schneidet standardmäßig in 3D (Patrick, 25.10.2026): beim Wechsel der Profilart auf Rundrohr setzen */
+export function roundTube3D(f) {
+  if (f?.section === "rohr" && ["profile", "frame", "profilzug"].includes(f.type)) f.cutMode = "3D";
+  return f;
 }
 
 /** Kann das Profil 2D/3D unterscheiden? Rechteckrohr braucht innen einen Eckradius (r ≥ t + 0,6). */

@@ -627,6 +627,8 @@ export class Viewer {
         const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: d.active ? 0.18 : 0.08, side: THREE.DoubleSide, depthWrite: false }));
         this.datumGroup.add(m);
         this.datumGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]), new THREE.LineBasicMaterial({ color })));
+      } else if (d.kind === "path") {
+        this.datumGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(d.pts.map((p) => new THREE.Vector3(...p))), new THREE.LineBasicMaterial({ color: d.active ? 0xef7d1a : 0x2f6db5 })));
       } else if (d.kind === "axis") {
         const a = d.p.map((c, i) => c - d.d[i] * s), b = d.p.map((c, i) => c + d.d[i] * s);
         const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]), new THREE.LineDashedMaterial({ color, dashSize: 8, gapSize: 3 }));
@@ -1244,6 +1246,30 @@ export class Viewer {
       r.setSize(size.x, size.y, false);
       this.needsRender = true;
       r.render(this.scene, this.camera);
+    }
+  }
+  /** Kleines Vorschaubild für die Startseite (PNG als data:-URL, transparenter Hintergrund, Ausschnitt aus der Mitte) */
+  thumbnail({ width = 320, height = 240 } = {}) {
+    const r = this.renderer;
+    const src = r.domElement;
+    if (!src.width || !src.height) return null;
+    const helpers = this.helpers.visible;
+    this.helpers.visible = false;
+    try {
+      // wie die Zeichenschleife, aber ohne ViewCube: ganze Fläche leeren, Szene zeichnen
+      r.setScissorTest(false);
+      r.clear();
+      r.setViewport(0, 0, this.container.clientWidth, this.container.clientHeight);
+      r.render(this.scene, this.camera);
+      const a = width / height;
+      const cw = Math.min(src.width, src.height * a), ch = cw / a;
+      const c = document.createElement("canvas");
+      c.width = width; c.height = height;
+      c.getContext("2d").drawImage(src, (src.width - cw) / 2, (src.height - ch) / 2, cw, ch, 0, 0, width, height);
+      return c.toDataURL("image/png");
+    } finally {
+      this.helpers.visible = helpers;
+      this.needsRender = true;
     }
   }
   snapshot() {

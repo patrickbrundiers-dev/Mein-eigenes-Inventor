@@ -1,4 +1,5 @@
 import { DEFAULT_LAYOUT, validateLayout } from "./layout.js";
+import { validateMacros } from "./makros.js";
 import { validateMaterialLib } from "./materials.js";
 import { validateRibbonLayout } from "./ribbonlayout.js";
 import { validateNameTemplate } from "./naming.js";
@@ -21,7 +22,7 @@ export const SETTINGS_VERSION = 1;
  * teilweise = einige Optionen wirken, Rest geplant; geplant = nur Beschreibung, keine Optionen.
  */
 export const CATEGORIES = [
-  { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standard-Einheit (intern immer mm/Grad)"] },
+  { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Englisch auch für Eigenschaften, Meldungen und Zeichnungstexte", "Zahlenformat und Standard-Einheit (intern immer mm/Grad)"], note: "Sprache: Englisch gilt in dieser Ausbaustufe für Menüband, Befehlssuche und Befehlsnamen; Eigenschaften, Meldungen und Zeichnungstexte bleiben deutsch." },
   { id: "ansicht", label: "3D-Ansicht", status: "aktiv", note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
   { id: "skizze", label: "Skizzen", status: "aktiv" },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
@@ -47,9 +48,12 @@ const QUAL = [{ value: "grob", label: "Schnell" }, { value: "normal", label: "No
 
 /** Alle einstellbaren Werte. Jede Option hier wirkt tatsächlich (sonst steht sie unter planned). */
 export const SETTINGS = [
+  { key: "allgemein.sprache", cat: "allgemein", label: "Sprache der Oberfläche", type: "enum", default: "de", options: [{ value: "de", label: "Deutsch" }, { value: "en", label: "English" }], help: "Englisch: Menüband, Befehlssuche und Befehlsnamen. Eigenschaften und Meldungen bleiben vorerst deutsch." },
   { key: "allgemein.ordner", cat: "allgemein", label: "Standardordner für Projekte", type: "folder", default: "", help: "Hier starten »Öffnen« und »Speichern unter«. Leer = zuletzt benutzter Ordner. Nur in der Desktop-Version." },
   { key: "allgemein.autosaveSekunden", cat: "allgemein", label: "Automatische Sicherung nach", unit: "s", type: "number", default: 1.5, min: 0.5, max: 120, help: "Wartezeit nach der letzten Änderung, bevor die Wiederherstellungsdatei geschrieben wird. Abschalten ist nicht vorgesehen." },
   { key: "allgemein.loeschenBestaetigen", cat: "allgemein", label: "Löschen von Dokumenten bestätigen", type: "bool", default: true },
+  { key: "allgemein.startAnsicht", cat: "allgemein", label: "Startseite: zuletzt verwendete Dateien als", type: "enum", default: "kacheln", options: [{ value: "kacheln", label: "Kacheln mit Vorschaubild" }, { value: "liste", label: "Liste" }], help: "Auch direkt auf der Startseite umschaltbar." },
+  { key: "allgemein.startSortierung", cat: "allgemein", label: "Startseite: sortieren nach", type: "enum", default: "geaendert", options: [{ value: "geaendert", label: "Änderungsdatum" }, { value: "geoeffnet", label: "zuletzt geöffnet" }, { value: "name", label: "Name" }] },
   { key: "allgemein.dezimalstellen", cat: "allgemein", label: "Dezimalstellen für Messwerte", type: "int", default: 3, min: 0, max: 6, help: "Anzeige beim Messen (Abstand, Winkel). Gerechnet wird immer mit voller Genauigkeit." },
 
   { key: "ansicht.qualitaet", cat: "ansicht", label: "Darstellungsqualität beim Start", type: "enum", default: "normal", options: QUAL, help: "Feinheit der Dreiecksvernetzung. Wirkt nur auf die Anzeige, nicht auf Export oder Masse." },
@@ -93,6 +97,7 @@ export const SETTINGS = [
   { key: "werkzeuge.std.extrusion", cat: "werkzeuge", label: "Standardwert Extrusionstiefe", unit: "mm", type: "number", default: 10, min: 0.001, max: 100000, help: "Startwert neuer Extrusionen." },
   { key: "werkzeuge.merken", cat: "werkzeuge", label: "Letzte Werkzeugwerte merken", type: "bool", default: true, help: "Rundung, Versatz, Polygon und Muster starten mit dem zuletzt eingegebenen Wert, auch nach einem Neustart. Aus = immer die Standardwerte oben." },
   { key: "werkzeuge.letzte", cat: "werkzeuge", label: "Zuletzt verwendete Werkzeugwerte", type: "toolmemo", default: {}, custom: true },
+  { key: "werkzeuge.makros", cat: "werkzeuge", label: "Makros", type: "macros", default: [], custom: true, help: "Benannte Befehlsfolgen; anlegen und aufzeichnen über die Befehlssuche (»Makros verwalten«, »Makro aufzeichnen«)." },
   { key: "werkzeuge.kuerzel", cat: "werkzeuge", label: "Tastaturkürzel", type: "keymap", default: {}, custom: true, help: "Abweichungen von der Standardbelegung; Konflikte werden abgelehnt." },
 
   { key: "fertigung.stange", cat: "fertigung", label: "Max. Stangenlänge", unit: "mm", type: "number", default: 6500, min: 0, max: 20000, help: "Nutzbar ist die Stange minus Endbeschnitt und Greiferrest. 0 = nicht prüfen." },
@@ -114,6 +119,7 @@ export const SETTINGS = [
   { key: "dokument.name.baugruppe", cat: "dokument", label: "Name neuer Baugruppen", type: "name", default: "Baugruppe {n}", placeholders: ["n", "projekt", "datum"] },
   { key: "dokument.name.zeichnung", cat: "dokument", label: "Name neuer Zeichnungen", type: "name", default: "Zeichnung {quelle}", placeholders: ["n", "projekt", "datum", "quelle"] },
   { key: "dokument.nummer", cat: "dokument", label: "Sachnummer neuer Bauteile", type: "name", default: "", allowEmpty: true, placeholders: ["n", "projekt", "datum"], help: "Leer = keine Sachnummer. Beispiel: »BT-{n:3}« → »BT-001«; steht im Schriftfeld und in der Stückliste." },
+  { key: "dokument.restwand", cat: "dokument", label: "Mindest-Restwand 0,1 mm in neuen Bauteilen", type: "bool", default: true, help: "Extrusion (Schnitt), Bohrung mit Tiefe oder Skizzenkontur, die genau auf der Rückseite der Wand endet (Tiefe = Wandstärke), lässt 0,1 mm stehen. Am Bauteil einzeln abschaltbar." },
   { key: "dokument.teilenummerPflicht", cat: "dokument", label: "Teilenummer ist Pflicht für die Freigabe", type: "bool", default: false, help: "Aus: fehlende Teilenummer ist eine Warnung. Ein: ein Fehler – Freigeben geht dann erst mit Nummer. Reine Normteile brauchen keine." },
   { key: "dokument.toleranzklasse", cat: "dokument", label: "Allgemeintoleranz neuer Zeichnungen", type: "enum", default: "m", options: CLASSES.map((c) => ({ value: c.value, label: "ISO 2768-" + c.label })), help: "Steht im Schriftfeld. »Allgemeintoleranz anzeigen« am Maß nimmt das ± aus dieser Klasse (Längen, Radien und Fasen nach ISO 2768-1)." },
   { key: "dokument.nachkomma", cat: "dokument", label: "Nachkommastellen neuer Zeichnungsmaße", type: "int", default: 1, min: 0, max: 3, help: "Gilt für neue Zeichnungen; jedes Maß lässt sich einzeln ändern." },
@@ -158,6 +164,8 @@ export function validateValue(def, v) {
     }
     case "keymap":
       return validateKeymap(v);
+    case "macros":
+      return validateMacros(v);
     case "cmdlist": {
       if (!Array.isArray(v)) return { ok: false, error: "Liste von Befehlen erwartet" };
       if (v.length > 30) return { ok: false, error: "Höchstens 30 Befehle" };

@@ -43,7 +43,7 @@ export class Docking {
     grip.addEventListener("dblclick", () => this.app.prefs.set("oberflaeche.layout", { ...this.layout, [side === "left" ? "wLeft" : "wRight"]: DEFAULT_LAYOUT[side === "left" ? "wLeft" : "wRight"] }));
     return grip;
   }
-  /** Modus blendet Panels aus (Startseite: kein Browser) */
+  /** Modus blendet Panels aus (Startseite: weder Browser noch Eigenschaften) */
   setModeHidden(list) { this.modeHidden = list; this.apply(); }
   apply(layout = this.layout) {
     const L = layoutColumns(layout, this.modeHidden);

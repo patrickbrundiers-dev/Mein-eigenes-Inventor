@@ -110,13 +110,20 @@ test("Rohr-Konturen: Planung mit Muster, durchgehend, Schneidweg und Einstiche",
 test("Rohr-Konturen: Prüfungen nennen die Kontur", () => {
   const msg = (c, prof = QR) => planTubeCuts([{ ...defaultTubeCut(c.kind || "bohrung"), ...c }], prof, ev).issues.map((x) => x.message).join();
   assert.match(msg({ x: "3" }), /Kontur 1: liegt nicht ganz auf dem Teil/);
-  assert.match(msg({ q: "10", d: "10" }), /ragt über die ebene Fläche \(\|Versatz\| \+ b\/2 höchstens 14 mm\)/);
+  // über die Eckrundung (r 6) bis 80° um die Rundung: 14 + 6 · 80° = 22,38 mm
+  assert.equal(msg({ q: "10", d: "10" }), "");
+  assert.match(msg({ q: "18", d: "10" }), /ragt zu weit über die Eckrundung \(\|Versatz\| \+ b\/2 auf der Abwicklung höchstens 22,38 mm\)/);
+  assert.match(msg({ q: "14", d: "10" }, { ...QR, r: 3 }), /nur ab Eckradius Wand \+ 0,6 mm/);
   assert.match(msg({ kind: "langloch", l: "10", b: "10" }), /Länge muss größer/);
   assert.match(msg({ kind: "rechteck", r: "15" }), /Eckradius 0 bis 10 mm/);
   assert.match(msg({ side: "links" }), /Seite oben, vorne, unten oder hinten/);
   assert.match(msg({ pattern: "3x5" }), /überlappen/);
   assert.match(msg({ kind: "ausklinkung", l: "1000" }), /länger als das Teil/);
-  assert.equal(msg({ d: "40" }, { kind: "rohr", W: 42.4, H: 42.4, t: 2.6, L: 1000 }), "");
+  // Rundrohr 3D: Ø40 an Ø42,4 braucht 70,63° Kopfschwenk → auf ±45° begrenzt; 2D auf der Abwicklung bis 80° um das Rohr
+  assert.match(msg({ d: "40" }, { kind: "rohr", W: 42.4, H: 42.4, t: 2.6, L: 1000 }), /braucht in 3D 70,63° Kopfschwenk, Winkelkorrektur auf ±45°/);
+  assert.equal(msg({ d: "20" }, { kind: "rohr", W: 42.4, H: 42.4, t: 2.6, L: 1000 }), "");
+  assert.equal(msg({ d: "40" }, { kind: "rohr", W: 42.4, H: 42.4, t: 2.6, L: 1000, mode: "2D" }), "");
+  assert.match(msg({ d: "40" }, { kind: "rohr", W: 42.4, H: 42.4, t: 2.6, L: 1000, swivel: 75 }), /^$/);
   assert.match(planTubeCuts([defaultTubeCut()], { ...QR, kind: "winkel" }, ev).issues[0].message, /nur für Rund-, Quadrat- und Rechteckrohr/);
   // Rechteckrohr vorne: Fläche über die Höhe H
   const re = { kind: "rechteck", W: 60, H: 40, t: 3, r: 6, L: 1000 };
@@ -260,7 +267,53 @@ test("Schlitz und Polygon: Lage, Schneidweg, Prüfregeln", () => {
   const rand = checkContours(planTubeCuts([{ kind: "polygon", side: "oben", x: "16", q: "0", pattern: "1", punkte: "0,0; 30,0; 15,10" }], prof, ev).items, prof, DFM_DEFAULTS);
   assert.match(rand[0].text, /kleinster Abstand 1 mm/);
   assert.deepEqual(checkContours(r.items.slice(0, 1), prof, DFM_DEFAULTS), []);
-  // zu breit für die ebene Fläche
-  const bad = planTubeCuts([{ kind: "polygon", side: "oben", x: "100", q: "0", pattern: "1", punkte: "0,0; 10,0; 10,30" }], prof, ev);
-  assert.match(bad.issues[0].message, /ragt über die ebene Fläche/);
+  // breiter als die ebene Fläche: über die Eckrundung; zu breit auch dafür
+  const wide = planTubeCuts([{ kind: "polygon", side: "oben", x: "100", q: "0", pattern: "1", punkte: "0,0; 10,0; 10,30" }], prof, ev);
+  assert.deepEqual(wide.issues, []);
+  assert.equal(wide.items[0].wrap, undefined); // 3D: eben, 15 ≤ 16,9
+  assert.equal(planTubeCuts([{ kind: "polygon", side: "oben", x: "100", q: "0", pattern: "1", punkte: "0,0; 10,0; 10,30" }], { ...prof, mode: "2D" }, ev).items[0].wrap, true);
+  const bad = planTubeCuts([{ kind: "polygon", side: "oben", x: "100", q: "0", pattern: "1", punkte: "0,0; 10,0; 10,50" }], prof, ev);
+  assert.match(bad.issues[0].message, /ragt zu weit über die Eckrundung/);
+});
+
+// ---------- 3D-Schnitt je Bauteil, Rundrohr 3D, Konturen über die Rundung (Patrick, 25.10.2026) ----------
+import { featureCutSettings, roundTube3D } from "../src/core/endcut.js";
+import { contourPolyline } from "../src/core/tubecuts.js";
+
+test("Schnitt 2D/3D: Bauteil gibt allen Profilen Art und Winkelkorrektur vor", () => {
+  const f = { type: "profile", section: "vierkant", cutMode: "2D", swivel: "30" };
+  assert.deepEqual(featureCutSettings(f), { mode: "2D", swivel: "30", fromPart: false });
+  assert.deepEqual(featureCutSettings(f, {}), { mode: "2D", swivel: "30", fromPart: false });
+  assert.deepEqual(featureCutSettings(f, { cutMode: "3D" }), { mode: "3D", swivel: "45", fromPart: true });
+  assert.deepEqual(featureCutSettings(f, { cutMode: "3D", swivel: "40" }), { mode: "3D", swivel: "40", fromPart: true });
+  // Rundrohr beginnt in 3D, andere Profile bleiben
+  assert.equal(roundTube3D({ type: "profile", section: "rohr", cutMode: "2D" }).cutMode, "3D");
+  assert.equal(roundTube3D({ type: "frame", section: "rohr" }).cutMode, "3D");
+  assert.equal(roundTube3D({ type: "profile", section: "vierkant", cutMode: "2D" }).cutMode, "2D");
+  assert.equal(roundTube3D({ type: "biegerohr", section: "rohr" }).cutMode, undefined);
+});
+
+test("Langloch 30 breit an QR 40x40x3 (Patricks Test): über die Eckrundung statt übersprungen", () => {
+  const ll = (b) => [{ kind: "langloch", x: "500", side: "oben", q: "0", pattern: "1", l: "60", b }];
+  const p = planTubeCuts(ll("30"), { ...QR, mode: "2D" }, ev);
+  assert.deepEqual(p.issues, []);
+  assert.equal(p.items[0].wrap, true);
+  assert.equal(p.items[0].faceHalf, 14);
+  // 3D: eben bis 0,1 mm vor die Seitenwand (20 − 3 − 0,1 = 16,9), Kopfschwenk auf der Rundung asin(1/6)
+  const p3 = planTubeCuts(ll("30"), QR, ev);
+  assert.deepEqual(p3.issues, []);
+  assert.equal(p3.items[0].wrap, undefined);
+  near(p3.items[0].need, Math.asin(1 / 6) / (Math.PI / 180), 1e-9);
+  const p4 = planTubeCuts(ll("34"), QR, ev);
+  assert.equal(p4.items[0].wrap, true);
+  assert.match(p4.issues[0].message, /in 3D eben nur bis 0,1 mm vor die Seitenwand \(\|Versatz\| \+ b\/2 höchstens 16,9 mm\)/);
+  // auf der ebenen Fläche bleibt alles wie bisher
+  const n = planTubeCuts([{ kind: "langloch", x: "500", side: "oben", q: "0", pattern: "1", l: "60", b: "28" }], QR, ev);
+  assert.equal(n.items[0].wrap, undefined);
+  // Umriss als Linienzug: geschlossen, quer höchstens b/2 + Versatz, dicht genug
+  const pl = contourPolyline({ ...p.items[0], q: 2 }, 500);
+  const ys = pl.map((q) => q[1]), xs = pl.map((q) => q[0]);
+  near(Math.max(...ys), 17, 1e-9); near(Math.min(...ys), -13, 1e-9);
+  near(Math.max(...xs), 530, 1e-9); near(Math.min(...xs), 470, 1e-9);
+  assert.ok(pl.every((a, i) => Math.abs(pl[(i + 1) % pl.length][1] - a[1]) <= 0.5 + 1e-9));
 });
