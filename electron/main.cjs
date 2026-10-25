@@ -183,8 +183,14 @@ ipcMain.on("app:close-confirmed", (_e, ok) => { if (ok) { allowClose = true; win
 ipcMain.on("app:title", (_e, t) => win && win.setTitle(String(t)));
 ipcMain.handle("recent:list", () => (readSettings().recent || []).filter((p) => fs.existsSync(p)));
 
-ipcMain.handle("project:open", async () => {
-  const r = await dialog.showOpenDialog(win, { title: "Projekt öffnen", defaultPath: lastDir("project"), filters: [{ name: "PBCAD-Projekt", extensions: ["wcad"] }], properties: ["openFile"] });
+// Standardordner aus den Benutzereinstellungen (allgemein.ordner), sonst zuletzt benutzter Ordner
+const startDir = (dir) => (typeof dir === "string" && dir && fs.existsSync(dir) && fs.statSync(dir).isDirectory() ? dir : lastDir("project"));
+ipcMain.handle("dialog:folder", async (_e, { dir } = {}) => {
+  const r = await dialog.showOpenDialog(win, { title: "Ordner wählen", defaultPath: startDir(dir), properties: ["openDirectory", "createDirectory"] });
+  return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+});
+ipcMain.handle("project:open", async (_e, { dir } = {}) => {
+  const r = await dialog.showOpenDialog(win, { title: "Projekt öffnen", defaultPath: startDir(dir), filters: [{ name: "PBCAD-Projekt", extensions: ["wcad"] }], properties: ["openFile"] });
   if (r.canceled || !r.filePaths[0]) return null;
   const p = r.filePaths[0];
   lastDir("project", p);
@@ -215,10 +221,10 @@ ipcMain.handle("autosave:write", async (_e, { time, path: p, json }) => {
 ipcMain.handle("autosave:read", async () => {
   try { return JSON.parse(fs.readFileSync(autosaveFile(), "utf8")); } catch { return null; }
 });
-ipcMain.handle("project:save", async (_e, { path: p, text, defaultName, backups }) => {
+ipcMain.handle("project:save", async (_e, { path: p, text, defaultName, backups, dir }) => {
   let file = p;
   if (!file) {
-    const r = await dialog.showSaveDialog(win, { title: "Projekt speichern", defaultPath: path.join(lastDir("project"), defaultName || "Projekt.wcad"), filters: [{ name: "PBCAD-Projekt", extensions: ["wcad"] }] });
+    const r = await dialog.showSaveDialog(win, { title: "Projekt speichern", defaultPath: path.join(startDir(dir), defaultName || "Projekt.wcad"), filters: [{ name: "PBCAD-Projekt", extensions: ["wcad"] }] });
     if (r.canceled || !r.filePath) return null;
     file = r.filePath;
   }

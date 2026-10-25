@@ -8,6 +8,7 @@ import { ellipseGeom, ellipseSamples } from "../core/ellipse.js";
 import { splineSamples } from "../core/spline.js";
 import { photoSurface, photoStage } from "../core/rendering.js";
 import { explodeOffsets } from "../core/kinematik.js";
+import { lighting } from "../core/viewlight.js";
 
 const COL = {
   edge: 0x1c2733,
@@ -254,8 +255,16 @@ export class Viewer {
   }
 
   /** Benutzereinstellungen (src/core/settings.js) übernehmen */
+  /** Licht nach Einstellung bzw. Fotodarstellung */
+  applyLighting() {
+    const L = lighting(this.lightPreset, !!this.photo);
+    for (const h of this.lights.heads) h.intensity = L.head;
+    this.lights.ambient.intensity = L.ambient;
+    this.lights.hemi.intensity = L.hemi;
+  }
   applyPrefs(v) {
     const c = this.controls;
+    if (v["ansicht.beleuchtung"] !== this.lightPreset) { this.lightPreset = v["ansicht.beleuchtung"]; this.applyLighting(); this.render(); }
     // Drehen um den Punkt unter dem Mauszeiger übernimmt bindPivotOrbit; OrbitControls dreht dann nicht selbst
     this.pivotOrbit = v["ansicht.drehpunktCursor"] !== false;
     const rot = this.pivotOrbit ? null : THREE.MOUSE.ROTATE;
@@ -709,9 +718,7 @@ export class Viewer {
     r.toneMappingExposure = 1;
     r.shadowMap.enabled = on;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
-    for (const h of this.lights.heads) h.intensity = on ? 0.6 : 1.9;
-    this.lights.ambient.intensity = on ? 0.15 : 0.95;
-    this.lights.hemi.intensity = on ? 0.25 : 0.55;
+    this.applyLighting();
     if (this.grid) this.grid.visible = on ? false : this.showGrid;
     this.updateStage();
   }
