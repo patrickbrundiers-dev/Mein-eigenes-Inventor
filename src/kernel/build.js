@@ -13,6 +13,7 @@ import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.
 import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
+import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims } from "../core/normteile.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
 import { GENERATORS, resolveGenParams } from "../core/generator.js";
@@ -377,12 +378,13 @@ export function createKernel(R) {
 
     const applyOp = (op, tool, fid, label) => {
       const bodies = state.bodies;
-      if (op === "new" || (op === "join" && !bodies.some((b) => b.kind === "solid"))) {
+      const fusable = (x) => x.kind === "solid" && !x.meta?.norm;
+      if (op === "new" || (op === "join" && !bodies.some(fusable))) {
         bodies.push({ shape: tool.clone(), kind: "solid", name: label, fid });
         return;
       }
       if (op === "join") {
-        const b = bodies.find((x) => x.kind === "solid");
+        const b = bodies.find(fusable);
         b.shape = b.shape.fuse(tool.clone());
         return;
       }
@@ -725,6 +727,22 @@ export function createKernel(R) {
             applyOp(f.op || "join", tool, f.id, f.name);
             break;
           }
+          case "normteil": {
+            const kind = f.kind || "schraube4017";
+            const L = NORM_KINDS[kind]?.length ? E(f.length ?? "40", "Länge") : 0;
+            const warn = checkNorm(kind, f.size, L);
+            const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Basispunkt " + "XYZ"[k]));
+            const dir = f.axis === "custom" ? (f.dir || ["0", "0", "1"]).map((x) => E(x, "Richtung")) : AXES[f.axis || "Z"];
+            const solid = orientZ(normSolid(kind, f.size, L), dir, pos);
+            const designation = normDesignation({ kind, size: f.size, length: L, grade: f.grade, galv: f.galv });
+            const meta = { norm: { kind, size: f.size, length: L, grade: f.grade || "", designation }, density: normDensity(f.grade) };
+            const name = f.name || designation;
+            state.tools.set(f.id, { op: "new", shapes: [{ shape: solid, kind: "norm", meta, name }] });
+            state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
+            st.info = designation;
+            if (warn.length) st.warning = warn.join("; ");
+            break;
+          }
           case "biegerohr": {
             const dims = {};
             for (const [k, v] of Object.entries(f.dims || {})) dims[k] = E(v, k);
@@ -821,7 +839,8 @@ export function createKernel(R) {
                 if (s.kind === "member") {
                   const meta = { ...s.meta };
                   pushMember(state, copy, f, meta, s.name);
-                } else applyOp(src.op, copy, f.id, f.name);
+                } else if (s.kind === "norm") state.bodies.push({ shape: copy, kind: "solid", name: s.name, fid: f.id, meta: { ...s.meta } });
+                else applyOp(src.op, copy, f.id, f.name);
                 n++;
               }
             }
@@ -1078,6 +1097,33 @@ export function createKernel(R) {
       }
     }
     throw new Error("Unbekannter Regelkörper: " + kind);
+  }
+  // ---------- Normteile in lokaler Lage: Achse +z, Basispunkt = Auflagefläche (Schraube: Kopfunterseite) ----------
+  function normSolid(kind, size, L) {
+    const t = NORM_THREADS[size];
+    const hex = (s, h, z0 = 0) => R.drawPolysides(s / Math.sqrt(3), 6).sketchOnPlane("XY", z0).extrude(h);
+    const cyl = (r, h, z0 = 0) => R.makeCylinder(r, h, [0, 0, z0], [0, 0, 1]);
+    const core = t.d - 1.0825 * t.P; // Kerndurchmesser Bolzen (Flankendurchmesser-Näherung) für den Gewindebereich
+    switch (kind) {
+      case "schraube4017":
+      case "schraube4014": {
+        const b = kind === "schraube4014" ? Math.min(L, threadLength4014(t.d, L)) : L;
+        let s = hex(t.s, t.k, -t.k);
+        if (L - b > 0.01) s = s.fuse(cyl(t.d / 2, L - b));
+        return s.fuse(cyl(core / 2, b, L - b));
+      }
+      case "mutter": return hex(t.s, t.m).cut(cyl(t.d / 2, t.m + 2, -1));
+      case "scheibe": return cyl(t.d2 / 2, t.h).cut(cyl(t.d1 / 2, t.h + 2, -1));
+      case "gewindestange": return cyl(core / 2, L);
+      case "spannschloss": {
+        // offener Bügel: zwei Naben mit Gewinde, verbunden durch zwei Seitenstege; Mitte bei z = 0
+        const { l, b, e } = turnbuckleDims(size);
+        const w = Math.max(3, (b - t.d) / 2), bar = (y) => R.makeBaseBox(w, w, l).translate([0, y, -l / 2]);
+        let s = cyl(b / 2 * 0.8, e, l / 2).fuse(cyl(b / 2 * 0.8, e, -l / 2 - e)).fuse(bar(b / 2 - w / 2)).fuse(bar(-(b / 2 - w / 2)));
+        return s.cut(cyl(t.d / 2, l + 2 * e + 2, -l / 2 - e - 1));
+      }
+    }
+    throw new Error("Unbekanntes Normteil: " + kind);
   }
   /** Körper mit Achse +z an Punkt pos auf Richtung dir drehen */
   function orientZ(shape, dir, pos) {

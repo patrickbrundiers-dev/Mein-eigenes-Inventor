@@ -185,3 +185,35 @@ test("Treppen-Generator: Wangen unten waagrecht/oben senkrecht geschnitten, Stuf
   // Holm liegt unter den Stufen: höchster Punkt des Holms ≤ Unterkante der obersten Stufe + Steigung
   assert.ok(Math.max(...holme.map((b) => b.shape.boundingBox.bounds[1][2])) <= 15 * 175 - 30 + 1e-3);
 });
+
+test("Normteile: Schraube, Mutter, Scheibe, Gewindestange, Spannschloss mit Normbezeichnung (MegaCAD-Abgleich M20)", async () => {
+  const { NORM_KINDS, NORM_THREADS: THREADS, defaultNormteil, collectNorm } = await import("../src/core/normteile.js");
+  for (const kind of Object.keys(NORM_KINDS)) {
+    const res = await K.buildPart(part([{ id: "n", ...defaultNormteil(kind) }]));
+    okAll(res);
+    assert.equal(res.bodies.length, 1, kind);
+    assert.ok(res.bodies[0].meta.norm.designation.includes(NORM_KINDS[kind].norm), kind);
+  }
+  // M12 x 40, ISO 4017: Kopf unter z = 0, Schaft bis z = 40, Kopfvolumen ≈ Sechseck × k
+  const t = THREADS.M12;
+  const res = await K.buildPart(part([{ id: "s", ...defaultNormteil("schraube4017"), grade: "8.8" }, { id: "q", type: "regelkoerper", kind: "quader", dims: { L: "60", B: "60", H: "20" }, pos: ["0", "0", "50"], axis: "Z", op: "join" }]));
+  okAll(res);
+  assert.equal(res.bodies.length, 2, "Quader wird nicht mit der Schraube vereinigt");
+  const bolt = res.bodies.find((b) => b.meta?.norm);
+  assert.equal(bolt.name, "Sechskantschraube ISO 4017 - M12 x 40 - 8.8");
+  const bb = bolt.shape.boundingBox.bounds;
+  near(bb[0][2], -t.k, 0.01, "Kopf"); near(bb[1][2], 40, 0.01, "Ende");
+  const head = (3 * Math.sqrt(3) / 2) * (t.s / Math.sqrt(3)) ** 2 * t.k;
+  const core = t.d - 1.0825 * t.P;
+  near(R.measureVolume(bolt.shape), head + Math.PI / 4 * core * core * 40, 1, "Volumen");
+  // ISO 4014 M12 x 100: Schaft 100 − (2·12 + 6) = 70 mm voll
+  const res14 = await K.buildPart(part([{ id: "s", ...defaultNormteil("schraube4014"), length: "100" }]));
+  okAll(res14);
+  near(R.measureVolume(res14.bodies[0].shape), head + Math.PI / 4 * (144 * 70 + core * core * 30), 1, "ISO 4014");
+  // Muster: drei Schrauben → Normliste zählt 3
+  const pat = await K.buildPart(part([{ id: "s", ...defaultNormteil("schraube4017") }, { id: "m", type: "pattern", feature: "s", kind: "linear", dir: "X", count: "3", spacing: "50" }]));
+  okAll(pat);
+  const rows = collectNorm([{ bodies: pat.bodies.map((b) => ({ ...b, props: { volume: R.measureVolume(b.shape) } })), qty: 2 }]);
+  assert.equal(rows.length, 1); assert.equal(rows[0].qty, 6);
+  near(rows[0].mass, R.measureVolume(bolt.shape) * 7.85 / 1e6, 1e-6, "Masse je Stück");
+});

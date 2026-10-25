@@ -43,6 +43,7 @@ const P = {
   clean: '<path d="M14 4l6 6"/><path d="M12 6l6 6-7 7H6l-3-3z"/><path d="M8 20h13"/>',
   platte: '<path d="M4 4h6v16H4z"/><path d="M10 9h11v6H10"/><circle cx="7" cy="7" r="1"/><circle cx="7" cy="17" r="1"/>',
   rippe: '<path d="M4 3v18"/><path d="M4 21h17"/><path d="M4 7l13 14"/><path d="M4 10v-3"/>',
+  normteil: '<path d="M8 3h8l2 3-2 3H8L6 6z"/><path d="M10 9v12h4V9"/><path d="M10 12l4 1.5M10 15l4 1.5M10 18l4 1.5"/>',
   regelkoerper: '<circle cx="7" cy="8" r="4"/><path d="M14 20l4-12 4 12z"/><path d="M2 20h9v-6H2z"/>',
   biegerohr: '<path d="M3 20V12a5 5 0 0 1 5-5h6a4 4 0 0 0 4-4"/><path d="M7 20v-8a1 1 0 0 1 1-1h6a8 8 0 0 0 8-8"/>',
   profilzug: '<path d="M3 19l6-4 4 3 8-12"/><circle cx="3" cy="19" r="1.5"/><circle cx="9" cy="15" r="1.5"/><circle cx="13" cy="18" r="1.5"/><circle cx="21" cy="6" r="1.5"/>',
