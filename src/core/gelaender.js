@@ -13,7 +13,7 @@ import { splitList } from "./expr.js";
 import { holderSchema, holderDrop, holderParts, entryWall } from "./handlaufhalter.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
-import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
+import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, findPlateFace, faceCoords, holesBelow, applyTargetHoles, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
 const mountKind = (p) => (p.base === "oben" || p.base === "seitlich" ? p.base : null);
 const SEC = { rohr: "Rundrohr", vierkant: "Quadratrohr", rechteck: "Rechteckrohr", flach: "Flachstahl", rund: "Rundstahl", vierkantvoll: "Vierkantstahl" };
@@ -100,7 +100,8 @@ export const GELAENDER = {
     const mount = kind ? mountConfig(p, undefined, kind) : null, mounted = [];
     const sOff = kind === "seitlich" ? sideOffset(mount, post) : 0;
     let rand = null;
-    if (mount && p.mTarget === "profil") {
+    const sup = mount && p.supports ? p.supports : null; // vom Balkon: Rahmen (Stäbe) und Belag in Geländer-Lage
+    if (mount && !sup && p.mTarget === "profil") {
       const sec = p.mProfile, d0 = norm2(sub2(pts[1], pts[0])), side = kind === "seitlich";
       const open = side ? [-d0[1], d0[0], 0] : [d0[1], -d0[0], 0];
       const rot = orientRot(sec, [d0[0], d0[1], 0], up, { tall: up, open, legs: [-d0[1], d0[0], -1], stem: [0, 0, -1] });
@@ -119,14 +120,25 @@ export const GELAENDER = {
       if (mount) {
         let r;
         if (kind === "oben") {
-          const face = rand ? findMemberFace(rand, P3(q.at, 0), up) : planeFace([0, 0, 0], up, along, "Boden");
+          let face;
+          if (sup) {
+            // Balkon: auf dem Belag (Bohrungen auch in den Rahmen darunter) bzw. direkt auf dem Rahmen
+            face = findPlateFace(sup.plates, top);
+            if (!face) { face = findMemberFace(sup.members, P3(q.at, 0), up, 400); if (face?.cPhys) { const c = faceCoords(face, P3(q.at, 0))[1]; if (c < face.cPhys[0] - 1 || c > face.cPhys[1] + 1) face = null; } }
+            if (!face) throw fieldError(`${name}: weder Belag noch Rahmen unter dem Pfosten – Geländer vom Rand prüfen`, "mTarget");
+          } else face = rand ? findMemberFace(rand, P3(q.at, 0), up) : planeFace([0, 0, 0], up, along, "Boden");
           if (!face) throw fieldError(`${name}: kein Randprofil unter dem Pfosten`, "mTarget");
           r = topMount(mount, { name, post, top, along, face, plateName: `Fußplatte ${i + 1}` });
+          if (sup && face.targetKind === "plate") {
+            applyTargetHoles(sup.plates, face, r.targetHoles);
+            const below = holesBelow(mount, r.holes, sup.members, name);
+            r.drills.push(...below.drills); r.issues.push(...below.issues); r.transferred += below.drills.length; r.below = below.drills.length;
+          }
         } else {
           const left = [-q.d[1], q.d[0], 0];
           let face;
-          try { face = rand ? findSideFace(rand, P3(q.at, 0), along, 2 * sOff + 500) : slabFace(P3([q.at[0] + left[0] * sOff, q.at[1] + left[1] * sOff], 0), [-left[0], -left[1], 0], along, p.mSlab, "Deckenstirn"); } catch (e) { throw fieldError(e.message, "mProfile"); }
-          if (!face) throw fieldError(`${name}: kein Randprofil neben dem Pfosten`, "mTarget");
+          try { face = sup ? findSideFace(sup.members, P3(q.at, 0), along, 2 * sOff + 500, 100 + mount.gap) : rand ? findSideFace(rand, P3(q.at, 0), along, 2 * sOff + 500) : slabFace(P3([q.at[0] + left[0] * sOff, q.at[1] + left[1] * sOff], 0), [-left[0], -left[1], 0], along, p.mSlab, "Deckenstirn"); } catch (e) { throw fieldError(e.message, "mProfile"); }
+          if (!face) throw fieldError(`${name}: ${sup ? "kein Rahmen" : "kein Randprofil"} neben dem Pfosten`, "mTarget");
           r = sideMount(mount, { name, post, top, base: P3(q.at, 0), along, face, plateName: `Befestigungsblech ${i + 1}` });
         }
         members.push({ section: post, a: r.a, b: top, name, up: along, ...(r.cuts ? { cuts: r.cuts } : {}) });

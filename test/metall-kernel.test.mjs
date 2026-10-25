@@ -599,3 +599,28 @@ test("Pfostenbefestigung mit Abstandsausgleich: Flacheisen mit Stecknasen bündi
   near(R.measureVolume(post.shape.clone().intersect(pl.shape.clone())), 0, 1);
   assert.ok(post.meta.drills >= 1, "Schlitz im Pfosten");
 });
+
+test("Pfostenbefestigung Balkon oben und L-Podestecke: Gegenbohrungen in Belag und Rahmen, Futterblech, verlängertes Blech", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const b = { id: "b", ...defaultGenerator("balkon") };
+  const rb = await K.buildPart(part([b]));
+  okAll(rb);
+  const belag = rb.bodies.find((x) => x.name === "Belag"), rahmen = rb.bodies.filter((x) => /^Rahmen/.test(x.name));
+  assert.equal(belag.meta.plate.holes, 16, "2 Bohrungen je Pfosten im Belag");
+  assert.ok(rahmen.reduce((s, x) => s + (x.meta.drills || 0), 0) >= 16, "und im Rahmen darunter (an der Gehrung in beiden Stäben)");
+  const post = rb.bodies.find((x) => x.name === "Geländer Pfosten 1"), fp = rb.bodies.find((x) => x.name === "Geländer Fußplatte 1");
+  near(R.measureVolume(post.shape.clone().intersect(fp.shape.clone())), 0, 1, "Pfosten steht auf der Fußplatte");
+  // L-Treppe: Eckpfosten am Podest mit verlängertem Blech und Futterblech, keine Durchdringung mit dem Rahmen
+  const t = { id: "t", ...defaultGenerator("treppe") };
+  Object.assign(t.params, { form: "L", gel: "rechts", gelFill: "keine" });
+  const rt = await K.buildPart(part([t]));
+  okAll(rt);
+  const get = (n) => rt.bodies.find((x) => x.name === `Geländer rechts Pfosten 4${n}`);
+  const fr = rt.bodies.filter((x) => /^Podestrahmen/.test(x.name));
+  for (const pl of [get(" Befestigungsblech"), get(" Futterblech")]) {
+    assert.ok(pl, "Blech und Futterblech");
+    for (const f of fr) near(R.measureVolume(pl.shape.clone().intersect(f.shape.clone())), 0, 1, `${pl.name} liegt an ${f.name} an`);
+  }
+  near(R.measureVolume(get("").shape.clone().intersect(get(" Befestigungsblech").shape.clone())), 0, 1);
+  assert.ok(fr.reduce((s, x) => s + (x.meta.drills || 0), 0) >= 4, "Gegenbohrungen im Podestrahmen");
+});

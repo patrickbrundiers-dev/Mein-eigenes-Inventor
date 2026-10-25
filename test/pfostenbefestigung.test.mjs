@@ -239,7 +239,7 @@ test("Seitliche Befestigung ohne Abstandsausgleich: Blech plan an der Wange, Pfo
   const dr = p.drills.filter((d) => d.target === "Wange rechts" && d.d === 13.5);
   assert.equal(dr.length, 4 * side.length, "4 Gegenbohrungen je Blech");
   assert.ok(dr.every((d) => Math.abs(M.faceCoords(face, d.p)[2] - 1) < 1e-9 && Math.abs(d.len - 14) < 1e-9));
-  assert.match(p.info, /Befestigungsbleche \(2 davon oben mit Fußplatte, kein Bauteil daneben\), 2 Pfosten an Enden\/Knicken zurückgerückt/);
+  assert.match(p.info, /Befestigungsbleche \(2 davon oben mit Fußplatte, wo kein Bauteil daneben liegt\), 2 Pfosten gerückt/);
   // zu schmales Blech: Pfosten verdeckt die Bohrungen
   const narrow = treppe({ gelSW: "80", gelE: "15" });
   assert.match(narrow.issues.map((x) => x.message).join(), /vom Pfosten verdeckt/);
@@ -254,8 +254,13 @@ test("Geländer seitlich: an der Deckenstirn bzw. am Randprofil, Randabstand zur
   nearV(bl.center, [0, 31.2, -100], 1e-9, "Blech mittig auf 200 mm Deckenstirn, links der Lauflinie");
   near(post.a[2], -180, 1e-9);
   assert.equal(s.drills.length > 0 && s.drills.some((d) => d.target === "Deckenstirn"), false, "Untergrund: keine Gegenbohrung");
+  // niedrige Stirn: 4 Bohrungen passen nicht, eine Reihe mittig schon; senkrechtes Paar bleibt ein Fehler
   const thin = gelaender({ runs: "2500", base: "seitlich", mSlab: "120" });
-  assert.match(thin.issues.map((x) => x.message).join(), /Randabstand .* Deckenstirn|über der Kante von Deckenstirn/);
+  assert.match(thin.issues.map((x) => x.message).join(), /Deckenstirn zu niedrig für 4 Bohrungen – 2 Bohrungen in einer Reihe mittig/);
+  assert.equal(thin.issues.filter((x) => x.level === "Fehler").length, 0);
+  assert.ok(thin.plates.find((x) => x.name === "Befestigungsblech 1").holes.every(([, y]) => y === 0));
+  const q = gelaender({ runs: "2500", base: "seitlich", mSlab: "120", sHoles: "2q" });
+  assert.match(q.issues.map((x) => x.message).join(), /Randabstand .* Deckenstirn|über der Kante von Deckenstirn/);
   const rp = gelaender({ runs: "2500", base: "seitlich", mTarget: "profil" });
   const rand = rp.chains.find((c) => c.name === "Randprofil");
   near(rand.points[0][1], 31.2 + 37.5, 1e-9, "U200 links, Steg zum Pfosten");
@@ -305,4 +310,102 @@ test("Abstandsausgleich: Flacheisen durch Schlitz im Pfosten, Stecknasen in Stec
   const g = gelaender({ runs: "2500", base: "seitlich", mSpacer: true });
   assert.equal(g.plates.filter((x) => /Flacheisen/.test(x.name)).length, 4);
   assert.equal(g.issues.filter((i) => i.level === "Fehler").length, 0, msg(g));
+});
+
+test("Podestecken L/U: Futterblech gegen die Luft hinter der Wangenflucht, Blech am Rahmenende verlängert, eine Bohrreihe am niedrigen Rahmen", () => {
+  for (const turn of ["links", "rechts"]) {
+    const p = treppe({ form: "L", turn });
+    assert.equal(p.issues.filter((i) => i.level !== "Hinweis").length, 0, `L ${turn}: ` + p.issues.map((i) => i.message).join("\n"));
+  }
+  const p = treppe({ form: "L" });
+  const get = (n) => p.plates.find((x) => x.name === `Geländer rechts Pfosten ${n}`);
+  // Eckpfosten: Blech zum Rahmen hin verlängert, beide Bohrungen auf dem Rahmen (Ende bei x = 2960), Pfosten ganz auf dem Blech
+  const bl = get("4 Befestigungsblech"), post = p.members.find((m) => m.name === "Geländer rechts Pfosten 4");
+  assert.ok(bl.W > 160);
+  const x = (h) => bl.center[0] + h[0] * bl.xDir[0];
+  assert.ok(bl.holes.every((h) => x(h) < 2960 - 20), JSON.stringify(bl.holes.map(x)));
+  assert.ok(Math.abs(post.b[0] - bl.center[0]) + 20 <= bl.W / 2 + 1e-6, "Pfosten liegt ganz auf dem Blech");
+  assert.equal(bl.holes.length, 2, "Rahmen 100 hoch: eine Reihe mittig");
+  // Futterblech füllt die 12 mm zwischen Rahmen und Blech, gleiche Bohrungen
+  const fu = get("4 Futterblech");
+  near(fu.t, 12, 1e-6);
+  near(fu.center[1], 0, 1e-9, "Futterblech an der Rahmenaußenseite");
+  near(bl.center[1], -12, 1e-6, "Blech davor am Pfosten");
+  assert.deepEqual(fu.holes, bl.holes);
+  assert.match(p.info, /2 mit Futterblech, 1 zum Bauteil hin verlängert/);
+  // Futterblech abschaltbar: dann wieder Fehler wegen Luft
+  assert.match(treppe({ form: "L", gelMShim: "0" }).issues.map((i) => i.message).join(), /12 mm Luft zwischen Pfosten und Blech/);
+});
+
+test("Ausweichen: oben → seitlich, wo die Fußplatte nicht aufliegt (Podest neben der U200-Flucht); seitlich → oben mitten auf dem Podest", () => {
+  const u = treppe({ form: "L", support: "upn", upn: { kind: "upn", size: "200" }, gelMount: "oben" });
+  assert.equal(u.issues.filter((i) => i.level === "Fehler").length, 0, u.issues.map((i) => i.message).join("\n"));
+  assert.ok(u.plates.some((x) => x.name === "Geländer rechts Pfosten 5 Befestigungsblech"));
+  assert.match(u.info, /2 davon seitlich mit Befestigungsblech, wo die Fußplatte nicht aufliegt/);
+  // U: inneres Geländer läuft übers Podest – der Pfosten dort bekommt eine Fußplatte auf dem Podestbelag
+  const U = treppe({ form: "U" });
+  const fp = U.plates.find((x) => x.name === "Geländer links Pfosten 4 Fußplatte");
+  assert.ok(fp, "Fußplatte mitten auf dem Podest");
+  assert.ok(U.plates.find((x) => x.name === "Podest").holes?.length > 0, "Gegenbohrungen im Podestbelag");
+  // Pfosten vor der Stirnseite des Podestrahmens: an das Blech herangerückt
+  const st = U.members.find((m) => m.name === "Geländer links Pfosten 3"), sb = U.plates.find((x) => x.name === "Geländer links Pfosten 3 Befestigungsblech");
+  near(sb.center[0] - 10 - st.b[0], 20, 1e-6, "Pfosten liegt am Blech an der Rahmenstirn");
+});
+
+test("Holmtreppe oben: Pfosten rücken auf die Stufen, Fußplatte ganz auf der Stufe, Bohrungen in die Stufe", () => {
+  const h = treppe({ support: "holm2", gelMount: "oben" });
+  assert.equal(h.issues.filter((i) => i.level === "Fehler").length, 0, h.issues.map((i) => i.message).join("\n"));
+  const steps = h.plates.filter((x) => /^Stufe \d+$/.test(x.name));
+  for (const fp of h.plates.filter((x) => /rechts Pfosten \d+ Fußplatte$/.test(x.name))) {
+    const on = steps.find((s) => Math.abs(fp.center[0] - s.center[0]) + fp.W / 2 <= s.H / 2 + 1e-6 && Math.abs(fp.center[2] - s.center[2] - s.t) < 1);
+    assert.ok(on || Math.abs(fp.center[2] - 2800) < 1, `${fp.name} liegt ganz auf einer Stufe bzw. Boden/Decke`);
+  }
+  assert.ok(steps.some((s) => s.holes?.length), "Gegenbohrungen in den Stufen");
+  assert.match(h.info, /Pfosten gerückt, damit die Platte ganz auf dem Bauteil liegt/);
+});
+
+test("Balkon: oben auf dem Belag mit Bohrungen auch im Rahmen, seitlich an der Rahmenaußenseite, alte Projekte mit einfacher Fußplatte", () => {
+  const balkon = (patch = {}, drop = []) => {
+    const params = { ...defaultGenerator("balkon").params, ...patch };
+    for (const k of drop) delete params[k];
+    return GENERATORS.balkon.plan(resolveGenParams("balkon", params, E));
+  };
+  const b = balkon();
+  assert.equal(b.issues.length, 0, b.issues.map((i) => i.message).join("\n"));
+  const belag = b.plates.find((x) => x.name === "Belag");
+  assert.equal(belag.holes.length, 16);
+  const rd = b.drills.filter((d) => d.target === "Rahmen");
+  assert.equal(rd.length, 16, "jede Belagbohrung auch im Rahmen darunter");
+  assert.ok(rd.every((d) => Math.abs(d.p[2] - (2800 - 30 + 1)) < 1e-6 && d.dir[2] === -1), "von der Rahmenoberseite (unter dem 30-mm-Belag) nach unten");
+  assert.match(b.info, /4 zum Bauteil hin verlängert/);
+  // seitlich: Pfosten außen vor dem Rahmen, Blech an der Außenseite, Gegenbohrungen im Rahmen
+  const s = balkon({ railMount: "seitlich" });
+  assert.equal(s.issues.filter((i) => i.level !== "Hinweis").length, 0, s.issues.map((i) => i.message).join("\n"));
+  const p1 = s.members.find((m) => m.name === "Geländer Pfosten 2"), bl = s.plates.find((x) => x.name === "Geländer Befestigungsblech 2");
+  near(bl.center[0], 0, 1e-6, "Blech an der Rahmenaußenseite x = 0");
+  near(p1.b[0], -10 - 20, 1e-6, "Pfosten liegt am Blech an");
+  assert.equal(s.drills.filter((d) => d.target === "Rahmen").length, 16);
+  // UPN-Rahmen offen nach außen: verständlicher Fehler am Feld »Pfostenbefestigung«
+  assert.throws(() => balkon({ railMount: "seitlich", frame: { kind: "upn", size: "160" } }), (e) => e.key === "railMount" && /offene Seite/.test(e.message));
+  // alte Projekte: ohne railMount einfache Fußplatte auf dem Belag wie bisher, keine Bohrungen im Tragwerk
+  const old = balkon({ inset: "60" }, ["railMount"]);
+  assert.equal(old.drills.filter((d) => !/^Geländer/.test(d.target)).length, 0);
+  assert.ok(old.plates.filter((x) => /^Geländer Fußplatte/.test(x.name)).every((x) => x.W === x.H));
+});
+
+test("Spindeltreppe: Fußplatte je Geländerstab auf der Stufe, entlang der Tangente, Bohrungen in die Stufe; alte Projekte geschweißt", () => {
+  const sp = (patch = {}) => GENERATORS.spindel.plan(resolveGenParams("spindel", { ...defaultGenerator("spindel").params, ...patch }, E));
+  const base = sp();
+  assert.ok(!base.plates.some((x) => / Fußplatte$/.test(x.name)), "Vorgabe: Stäbe auf die Stufe geschweißt wie bisher");
+  const s = sp({ stabMount: "oben" });
+  assert.equal(s.issues.length, 0, s.issues.map((i) => i.message).join("\n"));
+  const bars = s.members.filter((m) => /^Geländerstab [\d.]+$/.test(m.name));
+  const fps = s.plates.filter((x) => / Fußplatte$/.test(x.name));
+  assert.equal(fps.length, bars.length);
+  const m = bars[0], fp = s.plates.find((x) => x.name === `${m.name} Fußplatte`), st = s.plates.find((x) => x.name === "Stufe 1");
+  near(m.a[2], st.center[2] + st.t + 6, 1e-6, "Stab steht auf der 6-mm-Fußplatte auf der Stufe");
+  const radial = [m.a[0], m.a[1]].map((x) => x / Math.hypot(m.a[0], m.a[1]));
+  near(Math.abs(fp.xDir[0] * radial[0] + fp.xDir[1] * radial[1]), 0, 1e-9, "Platte entlang der Tangente");
+  assert.equal(st.holes.length, 2 * bars.filter((b) => /^Geländerstab 1(\.\d)?$/.test(b.name)).length, "2 Bohrungen je Stab in Stufe 1");
+  assert.match(s.info, /Befestigung: \d+ Fußplatten, \d+ Gegenbohrungen übertragen, geometrisch geprüft/);
 });

@@ -726,7 +726,8 @@ export function createKernel(R) {
             for (const ch of plan.chains) {
               const segs = ch.points.slice(1).map((b, i) => ({ id: "s" + (i + 1), a: ch.points[i], b }));
               const ms = buildMembers(segs, { kind: ch.section.kind, dims: ch.section.dims }, { corner: "gehrung", align: "mitte", rotation: String(ch.rot || 0) }, E, cut, () => ch.up || [0, 0, 1], ch.name);
-              const size = Math.max(ch.section.geom?.width || 0, ch.section.geom?.height || 0);
+              const g = ch.section.geom || sectionGeometry(ch.section.kind, ch.section.dims); // Kette oft nur mit kind/dims
+              const size = Math.max(g?.width || 0, g?.height || 0);
               ms.forEach((m, i) => {
                 if (ch.onlySeg != null && i !== ch.onlySeg) return;
                 const ds = segs[i] ? drillsOf(ch.name, segs[i].a, segs[i].b, size) : [];

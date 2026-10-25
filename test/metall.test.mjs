@@ -672,7 +672,7 @@ test("Handlaufhalter: Pfosten endet unter dem Handlauf, Endkappe, Stift, Bohrung
   assert.ok(thd.length === tp && thd.every((d) => d.d === 12.1));
   const b = plan("balkon", {});
   assert.ok(b.drills.some((d) => d.target === "Geländer Handlauf"));
-  assert.equal(plan("balkon", { railHolder: false, beltMode: "zwischen" }).drills.length, 0);
+  assert.equal(plan("balkon", { railHolder: false, beltMode: "zwischen" }).drills.filter((d) => /^Geländer/.test(d.target)).length, 0);
   // Spindeltreppe: jeder Stab mit Halter, Bohrung im Handlauf
   const sp = plan("spindel", {});
   const bars = sp.members.filter((m) => /^Geländerstab [\d.]+$/.test(m.name)).length;

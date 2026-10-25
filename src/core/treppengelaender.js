@@ -57,11 +57,19 @@ export function railAlong(path, o, label) {
     posts.forEach((p, i) => {
       const where = segs.flatMap((sg) => sg.ps.map((pi, k) => (pi === i ? { sg, k } : null)).filter(Boolean));
       const own = where.find(({ sg, k }) => (k === 0 || k === sg.ps.length - 1) && sg.d[0] === p.d[0] && sg.d[1] === p.d[1]);
-      if (!own || (where.length < 2 && i !== 0 && i !== posts.length - 1)) return;
+      // Pfosten mitten im Abschnitt (z. B. auf einer Stufe der Holmtreppe): in beide Richtungen, höchstens ⅓ der Nachbarfelder
+      const mid = where.length === 1 && where[0].k > 0 && where[0].k < where[0].sg.ps.length - 1 ? where[0] : null;
+      if (!mid && (!own || (where.length < 2 && i !== 0 && i !== posts.length - 1))) return;
+      if (where.some(({ sg }) => Math.abs(sg.d[0] * p.d[0] + sg.d[1] * p.d[1]) < 0.999)) return; // Ecke: bleibt stehen
       const top = [p.q[0], p.q[1], p.q[2] + o.H - railH - drop];
       const dt = o.mountFit({ name: `${label} Pfosten ${i + 1}`, top, base: p.q, along: [p.d[0], p.d[1], 0] });
-      const back = own.k === 0 ? dt > 0 : dt < 0, field = own.k === 0 ? own.sg.ts[1] - own.sg.ts[0] : own.sg.ts[own.k] - own.sg.ts[own.k - 1];
-      if (!dt || !back || !(Math.abs(dt) < field / 3)) return;
+      if (!dt) return;
+      if (mid) {
+        if (!(Math.abs(dt) < Math.min(mid.sg.ts[mid.k] - mid.sg.ts[mid.k - 1], mid.sg.ts[mid.k + 1] - mid.sg.ts[mid.k]) / 3)) return;
+      } else {
+        const back = own.k === 0 ? dt > 0 : dt < 0, field = own.k === 0 ? own.sg.ts[1] - own.sg.ts[0] : own.sg.ts[own.k] - own.sg.ts[own.k - 1];
+        if (!back || !(Math.abs(dt) < field / 3)) return;
+      }
       p.q = [p.q[0] + p.d[0] * dt, p.q[1] + p.d[1] * dt, p.q[2] + p.slope * dt];
       for (const { sg, k } of where) sg.ts[k] = (p.q[0] - sg.A[0]) * sg.d[0] + (p.q[1] - sg.A[1]) * sg.d[1];
       movedEnds.add(i);

@@ -146,9 +146,12 @@ export function plateFace(pl, side = "oben") {
   const sign = dot(c, y0) >= 0 ? 1 : -1;
   const box = pl.poly ? bbox2(pl.poly) : [-pl.W / 2, -pl.H / 2, pl.W / 2, pl.H / 2];
   const [cy0, cy1] = sign > 0 ? [box[1], box[3]] : [-box[3], -box[1]];
+  const o = top ? add(pl.center, mul(n0, pl.t)) : pl.center;
+  // Kanten der rechteckigen Platte als Endebenen (Fußplatte auf der Stufe ganz auf die Platte schieben)
+  const ends = pl.poly ? null : [[s, box[0], -1], [s, box[2], 1], [c, cy0, -1], [c, cy1, 1]].map(([v, at, sg]) => ({ p: add(o, mul(v, at)), n: mul(v, sg) }));
   return makeFace({ name: pl.name, label: `${pl.name} (${top ? "Oberseite" : "Unterseite"})`, target: pl.name, targetKind: "plate", plate: pl,
-    o: top ? add(pl.center, mul(n0, pl.t)) : pl.center, n, s, sRange: [box[0], box[2]], cLo: { at: cy0, edge: "kante" }, cHi: { at: cy1, edge: "kante" }, cPhys: [cy0, cy1], wall: pl.t,
-    poly: pl.poly ? pl.poly.map(([x, y]) => [x, sign * y]) : null });
+    o, n, s, sRange: [box[0], box[2]], cLo: { at: cy0, edge: "kante" }, cHi: { at: cy1, edge: "kante" }, cPhys: [cy0, cy1], wall: pl.t,
+    poly: pl.poly ? pl.poly.map(([x, y]) => [x, sign * y]) : null, ...(ends ? { ends } : {}) });
 }
 
 /** Ebene ohne Bauteil im Modell (Boden, Decke, Wand): unbegrenzt, keine Gegenbohrung */
@@ -197,20 +200,22 @@ export function findMemberFace(cands, P, want, maxDist = Infinity, alongTol = 10
  * zur Laufrichtung along).
  */
 export function findSideFace(cands, P, along, maxDist = Infinity, alongTol = 100) {
-  let best = null, bd = Infinity, foot = null;
+  // gleich weit entfernt (Eckpfosten am Podest): das Bauteil parallel zur Laufrichtung des Pfostens gewinnt
+  const al = norm([along[0], along[1], 0]);
+  let best = null, bd = Infinity, bp = -1, foot = null;
   for (const m of cands) {
     const ab = sub(m.b, m.a), L = len(ab);
     if (!(L > 0)) continue;
     const [t0, t1] = axisRange(m), z = mul(ab, 1 / L), t = dot(sub(P, m.a), z);
     if (t < t0 - alongTol || t > t1 + alongTol) continue;
-    const Q = add(m.a, mul(z, Math.max(t0, Math.min(t1, t)))), dd = len(sub(P, Q));
-    if (dd < bd - 1e-9) { bd = dd; best = m; foot = Q; }
+    const Q = add(m.a, mul(z, Math.max(t0, Math.min(t1, t)))), dd = len(sub(P, Q)), par = Math.abs(dot(z, al));
+    if (dd < bd - 0.5 || (dd < bd + 0.5 && par > bp)) { bd = Math.min(bd, dd); bp = par; best = m; foot = Q; }
   }
   if (!best || bd > maxDist) return null;
-  const al = norm([along[0], along[1], 0]);
-  let w = sub(P, foot);
-  w = [w[0], w[1], 0];
-  w = sub(w, mul(al, dot(w, al)));
+  const w0 = [P[0] - foot[0], P[1] - foot[1], 0];
+  let w = sub(w0, mul(al, dot(w0, al)));
+  // Bauteil quer vor dem Pfosten (Lauf endet am Podestrahmen): dessen Stirnseite, wenn der Pfosten dicht davor steht
+  if (len(w) < 1e-6 && len(w0) > 1 && len(w0) < 150) w = w0;
   if (len(w) < 1e-6) throw new Error(`${best.name}: Pfosten steht über dem Bauteil – für »seitlich« liegt die Lauflinie neben dem Bauteil`);
   return memberFace(best, w);
 }
@@ -366,6 +371,7 @@ export function mountSchema(key = (k) => k, group = "Pfostenbefestigung", kind =
     { key: key("sT"), label: "Befestigungsblech Dicke", type: "num", default: D.sT, group, when: side },
     { key: key("sZ"), label: "Blechmitte versetzt (zur Flächenmitte bzw. OK Boden)", type: "num", default: D.sZ || "0", group, when: side },
     { key: key("sDown"), label: "Pfosten unter dem Blech", type: "num", default: "0", group, when: side },
+    { key: key("mShim"), label: "Futterblech bis Luft (0 = nie)", type: "num", default: "20", group, when: (p) => side(p) && !spacer(p) },
     { key: key("mSpacer"), label: "Abstand mit Flacheisen ausgleichen (Schlitz im Pfosten, Stecknasen ins Blech)", type: "check", default: false, group, when: side },
     { key: key("mGap"), label: "Abstand Blech – Pfosten", type: "num", default: D.gap || "40", group, when: spacer },
     { key: key("mGapMax"), label: "Abstand höchstens", type: "num", default: "150", group, when: spacer },
@@ -393,7 +399,7 @@ export function mountSchema(key = (k) => k, group = "Pfostenbefestigung", kind =
 export function mountConfig(p, key = (k) => k, kind = "oben") {
   const v = (k) => p[key(k)];
   return { rule: v("mRule") || "lotrecht", W: v("oW"), L: v("oL"), t: v("oT"), dx: v("oDx") || 0, dy: v("oDy") || 0, rot: v("mRot") || 0,
-    sW: v("sW"), sH: v("sH"), sT: v("sT"), sZ: v("sZ") || 0, sDown: v("sDown") || 0,
+    sW: v("sW"), sH: v("sH"), sT: v("sT"), sZ: v("sZ") || 0, sDown: v("sDown") || 0, shim: v("mShim") ?? 20,
     spacer: kind === "seitlich" && !!v("mSpacer"), gap: kind === "seitlich" && v("mSpacer") ? v("mGap") || 0 : 0, gapMax: v("mGapMax") ?? 150, flat: v("mFlat"), ins: v("mIns") || 0,
     tabs: v("mTabs") ?? 2, tabW: v("mTabW") ?? 15, play: v("mPlay") ?? 0.2, slotW: v("mSlotW") || 0, steg: v("mSteg") ?? 5, shift: v("mShift") || 0,
     kind, holes: v(kind === "seitlich" ? "sHoles" : "oHoles") || "4", holesKey: key(kind === "seitlich" ? "sHoles" : "oHoles"), free: v("mFree") || [], d: v("mD"), e: v("mE"), slot: v("mSlot") || 0, td: v("mTD") || 0, edge: v("mEdge") || 0, keys: (k) => key(k) };
@@ -497,7 +503,8 @@ function edgeDistance(p, poly) {
  */
 export function topMount(cfg, ctx) {
   const k = cfg.keys || ((x) => x), issues = [], name = ctx.name;
-  const { W, L, t } = cfg;
+  const { W, t } = cfg;
+  let L = cfg.L;
   if (!(t > 0)) throw fieldError("Fußplatte: Dicke muss > 0 sein", k("oT"));
   if (!(W > 0 && L > 0)) throw fieldError("Fußplatte: Breite und Länge müssen > 0 sein", k("oW"));
   const face = ctx.face;
@@ -507,12 +514,22 @@ export function topMount(cfg, ctx) {
   // Pfostenachse trifft die Fläche in F; Plattenmitte so, dass der Pfosten bei (dx, dy) auf der Platte steht
   let C = fromMount(fr, [-cfg.dx, -cfg.dy, 0]);
   // am Bauteilende so weit zurück, dass die Platte ganz auf der Fläche liegt (Pfosten bleibt auf der Platte)
-  const sx = cfg.fit === false ? 0 : fitShift(face, fr, C, L, W, cfg.dx);
+  let sx = cfg.fit === false ? 0 : fitShift(face, fr, C, L, W, cfg.dx);
+  const need = cfg.fit === false ? 0 : endShift(face, fr, C, L, W), d = cfg.d, slot = cfg.slot > d ? cfg.slot : 0;
+  const foot0 = postFootprint({ ...fr, F: add(fr.F, mul(fr.n, t)) }, ctx.post, ctx.along).map(([x, y]) => [x + cfg.dx, y + cfg.dy]);
+  let holes = holePattern(cfg, L, W); // Plattenkoordinaten
+  // Pfosten am Bauteilende (Ecke): Platte zum Bauteil hin verlängert, Bohrbild ganz auf dem Bauteil und neben dem Pfosten
+  const under = (hs, off) => hs.some(([x, y]) => distToPoly([x + off, y], foot0) < d - 1e-6);
+  let ext = 0;
+  if (need && cfg.holes !== "frei" && (!sx || under(holes, sx))) {
+    const sg = Math.sign(need), half = Math.max(...foot0.map(([x]) => Math.abs(x - cfg.dx))), hx = Math.max(0, ...holes.map(([x]) => Math.abs(x)));
+    const pc = sg * Math.max(sg * need, sg * cfg.dx + hx + half + d + 1);
+    const lo = Math.min(pc - L / 2, cfg.dx - half), hi = Math.max(pc + L / 2, cfg.dx + half); // Platte bündig mit der Pfostenseite
+    sx = (lo + hi) / 2; holes = holes.map(([x, y]) => [x + pc - sx, y]); ext = L = hi - lo;
+  }
   C = add(C, mul(fr.x, sx));
-  const holes = holePattern(cfg, L, W); // Plattenkoordinaten
   // Bohrungen in der Platte: innerhalb, Randabstand, nicht unter dem Pfosten
-  const foot = postFootprint({ ...fr, F: add(fr.F, mul(fr.n, t)) }, ctx.post, ctx.along).map(([x, y]) => [x + cfg.dx - sx, y + cfg.dy]);
-  const d = cfg.d, slot = cfg.slot > d ? cfg.slot : 0;
+  const foot = foot0.map(([x, y]) => [x - sx, y]);
   holes.forEach(([x, y], i) => {
     const ex = L / 2 - Math.abs(x) - (slot ? (slot - d) / 2 : 0), ey = W / 2 - Math.abs(y);
     if (Math.min(ex, ey) < d / 2 + 1e-6) issues.push({ key: cfg.holesKey, level: "Fehler", message: `${name}: Bohrung ${i + 1} liegt nicht ganz in der Fußplatte` });
@@ -526,7 +543,7 @@ export function topMount(cfg, ctx) {
   // Pfostenfuß: Achse durch top trifft die Plattenoberseite; schräg → Schnitt parallel zur Platte
   const a = linePlane(ctx.top, fr.axis, add(fr.F, mul(fr.n, t)), fr.n);
   const cuts = fr.tilt > 0.01 ? { start: [{ p: a, n: mul(fr.n, -1) }], end: [] } : null;
-  return { post: name, target: face.target, frame: fr, a, axis: fr.axis, cuts, plate, shifted: Math.abs(sx) > 1e-6 ? sx : 0, drills, targetHoles, holes: world, issues, ok: !issues.some((x) => x.level === "Fehler"), transferred: drills.length + targetHoles.length };
+  return { post: name, target: face.target, frame: fr, a, axis: fr.axis, cuts, plate, shifted: Math.abs(sx) > 1e-6 && !ext ? sx : 0, extended: ext, need: Math.abs(need) > 1e-6 ? need - (ext ? 0 : sx) : 0, drills, targetHoles, holes: world, issues, ok: !issues.some((x) => x.level === "Fehler"), transferred: drills.length + targetHoles.length };
 }
 
 // ---------- Seitliche Befestigung mit Befestigungsblech ----------
@@ -551,7 +568,8 @@ export function sideOffset(cfg, post) {
  */
 export function sideMount(cfg, ctx) {
   const k = cfg.keys || ((x) => x), issues = [], name = ctx.name, face = ctx.face;
-  const { sW: W, sH: H, sT: t } = cfg;
+  const { sH: H, sT: t } = cfg;
+  let W = cfg.sW;
   if (!(t > 0)) throw fieldError("Befestigungsblech: Dicke muss > 0 sein", k("sT"));
   if (!(W > 0 && H > 0)) throw fieldError("Befestigungsblech: Breite und Höhe müssen > 0 sein", k("sW"));
   const axis = norm(ctx.axis || [0, 0, 1]), n = face.n;
@@ -560,7 +578,9 @@ export function sideMount(cfg, ctx) {
   const h = faceCoords(face, ctx.top)[2], half = postHalf(ctx.post, axis, ctx.along, n);
   const gap = h - t - half;
   if (gap < -0.5) issues.push({ key: k("mount"), level: "Fehler", message: `${name}: Pfosten durchdringt das Blech bzw. ${face.label} um ${fmt(-gap)} mm` });
-  else if (gap > 0.5 && !cfg.spacer) issues.push({ key: k("mount"), level: "Fehler", message: `${name}: ${fmt(gap)} mm Luft zwischen Pfosten und Blech – Abstandsausgleich mit Flacheisen aktivieren oder Lage prüfen` });
+  // kleine Luft (z. B. Podestrahmen hinter der Wangenflucht): Futterblech zwischen Fläche und Blech, Blech liegt am Pfosten
+  const shim = gap > 0.5 && !cfg.spacer && gap <= cfg.shim + 1e-6 ? gap : 0;
+  if (gap > 0.5 && !cfg.spacer && !shim) issues.push({ key: k("mount"), level: "Fehler", message: `${name}: ${fmt(gap)} mm Luft zwischen Pfosten und Blech – Abstandsausgleich mit Flacheisen aktivieren oder Lage prüfen` });
   // Blechebene: y entlang des Pfostens, x waagrecht (n × x = y)
   let yv = norm(sub(axis, mul(n, dot(axis, n))));
   let x = norm(cross(yv, n));
@@ -577,16 +597,32 @@ export function sideMount(cfg, ctx) {
     const B0 = sub(ctx.base || ctx.top, mul(n, faceCoords(face, ctx.base || ctx.top)[2]));
     C = add(add(F0, mul(fr.y, dot(sub(B0, F0), fr.y))), mul(fr.y, cfg.sZ));
   }
-  const sx = cfg.fit === false ? 0 : fitShift(face, fr, C, W, H, 0);
+  const yBot = -H / 2, across = postHalf(ctx.post, axis, ctx.along, x);
+  let sx = cfg.fit === false ? 0 : fitShift(face, fr, C, W, H, 0), hx0 = 0, W0 = W;
+  // Pfosten am Ende des Bauteils (Podestecke): Blech zum Bauteil hin verlängert, Bohrbild ganz auf dem Bauteil
+  const raw = cfg.fit === false || sx ? 0 : endShift(face, fr, C, W, H);
+  if (raw) {
+    const lo = Math.min(raw - W / 2, -across - 10), hi = Math.max(raw + W / 2, across + 10);
+    sx = (lo + hi) / 2; hx0 = raw - sx; W = hi - lo;
+  }
   C = add(C, mul(fr.x, sx));
   fr.F = C;
-  const holes = holePattern(cfg, W, H);
+  let holes = holePattern(cfg, W0, H).map(([hx, hy]) => [hx + hx0, hy]);
+  // niedrige Fläche (z. B. Podestrahmen 100 hoch): statt 4 Bohrungen eine Reihe mittig, wenn nur die passt
+  if (cfg.holes === "4" && face.cLo) {
+    const td = cfg.td > 0 ? cfg.td : cfg.d, edge = cfg.edge > 0 ? cfg.edge : 1.2 * td;
+    const bad = (hs) => hs.some(([hx, hy]) => { const P = fromMount(fr, [hx, hy, 0], C), [fs, fc] = faceCoords(face, P); return holeProblem(face, fs, fc, td, edge, P); });
+    const alt = holePattern({ ...cfg, holes: "2l" }, W0, H).map(([hx, hy]) => [hx + hx0, hy]);
+    if (bad(holes) && !bad(alt)) {
+      holes = alt;
+      issues.push({ key: cfg.holesKey, level: "Hinweis", message: `${name}: ${face.label} zu niedrig für 4 Bohrungen – 2 Bohrungen in einer Reihe mittig` });
+    }
+  }
   // Pfosten bzw. Flacheisen verdecken Bohrungen; Pfosten beginnt an der Blechunterkante
-  const yBot = -H / 2, across = postHalf(ctx.post, axis, ctx.along, x);
   const d = cfg.d, slot = cfg.slot > d ? cfg.slot : 0;
   // Abstandsausgleich: Flacheisen zwischen Blech und Pfosten (eigene Prüfungen, verdeckt die Bohrungen statt des Pfostens)
   const sp = cfg.spacer && gap > 0.5 ? spacer(cfg, { name, post: ctx.post, fr, C, sx, gap, W, H, yBot, across, axis, along: ctx.along, issues }) : null;
-  const cover = gap <= 0.5 ? [[-across - sx, yBot - cfg.sDown], [across - sx, yBot - cfg.sDown], [across - sx, H / 2 + 1e6], [-across - sx, H / 2 + 1e6]] : sp?.cover || null;
+  const cover = gap <= 0.5 || shim ? [[-across - sx, yBot - cfg.sDown], [across - sx, yBot - cfg.sDown], [across - sx, H / 2 + 1e6], [-across - sx, H / 2 + 1e6]] : sp?.cover || null;
   holes.forEach(([hx, hy], i) => {
     const ex = W / 2 - Math.abs(hx) - (slot ? (slot - d) / 2 : 0), ey = H / 2 - Math.abs(hy);
     if (Math.min(ex, ey) < d / 2 + 1e-6) issues.push({ key: cfg.holesKey, level: "Fehler", message: `${name}: Bohrung ${i + 1} liegt nicht ganz im Befestigungsblech` });
@@ -599,11 +635,11 @@ export function sideMount(cfg, ctx) {
   });
   if (across > W / 2 + 1e-6) issues.push({ key: k("sW"), level: "Warnung", message: `${name}: Pfosten breiter als das Befestigungsblech` });
   const res = transferHoles(cfg, face, fr, C, holes, W, H, name, issues, "Befestigungsblech");
-  const plate = { center: C, xDir: x, normal: n, W, H, t, holes, d, ...(slot ? { slots: holes.map(([hx, hy]) => [hx, hy, slot]), holes: [] } : {}), ...(sp ? { rects: sp.rects } : {}), name: ctx.plateName || `${name} Befestigungsblech`, mount: "seitlich" };
+  const plate = { center: shim ? add(C, mul(n, shim)) : C, xDir: x, normal: n, W, H, t, holes, d, ...(slot ? { slots: holes.map(([hx, hy]) => [hx, hy, slot]), holes: [] } : {}), ...(sp ? { rects: sp.rects } : {}), name: ctx.plateName || `${name} Befestigungsblech`, mount: "seitlich" };
   // Pfostenfuß: Höhe der Blechunterkante (minus sDown) auf der Pfostenachse
   const bottom = fromMount(fr, [-sx, yBot, 0], C);
   const a = add(ctx.top, mul(axis, dot(sub(bottom, ctx.top), axis) - cfg.sDown));
-  return { post: name, target: face.target, frame: fr, a, axis, cuts: null, plate, parts: sp ? [sp.flat] : [], spacer: sp, shifted: Math.abs(sx) > 1e-6 ? sx : 0, drills: [...res.drills, ...(sp ? [sp.slot] : [])], targetHoles: res.targetHoles, holes: res.world, gap, issues, ok: !issues.some((q) => q.level === "Fehler"), transferred: res.drills.length + res.targetHoles.length };
+  return { post: name, target: face.target, frame: fr, a, axis, cuts: null, plate, parts: sp ? [sp.flat] : shim ? [{ center: C, xDir: x, normal: n, W, H, t: shim, holes, d, name: `${name} Futterblech`, mount: "futter" }] : [], spacer: sp, shim, shifted: Math.abs(sx) > 1e-6 && !raw ? sx : 0, pull: ctx.along && Math.abs(dot(norm([ctx.along[0], ctx.along[1], 0]), n)) > 0.9 && Math.abs(gap) > 0.5 && !sp && !shim ? mul(n, -gap) : null, extended: raw ? W : 0, drills: [...res.drills, ...(sp ? [sp.slot] : [])], targetHoles: res.targetHoles, holes: res.world, gap, issues, ok: !issues.some((q) => q.level === "Fehler"), transferred: res.drills.length + res.targetHoles.length };
 }
 
 /**
@@ -611,6 +647,12 @@ export function sideMount(cfg, ctx) {
  * Fläche liegt; 0, wenn sie schon passt, die Fläche zu kurz ist oder der Pfosten (bei px auf der Platte) herunterfiele.
  */
 export function fitShift(face, fr, C, L, W, px = 0) {
+  const sx = endShift(face, fr, C, L, W);
+  return Math.abs(px - sx) < L / 2 ? sx : 0;
+}
+
+/** Nötige Verschiebung entlang x, damit die Platte an genau einem Ende ganz auf der Fläche liegt (sonst 0) */
+function endShift(face, fr, C, L, W) {
   if (!face.ends) return 0;
   const corners = [[-L / 2, -W / 2], [L / 2, -W / 2], [L / 2, W / 2], [-L / 2, W / 2]].map(([x, y]) => fromMount(fr, [x, y, 0], C));
   let sx = 0, n = 0;
@@ -620,8 +662,7 @@ export function fitShift(face, fr, C, L, W, px = 0) {
     const over = Math.max(...corners.map((P) => dot(sub(P, e.p), e.n)));
     if (over > 1e-6) { sx = -over / xn; n++; }
   }
-  if (n !== 1) return 0; // passt schon oder an beiden Enden zu lang
-  return Math.abs(px - sx) < L / 2 ? sx : 0;
+  return n === 1 ? sx : 0; // 0: passt schon oder an beiden Enden zu lang
 }
 
 // ---------- Abstandsausgleich: Flacheisen, Schlitz im Pfosten, Stecknasen ----------
@@ -750,12 +791,31 @@ export function applyTargetHoles(plates, face, holes) {
   if (pl) pl.holes = [...(pl.holes || []), ...holes];
 }
 
+/**
+ * Bohrungen der Fußplatte, die durch einen Belag gehen, auch in den Träger darunter (Rahmen, Wange): je Bohrung der
+ * nächste Stab unter dem Loch, Oberseite; ohne Treffer bzw. bei Problem eine Meldung. Liefert { drills, issues }.
+ */
+export function holesBelow(cfg, world, cands, name) {
+  const k = cfg.keys || ((x) => x), drills = [], issues = [];
+  const td = cfg.td > 0 ? cfg.td : cfg.d, edge = cfg.edge > 0 ? cfg.edge : 1.2 * td;
+  world.forEach((P, i) => {
+    let f = null;
+    try { f = findMemberFace(cands, P, [0, 0, 1], 400, 0); } catch { f = null; }
+    const [s, c, h] = f ? faceCoords(f, P) : [0, 0, 0];
+    if (!f || h < -1e-6 || (f.cPhys && (c < f.cPhys[0] || c > f.cPhys[1]))) return; // kein Träger unter dieser Bohrung
+    const Q = sub(P, mul(f.n, h)), why = holeProblem(f, s, c, td, edge, Q);
+    if (why) { issues.push({ key: k("mEdge"), level: "Hinweis", message: `${name}: Bohrung ${i + 1} im Träger darunter ${why}` }); return; }
+    drills.push({ target: f.target, p: add(Q, f.n), dir: mul(f.n, -1), d: td, len: f.wall + 2 });
+  });
+  return { drills, issues };
+}
+
 /** Info-Zeile mit Prüfstufe (Plan §12) */
 export function mountInfo(results, what) {
   const n = results.length;
   if (!n) return "";
   const tr = results.reduce((s, r) => s + (r.transferred || 0), 0), bad = results.filter((r) => !r.ok).length;
-  const sh = results.filter((r) => r.shifted && !r.moved).length, mv = results.filter((r) => r.moved).length, top = results.filter((r) => r.fallback).length;
-  const spc = results.filter((r) => r.spacer).length;
-  return `${n} ${what}` + (spc ? `, ${spc} mit Flacheisen (Stecknasen sichern nur die Lage – mit Pfosten und Blech verschweißen)` : "") + (top ? ` (${top} davon oben mit Fußplatte, kein Bauteil daneben)` : "") + (mv ? `, ${mv} Pfosten an Enden/Knicken zurückgerückt, damit die Platte auf dem Bauteil liegt` : "") + (sh ? `, ${sh} Platten am Bauteilende zurückgesetzt` : "") + (tr ? `, ${tr} Gegenbohrungen übertragen` : "") + (bad ? `, ${bad} mit Fehlern` : ", geometrisch geprüft") + ", Randabstände plausibilisiert, statisch nicht nachgewiesen";
+  const sh = results.filter((r) => r.shifted && !r.moved).length, mv = results.filter((r) => r.moved).length, top = results.filter((r) => r.fallback === "oben").length, side = results.filter((r) => r.fallback === "seitlich").length;
+  const spc = results.filter((r) => r.spacer).length, shm = results.filter((r) => r.shim).length, ext = results.filter((r) => r.extended).length;
+  return `${n} ${what}` + (spc ? `, ${spc} mit Flacheisen (Stecknasen sichern nur die Lage – mit Pfosten und Blech verschweißen)` : "") + (shm ? `, ${shm} mit Futterblech` : "") + (ext ? `, ${ext} zum Bauteil hin verlängert (Pfosten am Bauteilende, Bohrbild neben dem Pfosten)` : "") + (top ? ` (${top} davon oben mit Fußplatte, wo kein Bauteil daneben liegt)` : "") + (side ? ` (${side} davon seitlich mit Befestigungsblech, wo die Fußplatte nicht aufliegt)` : "") + (mv ? `, ${mv} Pfosten gerückt, damit die Platte ganz auf dem Bauteil liegt` : "") + (sh ? `, ${sh} Platten am Bauteilende zurückgesetzt` : "") + (tr ? `, ${tr} Gegenbohrungen übertragen` : "") + (bad ? `, ${bad} mit Fehlern` : ", geometrisch geprüft") + ", Randabstände plausibilisiert, statisch nicht nachgewiesen";
 }

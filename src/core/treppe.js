@@ -15,7 +15,7 @@ import { railAlong } from "./treppengelaender.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { holderSchema } from "./handlaufhalter.js";
-import { mountSchema, mountConfig, topMount, sideMount, sideOffset, findSideFace, planeFace, findMemberFace, findPlateFace, applyTargetHoles, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
+import { mountSchema, mountConfig, topMount, sideMount, sideOffset, findSideFace, planeFace, findMemberFace, findPlateFace, faceCoords, applyTargetHoles, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
 const podest = (p) => p.form === "L" || p.form === "U";
 const gel = (p) => p.gel !== "keine";
@@ -289,36 +289,46 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
   // Pfostenbefestigung oben: Anschlussbauteil unter dem Pfosten = Wange, Holm bzw. Podestrahmen (nächste Achse) oder Stufe
   const mounted = [];
   if (gelMount(p)) {
-    const kind = gelMount(p), cfg = mountConfig(p, gk, kind), cfgTop = mountConfig(p, gk, "oben");
+    const kind = gelMount(p), cfg = mountConfig(p, gk, kind), cfgTop = mountConfig(p, gk, "oben"), cfgSide = mountConfig(p, gk, "seitlich");
     const segs = supports.chains.filter((c) => /^Podestrahmen/.test(c.name)).flatMap((c) => c.points.slice(1).map((b, k) => ({ name: c.name, a: c.points[k], b, section: c.section.geom ? c.section : { ...c.section, geom: p.podestRahmen.geom }, up: c.up, rot: c.rot })));
     const beams = supports.members.filter((m) => /^Wange|^Holm|^Mittelholm/.test(m.name));
     const onBeam = p.support === "flach" || p.support === "upn";
     // Befestigung eines Pfostens; record = false: nur rechnen (Probe für die Endpfosten), nichts eintragen
     const mountAt = ({ name, top, base, along }, record = true) => {
+      const fail = (message) => { if (record) issues.push({ key: "gelMount", level: "Fehler", message: `${name}: ${message} – Pfosten ohne Befestigung` }); return null; };
+      // oben: Wange, Holm bzw. Podestrahmen unter dem Pfosten, sonst Stufe/Podest, am Antritt bzw. Auslauf Boden/Decke
+      const onTop = () => {
+        let f = onBeam ? findMemberFace([...beams, ...segs], base, [0, 0, 1], 400) : null;
+        if (f?.cPhys) { const c = faceCoords(f, base)[1]; if (c < f.cPhys[0] - 1 || c > f.cPhys[1] + 1) f = null; } // Pfosten nicht über dem Profil (z. B. mitten auf dem Podest)
+        if (!f) f = findPlateFace(supports.plates.filter((x) => /^Stufe \d+$|^Podest$/.test(x.name)), top);
+        if (!f && Math.abs(base[2]) < 1) f = planeFace([0, 0, 0], [0, 0, 1], along, "Boden");
+        if (!f && Math.abs(base[2] - p.height) < 1) f = planeFace([0, 0, p.height], [0, 0, 1], along, "obere Decke");
+        return f ? { face: f, r: topMount(cfgTop, { name, post: o.post, top, along, face: f, plateName: `${name} Fußplatte` }) } : null;
+      };
       let face = null, r = null;
       if (kind === "seitlich") {
-        try { face = findSideFace(onBeam ? [...beams, ...segs] : segs, base, along, 600); } catch (e) {
-          if (record) issues.push({ key: "gelMount", level: "Fehler", message: `${name}: ${e.message} oder »oben mit Fußplatte« nehmen – Pfosten ohne Befestigung` });
-          return null;
-        }
+        let why = null;
+        try { face = findSideFace(onBeam ? [...beams, ...segs] : segs, base, along, 600, 100 + cfg.gap); } catch (e) { why = e.message; }
         if (face) r = sideMount(cfg, { name, post: o.post, top, base, along, face, plateName: `${name} Befestigungsblech` });
-        // Antritt bzw. Auslauf oben ohne Bauteil daneben: oben auf Boden bzw. Decke
-        else if (Math.abs(base[2]) > 1 && Math.abs(base[2] - p.height) > 1) {
-          if (record) issues.push({ key: "gelMount", level: "Fehler", message: `${name}: kein Bauteil neben dem Pfosten (Wange oder Podestrahmen)${onBeam ? "" : " – Holmtreppe: Befestigung oben auf der Stufe wählen"} – Pfosten ohne Befestigung` });
-          return null;
+        else {
+          // kein Bauteil daneben (Antritt, Auslauf, Pfosten über dem Podest): oben mit Fußplatte, wenn die passt
+          const t = onTop(), floor = Math.abs(base[2]) < 1 || Math.abs(base[2] - p.height) < 1;
+          if (!t || !(t.r.ok || floor)) return fail(why ? `${why} oder »oben mit Fußplatte« nehmen` : `kein Bauteil neben dem Pfosten (Wange oder Podestrahmen)${onBeam ? "" : " – Holmtreppe: Befestigung oben auf der Stufe wählen"}`);
+          ({ face, r } = t);
+          r.fallback = "oben"; // in der Info gezählt
         }
-      } else if (onBeam) face = findMemberFace([...beams, ...segs], base, [0, 0, 1], 400);
-      if (!r) {
-        if (!face && kind === "oben") face = findPlateFace(supports.plates.filter((x) => /^Stufe \d+$|^Podest$/.test(x.name)), top);
-        // Antritt bzw. Auslauf oben: Pfosten auf dem Boden bzw. der oberen Decke (nicht im Modell)
-        if (!face && Math.abs(base[2]) < 1) face = planeFace([0, 0, 0], [0, 0, 1], along, "Boden");
-        if (!face && Math.abs(base[2] - p.height) < 1) face = planeFace([0, 0, p.height], [0, 0, 1], along, "obere Decke");
-        if (!face) {
-          if (record) issues.push({ key: "gelMount", level: "Fehler", message: `${name}: kein Anschlussbauteil unter dem Pfosten (Wange, Podestrahmen oder Stufe) – Pfosten ohne Befestigung` });
-          return null;
+      } else {
+        const t = onTop();
+        // nichts darunter bzw. Platte passt nicht (Podest neben der Wangenflucht): seitlich am Bauteil daneben, wenn das passt
+        if (!t || !t.r.ok) {
+          try {
+            const f = findSideFace(onBeam ? [...beams, ...segs] : segs, base, along, 600);
+            const rs = f ? sideMount(cfgSide, { name, post: o.post, top, base, along, face: f, plateName: `${name} Befestigungsblech` }) : null;
+            if (rs?.ok) { face = f; r = rs; r.fallback = "seitlich"; }
+          } catch { /* keine passende Seitenfläche: bleibt bei oben */ }
         }
-        r = topMount(cfgTop, { name, post: o.post, top, along, face, plateName: `${name} Fußplatte` });
-        if (kind === "seitlich") r.fallback = true; // Antritt/Auslauf: oben auf Boden bzw. Decke (in der Info gezählt)
+        if (!r && !t) return fail("kein Anschlussbauteil unter oder neben dem Pfosten (Wange, Podestrahmen oder Stufe)");
+        if (!r) ({ face, r } = t);
       }
       if (!record) return r;
       applyTargetHoles(supports.plates, face, r.targetHoles);
@@ -330,7 +340,10 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
     // Endpfosten so weit zurück, dass Blech bzw. Fußplatte mittig zum Pfosten ganz auf dem Bauteil liegt
     o.mountFit = (ctx) => {
       const r = mountAt(ctx, false);
-      return r?.shifted ? dot3(mul3(r.frame.x, r.shifted), ctx.along) : 0;
+      if (r?.pull) return dot3(r.pull, ctx.along); // Pfosten vor der Stirnseite: auf Anlage am Blech rücken
+      // Fußplatte: so weit, dass sie mittig zum Pfosten ganz auf dem Bauteil liegt (Pfosten an der Stufenkante)
+      const d = (r?.shifted || 0) + (r?.need || 0);
+      return d ? dot3(mul3(r.frame.x, d), ctx.along) : 0;
     };
   }
   if (!(o.H > 300)) throw fieldError("Geländerhöhe zu klein", "gelH");
