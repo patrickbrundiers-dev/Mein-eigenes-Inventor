@@ -617,6 +617,21 @@ try {
   });
   step("Listen als Excel", !!xl && xl.pk === "80,75" && /_Listen\.xlsx$/.test(xl.name) && xl.sheets.join() === "Zuschnitt,Summen je Profil", JSON.stringify(xl));
 
+  // Treppe L-Form mit Podest und Spindeltreppe (MegaCAD-Abgleich M14)
+  await page.locator("#props .field", { hasText: "Form" }).first().locator("select").selectOption("L");
+  await idle(120000);
+  const trL = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { podest: r.bodies.filter((b) => /^Podest/.test(b.name)).length, holme: r.bodies.filter((b) => /^Holm/.test(b.name)).length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20i-treppe-l");
+  await evalApp(() => window.__werkcad.newPart("Spindeltreppe"));
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Spindeltreppe$/ }).click();
+  await idle(120000);
+  const sp = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20j-spindeltreppe");
+  step("Treppe L-Form und Spindeltreppe", trL.ok && trL.holme === 4 && trL.podest >= 6 && /Podest auf/.test(trL.info) && sp.ok && sp.n > 40 && /Durchgangshöhe/.test(sp.info), JSON.stringify({ trL, sp }));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();

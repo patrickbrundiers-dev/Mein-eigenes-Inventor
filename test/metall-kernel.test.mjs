@@ -217,3 +217,70 @@ test("Normteile: Schraube, Mutter, Scheibe, Gewindestange, Spannschloss mit Norm
   assert.equal(rows.length, 1); assert.equal(rows[0].qty, 6);
   near(rows[0].mass, R.measureVolume(bolt.shape) * 7.85 / 1e6, 1e-6, "Masse je Stück");
 });
+
+test("Treppe L- und U-Form mit Podest, Rahmen und Stützen (MegaCAD-Abgleich M14)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const bb = (b) => b.shape.boundingBox.bounds;
+  // L links: 16 Steigungen à 175, 8 + 8, Auftritt 280, Laufbreite 1000
+  const fL = { id: "l", ...defaultGenerator("treppe") };
+  Object.assign(fL.params, { form: "L", turn: "links" });
+  const rL = await K.buildPart(part([fL]));
+  okAll(rL);
+  const by = (r, re) => r.bodies.filter((b) => re.test(b.name));
+  assert.equal(by(rL, /^Stufe/).length, 14, "7 + 7 Stufen");
+  assert.equal(by(rL, /^Wange/).length, 4);
+  assert.equal(by(rL, /^Podeststütze/).length, 2);
+  assert.ok(by(rL, /^Podestrahmen/).length >= 4, "Rahmen aus vier gegehrten Stäben");
+  const pod = by(rL, /^Podest$/)[0];
+  near(bb(pod)[1][2], 8 * 175, 0.01, "Podest-OK"); near(bb(pod)[0][0], 7 * 280, 0.01, "Podestkante = Ende Lauf 1"); near(bb(pod)[1][1], 1000, 0.01);
+  // Lauf 2 geht in +Y, oberste Stufe auf 15 · 175, über dem Podest (x zwischen 1960 und 2960)
+  const s15 = by(rL, /^Stufe 15$/)[0];
+  near(bb(s15)[1][2], 15 * 175, 0.01); near(bb(s15)[0][0], 7 * 280, 0.01); near(bb(s15)[1][0], 7 * 280 + 1000, 0.01);
+  near(bb(s15)[1][1], 1000 + 7 * 280, 0.01, "letzte Stufe endet an der Deckenstirn");
+  assert.match(rL.status.l.info, /\(8 \+ 8\).*Podest auf 1400 mm/);
+  // Stützen stehen auf dem Boden und tragen den Rahmen
+  for (const s of by(rL, /^Podeststütze/)) { near(bb(s)[0][2], 0, 0.01); near(bb(s)[1][2], 1400 - 30 - 50, 0.01); }
+  // U rechts mit Treppenauge 200, zwei Holme
+  const fU = { id: "u", ...defaultGenerator("treppe") };
+  Object.assign(fU.params, { form: "U", turn: "rechts", gap: "200", support: "holm2", stuetzen: "alle", n1: "6" });
+  const rU = await K.buildPart(part([fU]));
+  okAll(rU);
+  assert.equal(by(rU, /^Holm/).length, 4); assert.equal(by(rU, /^Podeststütze/).length, 4);
+  const pU = by(rU, /^Podest$/)[0];
+  near(bb(pU)[0][1], -1200, 0.01, "Podest reicht über beide Läufe"); near(bb(pU)[1][2], 6 * 175, 0.01);
+  const last = by(rU, /^Stufe 15$/)[0];
+  near(bb(last)[0][1], -1200, 0.01); near(bb(last)[1][1], -200, 0.01);
+  near(bb(last)[0][0], 5 * 280 - 9 * 280, 0.01, "Lauf 2 läuft zurück (−X)");
+  // Fehler: zu wenig Steigungen in einem Lauf
+  const fE = { id: "e", ...defaultGenerator("treppe") };
+  Object.assign(fE.params, { form: "L", n1: "15" });
+  const rE = await K.buildPart(part([fE]));
+  assert.match(rE.status.e.error, /mindestens 2 Steigungen/);
+});
+
+test("Spindeltreppe: Stufen als Ringausschnitt, Träger, Geländer, Prüfung Durchgangshöhe (MegaCAD-Abgleich M14)", async () => {
+  const { defaultGenerator, GENERATORS, resolveGenParams } = await import("../src/core/generator.js");
+  const f = { id: "sp", ...defaultGenerator("spindel") };
+  const res = await K.buildPart(part([f]));
+  okAll(res);
+  const by = (re) => res.bodies.filter((b) => re.test(b.name));
+  const bb = (b) => b.shape.boundingBox.bounds;
+  // 2800 / 190 → 15 Steigungen à 186,7; 14 Stufen, 14 Träger, 14 Stäbe, Handlauf
+  assert.equal(by(/^Stufe /).length, 14); assert.equal(by(/^Stufenträger/).length, 14); assert.equal(by(/^Geländerstab/).length, 14);
+  assert.ok(by(/^Handlauf/).length >= 13);
+  const sp = by(/^Spindel/)[0];
+  near(bb(sp)[1][2], 2800 + 900, 0.01, "Spindel bis Handlaufhöhe über der Decke");
+  const s1 = by(/^Stufe 1$/)[0];
+  near(bb(s1)[1][2], 2800 / 15, 0.01, "erste Stufe auf einer Steigung");
+  assert.ok(bb(s1)[1][0] <= 900 + 1e-6 && bb(s1)[1][0] > 890, "Stufe reicht bis zum Außenradius");
+  assert.equal(GENERATORS.spindel.plan(resolveGenParams("spindel", f.params, (x) => Number(x))).issues.length, 0, "Standardwerte ohne Warnung");
+  // Winkel aus 2s + a = 630 auf der Gehlinie
+  const P = resolveGenParams("spindel", f.params, (x) => Number(x));
+  const plan = GENERATORS.spindel.plan(P);
+  assert.match(plan.info, /15 Steigungen à 186,7 mm/);
+  assert.match(plan.info, /2s \+ a = 630 mm/);
+  // kleiner Durchmesser → Durchgangshöhe zu klein
+  const small = GENERATORS.spindel.plan({ ...P, D: 1300 });
+  assert.ok(small.issues.some((x) => /Durchgangshöhe/.test(x.message)), JSON.stringify(small.issues));
+  assert.throws(() => GENERATORS.spindel.plan({ ...P, D: 600 }), /Außendurchmesser zu klein/);
+});

@@ -40,6 +40,7 @@ const P = {
   gelaender: '<path d="M3 21V7M12 21V7M21 21V7"/><path d="M2 6h20"/><path d="M6 9v10M9 9v10M15 9v10M18 9v10" stroke-width="1.2"/><path d="M3 19h18"/>',
   tor: '<path d="M3 21V5M21 21V5"/><path d="M5 20V9q3.5-3 7-3t7 3v11z"/><path d="M12 6v14M8.5 8v12M15.5 8v12" stroke-width="1.2"/>',
   treppe: '<path d="M3 21h4v-4h4v-4h4V9h4V5h2"/><path d="M3 17L19 3" stroke-width="1.2"/>',
+  spindel: '<circle cx="12" cy="12" r="1.6"/><path d="M12 12L20 9M12 12l5 7M12 12l-4 8M12 12L4 14M12 12l-3-8"/><circle cx="12" cy="12" r="9" stroke-width="1"/>',
   clean: '<path d="M14 4l6 6"/><path d="M12 6l6 6-7 7H6l-3-3z"/><path d="M8 20h13"/>',
   platte: '<path d="M4 4h6v16H4z"/><path d="M10 9h11v6H10"/><circle cx="7" cy="7" r="1"/><circle cx="7" cy="17" r="1"/>',
   rippe: '<path d="M4 3v18"/><path d="M4 21h17"/><path d="M4 7l13 14"/><path d="M4 10v-3"/>',
