@@ -141,10 +141,10 @@ export const GELAENDER = {
         }
         // Öffnung = größter Inkreis der vier Dreiecke zwischen Diagonalen und Rand (Ring nicht angerechnet)
         const w = clear / 2, h = (fillHi - fillLo) / 2, L = Math.hypot(w, h);
-        gapMaxSeen = Math.max(gapMaxSeen, (2 * w * h) / (Math.min(w, h) + L));
+        gapMaxSeen = Math.max(gapMaxSeen, w + h - L); // Inkreis-⌀ des rechtwinkligen Dreiecks
       } else if (p.fill === "rahmen") {
         // Füllungsrahmen (gegehrt) mit Abstand zu Pfosten und Gurten, Staketen innen zwischen den Rahmenstäben
-        const fr = p.frame, fw = fr.geom.height, g = p.panelGap;
+        const fr = p.frame, fw = fr.geom.width, g = p.panelGap; // Kette mit up = Feldnormale: Breite liegt in der Feldebene
         const fs0 = s0 + g + fw / 2, fs1 = s1 - g - fw / 2, fz0 = fillLo + g + fw / 2, fz1 = fillHi - g - fw / 2;
         if (!(fs1 - fs0 > 3 * fw && fz1 - fz0 > 3 * fw)) throw new Error("Füllungsrahmen passt nicht ins Feld – Abstand oder Rahmenprofil prüfen");
         const n = [-fd.d[1], fd.d[0], 0];
