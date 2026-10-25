@@ -760,8 +760,7 @@ try {
   // Schiebetor (E8): Generator, dann als Baugruppe mit Schiebegelenk, Flügel per Regler öffnen, Bereich prüfen
   await evalApp(() => window.__werkcad.newPart("Schiebetor"));
   await idle();
-  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-  await page.locator("#ribbon button", { hasText: /^Schiebetor$/ }).click();
+  await evalApp(() => window.__werkcad.addGeneratorFeature("schiebetor")); // Generator-Feature im Bauteil (ältere Arbeitsweise)
   await idle(120000);
   const st0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), tiles: document.querySelectorAll("#props .tile").length, dims: document.querySelectorAll("#props svg.gsk .dim").length }; });
   await evalApp(() => { const a = window.__werkcad; a.activeDoc().finish = { kind: "pulver", ral: "6005" }; });
@@ -859,9 +858,12 @@ try {
   await shot("20k-balkon");
   step("Balkon-Generator", bk.ok && bk.n > 40 && /Balkon 3000 × 1500 mm/.test(bk.info) && !bk.warn, JSON.stringify(bk));
   // Generator als Baugruppe mit Einzelteilen: Treppe über das Menüband → Baugruppe, jedes Teil ein Bauteil in eigener Lage
-  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  // Generatoren stehen im Menüband der Baugruppe und bauen sich dort als Unterbaugruppe ein
+  const host = await evalApp(() => { const a = window.__werkcad; a.newAssembly(); return { id: a.activeId }; });
+  await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
   await page.locator("#ribbon button", { hasText: /^Treppe$/ }).click();
   await idle(180000);
+  const hosted = await evalApp((id) => { const a = window.__werkcad, h = a.doc(id), c = h.components[0]; return { n: h.components.length, sub: a.doc(c?.part)?.generator?.gen, open: a.activeDoc()?.id === c?.part }; }, host.id);
   const ga = async () => evalApp(() => {
     const a = window.__werkcad, asm = a.activeDoc();
     const parts = [...new Set(asm.components.map((c) => c.part))].map((id) => a.doc(id));
@@ -880,7 +882,14 @@ try {
   await idle(180000);
   const ga1 = await ga();
   step("Generator als Baugruppe mit Einzelteilen", ga0.kind === "assembly" && ga0.gen === "treppe" && ga0.comps > 80 && ga0.parts >= 10 && ga0.parts < ga0.comps && ga0.genteil && ga0.ok && ga0.posts > 6 && ga0.postParts * 2 <= ga0.posts && ga0.wangeAlongX && ga0.fields > 20
-    && ga1.ok && ga1.wangeId === ga0.wangeId && ga1.comps >= ga0.comps, JSON.stringify({ ga0, ga1 }));
+    && ga1.ok && ga1.wangeId === ga0.wangeId && ga1.comps >= ga0.comps && hosted.n === 1 && hosted.sub === "treppe" && hosted.open, JSON.stringify({ ga0, ga1, hosted }));
+  // Schiebetor aus der Baugruppe: Unterbaugruppe aus Flügel und festen Teilen mit Schiebegelenk
+  const sgate = await evalApp((id) => {
+    const a = window.__werkcad; a.openDoc(id); a.ribbon.addGenerator("schiebetor");
+    const h = a.doc(id), sub = a.doc(h.components[1]?.part);
+    return { n: h.components.length, kind: sub?.kind, slide: sub?.components?.find((c) => c.joint)?.joint?.kind };
+  }, host.id);
+  step("Schiebetor aus der Baugruppe", sgate.n === 2 && sgate.kind === "assembly" && sgate.slide === "schiebe", JSON.stringify(sgate));
   // Umwandeln eines Generator-Features, dessen Maß einen Teileparameter nutzt: Parameter gehen mit in die Baugruppe
   const gconv = await evalApp(() => {
     const a = window.__werkcad, p = a.newPart("Zaun mit Parameter");
@@ -1881,8 +1890,8 @@ try {
     await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
     const groupsNow = () => evalApp(() => [...document.querySelectorAll("#ribbon .rb-group")].map((g) => g.dataset.group));
     const g0 = await groupsNow();
-    await page.locator('#ribbon .rb-group[data-group="Generatoren"]').click({ button: "right" });
-    await page.locator(".menu button", { hasText: "»Generatoren« ausblenden" }).click();
+    await page.locator('#ribbon .rb-group[data-group="Anschluss"]').click({ button: "right" });
+    await page.locator(".menu button", { hasText: "»Anschluss« ausblenden" }).click();
     await page.waitForTimeout(150);
     const g1 = await groupsNow();
     const plus = await page.locator("#ribbon .rb-hidden").textContent();
@@ -1895,8 +1904,8 @@ try {
     await evalApp(() => window.__werkcad.props.settingsDialog({ category: "werkzeuge" }));
     await page.waitForTimeout(300);
     const box = page.locator(".dialog .rb-editor");
-    const unchecked = !(await box.locator('li[data-group="Generatoren"] input[type=checkbox]').isChecked());
-    await box.locator('li[data-group="Generatoren"] input[type=checkbox]').check();
+    const unchecked = !(await box.locator('li[data-group="Anschluss"] input[type=checkbox]').isChecked());
+    await box.locator('li[data-group="Anschluss"] input[type=checkbox]').check();
     await page.waitForTimeout(100);
     const shown = await evalApp(() => window.__werkcad.prefs.get("werkzeuge.menueband").modell?.hide || []);
     await box.locator("button", { hasText: "Alles zurücksetzen" }).click();
@@ -1906,8 +1915,8 @@ try {
     await page.waitForTimeout(200);
     const g3 = await groupsNow();
     const iP = (g) => g.indexOf("Profile"), iE = (g) => g.indexOf("Erstellen");
-    step("Menüband anordnen", g0.includes("Generatoren") && !g1.includes("Generatoren") && g1.length === g0.length - 1 && plus === "+1" &&
-      iP(g2) === iE(g2) - 1 && saved?.modell?.hide?.includes("Generatoren") && unchecked && shown.length === 0 && Object.keys(cleared || {}).length === 0 && g3.join() === g0.join(),
+    step("Menüband anordnen", g0.includes("Anschluss") && !g1.includes("Anschluss") && g1.length === g0.length - 1 && plus === "+1" &&
+      iP(g2) === iE(g2) - 1 && saved?.modell?.hide?.includes("Anschluss") && unchecked && shown.length === 0 && Object.keys(cleared || {}).length === 0 && g3.join() === g0.join(),
       JSON.stringify({ g1: g1.length, plus, g2, saved, unchecked, shown, cleared, same: g3.join() === g0.join() }));
   }
 

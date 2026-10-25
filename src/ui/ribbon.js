@@ -9,6 +9,8 @@ import { defaultNormteil } from "../core/normteile.js";
 import { defaultKantteil } from "../core/blech.js";
 import { defaultPlatte, defaultRippe } from "../core/anschluss.js";
 import { DISPLAY } from "../core/settings.js";
+import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generator.js";
+import { evaluate } from "../core/expr.js";
 import { commandDef, inScope } from "../core/commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
 import { applyRibbonLayout, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
@@ -122,9 +124,11 @@ export class Ribbon {
     return list.length ? list[list.length - 1].id : null;
   }
   addGenerator(gen) {
-    // Generatoren legen eine Baugruppe mit Einzelteilen an; das Schiebetor bleibt im Bauteil (eigene Baugruppe mit Gelenk)
-    if (gen !== "schiebetor") return this.app.generatorAssembly(gen);
-    this.app.addGeneratorFeature(gen);
+    // Generatoren stehen in der Baugruppe: sie legen eine Unterbaugruppe mit Einzelteilen an und bauen sie hier ein;
+    // das Schiebetor wird eine Unterbaugruppe aus Flügel und festen Teilen mit Schiebegelenk
+    const into = this.app.activeDoc()?.kind === "assembly" ? this.app.activeDoc() : null;
+    if (gen === "schiebetor") return this.app.props.slidingGateAssembly({ ...defaultGenerator(gen), name: `Schiebetor ${this.app.project.docs.filter((d) => d.kind === "assembly" && /^Schiebetor/.test(d.name)).length + 1}` }, (params) => GENERATORS[gen].plan(resolveGenParams(gen, params, (x) => evaluate(String(x), {}))), { into });
+    return this.app.generatorAssembly(gen, { into });
   }
   /** gewähltes Feature eines der Typen, sonst das letzte im Bauteil */
   lastOf(types) {
@@ -198,9 +202,7 @@ export class Ribbon {
           { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch")] },
           { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper"), B("kantteil", "Kantteil", "kantteil")] },
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
-          { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon")] },
           { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil")] },
-          { label: "Stahlbau", buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
           { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() })] },
@@ -243,6 +245,8 @@ export class Ribbon {
       return [
         { id: "baugruppe", label: "Zusammenfügen", groups: [
           { label: "Komponente", buttons: [B("place", "Platzieren", "place"), B("normteilAsm", "Normteil", "normteil"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() })] },
+          { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon")] },
+          { label: "Stahlbau", buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband")] },
           { label: "Positionieren", buttons: [B("align", "Fläche an Fläche", "align", { on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "align", { on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" })] },
           { label: "Listen", buttons: [B("bom", "Stückliste", "bom"), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() })] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() })] },

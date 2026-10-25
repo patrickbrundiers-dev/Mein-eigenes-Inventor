@@ -155,7 +155,7 @@ export class App {
    * Generator als Baugruppe mit Einzelteilen: die Baugruppe hält die Einstellungen (asm.generator), jedes Teil des
    * Bauplans wird ein Bauteil mit Feature »genteil« (gleiche Teile einmal), die Komponenten setzen sie an ihre Stelle.
    */
-  generatorAssembly(gen, { params, name, from } = {}) {
+  generatorAssembly(gen, { params, name, from, into } = {}) {
     const n = this.project.docs.filter((d) => d.kind === "assembly" && d.generator?.gen === gen).length + 1;
     const asm = newAssembly(name || `${GENERATORS[gen].label} ${n}`);
     asm.generator = { gen, params: JSON.parse(JSON.stringify(params || defaultGenerator(gen).params)) };
@@ -165,9 +165,11 @@ export class App {
     this.edit(`${GENERATORS[gen].label} als Baugruppe`, () => {
       this.project.docs.push(asm);
       this.syncGenAssembly(asm);
+      // aus einer Baugruppe heraus: als Unterbaugruppe dort einbauen
+      if (into) into.components.push({ id: uid("c"), part: asm.id, name: asm.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: !into.components.length });
     }, { rebuild: false });
     this.openDoc(asm.id);
-    toast(`Baugruppe »${asm.name}« mit ${new Set(asm.components.map((c) => c.part)).size} Einzelteilen angelegt`, { kind: "ok" });
+    toast(`Baugruppe »${asm.name}« mit ${new Set(asm.components.map((c) => c.part)).size} Einzelteilen angelegt${into ? `, in »${into.name}« eingebaut` : ""}`, { kind: "ok" });
     return asm;
   }
   /**
