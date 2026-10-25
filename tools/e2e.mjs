@@ -1115,12 +1115,73 @@ try {
       const info = made.map((d) => ({ views: d.views.length, dims: d.dims.length, pend: !!(d.pendingAutoViews || d.pendingAutoDims), title: d.title.benennung }));
       const orig = a.files.saveBinary; let zip = null, name = "";
       a.files.saveBinary = async (buf, n) => { zip = new TextDecoder().decode(buf); name = n; };
-      try { await a.files.exportMappe(a.doc("beispiel_bg")); } finally { a.files.saveBinary = orig; }
+      // Prüfung vor der Mappe (FU13): bei offenen Punkten erscheint ein Dialog → »Trotzdem erstellen«
+      let asked = "";
+      try {
+        let done = false;
+        const run = a.files.exportMappe(a.doc("beispiel_bg")).finally(() => { done = true; });
+        while (!done) {
+          const b = [...document.querySelectorAll(".dialog footer .btn")].find((x) => x.textContent === "Trotzdem erstellen");
+          if (b) { asked = b.closest(".dialog").querySelector(".body").textContent; b.click(); }
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        await run;
+      } finally { a.files.saveBinary = orig; }
+      const openPage = zip ? zip.includes("Offene Punkte") : false;
+      if (!!asked !== openPage) return { asked, openPage };
       return { before, made: made.length, again: again.length, after: drawn().length, info, name, pages: zip ? (zip.match(/class="pg"/g) || []).length : 0, lists: zip ? zip.includes("<h1>Stückliste") && zip.includes("<h1>Zuschnittliste") : false,
         dxf: zip ? (zip.match(/Zeichnungen\/[^\x00]*?\.dxf/g) || []).length : 0, pos: zip ? /Positionen\/01_/.test(zip) : false, laser: zip ? /Laser\/[^\x00]*?\.step/.test(zip) : false, step: zip ? zip.includes("ISO-10303-21") : false, xlsx: zip ? /_Listen\.xlsx/.test(zip) : false };
     });
     step("Einzelteilzeichnungen und Fertigungsmappe", ez.after === 3 && ez.made === 3 - ez.before && ez.made > 0 && ez.again === 0 && ez.info.every((x) => x.views >= 2 && x.dims > 0 && !x.pend) && /_Fertigungsmappe\.zip$/.test(ez.name) && ez.pages >= 4 && ez.lists && ez.dxf >= 3 && ez.pos && ez.laser && ez.step && ez.xlsx,
       JSON.stringify(ez));
+  }
+
+  // Problemliste (FU15) und Freigabe (FU13): Fehler einbauen, Liste zeigt ihn, Klick springt zum Feature;
+  // Freigabe ohne Teilenummer nur mit Rückfrage, nach einer Maßänderung »Nach Freigabe geändert«
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    const pl = await evalApp(async () => {
+      const a = window.__werkcad, d = a.activeDoc();
+      const wait = async (pred, ms = 8000) => { const t = Date.now(); while (!pred() && Date.now() - t < ms) await new Promise((r) => setTimeout(r, 50)); return pred(); };
+      const out = {};
+      // Fehler: Rundung mit riesigem Radius
+      const f = d.features.find((x) => x.type === "extrude");
+      a.edit("Test", () => { d.features.push({ id: "e2e_fillet", type: "fillet", name: "Zu große Rundung", mode: "dir", dir: "Z", radius: "5000" }); });
+      await wait(() => a.results.get(d.id)?.status?.e2e_fillet && !a.busy);
+      await new Promise((r) => setTimeout(r, 300));
+      out.statusBtn = document.querySelector("#status .status-btn.err")?.textContent || "";
+      document.querySelector("#status .status-btn.err")?.click();
+      await wait(() => document.querySelector(".problems-dialog"));
+      const row = [...document.querySelectorAll(".problem-list .problem")].find((x) => x.textContent.includes("Zu große Rundung"));
+      out.row = row?.textContent || "";
+      row?.click();
+      await new Promise((r) => setTimeout(r, 200));
+      out.selected = a.sel?.id;
+      out.closed = !document.querySelector(".problems-dialog");
+      a.edit("Test", () => { d.features = d.features.filter((x) => x.id !== "e2e_fillet"); });
+      await wait(() => !a.results.get(d.id)?.status?.e2e_fillet);
+      // Freigabe: ohne Fehler, Teilenummer vorhanden → direkt freigegeben
+      a.sel = null; a.props.render();
+      const sel = () => [...document.querySelectorAll("#props .section")].find((s) => s.querySelector("h3")?.textContent === "Freigabe")?.querySelector("select");
+      await wait(() => sel());
+      const s1 = sel(); s1.value = "freigegeben"; s1.dispatchEvent(new Event("change"));
+      await wait(() => d.release?.status === "freigegeben" || document.querySelector(".dialog"));
+      const ok = [...document.querySelectorAll(".dialog footer .btn")].find((x) => x.textContent === "Freigeben");
+      if (ok) ok.click();
+      await wait(() => d.release?.status === "freigegeben");
+      out.released = d.release?.status;
+      // Maß ändern → geändert nach Freigabe
+      const before = f.depth;
+      a.edit("Test", () => { f.depth = String(Number(f.depth) + 1); });
+      await new Promise((r) => setTimeout(r, 300));
+      a.props.render();
+      out.changed = [...document.querySelectorAll("#props .msg.warn")].some((x) => x.textContent.includes("Nach der Freigabe geändert"));
+      a.edit("Test", () => { f.depth = before; delete d.release; });
+      return out;
+    });
+    step("Problemliste und Freigabe", /Fehler/.test(pl.statusBtn) && pl.row.includes("Zu große Rundung") && pl.selected === "e2e_fillet" && pl.closed && pl.released === "freigegeben" && pl.changed, JSON.stringify(pl));
+    await idle();
   }
 
   // Angebotsblatt (E4): Dialog ausfüllen, Preis von Hand, Seite mit Bild und Summen

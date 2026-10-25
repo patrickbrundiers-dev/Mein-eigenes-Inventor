@@ -455,6 +455,16 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .field-bad input, .field-bad select { border-color: var(--err); }
 .field-warn input, .field-warn select { border-color: var(--warn); }
 
+/* Problemliste und Freigabe (FU13/FU15) */
+#status .status-btn.err { border-color: var(--err); color: var(--err); font-weight: 600; }
+#status .status-btn.warn { border-color: var(--warn, #c98a00); color: var(--warn, #c98a00); }
+.problem-list { max-height: 55vh; overflow: auto; margin-top: 8px; }
+.problem-group h4 { margin: 10px 0 4px; font-size: 12px; }
+.problem-list .problem { display: block; width: 100%; text-align: left; border: 0; cursor: pointer; font: inherit; font-size: 12px; }
+.problem-list .problem:disabled { cursor: default; }
+.problem-list .problem:not(:disabled):hover { filter: brightness(0.96); }
+.problems-dialog .btn-row .btn:not(.on) { opacity: 0.5; }
+
 /* Mehrfachauswahl (Körper) und Querschnittliste der Erhebung */
 .checks { display: flex; flex-direction: column; gap: 2px; max-height: 140px; overflow: auto; }
 .checks .check { display: flex; align-items: center; gap: 4px; font-size: 12px; }
