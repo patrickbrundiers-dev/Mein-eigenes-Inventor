@@ -1078,6 +1078,43 @@ try {
     step("Skizze: Bestimmtheit farbig", cls.free === 1 && cls.full >= 1 && /1 Element/.test(cls.hud), JSON.stringify(cls));
   }
 
+  // Schnitt mit gefüllten Schnittflächen: Rohre des Rahmens in Y-Mitte längs geschnitten, Ecke nah, Wandschnitte geschlossen
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    const sc = await evalApp(() => {
+      const a = window.__werkcad, vw = a.viewer;
+      a.toggleClip("Y");
+      vw.setViewDir([0.5, -1, -0.6], [0, 0, 1], { animate: false });
+      const b = vw.contentBox(); b.max.x = b.min.x + 120; b.min.z = b.max.z - 120; vw.fit(b);
+      const gl = vw.renderer.getContext();
+      const grab = () => {
+        vw.renderer.clear(); // autoClear ist aus
+        vw.renderer.render(vw.scene, vw.camera);
+        const w = gl.drawingBufferWidth, hh = gl.drawingBufferHeight, px = new Uint8Array(w * hh * 4);
+        gl.readPixels(0, 0, w, hh, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        return px;
+      };
+      const caps = vw.capGroup.children.length, bodies = vw.pickables.filter((p) => p.mesh.visible).length;
+      const filled = grab();
+      a.prefs.set("ansicht.schnittFuellen", false);
+      const capsOff = vw.capGroup.children.length;
+      const hollow = grab();
+      a.prefs.reset(["ansicht.schnittFuellen"]);
+      let diff = 0, covered = 0, coveredHollow = 0;
+      for (let i = 0; i < filled.length; i += 4) {
+        if (Math.abs(filled[i] - hollow[i]) + Math.abs(filled[i + 1] - hollow[i + 1]) + Math.abs(filled[i + 2] - hollow[i + 2]) > 30) diff++;
+        if (filled[i + 3] > 0) covered++;
+        if (hollow[i + 3] > 0) coveredHollow++;
+      }
+      const capsAgain = vw.capGroup.children.length;
+      return { caps, bodies, capsOff, capsAgain, diff, covered, coveredHollow };
+    });
+    await shot("22b-schnitt-gefuellt");
+    sc.capsAfter = await evalApp(() => { const a = window.__werkcad; a.toggleClip("Y"); return a.viewer.capGroup.children.length; });
+    step("Schnitt: Schnittflächen gefüllt", sc.caps > 0 && sc.caps === sc.bodies && sc.capsOff === 0 && sc.capsAgain === sc.caps && sc.diff > 50 && sc.covered >= sc.coveredHollow && sc.capsAfter === 0, JSON.stringify(sc));
+  }
+
   // Benannte Ansicht: speichern, andere Ansicht, wiederherstellen, im Projekt gespeichert, Rückgängig
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));

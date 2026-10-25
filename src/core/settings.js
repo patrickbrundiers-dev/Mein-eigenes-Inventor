@@ -16,7 +16,7 @@ export const SETTINGS_VERSION = 1;
  */
 export const CATEGORIES = [
   { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standardordner", "Standard-Einheit (intern immer mm/Grad)"] },
-  { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["gefüllte Schnittflächen", "Beleuchtung", "gespeicherte Ansichten"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
+  { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["Beleuchtung", "gespeicherte Ansichten"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
   { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["automatische Bemaßung", "Standardebene"] },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", planned: ["Menüband selbst anordnen", "letzte Werkzeugparameter über die Sitzung hinaus merken"], note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
   { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Farbschema hell/dunkel", "Tooltip-Verzögerung"] },
@@ -56,6 +56,7 @@ export const SETTINGS = [
   { key: "ansicht.zoomGeschwindigkeit", cat: "ansicht", label: "Zoomgeschwindigkeit", type: "number", default: 1.2, min: 0.2, max: 5 },
   { key: "ansicht.drehGeschwindigkeit", cat: "ansicht", label: "Drehgeschwindigkeit", type: "number", default: 0.9, min: 0.1, max: 5 },
   { key: "ansicht.raster", cat: "ansicht", label: "Bodenraster anzeigen", type: "bool", default: true },
+  { key: "ansicht.schnittFuellen", cat: "ansicht", label: "Schnittflächen füllen", type: "bool", default: true, help: "Beim Schnitt X/Y/Z wird das geschnittene Material als geschlossene, abgedunkelte Fläche gezeigt statt hohl." },
   { key: "ansicht.viewcube", cat: "ansicht", label: "ViewCube anzeigen", type: "bool", default: true },
   { key: "ansicht.kantenfarbe", cat: "ansicht", label: "Kantenfarbe", type: "color", default: "#1c2733" },
   { key: "ansicht.auswahlfarbe", cat: "ansicht", label: "Auswahlfarbe", type: "color", default: "#d9600c" },

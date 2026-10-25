@@ -36,7 +36,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Normal zur gewählten Fläche | vorhanden | ebene Fläche wählen → Ansicht → Normal zur Fläche (Stufe 2) |
 | Orbit, Pan, Zoom, ViewCube | vorhanden | OrbitControls, Maustasten einstellbar; Drehen um den Modellpunkt unter dem Mauszeiger (#62, abschaltbar) |
 | Perspektive | vorhanden | Umschalter + Einstellung; Skizzieren immer orthogonal (Stufe 2) |
-| Schnittansicht/Clipping im 3D-Fenster | vorhanden | Schnitt X/Y/Z mit Schieber, Seite wechseln; nur Anzeige, Schnittflächen nicht gefüllt (Stufe 2) |
+| Schnittansicht/Clipping im 3D-Fenster | vorhanden | Schnitt X/Y/Z mit Schieber, Seite wechseln; nur Anzeige (Stufe 2); Schnittflächen geschlossen und abgedunkelt, abschaltbar (Stufe 18) |
 | Darstellungsmodi (schattiert, mit Kanten, Drahtmodell, transparent) | vorhanden | Auswahl folgt dem Sichtbaren (Drahtmodell: nur Kanten wählbar) (Stufe 2) |
 | Farben für Kanten/Auswahl/Hover | vorhanden (neu) | Einstellungscenter |
 | Gespeicherte benannte Ansichten | vorhanden | Stufe 8: Ansicht → Benannt; im Bauteil bzw. in der Baugruppe gespeichert (`namedViews`), mit Rückgängig; Projektion bleibt Einstellung |
@@ -123,6 +123,6 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 15 | Schnellzugriffsleiste (Befehle anheften) und Standardwerte je Werkzeug | Unit-Test Schema/Migration, Oberflächentest |
 | 16 | Bestimmtheit der Skizze farbig (frei/bestimmt/Widerspruch) | Solver-Tests Nullraum, Oberflächentest |
 | 17 | Trägheitsmomente aus dem Dreiecksnetz (Messen → Masse-Eigenschaften) | Kernel-Test Quader/Zylinder/Rohr |
-| 18 (geplant) | Gefüllte Schnittflächen im 3D-Schnitt | Oberflächentest (Pixel) |
+| 18 | Gefüllte Schnittflächen im 3D-Schnitt (Stencil, Einstellung „Schnittflächen füllen“) | Oberflächentest (Pixel) |
 | 19 (geplant) | Ellipse in der Skizze (Solver, Profil, DXF) | Solver-/Kernel-/Oberflächentest |
 | 20 (geplant) | Farbschema hell/dunkel, Werkzeugparameter merken | Unit-Test Schema, Oberflächentest |
