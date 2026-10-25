@@ -15,7 +15,9 @@ import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
 import { PLATE_HOLES, RIB_SIDES } from "../core/anschluss.js";
-import { GENERATORS, applyTemplate } from "../core/generator.js";
+import { GENERATORS, applyTemplate, genValues, resolveGenParams } from "../core/generator.js";
+import { sketchViews, VIEW_LABEL } from "../core/genskizze.js";
+import { sketchSvg, linkFieldToSketch } from "./genskizze.js";
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gentemplates.js";
 import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
@@ -113,6 +115,28 @@ export class Props {
   seg(label, options, value, onChange) {
     const wrap = h("div", { class: "seg" }, ...options.map(([v, l]) => h("button", { class: v === value ? "on" : "", onclick: () => v !== value && onChange(v), title: l }, l)));
     return label ? this.field(label, wrap) : wrap;
+  }
+  /** Skizze der Generator-Einstellungen mit Ansichtswahl; null, wenn der Bauplan gerade nicht rechnet */
+  genSketch(f, gen, P, planOf, setSvg) {
+    let plan;
+    try { plan = planOf(f.params); } catch { return null; }
+    const views = sketchViews(gen);
+    this.genView = this.genView || {};
+    const view = views.includes(this.genView[f.gen]) ? this.genView[f.gen] : views[0];
+    const svg = sketchSvg(plan, view, { gen, p: resolvedOrNull(() => resolveGenParams(f.gen, f.params, (x) => evaluate(String(x), this.scope()))) || P });
+    setSvg(svg);
+    return this.section("Skizze",
+      views.length > 1 ? this.seg("", views.map((v) => [v, VIEW_LABEL[v]]), view, (v) => { this.genView[f.gen] = v; this.render(); }) : null,
+      h("div", { class: "gsk-wrap" }, svg));
+  }
+  /** Auswahl als Bildkacheln: jede Variante als kleine Ansicht des Bauplans mit diesem Wert */
+  genTiles(s, value, P, planOf, onChange) {
+    const tiles = s.options.map(([v, label]) => {
+      let pic = null;
+      try { pic = sketchSvg(planOf({ ...P, [s.key]: v }), s.tiles, { dims: false, cls: "gsk tile-pic" }); } catch { /* Variante passt gerade nicht */ }
+      return h("button", { class: "tile" + (v === value ? " on" : ""), title: label, onclick: () => v !== value && onChange(v) }, pic || h("div", { class: "tile-pic none" }), h("span", {}, label));
+    });
+    return this.field(s.label, h("div", { class: "tiles" }, ...tiles), true);
   }
   check(label, value, onChange) {
     const c = h("input", { type: "checkbox", checked: !!value });
@@ -584,23 +608,32 @@ export class Props {
       case "generator": {
         const gen = GENERATORS[f.gen];
         if (!gen) break;
-        const P = f.params || {};
+        const P = genValues(f.gen, f.params);
         const setP = (key, v, label) => this.set(f, (x) => { x.params = { ...x.params, [key]: v }; }, label);
+        // Skizze mit Maßen (Bebilderung der Einstellungen); Fokus auf einem Feld hebt sein Maß hervor
+        const scope = this.scope();
+        const planOf = (params) => gen.plan(resolveGenParams(f.gen, params, (x) => evaluate(String(x), scope)));
+        let svg = null;
+        const sketch = this.genSketch(f, gen, P, planOf, (el) => { svg = el; });
+        if (sketch) out.push(sketch);
         const groups = [];
         for (const s of gen.schema) {
           if (s.when && !s.when(P)) continue;
           let g = groups.find((x) => x.name === (s.group || ""));
           if (!g) groups.push((g = { name: s.group || "", items: [] }));
-          const v = P[s.key] ?? s.default;
+          const v = P[s.key];
+          const n0 = g.items.length;
           if (s.type === "num") g.items.push(this.expr(s.label, String(v), (x) => setP(s.key, x, s.label), { unit: s.unit || "mm" }));
           else if (s.type === "list") g.items.push(this.text(s.label + " (mm, mit ; trennen)", String(v), (x) => setP(s.key, x, s.label), { placeholder: "3000; 1500" }));
           else if (s.type === "check") g.items.push(this.check(s.label, !!v, (x) => setP(s.key, x, s.label)));
+          else if (s.type === "select" && s.tiles) g.items.push(this.genTiles(s, v, P, planOf, (x) => setP(s.key, x, s.label)));
           else if (s.type === "select") g.items.push(this.select(s.label, s.options, v, (x) => setP(s.key, x, s.label)));
           else if (s.type === "section") {
             const kinds = s.kinds || Object.keys(CATALOG);
             g.items.push(this.select(s.label, kinds.map((k) => [k, SECTION_KINDS[k].label]), v.kind, (k) => setP(s.key, { kind: k, size: CATALOG[k][Math.floor(CATALOG[k].length / 2)] }, s.label)));
             g.items.push(this.select("", (CATALOG[v.kind] || []).map((c) => [c, c.replace(/\./g, ",")]), v.size, (z) => setP(s.key, { kind: v.kind, size: z }, s.label)));
           }
+          for (const el of g.items.slice(n0)) linkFieldToSketch(el, s.key, () => svg);
         }
         for (const g of groups) out.push(this.section(g.name, ...g.items));
         const tpls = listTemplates(f.gen);
@@ -1476,6 +1509,8 @@ export function unionBox(boxes) {
   return o;
 }
 /** Mengenstückliste: alle Bauteile der Baugruppe einschließlich der Unterbaugruppen, summiert */
+const resolvedOrNull = (fn) => { try { return fn(); } catch { return null; } };
+
 export function bomRows(app, asm) {
   const map = new Map(), norm = [];
   for (const o of flattenAssembly(asm, (id) => app.doc(id))) {

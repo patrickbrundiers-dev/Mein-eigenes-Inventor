@@ -32,7 +32,7 @@ export const BALKON = {
     { key: "deckT", label: "Belagdicke", type: "num", default: "30", group: "Belag", when: (p) => p.deck !== "keiner" },
     { key: "railing", label: "Geländer", type: "check", default: true, group: "Geländer" },
     { key: "railH", label: "Geländerhöhe über Belag", type: "num", default: "1000", group: "Geländer", when: (p) => p.railing },
-    { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz mit Ring"], ["rahmen", "Rahmen mit Staketen"]], default: "staketen", group: "Geländer", when: (p) => p.railing },
+    { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz mit Ring"], ["rahmen", "Rahmen mit Staketen"]], default: "staketen", tiles: "front", group: "Geländer", when: (p) => p.railing },
     { key: "inset", label: "Geländer vom Rand", type: "num", default: "60", group: "Geländer", when: (p) => p.railing },
   ],
 
@@ -107,6 +107,16 @@ export const BALKON = {
     }
     const info = `Balkon ${Math.round(W)} × ${Math.round(T)} mm auf ${Math.round(Hb)} mm, ${nJ} Querträger` + (p.support !== "keine" ? `, ${members.filter((m) => /^Stütze/.test(m.name)).length} Stützen` : ", ohne Stützen") + railInfo;
     return { chains, members, plates, info, issues };
+  },
+
+  views: ["top", "front"],
+  /** Maßlinien: Grundriss (Breite, Tiefe), Ansicht (Höhe, Geländerhöhe) */
+  dims(p, plan, view) {
+    const gap = Math.max(200, p.width * 0.06), r = Math.round;
+    if (view === "top") return [{ key: "width", a: [0, 0], b: [p.width, 0], off: -gap, text: r(p.width) }, { key: "depth", a: [p.width, 0], b: [p.width, p.depth], off: -gap, text: r(p.depth) }];
+    const out = [{ key: "height", a: [0, 0], b: [0, p.height], off: gap, text: r(p.height) }];
+    if (p.railing) out.push({ key: "railH", a: [p.width, p.height], b: [p.width, p.height + p.railH], off: -gap, text: r(p.railH) });
+    return out;
   },
 };
 

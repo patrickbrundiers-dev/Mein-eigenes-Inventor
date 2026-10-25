@@ -643,7 +643,7 @@ try {
   await runs.fill("3000; 1500");
   await runs.press("Enter");
   await idle(120000);
-  await page.locator("#props .field", { hasText: "Füllung" }).locator("select").selectOption("glas");
+  await page.locator("#props .field", { hasText: "Füllung" }).locator(".tile", { hasText: "Glas" }).click();
   await idle(120000);
   const gl1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, glass: r.bodies.filter((b) => b.meta?.glass).length, members: r.bodies.filter((b) => b.kind === "member").length, info: Object.values(r.status)[0]?.info }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
@@ -670,13 +670,13 @@ try {
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
   await page.locator("#ribbon button", { hasText: /^Treppe$/ }).click();
   await idle(120000);
-  const tr0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
+  const tr0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.filter((b) => !/^Geländer/.test(b.name)).length, gel: r.bodies.filter((b) => /^Geländer/.test(b.name)).length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20h-treppe");
-  await page.locator("#props .field", { hasText: "Tragwerk" }).locator("select").selectOption("holm2");
+  await page.locator("#props .field", { hasText: "Tragwerk" }).locator(".tile", { hasText: "Zwei Holme" }).click();
   await idle(120000);
   const tr1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { holme: r.bodies.filter((b) => /^Holm/.test(b.name)).length, ok: Object.values(r.status).every((s) => s.ok) }; });
-  step("Treppen-Generator", tr0.ok && tr0.n === 17 && /16 Steigungen/.test(tr0.info) && tr1.ok && tr1.holme === 2, JSON.stringify({ tr0, tr1 }));
+  step("Treppen-Generator", tr0.ok && tr0.n === 17 && tr0.gel > 20 && /16 Steigungen/.test(tr0.info) && tr1.ok && tr1.holme === 2, JSON.stringify({ tr0, tr1 }));
 
   // Listen als Excel (MegaCAD-Abgleich M18): Arbeitsmappe der Treppe abfangen und prüfen
   const xl = await evalApp(async () => {
@@ -689,8 +689,17 @@ try {
   step("Listen als Excel", !!xl && xl.pk === "80,75" && /_Listen\.xlsx$/.test(xl.name) && xl.sheets.join() === "Zuschnitt,Summen je Profil", JSON.stringify(xl));
 
   // Treppe L-Form mit Podest und Spindeltreppe (MegaCAD-Abgleich M14)
-  await page.locator("#props .field", { hasText: "Form" }).first().locator("select").selectOption("L");
+  await page.locator("#props .field", { hasText: "Form" }).first().locator(".tile", { hasText: "L-Form" }).click();
   await idle(120000);
+  // Skizze mit Maßen: Fokus auf »Laufbreite« hebt das Breitenmaß hervor; Geländer läuft außen ums Podest
+  await page.locator("#props .field", { hasText: "Laufbreite" }).locator("input").focus();
+  const gsk = await evalApp(() => {
+    const svg = document.querySelector("#props .gsk-wrap svg"), a = window.__werkcad, r = a.results.get(a.activeId);
+    return { dims: svg?.querySelectorAll(".dim").length || 0, hi: [...(svg?.querySelectorAll(".dim.hi text") || [])].map((t) => t.textContent), rails: svg?.querySelectorAll(".l.rail").length || 0,
+      tiles: document.querySelectorAll("#props .tile svg").length, podestRail: r.bodies.filter((b) => /^Geländer rechts Pfosten/.test(b.name)).length >= 7 };
+  });
+  await shot("20i-treppe-skizze");
+  step("Treppe: Skizze mit Maßen und Bildkacheln", gsk.dims >= 4 && gsk.hi.join() === "1000" && gsk.rails > 10 && gsk.tiles >= 8 && gsk.podestRail, JSON.stringify(gsk));
   const trL = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { podest: r.bodies.filter((b) => /^Podest/.test(b.name)).length, holme: r.bodies.filter((b) => /^Holm/.test(b.name)).length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20i-treppe-l");
