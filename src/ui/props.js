@@ -12,6 +12,7 @@ import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern, parsePolygon, atEnd } from "../core/tubecuts.js";
 import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
+import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
@@ -364,6 +365,28 @@ export class Props {
         out.push(this.sectionEditor(f));
         if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(f, "alle Gehrungen dieses Rahmens")));
         break;
+      case "profilzug": {
+        const pts = f.points || [];
+        const setPt = (i, patch, label) => this.set(f, (x) => { x.points[i] = { ...x.points[i], ...patch }; }, label);
+        const rows = pts.map((p, i) => h("div", { class: "pz-point" },
+          this.vec3(`Punkt ${i + 1}` + (p.rel && i ? " (Δ)" : ""), [p.x, p.y, p.z], (v) => setPt(i, { x: v[0], y: v[1], z: v[2] }, `Punkt ${i + 1}`)),
+          h("div", { class: "pz-opts" },
+            i ? this.check("relativ zum vorigen", !!p.rel, (v) => setPt(i, { rel: v }, `Punkt ${i + 1} relativ`)) : h("span", { class: "hint" }, "Startpunkt"),
+            pts.length > 2 ? h("button", { class: "btn", title: "Punkt entfernen", onclick: () => this.set(f, (x) => { x.points.splice(i, 1); if (x.points[0]) x.points[0] = { ...x.points[0], rel: false }; }, "Punkt entfernen") }, "Entfernen") : null),
+          i < pts.length - (f.closed ? 0 : 1) ? this.text(`Drehung Segment ${i + 1} °`, p.roll || "", (v) => setPt(i, { roll: v }, `Segment ${i + 1} Drehung`), { placeholder: "0" }) : null));
+        out.push(this.section("Profilzug",
+          ...rows,
+          h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.set(f, (x) => { let w = []; try { const sc = this.scope(); w = resolvePathPoints(x.points, (v) => evaluate(String(v), sc)); } catch { /* ungültig: Vorschlag entlang X */ } x.points.push(nextPointDefault(w)); }, "Punkt hinzufügen") }, "+ Punkt")),
+          this.check("Geschlossen (letzter Punkt zurück zum ersten)", !!f.closed, (v) => this.set(f, "closed", v, "Geschlossen")),
+          this.seg("Ecken", [["gehrung", "Gehrung"], ["stumpf", "Stumpf"]], f.corner || "gehrung", (v) => this.set(f, "corner", v, "Ecken")),
+          this.seg("Lage zur Linie", [["mitte", "Mitte"], ["links", "Links"], ["rechts", "Rechts"]], f.align || "mitte", (v) => this.set(f, "align", v, "Lage")),
+          this.seg("Profilhöhe zeigt nach", [["Z", "Z"], ["Y", "Y"], ["X", "X"]], f.up || "Z", (v) => this.set(f, "up", v, "Oben")),
+          E("Drehung aller Profile", "rotation", { unit: "°" }),
+          h("p", { class: "hint" }, "Eckpunkte im Raum eingeben (absolut oder als Δ zum vorigen Punkt). Jedes Segment wird ein Profil; an den Ecken auf der Winkelhalbierenden gegehrt – auch wenn die Ecke in zwei Ebenen abknickt. Läuft ein Segment parallel zur gewählten Höhenrichtung, zeigt die Höhe nach Y (bzw. Z).")));
+        out.push(this.sectionEditor(f));
+        if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(f, "alle Gehrungen dieses Profilzugs")));
+        break;
+      }
       case "knickrahmen": {
         const segs = f.segments || [], bends = f.bends || [];
         const setIn = (list, i, key, label) => (v) => this.set(f, (x) => { x[list][i] = { ...x[list][i], [key]: v }; }, label);
@@ -445,7 +468,7 @@ export class Props {
         break;
       }
       case "pattern": {
-        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "import"].includes(g.type) && g.id !== f.id);
+        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "import"].includes(g.type) && g.id !== f.id);
         const axisSeg = (label, key, def) => this.seg(label, [["X", "X"], ["Y", "Y"], ["Z", "Z"], ["-X", "−X"], ["-Y", "−Y"], ["-Z", "−Z"]], f[key] || def, (v) => this.set(f, key, v, label));
         out.push(this.section(f.kind === "circular" ? "Kreismuster" : "Rechteckmuster",
           this.select("Feature", srcs.map((s) => [s.id, s.name]), f.feature, (v) => this.set(f, "feature", v, "Feature")),

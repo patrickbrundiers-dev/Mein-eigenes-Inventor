@@ -10,6 +10,7 @@ import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
 import { planKnickrahmen, knickInput } from "../core/knickrahmen.js";
 import { planTubeCuts, atEnd as openAtEnd } from "../core/tubecuts.js";
 import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.js";
+import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
 
 const BIG = 20000;
 
@@ -561,6 +562,23 @@ export function createKernel(R) {
             if (members.warnings?.length) st.warning = members.warnings.join("; ");
             break;
           }
+          case "profilzug": {
+            const dims = {};
+            for (const [k, v] of Object.entries(f.dims || {})) dims[k] = E(v, k);
+            const pts = resolvePathPoints(f.points, E);
+            const up = UP_AXES[f.up || "Z"] || UP_AXES.Z;
+            const rolls = (f.points || []).map((p, i) => E(p.roll || "0", `Punkt ${i + 1} Drehung`));
+            const members = buildMembers(pathSegments(pts, !!f.closed), { kind: f.section, dims }, f, E, cutCfg(f), (z) => upFor(z, up), f.name || "Profilzug", (i) => rolls[i] || 0);
+            const list = [];
+            for (const m of members) {
+              pushMember(state, m.solid, f, m.meta, m.name);
+              list.push({ shape: m.solid, kind: "member", meta: m.meta, name: m.name });
+            }
+            state.tools.set(f.id, { op: "member", shapes: list });
+            st.info = `${members.length} Profil(e), Mittellinie ${round(pathLength(pts, !!f.closed))} mm`;
+            if (members.warnings?.length) st.warning = members.warnings.join("; ");
+            break;
+          }
           case "knickrahmen": {
             const kr = buildKnickrahmen(f, E);
             // ein Bauteil (eine Zuschnittzeile in Abwicklungslänge); gefaltet mit sichtbarer Gehrungslinie
@@ -882,25 +900,41 @@ export function createKernel(R) {
 
   // ---------- Rahmen aus Skizzenlinien ----------
   function buildFrame(s, section, f, E, cut) {
-    const g = sectionGeometry(section.kind, section.dims);
-    const rot = E(f.rotation || "0", "Drehung");
     const N = s.frame.normal;
     const lines = sketchLines(s.sketch).filter((l) => !f.lines || f.lines === "all" || !f.lines.length || f.lines.includes(l.id));
     if (!lines.length) throw new Error("Skizze enthält keine Linien");
     const W = (p) => toWorld(s.frame, p[0], p[1]);
-    const L = lines.map((l, idx) => {
-      const a = W(l.a), b = W(l.b);
+    // u = N × z (in der Ebene), v = N (Profilhöhe senkrecht zur Skizzenebene)
+    return buildMembers(lines.map((l) => ({ id: l.id, a: W(l.a), b: W(l.b) })), section, f, E, cut, () => N, f.name || "Rahmen");
+  }
+
+  /**
+   * Profile auf Segmenten [{id, a, b}] in Weltkoordinaten mit Gehrung/Stumpf an gemeinsamen Ecken und T-Stoß, für
+   * Rahmen (eben) und 3D-Profilzug gleich. upOf(z, idx) gibt die Richtung der Profilhöhe, rollOf(idx) eine zusätzliche
+   * Drehung des Segments um seine Achse.
+   */
+  function buildMembers(segs, section, f, E, cut, upOf, baseName, rollOf = () => 0) {
+    const g = sectionGeometry(section.kind, section.dims);
+    const rot0 = E(f.rotation || "0", "Drehung");
+    const L = segs.map((sg, idx) => {
+      const a = sg.a, b = sg.b;
       const z = v3.norm(v3.sub(b, a));
-      // u = N × z (in der Ebene), v = N (Profilhöhe senkrecht zur Skizzenebene)
-      const fr = memberFrame(a, z, rot, N);
-      let width = Math.abs(Math.cos((rot * Math.PI) / 180)) * g.width + Math.abs(Math.sin((rot * Math.PI) / 180)) * g.height;
+      const rot = rot0 + rollOf(idx);
+      const fr = memberFrame(a, z, rot, upOf(z, idx));
+      const c = Math.abs(Math.cos((rot * Math.PI) / 180)), sn = Math.abs(Math.sin((rot * Math.PI) / 180));
+      const width = c * g.width + sn * g.height, height = c * g.height + sn * g.width;
       // Ausrichtung: Profil-Außenkante auf Linie (Versatz in u)
       let shift = 0;
       if (f.align === "links") shift = width / 2;
       if (f.align === "rechts") shift = -width / 2;
       if (shift) fr.origin = v3.add(fr.origin, v3.mul(fr.u, shift));
-      return { l, idx, a, b, z, fr, len: v3.dist(a, b), width, shift, cuts: { start: [], end: [] }, envCuts: [] };
+      return { l: sg, idx, a, b, z, fr, len: v3.dist(a, b), width, height, shift, cuts: { start: [], end: [] }, envCuts: [] };
     });
+    // Seite des Profils o, auf die die Richtung d trifft: Breite (u) oder Höhe (v), im ebenen Rahmen immer u
+    const sideOf = (o, d) => {
+      const isU = Math.abs(v3.dot(o.fr.u, d)) >= Math.abs(v3.dot(o.fr.v, d)) - 1e-9;
+      return isU ? { n: o.fr.u, half: o.width / 2, shift: o.shift } : { n: o.fr.v, half: o.height / 2, shift: 0 };
+    };
     // Knoten über Punkt-IDs (und Lage)
     const keyOf = (p) => p.map((x) => Math.round(x * 1e5)).join(",");
     const nodes = new Map();
@@ -918,13 +952,14 @@ export function createKernel(R) {
     // Eckiges Gegenprofil: gerader Schnitt an der zugewandten Außenfläche.
     const roundSection = ["rohr", "rund"].includes(section.kind);
     const buttAgainst = (m, end, dInto, o) => {
-      let n = o.fr.u;
+      const sd = sideOf(o, dInto);
+      let n = sd.n;
       if (v3.dot(n, dInto) > 0) n = v3.mul(n, -1); // zeigt von m weg
       if (roundSection) {
         m.cuts[end].push({ p: o.fr.origin, n });
         m.envCuts.push(o);
       } else {
-        m.cuts[end].push({ p: v3.sub(o.fr.origin, v3.mul(n, o.width / 2)), n });
+        m.cuts[end].push({ p: v3.sub(o.fr.origin, v3.mul(n, sd.half)), n });
         m.butt = true;
       }
     };
@@ -960,12 +995,11 @@ export function createKernel(R) {
       } else {
         // Stumpf: das Profil mit kleinerem Index läuft durch
         const [run, butt, dRun] = A.m.idx < B.m.idx ? [A, B, dA] : [B, A, dB];
-        let o = butt.m.fr.u;
-        const sgn = v3.dot(o, dRun) > 0 ? -1 : 1;
-        o = v3.mul(o, sgn);
-        const half = butt.m.width / 2;
+        const sd = sideOf(butt.m, dRun);
+        const sgn = v3.dot(sd.n, dRun) > 0 ? -1 : 1;
+        const o = v3.mul(sd.n, sgn);
         // durchlaufendes Profil endet bündig mit der Außenseite des anderen
-        run.m.cuts[run.end].push({ p: v3.add(P, v3.mul(o, half + sgn * butt.m.shift)), n: o });
+        run.m.cuts[run.end].push({ p: v3.add(P, v3.mul(o, sd.half + sgn * sd.shift)), n: o });
         buttAgainst(butt.m, butt.end, butt === A ? dA : dB, run.m);
       }
     }
@@ -993,7 +1027,7 @@ export function createKernel(R) {
         line: m.l.id,
         endCuts: ends,
       };
-      built.set(m, { solid, meta, name: `${f.name || "Rahmen"} ${m.idx + 1}` });
+      built.set(m, { solid, meta, name: `${baseName} ${m.idx + 1}` });
     }
     for (const m of L) members.push(built.get(m));
     members.warnings = [...new Set(warnings)];

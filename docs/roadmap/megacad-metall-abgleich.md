@@ -1,6 +1,6 @@
 # Abgleich MegaCAD Metall 3D ↔ PBCAD
 
-Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **Plan, Umsetzung erst nach Patricks Okay**
+Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **freigegeben 25.10.2026, Umsetzung läuft** (erledigt: M1 #71, M2)
 
 Auftrag: Patrick hat den Funktionsumfang der Produktseite „MegaCAD Metall 3D“ geschickt („Das möchte ich auch alles
 drin haben“). Übernommen wird nur der **Funktionsumfang als Ziel**; keine Texte, Bilder, Dialoge oder Daten von
@@ -117,8 +117,8 @@ den Entwicklungsplan-Thread. Große Stufen (L) werden beim Start in 2–3 PRs ge
 
 | Stufe | Inhalt | Abnahme / Tests | Aufwand |
 |---|---|---|---|
-| M1 | Metergewicht in Profilauswahl und Zuschnittliste, Summen je Profilart | Unit-Test Gewicht = Fläche × Dichte | XS |
-| M2 | **3D-Pfad** über Eckpunkte (Koordinatentabelle, Punkte relativ/absolut, Ecken anderer Körper fangen) und Profilzug darauf; Rollwinkel und Bezugspunkt je Segment | Kernel-Test: räumlicher Zug mit 4 Ecken, Längen und Masse | M |
+| M1 ✓ | Metergewicht in Profilauswahl und Zuschnittliste, Summen je Profilart (#71) | Unit-Test Gewicht = Fläche × Dichte | XS |
+| M2 ✓ | **3D-Pfad** über Eckpunkte (Koordinatentabelle, Punkte relativ/absolut, Ecken anderer Körper fangen) und Profilzug darauf; Rollwinkel und Bezugspunkt je Segment. Umgesetzt als Feature »Profilzug 3D« (`src/core/profilzug.js`, `buildMembers` in `build.js` gemeinsam mit dem Rahmen); Ecken anderer Körper fangen folgt | Kernel-Test: räumlicher Zug mit 4 Ecken, Längen und Masse | M |
 | M3 | **Gehrung in zwei Ebenen**: Schnitt auf der Winkelhalbierenden im Raum, Zuschnittliste zeigt beide Winkel (Neigung + Schwenk) wie der Rohrlaser sie braucht; 2D/3D-Schnitt aus #60 gilt weiter | Kernel-Test: beide Hälften spaltfrei, Winkel gegen Handrechnung | M |
 | M4 | **Rohr über Polygonzug** mit Biegeradius (Sweep), Biegeliste (Gerade, Bogenwinkel, Drehung, Abwicklungslänge mit K-Faktor wie Knickrahmen) | Kernel-Test: Länge = Summe Geraden + Bögen; Prüfung Radius ≥ Mindestradius | M |
 

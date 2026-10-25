@@ -442,6 +442,21 @@ try {
   step("Knickrahmen", kr0.bodies === 1 && kr0.errors === 0 && Math.abs(kr1.len - krL) < 1e-6 && Math.abs(kr2[1][0] - kr2[0][0] - krL) < 0.05 && kr3 === "30",
     JSON.stringify({ kr0, kr1, flatX: kr2 && kr2[1][0] - kr2[0][0], undo: kr3 }));
 
+  // 3D-Profilzug (MegaCAD-Abgleich M2): über das Menüband, Punkt hinzufügen, Metergewicht sichtbar
+  await evalApp(() => window.__werkcad.newPart("Profilzug"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: "Profilzug 3D" }).click();
+  await idle();
+  const pz0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, errors: Object.values(r.status).filter((s) => !s.ok).length }; });
+  await page.locator("#props button", { hasText: "+ Punkt" }).click();
+  await idle();
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20b-profilzug");
+  const pz1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, errors: Object.values(r.status).filter((s) => !s.ok).length }; });
+  const pzKgm = await page.locator("#props dd", { hasText: "kg/m" }).first().textContent().catch(() => "");
+  step("3D-Profilzug", pz0.bodies === 3 && pz0.errors === 0 && pz1.bodies === 4 && pz1.errors === 0 && /kg\/m/.test(pzKgm), JSON.stringify({ pz0, pz1, pzKgm }));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();
