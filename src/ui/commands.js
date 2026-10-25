@@ -1,5 +1,7 @@
 // Befehle ausführen, Tastaturkürzel verteilen, Befehlssuche (Strg+K) und Kürzel-Editor
 import { h, toast } from "./dom.js";
+import { t } from "../core/i18n.js";
+import { recordable } from "../core/makros.js";
 import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
 import { problemsDialog } from "./pruefung.js";
 
@@ -25,6 +27,8 @@ export function commandRunners(app) {
     "file.importStep": () => app.files.importStepAsPart(),
     "app.settings": () => app.props.settingsDialog(),
     "app.search": () => commandPalette(app),
+    "app.macros": () => app.props.macroDialog(),
+    "app.macroRecord": () => app.commands.toggleRecording(),
     "edit.undo": () => app.undo(),
     "model.rebuild": () => app.rebuildNow(),
     "model.problems": () => problemsDialog(app),
@@ -67,6 +71,7 @@ export function commandRunners(app) {
     "asm.alignAngle": r("alignAngle"),
     "asm.alignTangent": r("alignTangent"),
     "asm.pattern": r("asmPattern"),
+    "asm.mirror": () => app.props.mirrorComponent(),
     "asm.bom": r("bom"),
     "asm.cutlist": () => app.props.cutListDialog(),
     "asm.collide": () => app.props.collisionDialog(),
@@ -108,11 +113,45 @@ export class CommandKeys {
     return this.exec(cmd.id, e);
   }
   exec(id, e) {
+    if (id.startsWith("macro.")) { e?.preventDefault?.(); this.runMacro(id.slice(6)); return true; }
     const fn = this.run[id];
     if (!fn) return false;
     e?.preventDefault?.();
-    try { fn(); } catch (err) { toast(`${commandDef(id)?.label || id}: ${err.message}`, { kind: "err" }); }
+    if (this.recording && recordable(id) && !id.startsWith("part.")) { this.recording.push(id); toast(`Aufgezeichnet: ${commandDef(id)?.label || id} (${this.recording.length})`, { timeout: 1200 }); }
+    try { return fn() ?? true; } catch (err) { toast(`${commandDef(id)?.label || id}: ${err.message}`, { kind: "err" }); }
     return true;
+  }
+  /** Makro: Schritte nacheinander, auf asynchrone Befehle (Export, Neuberechnen) wird gewartet; Abbruch beim ersten Fehler */
+  async runMacro(mid) {
+    const m = (this.app.prefs.get("werkzeuge.makros") || []).find((x) => x.id === mid);
+    if (!m) return toast("Makro nicht gefunden", { kind: "err" });
+    const rec = this.recording;
+    this.recording = null;
+    try {
+      for (const [i, id] of m.steps.entries()) {
+        const fn = this.run[id];
+        if (!fn) throw new Error(`Schritt ${i + 1}: Befehl »${id}« gibt es nicht`);
+        await fn();
+        await this.app.idle?.();
+      }
+      toast(`Makro »${m.name}« ausgeführt (${m.steps.length} Schritte)`, { kind: "ok" });
+    } catch (err) {
+      toast(`Makro »${m.name}« abgebrochen: ${err.message}`, { kind: "err", timeout: 6000 });
+    } finally { this.recording = rec; }
+  }
+  /** Aufzeichnung starten oder beenden; beim Beenden als Makro speichern */
+  toggleRecording() {
+    if (!this.recording) { this.recording = []; this.app.updateStatus?.(); return toast("Makro-Aufzeichnung läuft – Befehle über Menüband, Kürzel oder Befehlssuche ausführen, dann erneut »Makro aufzeichnen«"); }
+    const steps = this.recording;
+    this.recording = null;
+    this.app.updateStatus?.();
+    if (!steps.length) return toast("Aufzeichnung beendet – keine Befehle aufgezeichnet");
+    const list = this.app.prefs.get("werkzeuge.makros") || [];
+    let n = list.length + 1;
+    while (list.some((x) => x.name === `Makro ${n}`)) n++;
+    const r = this.app.prefs.set("werkzeuge.makros", [...list, { id: Math.random().toString(36).slice(2, 10), name: `Makro ${n}`, steps }]);
+    if (!r.ok) return toast(r.error, { kind: "err" });
+    toast(`»Makro ${n}« mit ${steps.length} Schritt(en) gespeichert – umbenennen unter »Makros verwalten«`, { kind: "ok", timeout: 5000 });
   }
 }
 
@@ -136,7 +175,7 @@ export function commandPalette(app) {
     items = searchCommands(input.value, app.mode).filter((c) => c.id !== "app.search").slice(0, 40);
     idx = Math.min(idx, Math.max(0, items.length - 1));
     list.replaceChildren(...(items.length ? items.map((c, i) => h("button", { class: "cmd-item" + (i === idx ? " on" : ""), role: "option", "aria-selected": i === idx ? "true" : "false", onmousemove: () => { if (idx !== i) { idx = i; render(); } }, onclick: () => exec(c) },
-      h("span", { class: "cmd-label" }, c.label), h("span", { class: "cmd-group" }, c.group), keys.label(c.id) ? h("span", { class: "kbd" }, keys.label(c.id)) : h("span"),
+      h("span", { class: "cmd-label" }, t(c.label)), h("span", { class: "cmd-group" }, t(c.group)), keys.label(c.id) ? h("span", { class: "kbd" }, keys.label(c.id)) : h("span"),
       h("span", { class: "cmd-pin" + (pinned().includes(c.id) ? " on" : ""), role: "button", title: pinned().includes(c.id) ? "Vom Schnellzugriff lösen" : "An den Schnellzugriff heften", onclick: (e) => { e.stopPropagation(); togglePin(c.id); } }, "📌")))
       : [h("div", { class: "hint", style: { padding: "8px" } }, "Kein passender Befehl in diesem Arbeitsbereich")]));
     list.children[idx]?.scrollIntoView?.({ block: "nearest" });

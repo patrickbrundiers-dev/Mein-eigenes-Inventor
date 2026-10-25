@@ -128,6 +128,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .node { display: flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; cursor: default; white-space: nowrap; border: 1px solid transparent; user-select: none; }
 .node:hover { background: var(--steel-1); }
 .node.sel { background: var(--laser-soft); border-color: #f3c08f; }
+.node.drop { box-shadow: inset 0 -2px 0 var(--laser, #ef7d1a); }
 .node.active-doc > .label { font-weight: 600; }
 .node .twist { width: 12px; flex: none; color: var(--steel-4); cursor: pointer; text-align: center; font-size: 10px; }
 .node .ico { width: 16px; height: 16px; flex: none; color: var(--dye); }
@@ -471,3 +472,14 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .loft-list { margin: 4px 0 6px 18px; padding: 0; }
 .loft-list li { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
 .loft-list li .btn { padding: 0 6px; min-width: 0; }
+
+/* Stufe 43: Variantentabelle, Regeln, Makros */
+.var-table { overflow: auto; max-height: 55vh; }
+.var-table th .inp { min-width: 80px; }
+.var-table td .inp { width: 100%; min-width: 70px; }
+.rule, .macro { border: 1px solid var(--dye); border-radius: var(--radius-s); padding: 8px; margin: 0 0 8px; }
+.rule.off { opacity: 0.55; }
+.rule-head, .rule-body { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.rule-body { margin-top: 6px; }
+.rule-body .inp { flex: 1 1 140px; }
+.macro ol { margin: 6px 0; padding-left: 22px; }

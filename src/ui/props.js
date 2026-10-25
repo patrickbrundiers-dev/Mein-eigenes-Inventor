@@ -13,6 +13,10 @@ import { COMBINE_OPS, SPLIT_KEEP, THICKEN_SIDES } from "../core/koerper.js";
 import { CONSTRAINT_TYPES } from "../core/asmsolve.js";
 import { defaultAsmPattern } from "../core/asmmuster.js";
 import { CAP_MODES, equalParts } from "../core/rahmen.js";
+import { LASCHE_EDGES, HEM_KINDS } from "../core/blechplus.js";
+import { derivableSources, mirrorPlacement, MIRROR_PLANES } from "../core/ableiten.js";
+import { applyRules } from "../core/regeln.js";
+import { variantDialog, rulesDialog, macroDialog, variantSection, rulesSection } from "./stufe43.js";
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
@@ -55,7 +59,7 @@ export class Props {
   }
   scope() {
     const d = this.app.activeDoc();
-    return d?.kind === "part" ? resolveParams(d.params).values : {};
+    return d?.kind === "part" ? resolveParams(applyRules(d).part.params).values : {};
   }
 
   // ---------- Feld-Bausteine ----------
@@ -324,7 +328,7 @@ export class Props {
   partProps(part) {
     const app = this.app;
     const r = app.results.get(part.id);
-    const out = [this.linkSection(part)];
+    const out = [this.linkSection(part), ...[variantSection(this, part), rulesSection(this, part)].filter(Boolean)];
     out.push(this.section("Allgemein",
       this.text("Name", part.name, (v) => app.edit("Name", () => { part.name = v; }, { rebuild: false })),
       this.text("Teilenummer", part.number, (v) => app.edit("Nummer", () => { part.number = v; }, { rebuild: false })),
@@ -611,6 +615,27 @@ export class Props {
         if (END_CUT_SECTIONS.includes(f.section || "vierkant")) out.push(this.section("Schnitt 2D / 3D", this.cutModeFields(f, "alle Gehrungen dieses Profilzugs")));
         break;
       }
+      case "skizze3d": {
+        out.push(this.section("3D-Skizze",
+          ...this.pathPointsEditor(f, true),
+          this.check("Geschlossen (letzter Punkt zurück zum ersten)", !!f.closed, (v) => this.set(f, "closed", v, "Geschlossen")),
+          E("Eckradius (0 = scharf)", "radius", { allowNeg: false }),
+          h("p", { class: "hint" }, "Punktzug im Raum (absolut oder als Δ zum vorigen Punkt), Ecken optional mit Radius gerundet. Als Pfad für Sweeping nutzbar (Rohr- und Drahtformen, Handläufe).")));
+        break;
+      }
+      case "abgeleitet": {
+        const srcs = derivableSources(app.project, part);
+        const src = app.doc(f.source);
+        out.push(this.section("Abgeleitetes Bauteil",
+          this.select("Quellbauteil", [["", "– wählen –"], ...srcs.map((d) => [d.id, d.number ? `${d.number} ${d.name}` : d.name])], f.source || "", (v) => this.set(f, "source", v, "Quelle")),
+          this.seg("Spiegeln", [["", "nein"], ["YZ", "an YZ"], ["XZ", "an XZ"], ["XY", "an XY"], ["frei", "Normale"]], f.mirror || "", (v) => this.set(f, "mirror", v || undefined, "Spiegeln")),
+          f.mirror === "frei" ? this.vec3("Spiegelnormale (durch Ursprung)", (f.mirrorN || [1, 0, 0]).map(String), (v) => this.set(f, "mirrorN", v, "Spiegelnormale")) : null,
+          E("Maßstab", "scale", { unit: "", allowNeg: false, allowZero: false }),
+          this.check("Mit erstem Körper vereinigen", !!f.join, (v) => this.set(f, "join", v, "Vereinigen")),
+          src ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.openDoc(src.id) }, `»${src.name}« öffnen`)) : null,
+          h("p", { class: "hint" }, "Übernimmt die Körper eines anderen Bauteils dieses Projekts und bleibt mit ihm verbunden: Änderungen an der Quelle kommen beim nächsten Neuberechnen an. Gespiegelt für linke/rechte Teile, mit Maßstab für Modelle. Weitere Features (Bohrungen, Ausschnitte) danach wie gewohnt.")));
+        break;
+      }
       case "regelkoerper": {
         const kind = f.kind || "zylinder";
         let volText = "–";
@@ -629,22 +654,79 @@ export class Props {
       }
       case "kantteil": {
         const sh = r?.bodies?.find((b) => b.fid === f.id)?.meta?.sheet;
+        const fromSketch = f.src === "skizze";
+        const sks = part.features.filter((g) => g.type === "sketch");
         out.push(this.section("Querschnitt",
-          this.text("Schenkel (mm, mit ; trennen)", f.legs || "", (v) => this.set(f, "legs", v, "Schenkel"), { placeholder: "40; 100; 40" }),
-          this.text("Biegewinkel (°, + auf / − ab)", f.angles || "", (v) => this.set(f, "angles", v, "Biegewinkel"), { placeholder: "90; 90" }),
-          this.seg("Maßbezug", [["aussen", "außen"], ["innen", "innen"], ["mitte", "Mitte Blech"]], f.ref || "aussen", (v) => this.set(f, "ref", v, "Maßbezug")),
+          this.seg("Querschnitt aus", [["masse", "Maßen"], ["skizze", "Skizze (Konturlasche)"]], fromSketch ? "skizze" : "masse", (v) => this.set(f, (x) => { if (v === "skizze") { x.src = "skizze"; x.sketch = x.sketch || sks.at(-1)?.id || ""; x.side = x.side || "links"; x.extent = x.extent || "normal"; } else delete x.src; }, "Querschnitt")),
+          ...(fromSketch ? [
+            this.select("Skizze", [["", "– wählen –"], ...sks.map((x) => [x.id, x.name])], f.sketch || "", (v) => this.set(f, "sketch", v, "Skizze")),
+            this.seg("Material", [["links", "links der Linie"], ["mitte", "mittig"], ["rechts", "rechts der Linie"]], f.side || "links", (v) => this.set(f, "side", v, "Material")),
+            this.seg("Richtung", [["normal", "in Normalenrichtung"], ["umgekehrt", "umgekehrt"], ["symmetrisch", "symmetrisch"]], f.extent || "normal", (v) => this.set(f, "extent", v, "Richtung")),
+            h("p", { class: "hint" }, "Offene Linie aus geraden Stücken zeichnen (wie die Blechkante von der Seite). Jede Ecke wird eine Biegung mit dem Innenradius; die Linie ist eine Blechfläche, das Material liegt auf der gewählten Seite."),
+          ] : [
+            this.text("Schenkel (mm, mit ; trennen)", f.legs || "", (v) => this.set(f, "legs", v, "Schenkel"), { placeholder: "40; 100; 40" }),
+            this.text("Biegewinkel (°, + auf / − ab)", f.angles || "", (v) => this.set(f, "angles", v, "Biegewinkel"), { placeholder: "90; 90" }),
+            this.seg("Maßbezug", [["aussen", "außen"], ["innen", "innen"], ["mitte", "Mitte Blech"]], f.ref || "aussen", (v) => this.set(f, "ref", v, "Maßbezug")),
+          ]),
           E("Blechdicke", "t", { allowNeg: false, allowZero: false }),
           E("Innenradius", "ri", { allowNeg: false }),
           this.select("Biegeregel", RULES.map((x) => [x.value, x.label]), f.rule || "k", (v) => this.set(f, "rule", v, "Biegeregel")),
           E((f.rule || "k") === "k" ? "K-Faktor" : "K-Faktor ohne Tabelle", "k", { unit: "", allowNeg: false }),
           E("Länge (Kantlänge)", "length", { allowNeg: false, allowZero: false }),
           sh?.rule && (f.rule || "k") !== "k" ? h("p", { class: "hint" }, "Gerechnet: " + sh.rule) : null,
-          h("p", { class: "hint" }, "Schenkel von Biegung zu Biegung, Winkel zwischen den Schenkeln (90 = rechtwinklig nach oben, −90 nach unten). Biegezugabe = (ri + K · t) · Winkel – wie beim Knickrahmen. Mit »Biegetabelle« kommt K je Biegung aus Einstellungen → Blechparameter (Werkstoff und Dicke des Bauteils).")));
+          fromSketch ? null : h("p", { class: "hint" }, "Schenkel von Biegung zu Biegung, Winkel zwischen den Schenkeln (90 = rechtwinklig nach oben, −90 nach unten). Biegezugabe = (ri + K · t) · Winkel – wie beim Knickrahmen. Mit »Biegetabelle« kommt K je Biegung aus Einstellungen → Blechparameter (Werkstoff und Dicke des Bauteils).")));
         out.push(this.section("Lage und Ansicht",
-          this.vec3("Startpunkt (Mitte Blech)", f.pos || ["0", "0", "0"], (v) => this.set(f, "pos", v, "Startpunkt")),
+          fromSketch ? null : this.vec3("Startpunkt (Mitte Blech)", f.pos || ["0", "0", "0"], (v) => this.set(f, "pos", v, "Startpunkt")),
           this.seg("Ansicht", [["gefaltet", "gefaltet"], ["abgewickelt", "abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
           sh ? h("dl", { class: "kv" }, h("dt", {}, "Abwicklung"), h("dd", {}, `${fmtNum(sh.flat, 2)} × ${fmtNum(sh.length, 1)} mm`), h("dt", {}, "Biegelinien"), h("dd", {}, sh.bendLines.map((x) => fmtNum(x, 2)).join(" · ") || "–")) : null,
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportKantteilDxf(f) }, "Abwicklung als DXF"))));
+        const extras = part.features.filter((g) => ["lasche", "umschlag", "durchzug"].includes(g.type) && g.base === f.id);
+        if (extras.length) out.push(this.section("Blech-Features", h("ul", { class: "hint" }, ...extras.map((g) => h("li", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); this.app.selectFeature(g.id); } }, g.name))))));
+        break;
+      }
+      case "lasche":
+      case "umschlag":
+      case "durchzug": {
+        const bases = part.features.filter((g) => g.type === "kantteil");
+        const opt = (label, key, placeholder) => this.text(label, f[key] ?? "", (v) => this.set(f, key, v, label), { placeholder });
+        const baseSel = this.select("Kantteil", [["", "– wählen –"], ...bases.map((g) => [g.id, g.name])], f.base || "", (v) => this.set(f, "base", v, "Kantteil"));
+        const dirSeg = (label) => this.seg(label, [["auf", "auf (+)"], ["ab", "ab (−)"]], f.dir === "ab" ? "ab" : "auf", (v) => this.set(f, "dir", v, label));
+        if (f.type === "lasche") {
+          const stirn = f.edge === "vorne" || f.edge === "hinten";
+          out.push(this.section("Lasche", baseSel,
+            this.select("Kante", LASCHE_EDGES, f.edge || "ende", (v) => this.set(f, "edge", v, "Kante")),
+            stirn ? E("Schenkel Nr.", "leg", { unit: "", allowNeg: false, allowZero: false }) : null,
+            E("Länge (außen)", "length", { allowNeg: false, allowZero: false }),
+            E("Biegewinkel", "angle", { unit: "°", allowNeg: false, allowZero: false }),
+            dirSeg("Richtung"),
+            opt("Innenradius (mm)", "ri", "leer = wie Kantteil"),
+            stirn ? null : opt("Breite (mm)", "width", "leer = ganze Länge"),
+            stirn ? null : E("Versatz ab y = 0", "offset", { allowNeg: false }),
+            this.seg(stirn ? "Eckfreischnitt" : "Biegefreischnitt", [["rechteck", "rechteckig"], ["keiner", "keiner"]], f.relief === "keiner" ? "keiner" : "rechteck", (v) => this.set(f, "relief", v, "Freischnitt")),
+            stirn ? null : opt("Freischnitt-Breite (mm)", "reliefW", "leer = Blechdicke"),
+            opt(stirn ? "Freischnitt über die Biegung hinaus (mm)" : "Freischnitt-Tiefe hinter der Biegung (mm)", "reliefD", "leer = halbe Blechdicke"),
+            h("p", { class: "hint" }, stirn
+              ? "Stirnlasche: biegt am Ende der Kantlänge (vorne y = 0, hinten y = Länge) über das gerade Stück des Schenkels. Der Eckfreischnitt nimmt die Biegezonen der Nachbarbiegungen bis hinter die Stirnbiegung heraus – so lässt sich eine Kassette kanten."
+              : "Länge außen gemessen, die Außenkante der neuen Biegung liegt an der bisherigen Blechkante. Mit Breite kleiner als die Länge entsteht eine Teil-Lasche; der Biegefreischnitt schneidet daneben bis hinter die Biegung frei.")));
+        } else if (f.type === "umschlag") {
+          out.push(this.section("Umschlag", baseSel,
+            this.seg("Kante", [["ende", "Ende"], ["anfang", "Anfang"]], f.edge === "anfang" ? "anfang" : "ende", (v) => this.set(f, "edge", v, "Kante")),
+            this.select("Art", HEM_KINDS, f.kind || "geschlossen", (v) => this.set(f, "kind", v, "Art")),
+            E("Länge (außen)", "length", { allowNeg: false, allowZero: false }),
+            f.kind === "offen" ? E("Spalt innen", "gap", { allowNeg: false, allowZero: false }) : null,
+            dirSeg("Richtung"),
+            h("p", { class: "hint" }, "Umschlag (Falz) um 180° über die ganze Länge, Länge ab der Außenkante der Falz. Geschlossen wird mit fast null Spalt gerechnet; Biegezugabe über den K-Faktor wie bei den anderen Biegungen.")));
+        } else {
+          out.push(this.section("Durchzug", baseSel,
+            E("Schenkel Nr.", "leg", { unit: "", allowNeg: false, allowZero: false }),
+            this.text("Lage entlang (mm ab Anfang des geraden Stücks, ; für mehrere)", f.s ?? "", (v) => this.set(f, "s", v, "Lage entlang"), { placeholder: "20; 60" }),
+            this.text("Lage längs (y, mm, gleich viele)", f.y ?? "", (v) => this.set(f, "y", v, "Lage längs"), { placeholder: "50; 50" }),
+            E("Innendurchmesser", "d", { allowNeg: false, allowZero: false }),
+            E("Höhe über alles", "height", { allowNeg: false, allowZero: false }),
+            dirSeg("Kragen"),
+            opt("Vorloch in der Abwicklung (mm)", "d0", "leer = Näherung"),
+            h("p", { class: "hint" }, "Kragen (Durchzug) für Gewindeformer oder als Lagerstelle. Das Vorloch der Abwicklung ist eine Näherung über die Volumenkonstanz (Wand auf etwa 0,7 · t gezogen) – mit Probeteil oder Werkzeugangabe überschreiben.")));
+        }
         break;
       }
       case "normteil": {
@@ -893,7 +975,7 @@ export class Props {
         const sks = part.features.filter((g) => g.type === "sketch");
         out.push(this.section("Sweeping",
           this.select("Profil", [["", "– wählen –"], ...sks.map((x) => [x.id, x.name])], f.sketch || "", (v) => this.set(f, "sketch", v, "Profil")),
-          this.select("Pfad", [["", "– wählen –"], ...sks.filter((x) => x.id !== f.sketch).map((x) => [x.id, x.name])], f.path || "", (v) => this.set(f, "path", v, "Pfad")),
+          this.select("Pfad", [["", "– wählen –"], ...sks.filter((x) => x.id !== f.sketch).map((x) => [x.id, x.name]), ...part.features.filter((x) => x.type === "skizze3d").map((x) => [x.id, x.name + " (3D)"])], f.path || "", (v) => this.set(f, "path", v, "Pfad")),
           this.seg("Ausrichtung", [["mit", "Profil folgt dem Pfad"], ["fest", "Profil bleibt parallel"]], f.orient === "fest" ? "fest" : "mit", (v) => this.set(f, "orient", v === "fest" ? "fest" : undefined, "Ausrichtung")),
           h("p", { class: "hint" }, "Profil: geschlossene Kontur am Anfang des Pfads, möglichst senkrecht dazu. Pfad: zusammenhängende Linien und Bögen einer anderen Skizze."),
           this.opSeg(f)));
@@ -1834,6 +1916,37 @@ export class Props {
       for (const p of asm.patterns || []) p.comps = p.comps.filter((x) => x !== id);
       asm.patterns = (asm.patterns || []).filter((p) => p.comps.length);
       this.app.sel = null;
+    });
+  }
+  variantDialog() { return variantDialog(this.app); }
+  rulesDialog() { return rulesDialog(this.app); }
+  macroDialog() { return macroDialog(this.app); }
+  /** Komponente an einer Ebene der Baugruppe spiegeln: gespiegeltes Bauteil (abgeleitet) an der gespiegelten Lage */
+  mirrorComponent(id) {
+    const app = this.app, asm = app.activeDoc();
+    const c = asm?.components?.find((x) => x.id === (id || (app.sel?.type === "component" ? app.sel.id : null)));
+    if (!c || c.pat) return toast("Erst die Komponente wählen, die gespiegelt werden soll");
+    const p = app.doc(c.part);
+    if (p?.kind !== "part") return toast("Nur Bauteile lassen sich spiegeln (Unterbaugruppen nicht)");
+    const run = (key) => {
+      const m = mirrorPlacement(c.pos || [0, 0, 0], c.rot || [0, 0, 0], MIRROR_PLANES[key], 0);
+      const same = (a, b) => a.every((x, i) => Math.abs(Number(x) - b[i]) < 1e-9);
+      let doc = app.parts().find((d) => d.features?.[0]?.type === "abgeleitet" && d.features[0].source === p.id && d.features[0].mirror === "frei" && same(d.features[0].mirrorN || [], m.normal));
+      const fresh = !doc;
+      if (fresh) {
+        doc = app.withPartDefaults(newPart(`${p.name} gespiegelt`));
+        doc.material = p.material;
+        doc.features = [{ id: uid("f"), type: "abgeleitet", name: "Abgeleitet 1", source: p.id, mirror: "frei", mirrorN: m.normal.map(String), scale: "1" }];
+      }
+      const comp = { id: uid("c"), part: doc.id, name: `${doc.name}:${asm.components.filter((x) => x.part === doc.id).length + 1}`, pos: m.pos, rot: m.rot };
+      app.edit("Komponente spiegeln", () => { if (fresh) app.project.docs.push(doc); asm.components.push(comp); });
+      app.sel = { type: "component", id: comp.id };
+      toast(fresh ? `»${doc.name}« als gespiegeltes Bauteil angelegt und eingefügt` : `Gespiegeltes Bauteil »${doc.name}« wiederverwendet`, { kind: "ok" });
+    };
+    modal({
+      title: `»${c.name}« spiegeln`,
+      body: h("p", {}, "Ebene der Baugruppe wählen. Es entsteht ein gespiegeltes Bauteil (abgeleitet, folgt Änderungen am Original) an der gespiegelten Lage."),
+      buttons: [{ label: "an YZ", run: () => run("YZ") }, { label: "an XZ", run: () => run("XZ") }, { label: "an XY", run: () => run("XY") }, { label: "Abbrechen" }],
     });
   }
   duplicateComponent(id) {
