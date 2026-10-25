@@ -127,6 +127,12 @@ test("Kinematik: Drehgelenk, Winkelbereich, Mitläufer, Explosion (MegaCAD-Abgle
   assert.equal(setJointAngle(c, 150), 100, "auf den Bereich begrenzt");
   setJointAngle(c, 0);
   assert.ok(Math.abs(tip()[0] - 1000) < 1e-6 && Math.abs(tip()[1]) < 1e-6, "zurück in der Ausgangslage");
+  // mitgehende Komponente bekommt dieselbe Drehung
+  const g = { id: "g", pos: [1000, 0, 0], rot: [0, 0, 0] };
+  setJointAngle(c, 90, [g]);
+  assert.ok(Math.abs(g.pos[0]) < 1e-6 && Math.abs(g.pos[1] - 1000) < 1e-6 && Math.abs(g.rot[2] - 90) < 1e-6, "Mitläufer gedreht");
+  setJointAngle(c, 0, [g]);
+  assert.ok(Math.abs(g.pos[0] - 1000) < 1e-6 && Math.abs(g.rot[2]) < 1e-6, "Mitläufer zurück");
   // Achse nicht im Ursprung, Bauteil schon gedreht
   const d = { pos: [500, 200, 0], rot: [0, 0, 30], joint: defaultJoint([500, 200, 0], [0, 0, 1], { min: -90, max: 0 }) };
   const pl = jointPlacement(d, -30);

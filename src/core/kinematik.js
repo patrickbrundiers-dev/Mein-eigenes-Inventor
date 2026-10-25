@@ -26,10 +26,15 @@ export function jointPlacement(c, a) {
   return decomposePlacement(matMul(jointDelta(c.joint, a), placementMatrix(c.pos, c.rot)));
 }
 
-/** Gelenkwinkel setzen (im Bereich min … max); verschiebt c.pos/c.rot entsprechend */
-export function setJointAngle(c, a) {
+/**
+ * Gelenkwinkel setzen (im Bereich min … max); verschiebt c.pos/c.rot entsprechend.
+ * followers (Komponenten aus jointFollowers) bekommen dieselbe Drehung, damit sie so liegen bleiben wie in der Vorschau.
+ */
+export function setJointAngle(c, a, followers = []) {
   const j = c.joint;
   const t = clampAngle(j, Number(a) || 0);
+  const D = jointDelta(j, t);
+  for (const f of followers) Object.assign(f, decomposePlacement(matMul(D, placementMatrix(f.pos, f.rot))));
   Object.assign(c, jointPlacement(c, t));
   j.angle = t;
   return t;

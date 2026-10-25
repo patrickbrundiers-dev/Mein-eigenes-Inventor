@@ -13,7 +13,7 @@ import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.
 import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
-import { planKantteil, kantteilOutline } from "../core/blech.js";
+import { planKantteil, kantteilOutline, splitList } from "../core/blech.js";
 import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims, boltSizeForHole, boltSet } from "../core/normteile.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
@@ -754,7 +754,7 @@ export function createKernel(R) {
             break;
           }
           case "kantteil": {
-            const list = (x, label) => String(x ?? "").split(/[;\s]+/).filter(Boolean).map((v, i) => E(v, `${label} ${i + 1}`));
+            const list = (x, label) => splitList(x).map((v, i) => E(v, `${label} ${i + 1}`));
             const t = E(f.t ?? "2", "Blechdicke"), L = E(f.length ?? "1000", "Länge");
             if (!(L > 0)) throw new Error("Länge muss > 0 sein");
             const plan = planKantteil({ legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), t, ri: E(f.ri ?? "0", "Innenradius"), k: E(f.k ?? "0.33", "K-Faktor"), ref: f.ref || "aussen" });

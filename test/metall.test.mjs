@@ -340,7 +340,9 @@ test("Generatoren: Standardprofile stehen im Katalog (Auswahlliste nicht leer)",
 });
 
 test("Kantteil: Mittellinie aus Außenmaßen, Abwicklung über Biegezugabe, Umriss, DXF (MegaCAD-Abgleich M17)", async () => {
-  const { planKantteil, kantteilOutline, kantteilFlatDxf, bendAllowance } = await import("../src/core/blech.js");
+  const { planKantteil, kantteilOutline, kantteilFlatDxf, bendAllowance, splitList } = await import("../src/core/blech.js");
+  assert.deepEqual(splitList("L + 5; 100 ;40"), ["L + 5", "100", "40"], "mit ; getrennt: Leerzeichen gehören zum Ausdruck");
+  assert.deepEqual(splitList("40 100  40"), ["40", "100", "40"]);
   const { DxfWriter } = await import("../src/core/dxf.js");
   const near = (a, b, t = 1e-6, m = "") => assert.ok(Math.abs(a - b) <= t, `${m} ${a} ≠ ${b}`);
   // U 40/100/40 außen, t 2, ri 2, K 0,33: Ausgleichswert v = 2(ri + t) − π/2 (ri + K t) je 90°-Biegung
@@ -408,6 +410,8 @@ test("Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCA
   const r0 = rings[0].points, c0 = [600, 0, (r0[0][2] + r0[12][2]) / 2];
   assert.ok(r0.every((q) => Math.abs(Math.hypot(q[0] - c0[0], q[2] - c0[2]) - 150) < 1e-6 && Math.abs(q[1]) < 1e-9), "Kreis ⌀ 300 in der Feldebene");
   assert.match(k.issues.map((x) => x.message).join(), /Öffnung \d+ mm größer als 120/, "Kreuz hält 120 mm nicht ein → Warnung");
+  const open = Number(/Öffnung (\d+) mm/.exec(k.issues.map((x) => x.message).join())[1]);
+  assert.ok(open < 580, `Inkreis kleiner als das halbe Feld (${open})`);
   assert.throws(() => plan({ runs: "2400", fill: "kreuz", ringD: "900" }), /Ring ⌀ 900 passt nicht/);
   assert.equal(plan({ runs: "2400", fill: "kreuz", ring: false }).chains.filter((c) => /^Ring/.test(c.name)).length, 0);
   // über Eck: Diagonalen liegen in der gedrehten Feldebene

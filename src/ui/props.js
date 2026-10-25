@@ -1102,7 +1102,7 @@ export class Props {
       const d = jointDelta(j, a);
       app.viewer.setComponentDeltas(new Map(movers.map((id) => [id, d])));
     });
-    slider.addEventListener("change", () => app.edit("Gelenkwinkel", () => { setJointAngle(c, Number(slider.value)); }));
+    slider.addEventListener("change", () => app.edit("Gelenkwinkel", () => { setJointAngle(c, Number(slider.value), movers.slice(1).map((id) => asm.components.find((x) => x.id === id)).filter(Boolean)); }));
     const lim = (label, key) => {
       const inp = h("input", { class: "inp", type: "number", step: "1", value: j[key] });
       inp.addEventListener("change", () => {

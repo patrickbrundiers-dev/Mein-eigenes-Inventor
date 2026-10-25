@@ -15,6 +15,9 @@ export function defaultKantteil() {
   return { type: "kantteil", legs: "40; 100; 40", angles: "90; 90", ref: "aussen", t: "2", ri: "2", k: "0.33", length: "1000", pos: ["0", "0", "0"], view: "gefaltet" };
 }
 
+/** Liste aus einem Eingabefeld: mit ; getrennt (Ausdrücke dürfen Leerzeichen enthalten), ohne ; durch Leerzeichen */
+export const splitList = (x) => { const s = String(x ?? ""); return (s.includes(";") ? s.split(";") : s.split(/\s+/)).map((v) => v.trim()).filter(Boolean); };
+
 /**
  * Plan eines Kantteils. legs: [mm], angles: [°] (legs.length − 1), t, ri, k, ref ∈ aussen|innen|mitte.
  * Rückgabe { center: [{a, b, n}] gerade Stücke der Mittellinie, bends: [{c, rm, theta, sgn, from, to}],

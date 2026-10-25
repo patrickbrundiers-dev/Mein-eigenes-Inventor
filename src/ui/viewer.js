@@ -734,6 +734,7 @@ export class Viewer {
     sc.right = sc.top = st.shadowHalf;
     sc.near = st.radius * 0.5;
     sc.far = st.shadowFar;
+    sc.updateProjectionMatrix();
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.bias = -0.0005;
     sun.shadow.normalBias = st.radius * 0.002;
