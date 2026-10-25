@@ -372,6 +372,44 @@ try {
   await evalApp(() => { const a = window.__werkcad, id = a.activeId; a.openDoc("beispiel_zeichnung"); a.project.docs = a.project.docs.filter((x) => x.id !== id); a.changed({ rebuild: false }); });
   await idle(120000);
 
+  // Bruchansicht und Ausbruch (Werkzeuge Stufe 35) in der Vorderansicht der Grundplatte
+  const brk = await evalApp(() => {
+    const dr = window.__werkcad.drawing, d = dr.doc, front = d.views.find((v) => v.type === "front");
+    const w0 = dr.sheetRects(d)[front.id].rect;
+    const bb = dr.proj.get(front.id).bbox;
+    dr.sel = { type: "view", id: front.id };
+    dr.breakDialog();
+    return { w0: w0[2] - w0[0], bb, id: front.id };
+  });
+  await page.locator("#modal-root .dialog footer .btn", { hasText: /^Brechen$/ }).click();
+  Object.assign(brk, await evalApp((id) => {
+    const dr = window.__werkcad.drawing, d = dr.doc, v = d.views.find((x) => x.id === id);
+    const w1 = dr.sheetRects(d)[id].rect;
+    const svg = dr.exportSvgString();
+    // Ausbruch in der Mitte der Ansicht, Tiefe halbe Plattendicke
+    const bb = dr.proj.get(id).bbox, xf = dr.viewXf(v), c = xf.to(bb.x0 + (bb.x1 - bb.x0) * 0.12, (bb.y0 + bb.y1) / 2); // links vom Bruch
+    dr.sel = { type: "view", id };
+    dr.startBreakout();
+    dr.breakoutClick(c[0], c[1]);
+    dr.breakoutClick(c[0] + 4, c[1]);
+    return { breaks: v.breaks?.length, w1: w1[2] - w1[0], zig: (svg.match(/<polyline/g) || []).length };
+  }, brk.id).catch((e) => ({ err: String(e) })));
+  await page.waitForTimeout(200);
+  await page.locator("#modal-root .dialog footer .btn", { hasText: "OK" }).click();
+  await idle(120000);
+  await page.waitForTimeout(800);
+  Object.assign(brk, await evalApp(async (id) => {
+    const a = window.__werkcad, dr = a.drawing, d = dr.doc, v = d.views.find((x) => x.id === id), p = dr.proj.get(id);
+    const orig = a.files.saveText;
+    let text = "";
+    a.files.saveText = async (t) => { text = t; };
+    try { await dr.exportDxf(); } finally { a.files.saveText = orig; }
+    return { bo: v.breakouts?.length, loops: p?.sectionLoops?.length || 0, hatch: (text.match(/\nSCHRAFFUR\r?\n/g) || []).length };
+  }, brk.id));
+  step("Bruchansicht und Ausbruch", brk.breaks === 1 && brk.w1 < brk.w0 * 0.75 && brk.zig >= 2 && brk.bo === 1 && brk.loops > 0 && brk.hatch > 2, JSON.stringify(brk));
+  await evalApp(() => window.__werkcad.drawing.fitSheet());
+  await shot("15f-bruch-ausbruch");
+
   // Exporte über den Kern
   const step3d = await evalApp(async () => { const a = window.__werkcad; const t = await a.kernel.call("exportStep", { items: [{ part: a.doc("beispiel_rahmen") }] }); return t.length; });
   step("STEP-Export", step3d > 1000, String(step3d));
@@ -918,6 +956,46 @@ try {
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20o-kantteil");
   step("Kantteil mit Abwicklung", kt.ok && /Abwicklung 172[.,]36 × 1000 mm/.test(kt.info) && /_2mm\.dxf$/.test(kt.dxf?.name || "") && kt.dxf.bend >= 3, JSON.stringify(kt));
+
+  // Zeichnung II (Werkzeuge Stufe 33/34): Abwicklungsansicht mit Biegenotiz und Biegetabelle, Oberfläche, Form- und Lagetoleranz, Bezug
+  {
+    const ktId = await evalApp(() => window.__werkcad.activeId);
+    await evalApp((id) => window.__werkcad.newDrawing({ kind: "part", id }), ktId);
+    await idle(120000);
+    await page.waitForTimeout(800);
+    await idle(120000);
+    const fl = await evalApp(() => {
+      const dr = window.__werkcad.drawing, d = dr.doc;
+      dr.addFlatView();
+      const v = d.views.find((x) => x.type === "flat"), p = v && dr.proj.get(v.id);
+      return v ? { bends: p?.bends?.length, flat: Math.round(p?.flat * 100) / 100, len: p?.length } : null;
+    });
+    // Symbole an der Oberkante der Abwicklung: Werkzeug wählen, klicken, Dialog bestätigen
+    for (const [tool, dx] of [["surface", 0.3], ["gdt", 0.5], ["datum", 0.8]]) {
+      await evalApp(([tool, dx]) => {
+        const dr = window.__werkcad.drawing, d = dr.doc, v = d.views.find((x) => x.type === "flat"), p = dr.proj.get(v.id);
+        const [sx, sy] = dr.viewXf(v).to(p.flat * dx, p.length);
+        dr.setTool(tool);
+        dr.symbolClick(sx, sy);
+      }, [tool, dx]);
+      await page.locator("#modal-root .dialog footer .btn", { hasText: "Setzen" }).click();
+    }
+    Object.assign(fl, await evalApp(async () => {
+      const a = window.__werkcad, dr = a.drawing, d = dr.doc;
+      dr.setTool(null);
+      const svg = dr.exportSvgString();
+      const orig = a.files.saveText;
+      let text = "";
+      a.files.saveText = async (t) => { text = t; };
+      try { await dr.exportDxf(); } finally { a.files.saveText = orig; }
+      return { syms: (d.symbols || []).map((y) => y.kind).join(), note: svg.includes("1: 90° auf R"), table: svg.includes(">Richtung<"), surf: svg.includes("Ra 3,2"), dxf: text.includes("Ra 3,2") && text.includes("1: 90") && text.includes("Richtung") };
+    }));
+    await evalApp(() => window.__werkcad.drawing.fitSheet());
+    await shot("20o1-abwicklung-symbole");
+    step("Abwicklung und Zeichnungssymbole", fl.bends === 2 && Math.abs(fl.flat - 172.36) < 0.01 && fl.len === 1000 && fl.syms === "surface,gdt,datum" && fl.note && fl.table && fl.surf && fl.dxf, JSON.stringify(fl));
+    await evalApp((id) => { const a = window.__werkcad, dId = a.activeId; a.openDoc(id); a.project.docs = a.project.docs.filter((x) => x.id !== dId); a.changed({ rebuild: false }); a.selectFeature(a.activeDoc().features[0].id); }, ktId);
+    await idle(60000);
+  }
 
   // Biegetabelle (Stufe 31): im Einstellungscenter aus Excel-Zellen anlegen, Kantteil auf »Biegetabelle« → Abwicklung mit Tabellen-K
   {
