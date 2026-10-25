@@ -1623,6 +1623,41 @@ try {
       /dock-right/.test(reset.parent) && reset.cols === "260px minmax(0px, 1fr) 300px", JSON.stringify({ docked, widened, reset }));
   }
 
+  // Menüband anordnen (Werkzeuge Stufe 25): Gruppe per Rechtsklick ausblenden und verschieben, im Center wieder einblenden
+  {
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    const groupsNow = () => evalApp(() => [...document.querySelectorAll("#ribbon .rb-group")].map((g) => g.dataset.group));
+    const g0 = await groupsNow();
+    await page.locator('#ribbon .rb-group[data-group="Generatoren"]').click({ button: "right" });
+    await page.locator(".menu button", { hasText: "»Generatoren« ausblenden" }).click();
+    await page.waitForTimeout(150);
+    const g1 = await groupsNow();
+    const plus = await page.locator("#ribbon .rb-hidden").textContent();
+    await page.locator('#ribbon .rb-group[data-group="Profile"]').click({ button: "right" });
+    await page.locator(".menu button", { hasText: "Nach links" }).click();
+    await page.waitForTimeout(150);
+    const g2 = await groupsNow();
+    const saved = await evalApp(() => window.__werkcad.prefs.get("werkzeuge.menueband"));
+    await shot("26e-menueband-angeordnet");
+    await evalApp(() => window.__werkcad.props.settingsDialog({ category: "werkzeuge" }));
+    await page.waitForTimeout(300);
+    const box = page.locator(".dialog .rb-editor");
+    const unchecked = !(await box.locator('li[data-group="Generatoren"] input[type=checkbox]').isChecked());
+    await box.locator('li[data-group="Generatoren"] input[type=checkbox]').check();
+    await page.waitForTimeout(100);
+    const shown = await evalApp(() => window.__werkcad.prefs.get("werkzeuge.menueband").modell?.hide || []);
+    await box.locator("button", { hasText: "Alles zurücksetzen" }).click();
+    await page.waitForTimeout(100);
+    const cleared = await evalApp(() => window.__werkcad.prefs.get("werkzeuge.menueband"));
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(200);
+    const g3 = await groupsNow();
+    const iP = (g) => g.indexOf("Profile"), iE = (g) => g.indexOf("Erstellen");
+    step("Menüband anordnen", g0.includes("Generatoren") && !g1.includes("Generatoren") && g1.length === g0.length - 1 && plus === "+1" &&
+      iP(g2) === iE(g2) - 1 && saved?.modell?.hide?.includes("Generatoren") && unchecked && shown.length === 0 && Object.keys(cleared || {}).length === 0 && g3.join() === g0.join(),
+      JSON.stringify({ g1: g1.length, plus, g2, saved, unchecked, shown, cleared, same: g3.join() === g0.join() }));
+  }
+
   // Skizze säubern (MegaCAD-Abgleich M7): lose Ecken, doppelte Linie, leicht schief → eine geschlossene Kontur
   {
     await evalApp(() => window.__werkcad.newPart("Saeubern"));

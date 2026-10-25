@@ -1,5 +1,5 @@
 // Menüband mit kontextabhängigen Registerkarten
-import { h, icon, toast, closeMenu } from "./dom.js";
+import { h, icon, toast, closeMenu, contextMenu } from "./dom.js";
 import { catalogToDims } from "../core/sections.js";
 import { defaultKnickrahmen } from "../core/knickrahmen.js";
 import { defaultProfilzug } from "../core/profilzug.js";
@@ -12,6 +12,7 @@ import { defaultGenerator, GENERATORS } from "../core/generator.js";
 import { DISPLAY } from "../core/settings.js";
 import { commandDef, inScope } from "../core/commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
+import { applyRibbonLayout, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
 
 export class Ribbon {
   constructor(app) {
@@ -330,7 +331,8 @@ export class Ribbon {
     const tab = tabs.find((t) => t.id === this.tab);
     const panel = h("div", { class: "rb-panel" });
     if (tab) {
-      for (const g of tab.groups) {
+      const L = applyRibbonLayout(tab.id, tab.groups, this.app.prefs.get("werkzeuge.menueband") || {});
+      for (const g of L.groups) {
         const btns = h("div", { class: "rb-buttons" });
         if (g.small) {
           // Kleine Knöpfe in Spalten zu je 3
@@ -341,12 +343,56 @@ export class Ribbon {
         } else {
           for (const b of g.buttons) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, title: this.tip(b) }, icon(b.icon), h("span", {}, b.label)));
         }
-        panel.append(h("div", { class: "rb-group" }, btns, h("div", { class: "rb-group-label" }, g.label)));
+        panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns, h("div", { class: "rb-group-label" }, g.label)));
       }
+      if (L.hidden.length) panel.append(h("button", { class: "rb-hidden", title: "Ausgeblendete Gruppen: " + L.hidden.join(", "), onclick: (e) => this.hiddenMenu(e, tab, L.hidden) }, "+" + L.hidden.length));
     } else if (mode === "start") {
       panel.append(h("div", { class: "hint", style: { alignSelf: "center", padding: "0 8px" } }, "Neues Projekt anlegen oder vorhandenes öffnen."));
     }
     this.el.replaceChildren(tabBar, panel);
+  }
+  /** Rechtsklick auf eine Gruppe: verschieben, ausblenden, anpassen */
+  groupMenu(e, tab, label) {
+    const labels = tab.groups.map((g) => g.label);
+    const L = applyRibbonLayout(tab.id, tab.groups, this.layoutCfg());
+    const i = L.groups.findIndex((g) => g.label === label);
+    contextMenu(e.clientX, e.clientY, [
+      { label: "Nach links", disabled: i <= 0, run: () => this.setLayout(moveGroup(this.layoutCfg(), tab.id, label, -1, labels, { overHidden: true })) },
+      { label: "Nach rechts", disabled: i >= L.groups.length - 1, run: () => this.setLayout(moveGroup(this.layoutCfg(), tab.id, label, +1, labels, { overHidden: true })) },
+      { label: `»${label}« ausblenden`, disabled: (PROTECTED[tab.id] || []).includes(label) || L.groups.length < 2, run: () => this.setLayout(setGroupHidden(this.layoutCfg(), tab.id, label, true, labels)) },
+      "-",
+      { label: "Karte »" + tab.label + "« zurücksetzen", disabled: !this.layoutCfg()[tab.id], run: () => this.setLayout({ ok: true, value: resetRibbonLayout(this.layoutCfg(), tab.id) }) },
+      { label: "Menüband anpassen…", icon: "settings", run: () => this.app.props.settingsDialog({ category: "werkzeuge" }) },
+    ]);
+  }
+  hiddenMenu(e, tab, hidden) {
+    const labels = tab.groups.map((g) => g.label);
+    const r = e.currentTarget.getBoundingClientRect();
+    contextMenu(r.left, r.bottom, [
+      ...hidden.map((label) => ({ label: `»${label}« einblenden`, icon: "eye", run: () => this.setLayout(setGroupHidden(this.layoutCfg(), tab.id, label, false, labels)) })),
+      "-",
+      { label: "Alle einblenden", run: () => { const c = this.layoutCfg(); this.setLayout({ ok: true, value: c[tab.id] ? { ...c, [tab.id]: { ...c[tab.id], hide: [] } } : c }); } },
+    ]);
+  }
+  layoutCfg() { return this.app.prefs.get("werkzeuge.menueband") || {}; }
+  setLayout(r) {
+    if (!r.ok) return toast(r.error, { kind: "err" });
+    const s = this.app.prefs.set("werkzeuge.menueband", r.value);
+    if (!s.ok) toast(s.error, { kind: "err" });
+  }
+  /** Alle Registerkarten mit ihren Gruppen (für das Einstellungscenter), Reihenfolge wie im Standard */
+  catalog() {
+    const tabs = new Map();
+    for (const mode of ["part", "sketch", "assembly", "drawing"]) {
+      let list = [];
+      try { list = this.tabsFor(mode); } catch { continue; }
+      for (const t of list) {
+        const e = tabs.get(t.id) || { id: t.id, label: t.label, labels: [] };
+        for (const g of t.groups) if (!e.labels.includes(g.label)) e.labels.push(g.label);
+        tabs.set(t.id, e);
+      }
+    }
+    return [...tabs.values()];
   }
   kbd(id) { return this.app.commands?.label(id) || ""; }
   /** Tooltip mit Tastaturkürzel, falls der Knopf einem Befehl entspricht */
