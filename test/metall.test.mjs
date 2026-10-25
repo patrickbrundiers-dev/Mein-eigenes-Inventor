@@ -693,13 +693,14 @@ test("Gurte durch die Pfosten: ein Stück bis 5800 mm, Stoß im Pfosten, Durchbr
   assert.equal(pd.filter((d) => d.target === "Pfosten 1").length, 2, "Ober- und Untergurt");
   assert.ok(pd.filter((d) => d.target === "Pfosten 2").every((d) => Math.abs(d.len - (42.4 + 2)) < 1e-9), "durchgehend");
   assert.ok(pd.filter((d) => d.target === "Pfosten 1").every((d) => Math.abs(d.len - (21.2 + 1)) < 1e-9 && d.dir[0] === 1), "einseitig nach innen");
-  // Stäbe: durch beide Gurte bis bündig außen, je Stab eine Bohrung Ø 13 in jedem Gurt
+  // Stäbe: nur durch die innere Gurtwand, Ende innen an der gegenüberliegenden Wand (Rohr 26,9 × 2,3); je Stab eine Bohrung Ø 13 in jedem Gurt
   const bars = a.members.filter((m) => /^Stab /.test(m.name));
   const zTop = 1000 - 42.4 - 100, zBot = 100;
-  assert.ok(bars.every((m) => Math.abs(m.a[2] - (zBot - 26.9 / 2)) < 1e-9 && Math.abs(m.b[2] - (zTop + 26.9 / 2)) < 1e-9));
+  assert.ok(bars.every((m) => Math.abs(m.a[2] - (zBot - 26.9 / 2 + 2.3)) < 1e-9 && Math.abs(m.b[2] - (zTop + 26.9 / 2 - 2.3)) < 1e-9));
   const sd = a.drills.filter((d) => /gurt/.test(d.target));
   assert.equal(sd.length, 2 * bars.length);
-  assert.ok(sd.every((d) => d.d === 13 && d.dir[2] === -1));
+  assert.ok(sd.every((d) => d.d === 13 && Math.abs(d.len - (2.3 + 2)) < 1e-9), "nur eine Wand");
+  assert.ok(sd.filter((d) => /^Obergurt/.test(d.target)).every((d) => d.dir[2] === 1 && d.p[2] < zTop) && sd.filter((d) => /^Untergurt/.test(d.target)).every((d) => d.dir[2] === -1 && d.p[2] > zBot), "von der Füllungsseite");
   // 9000 mm: Stoß in einem Pfosten (Stücke ≤ 5800), dort durchgehender Durchbruch für beide Stücke
   const b = plan({ runs: "9000" });
   const pieces = b.members.filter((m) => /^Obergurt/.test(m.name));
@@ -759,7 +760,7 @@ test("Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, 
   const belts = st.members.filter((m) => /Untergurt/.test(m.name)), stabs = st.members.filter((m) => / Stab \d+\.\d+$/.test(m.name));
   assert.ok(belts.length === 4 && stabs.length > 10, `${belts.length} ${stabs.length}`);
   assert.equal(st.drills.filter((d) => /Untergurt/.test(d.target)).length, stabs.length);
-  assert.ok(st.drills.filter((d) => /Untergurt/.test(d.target)).every((d) => d.d === 13 && d.dir[2] === -1));
+  assert.ok(st.drills.filter((d) => /Untergurt/.test(d.target)).every((d) => d.d === 13 && d.dir[2] === -1 && d.len < 2.3 * 1.25 + 2), "nur durch die obere Gurtwand");
   assert.ok(new Set(stabs.map((m) => m.name)).size === stabs.length, "Stabnamen eindeutig");
   assert.throws(() => plan({ gelFill: "staketen", gelStab: { kind: "rohr", size: "26.9x2.3" } }), (e) => e.key === "gelStab");
   assert.throws(() => plan({ gelBar: { kind: "rohr", size: "42.4x2.6" } }), (e) => e.key === "gelBar");

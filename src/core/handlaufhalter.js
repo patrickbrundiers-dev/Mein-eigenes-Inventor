@@ -6,6 +6,8 @@ import { sectionGeometry } from "./sections.js";
 
 const HOLLOW = new Set(["rohr", "vierkant", "rechteck"]);
 export const CAP_T = 4;
+/** Wand, durch die ein Stab in den Gurt gesteckt wird: Hohlprofil = Wandstärke, sonst bis zur Mitte (Sackloch) */
+export const entryWall = (sec, high) => (HOLLOW.has(sec.kind) && Number(sec.dims?.t) > 0 ? Number(sec.dims.t) : high / 2);
 
 /** Schema-Einträge (Schlüssel mit Vorsilbe, z. B. »gel«) – ältere Features ohne Angabe bleiben ohne Halter */
 export function holderSchema(key = (k) => k, group, when = () => true) {
