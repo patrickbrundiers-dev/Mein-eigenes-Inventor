@@ -11,6 +11,7 @@ import { uid } from "../core/examples.js";
 import { scaleLabel } from "./tree.js";
 import { v3, matApply, matApplyDir, placementMatrix, decomposePlacement } from "../core/geom.js";
 import { flattenAssembly } from "../core/subasm.js";
+import { assemblyForView, viewStateKey } from "../core/darstellungen.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
 import { weldSymbol } from "../core/weld.js";
@@ -81,11 +82,41 @@ export class DrawingEditor {
   close() { this.stage.replaceChildren(); this.svg = null; }
 
   // ---------- Quelle / Projektion ----------
-  sourceItems(d = this.doc) {
+  /** Darstellung einer Ansicht (FU8/FU9): eigene oder die der Elternansicht */
+  viewState(d, v) {
+    for (let x = v, k = 0; x && k < 20; x = x.parent && d.views.find((y) => y.id === x.parent), k++) if (x.state) return x.state;
+    return null;
+  }
+  /** Auswahl Positionsdarstellung und Explosion für Ansichten von Baugruppen (FU8/FU9) */
+  stateProps(P, d, v) {
     const app = this.app;
-    const src = d?.source && app.doc(d.source.id);
-    if (!src) return null;
-    if (src.kind === "part") return [{ part: src, pos: [0, 0, 0], rot: [0, 0, 0] }];
+    const src = d.source && app.doc(d.source.id);
+    if (src?.kind !== "assembly" || v.parent) return [];
+    const st = v.state || {};
+    const set = (label, fn) => app.edit(label, () => {
+      const next = { ...(v.state || {}) };
+      fn(next);
+      if (!next.position) delete next.position;
+      if (!next.explode) delete next.explode;
+      if (Object.keys(next).length) v.state = next; else delete v.state;
+      // abhängige Ansichten (projiziert, Schnitt) folgen der Elternansicht
+      for (const c of d.views) if (c.parent === v.id) delete c.state;
+    });
+    const positions = src.positions || [];
+    const steps = src.explosion?.steps || [];
+    return [
+      positions.length ? P.select("Position", [["", "Konstruktion (aktuell)"], ...positions.map((p) => [p.id, p.name])], st.position || "", (id) => set("Positionsdarstellung", (n) => { n.position = id; })) : null,
+      steps.length ? P.check("Explodiert", !!st.explode, (on) => set("Explosion", (n) => { n.explode = on; })) : null,
+      !positions.length && !steps.length ? h("p", { class: "hint" }, "Positionsdarstellungen und Explosionsschritte der Baugruppe lassen sich hier je Ansicht wählen.") : null,
+    ].filter(Boolean);
+  }
+  sourceItems(d = this.doc, v = null) {
+    const app = this.app;
+    const src0 = d?.source && app.doc(d.source.id);
+    if (!src0) return null;
+    if (src0.kind === "part") return [{ part: src0, pos: [0, 0, 0], rot: [0, 0, 0] }];
+    const st = v && this.viewState(d, v);
+    const src = st ? assemblyForView(src0, { state: st }) : src0;
     if (src.kind === "assembly") return flattenAssembly(src, (id) => app.doc(id)).map((o) => ({ part: o.part, ...decomposePlacement(o.matrix), name: o.path.join(" / ") }));
     return null;
   }
@@ -101,17 +132,26 @@ export class DrawingEditor {
       return;
     }
     this.deriveFlats(d);
-    const views = d.views.filter((v) => v.type !== "detail" && v.type !== "flat").flatMap((v) => {
+    const projected = d.views.filter((v) => v.type !== "detail" && v.type !== "flat");
+    // Ansichten mit gleicher Darstellung (Position/Explosion, FU8/FU9) in einem Auftrag
+    const groups = new Map();
+    for (const v of projected) {
+      const k = viewStateKey({ state: this.viewState(d, v) });
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(v);
+    }
+    const viewsOf = (list) => list.flatMap((v) => {
       const c = this.viewCam(d, v), hidden = v.hidden !== false && v.type !== "iso";
       // Ausbruch: je Bereich eine zweite Projektion mit Schnittebene in der gewählten Tiefe
       const bos = (v.breakouts || []).map((b, i) => ({ key: `${v.id}#bo${i}`, dir: c.dir, up: c.up, hidden, cut: { n: v3.mul(v3.norm(c.dir), -1), c: b.plane } }));
       return [{ key: v.id, dir: c.dir, up: c.up, cut: c.cut, hidden }, ...bos];
     });
-    if (!views.length) { this.render(); return; }
+    if (!projected.length) { this.render(); return; }
     this.loading = true;
     this.render();
     try {
-      const res = await this.app.kernel.call("project", { items, views });
+      const res = {};
+      for (const list of groups.values()) Object.assign(res, await this.app.kernel.call("project", { items: this.sourceItems(d, list[0]) || items, views: viewsOf(list) }));
       if (this.doc !== d) return;
       for (const [k, v] of Object.entries(res)) if (!k.includes("#")) this.proj.set(k, v);
       for (const v of d.views) if (v.breakouts?.length && res[v.id]) this.proj.set(v.id, composeBreakout(res[v.id], v.breakouts.map((b, i) => ({ c: b.c, r: b.r, proj: res[`${v.id}#bo${i}`] }))));
@@ -1178,7 +1218,8 @@ export class DrawingEditor {
     const v = (this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "iso") || d.views[0];
     if (!v || !this.proj.get(v.id)) return toast("Zuerst Ansichten erzeugen");
     // Positionsnummern je Bauteil der Mengenstückliste, auch aus Unterbaugruppen
-    const flat = { components: flattenAssembly(src, (id) => this.app.doc(id)).map((o) => ({ part: o.part.id, ...decomposePlacement(o.matrix) })) };
+    const st = this.viewState(d, v);
+    const flat = { components: flattenAssembly(st ? assemblyForView(src, { state: st }) : src, (id) => this.app.doc(id)).map((o) => ({ part: o.part.id, ...decomposePlacement(o.matrix) })) };
     const anchors = balloonAnchors(flat, (pid) => this.app.results.get(pid));
     if (!anchors.length) return toast("Die Bauteile sind noch nicht berechnet – bitte kurz warten");
     const cam = this.viewCam(d, v);
@@ -1995,6 +2036,7 @@ export class DrawingEditor {
           P.check("Verdeckte Kanten", v.hidden !== false, (on) => app.edit("Verdeckte Kanten", () => { v.hidden = on; })),
           P.check("Mittellinien", v.centerlines !== false, (on) => app.edit("Mittellinien", () => { v.centerlines = on; }, { rebuild: false })),
           P.text("Beschriftung", v.label || "", (t) => app.edit("Beschriftung", () => { v.label = t; }, { rebuild: false })),
+          ...this.stateProps(P, d, v),
           ...this.breakProps(P, v),
           h("div", { class: "btn-row" }, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.addSectionDialog() }, "Schnitt erzeugen") : null, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.startAux() }, "Hilfsansicht") : null, h("button", { class: "btn", onclick: () => this.startDetail() }, "Detail erzeugen"), h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Ansicht löschen"))));
         return out;

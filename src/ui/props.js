@@ -51,7 +51,9 @@ import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
-import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences } from "../core/subasm.js";
+import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
+import { linkedPart, asmParamValues } from "../core/baugruppenparameter.js";
+import { pushParamsDialog, invalidateLinked, explosionDialog, positionsSection, explosionSection, asmParamsSection } from "./darstellungen.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { FINISHES, RAL, finishOf, finishLabel, ralName } from "../core/oberflaeche.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
@@ -1774,6 +1776,7 @@ export class Props {
       out.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.paramsDialog() }, "Parameter…")));
     }
     if (asm.gestell) out.push(...gestellSections(this, asm));
+    for (const sec of [asmParamsSection(this, asm), positionsSection(this, asm), explosionSection(this, asm)]) if (sec) out.push(sec);
     const rows = bomRows(app, asm);
     const total = rows.reduce((s, r) => s + (r.mass || 0) * r.qty, 0);
     out.push(this.section("Stückliste", bomTable(rows, true), h("dl", { class: "kv", style: { marginTop: "6px" } }, h("dt", {}, "Gesamtmasse"), h("dd", {}, fmtNum(total, 2) + " kg")),
@@ -2092,7 +2095,9 @@ export class Props {
     return rows;
   }
   /** Explosionsdarstellung: Regler für den Abstand (nur Anzeige, bleibt bis zum Zurücksetzen) */
-  explodeDialog() {
+  explodeDialog() { return explosionDialog(this.app); }
+  /** Schnelle Explosion ohne Schritte: alle Komponenten von der Mitte weg (Regler) */
+  explodeCenterDialog() {
     const app = this.app, v = app.viewer;
     if (app.activeDoc()?.kind !== "assembly") return;
     const out = h("span", { class: "num" });
@@ -2366,14 +2371,28 @@ export class Props {
   paramsDialog() {
     const app = this.app;
     const part = app.activeDoc();
-    if (part?.kind !== "part" && !part?.generator) return toast("Parameter gehören zu einem Bauteil");
+    if (part?.kind !== "part" && part?.kind !== "assembly") return toast("Parameter gehören zu einem Bauteil oder einer Baugruppe");
     const rows = JSON.parse(JSON.stringify(part.params || []));
     const tbody = h("tbody");
+    const docOf = (id) => app.doc(id);
+    // FU4: Baugruppen, in denen das Bauteil steckt und die Parameter haben – Quelle für verknüpfte Werte
+    const sources = part.kind === "part" ? app.project.docs.filter((d) => d.kind === "assembly" && (d.params || []).length && containsDoc(d, part.id, docOf)) : [];
+    const linkSel = (r) => {
+      const opts = [h("option", { value: "" }, "eigener Wert"), ...sources.flatMap((a) => (a.params || []).map((q) => h("option", { value: `${a.id}\u0001${q.name}`, selected: r.link?.asm === a.id && r.link?.name === q.name }, `${a.name}: ${q.name}`)))];
+      if (r.link && !sources.some((a) => a.id === r.link.asm)) opts.push(h("option", { value: `${r.link.asm}\u0001${r.link.name}`, selected: true }, `${app.doc(r.link.asm)?.name || "Baugruppe fehlt"}: ${r.link.name}`));
+      const sel = h("select", { class: "inp", style: { width: "150px" }, title: "Wert aus einer Baugruppe übernehmen (Top-down)" }, ...opts);
+      sel.addEventListener("change", () => {
+        if (!sel.value) { if (r.link) { const v = asmParamValues(app.doc(r.link.asm) || {}).values[r.link.name]; if (Number.isFinite(v)) r.expr = String(v); } delete r.link; }
+        else { const [asm, name] = sel.value.split("\u0001"); r.link = { asm, name }; }
+        draw();
+      });
+      return sel;
+    };
     const draw = () => {
-      const { values, errors } = resolveParams(rows);
+      const { values, errors } = resolveParams(linkedPart({ kind: "part", params: rows }, docOf).part.params);
       tbody.replaceChildren(...rows.map((r, i) => {
         const name = h("input", { class: "inp", value: r.name, style: { width: "130px" } });
-        const ex = h("input", { class: "inp", value: r.expr, style: { width: "160px", fontFamily: "var(--din)" } });
+        const ex = h("input", { class: "inp", value: r.link ? `= ${app.doc(r.link.asm)?.name || "?"}.${r.link.name}` : r.expr, disabled: !!r.link, style: { width: "160px", fontFamily: "var(--din)" } });
         const cm = h("input", { class: "inp", value: r.comment || "" });
         name.addEventListener("change", () => { r.name = name.value.trim(); draw(); });
         ex.addEventListener("change", () => { r.expr = ex.value.trim(); draw(); });
@@ -2381,7 +2400,7 @@ export class Props {
         const bad = !isValidName(r.name) || rows.filter((x) => x.name === r.name).length > 1;
         if (bad) name.classList.add("bad");
         if (errors[r.name]) { ex.classList.add("bad"); ex.title = errors[r.name]; }
-        return h("tr", {}, h("td", {}, name), h("td", {}, ex), h("td", { class: "num" }, errors[r.name] ? "Fehler" : fmtNum(values[r.name], 4)), h("td", {}, cm),
+        return h("tr", {}, h("td", {}, name), h("td", {}, ex), sources.length || r.link ? h("td", {}, linkSel(r)) : null, h("td", { class: "num" }, errors[r.name] ? "Fehler" : fmtNum(values[r.name], 4)), h("td", {}, cm),
           h("td", {}, h("button", { class: "icon-btn", title: "Entfernen", onclick: () => { rows.splice(i, 1); draw(); } }, icon("trash"))));
       }));
     };
@@ -2389,7 +2408,7 @@ export class Props {
     modal({
       title: `Parameter – ${part.name}`, width: "760px",
       body: h("div", {},
-        h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Ausdruck"), h("th", {}, "Wert"), h("th", {}, "Kommentar"), h("th"))), tbody),
+        h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Ausdruck"), sources.length || rows.some((r) => r.link) ? h("th", {}, "Aus Baugruppe") : null, h("th", {}, "Wert"), h("th", {}, "Kommentar"), h("th"))), tbody),
         h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { let n = rows.length + 1; while (rows.some((r) => r.name === "P" + n)) n++; rows.push({ name: "P" + n, expr: "10", comment: "" }); draw(); } }, icon("plus"), " Parameter"),
           h("button", { class: "btn", title: "Parameter als Tabelle für Excel speichern (CSV)", onclick: () => app.files.saveText(paramsCsv(rows, resolveParams(rows).values), String(part.name || "Bauteil").replace(/[\\/:*?"<>|]+/g, "_") + " Parameter.csv", "text/csv", [{ name: "CSV", extensions: ["csv"] }]) }, icon("export"), " Exportieren"),
           h("button", { class: "btn", title: "Parameter aus CSV übernehmen: gleiche Namen werden geändert, neue angehängt", onclick: async () => {
@@ -2400,13 +2419,16 @@ export class Props {
             rows.splice(0, rows.length, ...m.rows);
             draw();
             toast(`${f.name}: ${m.added.length} neu, ${m.updated.length} geändert${errors.length ? ` – ${errors.length} Zeile(n) übersprungen: ${errors.slice(0, 3).join("; ")}` : ""}. Mit »Übernehmen« bestätigen.`, { kind: errors.length ? "" : "ok", timeout: errors.length ? 9000 : 5000 });
-          } }, icon("import"), " Importieren…")),
+          } }, icon("import"), " Importieren…"),
+          part.kind === "assembly" ? h("button", { class: "btn", title: "Gleichnamige Parameter der Bauteile mit dieser Baugruppe verknüpfen (Top-down)", onclick: () => pushParamsDialog(app, part, rows) }, icon("down"), " An Bauteile weitergeben…") : null),
+        part.kind === "assembly" ? h("p", { class: "hint" }, "Baugruppen-Parameter gelten für alle verknüpften Bauteile: ein Maß hier ändert jedes Teil, das es übernimmt.") : null,
         h("p", { class: "hint" }, "Parameter können in jedem Maß verwendet werden, z. B. »Länge - 2*Rand«. Funktionen: sin, cos, tan (Grad), sqrt, min, max, round, wenn(Bedingung; dann; sonst). Dezimalkomma ist erlaubt.")),
       buttons: [{ label: "Abbrechen" }, { label: "Übernehmen", primary: true, run: () => {
         const names = rows.map((r) => r.name);
         if (rows.some((r) => !isValidName(r.name))) { toast("Ungültiger Parametername (Buchstabe am Anfang, keine Leerzeichen)", { kind: "err" }); return false; }
         if (new Set(names).size !== names.length) { toast("Parameternamen müssen eindeutig sein", { kind: "err" }); return false; }
         app.edit("Parameter", () => { part.params = rows; if (part.generator) app.syncGenAssembly(part); });
+        if (part.kind === "assembly") invalidateLinked(app, part.id);
       } }],
     });
   }

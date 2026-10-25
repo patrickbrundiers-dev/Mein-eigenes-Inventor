@@ -116,6 +116,8 @@ export class App {
     this.endMeasure();
     this.viewer.clearPlanes();
     this.viewer.setHidden([]);
+    // Explosion in Schritten gilt nur für die Baugruppe, in der sie eingeschaltet wurde
+    if (this.explodeSteps) { this.explodeSteps = 0; this.viewer.stepOffs = null; }
     // Gestelle folgen ihrem Skelett (Skizze oder Profilzug wurde vielleicht geändert)
     if (d.kind === "assembly") refreshAllGestelle(this);
     this.setMode(d.kind);

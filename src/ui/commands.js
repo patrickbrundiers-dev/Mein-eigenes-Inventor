@@ -7,6 +7,7 @@ import { recordable } from "../core/makros.js";
 import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
 import { problemsDialog } from "./pruefung.js";
 import { saveVersion, versionsDialog } from "./versionen.js";
+import { savePosition } from "./darstellungen.js";
 
 /** id → Funktion. Ribbon-Aktionen werden wiederverwendet, damit Knopf und Kürzel dasselbe tun. */
 export function commandRunners(app) {
@@ -100,6 +101,8 @@ export function commandRunners(app) {
     "asm.contactSet": () => app.props.toggleContactSet(),
     "asm.motionVideo": () => app.props.recordMotion(),
     "asm.explode": () => app.props.explodeDialog(),
+    "asm.positionSave": () => savePosition(app, app.activeDoc()),
+    "asm.params": () => app.props.paramsDialog(),
   };
   for (const v of ["iso", "front", "back", "left", "right", "top", "bottom"]) run["view." + v] = () => app.viewer.setView(v);
   for (const m of ["kanten", "schattiert", "draht", "transparent", "foto"]) run["view.mode." + m] = () => app.prefs.set("ansicht.darstellung", m);
