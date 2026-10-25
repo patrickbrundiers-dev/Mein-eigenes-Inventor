@@ -1,5 +1,6 @@
 import { DEFAULT_LAYOUT, validateLayout } from "./layout.js";
 import { validateMaterialLib } from "./materials.js";
+import { validateRibbonLayout } from "./ribbonlayout.js";
 import { validateKeymap, commandDef } from "./commands.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
@@ -18,9 +19,9 @@ export const SETTINGS_VERSION = 1;
  */
 export const CATEGORIES = [
   { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Sprache und Zahlenformat (nur Deutsch)", "Standardordner", "Standard-Einheit (intern immer mm/Grad)"] },
-  { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["Beleuchtung", "gespeicherte Ansichten"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
+  { id: "ansicht", label: "3D-Ansicht", status: "teilweise", planned: ["Beleuchtung"], note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
   { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["Standardebene"] },
-  { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", planned: ["Menüband selbst anordnen"], note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
+  { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
   { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Tooltip-Verzögerung"] },
   { id: "dokument", label: "Dokument und Modell", status: "geplant", planned: ["Standardvorlagen", "Namensregeln", "Standardmaterial", "Modelltoleranz"], note: "Dokumentwerte werden später in der Projektdatei gespeichert, nicht hier." },
   { id: "material", label: "Materialien", status: "aktiv", note: "Eigene Werkstoffe gelten für Masse, Trägheit, Zuschnittliste und Zeichnung. Benutzte eigene Werkstoffe werden als Kopie in der Projektdatei gespeichert, damit sie auf anderen Rechnern stimmen." },
@@ -75,6 +76,7 @@ export const SETTINGS = [
   { key: "skizze.auto.tangential", cat: "skizze", label: "Automatisch: tangential am Bogenende", type: "bool", default: true },
   { key: "skizze.auto.gleich", cat: "skizze", label: "Automatisch: gleich lang / gleicher Radius", type: "bool", default: true, help: "Greift, wenn Länge bzw. Radius bis auf wenige Pixel getroffen wird." },
 
+  { key: "werkzeuge.menueband", cat: "werkzeuge", label: "Menüband anordnen", type: "ribbon", default: {}, custom: true, help: "Gruppen je Registerkarte aus- und einblenden und umsortieren. Rechtsklick auf eine Gruppe im Menüband oder hier im Einstellungscenter. Ausgeblendete Befehle bleiben über die Befehlssuche (Strg+K) erreichbar." },
   { key: "werkzeuge.schnellzugriff", cat: "werkzeuge", label: "Schnellzugriff", type: "cmdlist", default: [], custom: true, help: "Befehle in der Leiste oben neben Rückgängig. Anheften in der Befehlssuche (Strg+K) über die Stecknadel." },
   { key: "werkzeuge.std.rundung", cat: "werkzeuge", label: "Standardwert Skizzenrundung", unit: "mm", type: "number", default: 5, min: 0.001, max: 100000 },
   { key: "werkzeuge.std.versatz", cat: "werkzeuge", label: "Standardwert Versatz", unit: "mm", type: "number", default: 5, min: 0.001, max: 100000 },
@@ -146,6 +148,8 @@ export function validateValue(def, v) {
     }
     case "layout":
       return validateLayout(v);
+    case "ribbon":
+      return validateRibbonLayout(v);
     case "materials":
       return validateMaterialLib(v);
     case "toolmemo": { // {werkzeug: Text | {feld: Text}} – nur bekannte Werkzeuge, kurze Texte
