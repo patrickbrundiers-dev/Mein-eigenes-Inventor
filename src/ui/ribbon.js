@@ -1,5 +1,6 @@
 // Menüband mit kontextabhängigen Registerkarten
 import { h, icon, toast, closeMenu, contextMenu } from "./dom.js";
+import { problemsDialog } from "./pruefung.js";
 import { catalogToDims } from "../core/sections.js";
 import { defaultKnickrahmen } from "../core/knickrahmen.js";
 import { defaultProfilzug } from "../core/profilzug.js";
@@ -266,7 +267,7 @@ export class Ribbon {
           { label: "Körper", small: true, buttons: [B("kombinieren", "Kombinieren", "combine", { iconOnly: true }), B("trennen", "Trennen", "split", { iconOnly: true }), B("verschieben", "Verschieben", "move", { iconOnly: true }), B("aufdicken", "Aufdicken", "thicken", { iconOnly: true }), B("flaeche", "Fläche verschieben", "pushpull", { iconOnly: true }), B("entformung", "Entformung", "draft", { iconOnly: true })] },
           { label: "Muster", small: true, buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Arbeitselemente", small: true, buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
-          { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() })] },
+          { label: "Prüfen", big: 1, buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
           { label: "Verwalten", big: 1, buttons: [B("params", "Parameter", "params"), B("importStep", "STEP einfügen", "import"), B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() })] },
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },
         ] },
@@ -321,7 +322,7 @@ export class Ribbon {
           { label: "Position", small: true, buttons: [B("cmove", "Verschieben", "move", { run: () => app.props.moveComponentDialog("move") }), B("crotate", "Drehen", "rotate", { run: () => app.props.moveComponentDialog("rotate") }), B("ccopy", "Kopieren", "copy", { run: () => app.props.copySelectedComponent() })] },
           { label: "Beziehungen", big: 2, buttons: [B("align", "Fläche an Fläche", "align", { on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("joint", "Drehgelenk", "hinge", { run: () => app.props.jointDialog() }), B("alignFlush", "Bündig", "align", { on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" }), B("alignInsert", "Einfügen", "insert", { on: app.pick?.kind === "align" && app.align?.mode === "einfuegen" }), B("alignAngle", "Winkel", "angle", { on: app.pick?.kind === "align" && app.align?.mode === "winkel" }), B("alignTangent", "Tangential", "tangent", { on: app.pick?.kind === "align" && app.align?.mode === "tangential" }), B("jointCyl", "Zylindergelenk", "hinge", { run: () => app.props.jointDialog(null, "zylinder") })] },
           { label: "Verwalten", big: 1, buttons: [B("bom", "Stückliste", "bom"), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() }), B("asmParams", "Parameter", "params", { disabled: !asm?.generator, run: () => app.props.paramsDialog() }), B("showComps", "Alle einblenden", "eye", { disabled: !asm?.components?.some((c) => c.hidden), run: () => app.props.showAllComponents() })] },
-          { label: "Prüfen", small: true, buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() })] },
+          { label: "Prüfen", small: true, buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
           { label: "Bewegung", small: true, buttons: [B("animate", "Bewegen", "motion", { run: () => app.props.animateJoints() }), B("explode", "Explosion", "explode", { on: app.viewer.explode > 0, run: () => app.props.explodeDialog() })] },
           { label: "Zeichnung", small: true, buttons: [B("newDrawing", "Zeichnung ableiten", "drawing"), B("partDrawings", "Einzelteilzeichnungen", "drawing", { run: () => app.partDrawings(app.activeId) })] },
         ] },
@@ -503,7 +504,7 @@ export class Ribbon {
   kbd(id) { return this.app.commands?.label(id) || ""; }
   /** Tooltip mit Tastaturkürzel, falls der Knopf einem Befehl entspricht */
   tip(b) {
-    const special = { rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
+    const special = { rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
     const id = special[b.id] || (b.id.startsWith("t_") ? "sketch." + b.id.slice(2) : b.id.startsWith("v_") ? "view." + b.id.slice(2) : b.id.startsWith("dm_") ? "view.mode." + b.id.slice(3) : "part." + b.id);
     const k = this.kbd(id);
     return k ? `${b.label} (${k})` : b.label;
