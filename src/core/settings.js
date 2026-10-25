@@ -2,6 +2,7 @@ import { DEFAULT_LAYOUT, validateLayout } from "./layout.js";
 import { validateMaterialLib } from "./materials.js";
 import { validateRibbonLayout } from "./ribbonlayout.js";
 import { validateNameTemplate } from "./naming.js";
+import { CLASSES } from "./tolerance.js";
 import { validateKeymap, commandDef } from "./commands.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
@@ -24,9 +25,9 @@ export const CATEGORIES = [
   { id: "skizze", label: "Skizzen", status: "aktiv" },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
   { id: "darstellung", label: "Darstellung", status: "aktiv", note: "Die Verzögerung der Tooltips gibt Windows vor; sie lässt sich hier nicht einstellen." },
-  { id: "dokument", label: "Dokument und Modell", status: "teilweise", planned: ["Modelltoleranz"], note: "Gilt für neu angelegte Dokumente; vorhandene bleiben, wie sie sind. Platzhalter: {n} laufende Nummer ({n:3} = dreistellig), {projekt}, {datum}, bei Zeichnungen {quelle}." },
+  { id: "dokument", label: "Dokument und Modell", status: "aktiv", note: "Gilt für neu angelegte Dokumente; vorhandene bleiben, wie sie sind. Toleranz am einzelnen Maß: in der Zeichnung Doppelklick auf das Maß. Platzhalter: {n} laufende Nummer ({n:3} = dreistellig), {projekt}, {datum}, bei Zeichnungen {quelle}." },
   { id: "material", label: "Materialien", status: "aktiv", note: "Eigene Werkstoffe gelten für Masse, Trägheit, Zuschnittliste und Zeichnung. Benutzte eigene Werkstoffe werden als Kopie in der Projektdatei gespeichert, damit sie auf anderen Rechnern stimmen." },
-  { id: "kernel", label: "CAD-Kernel und Leistung", status: "teilweise", planned: ["Kernel-Toleranzen (erst, wenn abgesichert)"], note: "Neu berechnen: F5 oder Menüband 3D-Modell → Verwalten. Berechnungsprotokoll: Befehlssuche (Strg+K) → »Berechnungsprotokoll«." },
+  { id: "kernel", label: "CAD-Kernel und Leistung", status: "aktiv", note: "Die Rechengenauigkeit des Kernels ist fest und bewusst nicht einstellbar: gröbere Werte können Körper beschädigen. Maßtoleranzen stehen unter Dokument und Modell. Neu berechnen: F5 oder Menüband 3D-Modell → Verwalten. Berechnungsprotokoll: Befehlssuche (Strg+K) → »Berechnungsprotokoll«." },
   { id: "dateien", label: "Dateien und Datensicherheit", status: "aktiv", note: "Speichern ist immer atomar: erst vollständig schreiben, dann umbenennen. Datei → Schreibgeschützt öffnen bzw. Projekt paketieren." },
   { id: "blech", label: "Blechparameter", status: "geplant", planned: ["Biegetabellen", "K-Faktor je Material"], note: "Keine allgemeine Blechfunktion (ADR-0002); Biegewerte des Knickrahmens stehen im Feature." },
   { id: "fertigung", label: "Rohrlaser und Fertigung", status: "teilweise", planned: ["mehrere Maschinenprofile (getrennt von den CAD-Einstellungen gespeichert)"], note: "Fertigungsprüfung der Zuschnittliste (Bauteil und Zuschnittliste). Startwerte aus den Beispielmaschinen der Rohrlaser-Kalkulation – bitte an die eigene Maschine anpassen. 0 = Regel aus." },
@@ -111,6 +112,8 @@ export const SETTINGS = [
   { key: "dokument.name.baugruppe", cat: "dokument", label: "Name neuer Baugruppen", type: "name", default: "Baugruppe {n}", placeholders: ["n", "projekt", "datum"] },
   { key: "dokument.name.zeichnung", cat: "dokument", label: "Name neuer Zeichnungen", type: "name", default: "Zeichnung {quelle}", placeholders: ["n", "projekt", "datum", "quelle"] },
   { key: "dokument.nummer", cat: "dokument", label: "Sachnummer neuer Bauteile", type: "name", default: "", allowEmpty: true, placeholders: ["n", "projekt", "datum"], help: "Leer = keine Sachnummer. Beispiel: »BT-{n:3}« → »BT-001«; steht im Schriftfeld und in der Stückliste." },
+  { key: "dokument.toleranzklasse", cat: "dokument", label: "Allgemeintoleranz neuer Zeichnungen", type: "enum", default: "m", options: CLASSES.map((c) => ({ value: c.value, label: "ISO 2768-" + c.label })), help: "Steht im Schriftfeld. »Allgemeintoleranz anzeigen« am Maß nimmt das ± aus dieser Klasse (Längen, Radien und Fasen nach ISO 2768-1)." },
+  { key: "dokument.nachkomma", cat: "dokument", label: "Nachkommastellen neuer Zeichnungsmaße", type: "int", default: 1, min: 0, max: 3, help: "Gilt für neue Zeichnungen; jedes Maß lässt sich einzeln ändern." },
   { key: "material.eigene", cat: "material", label: "Eigene Werkstoffe", type: "materials", default: [], custom: true },
   { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },

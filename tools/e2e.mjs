@@ -632,6 +632,30 @@ try {
   await shot("20e-schweissnaehte");
   step("Schweißnähte: Nahtliste und Symbole", wl.n === 3 && wl.rows.length === 2 && ws.marks === 3 && ws.texts.includes("a5") && ws.texts.filter((t) => t === "a4").length === 4, JSON.stringify({ wl, ws }));
 
+  // Standardtoleranz (Stufe 30): Klasse und Nachkommastellen aus den Einstellungen, Grenzabmaße und Allgemeintoleranz am Maß
+  {
+    await evalApp((id) => { const a = window.__werkcad; a.prefs.set("dokument.toleranzklasse", "f"); a.prefs.set("dokument.nachkomma", 2); a.newDrawing({ kind: "part", id }); }, partId);
+    await idle(120000);
+    await page.waitForTimeout(1000);
+    await idle(120000);
+    await evalApp(() => window.__werkcad.drawing.autoDims({ silent: true }));
+    await page.waitForTimeout(300);
+    const t0 = await evalApp(() => { const d = window.__werkcad.drawing.doc, m = d.dims.find((x) => x.kind === "h" || x.kind === "v"); return { tol: d.title.toleranz, nk: d.nachkomma, id: m?.id, text: document.querySelector(`[data-dim="${m?.id}"] text`)?.textContent }; });
+    const editTol = async (art, fill) => {
+      await evalApp((id) => window.__werkcad.drawing.editDimText(id), t0.id);
+      await page.locator("#dm-tol").selectOption(art);
+      for (const [sel, v] of Object.entries(fill)) await page.locator(sel).fill(v);
+      await page.locator(".dialog button", { hasText: /^OK$/ }).click();
+      await page.waitForTimeout(200);
+      return evalApp((id) => document.querySelector(`[data-dim="${id}"] text`)?.textContent, t0.id);
+    };
+    const tAbm = await editTol("abm", { "#dm-o": "0,2", "#dm-u": "-0,1" });
+    await shot("20e2-masstoleranz");
+    const tAllg = await editTol("allg", {});
+    await evalApp(() => { const a = window.__werkcad; a.prefs.set("dokument.toleranzklasse", "m"); a.prefs.set("dokument.nachkomma", 1); });
+    step("Standardtoleranz und Toleranz am Maß", t0.tol === "ISO 2768-f" && t0.nk === 2 && /^[\d.]+(,\d{1,2})?$/.test(t0.text || "") && /\+0,2\/−0,1$/.test(tAbm || "") && /±0,\d+$/.test(tAllg || ""), JSON.stringify({ t0, tAbm, tAllg }));
+  }
+
   // Geländer-Generator (MegaCAD-Abgleich M10/M11): anlegen, über Eck, Füllung Glas, Zuschnittliste
   await evalApp(() => window.__werkcad.newPart("Geländer"));
   await idle();
