@@ -930,7 +930,9 @@ export class Props {
     const kinds = s.kinds || Object.keys(CATALOG);
     const offered = groupKinds(group, kinds);
     const kindOpts = (offered.includes(v.kind) ? offered : [v.kind, ...offered]).map((k) => [k, SECTION_KINDS[k].label]);
-    const choose = (e) => e && set({ kind: e.kind, size: e.size });
+    // Werkstoffgruppe mitspeichern: Kantenradius der Hohlprofile (Aluminium fast scharfkantig) – sectionOf/catalogToDims
+    const withGroup = (x) => (group ? { ...x, group } : x);
+    const choose = (e) => e && set(withGroup({ kind: e.kind, size: e.size }));
     const out = [this.select(s.label, kindOpts, v.kind, (k) => choose(defaultEntry(group, k) || defaultEntry(null, k)))];
     const g = mainSizes(group, v.kind).length ? group : null;
     const { main, wall } = splitSize(v.kind, v.size);
@@ -941,7 +943,7 @@ export class Props {
     if (hasWall(v.kind)) {
       const walls = wallsFor(g, v.kind, main);
       if (!walls.some(([w]) => w === wall)) walls.unshift([wall, String(wall).replace(".", ",") + " mm" + outside]);
-      out.push(this.select(wallLabel(v.kind), walls, wall, (w) => set({ kind: v.kind, size: `${main}x${w}` })));
+      out.push(this.select(wallLabel(v.kind), walls, wall, (w) => set(withGroup({ kind: v.kind, size: `${main}x${w}` }))));
     }
     return out;
   }

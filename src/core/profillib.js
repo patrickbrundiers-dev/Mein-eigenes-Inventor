@@ -184,8 +184,11 @@ export const bySize = (a, b) => {
 };
 
 /** Maße (Text wie in den Feldern) für Abmessung + Wandstärke einer Gruppe */
+/** Außenradius eines Hohlprofils mit Wandstärke t in der Werkstoffgruppe (unbekannte Gruppe: wie Baustahl) */
+export const radiusFor = (group, t) => Math.round((LIB_GROUPS[group] || LIB_GROUPS.stahl).radius(t) * 10) / 10;
+
 function dimsFor(group, kind, main, wall) {
-  const t = num(wall), r = (v) => String(Math.round(LIB_GROUPS[group].radius(v) * 10) / 10);
+  const t = num(wall), r = (v) => String(radiusFor(group, v));
   const [a, b] = String(main).split("x");
   switch (kind) {
     case "rohr": return { D: a, t: String(wall) };

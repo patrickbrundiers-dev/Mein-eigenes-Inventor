@@ -1,6 +1,6 @@
 // Profil-Querschnitte (Rohre, Hohlprofile, Flach-/Rundstahl, Winkel, U) und Normgrößen-Katalog
 
-import { allSizes, bySize } from "./profillib.js";
+import { allSizes, bySize, radiusFor } from "./profillib.js";
 
 export const SECTION_KINDS = {
   rohr: { label: "Rundrohr", fields: ["D", "t"] },
@@ -62,13 +62,14 @@ for (const kind of Object.keys(SECTION_KINDS)) {
   Object.defineProperty(CATALOG, kind, { enumerable: true, get: () => (list ||= [...new Set([...(BASE_CATALOG[kind] || []), ...allSizes(kind)])].sort(bySize)) });
 }
 
-/** "40x20x2" -> Feldwerte für die Profilart */
-export function catalogToDims(kind, s) {
+/** "40x20x2" -> Feldwerte für die Profilart; group (profillib: stahl, edelstahl, aluminium) wählt den Kantenradius */
+export function catalogToDims(kind, s, group = null) {
   const n = String(s).split("x").map((x) => x.trim());
+  const rr = (t) => String(group ? radiusFor(group, Number(t)) : roundR(Number(t)));
   switch (kind) {
     case "rohr": return { D: n[0], t: n[1] };
-    case "vierkant": return { B: n[0], t: n[1], r: String(roundR(Number(n[1]))) };
-    case "rechteck": return { B: n[0], H: n[1], t: n[2], r: String(roundR(Number(n[2]))) };
+    case "vierkant": return { B: n[0], t: n[1], r: rr(n[1]) };
+    case "rechteck": return { B: n[0], H: n[1], t: n[2], r: rr(n[2]) };
     case "flach": return { B: n[0], t: n[1] };
     case "rund": return { D: n[0] };
     case "vierkantvoll": return { B: n[0] };

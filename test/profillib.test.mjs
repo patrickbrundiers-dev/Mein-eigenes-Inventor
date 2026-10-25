@@ -78,3 +78,10 @@ test("Generatoren: Katalog-Größe zerlegen, ohne Werkstoffgruppe alle Gruppen",
   assert.equal(pickEntry(null, "vierkant", "50", 2).size, "50x2");
   assert.ok(mainSizes(null, "ipe").length > 0);
 });
+
+test("Generator-Profil mit Werkstoffgruppe: Kantenradius aus der Bibliothek", async () => {
+  const { sectionOf } = await import("../src/core/generator.js");
+  assert.equal(sectionOf({ kind: "vierkant", size: "40x3", group: "aluminium" }).dims.r, 1);
+  assert.equal(sectionOf({ kind: "vierkant", size: "40x3" }).dims.r, 6, "ohne Gruppe wie bisher (EN 10219)");
+  assert.equal(catalogToDims("rechteck", "200x100x10", "stahl").r, "25");
+});
