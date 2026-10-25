@@ -181,6 +181,7 @@ export class Tree {
         onDbl: () => p && app.openDoc(p.id),
         onMenu: (e) => contextMenu(e.clientX, e.clientY, [
           { label: "Bauteil bearbeiten", icon: "edit", run: () => p && app.openDoc(p.id) },
+          ...(p?.kind === "part" ? [{ label: "Im Kontext bearbeiten", icon: "edit", run: () => app.editInContext(asm.id, c.id) }] : []),
           { label: c.hidden ? "Einblenden" : "Ausblenden", icon: c.hidden ? "eye" : "eyeoff", run: () => app.edit("Sichtbarkeit", () => { c.hidden = !c.hidden; }) },
           { label: c.fixed ? "Fixierung lösen" : "Fixieren", icon: "fix", run: () => app.edit("Fixieren", () => { c.fixed = !c.fixed; }) },
           { label: "Duplizieren", icon: "copy", run: () => app.props.duplicateComponent(c.id) },

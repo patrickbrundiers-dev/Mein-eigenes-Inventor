@@ -26,6 +26,7 @@ import { setUserBendTables, adoptProjectBendTables, projectBendTableCopies } fro
 import { newSketch } from "../core/sketch.js";
 import { v3, planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir } from "../core/geom.js";
 import { flattenAssembly } from "../core/subasm.js";
+import { contextScene, contextLabel } from "../core/kontext.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
@@ -118,6 +119,8 @@ export class App {
     this.viewer.setHidden([]);
     // Explosion in Schritten gilt nur für die Baugruppe, in der sie eingeschaltet wurde
     if (this.explodeSteps) { this.explodeSteps = 0; this.viewer.stepOffs = null; }
+    // Bearbeiten im Kontext endet, sobald ein anderes Dokument geöffnet wird
+    if (this.context && this.context.part !== id) this.leaveContext({ reopen: false });
     // Gestelle folgen ihrem Skelett (Skizze oder Profilzug wurde vielleicht geändert)
     if (d.kind === "assembly") refreshAllGestelle(this);
     this.setMode(d.kind);
@@ -321,6 +324,7 @@ export class App {
     this.dirty = false;
     this.undoStack = [];
     this.redoStack = [];
+    if (this.context) this.leaveContext({ reopen: false });
     this.results.clear();
     this.activeId = null;
     const first = prj.docs.find((d) => d.kind === "assembly") || prj.docs[0];
@@ -481,12 +485,57 @@ export class App {
       toast("Fehler beim Berechnen: " + e.message, { kind: "err" });
     }
   }
+  // ---------- Bauteil im Kontext der Baugruppe bearbeiten (FU21) ----------
+  /** Bauteil der Komponente compId öffnen, Nachbarteile der Baugruppe halbdurchsichtig daneben */
+  editInContext(asmId, compId) {
+    const asm = this.doc(asmId);
+    const scene = asm && contextScene(asm, compId, (id) => this.doc(id));
+    if (!scene) return toast("Nur Bauteile der obersten Ebene lassen sich im Kontext bearbeiten", { kind: "err" });
+    this.context = { asm: asmId, comp: compId, part: scene.part.id, ghosts: true, label: contextLabel(asm, compId, (id) => this.doc(id)) };
+    this.openDoc(scene.part.id);
+  }
+  /** Zurück zur Baugruppe (reopen) oder nur die Nachbarteile wegräumen */
+  leaveContext({ reopen = true } = {}) {
+    const ctx = this.context;
+    this.context = null;
+    this.ghostsShown = null;
+    this.viewer.setGhosts([]);
+    if (reopen && ctx && this.doc(ctx.asm)) this.openDoc(ctx.asm);
+  }
+  /** Nachbarteile ein-/ausblenden */
+  toggleContextGhosts(on = !this.context?.ghosts) {
+    if (!this.context) return;
+    this.context.ghosts = on;
+    this.ghostsShown = null;
+    this.showContextGhosts();
+  }
+  async showContextGhosts() {
+    const ctx = this.context;
+    if (!ctx || this.activeId !== ctx.part) return this.viewer.setGhosts([]);
+    const asm = this.doc(ctx.asm);
+    const scene = asm && contextScene(asm, ctx.comp, (id) => this.doc(id));
+    if (!scene || !ctx.ghosts) { this.ghostsShown = null; return this.viewer.setGhosts([]); }
+    // schon angezeigt und kein weiteres Exemplar des bearbeiteten Bauteils dabei: stehen lassen
+    if (this.ghostsShown === ctx && !scene.others.some((o) => o.partId === ctx.part)) return;
+    // Nachbarteile erst berechnen, wenn sie noch fehlen (das bearbeitete Bauteil selbst ist frisch)
+    const missing = [...new Set(scene.others.map((o) => o.partId))].filter((id) => !this.results.has(id) && this.doc(id));
+    if (missing.length) {
+      await Promise.all(missing.map((id) => this.buildPart(this.doc(id))));
+      if (this.context !== ctx || this.activeId !== ctx.part) return;
+    }
+    this.viewer.setGhosts(scene.others.map((o) => {
+      const p = this.doc(o.partId);
+      return { id: o.id, bodies: this.results.get(o.partId)?.bodies, color: p ? this.partColor(p) : "#999", matrix: o.matrix };
+    }));
+    this.ghostsShown = ctx;
+  }
   partColor(part) { return part.color || finishColor(part) || materialOf(part.material).color; }
   showPart(part, res) {
     if (this.mode === "sketch") {
       // im Skizzenmodus Modell halbtransparent hinter der Skizze
       this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35, material: part.material, finish: part.finish });
     } else this.viewer.showPart(res.bodies, { color: this.partColor(part), material: part.material, finish: part.finish });
+    if (this.context?.part === part.id) this.showContextGhosts();
     this.showSketches3D();
     if (this.fittedFor !== part.id) {
       this.fittedFor = part.id;

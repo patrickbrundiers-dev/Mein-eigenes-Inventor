@@ -379,10 +379,19 @@ export class Props {
   }
 
   // ---------- Bauteil ----------
+  /** Bearbeiten im Kontext (FU21): Hinweis, Nachbarn ein/aus, zurück zur Baugruppe */
+  contextSection(part) {
+    const app = this.app, ctx = app.context;
+    if (!ctx || ctx.part !== part.id) return null;
+    return this.section("Im Kontext: " + ctx.label,
+      h("div", { class: "hint" }, "Die übrigen Teile der Baugruppe stehen halbdurchsichtig daneben. In einer Skizze holt »Projizieren« auch ihre Kanten."),
+      this.check("Nachbarteile zeigen", ctx.ghosts, (v) => app.toggleContextGhosts(v)),
+      h("div", { class: "btn-row" }, h("button", { class: "btn primary", "data-act": "leave-context", onclick: () => app.leaveContext() }, "Zurück zur Baugruppe")));
+  }
   partProps(part) {
     const app = this.app;
     const r = app.results.get(part.id);
-    const out = [this.linkSection(part), ...[variantSection(this, part), rulesSection(this, part)].filter(Boolean)];
+    const out = [...[this.contextSection(part)].filter(Boolean), this.linkSection(part), ...[variantSection(this, part), rulesSection(this, part)].filter(Boolean)];
     out.push(this.section("Allgemein",
       this.text("Name", part.name, (v) => app.edit("Name", () => { part.name = v; }, { rebuild: false })),
       this.text("Teilenummer", part.number, (v) => app.edit("Nummer", () => { part.number = v; }, { rebuild: false })),
@@ -1805,6 +1814,7 @@ export class Props {
           h("button", { class: "btn", disabled: c.fixed, onclick: () => app.beginAlign("buendig") }, "Bündig"))),
       h("div", { class: "btn-row" },
         p ? h("button", { class: "btn", onclick: () => app.openDoc(p.id) }, "Bauteil bearbeiten") : null,
+        p?.kind === "part" ? h("button", { class: "btn", "data-act": "in-context", title: "Bauteil öffnen, die übrigen Teile der Baugruppe halbdurchsichtig daneben; ihre Kanten lassen sich in Skizzen projizieren", onclick: () => app.editInContext(asm.id, c.id) }, "Im Kontext bearbeiten") : null,
         h("button", { class: "btn", onclick: () => this.duplicateComponent(c.id) }, "Duplizieren"),
         h("button", { class: "btn", onclick: () => this.replaceComponentDialog(c.id) }, "Ersetzen…"),
         h("button", { class: "btn danger", onclick: () => this.deleteComponent(c.id) }, "Entfernen")),

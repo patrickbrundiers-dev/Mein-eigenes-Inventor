@@ -208,6 +208,7 @@ export const COMMANDS = [
   { id: "asm.explode", label: "Explosion in Schritten", group: "Baugruppe", scope: "assembly", keywords: "explosion explodiert auseinander montage schritte" },
   { id: "asm.positionSave", label: "Positionsdarstellung speichern", group: "Baugruppe", scope: "assembly", keywords: "position stellung tor offen zu gelenk darstellung" },
   { id: "asm.params", label: "Parameter der Baugruppe", group: "Baugruppe", scope: "assembly", keywords: "parameter top-down weitergeben verknüpfen maß" },
+  { id: "asm.inContext", label: "Bauteil im Kontext bearbeiten", group: "Baugruppe", scope: "assembly", keywords: "kontext top-down nachbar projizieren durchsichtig bearbeiten" },
 ];
 
 const BY_ID = new Map(COMMANDS.map((c) => [c.id, c]));

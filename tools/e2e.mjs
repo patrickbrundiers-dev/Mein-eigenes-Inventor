@@ -2606,6 +2606,62 @@ try {
       JSON.stringify({ p1, p2, nSteps, ex, dr, prm }));
   }
 
+  // Fusion-Abgleich G4 (FU21): Bauteil im Kontext der Baugruppe bearbeiten, Nachbarkanten projizieren
+  {
+    const ctx0 = await evalApp(() => {
+      const a = window.__werkcad, asm = a.doc("beispiel_bg");
+      a.openDoc(asm.id);
+      const c = asm.components.find((x) => !x.hidden && !x.pat && a.doc(x.part)?.kind === "part");
+      return { asm: asm.id, comp: c.id, part: c.part, n: asm.components.filter((x) => !x.hidden).length };
+    });
+    await idle();
+    await evalApp((id) => { const a = window.__werkcad; a.sel = { type: "component", id }; a.props.render(); }, ctx0.comp);
+    await page.locator('#props button[data-act="in-context"]').click();
+    await idle();
+    await page.waitForTimeout(300);
+    const ctx1 = await evalApp(() => {
+      const a = window.__werkcad;
+      return { active: a.activeId, ghosts: a.viewer.ghosts.length, groups: a.viewer.ghostRoot.children.length, transparent: a.viewer.ghosts.every((g) => g.mesh.material.opacity < 0.5), section: !!document.querySelector('#props button[data-act="leave-context"]') };
+    });
+    await shot("27a-im-kontext");
+    // Skizze im Bauteil, Kante eines Nachbarteils projizieren
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const prj = await evalApp(() => {
+      const a = window.__werkcad, v = a.viewer, rect = v.renderer.domElement.getBoundingClientRect();
+      v.edgeCache = null;
+      const before = a.sketcher.sk.entities.filter((e) => e.projected).length;
+      let hit = null, plain = null;
+      for (const { pk, scr, ranges, ghost } of v.ensureEdgeCache()) {
+        if (!ghost) continue;
+        for (const [s, c] of ranges) {
+          if (c < 2) continue;
+          const x = (scr[s * 2] + scr[s * 2 + 2]) / 2, y = (scr[s * 2 + 1] + scr[s * 2 + 3]) / 2;
+          if (x < 5 || y < 5 || x > rect.width - 5 || y > rect.height - 5) continue;
+          const h = v.pick(rect.left + x, rect.top + y, { edges: true, faces: false, ghosts: true });
+          if (h?.kind === "edge" && h.key.startsWith("ghost:")) { hit = h; plain = v.pick(rect.left + x, rect.top + y, { edges: true, faces: false }); break; }
+        }
+        if (hit) break;
+      }
+      if (!hit) return { found: false };
+      a.sketcher.projectEdge(hit);
+      return { found: true, key: hit.key, plainGhost: !!plain?.key?.startsWith("ghost:"), added: a.sketcher.sk.entities.filter((e) => e.projected).length - before };
+    });
+    await evalApp(() => window.__werkcad.finishSketch());
+    await idle();
+    const stay = await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); return a.viewer.ghosts.length; });
+    await page.locator('#props button[data-act="leave-context"]').click();
+    await idle();
+    const ctx2 = await evalApp(() => { const a = window.__werkcad; return { active: a.activeId, ghosts: a.viewer.ghosts.length, ctx: !!a.context }; });
+    step("Bauteil im Kontext bearbeiten, Nachbarkanten projizieren",
+      ctx1.active === ctx0.part && ctx1.ghosts > 0 && ctx1.groups >= 1 && ctx1.transparent && ctx1.section
+      && prj.found && !prj.plainGhost && prj.added >= 1 && stay === ctx1.ghosts
+      && ctx2.active === ctx0.asm && ctx2.ghosts === 0 && !ctx2.ctx,
+      JSON.stringify({ ctx0, ctx1, prj, stay, ctx2 }));
+  }
+
   // Kernel (Werkzeuge Stufe 28): automatisches Neuberechnen aus → F5, Berechnungsprotokoll
   {
     await evalApp(() => { const app = window.__werkcad; app.newPart("Kernprobe"); app.ribbon.run("profile"); });
