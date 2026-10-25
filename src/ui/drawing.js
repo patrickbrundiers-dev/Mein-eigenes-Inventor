@@ -908,7 +908,8 @@ export class DrawingEditor {
     const p = this.proj.get(v.id);
     const bm = p && this.breakMapOf(v);
     if (!bm) return p;
-    const keep = (a) => !bm.removed(bm.axis === "v" ? a.cy : a.cx);
+    // Bögen, die in einen Bruchbereich reichen, entfallen – ihr beschnittener Linienzug bleibt
+    const keep = (a) => { const x = bm.axis === "v" ? a.cy : a.cx; return !bm.overlaps(x - a.r, x + a.r); };
     return { ...p, visible: clipBreaks(p.visible, bm), hidden: clipBreaks(p.hidden, bm), arcs: (p.arcs || []).filter(keep), hiddenArcs: (p.hiddenArcs || []).filter(keep), sectionLoops: clipLoopsBreaks(p.sectionLoops, bm) };
   }
   clientToSheet(cx, cy) {

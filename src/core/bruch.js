@@ -39,6 +39,7 @@ export function breakMap(breaks, axis = "u", gap = 8) {
     breaks: B, axis, gap,
     map: wrap(m1), unmap: wrap(u1),
     removed: (x) => B.some(({ a, b }) => x > a + 1e-9 && x < b - 1e-9),
+    overlaps: (lo, hi) => B.some(({ a, b }) => hi > a + 1e-9 && lo < b - 1e-9),
     cuts: B.map(({ a }) => [m1(a), m1(a) + gap]),
   };
 }
@@ -151,7 +152,9 @@ export function composeBreakout(raw, bos) {
   for (const { c, r, proj } of bos) {
     const out = (list) => list.flatMap((pl) => clipOutsideCircle(pl, c, r));
     vis = out(vis); hid = out(hid);
-    const outsideArc = (a) => Math.hypot(a.cx - c[0], a.cy - c[1]) + a.r > r + 1e-9; // ganz im Ausbruch liegende Kreise zeigt der Schnitt
+    // Kreisbögen nur behalten, wenn sie den Ausbruchkreis nicht berühren (ganz außerhalb oder ihn ganz umschließend);
+    // geschnittene Bögen stehen als beschnittene Linienzüge in visible/hidden, sonst käme der volle Kreis in die DXF
+    const outsideArc = (a) => { const d = Math.hypot(a.cx - c[0], a.cy - c[1]); return d >= a.r + r - 1e-9 || d + r <= a.r + 1e-9; };
     arcs = arcs.filter(outsideArc); harcs = harcs.filter(outsideArc);
     const src = proj;
     if (!src) continue;
