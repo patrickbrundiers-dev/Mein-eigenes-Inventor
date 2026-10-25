@@ -979,7 +979,7 @@ try {
     a.changed();
   });
   await idle();
-  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: /^Gestell einfügen$/ }).click();
   await page.locator(".dialog .btn.primary", { hasText: "Einfügen" }).click();
   await idle(180000);
@@ -1002,6 +1002,7 @@ try {
   });
   await idle(180000);
   const gs1 = await gs();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
   await page.locator("#ribbon button", { hasText: /^Gestell-Info$/ }).click();
   await page.waitForSelector(".dialog table.grid tbody tr", { timeout: 20000 });
   const infoRows = await page.locator(".dialog table.grid tbody tr").count();
