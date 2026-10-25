@@ -1,5 +1,7 @@
 // Profil-Querschnitte (Rohre, Hohlprofile, Flach-/Rundstahl, Winkel, U) und Normgrößen-Katalog
 
+import { allSizes, bySize, radiusFor } from "./profillib.js";
+
 export const SECTION_KINDS = {
   rohr: { label: "Rundrohr", fields: ["D", "t"] },
   vierkant: { label: "Quadratrohr", fields: ["B", "t", "r"] },
@@ -25,10 +27,10 @@ export const fieldLabel = (kind, k) => (SECTION_KINDS[kind]?.steel && STEEL_LABE
 // Vereinfacht: UPN mit parallelen Flanschen (mittlere Dicke t statt 8 % Neigung), T ohne Kantenrundungen –
 // Fläche und Metergewicht weichen dort um 1–3 % von der Tabelle ab.
 export const STEEL_TABLES = {
-  ipe: { 80: [80, 46, 3.8, 5.2, 5], 100: [100, 55, 4.1, 5.7, 7], 120: [120, 64, 4.4, 6.3, 7], 140: [140, 73, 4.7, 6.9, 7], 160: [160, 82, 5, 7.4, 9], 180: [180, 91, 5.3, 8, 9], 200: [200, 100, 5.6, 8.5, 12], 220: [220, 110, 5.9, 9.2, 12], 240: [240, 120, 6.2, 9.8, 15], 270: [270, 135, 6.6, 10.2, 15], 300: [300, 150, 7.1, 10.7, 15], 330: [330, 160, 7.5, 11.5, 18], 360: [360, 170, 8, 12.7, 18], 400: [400, 180, 8.6, 13.5, 21], 450: [450, 190, 9.4, 14.6, 21], 500: [500, 200, 10.2, 16, 21] },
-  hea: { 100: [96, 100, 5, 8, 12], 120: [114, 120, 5, 8, 12], 140: [133, 140, 5.5, 8.5, 12], 160: [152, 160, 6, 9, 15], 180: [171, 180, 6, 9.5, 15], 200: [190, 200, 6.5, 10, 18], 220: [210, 220, 7, 11, 18], 240: [230, 240, 7.5, 12, 21], 260: [250, 260, 7.5, 12.5, 24], 280: [270, 280, 8, 13, 24], 300: [290, 300, 8.5, 14, 27] },
-  heb: { 100: [100, 100, 6, 10, 12], 120: [120, 120, 6.5, 11, 12], 140: [140, 140, 7, 12, 12], 160: [160, 160, 8, 13, 15], 180: [180, 180, 8.5, 14, 15], 200: [200, 200, 9, 15, 18], 220: [220, 220, 9.5, 16, 18], 240: [240, 240, 10, 17, 21], 260: [260, 260, 10, 17.5, 24], 280: [280, 280, 10.5, 18, 24], 300: [300, 300, 11, 19, 27] },
-  upn: { 80: [80, 45, 6, 8, 8], 100: [100, 50, 6, 8.5, 8.5], 120: [120, 55, 7, 9, 9], 140: [140, 60, 7, 10, 10], 160: [160, 65, 7.5, 10.5, 10.5], 180: [180, 70, 8, 11, 11], 200: [200, 75, 8.5, 11.5, 11.5], 220: [220, 80, 9, 12.5, 12.5], 240: [240, 85, 9.5, 13, 13], 260: [260, 90, 10, 14, 14], 300: [300, 100, 10, 16, 16] },
+  ipe: { 80: [80, 46, 3.8, 5.2, 5], 100: [100, 55, 4.1, 5.7, 7], 120: [120, 64, 4.4, 6.3, 7], 140: [140, 73, 4.7, 6.9, 7], 160: [160, 82, 5, 7.4, 9], 180: [180, 91, 5.3, 8, 9], 200: [200, 100, 5.6, 8.5, 12], 220: [220, 110, 5.9, 9.2, 12], 240: [240, 120, 6.2, 9.8, 15], 270: [270, 135, 6.6, 10.2, 15], 300: [300, 150, 7.1, 10.7, 15], 330: [330, 160, 7.5, 11.5, 18], 360: [360, 170, 8, 12.7, 18], 400: [400, 180, 8.6, 13.5, 21], 450: [450, 190, 9.4, 14.6, 21], 500: [500, 200, 10.2, 16, 21], 550: [550, 210, 11.1, 17.2, 24], 600: [600, 220, 12, 19, 24] },
+  hea: { 100: [96, 100, 5, 8, 12], 120: [114, 120, 5, 8, 12], 140: [133, 140, 5.5, 8.5, 12], 160: [152, 160, 6, 9, 15], 180: [171, 180, 6, 9.5, 15], 200: [190, 200, 6.5, 10, 18], 220: [210, 220, 7, 11, 18], 240: [230, 240, 7.5, 12, 21], 260: [250, 260, 7.5, 12.5, 24], 280: [270, 280, 8, 13, 24], 300: [290, 300, 8.5, 14, 27], 320: [310, 300, 9, 15.5, 27], 340: [330, 300, 9.5, 16.5, 27], 360: [350, 300, 10, 17.5, 27], 400: [390, 300, 11, 19, 27], 450: [440, 300, 11.5, 21, 27], 500: [490, 300, 12, 23, 27] },
+  heb: { 100: [100, 100, 6, 10, 12], 120: [120, 120, 6.5, 11, 12], 140: [140, 140, 7, 12, 12], 160: [160, 160, 8, 13, 15], 180: [180, 180, 8.5, 14, 15], 200: [200, 200, 9, 15, 18], 220: [220, 220, 9.5, 16, 18], 240: [240, 240, 10, 17, 21], 260: [260, 260, 10, 17.5, 24], 280: [280, 280, 10.5, 18, 24], 300: [300, 300, 11, 19, 27], 320: [320, 300, 11.5, 20.5, 27], 340: [340, 300, 12, 21.5, 27], 360: [360, 300, 12.5, 22.5, 27], 400: [400, 300, 13.5, 24, 27], 450: [450, 300, 14, 26, 27], 500: [500, 300, 14.5, 28, 27] },
+  upn: { 50: [50, 38, 5, 7, 7], 65: [65, 42, 5.5, 7.5, 7.5], 80: [80, 45, 6, 8, 8], 100: [100, 50, 6, 8.5, 8.5], 120: [120, 55, 7, 9, 9], 140: [140, 60, 7, 10, 10], 160: [160, 65, 7.5, 10.5, 10.5], 180: [180, 70, 8, 11, 11], 200: [200, 75, 8.5, 11.5, 11.5], 220: [220, 80, 9, 12.5, 12.5], 240: [240, 85, 9.5, 13, 13], 260: [260, 90, 10, 14, 14], 280: [280, 95, 10, 15, 15], 300: [300, 100, 10, 16, 16], 320: [320, 100, 14, 17.5, 17.5], 350: [350, 100, 14, 16, 16], 400: [400, 110, 14, 18, 18] },
   t: { 30: [30, 30, 4, 4], 35: [35, 35, 4.5, 4.5], 40: [40, 40, 5, 5], 50: [50, 50, 6, 6], 60: [60, 60, 7, 7], 70: [70, 70, 8, 8], 80: [80, 80, 9, 9], 100: [100, 100, 11, 11] },
 };
 const STEEL_PREFIX = { ipe: "IPE", hea: "HEA", heb: "HEB", upn: "UPN", t: "T" };
@@ -42,8 +44,8 @@ export function steelSize(kind, d) {
   return null;
 }
 
-// Normgrößen (Auswahl, gängige Lagerware)
-export const CATALOG = {
+// Normgrößen (Auswahl, gängige Lagerware) – ergänzt um die Profilbibliothek aller Werkstoffgruppen (profillib.js)
+const BASE_CATALOG = {
   rohr: ["20x2", "21.3x2", "25x2", "26.9x2.3", "30x2", "33.7x2.6", "40x2", "42.4x2.6", "48.3x2.6", "48.3x3.2", "50x3", "60.3x2.9", "60.3x3.6", "76.1x2.9", "76.1x3.2", "88.9x3.2", "101.6x3.6", "114.3x3.6"],
   vierkant: ["15x1.5", "20x2", "25x2", "30x2", "30x3", "35x3", "40x2", "40x3", "40x4", "50x3", "50x4", "60x3", "60x4", "70x4", "80x4", "80x5", "100x4", "100x5", "120x5"],
   rechteck: ["30x20x2", "40x20x2", "40x30x3", "50x25x2.5", "50x30x3", "60x30x3", "60x40x3", "60x40x4", "80x40x3", "80x40x4", "100x40x4", "100x50x4", "100x60x4", "120x60x5", "120x80x5", "140x80x5", "160x80x5"],
@@ -52,16 +54,22 @@ export const CATALOG = {
   vierkantvoll: ["10", "12", "16", "20", "25", "30"],
   winkel: ["20x20x3", "25x25x3", "30x30x3", "35x35x4", "40x40x4", "45x45x5", "50x50x5", "60x60x6", "70x70x7", "80x80x8", "60x40x5", "80x40x6", "100x50x6"],
   u: ["30x15x2", "40x20x2", "40x20x3", "50x25x3", "60x30x3", "80x40x4", "100x50x5"],
-  ...Object.fromEntries(Object.keys(STEEL_TABLES).map((k) => [k, Object.keys(STEEL_TABLES[k])])),
 };
+// Erst beim ersten Zugriff zusammenstellen: profillib.js liest seinerseits STEEL_TABLES und catalogToDims
+export const CATALOG = {};
+for (const kind of Object.keys(SECTION_KINDS)) {
+  let list = null;
+  Object.defineProperty(CATALOG, kind, { enumerable: true, get: () => (list ||= [...new Set([...(BASE_CATALOG[kind] || []), ...allSizes(kind)])].sort(bySize)) });
+}
 
-/** "40x20x2" -> Feldwerte für die Profilart */
-export function catalogToDims(kind, s) {
+/** "40x20x2" -> Feldwerte für die Profilart; group (profillib: stahl, edelstahl, aluminium) wählt den Kantenradius */
+export function catalogToDims(kind, s, group = null) {
   const n = String(s).split("x").map((x) => x.trim());
+  const rr = (t) => String(group ? radiusFor(group, Number(t)) : roundR(Number(t)));
   switch (kind) {
     case "rohr": return { D: n[0], t: n[1] };
-    case "vierkant": return { B: n[0], t: n[1], r: String(roundR(Number(n[1]))) };
-    case "rechteck": return { B: n[0], H: n[1], t: n[2], r: String(roundR(Number(n[2]))) };
+    case "vierkant": return { B: n[0], t: n[1], r: rr(n[1]) };
+    case "rechteck": return { B: n[0], H: n[1], t: n[2], r: rr(n[2]) };
     case "flach": return { B: n[0], t: n[1] };
     case "rund": return { D: n[0] };
     case "vierkantvoll": return { B: n[0] };
@@ -72,7 +80,8 @@ export function catalogToDims(kind, s) {
   if (row) return Object.fromEntries(Object.entries(steelDims(kind, row)).map(([k, v]) => [k, String(v)]));
   return {};
 }
-const roundR = (t) => Math.round(2 * t * 10) / 10; // EN 10219: r_außen ≈ 2·t
+// EN 10219-2: r_außen ≈ 2·t bis t = 6, 2,5·t bis t = 10, darüber 3·t
+const roundR = (t) => Math.round((t <= 6 ? 2 : t <= 10 ? 2.5 : 3) * t * 10) / 10;
 
 export function sectionName(kind, d) {
   const f = (x) => String(Math.round(x * 100) / 100).replace(".", ",");

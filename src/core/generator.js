@@ -63,10 +63,10 @@ export function resolveGenParams(gen, params, E) {
   return out;
 }
 
-/** Profil { kind, size } → { kind, dims (Zahlen), geom, size } */
+/** Profil { kind, size, group? } → { kind, dims (Zahlen), geom, size }; group = Werkstoffgruppe der Profilbibliothek (Kantenradius) */
 export function sectionOf(v, label = "Profil") {
   if (!v?.kind || !CATALOG[v.kind]) throw new Error(`${label}: Profilart fehlt`);
-  const dims = Object.fromEntries(Object.entries(catalogToDims(v.kind, v.size)).map(([k, x]) => [k, Number(x)]));
+  const dims = Object.fromEntries(Object.entries(catalogToDims(v.kind, v.size, v.group)).map(([k, x]) => [k, Number(x)]));
   const geom = sectionGeometry(v.kind, dims);
   return { kind: v.kind, dims, geom, size: v.size };
 }
