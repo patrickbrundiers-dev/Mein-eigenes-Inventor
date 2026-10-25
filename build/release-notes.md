@@ -1,22 +1,28 @@
-**Neu in 0.7.0**
+**Neu in 0.8.0**
 
-- **Update aus dem Programm:** Ab 0.6.0 findet „Nach Updates suchen“ dieses Release selbst. Wer noch 0.5.0 oder älter hat, installiert einmal von Hand.
 - **Skizze:**
-  - Neue Werkzeuge Langloch, Polygon (3–64 Ecken) und Spiegeln, alle parametrisch über Bedingungen.
-  - Ist eine Skizze nicht lösbar, nennt PBCAD die widersprüchlichen Bedingungen (z. B. „Länge 30“) und markiert sie rot.
-  - Versatz: Kontur anklicken, Seite wählen, Abstand eingeben. Ecken und Bögen werden sauber verbunden, ein einziges Maß steuert die ganze versetzte Kontur.
-  - Bedingungen und Maße lassen sich in den Eigenschaften unterdrücken. Sie bleiben gespeichert und werden blass gezeigt.
-  - Fensterauswahl: nach rechts gezogen werden nur ganz umschlossene Elemente gewählt, nach links gezogen auch angeschnittene. Strg+A wählt alle Skizzenelemente.
-- **Ansicht:** Benannte Ansichten unter Ansicht → Benannt speichern, wiederherstellen und löschen. Sie werden im Bauteil bzw. in der Baugruppe gespeichert.
-- **Messen:** Ecken lassen sich anklicken. Eine Ecke zeigt ihre Lage X/Y/Z, zwei Ecken zeigen Abstand und Δ X/Y/Z. Ecke zu Fläche oder Kante geht ebenfalls.
-- **Zeichnung:**
-  - Bohrungsbilder werden wie vom Konstrukteur bemaßt: symmetrische Abstände, Teilungen „2× 15 (=30)“, Lochkreise „LK Ø70, 6× 60°“, Koordinatenmaße ab vier Lagemaßen.
-  - Rohre bekommen die Profilangabe („Rohr 48,3x2,6 – L = 400“) statt Einzelmaßen, Hohlkörper die Wandstärke.
-  - Werkstoff und Masse im Schriftfeld folgen dem Modell, auch bei Baugruppen.
-  - „Grundansichten“ lässt Ansichten weg, die nichts Neues zeigen (z. B. die Seitenansicht einer Platte). Der Maßstab wird dadurch oft größer.
-  - Neuer Befehl „Schnitt Hohlprofil“ legt einen Schnitt quer durch Rohre und Hohlprofile, möglichst durch eine Bohrung.
-- **Rohr / Profil:**
-  - Konturen direkt am Rohr ohne Skizze: Bohrung, Langloch, Rechteck und Ausklinkung am Ende, mit Seite bzw. Winkel am Rundrohr, Versatz, Muster „3x25“ und „durchgehend“. Schneidweg und Einstiche stehen am Feature.
-  - Enden wahlweise im 2D-Schnitt (Strahl senkrecht) oder 3D-Schnitt (Kopf geschwenkt) mit Winkelkorrektur. Über ±45° warnt PBCAD „nicht maßhaltig“. Bohrungen gehen auch schräg.
-  - Die Konturkarten zeigen ein Maßbild, welcher Buchstabe welches Maß ist.
-- **Fertigungsprüfung Rohrlaser:** Die Zuschnittliste wird gegen die Maschinengrenzen geprüft: Stangenlänge, kürzestes Teil, Hüllkreis, Metergewicht, Knickrahmen-Schenkel und -Wand, Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende. Die Grenzen stehen unter Einstellungen → Rohrlaser und Fertigung und sollten an die eigene Maschine angepasst werden.
+  - Neue Elemente Ellipse und Spline (Kontrollpunkte). Beide lassen sich bemaßen, extrudieren und als DXF exportieren.
+  - Verlängern und Teilen von Linien und Bögen, Rechteck- und Kreismuster (Kopien folgen dem Original, „Muster auflösen“ löst die Bindung).
+  - Mehr automatische Bedingungen beim Zeichnen: parallel, senkrecht, tangential, gleich. Strg gedrückt halten setzt für diesen Klick keine.
+  - Bewegliche Elemente erscheinen hellblau, bestimmte dunkel. Die Anzeige unten nennt, wie viele Elemente noch frei sind.
+  - „Voll bemaßen“ setzt auf Knopfdruck die fehlenden Maße, bis die Skizze voll bestimmt ist.
+- **3D-Modell:**
+  - „Prägen“: eine Skizze als Gravur oder Prägung auf die Oberfläche bringen, auf Rundrohren um den Mantel abgewickelt.
+  - „Regelkörper“: Quader, Zylinder, Kugel, Kegel/Kegelstumpf, Torus und Pyramide, als neuer Körper, vereinigt, abgezogen oder geschnitten.
+  - Fensterauswahl im 3D-Modell. Strg+A wählt alles, Strg+I kehrt die Auswahl um.
+- **Rohr / Profil und Rahmen:**
+  - Warmgewalzte Stahlprofile nach DSTV: IPE, HEA, HEB, UPN und T, mit Metergewicht.
+  - „Profilzug 3D“: Profile über Eckpunkte im Raum, an den Ecken gegehrt, auch in zwei Ebenen.
+  - „Rohr gebogen“: Polygonzug mit Biegeradius, Biegeliste (auch als CSV) und Abwicklungslänge in der Zuschnittliste.
+  - Neue Konturen am Rohr: Schlitz am Ende und Polygon (Eckpunkte, Bögen als Bulge wie in DXF).
+  - 2D- oder 3D-Schnitt wählst du jetzt einmal je Profil bzw. Rahmen. Die Eckrundungen im Schnitt sind glatt.
+  - Im Querschnitt stehen Fläche und Metergewicht. Die Zuschnittliste zeigt „Summen je Profil“ (Stück, Meter, Gewicht) und kennzeichnet Gehrungen in zwei Ebenen. Die CSV bleibt gleich.
+- **Zeichnung:** Die Profilangabe nennt die Zuschnittlänge und steht im neuen Schriftfeld-Feld „Halbzeug“.
+- **Messen:** Die Masse-Eigenschaften zeigen jetzt auch Trägheitsmomente um Schwerpunkt und Ursprung.
+- **Ansicht und Oberfläche:**
+  - Drehen mit der Maus dreht um den Modellpunkt unter dem Mauszeiger (abschaltbar).
+  - Im 3D-Schnitt sind die Schnittflächen gefüllt.
+  - Dunkles Farbschema (Hell, Dunkel oder „wie Windows“).
+  - Modellbrowser und Eigenschaften lassen sich links oder rechts andocken und in der Breite ziehen.
+  - Schnellzugriff: Befehle in der Befehlssuche anheften. Standardwerte je Werkzeug im Einstellungscenter, zuletzt eingegebene Werte werden gemerkt.
+- **Material:** Eigene Werkstoffe mit Dichte und Farbe anlegen, importieren und exportieren. Benutzte eigene Werkstoffe werden in der Projektdatei mitgespeichert.
