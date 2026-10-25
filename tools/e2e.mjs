@@ -18,6 +18,18 @@ let browser;
 try { browser = await chromium.launch({ ...launchOpts, channel: "chrome" }); }
 catch { browser = await chromium.launch({ ...launchOpts, executablePath: process.env.CHROME_PATH }); }
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
+// Menüband-Knopf nach Namen klicken (Text oder aria-label bei Symbolknöpfen); steht er nicht im aktiven Reiter, die Reiter durchgehen
+const rbClick = async (name) => {
+  const btn = () => page.locator("#ribbon .rb-panel").getByRole("button", { name, exact: true });
+  if (!(await btn().first().isVisible().catch(() => false))) {
+    const tabs = page.locator("#ribbon .rb-tab");
+    for (let i = 0, n = await tabs.count(); i < n; i++) {
+      await tabs.nth(i).click();
+      if (await btn().first().isVisible().catch(() => false)) break;
+    }
+  }
+  await btn().first().click();
+};
 page.on("console", (m) => report.console.push(`[${m.type()}] ${m.text()}`));
 page.on("pageerror", (e) => report.errors.push(String(e.stack || e)));
 
@@ -730,7 +742,7 @@ try {
   await page.locator("#ribbon button", { hasText: "Stirn-/Fußplatte" }).click();
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
-  await page.locator("#ribbon button", { hasText: /^Rippe$/ }).click();
+  await rbClick("Rippe");
   await idle();
   const sp0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, kinds: r.bodies.map((b) => b.kind).join(), bad: Object.values(r.status).filter((s) => !s.ok).length }; });
   await evalApp(() => { const a = window.__werkcad; a.selectFeature(a.activeDoc().features.find((x) => x.type === "platte").id); });
@@ -920,7 +932,7 @@ try {
   const host = await evalApp(() => { const a = window.__werkcad; a.newAssembly(); return { id: a.activeId }; });
   await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
   await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
-  await page.locator("#ribbon button", { hasText: /^Treppe$/ }).click();
+  await rbClick("Treppe");
   await idle(180000);
   const hosted = await evalApp((id) => { const a = window.__werkcad, h = a.doc(id), c = h.components[0]; return { n: h.components.length, sub: a.doc(c?.part)?.generator?.gen, open: a.activeDoc()?.id === c?.part }; }, host.id);
   const ga = async () => evalApp(() => {
@@ -980,7 +992,7 @@ try {
   });
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
-  await page.locator("#ribbon button", { hasText: /^Gestell einfügen$/ }).click();
+  await rbClick("Gestell einfügen");
   await page.locator(".dialog .btn.primary", { hasText: "Einfügen" }).click();
   await idle(180000);
   const gs = async () => evalApp(() => {
@@ -1003,7 +1015,7 @@ try {
   await idle(180000);
   const gs1 = await gs();
   await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
-  await page.locator("#ribbon button", { hasText: /^Gestell-Info$/ }).click();
+  await rbClick("Gestell-Info");
   await page.waitForSelector(".dialog table.grid tbody tr", { timeout: 20000 });
   const infoRows = await page.locator(".dialog table.grid tbody tr").count();
   const infoMass = await page.locator(".dialog .hint").filter({ hasText: "Masse gesamt" }).textContent().catch(() => "");
@@ -1029,7 +1041,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Kantteil"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
-  await page.locator("#ribbon button", { hasText: /^Kantteil$/ }).click();
+  await rbClick("Kantteil");
   await idle(60000);
   const kt = await evalApp(async () => {
     const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features[0];
@@ -1689,12 +1701,12 @@ try {
     await page.waitForTimeout(300);
     const cv = await page.locator("#viewer canvas").boundingBox();
     const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
-    await page.locator("#ribbon button", { hasText: /^Verlängern$/ }).click();
+    await rbClick("Verlängern");
     let [cx, cy] = await at(18, 10);
     await page.mouse.click(cx, cy);
     await page.waitForTimeout(200);
     const ext = await evalApp(() => { const p = window.__werkcad.sketcher.sk.points.find((q) => q.id === "ei"); return { x: p.x, y: p.y }; });
-    await page.locator("#ribbon button", { hasText: /^Teilen$/ }).click();
+    await rbClick("Teilen");
     [cx, cy] = await at(35, 10);
     await page.mouse.click(cx, cy);
     await page.waitForTimeout(200);
@@ -1721,7 +1733,7 @@ try {
     const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
     const selectOrig = () => evalApp(() => { const s = window.__werkcad.sketcher; s.sel.clear(); s.sel.add("e:mk"); window.__werkcad.selectSketchItems(["e:mk"]); });
     await selectOrig();
-    await page.locator('#ribbon button[aria-label="Rechteckmuster"]').click();
+    await rbClick("Rechteckmuster");
     let [cx, cy] = await at(0, 60);
     await page.mouse.click(cx, cy);
     // der Dialog setzt den Fokus 20 ms nach dem Öffnen auf das erste Feld – erst danach tippen
@@ -1734,7 +1746,7 @@ try {
     await page.waitForTimeout(300);
     const rect = await evalApp(() => window.__werkcad.sketcher.sk.entities.filter((e) => e.type === "circle").length);
     await selectOrig();
-    await page.locator('#ribbon button[aria-label="Kreismuster"]').click();
+    await rbClick("Kreismuster");
     [cx, cy] = await at(0, 0);
     await page.mouse.click(cx, cy);
     // der Dialog setzt den Fokus 20 ms nach dem Öffnen auf das erste Feld – erst danach tippen
@@ -1965,7 +1977,7 @@ try {
     const cv = await page.locator("#viewer canvas").boundingBox();
     const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
     await evalApp(() => { window.__werkcad.sketcher.gridSnap = false; });
-    await page.locator("#ribbon button", { hasText: /^Ellipse$/ }).click();
+    await rbClick("Ellipse");
     for (const [x, y] of [[40, 30], [70, 30], [50, 50]]) { const [px, py] = await at(x, y); await page.mouse.click(px, py); await page.waitForTimeout(120); }
     const el = await evalApp(() => {
       const s = window.__werkcad.sketcher, e = s.sk.entities.find((q) => q.type === "ellipse");
@@ -1998,7 +2010,7 @@ try {
     await page.waitForTimeout(800);
     const cv = await page.locator("#viewer canvas").boundingBox();
     const at = async (x, y) => { const [sx, sy] = await evalApp(([x, y]) => window.__werkcad.sketcher.S(x, y), [x, y]); return [cv.x + sx, cv.y + sy]; };
-    await page.locator("#ribbon button", { hasText: /^Spline$/ }).click();
+    await rbClick("Spline");
     for (const [x, y] of [[20, 10], [70, 0], [80, 50], [30, 60], [20, 10]]) { const [px, py] = await at(x, y); await page.mouse.click(px, py); await page.waitForTimeout(120); }
     const sp = await evalApp(() => {
       const s = window.__werkcad.sketcher, e = s.sk.entities.find((q) => q.type === "spline");
@@ -2035,7 +2047,7 @@ try {
     }));
     await page.waitForTimeout(200);
     const n0 = await evalApp(() => window.__werkcad.sketcher.sk.constraints.length);
-    await page.locator("#ribbon button", { hasText: /^Voll bemaßen$/ }).click();
+    await rbClick("Voll bemaßen");
     await page.waitForTimeout(300);
     const hint = await page.locator(".dialog .hint").last().textContent();
     await page.locator(".dialog button", { hasText: /^Bemaßen$/ }).click();
@@ -2098,7 +2110,7 @@ try {
     await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
     await idle();
     await page.locator("#ribbon .rb-tab", { hasText: "Ansicht" }).click();
-    await page.locator("#ribbon button", { hasText: /^Eigenschaften links$/ }).click();
+    await rbClick("Eigenschaften links");
     await page.waitForTimeout(200);
     const docked = await evalApp(() => ({ parent: document.getElementById("props").parentElement.className, right: document.querySelector(".dock-right").getBoundingClientRect().width, cols: document.getElementById("workspace").style.gridTemplateColumns }));
     const grip = await page.locator(".dock-left .dock-grip").boundingBox();
@@ -2110,7 +2122,7 @@ try {
     await page.waitForTimeout(200);
     const widened = await evalApp(() => ({ w: document.querySelector(".dock-left").getBoundingClientRect().width, saved: JSON.parse(window.__werkcad.prefs.exportText()).values["oberflaeche.layout"], canvas: document.querySelector("#viewer canvas").getBoundingClientRect().width }));
     await shot("26f-panels-links");
-    await page.locator("#ribbon button", { hasText: /^Anordnung zurücksetzen$/ }).click();
+    await rbClick("Anordnung zurücksetzen");
     await page.waitForTimeout(200);
     const reset = await evalApp(() => ({ parent: document.getElementById("props").parentElement.className, cols: document.getElementById("workspace").style.gridTemplateColumns }));
     await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
@@ -2298,7 +2310,7 @@ try {
     }));
     await page.waitForTimeout(200);
     const before = await evalApp(() => { const s = window.__werkcad.sketcher.sk; return { lines: s.entities.filter((e) => e.type === "line").length, pts: s.points.length }; });
-    await page.locator("#ribbon button", { hasText: /^Säubern$/ }).click();
+    await rbClick("Säubern");
     await page.waitForTimeout(300);
     const hint = await page.locator(".dialog .hint").last().textContent();
     await page.locator(".dialog button", { hasText: /^Säubern$/ }).click();
@@ -2474,7 +2486,7 @@ try {
   await evalApp(() => window.__werkcad.newPart("Bezug"));
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-  await page.locator("#ribbon button", { hasText: /^Arbeitsebene$/ }).click();
+  await rbClick("Arbeitsebene");
   await idle();
   const wp = await evalApp(() => { const a = window.__werkcad; const f = a.activeDoc().features.at(-1); const r = a.results.get(a.activeId); return { type: f.type, st: r.status[f.id], datums: r.datums?.length, shown: a.viewer.datumGroup?.children.length, props: !!document.querySelector("#props h3") && [...document.querySelectorAll("#props h3")].some((x) => x.textContent === "Arbeitsebene") }; });
   await page.locator("#props button", { hasText: "Skizze auf dieser Ebene" }).click();
@@ -2496,7 +2508,7 @@ try {
   });
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-  await page.locator("#ribbon button", { hasText: /^Sweeping$/ }).click();
+  await rbClick("Sweeping");
   await idle();
   await evalApp(() => {
     const a = window.__werkcad;
@@ -2506,14 +2518,14 @@ try {
     a.addFeature(sq("o", "40", 8), { select: false });
   });
   await idle();
-  await page.locator("#ribbon button", { hasText: /^Erhebung$/ }).click();
+  await rbClick("Erhebung");
   await idle();
   await evalApp(() => {
     const a = window.__werkcad;
     a.addFeature({ type: "sketch", id: "fed", name: "Feder", plane: { ref: "XZ" }, offset: "0", points: [{ id: "fc", x: -100, y: 0 }, { id: "f0", x: -80, y: 0 }, { id: "f1", x: -80, y: 10 }], entities: [{ id: "fk", type: "circle", c: "fc", r: 2 }, { id: "fa", type: "line", p1: "f0", p2: "f1", construction: true }], constraints: [] }, { select: false });
   });
   await idle();
-  await page.locator("#ribbon button", { hasText: /^Spirale$/ }).click();
+  await rbClick("Spirale");
   await idle();
   await page.locator("#props .field", { hasText: "Achse" }).locator("select").selectOption("fa");
   await idle(60000);
@@ -2535,14 +2547,14 @@ try {
   });
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-  await page.locator('#ribbon button[aria-label="Kombinieren"]').click();
+  await rbClick("Kombinieren");
   await idle();
   const kb = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features.at(-1); return { type: f.type, st: r.status[f.id], bodies: r.bodies.length, vol: Math.round(r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0)), checks: document.querySelectorAll("#props .checks input").length }; });
-  await page.locator('#ribbon button[aria-label="Fläche verschieben"]').click();
+  await rbClick("Fläche verschieben");
   await idle();
   await evalApp(() => { const a = window.__werkcad, f = a.activeDoc().features.at(-1); a.edit("Fläche", () => { f.faces = [{ p: [25, 20, 10] }]; f.distance = "5"; }); });
   await idle();
-  await page.locator('#ribbon button[aria-label="Trennen"]').click();
+  await rbClick("Trennen");
   await idle();
   await page.locator("#props .field", { hasText: "Abstand" }).first().locator("input").fill("25");
   await page.locator("#props .field", { hasText: "Abstand" }).first().locator("input").press("Enter");
@@ -2563,7 +2575,7 @@ try {
   });
   await idle(120000);
   await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
-  await page.locator("#ribbon button", { hasText: /^Muster$/ }).click();
+  await rbClick("Muster");
   await idle(60000);
   const am = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { copies: asm.components.filter((c) => c.pat).length, sel: a.sel?.type, tree: [...document.querySelectorAll("#browser .node .label")].some((x) => /^Muster 1$/.test(x.textContent)), bomRohr: asm.components.filter((c) => c.part === "beispiel_rohr").length }; });
   await page.locator("#props .field", { hasText: "Anzahl 1" }).locator("input").fill("5");
@@ -2582,7 +2594,7 @@ try {
   });
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
-  await page.locator("#ribbon button", { hasText: /^Endkappe$/ }).click();
+  await rbClick("Endkappe");
   await idle();
   await page.locator("#ribbon button", { hasText: /^Kürzen\/Verlängern$/ }).click();
   await idle();
@@ -2600,10 +2612,10 @@ try {
     await evalApp(() => window.__werkcad.newPart("Blech"));
     await idle();
     await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
-    await page.locator("#ribbon button", { hasText: /^Kantteil$/ }).click();
+    await rbClick("Kantteil");
     await idle(60000);
     for (const label of ["Lasche", "Umschlag", "Durchzug"]) {
-      await page.locator("#ribbon button", { hasText: new RegExp("^" + label + "$") }).click();
+      await rbClick(label);
       await idle(60000);
     }
     // Stirnlasche: Lasche auf »vorne« am Steg stellen
@@ -2633,7 +2645,7 @@ try {
     });
     await idle(60000);
     await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
-    await page.locator("#ribbon button", { hasText: /^Konturlasche$/ }).click();
+    await rbClick("Konturlasche");
     await idle(60000);
     const kl2 = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId); const f = d.features.at(-1); return { type: f.type, src: f.src, ok: r.status[f.id]?.ok, info: r.status[f.id]?.info, bodies: r.bodies.length }; });
     step("Blech: Lasche, Umschlag, Durchzug, Stirnlasche, Konturlasche", bl.ok && bl.bends === 4 && bl.circles === 1 && bl.y0 < 0 && bl.dxf?.circles === 1 && kl && kl2.ok && kl2.src === "skizze" && kl2.bodies === 2 && /1 Biegung/.test(kl2.info || ""), JSON.stringify({ bl0, bl, kl2 }));
@@ -2643,9 +2655,9 @@ try {
   {
     await evalApp(() => window.__werkcad.newPart("Blech 48"));
     await idle();
-    await page.locator("#ribbon button", { hasText: /^Kantteil$/ }).click();
+    await rbClick("Kantteil");
     await idle(60000);
-    await page.locator("#ribbon button", { hasText: /^Lasche$/ }).click();
+    await rbClick("Lasche");
     await idle(60000);
     await evalApp(async () => {
       const a = window.__werkcad, la = a.activeDoc().features.find((f) => f.type === "lasche");
@@ -2654,7 +2666,7 @@ try {
     });
     await idle(60000);
     for (const label of ["Ecke schließen", "Stanzwerkzeug"]) {
-      await page.locator("#ribbon button", { hasText: new RegExp("^" + label + "$") }).click();
+      await rbClick(label);
       await idle(60000);
     }
     const ec = await evalApp(() => {
@@ -2669,10 +2681,10 @@ try {
       a.edit("Skizze", () => d.features.push({ id: "skKW", type: "sketch", name: "Mantel", plane: { ref: "XY" }, offset: "0", points: [{ id: "w1", x: 0, y: 50 }, { id: "w2", x: 100, y: 50 }], entities: [{ id: "wl", type: "line", p1: "w1", p2: "w2" }], constraints: [] }));
     });
     await idle(60000);
-    await page.locator("#ribbon button", { hasText: /^Konturwalzen$/ }).click();
+    await rbClick("Konturwalzen");
     await idle(60000);
     const kw0 = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features.at(-1); return { type: f.type, ok: r.status[f.id]?.ok, info: r.status[f.id]?.info }; });
-    await page.locator("#ribbon button", { hasText: /^Trennfuge$/ }).click();
+    await rbClick("Trennfuge");
     await idle(60000);
     const kw = await evalApp(async () => {
       const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId);
@@ -2691,7 +2703,7 @@ try {
   {
     await evalApp(() => { const a = window.__werkcad; a.__iges = null; a.__igesSave = a.files.saveText; a.files.saveText = async (text, name) => { a.__iges = { name, lines: text.split("\r\n").filter(Boolean), t144: (text.match(/^\s*144\s/gm) || []).length }; }; });
     await page.locator("#ribbon .rb-tab", { hasText: /^Export$/ }).click();
-    await page.locator("#ribbon button", { hasText: /^IGES$/ }).click();
+    await rbClick("IGES");
     await idle(60000);
     await page.waitForFunction(() => window.__werkcad.__iges, null, { timeout: 60000 });
     const ig = await evalApp(() => { const a = window.__werkcad, g = a.__iges; a.files.saveText = a.__igesSave; return { name: g.name, n: g.lines.length, all80: g.lines.every((l) => l.length === 80), last: g.lines.at(-1).slice(72), t144: g.t144 }; });
@@ -2714,7 +2726,7 @@ try {
     });
     await idle(60000);
     await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-    await page.locator("#ribbon button", { hasText: /^Schraubenverbindung$/ }).click();
+    await rbClick("Schraubenverbindung");
     await idle(60000);
     const sv = await evalApp(() => {
       const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features.at(-1);
@@ -2742,8 +2754,8 @@ try {
     });
     await idle(120000);
     await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
-    await page.locator("#ribbon button", { hasText: /^Kontaktsatz$/ }).click();
-    await page.locator("#ribbon button", { hasText: /^Kontaktlöser$/ }).click();
+    await rbClick("Kontaktsatz");
+    await rbClick("Kontaktlöser");
     const ks = await evalApp(async () => {
       const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === "kb");
       const r = { set: asm.components.filter((x) => x.contact).map((x) => x.id).join(), solver: !!asm.contactSolver };
@@ -2781,13 +2793,13 @@ try {
     });
     await idle(60000);
     await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-    await page.locator("#ribbon button", { hasText: /^iFeature erstellen$/ }).click();
+    await rbClick("iFeature erstellen");
     await page.locator("#modal-root .dialog .field", { hasText: "Name" }).locator("input").fill("Tasche 20x10");
     const exInfo = await evalApp(() => document.querySelector("#modal-root .dialog p.muted")?.textContent || "");
     await page.locator("#modal-root .dialog footer .btn", { hasText: "In Bibliothek speichern" }).click();
     await mk(30);
     await idle(60000);
-    await page.locator("#ribbon button", { hasText: /^iFeature einfügen$/ }).click();
+    await rbClick("iFeature einfügen");
     await page.locator("#modal-root .dialog .field", { hasText: "Abstand" }).locator("input").fill("30");
     await page.locator("#modal-root .dialog .field", { hasText: /^tt/ }).locator("input").fill("8");
     await page.locator("#modal-root .dialog .field", { hasText: /^tt/ }).locator("input").dispatchEvent("change");
@@ -2817,7 +2829,7 @@ try {
     });
     await idle(120000);
     await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
-    await page.locator("#ribbon button", { hasText: /^Schweißbaugruppe$/ }).click();
+    await rbClick("Schweißbaugruppe");
     await idle(120000);
     const wb0 = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId); return { kind: d.kind, name: d.name, first: d.features[0]?.type, st: r?.status[d.features[0].id], bodies: r?.bodies.length }; });
     await evalApp(() => {
@@ -2840,7 +2852,7 @@ try {
   // Werkzeuge Stufe 54: Bereichseigenschaften der Skizze, Entformungsanalyse am Bauteil (Schweißbaugruppe von oben)
   {
     await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-    await page.locator("#ribbon button", { hasText: /^Entformungsanalyse$/ }).click();
+    await rbClick("Entformungsanalyse");
     await page.locator("#modal-root .dialog footer .btn", { hasText: "Anzeigen" }).click();
     await idle(30000);
     const da = await evalApp(() => {
@@ -2848,7 +2860,7 @@ try {
       return { on: v.draftOn, colored: m.length > 0 && m.every((x) => x.material.vertexColors && x.geometry.getAttribute("color")), toast: [...document.querySelectorAll("#toasts .toast")].map((t) => t.textContent).find((t) => /Entformung Z\+/.test(t)) || "" };
     });
     await shot("54-entformung");
-    await page.locator("#ribbon button", { hasText: /^Entformungsanalyse$/ }).click();
+    await rbClick("Entformungsanalyse");
     const daOff = await evalApp(() => { const v = window.__werkcad.viewer; return { on: v.draftOn, plain: v.pickables.every((p) => !p.mesh.material.vertexColors) }; });
     await evalApp(() => {
       const a = window.__werkcad;
@@ -2861,10 +2873,10 @@ try {
     await idle(30000);
     const mode = await evalApp(() => window.__werkcad.mode);
     if (mode === "sketch") {
-      await page.locator("#ribbon button", { hasText: /^Bereichseigenschaften$/ }).click();
+      await rbClick("Bereichseigenschaften");
     } else {
       await evalApp(() => { const a = window.__werkcad; a.sel = { type: "feature", id: "rq" }; });
-      await page.locator("#ribbon button", { hasText: /^Bereichseigenschaften$/ }).click();
+      await rbClick("Bereichseigenschaften");
     }
     const rpd = await evalApp(() => { const t = document.querySelector("#modal-root .dialog")?.textContent || ""; document.querySelectorAll("#modal-root .dialog footer .btn").forEach((b) => { if (b.textContent === "Schließen") b.click(); }); return t; });
     if (mode === "sketch") await evalApp(() => window.__werkcad.finishSketch?.());
@@ -2877,7 +2889,7 @@ try {
     await idle(30000);
     await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
     for (const label of ["Welle", "Stirnrad", "Lager", "Druckfeder"]) {
-      await page.locator("#ribbon button", { hasText: new RegExp("^" + label + "$") }).click();
+      await rbClick(label);
       await idle(60000);
     }
     const ka = await evalApp(() => {
@@ -2908,7 +2920,7 @@ try {
     await evalApp(() => window.__werkcad.newPart("Winkel rechts"));
     await idle();
     await page.locator("#ribbon .rb-tab", { hasText: "Verwalten" }).click();
-    await page.locator("#ribbon button", { hasText: /^Abgeleitetes Bauteil$/ }).click();
+    await rbClick("Abgeleitetes Bauteil");
     await idle(60000);
     const der = await evalApp(async (srcId) => {
       const a = window.__werkcad, d = a.activeDoc(), f = d.features[0];
@@ -2917,7 +2929,7 @@ try {
     }, q);
     await idle(60000);
     await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-    await page.locator("#ribbon button", { hasText: /^3D-Skizze$/ }).click();
+    await rbClick("3D-Skizze");
     await idle(60000);
     const s42 = await evalApp(() => {
       const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(d.id);
@@ -2956,7 +2968,7 @@ try {
     });
     await idle(60000);
     await page.locator("#ribbon .rb-tab", { hasText: "Verwalten" }).click();
-    await page.locator("#ribbon button", { hasText: /^Variantentabelle$/ }).click();
+    await rbClick("Variantentabelle");
     await page.locator(".dialog button", { hasText: /^Zeile hinzufügen$/ }).click();
     await page.locator(".dialog .var-table tbody tr").nth(1).locator("td").nth(3).locator("input").fill("25");
     await page.locator(".dialog .var-table tbody tr").nth(1).locator("td").nth(3).locator("input").press("Tab");
@@ -2975,7 +2987,7 @@ try {
     await evalApp((fid) => window.__werkcad.openDoc(fid), fid);
     await idle(60000);
     await page.locator("#ribbon .rb-tab", { hasText: "Verwalten" }).click();
-    await page.locator("#ribbon button", { hasText: /^Regeln$/ }).click();
+    await rbClick("Regeln");
     await page.locator(".dialog button", { hasText: /Prüfen und melden/ }).click();
     const ruleRows = await page.locator(".dialog .rule").count();
     await page.locator(".dialog button", { hasText: /^Abbrechen$/ }).click();
@@ -2994,7 +3006,7 @@ try {
     const palHit = await page.locator(".cmd-palette").textContent();
     await page.keyboard.press("Escape");
     await page.locator("#ribbon .rb-tab", { hasText: "Verwalten" }).click();
-    await page.locator("#ribbon button", { hasText: /^Makros$/ }).click();
+    await rbClick("Makros");
     const macroDlg = await page.locator(".dialog .macro").count();
     await page.locator(".dialog button", { hasText: /^Schließen$/ }).click();
     // Sprache Englisch: Menüband übersetzt, zurück auf Deutsch
@@ -3019,7 +3031,7 @@ try {
     });
     await idle(120000);
     await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
-    await page.locator("#ribbon button", { hasText: /^Abhängigkeit$/ }).click();
+    await rbClick("Abhängigkeit");
     const panel = await page.locator("#props").textContent();
     const p44 = await evalApp(() => {
       const a = window.__werkcad, asm = a.activeDoc();
@@ -3072,7 +3084,7 @@ try {
     });
     await idle(60000);
     await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
-    await page.locator("#ribbon button", { hasText: /^Stecksystem$/ }).click();
+    await rbClick("Stecksystem");
     await idle(60000);
     const s45 = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), f = d.features.at(-1), r = a.results.get(d.id); return { type: f.type, info: r?.status?.[f.id]?.info || r?.status?.[f.id]?.error || "", props: document.querySelector("#props")?.textContent.includes("Zapfenteil") }; });
     await shot("45-stecksystem");
@@ -3101,7 +3113,7 @@ try {
     });
     await idle(60000);
     await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
-    await page.locator("#ribbon button", { hasText: /^Stecksystem$/ }).click();
+    await rbClick("Stecksystem");
     await page.locator("#props button", { hasText: "Zapfen und Schlitze erzeugen" }).click();
     await idle(60000);
     const s46 = await evalApp(async ({ pl, ri }) => {
