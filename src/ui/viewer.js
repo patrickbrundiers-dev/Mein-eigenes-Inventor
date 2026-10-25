@@ -7,6 +7,7 @@ import { segmentsInBox, trianglesInBox } from "../core/boxselect.js";
 import { ellipseGeom, ellipseSamples } from "../core/ellipse.js";
 import { splineSamples } from "../core/spline.js";
 import { photoSurface, photoStage } from "../core/rendering.js";
+import { explodeOffsets } from "../core/kinematik.js";
 
 const COL = {
   edge: 0x1c2733,
@@ -477,10 +478,71 @@ export class Viewer {
       g.matrixAutoUpdate = false;
       g.matrix.fromArray(c.matrix || placementMatrix(c.pos, c.rot));
       g.userData.comp = c.id;
+      g.userData.baseMatrix = g.matrix.clone();
       if (c.leaf) { g.userData.leaf = c.leaf; g.userData.inner = c.inner; }
       this.root.add(g);
     }
     this.root.updateMatrixWorld(true);
+    this.compDeltas = new Map();
+    this.explodeCenters = null;
+    if (this.explode > 0) this.applyCompMatrices();
+    this.updateCaps();
+    this.render();
+  }
+  /** Hüllquader einer Komponente in Baugruppen-Koordinaten (zusammengebaut) als [min, max] oder null */
+  componentBox(compId) {
+    const b = new THREE.Box3(), M = new THREE.Matrix4();
+    for (const g of this.root.children) {
+      if (g.userData.comp !== compId) continue;
+      M.copy(g.userData.baseMatrix || g.matrix);
+      g.traverse((o) => {
+        if (!o.isMesh || o.userData.stencil) return;
+        o.geometry.computeBoundingBox();
+        const local = o === g ? new THREE.Matrix4() : new THREE.Matrix4().copy(o.matrix);
+        b.union(o.geometry.boundingBox.clone().applyMatrix4(M.clone().multiply(local)));
+      });
+    }
+    return b.isEmpty() ? null : [b.min.toArray(), b.max.toArray()];
+  }
+  /** Nur Anzeige (M23): zusätzliche Drehung je Komponente beim Bewegen von Gelenken; deltas = Map compId → 4×4-Array */
+  setComponentDeltas(deltas) {
+    this.compDeltas = deltas || new Map();
+    this.applyCompMatrices();
+  }
+  /** Explosionsdarstellung (nur Anzeige): 0 = zusammengebaut, 1 = Abstände zur Mitte verdoppelt */
+  setExplode(factor) {
+    this.explode = Math.max(0, Number(factor) || 0);
+    this.applyCompMatrices();
+  }
+  applyCompMatrices() {
+    const groups = this.root.children.filter((g) => g.userData.comp && g.userData.baseMatrix);
+    if (!groups.length) return;
+    let offs = null;
+    if (this.explode > 0) {
+      if (!this.explodeCenters) {
+        // Mitten je Komponente aus der zusammengebauten Lage (einmal je Anzeige)
+        const boxes = new Map();
+        for (const g of groups) {
+          g.matrix.copy(g.userData.baseMatrix);
+          g.updateMatrixWorld(true);
+          const b = boxes.get(g.userData.comp) || new THREE.Box3();
+          g.traverse((o) => { if (o.isMesh && !o.userData.stencil) b.expandByObject(o); });
+          boxes.set(g.userData.comp, b);
+        }
+        this.explodeCenters = [...boxes].filter(([, b]) => !b.isEmpty()).map(([id, b]) => ({ id, center: b.getCenter(new THREE.Vector3()).toArray() }));
+      }
+      offs = explodeOffsets(this.explodeCenters, this.explode);
+    }
+    const D = new THREE.Matrix4(), T = new THREE.Matrix4();
+    for (const g of groups) {
+      const m = g.matrix.copy(g.userData.baseMatrix);
+      const d = this.compDeltas?.get(g.userData.comp);
+      if (d) m.premultiply(D.fromArray(d));
+      const o = offs?.get(g.userData.comp);
+      if (o) m.premultiply(T.makeTranslation(o[0], o[1], o[2]));
+    }
+    this.root.updateMatrixWorld(true);
+    this.edgeCache = null;
     this.updateCaps();
     this.render();
   }

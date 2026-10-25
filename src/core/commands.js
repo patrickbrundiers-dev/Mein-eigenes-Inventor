@@ -136,6 +136,9 @@ export const COMMANDS = [
   { id: "asm.bom", label: "Stückliste", group: "Baugruppe", scope: "assembly" },
   { id: "asm.cutlist", label: "Zuschnittliste", group: "Baugruppe", scope: "assembly" },
   { id: "asm.collide", label: "Kollision prüfen", group: "Baugruppe", scope: "assembly" },
+  { id: "asm.joint", label: "Drehgelenk anlegen", group: "Baugruppe", scope: "assembly", keywords: "kinematik gelenk scharnier tor flügel drehen bewegung" },
+  { id: "asm.animate", label: "Gelenke bewegen (Animation)", group: "Baugruppe", scope: "assembly", keywords: "kinematik animation bewegen öffnen tor" },
+  { id: "asm.explode", label: "Explosionsdarstellung", group: "Baugruppe", scope: "assembly", keywords: "explosion explodiert auseinander montage" },
 ];
 
 const BY_ID = new Map(COMMANDS.map((c) => [c.id, c]));
