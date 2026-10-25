@@ -16,6 +16,7 @@ import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
 import { GENERATORS, resolveGenParams } from "../core/generator.js";
+import { FILL_DENSITY } from "../core/mass.js";
 
 const BIG = 20000;
 
@@ -665,14 +666,17 @@ export function createKernel(R) {
               const L = v3.dist(m.a, m.b);
               if (!(L > 1e-6)) continue;
               const fr = memberFrame(m.a, v3.sub(m.b, m.a), m.rot || 0, m.up);
-              const { solid } = memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, { start: [], end: [] }, cut);
-              add(solid, metaOf(m.section, solid, fr), m.name);
+              const cuts = m.cuts || { start: [], end: [] };
+              const { solid } = memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts, cut);
+              add(solid, metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z) }), m.name);
             }
             for (const pl of plan.plates) {
               let d = R.drawRoundedRectangle(pl.W, pl.H, pl.r || 0);
               for (const [x, y] of pl.holes || []) d = d.cut(R.drawCircle(pl.d / 2).translate(x, y));
               const solid = d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t);
-              const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length, d: pl.d }, glass: !!pl.glass, generator: f.gen };
+              const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length, d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
+              const dens = pl.glass ? FILL_DENSITY.glas : FILL_DENSITY[pl.tread];
+              if (dens) meta.density = dens;
               state.bodies.push({ shape: solid, kind: "solid", name: pl.name, fid: f.id, meta });
               list.push({ shape: solid, kind: "solid", meta, name: pl.name });
             }

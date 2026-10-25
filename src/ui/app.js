@@ -17,6 +17,7 @@ import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./do
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { newSketch } from "../core/sketch.js";
 import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, alignFaces, matApply, matApplyDir } from "../core/geom.js";
+import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
 import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
@@ -857,9 +858,7 @@ export class App {
     if (d?.kind === "part") {
       const r = this.results.get(d.id);
       if (r) {
-        const vol = r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0);
-        const dens = materialOf(d.material).density;
-        parts.push(h("span", {}, "Masse ", h("span", { class: "num" }, fmtNum((vol * dens) / 1e6, 3) + " kg")));
+        parts.push(h("span", {}, "Masse ", h("span", { class: "num" }, fmtNum(bodiesMass(r.bodies, materialOf(d.material).density), 3) + " kg")));
         parts.push(h("span", {}, "Körper ", h("span", { class: "num" }, String(r.bodies.length))));
         const errs = Object.values(r.status).filter((s) => !s.ok).length;
         if (errs) parts.push(h("span", { style: { color: "var(--err)" } }, `${errs} Fehler`));
