@@ -12,6 +12,7 @@ import { planTubeCuts, atEnd as openAtEnd } from "../core/tubecuts.js";
 import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.js";
 import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
+import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
 
 const BIG = 20000;
 
@@ -581,6 +582,18 @@ export function createKernel(R) {
             if (members.warnings?.length) st.warning = members.warnings.join("; ");
             break;
           }
+          case "regelkoerper": {
+            const kind = f.kind || "zylinder";
+            const d = {};
+            for (const k of REGEL_KINDS[kind]?.fields || []) d[k] = E(f.dims?.[k] ?? "0", k);
+            checkRegel(kind, d);
+            const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Basispunkt " + "XYZ"[k]));
+            const dir = f.axis === "custom" ? (f.dir || ["0", "0", "1"]).map((x) => E(x, "Richtung")) : AXES[f.axis || "Z"];
+            const tool = orientZ(regelSolid(kind, d), dir, pos);
+            state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
+            applyOp(f.op || "join", tool, f.id, f.name);
+            break;
+          }
           case "biegerohr": {
             const dims = {};
             for (const [k, v] of Object.entries(f.dims || {})) dims[k] = E(v, k);
@@ -913,6 +926,35 @@ export function createKernel(R) {
         out.push((s) => s.translate(t));
       }
     return out;
+  }
+
+  // ---------- Regelkörper in lokaler Lage: Grundfläche auf z = 0, Achse +z ----------
+  function regelSolid(kind, d) {
+    const revolveXZ = (pts) => {
+      let dr = R.draw(pts[0]);
+      for (const p of pts.slice(1)) dr = dr.lineTo(p);
+      return dr.close().sketchOnPlane("XZ").revolve([0, 0, 1], { origin: [0, 0, 0] });
+    };
+    switch (kind) {
+      case "quader": return R.makeBaseBox(d.L, d.B, d.H);
+      case "zylinder": return R.makeCylinder(d.D / 2, d.H, [0, 0, 0], [0, 0, 1]);
+      case "kugel": return R.makeSphere(d.D / 2);
+      case "kegel": return revolveXZ(d.d > 1e-9 ? [[0, 0], [d.D / 2, 0], [d.d / 2, d.H], [0, d.H]] : [[0, 0], [d.D / 2, 0], [0, d.H]]);
+      case "torus": return R.drawCircle(d.d / 2).translate([d.D / 2, 0]).sketchOnPlane("XZ").revolve([0, 0, 1], { origin: [0, 0, 0] });
+      case "pyramide": {
+        const c = [[-d.L / 2, -d.B / 2, 0], [d.L / 2, -d.B / 2, 0], [d.L / 2, d.B / 2, 0], [-d.L / 2, d.B / 2, 0]];
+        return R.loft([R.assembleWire(c.map((p, i) => R.makeLine(p, c[(i + 1) % 4])))], { ruled: true, endPoint: [0, 0, d.H] });
+      }
+    }
+    throw new Error("Unbekannter Regelkörper: " + kind);
+  }
+  /** Körper mit Achse +z an Punkt pos auf Richtung dir drehen */
+  function orientZ(shape, dir, pos) {
+    const n = v3.norm(dir), z = [0, 0, 1];
+    const axis = v3.cross(z, n), s = v3.len(axis), c = v3.dot(z, n);
+    if (s > 1e-12) shape = shape.rotate((Math.atan2(s, c) * 180) / Math.PI, [0, 0, 0], axis);
+    else if (c < 0) shape = shape.rotate(180, [0, 0, 0], [1, 0, 0]);
+    return shape.translate(pos);
   }
 
   // ---------- Biegerohr: Kreis(ring) entlang der Mittellinie aus Geraden und Bögen ----------

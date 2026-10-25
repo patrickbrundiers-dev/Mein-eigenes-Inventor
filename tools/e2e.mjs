@@ -475,6 +475,18 @@ try {
   // R 100 → 900 + π·100; R 150: Geraden −4·150 + 2·(π/2)·150 statt −4·100 + π·100
   step("Rohr gebogen (Biegeliste)", br0.bodies === 1 && br0.errors === 0 && Math.abs(br0.len - (900 + Math.PI * 100)) < 1e-6 && brRows === 3 && Math.abs(br1 - (700 + Math.PI * 150)) < 1e-6, JSON.stringify({ br0, brRows, br1 }));
 
+  // Regelkörper (MegaCAD-Abgleich M5): Zylinder anlegen, Form auf Kugel wechseln
+  await evalApp(() => window.__werkcad.newPart("Regelkörper"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: "Regelkörper" }).click();
+  await idle();
+  const rk0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, vol: r.bodies[0]?.props?.volume }; });
+  await page.locator("#props .field", { hasText: "Form" }).locator("select").selectOption("kugel");
+  await idle();
+  const rk1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, vol: r.bodies[0]?.props?.volume, kind: a.activeDoc().features[0].kind }; });
+  step("Regelkörper", rk0.bodies === 1 && Math.abs(rk0.vol - Math.PI / 4 * 2500 * 100) < 200 && rk1.kind === "kugel" && Math.abs(rk1.vol - Math.PI / 6 * 216000) < 200, JSON.stringify({ rk0, rk1 }));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();
