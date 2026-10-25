@@ -1,6 +1,9 @@
-**Neu in 0.22.0**
+**Neu in 0.23.0**
 
-- **Menüband nach Inventor aufgeräumt:** große und kleine Knöpfe je Gruppe. Im Bauteil gibt es eigene Reiter für Metallbau, Verwalten und Konstruktion, in der Baugruppe einen Reiter Prüfen. Skizze und Baugruppe sind nach Inventor-Vorlage gegliedert.
-- **Skizze:** Elemente verschieben, kopieren, drehen und skalieren.
-- **Baugruppe:** Komponente verschieben, drehen und kopieren.
-- **Fangen in der Skizze wie in Inventor:** Schnittpunkte, Quadranten, Bogenmitte und gestrichelte Ausrichtungslinien zu vorhandenen Punkten. Die Ausrichtungslinien lassen sich in den Einstellungen abschalten.
+- **Skizze:** Text (zum Beispiel als Gravur, mit Platzhaltern wie {teilenummer}) und Bilder als Vorlage einfügen.
+- **Versionen mit Notiz:** Stände mit Notiz speichern, vergleichen, schreibgeschützt öffnen und wiederherstellen.
+- **Baugruppe:** Komponente ersetzen (eine oder alle gleichen) und Bauteilfarben.
+- **Bauteil:** Bauteilende verschieben, Parameter als CSV exportieren und importieren.
+- **Ansicht:** Benannte Ansichten merken sich den Schnitt.
+- **Zeichnung:** Ketten- und Bezugsmaße, Bogenlänge, Mittelpunkt, Maße und Positionsnummern ausrichten und eine eigene Zeichnungsvorlage mit Logo und Zusatzfeldern.
+- **Gestell:** „Gestell einfügen“ ist ein großer Knopf im Reiter Metallbau, Ecken und T-Stöße sind Auswahllisten.
