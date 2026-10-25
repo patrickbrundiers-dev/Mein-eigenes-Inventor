@@ -464,3 +464,10 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .problem-list .problem:disabled { cursor: default; }
 .problem-list .problem:not(:disabled):hover { filter: brightness(0.96); }
 .problems-dialog .btn-row .btn:not(.on) { opacity: 0.5; }
+
+/* Mehrfachauswahl (Körper) und Querschnittliste der Erhebung */
+.checks { display: flex; flex-direction: column; gap: 2px; max-height: 140px; overflow: auto; }
+.checks .check { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.loft-list { margin: 4px 0 6px 18px; padding: 0; }
+.loft-list li { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+.loft-list li .btn { padding: 0 6px; min-width: 0; }

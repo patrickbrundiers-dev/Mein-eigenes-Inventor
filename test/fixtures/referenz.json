@@ -1338,7 +1338,7 @@
    }
   ],
   "notes": [
-   "6 Pfosten, 5 Feld(er) à 1000 / 750 mm, 31 Stäbe, Lauflänge 4500 mm, 6 Handlaufhalter (Bohrung Ø 12,1), Gurte durchgesteckt (4 Stück, Aufmaß 1 mm)"
+   "6 Pfosten, 5 Feld(er) à 1000 / 750 mm, 31 Stäbe, Lauflänge 4500 mm, 6 Handlaufhalter (Bohrung Ø 12,1), Gurte durchgesteckt (4 Stück, Aufmaß 1 mm); Befestigung: 6 Fußplatten, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen"
   ]
  },
  "Tor": {
@@ -2530,18 +2530,18 @@
  },
  "Treppe": {
   "errors": [],
-  "count": 101,
+  "count": 115,
   "bodies": [
    {
     "name": "Geländer links Handlauf 1",
     "kind": "member",
-    "volume": 1624470.117,
+    "volume": 1624467.013,
     "box": [
      -73.636,
-     1010.8,
+     1020.8,
      1109.322,
      4186.08,
-     1053.2,
+     1063.2,
      3800
     ],
     "profileId": "RR 42,4x2,6",
@@ -2555,13 +2555,13 @@
    {
     "name": "Geländer links Handlauf 2",
     "kind": "member",
-    "volume": 119978.621,
+    "volume": 119981.52,
     "box": [
      4173.92,
-     1010.8,
+     1020.8,
      3757.6,
      4550,
-     1053.2,
+     1063.2,
      3800
     ],
     "profileId": "RR 42,4x2,6",
@@ -2570,22 +2570,22 @@
      16,
      0
     ],
-    "drills": 2
+    "drills": 1
    },
    {
     "name": "Geländer links Knieleiste 1.1",
     "kind": "member",
-    "volume": 880373.827,
+    "volume": 867797.058,
     "box": [
      -27.128,
-     1018.55,
+     1028.55,
      482.794,
-     4187.128,
-     1045.45,
-     3130.606
+     4127.128,
+     1055.45,
+     3093.106
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 4952.84,
+    "length": 4882.085,
     "miters": [
      0,
      0
@@ -2594,17 +2594,17 @@
    {
     "name": "Geländer links Knieleiste 1.2",
     "kind": "member",
-    "volume": 880373.827,
+    "volume": 867797.058,
     "box": [
      -27.128,
-     1018.55,
+     1028.55,
      801.994,
-     4187.128,
-     1045.45,
-     3449.806
+     4127.128,
+     1055.45,
+     3412.306
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 4952.84,
+    "length": 4882.086,
     "miters": [
      0,
      0
@@ -2613,17 +2613,17 @@
    {
     "name": "Geländer links Knieleiste 2.1",
     "kind": "member",
-    "volume": 56880.42,
+    "volume": 67545.499,
     "box": [
-     4180,
-     1018.55,
+     4120,
+     1028.55,
      3105.75,
      4500,
-     1045.45,
+     1055.45,
      3132.65
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 320,
+    "length": 380,
     "miters": [
      0,
      0
@@ -2632,17 +2632,17 @@
    {
     "name": "Geländer links Knieleiste 2.2",
     "kind": "member",
-    "volume": 56880.42,
+    "volume": 67545.499,
     "box": [
-     4180,
-     1018.55,
+     4120,
+     1028.55,
      3424.95,
      4500,
-     1045.45,
+     1055.45,
      3451.85
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 320,
+    "length": 380,
     "miters": [
      0,
      0
@@ -2651,17 +2651,17 @@
    {
     "name": "Geländer links Pfosten 1",
     "kind": "member",
-    "volume": 436101.785,
+    "volume": 452408.677,
     "box": [
      -40,
-     1012,
-     25,
+     1022,
+     -13.75,
      0,
-     1052,
+     1062,
      1068.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -2669,15 +2669,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer links Pfosten 1 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     -100,
+     1012,
+     -13.75,
+     60,
+     1022,
+     146.25
+    ]
+   },
+   {
     "name": "Geländer links Pfosten 1 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      -40,
-     1012,
+     1022,
      1068.6,
      0,
-     1052,
+     1062,
      1072.6
     ]
    },
@@ -2687,10 +2700,10 @@
     "volume": 9183.504,
     "box": [
      -26,
-     1026,
+     1036,
      1072.6,
      -14,
-     1038,
+     1048,
      1153.8
     ],
     "profileId": "RD 12",
@@ -2703,17 +2716,17 @@
    {
     "name": "Geländer links Pfosten 2",
     "kind": "member",
-    "volume": 433032.686,
+    "volume": 449339.577,
     "box": [
      800,
-     1012,
-     550,
+     1022,
+     511.25,
      840,
-     1052,
+     1062,
      1593.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -2721,15 +2734,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer links Pfosten 2 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     740,
+     1012,
+     511.25,
+     900,
+     1022,
+     671.25
+    ]
+   },
+   {
     "name": "Geländer links Pfosten 2 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      800,
-     1012,
+     1022,
      1593.6,
      840,
-     1052,
+     1062,
      1597.6
     ]
    },
@@ -2739,10 +2765,10 @@
     "volume": 9183.504,
     "box": [
      814,
-     1026,
+     1036,
      1597.6,
      826,
-     1038,
+     1048,
      1678.8
     ],
     "profileId": "RD 12",
@@ -2755,17 +2781,17 @@
    {
     "name": "Geländer links Pfosten 3",
     "kind": "member",
-    "volume": 433032.686,
+    "volume": 449339.577,
     "box": [
      1640,
-     1012,
-     1075,
+     1022,
+     1036.25,
      1680,
-     1052,
+     1062,
      2118.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -2773,15 +2799,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer links Pfosten 3 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     1580,
+     1012,
+     1036.25,
+     1740,
+     1022,
+     1196.25
+    ]
+   },
+   {
     "name": "Geländer links Pfosten 3 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      1640,
-     1012,
+     1022,
      2118.6,
      1680,
-     1052,
+     1062,
      2122.6
     ]
    },
@@ -2791,10 +2830,10 @@
     "volume": 9183.504,
     "box": [
      1654,
-     1026,
+     1036,
      2122.6,
      1666,
-     1038,
+     1048,
      2203.8
     ],
     "profileId": "RD 12",
@@ -2807,17 +2846,17 @@
    {
     "name": "Geländer links Pfosten 4",
     "kind": "member",
-    "volume": 433032.686,
+    "volume": 449339.577,
     "box": [
      2480,
-     1012,
-     1600,
+     1022,
+     1561.25,
      2520,
-     1052,
+     1062,
      2643.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -2825,15 +2864,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer links Pfosten 4 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     2420,
+     1012,
+     1561.25,
+     2580,
+     1022,
+     1721.25
+    ]
+   },
+   {
     "name": "Geländer links Pfosten 4 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      2480,
-     1012,
+     1022,
      2643.6,
      2520,
-     1052,
+     1062,
      2647.6
     ]
    },
@@ -2843,10 +2895,10 @@
     "volume": 9183.504,
     "box": [
      2494,
-     1026,
+     1036,
      2647.6,
      2506,
-     1038,
+     1048,
      2728.8
     ],
     "profileId": "RD 12",
@@ -2859,17 +2911,17 @@
    {
     "name": "Geländer links Pfosten 5",
     "kind": "member",
-    "volume": 433032.686,
+    "volume": 449339.577,
     "box": [
      3320,
-     1012,
-     2125,
+     1022,
+     2086.25,
      3360,
-     1052,
+     1062,
      3168.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -2877,15 +2929,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer links Pfosten 5 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     3260,
+     1012,
+     2086.25,
+     3420,
+     1022,
+     2246.25
+    ]
+   },
+   {
     "name": "Geländer links Pfosten 5 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      3320,
-     1012,
+     1022,
      3168.6,
      3360,
-     1052,
+     1062,
      3172.6
     ]
    },
@@ -2895,10 +2960,10 @@
     "volume": 9183.504,
     "box": [
      3334,
-     1026,
+     1036,
      3172.6,
      3346,
-     1038,
+     1048,
      3253.8
     ],
     "profileId": "RD 12",
@@ -2911,17 +2976,17 @@
    {
     "name": "Geländer links Pfosten 6",
     "kind": "member",
-    "volume": 432433.614,
+    "volume": 448740.506,
     "box": [
-     4160,
-     1012,
-     2650,
-     4200,
-     1052,
-     3693.6
+     4100,
+     1022,
+     2573.75,
+     4140,
+     1062,
+     3656.1
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -2929,16 +2994,29 @@
     "drills": 4
    },
    {
+    "name": "Geländer links Pfosten 6 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     4040,
+     1012,
+     2573.75,
+     4200,
+     1022,
+     2733.75
+    ]
+   },
+   {
     "name": "Geländer links Pfosten 6 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
-     4160,
-     1012,
-     3693.6,
-     4200,
-     1052,
-     3697.6
+     4100,
+     1022,
+     3656.1,
+     4140,
+     1062,
+     3660.1
     ]
    },
    {
@@ -2946,12 +3024,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     4174,
-     1026,
-     3697.6,
-     4186,
-     1038,
-     3778.8
+     4114,
+     1036,
+     3660.1,
+     4126,
+     1048,
+     3741.3
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -2963,17 +3041,17 @@
    {
     "name": "Geländer links Pfosten 7",
     "kind": "member",
-    "volume": 435502.714,
+    "volume": 368171.034,
     "box": [
      4480,
-     1012,
-     2650,
+     1022,
+     2810,
      4520,
-     1052,
+     1062,
      3693.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 883.6,
     "miters": [
      0,
      0
@@ -2986,11 +3064,24 @@
     "volume": 6400,
     "box": [
      4480,
-     1012,
+     1022,
      3693.6,
      4520,
-     1052,
+     1062,
      3697.6
+    ]
+   },
+   {
+    "name": "Geländer links Pfosten 7 Fußplatte",
+    "kind": "solid",
+    "volume": 109137.224,
+    "box": [
+     4420,
+     1007,
+     2800,
+     4580,
+     1077,
+     2810
     ]
    },
    {
@@ -2999,10 +3090,10 @@
     "volume": 9183.504,
     "box": [
      4494,
-     1026,
+     1036,
      3697.6,
      4506,
-     1038,
+     1048,
      3778.8
     ],
     "profileId": "RD 12",
@@ -3015,13 +3106,13 @@
    {
     "name": "Geländer rechts Handlauf 1",
     "kind": "member",
-    "volume": 1624470.117,
+    "volume": 1624467.013,
     "box": [
      -73.636,
-     -53.2,
+     -63.2,
      1109.322,
      4186.08,
-     -10.8,
+     -20.8,
      3800
     ],
     "profileId": "RR 42,4x2,6",
@@ -3035,13 +3126,13 @@
    {
     "name": "Geländer rechts Handlauf 2",
     "kind": "member",
-    "volume": 119978.621,
+    "volume": 119981.52,
     "box": [
      4173.92,
-     -53.2,
+     -63.2,
      3757.6,
      4550,
-     -10.8,
+     -20.8,
      3800
     ],
     "profileId": "RR 42,4x2,6",
@@ -3050,22 +3141,22 @@
      16,
      0
     ],
-    "drills": 2
+    "drills": 1
    },
    {
     "name": "Geländer rechts Knieleiste 1.1",
     "kind": "member",
-    "volume": 880373.827,
+    "volume": 867797.058,
     "box": [
      -27.128,
-     -45.45,
+     -55.45,
      482.794,
-     4187.128,
-     -18.55,
-     3130.606
+     4127.128,
+     -28.55,
+     3093.106
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 4952.84,
+    "length": 4882.085,
     "miters": [
      0,
      0
@@ -3074,17 +3165,17 @@
    {
     "name": "Geländer rechts Knieleiste 1.2",
     "kind": "member",
-    "volume": 880373.827,
+    "volume": 867797.058,
     "box": [
      -27.128,
-     -45.45,
+     -55.45,
      801.994,
-     4187.128,
-     -18.55,
-     3449.806
+     4127.128,
+     -28.55,
+     3412.306
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 4952.84,
+    "length": 4882.086,
     "miters": [
      0,
      0
@@ -3093,17 +3184,17 @@
    {
     "name": "Geländer rechts Knieleiste 2.1",
     "kind": "member",
-    "volume": 56880.42,
+    "volume": 67545.499,
     "box": [
-     4180,
-     -45.45,
+     4120,
+     -55.45,
      3105.75,
      4500,
-     -18.55,
+     -28.55,
      3132.65
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 320,
+    "length": 380,
     "miters": [
      0,
      0
@@ -3112,17 +3203,17 @@
    {
     "name": "Geländer rechts Knieleiste 2.2",
     "kind": "member",
-    "volume": 56880.42,
+    "volume": 67545.499,
     "box": [
-     4180,
-     -45.45,
+     4120,
+     -55.45,
      3424.95,
      4500,
-     -18.55,
+     -28.55,
      3451.85
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 320,
+    "length": 380,
     "miters": [
      0,
      0
@@ -3131,17 +3222,17 @@
    {
     "name": "Geländer rechts Pfosten 1",
     "kind": "member",
-    "volume": 436101.785,
+    "volume": 452408.677,
     "box": [
      -40,
-     -52,
-     25,
+     -62,
+     -13.75,
      0,
-     -12,
+     -22,
      1068.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -3149,15 +3240,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer rechts Pfosten 1 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     -100,
+     -22,
+     -13.75,
+     60,
+     -12,
+     146.25
+    ]
+   },
+   {
     "name": "Geländer rechts Pfosten 1 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      -40,
-     -52,
+     -62,
      1068.6,
      0,
-     -12,
+     -22,
      1072.6
     ]
    },
@@ -3167,10 +3271,10 @@
     "volume": 9183.504,
     "box": [
      -26,
-     -38,
+     -48,
      1072.6,
      -14,
-     -26,
+     -36,
      1153.8
     ],
     "profileId": "RD 12",
@@ -3183,17 +3287,17 @@
    {
     "name": "Geländer rechts Pfosten 2",
     "kind": "member",
-    "volume": 433032.686,
+    "volume": 449339.577,
     "box": [
      800,
-     -52,
-     550,
+     -62,
+     511.25,
      840,
-     -12,
+     -22,
      1593.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -3201,15 +3305,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer rechts Pfosten 2 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     740,
+     -22,
+     511.25,
+     900,
+     -12,
+     671.25
+    ]
+   },
+   {
     "name": "Geländer rechts Pfosten 2 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      800,
-     -52,
+     -62,
      1593.6,
      840,
-     -12,
+     -22,
      1597.6
     ]
    },
@@ -3219,10 +3336,10 @@
     "volume": 9183.504,
     "box": [
      814,
-     -38,
+     -48,
      1597.6,
      826,
-     -26,
+     -36,
      1678.8
     ],
     "profileId": "RD 12",
@@ -3235,17 +3352,17 @@
    {
     "name": "Geländer rechts Pfosten 3",
     "kind": "member",
-    "volume": 433032.686,
+    "volume": 449339.577,
     "box": [
      1640,
-     -52,
-     1075,
+     -62,
+     1036.25,
      1680,
-     -12,
+     -22,
      2118.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -3253,15 +3370,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer rechts Pfosten 3 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     1580,
+     -22,
+     1036.25,
+     1740,
+     -12,
+     1196.25
+    ]
+   },
+   {
     "name": "Geländer rechts Pfosten 3 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      1640,
-     -52,
+     -62,
      2118.6,
      1680,
-     -12,
+     -22,
      2122.6
     ]
    },
@@ -3271,10 +3401,10 @@
     "volume": 9183.504,
     "box": [
      1654,
-     -38,
+     -48,
      2122.6,
      1666,
-     -26,
+     -36,
      2203.8
     ],
     "profileId": "RD 12",
@@ -3287,17 +3417,17 @@
    {
     "name": "Geländer rechts Pfosten 4",
     "kind": "member",
-    "volume": 433032.686,
+    "volume": 449339.577,
     "box": [
      2480,
-     -52,
-     1600,
+     -62,
+     1561.25,
      2520,
-     -12,
+     -22,
      2643.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -3305,15 +3435,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer rechts Pfosten 4 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     2420,
+     -22,
+     1561.25,
+     2580,
+     -12,
+     1721.25
+    ]
+   },
+   {
     "name": "Geländer rechts Pfosten 4 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      2480,
-     -52,
+     -62,
      2643.6,
      2520,
-     -12,
+     -22,
      2647.6
     ]
    },
@@ -3323,10 +3466,10 @@
     "volume": 9183.504,
     "box": [
      2494,
-     -38,
+     -48,
      2647.6,
      2506,
-     -26,
+     -36,
      2728.8
     ],
     "profileId": "RD 12",
@@ -3339,17 +3482,17 @@
    {
     "name": "Geländer rechts Pfosten 5",
     "kind": "member",
-    "volume": 433032.686,
+    "volume": 449339.577,
     "box": [
      3320,
-     -52,
-     2125,
+     -62,
+     2086.25,
      3360,
-     -12,
+     -22,
      3168.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -3357,15 +3500,28 @@
     "drills": 2
    },
    {
+    "name": "Geländer rechts Pfosten 5 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     3260,
+     -22,
+     2086.25,
+     3420,
+     -12,
+     2246.25
+    ]
+   },
+   {
     "name": "Geländer rechts Pfosten 5 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
      3320,
-     -52,
+     -62,
      3168.6,
      3360,
-     -12,
+     -22,
      3172.6
     ]
    },
@@ -3375,10 +3531,10 @@
     "volume": 9183.504,
     "box": [
      3334,
-     -38,
+     -48,
      3172.6,
      3346,
-     -26,
+     -36,
      3253.8
     ],
     "profileId": "RD 12",
@@ -3391,17 +3547,17 @@
    {
     "name": "Geländer rechts Pfosten 6",
     "kind": "member",
-    "volume": 432433.614,
+    "volume": 448740.506,
     "box": [
-     4160,
-     -52,
-     2650,
-     4200,
-     -12,
-     3693.6
+     4100,
+     -62,
+     2573.75,
+     4140,
+     -22,
+     3656.1
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 1082.35,
     "miters": [
      0,
      0
@@ -3409,16 +3565,29 @@
     "drills": 4
    },
    {
+    "name": "Geländer rechts Pfosten 6 Befestigungsblech",
+    "kind": "solid",
+    "volume": 250274.447,
+    "box": [
+     4040,
+     -22,
+     2573.75,
+     4200,
+     -12,
+     2733.75
+    ]
+   },
+   {
     "name": "Geländer rechts Pfosten 6 Endkappe",
     "kind": "solid",
     "volume": 6400,
     "box": [
-     4160,
-     -52,
-     3693.6,
-     4200,
-     -12,
-     3697.6
+     4100,
+     -62,
+     3656.1,
+     4140,
+     -22,
+     3660.1
     ]
    },
    {
@@ -3426,12 +3595,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     4174,
-     -38,
-     3697.6,
-     4186,
-     -26,
-     3778.8
+     4114,
+     -48,
+     3660.1,
+     4126,
+     -36,
+     3741.3
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -3443,17 +3612,17 @@
    {
     "name": "Geländer rechts Pfosten 7",
     "kind": "member",
-    "volume": 435502.714,
+    "volume": 368171.034,
     "box": [
      4480,
-     -52,
-     2650,
+     -62,
+     2810,
      4520,
-     -12,
+     -22,
      3693.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1043.6,
+    "length": 883.6,
     "miters": [
      0,
      0
@@ -3466,11 +3635,24 @@
     "volume": 6400,
     "box": [
      4480,
-     -52,
+     -62,
      3693.6,
      4520,
-     -12,
+     -22,
      3697.6
+    ]
+   },
+   {
+    "name": "Geländer rechts Pfosten 7 Fußplatte",
+    "kind": "solid",
+    "volume": 109137.224,
+    "box": [
+     4420,
+     -77,
+     2800,
+     4580,
+     -7,
+     2810
     ]
    },
    {
@@ -3479,10 +3661,10 @@
     "volume": 9183.504,
     "box": [
      4494,
-     -38,
+     -48,
      3697.6,
      4506,
-     -26,
+     -36,
      3778.8
     ],
     "profileId": "RD 12",
@@ -4080,7 +4262,7 @@
    {
     "name": "Wange links",
     "kind": "member",
-    "volume": 15248858.197,
+    "volume": 15207634.218,
     "box": [
      -361.85,
      1000,
@@ -4095,12 +4277,12 @@
      57.99,
      32.01
     ],
-    "drills": 30
+    "drills": 54
    },
    {
     "name": "Wange rechts",
     "kind": "member",
-    "volume": 15248858.197,
+    "volume": 15207634.218,
     "box": [
      -361.85,
      -12,
@@ -4115,11 +4297,11 @@
      57.99,
      32.01
     ],
-    "drills": 30
+    "drills": 54
    }
   ],
   "notes": [
-   "16 Steigungen à 175 mm, Auftritt 280 mm, 2s + a = 630 mm, Neigung 32°, Lauflänge 4200 mm, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø 14, Lochabstand 180 mm), Geländer: rechts und links, 14 Pfosten, 8 Knieleisten, Handlaufhalter mit Bohrung Ø 12,1, Knieleisten durch die Pfosten (4 Stück, Aufmaß 1 mm)"
+   "16 Steigungen à 175 mm, Auftritt 280 mm, 2s + a = 630 mm, Neigung 32°, Lauflänge 4200 mm, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø 14, Lochabstand 180 mm), Geländer: rechts und links, 14 Pfosten, 8 Knieleisten, Handlaufhalter mit Bohrung Ø 12,1, Knieleisten durch die Pfosten (4 Stück, Aufmaß 1 mm); Befestigung: 14 Befestigungsbleche (2 davon oben mit Fußplatte, wo kein Bauteil daneben liegt), 2 Pfosten gerückt, damit die Platte ganz auf dem Bauteil liegt, 48 Gegenbohrungen übertragen, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen"
   ]
  },
  "Zaun": {

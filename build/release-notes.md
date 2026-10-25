@@ -1,10 +1,12 @@
-**Neu in 0.17.0**
+**Neu in 0.18.0**
 
-- **Gestell wie in Inventor:** Auf einem Skelett-Bauteil aus Skizzenlinien oder einem Profilzug fügst du mit »Gestell einfügen« ein Gestell ein. Jeder Stab wird ein eigenes Bauteil in einer Gestell-Baugruppe, das Skelett steht als Referenzmodell im Baum. Ändert sich das Skelett, folgen die Stäbe.
-- **Werkzeuge in der Gruppe »Gestell«:**
-  - Ändern: Profil, Lage zur Linie und Drehung, auch für alle gleichen Stäbe.
-  - Gehrung und Eckverbindung.
-  - Auf Gestell stutzen und Verlängern/Kürzen.
-  - Nuten: Ausklinken an der Form des Gegenprofils, Sattelschnitt bei Rohren.
-  - Wiederverwenden.
-  - Gestell-Info: Liste mit Länge, Schnittwinkeln und Verbindungen, auch als CSV.
+- **Pfostenbefestigung für Geländer:** Bei Treppe, Geländer, Balkon und Spindeltreppe befestigst du Pfosten oben mit Fußplatte oder seitlich mit Befestigungsblech.
+  - Das Bohrbild der Fußplatte kommt als Gegenbohrung ins Bauteil, z. B. in ein U200.
+  - Flacheisen gleichen den Abstand aus, mit Stecknasen in Schlitzen des Blechs.
+  - Bei kleiner Luft kommt ein Futterblech dazu, und am Bauteilende wird das Blech verlängert.
+  - Der Pfosten weicht automatisch nach oben oder zur Seite aus, und einzelne Pfosten stellst du abweichend ein.
+  - Alte Projekte öffnen unverändert.
+- **Modell, Körper-Werkzeuge:** Kombinieren, Trennen, Körper verschieben, Aufdicken, Fläche verschieben und Entformung.
+- **Baugruppe:** Beziehungen Winkel, Tangential und Einfügen, dazu Zylindergelenk und Komponentenmuster.
+- **Rahmen:** Endkappe, Kürzen/Verlängern an einer Ebene und Erkennung von Gleichteilen.
+- **Gestell:** Den Spalt bei Gehrung, Eckverbindung und Stutzen gibst du jetzt ein. Das geht fürs ganze Gestell, beim Setzen von Hand und für jede Verbindung einzeln.

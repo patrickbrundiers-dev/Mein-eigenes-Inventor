@@ -81,6 +81,16 @@ export class Ribbon {
       gestellLength: () => lengthenDialog(app),
       gestellReuse: () => startGestellTool(app, "reuse"),
       gestellInfo: () => gestellInfoDialog(app),
+      endkappe: () => {
+        const t = this.lastOf(["profile", "frame", "profilzug", "generator"]);
+        if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
+        app.addFeature({ type: "endkappe", target: t, end: "beide", mode: "aufgesetzt", thickness: "3", overhang: "0" });
+      },
+      kuerzen: () => {
+        const t = this.lastOf(["profile", "frame", "profilzug", "generator"]);
+        if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
+        app.addFeature({ type: "kuerzen", target: t, plane: "YZ", offset: "0", end: "auto" });
+      },
       gelaender: () => this.addGenerator("gelaender"),
       tor: () => this.addGenerator("tor"),
       schiebetor: () => this.addGenerator("schiebetor"),
@@ -133,6 +143,16 @@ export class Ribbon {
         if (!src || !sks.length) return toast("Zuerst ein Feature (z. B. Bohrung) und eine Skizze mit dem Pfad anlegen");
         app.addFeature({ type: "pattern", kind: "path", feature: src, path: sks.at(-1).id, count: "5", spacingMode: "gleich", align: true });
       },
+      kombinieren: () => {
+        const fids = [...new Set((app.results.get(app.activeId)?.bodies || []).filter((b) => b.kind === "solid").map((b) => b.fid))];
+        if (fids.length < 2) return toast("Kombinieren braucht mindestens zwei Körper (z. B. Extrusion mit »Neuer Körper«)");
+        app.addFeature({ type: "kombinieren", target: fids[0], tools: fids.slice(1), op: "cut" });
+      },
+      trennen: () => app.addFeature({ type: "trennen", plane: "YZ", offset: "0", keep: "beide" }),
+      verschieben: () => app.addFeature({ type: "verschieben", bodies: [], move: ["0", "0", "0"], axis: "Z", angle: "0" }),
+      aufdicken: () => app.addFeature({ type: "aufdicken", faces: [], thickness: "5", side: "aussen", op: "new" }),
+      flaeche: () => app.addFeature({ type: "flaeche", faces: [], distance: "5" }),
+      entformung: () => app.addFeature({ type: "entformung", faces: [], angle: "3", plane: "XY", offset: "0" }),
       datumPlane: () => app.addFeature({ type: "arbeitsebene", mode: "versatz", base: "XY", distance: "50" }),
       datumAxis: () => app.addFeature({ type: "arbeitsachse", mode: "parallel", dir: "Z", point: { x: "0", y: "0", z: "0" } }),
       datumPoint: () => app.addFeature({ type: "arbeitspunkt", mode: "koordinaten", x: "0", y: "0", z: "0" }),
@@ -142,10 +162,14 @@ export class Ribbon {
       finishSketch: () => app.finishSketch(),
       // Baugruppe
       place: () => app.props.placeComponentDialog(),
+      asmPattern: () => app.props.newAsmPattern(),
       normteilAsm: () => app.props.normteilDialog(),
       align: () => app.beginAlign("gegen"),
       alignFlush: () => app.beginAlign("buendig"),
       alignConc: () => app.beginAlign("konzentrisch"),
+      alignInsert: () => app.beginAlign("einfuegen"),
+      alignAngle: () => app.beginAlign("winkel"),
+      alignTangent: () => app.beginAlign("tangential"),
       bom: () => app.props.bomDialog(),
       // Zeichnung
       newDrawing: () => app.newDrawing(),
@@ -238,9 +262,10 @@ export class Ribbon {
           { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch")] },
           { label: "Arbeitselemente", buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
           { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper"), B("kantteil", "Kantteil", "kantteil"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil")] },
-          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame")] },
+          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend")] },
           { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
+          { label: "Körper", buttons: [B("kombinieren", "Kombinieren", "combine"), B("trennen", "Trennen", "split"), B("verschieben", "Verschieben", "move"), B("aufdicken", "Aufdicken", "thicken"), B("flaeche", "Fläche verschieben", "pushpull"), B("entformung", "Entformung", "draft")] },
           { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() })] },
           { label: "Verwalten", buttons: [B("params", "Parameter", "params"), B("importStep", "STEP einfügen", "import"), B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
@@ -281,7 +306,7 @@ export class Ribbon {
     if (mode === "assembly") {
       return [
         { id: "baugruppe", label: "Zusammenfügen", groups: [
-          { label: "Komponente", buttons: [B("place", "Platzieren", "place"), B("normteilAsm", "Normteil", "normteil"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() })] },
+          { label: "Komponente", buttons: [B("place", "Platzieren", "place"), B("normteilAsm", "Normteil", "normteil"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() }), B("asmPattern", "Muster", "pattern")] },
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon")] },
           { label: "Stahlbau", buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband")] },
           { label: "Gestell", small: true, buttons: (() => {
@@ -298,10 +323,10 @@ export class Ribbon {
               B("gestellInfo", "Gestell-Info", "info", { disabled: !g }),
             ];
           })() },
-          { label: "Positionieren", buttons: [B("align", "Fläche an Fläche", "align", { on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "align", { on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" })] },
+          { label: "Positionieren", buttons: [B("align", "Fläche an Fläche", "align", { on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "align", { on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" }), B("alignInsert", "Einfügen", "insert", { on: app.pick?.kind === "align" && app.align?.mode === "einfuegen" }), B("alignAngle", "Winkel", "angle", { on: app.pick?.kind === "align" && app.align?.mode === "winkel" }), B("alignTangent", "Tangential", "tangent", { on: app.pick?.kind === "align" && app.align?.mode === "tangential" })] },
           { label: "Listen", buttons: [B("bom", "Stückliste", "bom"), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() })] },
           { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
-          { label: "Bewegung", buttons: [B("joint", "Drehgelenk", "hinge", { run: () => app.props.jointDialog() }), B("animate", "Bewegen", "motion", { run: () => app.props.animateJoints() }), B("explode", "Explosion", "explode", { on: app.viewer.explode > 0, run: () => app.props.explodeDialog() })] },
+          { label: "Bewegung", buttons: [B("joint", "Drehgelenk", "hinge", { run: () => app.props.jointDialog() }), B("jointCyl", "Zylindergelenk", "hinge", { run: () => app.props.jointDialog(null, "zylinder") }), B("animate", "Bewegen", "motion", { run: () => app.props.animateJoints() }), B("explode", "Explosion", "explode", { on: app.viewer.explode > 0, run: () => app.props.explodeDialog() })] },
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing"), B("partDrawings", "Einzelteilzeichnungen", "drawing", { run: () => app.partDrawings(app.activeId) })] },
         ] },
         this.exportTab("assembly"),

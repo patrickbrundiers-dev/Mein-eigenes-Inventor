@@ -118,3 +118,100 @@ test("Sweeping, Erhebung, Spirale und Muster entlang Pfad (Stufe 37)", async () 
   near(vol(res4), 20000 - 5 * Math.PI * 9 * 10, 1, "Muster entlang Pfad");
   assert.match(res4.status.pp.info, /5 Exemplare/);
 });
+
+test("Körper kombinieren, trennen, verschieben, aufdicken, Fläche verschieben, Entformung (Stufe 38)", async () => {
+  // zwei Quader 100×40×10, der zweite um 50 versetzt (überlappen 50×40×10)
+  const b1 = [rectSketchFeature("s1", "XY", 0, 0, 0, "100", "40"), { id: "e1", type: "extrude", sketch: "s1", distance: "10", op: "new" }];
+  const b2 = [rectSketchFeature("s2", "XY", 0, 50, 0, "100", "40"), { id: "e2", type: "extrude", sketch: "s2", distance: "10", op: "new" }];
+  const two = await K.buildPart(part([...b1, ...b2]));
+  assert.equal(two.bodies.length, 2);
+  const cut = await K.buildPart(part([...b1, ...b2, { id: "k", type: "kombinieren", target: "e1", tools: ["e2"], op: "cut" }]));
+  okAll(cut);
+  assert.equal(cut.bodies.length, 1);
+  near(vol(cut), 50 * 40 * 10, 1e-3, "Differenz");
+  const keep = await K.buildPart(part([...b1, ...b2, { id: "k", type: "kombinieren", target: "e1", tools: ["e2"], op: "join", keep: true }]));
+  assert.equal(keep.bodies.length, 2);
+  near(vol(keep), 150 * 40 * 10 + 100 * 40 * 10, 1e-3, "Vereinigen, Werkzeug behalten");
+  const bad = await K.buildPart(part([...b1, { id: "k", type: "kombinieren", target: "e1", tools: [] }]));
+  assert.match(bad.status.k.error, /Werkzeugkörper/);
+
+  // Trennen an YZ bei x = 30: zwei Körper 30 und 70 lang; nur Gegenseite: 30
+  const sp = await K.buildPart(part([...b1, { id: "t", type: "trennen", plane: "YZ", offset: "30" }]));
+  okAll(sp);
+  assert.equal(sp.bodies.length, 2);
+  assert.deepEqual(sp.bodies.map((b) => Math.round(R.measureVolume(b.shape))).sort((a, b) => a - b), [12000, 28000]);
+  const sp2 = await K.buildPart(part([...b1, { id: "t", type: "trennen", plane: "YZ", offset: "30", keep: "minus" }]));
+  near(vol(sp2), 12000, 1e-3, "Gegenseite");
+  const miss = await K.buildPart(part([...b1, { id: "t", type: "trennen", plane: "YZ", offset: "300" }]));
+  assert.match(miss.status.t.error, /schneidet keinen/);
+
+  // Verschieben um (0, 0, 20) und 90° um Z als Kopie
+  const mv = await K.buildPart(part([...b1, { id: "v", type: "verschieben", bodies: ["e1"], move: ["0", "0", "20"], angle: "90", axis: "Z", copy: true }]));
+  okAll(mv);
+  assert.equal(mv.bodies.length, 2);
+  const cb = mv.bodies[1].shape.boundingBox.bounds;
+  near(cb[0][2], 20, 1e-6); near(cb[1][0] - cb[0][0], 40, 1e-6, "gedreht");
+
+  // Aufdicken der Oberseite um 5 (neuer Körper), Fläche verschieben: Oberseite +3 und −4
+  const top = { p: [50, 20, 10] };
+  const th = await K.buildPart(part([...b1, { id: "a", type: "aufdicken", faces: [top], thickness: "5", side: "aussen" }]));
+  okAll(th);
+  assert.equal(th.bodies.length, 2);
+  near(R.measureVolume(th.bodies[1].shape), 100 * 40 * 5, 1e-3, "Aufdicken");
+  near(th.bodies[1].shape.boundingBox.bounds[1][2], 15, 1e-6);
+  const up = await K.buildPart(part([...b1, { id: "f", type: "flaeche", faces: [top], distance: "3" }]));
+  near(vol(up), 100 * 40 * 13, 1e-3, "Fläche heraus");
+  const dn = await K.buildPart(part([...b1, { id: "f", type: "flaeche", faces: [top], distance: "-4" }]));
+  near(vol(dn), 100 * 40 * 6, 1e-3, "Fläche zurück");
+
+  // Entformung: Seitenfläche y = 0 um 5° zur Ebene XY (neutral unten) geneigt → Keil 100 · 10 · tan5° · 10 / 2 weg oder dazu
+  const df = await K.buildPart(part([...b1, { id: "d", type: "entformung", faces: [{ p: [50, 0, 5] }], angle: "5", plane: "XY" }]));
+  okAll(df);
+  const wedge = (100 * 10 * 10 * Math.tan((5 * Math.PI) / 180)) / 2;
+  near(Math.abs(vol(df) - 40000), wedge, 1, "Entformung");
+});
+
+test("Rahmen: Endkappe, Kürzen/Verlängern an Ebene (Stufe 40)", async () => {
+  // Rechteckrohr 40×40×3, 500 lang entlang X ab 0
+  const prof = { id: "pr", type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "4" }, length: "500", start: ["0", "0", "0"], axis: "X", rotation: "0", miterStart: "0", miterEnd: "0" };
+  const base = await K.buildPart(part([prof]));
+  okAll(base);
+  const v0 = vol(base);
+  // aufgesetzte Kappe 5 mm an beiden Enden: 2 Platten 40×40 (Eckradius des Rohrs) dazu
+  const cap = await K.buildPart(part([prof, { id: "ek", type: "endkappe", target: "pr", end: "beide", mode: "aufgesetzt", thickness: "5" }]));
+  okAll(cap);
+  assert.equal(cap.bodies.length, 3);
+  const caps = cap.bodies.filter((b) => b.meta?.endcap);
+  assert.equal(caps.length, 2);
+  const bbA = caps[0].shape.boundingBox.bounds;
+  near(bbA[0][0], -5, 1e-6); near(bbA[1][0], 0, 1e-6);
+  near(R.measureVolume(caps[0].shape), 40 * 40 * 5, 100, "Kappe (Eckradius)");
+  // eingesetzt: Stopfen im Rohr bündig am Ende B
+  const plug = await K.buildPart(part([prof, { id: "ek", type: "endkappe", target: "pr", end: "B", mode: "eingesetzt", thickness: "10" }]));
+  okAll(plug);
+  const pb = plug.bodies.find((b) => b.meta?.endcap).shape.boundingBox.bounds;
+  near(pb[1][0], 500, 1e-6); near(pb[1][1] - pb[0][1], 34, 0.01, "Innenmaß");
+  const bad = await K.buildPart(part([{ ...prof, section: "flach", dims: { B: "40", t: "10" } }, { id: "ek", type: "endkappe", target: "pr", mode: "eingesetzt", thickness: "5" }]));
+  assert.match(bad.status.ek.error, /Hohlprofil/);
+
+  // Kürzen an YZ bei x = 400 (Ende B): 100 mm kürzer
+  const tr = await K.buildPart(part([prof, { id: "k", type: "kuerzen", target: "pr", plane: "YZ", offset: "400", end: "auto" }]));
+  okAll(tr);
+  near(vol(tr), v0 * 0.8, 1, "gekürzt");
+  near(tr.bodies[0].meta.length, 400, 1e-3);
+  // Verlängern bis x = 600: 100 mm länger
+  const ex = await K.buildPart(part([prof, { id: "k", type: "kuerzen", target: "pr", plane: "YZ", offset: "600" }]));
+  okAll(ex);
+  near(vol(ex), v0 * 1.2, 2, "verlängert");
+  near(ex.bodies[0].meta.length, 600, 1e-3);
+  // schräge Arbeitsebene: Ende auf Gehrung 30°
+  const sk = await K.buildPart(part([
+    { id: "w", type: "arbeitsebene", mode: "winkel", base: "YZ", axis: "u", angle: "30" },
+    prof, { id: "k", type: "kuerzen", target: "pr", plane: "datum:w", offset: "0", end: "A" },
+  ]));
+  okAll(sk);
+  near(sk.bodies[0].meta.miterStart, 30, 0.1, "Gehrung aus Ebene");
+  // parallele Ebene: Fehler
+  const par = await K.buildPart(part([prof, { id: "k", type: "kuerzen", target: "pr", plane: "XY", offset: "0" }]));
+  assert.match(par.status.k.error, /parallel/);
+});

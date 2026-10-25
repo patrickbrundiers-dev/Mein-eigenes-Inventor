@@ -121,7 +121,25 @@ Unit-Tests direkt prüfen.
 | 6 | Podest, Holmtreppe (auf der Stufe), Balkon (Rahmen), Spindeltreppe (Stufe) | Generatoren | je Typ, mehrere Pfosten mit verschiedenen Flächen |
 | 7 | Feinschliff UI (Pfostenauswahl, Hervorhebung), Regressionstests, Anwender-Doku, Release-Notiz | `props.js`, Doku | alte Projekte, Kernel-Körper |
 
-Jede Etappe ist ein eigener PR; nach jeder Etappe laufen alle Tests.
+Jede Etappe ist ein eigener PR; nach jeder Etappe laufen alle Tests. Etappe 3–5 sind zusammen in einem PR gelandet, weil die Vorgabe der Treppe (seitlich) erst mit Etappe 4 meldungsfrei wird.
+
+### Stand nach Etappe 5
+
+- **Treppe:** neues Feld „Pfostenbefestigung“ (seitlich = Vorgabe für neue Treppen, oben, aus). Alte Projekte ohne das Feld laufen mit „aus“ wie bisher. Pfosten an Enden/Knicken rücken in ihr Feld zurück (höchstens ein Drittel des Feldes), damit das Blech auf dem Bauteil liegt; Pfosten ohne passendes Bauteil daneben (Podest-Auslauf) bekommen eine Fußplatte oben bzw. eine Fehlermeldung, wenn auch das nicht geht. UPN-Wangen mit der offenen Seite nach außen: Fehlermeldung, Pfosten wie bisher.
+- **Geländer:** „Befestigung“ hat jetzt oben (Vorgabe), seitlich, Fußplatte (bisher) und keine; Anschluss an Boden/Deckenstirn (ohne Gegenbohrung, nur Randabstand) oder an ein Randprofil (Vorgabe U200, mit Gegenbohrungen).
+- **Abstandsausgleich:** Flacheisen (Vorgabe 60 × 10) steht senkrecht auf dem Blech, greift mit Stecknasen (Länge = Blechdicke, bündig) durch Steckschlitze im Blech und steckt durch einen Schlitz in der nahen Pfostenwand bis kurz vor die Gegenwand. Schlitze = Nase bzw. Flacheisen + 2 × Passungsspiel (gleiche Regel wie `slotSize` im Stecksystem), Schlitzbreite von Hand mit Passungsprüfung. Geprüft: Höchstabstand, Nasen auf der Breite (Mindeststeg), Schlitze im Blech zu Bohrungen und Rand, Material neben dem Pfostenschlitz, Abstand zum Pfostenende, Einstecktiefe, Vollmaterial.
+- **Kernel:** Plattenbohrungen mit eigenem Ø (`[x, y, Ø]`) und Rechteckausschnitte (`rects`).
+
+### Stand nach Etappe 6
+
+- **Podestecken L/U:** Der Podestrahmen liegt um die Wangendicke hinter der Wangenflucht. Die Luft dazwischen füllt ein **Futterblech** mit gleichem Bohrbild (Feld „Futterblech bis Luft“, Vorgabe 20 mm, 0 = nie). Eckpfosten am Rahmenende bekommen ein **zum Bauteil hin verlängertes Blech** bzw. eine verlängerte Fußplatte, das Bohrbild liegt ganz auf dem Bauteil und neben dem Pfosten. Ist die Fläche zu niedrig für 4 Bohrungen (Rahmen 100 hoch), werden es **2 Bohrungen in einer Reihe mittig** (Hinweis). Bei gleichem Abstand zu zwei Bauteilen gewinnt das parallel zur Laufrichtung. Steht ein Pfosten dicht vor der Stirnseite eines Bauteils (U-Treppe, Lauf endet am Podestrahmen), wird an die Stirnseite befestigt und der Pfosten an das Blech gerückt.
+- **Ausweichen:** „seitlich“ ohne Bauteil daneben (Antritt, Auslauf, Pfosten mitten auf dem Podest) nimmt die Fußplatte oben, wenn sie passt. „Oben“ ohne Auflage (Podest neben der U200-Flucht) nimmt das Blech seitlich, wenn es passt. Beides steht in der Info-Zeile.
+- **Holmtreppe oben:** Pfosten rücken auf die Stufen (höchstens ⅓ der Nachbarfelder), die Fußplatte liegt ganz auf der Stufe, Bohrungen in die Stufe. Seitlich gibt es bei Holmen kein Bauteil daneben (Meldung mit Hinweis auf „oben“).
+- **Balkon:** neues Feld „Pfostenbefestigung“: oben (Vorgabe für neue Balkone, Fußplatte 160 × 80 mit 2 Bohrungen auf dem Belag, Bohrungen auch in den Rahmen darunter), seitlich (Lauflinie außen vor dem Rahmen, Blech an der Rahmenaußenseite), einfache Fußplatte (bisher; alte Projekte). Geländer vom Rand neu 40 mm (Pfosten mittig über dem 80er-Rahmen).
+- **Spindeltreppe:** neues Feld „Befestigung der Stäbe“: geschweißt (Vorgabe, bisher) oder Fußplatte 80 × 50 × 6 je Stab entlang der Tangente, 2 Bohrungen Ø 9 in die Stufe.
+- **Kernel:** Bohrungen in Ketten ohne `geom` (Podest-/Balkonrahmen) finden ihren Stab jetzt über die Profilgröße.
+
+Bekannt und gewollt als Meldung: UPN-Wangen offen nach außen mit „seitlich“, Flachstahlwangen mit „oben“ (Bohrung breiter als die Wange), Pfostenplatten im engen Treppenauge der U-Treppe (Kollision mit der Wange, Blech schmaler wählen), Eckpfosten innen am L-Podest mit „oben“ (Platten zweier Pfosten überlappen).
 
 ## 6. Bekannte Grenzen (erste Version)
 
