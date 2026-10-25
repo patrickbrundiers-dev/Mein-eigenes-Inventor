@@ -118,7 +118,7 @@ export function bendTableUses(prj) {
     };
     for (const f of d.features || []) {
       if (f.suppressed) continue;
-      if (["kantteil", "konturwalzen"].includes(f.type) && f.rule === "tabelle") out.push([d.material || "S235", val(f.t ?? "2")]);
+      if (["kantteil", "konturwalzen", "blechkasten"].includes(f.type) && f.rule === "tabelle") out.push([d.material || "S235", val(f.t ?? "2")]);
       if (f.type === "knickrahmen" && f.bendRule === "tabelle") out.push([d.material || "S235", val(f.dims?.t)]);
     }
   }

@@ -2662,6 +2662,36 @@ try {
       JSON.stringify({ ctx0, ctx1, prj, stay, ctx2 }));
   }
 
+  // Fusion-Abgleich G4 (FU19): Blechkasten, In Blech umwandeln mit aufgetrennten Ecken
+  {
+    await evalApp(() => {
+      const a = window.__werkcad;
+      a.newPart("Kasten");
+      const P = [[0, 0], [250, 0], [250, 150], [0, 150]];
+      const sk = { id: "bq", type: "sketch", name: "Quader", plane: "XY", offset: "0", points: P.map(([x, y], i) => ({ id: "q" + i, x, y })), entities: P.map((_, i) => ({ id: "ql" + i, type: "line", p1: "q" + i, p2: "q" + ((i + 1) % 4) })), constraints: [] };
+      a.edit("Quader", () => { a.activeDoc().features.push(sk, { id: "bqe", type: "extrude", name: "Quader", sketch: "bq", distance: "80", mode: "normal" }); });
+    });
+    await idle();
+    await rbClick("In Blech umwandeln");
+    await idle();
+    const conv = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc(), f = d.features.at(-1), r = a.results.get(d.id);
+      const b = r.bodies.find((x) => x.fid === f.id);
+      return { type: f.type, from: f.from, bodies: r.bodies.length, flat: b?.meta?.sheet?.flatModel?.bends?.length, err: r.status[f.id]?.error || null, info: r.status[f.id]?.info || "", bb: b?.props?.bbox };
+    });
+    await evalApp(() => { const a = window.__werkcad; a.selectFeature(a.activeDoc().features.at(-1).id); });
+    await page.waitForTimeout(200);
+    const ui = await evalApp(() => ({ secs: [...document.querySelectorAll("#props .section h3, #props .section .sec-title, #props summary")].map((x) => x.textContent.trim()).filter(Boolean) }));
+    await shot("27b-blechkasten");
+    await evalApp(() => { const a = window.__werkcad, f = a.activeDoc().features.at(-1); a.edit("Ansicht", () => { f.view = "abgewickelt"; }); });
+    await idle();
+    const flat = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(d.id); const bb = r.bodies[0]?.props?.bbox; return bb ? [bb[1][0] - bb[0][0], bb[1][2] - bb[0][2]] : null; });
+    step("Blechkasten aus Quader (In Blech umwandeln), Ecken aufgetrennt, abgewickelt",
+      conv.type === "blechkasten" && conv.from === "bqe" && conv.bodies === 1 && conv.flat === 4 && !conv.err && /aus Körper umgewandelt/.test(conv.info) && /aufgetrennt/.test(conv.info)
+      && ui.secs.some((x) => /Ecken auftrennen/.test(x)) && flat && flat[0] > 250 && Math.abs(flat[1] - 2) < 1e-6,
+      JSON.stringify({ conv, ui, flat }));
+  }
+
   // Kernel (Werkzeuge Stufe 28): automatisches Neuberechnen aus → F5, Berechnungsprotokoll
   {
     await evalApp(() => { const app = window.__werkcad; app.newPart("Kernprobe"); app.ribbon.run("profile"); });

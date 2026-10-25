@@ -87,7 +87,7 @@ export function outdatedSheetRules(docs, rules) {
   const byId = new Map(rules.map((r) => [r.id, r]));
   const out = [];
   for (const d of docs) for (const f of d.features || []) {
-    if (!["kantteil", "konturwalzen"].includes(f.type) || !f.sheetRule) continue;
+    if (!["kantteil", "konturwalzen", "blechkasten"].includes(f.type) || !f.sheetRule) continue;
     const lib = byId.get(f.sheetRule.id);
     if (lib && JSON.stringify(lib) !== JSON.stringify(f.sheetRule)) out.push({ doc: d.id, feature: f.id, rule: lib });
   }

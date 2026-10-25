@@ -62,3 +62,43 @@ test("Bauteilende (FU5): Features hinter der Markierung werden nicht gerechnet",
   assert.ok(vol(full) > vol(cut));
   assert.deepEqual(cut.status.e2, { ok: true, rolledBack: true });
 });
+
+test("Blechkasten (FU19): Volumen = Abwicklungsfläche × Dicke, Ecken aufgetrennt, abgewickelt gleiches Volumen", async () => {
+  const kasten = { id: "bk", type: "blechkasten", L: "300", B: "200", H: "60", t: "2", ri: "2", k: "0.5", walls: "vorne; rechts; hinten; links", through: "x", gap: "0.5", pos: ["10", "20", "0"] };
+  const mk = (f) => ({ id: "pk" + Math.random(), kind: "part", name: "Kasten", material: "S235", params: [], features: [f] });
+  const res = await K.buildPart(mk(kasten));
+  okAll(res);
+  const b = res.bodies[0];
+  assert.ok(K.shapeValid(b.shape), "Körper gültig");
+  const [lo, hi] = b.shape.boundingBox.bounds;
+  assert.ok(Math.abs(lo[0] - 10) < 1e-3 && Math.abs(hi[0] - 310) < 1e-3 && Math.abs(lo[1] - 20) < 1e-3 && Math.abs(hi[2] - 60) < 1e-3, JSON.stringify([lo, hi]));
+  // K = 0,5: neutrale Faser in der Mitte → Volumen gefaltet = Abwicklungsfläche × t (bis auf Rundung der Bögen)
+  const fm = b.meta.sheet.flatModel;
+  const v = vol(res);
+  assert.ok(Math.abs(v - fm.area * 2) < fm.area * 2 * 0.003, `Volumen ${v} ≈ ${fm.area * 2}`);
+  assert.equal(fm.bends.length, 4);
+  assert.match(res.status.bk.info, /4 Ecke\(n\) aufgetrennt/);
+  const flat = await K.buildPart(mk({ ...kasten, view: "abgewickelt" }));
+  okAll(flat);
+  assert.ok(Math.abs(vol(flat) - fm.area * 2) < 1e-3 * fm.area);
+  // offen unten: gleiche Hülle, Boden oben
+  const down = await K.buildPart(mk({ ...kasten, open: "unten", walls: "vorne; hinten" }));
+  okAll(down);
+  assert.ok(Math.abs(down.bodies[0].shape.boundingBox.bounds[1][2] - 60) < 1e-3);
+});
+
+test("In Blech umwandeln: Quader wird Blechkasten mit seinen Außenmaßen, anderer Körper wird abgelehnt", async () => {
+  const quader = rectSketchFeature("s1", "XY", "0", 0, 0, 250, 150, "Quader");
+  const mk = (extra) => ({ id: "pq" + Math.random(), kind: "part", name: "Umwandeln", material: "S235", params: [], features: [quader, { id: "e1", type: "extrude", sketch: "s1", distance: "80", mode: "normal" }, ...extra] });
+  const res = await K.buildPart(mk([{ id: "bk", type: "blechkasten", from: "e1", t: "1.5", ri: "1.5", k: "0.33", walls: "vorne; rechts; hinten; links", through: "y", gap: "0.5" }]));
+  okAll(res);
+  assert.equal(res.bodies.length, 1, "Quader ersetzt");
+  const [lo, hi] = res.bodies[0].shape.boundingBox.bounds;
+  assert.ok(Math.abs(hi[0] - lo[0] - 250) < 1e-3 && Math.abs(hi[1] - lo[1] - 150) < 1e-3 && Math.abs(hi[2] - 80) < 1e-3, JSON.stringify([lo, hi]));
+  assert.match(res.status.bk.info, /aus Körper umgewandelt/);
+  // Quader mit Bohrung ist kein Quader mehr
+  const hole = { id: "h1", type: "extrude", sketch: "s9", distance: "80", mode: "reverse", op: "cut" };
+  const sk = { id: "s9", type: "sketch", plane: "XY", offset: "80", points: [{ id: "c", x: 125, y: 75 }], entities: [{ id: "k", type: "circle", c: "c", r: 20 }], constraints: [] };
+  const bad = await K.buildPart(mk([sk, hole, { id: "bk", type: "blechkasten", from: "e1", t: "1.5", ri: "1.5", walls: "vorne" }]));
+  assert.match(bad.status.bk.error, /nur quaderförmige Körper/);
+});

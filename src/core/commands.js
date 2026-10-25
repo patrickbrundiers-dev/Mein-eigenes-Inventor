@@ -89,6 +89,8 @@ export const COMMANDS = [
   { id: "file.angebot", label: "Angebotsblatt (PDF)", group: "Export", scope: "3d", keywords: "angebot kunde preis pdf bild" },
   { id: "file.mappe", label: "Fertigungsmappe (PDF + Dateien als ZIP)", group: "Export", scope: "3d", keywords: "werkstatt mappe pdf zip zeichnungen laser paket" },
   { id: "part.naht", label: "Schweißnaht", group: "3D-Modell", scope: "part", keywords: "schweissen kehlnaht v-naht hv-naht iso 2553 a-maß nahtliste" },
+  { id: "part.blechkasten", label: "Blechkasten (Blech mit Wänden und aufgetrennten Ecken)", group: "3D-Modell", scope: "part", keywords: "blech kasten wanne schale kassette abdeckung ecken auftrennen eckfreischnitt abwicklung" },
+  { id: "part.inBlech", label: "In Blech umwandeln", group: "3D-Modell", scope: "part", keywords: "blech umwandeln convert quader kasten auftrennen" },
   { id: "part.kantteil", label: "Kantteil (Blech)", group: "3D-Modell", scope: "part", keywords: "blech kantteil abkanten abwicklung biegen winkel u-profil z-profil kassette abdeckung laser dxf" },
   { id: "part.konturlasche", label: "Konturlasche (Blech aus Skizze)", group: "3D-Modell", scope: "part", keywords: "blech konturlasche contour flange skizze linie kanten profil" },
   { id: "part.lasche", label: "Lasche / Stirnlasche (Blech)", group: "3D-Modell", scope: "part", keywords: "blech lasche flange stirnlasche kassette freischnitt eckfreischnitt biegefreischnitt teil-lasche" },
