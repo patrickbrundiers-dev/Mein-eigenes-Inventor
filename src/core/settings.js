@@ -7,6 +7,7 @@ import { validateNameTemplate } from "./naming.js";
 import { CLASSES } from "./tolerance.js";
 import { validateBendTables } from "./bendtable.js";
 import { validateKeymap, commandDef } from "./commands.js";
+import { validateTemplate, DEFAULT_TEMPLATE } from "./zeichnungsvorlage.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
 // Reines Modul ohne DOM – die Oberfläche (src/ui/prefs.js) speichert und wendet an.
@@ -126,6 +127,7 @@ export const SETTINGS = [
   { key: "dokument.restwand", cat: "dokument", label: "Mindest-Restwand 0,1 mm in neuen Bauteilen", type: "bool", default: true, help: "Extrusion (Schnitt), Bohrung mit Tiefe oder Skizzenkontur, die genau auf der Rückseite der Wand endet (Tiefe = Wandstärke), lässt 0,1 mm stehen. Am Bauteil einzeln abschaltbar." },
   { key: "dokument.teilenummerPflicht", cat: "dokument", label: "Teilenummer ist Pflicht für die Freigabe", type: "bool", default: false, help: "Aus: fehlende Teilenummer ist eine Warnung. Ein: ein Fehler – Freigeben geht dann erst mit Nummer. Reine Normteile brauchen keine." },
   { key: "dokument.toleranzklasse", cat: "dokument", label: "Allgemeintoleranz neuer Zeichnungen", type: "enum", default: "m", options: CLASSES.map((c) => ({ value: c.value, label: "ISO 2768-" + c.label })), help: "Steht im Schriftfeld. »Allgemeintoleranz anzeigen« am Maß nimmt das ± aus dieser Klasse (Längen, Radien und Fasen nach ISO 2768-1)." },
+  { key: "zeichnung.vorlage", cat: "dokument", label: "Zeichnungsvorlage", type: "drawtemplate", default: { ...DEFAULT_TEMPLATE, extra: [] }, custom: true },
   { key: "dokument.nachkomma", cat: "dokument", label: "Nachkommastellen neuer Zeichnungsmaße", type: "int", default: 1, min: 0, max: 3, help: "Gilt für neue Zeichnungen; jedes Maß lässt sich einzeln ändern." },
   { key: "blech.regeln", cat: "blech", label: "Blechregeln", type: "sheetrules", default: DEFAULT_SHEET_RULES.map((r) => ({ ...r })), custom: true, help: "Benannte Vorgaben für Kantteile: Werkstoff, Dicke, Innenradius, Abwicklungsregel und Freischnitt. Am Kantteil als »Blechregel« wählbar." },
   { key: "blech.biegetabellen", cat: "blech", label: "Biegetabellen", type: "bendtables", default: [], custom: true, help: "Je Werkstoff und Blechdicke ein Raster Biegewinkel × Innenradius mit Werten der Abkantpresse. Zwischen den Zellen wird interpoliert, außerhalb gilt der Ersatz-K-Faktor der Tabelle." },
@@ -209,6 +211,8 @@ export function validateValue(def, v) {
       }
       return { ok: true, value: out };
     }
+    case "drawtemplate":
+      return validateTemplate(v);
     case "color":
       return typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? { ok: true, value: v.toLowerCase() } : { ok: false, error: "Farbe als #rrggbb erwartet" };
     default:

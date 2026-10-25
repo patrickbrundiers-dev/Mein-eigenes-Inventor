@@ -31,6 +31,7 @@ import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { releaseSection } from "./pruefung.js";
+import { paramsCsv, parseParamsCsv, mergeParams } from "../core/parameterdatei.js";
 import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern, parsePolygon, atEnd } from "../core/tubecuts.js";
 import { END_CUT_SECTIONS, featureCutSettings, roundTube3D, SWIVEL_DEFAULT } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
@@ -50,7 +51,7 @@ import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
-import { flattenAssembly, partCounts, canInsert, structureBom, modularBom } from "../core/subasm.js";
+import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences } from "../core/subasm.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { FINISHES, RAL, finishOf, finishLabel, ralName } from "../core/oberflaeche.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
@@ -1654,7 +1655,7 @@ export class Props {
       if (t === "e") {
         const e = sk.entities.find((x) => x.id === id);
         if (e) {
-          const label = { line: "Linie", circle: "Kreis", arc: "Bogen", point: "Punkt", ellipse: "Ellipse", spline: "Spline" }[e.type];
+          const label = { line: "Linie", circle: "Kreis", arc: "Bogen", point: "Punkt", ellipse: "Ellipse", spline: "Spline", text: "Text" }[e.type];
           const info = [];
           if (e.type === "line") { const a = P.get(e.p1), b = P.get(e.p2); info.push(h("dt", {}, "Länge"), h("dd", {}, fmtNum(Math.hypot(b.x - a.x, b.y - a.y), 3)), h("dt", {}, "Winkel"), h("dd", {}, fmtNum((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI, 2) + "°")); }
           if (e.type === "circle") info.push(h("dt", {}, "Durchmesser"), h("dd", {}, fmtNum(2 * e.r, 3)));
@@ -1674,6 +1675,18 @@ export class Props {
               se.pts.splice(best + 1, 0, id);
             }) }, "Punkt einfügen"),
             h("span", { class: "hint" }, "Kontrollpunkte ziehen formt die Kurve; Punkt wählen → „Aus Spline entfernen“."));
+          }
+          if (e.type === "text") {
+            const set = (key, label, conv = (v) => v) => (v) => app.sketcher.commit(label, (s) => { s.entities.find((x) => x.id === e.id)[key] = conv(v); });
+            const pos = (v) => { const n = Number(String(v).replace(",", ".")); return n > 0 ? n : e.h; };
+            extra = [
+              this.text("Text", e.text, set("text", "Text ändern"), { area: true }),
+              this.text("Schrifthöhe (mm)", String(e.h), set("h", "Schrifthöhe", pos)),
+              this.text("Winkel (°)", String(e.angle || 0), set("angle", "Textwinkel", (v) => Number(String(v).replace(",", ".")) || 0)),
+              this.seg("Schrift", [["normal", "Normal"], ["fett", "Fett"]], e.style || "normal", set("style", "Schrift")),
+              this.seg("Ausrichtung", [["links", "Links"], ["mitte", "Mitte"], ["rechts", "Rechts"]], e.align || "links", set("align", "Ausrichtung")),
+              h("p", { class: "hint" }, "Platzhalter {teilenummer}, {name}, {werkstoff}, {datum}. Doppelklick auf den Text öffnet den Dialog. Gravieren/Prägen: Feature »Prägen« oder Ausschnitt mit dieser Skizze."),
+            ];
           }
           if (e.type === "ellipse") {
             const g = ellipseGeom(P.get(e.c), P.get(e.a), e.r), deg = (g.rot * 180) / Math.PI;
@@ -1790,6 +1803,7 @@ export class Props {
       h("div", { class: "btn-row" },
         p ? h("button", { class: "btn", onclick: () => app.openDoc(p.id) }, "Bauteil bearbeiten") : null,
         h("button", { class: "btn", onclick: () => this.duplicateComponent(c.id) }, "Duplizieren"),
+        h("button", { class: "btn", onclick: () => this.replaceComponentDialog(c.id) }, "Ersetzen…"),
         h("button", { class: "btn danger", onclick: () => this.deleteComponent(c.id) }, "Entfernen")),
       this.jointSection(asm, c),
     ];
@@ -2224,6 +2238,45 @@ export class Props {
       this.app.sel = null;
     });
   }
+  /**
+   * Komponente ersetzen (FU7): anderes Bauteil oder andere Baugruppe aus dem Projekt oder aus einer Datei (verknüpft),
+   * nur diese oder alle Vorkommen. Lage und Abhängigkeiten bleiben; Flächen sucht der Löser im neuen Teil neu.
+   */
+  async replaceComponentDialog(id) {
+    const app = this.app, asm = app.activeDoc();
+    const c = asm?.components?.find((x) => x.id === id);
+    if (!c) return toast("Erst eine Komponente wählen");
+    const old = app.doc(c.part);
+    const docOf = (x) => app.doc(x);
+    const cands = app.project.docs.filter((d) => d.id !== c.part && (d.kind === "part" || d.kind === "assembly") && canInsert(asm, d, docOf));
+    const all = sameOccurrences(asm, id);
+    const FILE = "__datei";
+    const sel = h("select", { class: "inp" },
+      ...cands.map((d) => h("option", { value: d.id }, (d.kind === "assembly" ? "Baugruppe: " : "") + (d.number ? d.number + " – " : "") + d.name)),
+      window.werkcad ? h("option", { value: FILE }, "Aus Datei verknüpfen…") : null);
+    const scope = h("select", { class: "inp" }, h("option", { value: "one" }, `Nur »${c.name || old?.name}«`), all.length > 1 ? h("option", { value: "all" }, `Alle ${all.length} Vorkommen von »${old?.name || "?"}«`) : null);
+    if (!cands.length && !window.werkcad) return toast("Kein anderes Bauteil im Projekt – erst eines anlegen");
+    const go = await new Promise((res) => modal({ title: "Komponente ersetzen", width: "500px",
+      body: h("div", {},
+        h("p", { class: "hint" }, "Lage, Fixierung und Gelenk bleiben. Abhängigkeiten suchen ihre Flächen im neuen Teil neu (gleiche Richtung, nächster Abstand); was nicht passt, steht danach rot im Baum."),
+        h("div", { class: "field wide" }, h("label", {}, "Ersetzen durch"), sel),
+        h("div", { class: "field wide" }, h("label", {}, "Umfang"), scope)),
+      onClose: (v) => res(v),
+      buttons: [{ label: "Abbrechen", value: null }, { label: "Ersetzen", primary: true, run: () => ({ target: sel.value, scope: scope.value }) }] }));
+    if (!go) return;
+    const ids = go.scope === "all" ? all : [id];
+    let pick = null;
+    if (go.target === FILE) { pick = await app.files.pickLinkedPart(); if (!pick) return; }
+    let r;
+    app.edit("Komponente ersetzen", () => {
+      const doc = pick ? app.files.linkedDoc(pick) : app.doc(go.target);
+      r = replaceComponents(asm, ids, doc, docOf);
+    }, pick ? { link: true } : undefined);
+    if (pick) app.syncMaterials?.();
+    if (r?.error) return toast("Nicht ersetzt: " + r.error, { kind: "err" });
+    toast(`${r.replaced} Komponente${r.replaced === 1 ? "" : "n"} ersetzt${r.constraints ? ` – ${r.constraints} Abhängigkeit${r.constraints === 1 ? "" : "en"} neu zugeordnet` : ""}`, { kind: "ok" });
+    app.props.render();
+  }
   newSteckverbindung() { return newSteckverbindung(this.app); }
   variantDialog() { return variantDialog(this.app); }
   rulesDialog() { return rulesDialog(this.app); }
@@ -2337,7 +2390,17 @@ export class Props {
       title: `Parameter – ${part.name}`, width: "760px",
       body: h("div", {},
         h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Ausdruck"), h("th", {}, "Wert"), h("th", {}, "Kommentar"), h("th"))), tbody),
-        h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { let n = rows.length + 1; while (rows.some((r) => r.name === "P" + n)) n++; rows.push({ name: "P" + n, expr: "10", comment: "" }); draw(); } }, icon("plus"), " Parameter")),
+        h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { let n = rows.length + 1; while (rows.some((r) => r.name === "P" + n)) n++; rows.push({ name: "P" + n, expr: "10", comment: "" }); draw(); } }, icon("plus"), " Parameter"),
+          h("button", { class: "btn", title: "Parameter als Tabelle für Excel speichern (CSV)", onclick: () => app.files.saveText(paramsCsv(rows, resolveParams(rows).values), String(part.name || "Bauteil").replace(/[\\/:*?"<>|]+/g, "_") + " Parameter.csv", "text/csv", [{ name: "CSV", extensions: ["csv"] }]) }, icon("export"), " Exportieren"),
+          h("button", { class: "btn", title: "Parameter aus CSV übernehmen: gleiche Namen werden geändert, neue angehängt", onclick: async () => {
+            const f = await app.files.pickCsv();
+            if (!f) return;
+            const { rows: inc, errors } = parseParamsCsv(f.text);
+            const m = mergeParams(rows, inc);
+            rows.splice(0, rows.length, ...m.rows);
+            draw();
+            toast(`${f.name}: ${m.added.length} neu, ${m.updated.length} geändert${errors.length ? ` – ${errors.length} Zeile(n) übersprungen: ${errors.slice(0, 3).join("; ")}` : ""}. Mit »Übernehmen« bestätigen.`, { kind: errors.length ? "" : "ok", timeout: errors.length ? 9000 : 5000 });
+          } }, icon("import"), " Importieren…")),
         h("p", { class: "hint" }, "Parameter können in jedem Maß verwendet werden, z. B. »Länge - 2*Rand«. Funktionen: sin, cos, tan (Grad), sqrt, min, max, round, wenn(Bedingung; dann; sonst). Dezimalkomma ist erlaubt.")),
       buttons: [{ label: "Abbrechen" }, { label: "Übernehmen", primary: true, run: () => {
         const names = rows.map((r) => r.name);

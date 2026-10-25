@@ -51,6 +51,9 @@ for (const b of BUNDLED) {
   if (b.note) notice.push(`  Einbindung: ${b.note}`);
   notice.push("");
 }
+// Schrift für Text in der Skizze (Umrisse in src/core/schrift-daten.js)
+fs.copyFileSync(path.join("docs", "lizenzen", "dejavu.txt"), path.join(licDir, "DejaVu-LICENSE.txt"));
+notice.push("DejaVu Sans 2.37 (Schriftumrisse) – Bitstream-Vera-Lizenz, DejaVu-Änderungen gemeinfrei (lizenzen/DejaVu-LICENSE.txt)", "  Quelle: https://dejavu-fonts.github.io", "");
 const legal = fs.readdirSync(out).filter((f) => f.endsWith(".LEGAL.txt"));
 if (legal.length) notice.push("Weitere Hinweise zu gebündelten Bibliotheken: " + legal.join(", "));
 fs.writeFileSync(path.join(licDir, "DRITTANBIETER.txt"), notice.join("\r\n") + "\r\n");

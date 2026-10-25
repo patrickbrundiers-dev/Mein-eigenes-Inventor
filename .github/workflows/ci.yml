@@ -35,11 +35,11 @@ jobs:
       - name: Kern-Tests (ohne Geometrie)
         id: core
         continue-on-error: true
-        run: set -o pipefail; node --test test/core.test.mjs test/project.test.mjs test/units.test.mjs test/cutlist.test.mjs test/drawing.test.mjs test/assembly.test.mjs test/settings.test.mjs test/materials.test.mjs test/ribbonlayout.test.mjs test/naming.test.mjs test/dateien.test.mjs test/buildlog.test.mjs test/viewlight.test.mjs test/tolerance.test.mjs test/bendtable.test.mjs test/commands.test.mjs test/rohrlaser.test.mjs test/sketchshapes.test.mjs test/sketchsnap.test.mjs test/metall.test.mjs test/werkzeuge.test.mjs test/profillib.test.mjs test/pfostenbefestigung.test.mjs test/pruefung.test.mjs 2>&1 | tee ergebnis/core.txt
+        run: set -o pipefail; node --test test/core.test.mjs test/project.test.mjs test/units.test.mjs test/cutlist.test.mjs test/drawing.test.mjs test/assembly.test.mjs test/settings.test.mjs test/materials.test.mjs test/ribbonlayout.test.mjs test/naming.test.mjs test/dateien.test.mjs test/buildlog.test.mjs test/viewlight.test.mjs test/tolerance.test.mjs test/bendtable.test.mjs test/commands.test.mjs test/rohrlaser.test.mjs test/sketchshapes.test.mjs test/sketchsnap.test.mjs test/metall.test.mjs test/werkzeuge.test.mjs test/profillib.test.mjs test/pfostenbefestigung.test.mjs test/pruefung.test.mjs test/schrift.test.mjs test/versionen.test.mjs test/ersetzen.test.mjs test/parameterdatei.test.mjs test/bauteilende.test.mjs test/komponentenfarben.test.mjs test/skizzenbild.test.mjs test/bemassung.test.mjs test/zeichnungsvorlage.test.mjs 2>&1 | tee ergebnis/core.txt
       - name: Geometrie-Tests
         id: kernel
         continue-on-error: true
-        run: set -o pipefail; node --stack-size=8000 --test --test-reporter=spec test/kernel.test.mjs test/project-kernel.test.mjs test/validation.test.mjs test/parametric.test.mjs test/metall-kernel.test.mjs test/werkzeuge-kernel.test.mjs test/referenz-kernel.test.mjs 2>&1 | grep -v -E "^\*+|Statistics on Transfer|Transfer Mode|Transferring Shape|WorkSession|Step File Name|^\s*$" | tee ergebnis/kernel.txt
+        run: set -o pipefail; node --stack-size=8000 --test --test-reporter=spec test/kernel.test.mjs test/project-kernel.test.mjs test/validation.test.mjs test/parametric.test.mjs test/metall-kernel.test.mjs test/werkzeuge-kernel.test.mjs test/referenz-kernel.test.mjs test/fusion-kernel.test.mjs 2>&1 | grep -v -E "^\*+|Statistics on Transfer|Transfer Mode|Transferring Shape|WorkSession|Step File Name|^\s*$" | tee ergebnis/kernel.txt
       - name: Oberfläche bauen
         id: build
         continue-on-error: true

@@ -263,6 +263,65 @@ try {
   const svgLen = await evalApp(() => window.__werkcad.drawing.exportSvgString().length);
   step("SVG-Export", svgLen > 2000, String(svgLen));
 
+  // Zeichnung: Kettenmaß, Bezugsmaß, Mittelpunkt, Maße ausrichten (FU11), eigene Vorlage (FU12)
+  {
+    const zb = await evalApp(() => {
+      const a = window.__werkcad, dr = a.drawing, d = dr.doc;
+      const v = d.views.find((x) => x.type !== "iso" && dr.proj.get(x.id)?.visible?.length);
+      const p = dr.viewGeom(v), xf = dr.viewXf(v);
+      // drei Ecken mit verschiedenem x: links außen, eine dazwischen (nahe gleicher Höhe), rechts außen
+      const ends = [...new Map(p.visible.flatMap((pl) => [pl[0], pl[pl.length - 1]]).map((q) => [Math.round(q[0] * 100) + ":" + Math.round(q[1] * 100), q])).values()];
+      const sx0 = [...ends].sort((m, n) => m[0] - n[0]);
+      const A = sx0[0], B = sx0[sx0.length - 1];
+      const mid = ends.filter((q) => q[0] > A[0] + 1 && q[0] < B[0] - 1 && Math.abs(q[0] - A[0]) >= Math.abs(q[1] - A[1])).sort((m, n) => Math.abs(m[1] - A[1]) - Math.abs(n[1] - A[1]))[0];
+      const row = mid ? [A, mid, B] : [A, B];
+      const n0 = d.dims.length;
+      dr.setTool("chain");
+      for (const [i, q] of row.entries()) {
+        const [sx, sy] = xf.to(q[0], q[1]);
+        dr.chainClick(sx, sy);
+        if (i === 1) { const bb = xf.bb; const [, top] = xf.to(bb.x0, bb.y1); dr.chainClick(sx, top - 15); }
+      }
+      const chain = d.dims.slice(n0).map((m) => ({ kind: m.kind, off: m.off }));
+      dr.setTool(null);
+      dr.setTool("base");
+      const n1 = d.dims.length;
+      for (const [i, q] of row.entries()) {
+        const [sx, sy] = xf.to(q[0], q[1]);
+        dr.chainClick(sx, sy);
+        if (i === 1) { const bb = xf.bb; const [, , , bot] = [0, 0, 0, xf.to(bb.x0, bb.y0)[1]]; dr.chainClick(sx, bot + 15); }
+      }
+      const base = d.dims.slice(n1).map((m) => ({ kind: m.kind, off: m.off, x1: m.p1[0] }));
+      dr.setTool(null);
+      dr.alignDims();
+      const aligned = d.dims.slice(n0).map((m) => m.off);
+      // Mittelpunkt an einem Kreis
+      const arc = (p.arcs || [])[0];
+      let cm = null;
+      if (arc) { dr.setTool("center"); const [cx, cy] = xf.to(arc.cx + arc.r, arc.cy); dr.centerClick(cx, cy); cm = (d.centerMarks || []).length; dr.setTool(null); }
+      return { rowN: row.length, chain, base, aligned, cm, hasArc: !!arc, sameRowChain: chain.length === 2 && chain[0].off === chain[1].off };
+    });
+    await evalApp(() => window.__werkcad.drawing.templateDialog());
+    await page.locator(".template-dialog .btn-row input").first().fill("Auftrag");
+    await page.locator(".template-dialog .btn-row input").nth(1).fill("A-17");
+    await page.locator(".template-dialog select").nth(1).selectOption("5");
+    await page.locator(".dialog footer .btn.primary", { hasText: "Speichern" }).click();
+    await page.waitForTimeout(300);
+    const tp = await evalApp(() => {
+      const a = window.__werkcad, svg = a.drawing.exportSvgString();
+      const t = a.project.drawingTemplate;
+      const out = { dimText: t?.dimText, extra: t?.extra, auftrag: svg.includes(">Auftrag<") && svg.includes(">A-17<"), font5: /font-size="5"[^>]*class="dw-dimtext"|class="dw-dimtext"[^>]*font-size="5"|font-size="5"/.test(svg) };
+      a.edit("zurück", () => { delete a.project.drawingTemplate; }, { rebuild: false });
+      a.prefs.set("zeichnung.vorlage", { firma: "", ersteller: "", logo: null, extra: [], lineGroup: "0.5", dimText: 3.5 });
+      return out;
+    });
+    await shot("15b-zeichnung-kette-vorlage");
+    step("Zeichnung: Ketten-/Bezugsmaß, Mittelpunkt, ausrichten, Vorlage",
+      zb.rowN >= 3 && zb.sameRowChain && zb.chain[0].kind === "h" && zb.base.length === 2 && zb.base[0].x1 === zb.base[1].x1 && Math.abs(Math.abs(zb.base[1].off - zb.base[0].off) - 7) < 1e-6
+      && zb.aligned.length === 4 && (!zb.hasArc || zb.cm === 1) && tp.dimText === 5 && tp.extra?.[0]?.label === "Auftrag" && tp.auftrag && tp.font5,
+      JSON.stringify({ zb, tp }));
+  }
+
   // Neue Zeichnung der Baugruppe mit Grundansichten
   await evalApp(() => window.__werkcad.newDrawing({ kind: "assembly", id: "beispiel_bg" }));
   await idle(120000);
@@ -1603,6 +1662,58 @@ try {
       JSON.stringify({ sk1, conflict }));
   }
 
+  // Text in der Skizze (FU1): Werkzeug Text, Dialog, Platzhalter, Kontur mit Löchern, Gravur ins Blech
+  {
+    await evalApp(() => { const a = window.__werkcad; a.newPart("Schild"); a.activeDoc().number = "PB-42"; });
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const vb = await page.locator("#viewer canvas").boundingBox();
+    const mx = vb.x + vb.width / 2, my = vb.y + vb.height / 2;
+    await evalApp(() => window.__werkcad.sketcher.setTool("text"));
+    await page.mouse.click(mx - 150, my);
+    await page.waitForTimeout(150); // Dialog setzt den Fokus verzögert ins Textfeld
+    await page.locator(".text-dialog textarea").fill("A {teilenummer}");
+    await page.locator(".text-dialog input[type=number]").first().fill("20");
+    await page.locator(".dialog footer .btn.primary").click();
+    await page.waitForTimeout(300);
+    await shot("25b-text");
+    const tx = await evalApp(async () => {
+      const a = window.__werkcad, s = a.sketcher, e = s.sk.entities.find((x) => x.type === "text");
+      const prof = s.profiles;
+      const out = { text: e?.text, h: e?.h, regions: prof.regions.length, holes: prof.regions.reduce((n, r) => n + r.holes.length, 0), path: !!document.querySelector("#overlay path.sk-line") };
+      // Doppelklick öffnet den Dialog zum Ändern
+      const p = s.sk.points.find((q) => q.id === e.p);
+      const [sx, sy] = s.S(p.x + 40, p.y + 10);
+      const r = s.canvas.getBoundingClientRect();
+      s.setTool("select");
+      s.dblClick({ clientX: r.left + sx, clientY: r.top + sy, preventDefault() {} });
+      await new Promise((res) => setTimeout(res, 100));
+      out.dialog = !!document.querySelector(".text-dialog");
+      document.querySelector(".dialog footer .btn:not(.primary)")?.click();
+      a.finishSketch();
+      await new Promise((res) => setTimeout(res, 300));
+      // Blech darunter und Text 1 mm graviert
+      const d = a.activeDoc(), sk = d.features.find((f) => f.type === "sketch");
+      a.edit("Test", () => {
+        d.features.unshift({ id: "pl", type: "sketch", name: "Blech", plane: "XY", offset: "-5", points: [{ id: "q1", x: -400, y: -200 }, { id: "q2", x: 400, y: -200 }, { id: "q3", x: 400, y: 200 }, { id: "q4", x: -400, y: 200 }],
+          entities: [["q1", "q2"], ["q2", "q3"], ["q3", "q4"], ["q4", "q1"]].map(([p1, p2], i) => ({ id: "ql" + i, type: "line", p1, p2 })), constraints: [] },
+          { id: "plx", type: "extrude", sketch: "pl", distance: "5", mode: "normal" });
+        d.features.push({ id: "grav", type: "extrude", sketch: sk.id, distance: "1", mode: "reverse", op: "cut" });
+      });
+      const t0 = Date.now();
+      while (!(a.results.get(d.id)?.status?.grav) && Date.now() - t0 < 20000) await new Promise((res) => setTimeout(res, 100));
+      const res = a.results.get(d.id);
+      out.grav = res?.status?.grav;
+      out.vol = res?.bodies?.reduce((v, b) => v + (b.props?.volume || 0), 0);
+      return out;
+    });
+    step("Text in der Skizze", tx.text === "A {teilenummer}" && tx.h === 20 && tx.regions >= 6 && tx.holes >= 2 && tx.path && tx.dialog && tx.grav?.ok && tx.vol < 800 * 400 * 5 - 100,
+      JSON.stringify(tx));
+  }
+
   // Skizze: Rechteck versetzen (Kontur anklicken, Seite, Abstand), Maß ändern, Bedingung unterdrücken
   {
     await evalApp(() => window.__werkcad.newPart("Versatz"));
@@ -2251,6 +2362,159 @@ try {
     const menu = await (async () => { await page.locator("#ribbon .rb-file").click(); const t = await page.locator(".file-menu").textContent(); await page.locator(".file-menu button", { hasText: "Projekt paketieren" }).count() && await evalApp(() => document.querySelector(".file-menu")?.remove()); return t; })();
     step("Schreibgeschützt und paketieren", /\[schreibgeschützt\]/.test(ro.title) && !/schreibgeschützt/.test(ro.after) && pk.packed?.length === 1 && pk.still && !!dl && !packedText.includes("C:/Teile/X.wcad") && /Projekt paketieren/.test(menu),
       JSON.stringify({ ro, pk, dl: dl?.suggestedFilename(), menu: /paketieren/.test(menu) }));
+  }
+
+  // Versionen mit Notiz (FU6) und Komponente ersetzen (FU7)
+  {
+    await evalApp(() => { const a = window.__werkcad; a.dirty = false; for (const k of Object.keys(localStorage)) if (k.startsWith("pbcad.versionen.")) localStorage.removeItem(k); return a.openExample(); });
+    await idle(120000);
+    const saveVer = async (note) => {
+      await evalApp(() => { window.__werkcad.commands.exec("file.versionSave"); });
+      await page.locator(".version-note textarea").fill(note);
+      await page.locator(".dialog footer .btn.primary").click();
+      await page.waitForTimeout(300);
+    };
+    await saveVer("Angebot");
+    const mat0 = await evalApp(() => { const a = window.__werkcad, p = a.doc("beispiel_platte"); const m = p.material; a.edit("Werkstoff", () => { p.material = "S355JR"; }, { rebuild: false }); return m; });
+    await saveVer("Platte S355");
+    await evalApp(() => { window.__werkcad.commands.exec("file.versions"); });
+    await page.waitForSelector(".versions tbody tr");
+    const list = await evalApp(() => [...document.querySelectorAll(".versions tbody tr")].map((r) => r.textContent));
+    await page.locator(".versions tbody tr").last().locator("button", { hasText: "Wiederherstellen" }).click();
+    await page.locator(".dialog footer .btn.primary", { hasText: "Wiederherstellen" }).click();
+    await page.waitForTimeout(800);
+    await idle();
+    const ver = await evalApp(async () => {
+      const a = window.__werkcad;
+      const key = Object.keys(localStorage).find((k) => k.startsWith("pbcad.versionen.") && !/:\d+$/.test(k));
+      const idx = JSON.parse(localStorage.getItem(key) || "[]");
+      return { mat: a.doc("beispiel_platte").material, dirty: a.dirty, n: idx.length, auto: idx[0]?.note, changes: idx[1]?.changes, title: document.title, dlg: !!document.querySelector(".versions") };
+    });
+    // Ersetzen: beide Grundplatten durch eine Kopie, Lage bleibt
+    const rep = await evalApp(() => {
+      const a = window.__werkcad;
+      const src = a.doc("beispiel_platte");
+      const copy = { ...JSON.parse(JSON.stringify(src)), id: "e2e_platte2", name: "Grundplatte 20" };
+      a.edit("Kopie", () => a.project.docs.push(copy), { rebuild: false });
+      a.openDoc("beispiel_bg");
+      a.sel = { type: "component", id: "c2" };
+      a.props.render();
+      a.commands.exec("asm.replace");
+      return true;
+    });
+    await page.locator(".dialog select").first().selectOption("e2e_platte2");
+    await page.locator(".dialog select").nth(1).selectOption("all");
+    await page.locator(".dialog footer .btn.primary", { hasText: "Ersetzen" }).click();
+    await idle();
+    const after = await evalApp(() => { const asm = window.__werkcad.doc("beispiel_bg"); return asm.components.map((c) => [c.id, c.part, c.name, c.pos.join(";")]); });
+    const undo = await evalApp(() => { const a = window.__werkcad; a.undo(); return a.doc("beispiel_bg").components.find((c) => c.id === "c2").part; });
+    step("Versionen mit Notiz, Komponente ersetzen", list.length === 2 && /Platte S355/.test(list[0]) && /Geändert: Grundplatte/.test(list[0]) && /Erste Version/.test(list[1])
+      && ver.mat === mat0 && ver.dirty && ver.n === 3 && /Automatisch vor Wiederherstellen von V1/.test(ver.auto) && !ver.dlg
+      && rep && after[1][1] === "e2e_platte2" && after[2][1] === "e2e_platte2" && after[0][1] === "beispiel_rahmen" && after[1][3] === "-150;-100;0" && after[1][2] === "Grundplatte links" && undo === "beispiel_platte",
+      JSON.stringify({ list, ver, after, undo }));
+  }
+
+  // Fusion-Abgleich G3: Parameter als CSV (FU3), Bauteilende (FU5), Bauteilfarben (FU16), benannter Schnitt (FU18)
+  {
+    await evalApp(() => { const a = window.__werkcad; a.dirty = false; return a.openExample(); });
+    await idle(120000);
+    await evalApp(() => { const a = window.__werkcad; a.openDoc("beispiel_platte"); a.edit("Parameter", () => { a.activeDoc().params.push({ name: "L", expr: "200", comment: "Länge" }); }); });
+    await idle();
+    // Parameter: exportieren (Download) und eine CSV einlesen
+    await evalApp(() => window.__werkcad.props.paramsDialog());
+    const dlWait = page.waitForEvent("download", { timeout: 5000 }).catch(() => null);
+    await page.locator(".dialog button", { hasText: "Exportieren" }).click();
+    const dl = await dlWait;
+    const csvOut = dl ? fs.readFileSync(await dl.path(), "utf8") : "";
+    // Datei direkt ins (versteckte) Dateifeld legen – unabhängig vom Auswahldialog des Browsers
+    await page.locator(".dialog button", { hasText: "Importieren" }).click();
+    await page.locator('body > input[type=file][accept*=".csv"]').last().setInputFiles({ name: "werte.csv", mimeType: "text/csv", buffer: Buffer.from("Name;Ausdruck;Kommentar\nL;250;\nB;L / 2;Breite\n", "utf8") });
+    await page.waitForTimeout(400);
+    await page.locator(".dialog footer .btn.primary", { hasText: "Übernehmen" }).click();
+    await idle();
+    const prm = await evalApp(() => window.__werkcad.activeDoc().params.filter((p) => p.name === "L" || p.name === "B").map((p) => [p.name, p.expr, p.comment || ""]));
+    // Bauteilende: hinter das erste Feature ziehen (über das Kontextmenü), neues Feature landet dort
+    const end = await evalApp(async () => {
+      const a = window.__werkcad, d = a.activeDoc();
+      const n = d.features.length, first = d.features[0].id;
+      const v0 = a.results.get(d.id).bodies.length;
+      a.setPartEnd(first);
+      await new Promise((r) => setTimeout(r, 300));
+      while (a.busy) await new Promise((r) => setTimeout(r, 100));
+      const r1 = a.results.get(d.id);
+      const rolled = Object.values(r1.status).filter((s) => s.rolledBack).length;
+      const greyed = document.querySelectorAll("#browser .node.suppressed").length;
+      const marker = !!document.querySelector("#browser .node.part-end.rolled");
+      const sk = a.createSketch({ ref: "XY" });
+      a.finishSketch();
+      const at = d.features.findIndex((f) => f.id === sk.id);
+      const endAfter = d.endAfter;
+      for (let k = 0; k < 5 && a.activeDoc().endAfter !== undefined; k++) a.undo();
+      const dd = a.activeDoc();
+      return { n, v0, rolled, greyed, marker, at, endAfter, skId: sk.id, restored: dd.endAfter === undefined && dd.features.length === n };
+    });
+    await idle();
+    // Bauteilfarben in der Baugruppe
+    const col = await evalApp(async () => {
+      const a = window.__werkcad;
+      a.openDoc("beispiel_bg");
+      const colors = () => { const m = new Map(); a.viewer.root.traverse((o) => { if (o.isMesh && o.parent?.userData?.comp && o.material?.color) m.set(o.parent.userData.comp, o.material.color.getHexString()); }); return Object.fromEntries(m); };
+      const t0 = Date.now();
+      do await new Promise((r) => setTimeout(r, 200)); while ((a.busy || Object.keys(colors()).length < 4) && Date.now() - t0 < 30000);
+      const before = colors();
+      a.commands.exec("view.compColors");
+      const on = colors();
+      a.toggleCompColors();
+      return { before, on, off: colors(), flag: !!a.compColors };
+    });
+    // Benannter Schnitt: Schnitt Z, Ansicht speichern, Schnitt aus, Ansicht wieder → Schnitt ist zurück
+    await evalApp(() => window.__werkcad.toggleClip("Z"));
+    const tab0 = await page.locator("#ribbon .rb-tab.active").textContent();
+    await page.locator("#ribbon .rb-tab", { hasText: "Ansicht" }).click();
+    await page.locator("#ribbon .rb-btn", { hasText: "Ansicht speichern" }).click();
+    await page.locator(".dialog input").fill("Schnitt Mitte");
+    await page.locator(".dialog footer .btn", { hasText: "Speichern" }).click();
+    await page.waitForTimeout(200);
+    await page.locator("#ribbon .rb-tab", { hasText: tab0 }).first().click();
+    const cut = await evalApp(() => {
+      const a = window.__werkcad;
+      const saved = a.activeDoc().namedViews?.find((v) => v.name === "Schnitt Mitte")?.clip;
+      a.toggleClip("Z");
+      const off = !a.viewer.clip;
+      a.showNamedView("Schnitt Mitte");
+      const back = a.viewer.clip && { axis: a.viewer.clip.axis, offset: a.viewer.clip.offset };
+      a.viewer.setClip(null); a.renderClipBar();
+      return { saved, off, back };
+    });
+    // Bild in der Skizze (FU2): Werkzeug Bild, Datei, Breite; nur Anzeige, keine Kontur
+    await evalApp(() => window.__werkcad.newPart("Vorlage"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    const vb2 = await page.locator("#viewer canvas").boundingBox();
+    await evalApp(() => window.__werkcad.sketcher.setTool("image"));
+    await page.mouse.click(vb2.x + vb2.width / 2, vb2.y + vb2.height / 2);
+    await page.locator('body > input[type=file][accept*=".png"]').last().setInputFiles({ name: "foto.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGM4YWT038joxH8AEbsEV2vUBVIAAAAASUVORK5CYII=", "base64") });
+    await page.locator(".image-dialog input[type=number]").first().fill("100");
+    await page.locator(".dialog footer .btn.primary").click();
+    await page.waitForTimeout(300);
+    const img = await evalApp(() => {
+      const a = window.__werkcad, s = a.sketcher, e = s.sk.entities.find((x) => x.type === "image");
+      const out = { w: e?.w, h: e?.h, op: e?.opacity, stored: Object.keys(a.project.images || {}).length, svg: !!document.querySelector("#overlay image.sk-image"), regions: s.profiles.regions.length };
+      a.finishSketch();
+      const json = a.files.serialize();
+      out.saved = (JSON.parse(json).images && Object.keys(JSON.parse(json).images).length) || 0;
+      return out;
+    });
+    step("Parameter-CSV, Bauteilende, Bauteilfarben, benannter Schnitt, Bild in Skizze",
+      img.w === 100 && img.h === 50 && img.op === 0.5 && img.stored === 1 && img.svg && img.regions === 0 && img.saved === 1 &&
+      /^\ufeff?Name;Ausdruck;Wert;Kommentar\r\n/.test(csvOut) && /\r\nL;200;200;Länge\r\n/.test(csvOut) && JSON.stringify(prm) === JSON.stringify([["L", "250", "Länge"], ["B", "L / 2", "Breite"]])
+      && end.n > 1 && end.rolled === end.n - 1 && end.greyed >= end.n - 1 && end.marker && end.at === 1 && end.endAfter === end.skId && end.restored
+      && col.on.c2 === col.on.c3 && col.on.c1 !== col.on.c2 && col.on.c1 !== col.before.c1 && col.off.c1 === col.before.c1 && !col.flag
+      && cut.saved?.axis === "Z" && cut.off && cut.back?.axis === "Z" && Math.abs(cut.back.offset - cut.saved.offset) < 1e-9,
+      JSON.stringify({ csv: csvOut.slice(0, 80), prm, end, col, cut, img }));
   }
 
   // Kernel (Werkzeuge Stufe 28): automatisches Neuberechnen aus → F5, Berechnungsprotokoll

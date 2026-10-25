@@ -31,7 +31,10 @@ function statusName(part, key) {
 export function featureProblems(part, result) {
   if (!result) return [];
   const out = [];
+  const rolled = Object.values(result.status || {}).filter((s) => s.rolledBack).length;
+  if (rolled) out.push(item(WARNUNG, part, `Bauteilende zurückgezogen – ${rolled} Feature${rolled === 1 ? " wird" : "s werden"} nicht gerechnet`));
   for (const [key, s] of Object.entries(result.status || {})) {
+    if (s.rolledBack) continue;
     const feature = key.startsWith("param:") || key === "koerper" ? null : key;
     if (!s.ok) out.push(item(FEHLER, part, `${statusName(part, key)}: ${s.error || "nicht berechenbar"}`, { feature }));
     else if (s.warning) out.push(item(WARNUNG, part, `${statusName(part, key)}: ${s.warning}`, { feature }));

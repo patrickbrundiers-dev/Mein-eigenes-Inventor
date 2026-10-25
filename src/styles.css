@@ -525,6 +525,23 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .loft-list li { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
 .loft-list li .btn { padding: 0 6px; min-width: 0; }
 
+/* Versionen (FU6) */
+.versions { width: 100%; border-collapse: collapse; font-size: 12px; }
+.versions th, .versions td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--steel-2); vertical-align: top; }
+.versions td.btn-cell { white-space: nowrap; text-align: right; }
+.versions td.btn-cell .btn { margin-left: 4px; }
+.versions-dialog { max-height: 60vh; overflow: auto; }
+.version-note textarea { width: 100%; resize: vertical; }
+
+/* Bauteilende (FU5) */
+.tree .node.part-end { color: var(--ink-soft); font-size: 11px; border-top: 2px solid var(--laser); cursor: grab; }
+.tree .node.part-end.rolled { color: var(--laser); font-weight: 600; }
+.tree li.drop > .node { box-shadow: inset 0 -2px 0 var(--laser); }
+
+/* Bild in der Skizze (FU2) */
+.sk-image { pointer-events: none; }
+.sk-ctrl.missing { stroke: var(--err); stroke-dasharray: 6 3; }
+
 /* Stufe 43: Variantentabelle, Regeln, Makros */
 .var-table { overflow: auto; max-height: 55vh; }
 .var-table th .inp { min-width: 80px; }

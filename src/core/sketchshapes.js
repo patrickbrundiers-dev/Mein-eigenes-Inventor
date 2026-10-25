@@ -1,5 +1,7 @@
 // Zusammengesetzte Skizzenelemente (Langloch, Polygon), Spiegeln und Klartext für Bedingungen.
 // Rein und testbar; die Bedingungen halten die Form auch nach Maßänderungen (kein Einmal-Geometrie).
+import { textBox } from "./schrift.js";
+import { imageCorners } from "./skizzenbild.js";
 
 const sub = (a, b) => [a.x - b.x, a.y - b.y];
 
@@ -370,6 +372,8 @@ export function entitiesInBox(sk, toScreen, rect, crossing) {
     let poly;
     if (e.type === "line") poly = [S(P.get(e.p1)), S(P.get(e.p2))];
     else if (e.type === "point") poly = [S(P.get(e.p))];
+    else if (e.type === "text") { const b = textBox(e, P.get(e.p)); if (!b) continue; poly = [...b, b[0]].map(([x, y]) => toScreen(x, y)); }
+    else if (e.type === "image") { const b = imageCorners(e, P.get(e.p)); if (!b) continue; poly = [...b, b[0]].map(([x, y]) => toScreen(x, y)); }
     else if (e.type === "circle" || e.type === "arc") {
       const c = P.get(e.c);
       let a1 = 0, sw = 2 * Math.PI, r = e.r;

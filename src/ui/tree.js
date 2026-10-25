@@ -2,6 +2,7 @@
 import { h, icon, contextMenu, promptDialog } from "./dom.js";
 import { FEATURE_NAMES } from "./app.js";
 import { sketchRefs } from "../core/featurerefs.js";
+import { activeCount } from "../core/bauteilende.js";
 
 const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
 
@@ -86,18 +87,37 @@ export class Tree {
     ul.append(oli);
     // Parameter
     if (part.params.length) ul.append(h("li", {}, this.node({ label: `Parameter (${part.params.length})`, ic: "params", onClick: () => app.props.paramsDialog() })));
-    for (const f of part.features) {
+    // Bauteilende (FU5): Markierung zum Ziehen; Features dahinter grau und nicht gerechnet
+    const endAt = activeCount(part);
+    const endNode = () => {
+      const n = this.node({ label: "Bauteilende", ic: "finish", cls: "part-end" + (endAt < part.features.length ? " rolled" : ""), title: "Bauteilende – auf ein Feature ziehen: nur bis dorthin rechnen, neue Features kommen hierher",
+        onMenu: (e) => contextMenu(e.clientX, e.clientY, [
+          { label: "Ans Ende", icon: "down", run: () => app.setPartEnd(null) },
+          { label: "Vor alle Features", icon: "up", run: () => app.setPartEnd("") },
+        ]) });
+      n.draggable = true;
+      n.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/x-pbcad-end", "1"); e.dataTransfer.effectAllowed = "move"; });
+      return h("li", {}, n);
+    };
+    const dropTarget = (li, id) => {
+      li.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("text/x-pbcad-end")) { e.preventDefault(); li.classList.add("drop"); } });
+      li.addEventListener("dragleave", () => li.classList.remove("drop"));
+      li.addEventListener("drop", (e) => { li.classList.remove("drop"); if (e.dataTransfer.getData("text/x-pbcad-end")) { e.preventDefault(); app.setPartEnd(id); } });
+      return li;
+    };
+    if (endAt === 0 && part.features.length) ul.append(endNode());
+    for (const [i, f] of part.features.entries()) {
       const st = r?.status?.[f.id];
       const cls = [];
       if (app.sel?.type === "feature" && app.sel.id === f.id) cls.push("sel");
       if (st && !st.ok) cls.push("err");
       else if (st?.warning) cls.push("warn");
-      if (f.suppressed || r?.ruleOff?.includes(f.id)) cls.push("suppressed");
+      if (f.suppressed || i >= endAt || r?.ruleOff?.includes(f.id)) cls.push("suppressed");
       const consumedBy = part.features.filter((g) => sketchRefs(g).includes(f.id));
       const meta = f.type === "sketch" && st?.dof > 0 ? `${st.dof} FG` : "";
       const nd = this.node({
         label: f.name || FEATURE_NAMES[f.type], ic: (f.type === "generator" && f.gen) || FICON[f.type], cls: cls.join(" "), meta,
-        title: st?.error ? "Fehler: " + st.error : st?.warning ? "Hinweis: " + st.warning : f.name,
+        title: i >= endAt ? "Hinter dem Bauteilende – wird nicht gerechnet" : st?.error ? "Fehler: " + st.error : st?.warning ? "Hinweis: " + st.warning : f.name,
         onClick: () => app.selectFeature(f.id),
         onDbl: () => (f.type === "sketch" ? app.editSketch(f.id) : app.selectFeature(f.id)),
         onMenu: (e) => this.featureMenu(e, part, f, consumedBy),
@@ -108,8 +128,9 @@ export class Tree {
       nd.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/x-pbcad-feature", f.id); e.dataTransfer.effectAllowed = "move"; });
       nd.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("text/x-pbcad-feature")) { e.preventDefault(); nd.classList.add("drop"); } });
       nd.addEventListener("dragleave", () => nd.classList.remove("drop"));
-      nd.addEventListener("drop", (e) => { e.preventDefault(); nd.classList.remove("drop"); const id = e.dataTransfer.getData("text/x-pbcad-feature"); if (id && id !== f.id) app.moveFeatureTo(id, part.features.findIndex((g) => g.id === f.id)); });
-      ul.append(h("li", {}, nd));
+      nd.addEventListener("drop", (e) => { nd.classList.remove("drop"); const id = e.dataTransfer.getData("text/x-pbcad-feature"); if (!id) return; e.preventDefault(); e.stopPropagation(); if (id !== f.id) app.moveFeatureTo(id, part.features.findIndex((g) => g.id === f.id)); });
+      ul.append(dropTarget(h("li", {}, nd), f.id));
+      if (i === endAt - 1 && endAt > 0) ul.append(endNode());
     }
     if (!part.features.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Mit »Skizze erstellen« oder »Rohr / Profil« beginnen."));
     return ul;
@@ -163,6 +184,7 @@ export class Tree {
           { label: c.hidden ? "Einblenden" : "Ausblenden", icon: c.hidden ? "eye" : "eyeoff", run: () => app.edit("Sichtbarkeit", () => { c.hidden = !c.hidden; }) },
           { label: c.fixed ? "Fixierung lösen" : "Fixieren", icon: "fix", run: () => app.edit("Fixieren", () => { c.fixed = !c.fixed; }) },
           { label: "Duplizieren", icon: "copy", run: () => app.props.duplicateComponent(c.id) },
+          { label: "Ersetzen…", icon: "update", run: () => app.props.replaceComponentDialog(c.id) },
           { label: "Spiegeln …", icon: "mirror", run: () => app.props.mirrorComponent(c.id) },
           "-",
           { label: "Entfernen", icon: "trash", run: () => app.props.deleteComponent(c.id) },
@@ -270,6 +292,7 @@ export class Tree {
       { label: f.suppressed ? "Unterdrückung aufheben" : "Unterdrücken", icon: f.suppressed ? "eye" : "eyeoff", run: () => app.edit("Unterdrücken", () => { f.suppressed = !f.suppressed; }) },
       { label: "Nach oben", icon: "up", run: () => app.moveFeature(f.id, -1) },
       { label: "Nach unten", icon: "down", run: () => app.moveFeature(f.id, 1) },
+      { label: "Bauteilende hierher", icon: "finish", run: () => app.setPartEnd(f.id) },
       "-",
       { label: "Duplizieren", icon: "copy", run: () => app.duplicateFeature(f.id) },
       { label: "Kopieren", icon: "copy", run: () => app.copyFeature(f.id) },

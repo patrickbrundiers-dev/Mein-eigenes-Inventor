@@ -310,7 +310,8 @@ export class Ribbon {
           B("v_ortho", "Orthogonal", "view", { on: !app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "orthogonal") }),
           B("v_persp", "Perspektive", "view", { on: app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "perspektive") }),
         ] },
-        { label: "Modus", small: true, buttons: DISPLAY.map((d) => B("dm_" + d.value, d.label, d.value === "draht" ? "grid" : d.value === "foto" ? "camera" : "eye", { on: app.viewer.displayMode === d.value, run: () => app.prefs.set("ansicht.darstellung", d.value) })) },
+        { label: "Modus", small: true, buttons: [...DISPLAY.map((d) => B("dm_" + d.value, d.label, d.value === "draht" ? "grid" : d.value === "foto" ? "camera" : "eye", { on: app.viewer.displayMode === d.value, run: () => app.prefs.set("ansicht.darstellung", d.value) })),
+          B("compColors", "Bauteilfarben", "steel", { on: !!app.compColors, disabled: app.mode !== "assembly", run: () => app.toggleCompColors() })] },
         { label: "Auswahl", small: true, buttons: [
           B("sf_alles", "Alles wählbar", "view", { on: app.selFilter === "alles", run: () => app.setSelFilter("alles") }),
           B("sf_flaechen", "Nur Flächen", "plane", { on: app.selFilter === "flaechen", run: () => app.setSelFilter("flaechen") }),
@@ -382,14 +383,14 @@ export class Ribbon {
             T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"),
             T("sfillet", "Rundung", "fillet"), T("point", "Punkt", "point"),
           ] },
-          { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() })] },
+          { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() }), T("image", "Bild", "import")] },
           { label: "Ändern", small: true, buttons: [
             T("smove", "Verschieben", "move"), T("scopy", "Kopieren", "copy"), T("srotate", "Drehen", "rotate"),
             T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"),
             T("sscale", "Skalieren", "scale"), T("offset", "Versatz", "offset"), B("sclean", "Säubern", "clean", { run: () => sk.cleanDialog() }),
           ] },
           { label: "Muster", small: true, buttons: [C("pattern", "Rechteckmuster", "pattern"), C("cpattern", "Kreismuster", "circpattern"), C("mirror", "Spiegeln", "mirror")] },
-          { label: "Bemaßung", big: 1, buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() }), B("params", "Parameter", "params")] },
+          { label: "Bemaßung", big: 1, buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() }), B("params", "Parameter", "params"), T("text", "Text", "text")] },
           { label: "Abhängigkeiten", small: true, buttons: [
             C("coincident", "Koinzident", "coincident"), C("collinear", "Kollinear", "collinear"), C("concentric", "Konzentrisch", "concentric"),
             C("fix", "Fixieren", "fix"), C("parallel", "Parallel", "parallel"), C("perpendicular", "Senkrecht", "perpendicular"),
@@ -411,7 +412,7 @@ export class Ribbon {
       const asm = app.activeDoc();
       return [
         { id: "baugruppe", label: "Zusammenfügen", groups: [
-          { label: "Komponente", big: 2, buttons: [B("place", "Platzieren", "place"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("normteilAsm", "Normteil", "normteil"), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() }), B("asmPattern", "Muster", "pattern"), B("steckAsm", "Stecksystem", "tabslot"), B("asmMirror", "Spiegeln", "mirror", { run: () => app.props.mirrorComponent() })] },
+          { label: "Komponente", big: 2, buttons: [B("place", "Platzieren", "place"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("normteilAsm", "Normteil", "normteil"), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() }), B("asmPattern", "Muster", "pattern"), B("steckAsm", "Stecksystem", "tabslot"), B("asmMirror", "Spiegeln", "mirror", { run: () => app.props.mirrorComponent() }), B("replaceComp", "Ersetzen", "update", { run: () => app.commands.exec("asm.replace") })] },
           { label: "Position", small: true, buttons: [B("cmove", "Verschieben", "move", { run: () => app.props.moveComponentDialog("move") }), B("crotate", "Drehen", "rotate", { run: () => app.props.moveComponentDialog("rotate") }), B("ccopy", "Kopieren", "copy", { run: () => app.props.copySelectedComponent() })] },
           { label: "Beziehungen", big: 2, buttons: [B("constraint", "Abhängigkeit", "align", { on: app.pick?.kind === "align" && !!app.align?.type }), B("joint", "Drehgelenk", "hinge", { run: () => app.props.jointDialog() }), B("align", "Fläche an Fläche", "align", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "align", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" }), B("alignInsert", "Einfügen", "insert", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "einfuegen" }), B("alignAngle", "Winkel", "angle", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "winkel" }), B("alignTangent", "Tangential", "tangent", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "tangential" }), B("jointCyl", "Zylindergelenk", "hinge", { iconOnly: true, run: () => app.props.jointDialog(null, "zylinder") })] },
           { label: "Verwalten", big: 1, buttons: [B("bom", "Stückliste", "bom"), B("weldment", "Schweißbaugruppe", "weldasm", { run: () => app.props.makeWeldment() }), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() }), B("asmParams", "Parameter", "params", { disabled: !asm?.generator, run: () => app.props.paramsDialog() }), B("showComps", "Alle einblenden", "eye", { disabled: !asm?.components?.some((c) => c.hidden), run: () => app.props.showAllComponents() })] },
@@ -461,6 +462,11 @@ export class Ribbon {
           ] },
           { label: "Beschriften", buttons: [
             B("dd_dim", "Bemaßung", "dimension", { on: dr.tool === "dim", run: () => dr.setTool(dr.tool === "dim" ? null : "dim") }),
+            B("dd_chain", "Kettenmaß", "dimension", { on: dr.tool === "chain", run: () => dr.setTool(dr.tool === "chain" ? null : "chain") }),
+            B("dd_base", "Bezugsmaß", "dimension", { on: dr.tool === "base", run: () => dr.setTool(dr.tool === "base" ? null : "base") }),
+            B("dd_arclen", "Bogenlänge", "arc", { on: dr.tool === "arclen", run: () => dr.setTool(dr.tool === "arclen" ? null : "arclen") }),
+            B("dd_center", "Mittelpunkt", "circle", { on: dr.tool === "center", run: () => dr.setTool(dr.tool === "center" ? null : "center") }),
+            B("dd_align", "Maße ausrichten", "align", { run: () => dr.alignDims() }),
             B("dd_auto", "Hauptmaße", "dimension", { run: () => dr.autoDims() }),
             B("dd_text", "Text", "text", { on: dr.tool === "text", run: () => dr.setTool(dr.tool === "text" ? null : "text") }),
             B("dd_leader", "Hinweis", "text", { on: dr.tool === "leader", run: () => dr.setTool(dr.tool === "leader" ? null : "leader") }),
@@ -473,9 +479,11 @@ export class Ribbon {
           ] },
           { label: "Baugruppe", buttons: [
             B("dd_pos", "Pos.-Nummern", "circle", { run: () => dr.autoBalloons() }),
+            B("dd_posnum", "Neu nummerieren", "circle", { disabled: !dr.doc?.balloons?.length, run: () => dr.renumberBalloons() }),
+            B("dd_posalign", "Pos. ausrichten", "align", { disabled: !dr.doc?.balloons?.length, run: () => dr.alignBalloonRows() }),
             B("dd_bom", "Stückliste", "bom", { on: !!dr.doc?.bomTable?.show, run: () => dr.toggleBomTable() }),
           ] },
-          { label: "Blatt", buttons: [B("dd_fit", "Blatt einpassen", "fit", { run: () => dr.fitSheet() })] },
+          { label: "Blatt", buttons: [B("dd_fit", "Blatt einpassen", "fit", { run: () => dr.fitSheet() }), B("dd_tpl", "Vorlage", "settings", { run: () => dr.templateDialog() })] },
         ] },
         this.exportTab("drawing"),
       ];
@@ -618,7 +626,7 @@ export class Ribbon {
   kbd(id) { return this.app.commands?.label(id) || ""; }
   /** Tooltip mit Tastaturkürzel, falls der Knopf einem Befehl entspricht */
   tip(b) {
-    const special = { rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
+    const special = { rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", replaceComp: "asm.replace", compColors: "view.compColors", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
     const id = special[b.id] || (b.id.startsWith("t_") ? "sketch." + b.id.slice(2) : b.id.startsWith("v_") ? "view." + b.id.slice(2) : b.id.startsWith("dm_") ? "view.mode." + b.id.slice(3) : "part." + b.id);
     const k = this.kbd(id);
     return k ? `${b.label} (${k})` : b.label;
@@ -643,6 +651,8 @@ export class Ribbon {
       window.werkcad ? item("open", "Schreibgeschützt öffnen…", () => f.open(null, { readOnly: true })) : null,
       item("save", "Speichern", () => f.save(false), this.kbd("file.save")),
       item("save", "Speichern unter…", () => f.save(true), this.kbd("file.saveAs")),
+      item("save", "Version speichern…", () => app.commands.exec("file.versionSave")),
+      item("open", "Versionen…", () => app.commands.exec("file.versions")),
       item("export", "Projekt paketieren…", () => f.packageProject()),
       h("hr"),
       item("part", "Neues Bauteil", () => app.newPart()),

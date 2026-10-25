@@ -1,6 +1,7 @@
 // DXF-Schreiber (AutoCAD R12 / AC1009 – wird von praktisch jedem CAD/CAM gelesen, auch Laser-Software)
 
 import { ellipseGeom, ellipseSamples } from "./ellipse.js";
+import { textPolylines } from "./schrift.js";
 import { splineSamples } from "./spline.js";
 
 const f = (v) => {
@@ -84,7 +85,7 @@ function sanitize(s) {
 }
 
 /** Skizze (2D) als DXF – exakte Linien, Bögen, Kreise. Konstruktionslinien auf eigenem Layer. */
-export function sketchToDxf(sketch) {
+export function sketchToDxf(sketch, { vars } = {}) {
   const w = new DxfWriter().layer("KONTUR", 7).layer("KONSTRUKTION", 8, "DASHED");
   const pts = new Map(sketch.points.map((p) => [p.id, p]));
   for (const e of sketch.entities) {
@@ -99,6 +100,9 @@ export function sketchToDxf(sketch) {
       const g = ellipseGeom(pts.get(e.c), pts.get(e.a), e.r), R = Math.max(g.A, g.B);
       const n = Math.min(2048, Math.max(64, Math.ceil(Math.PI / Math.acos(Math.max(-1, 1 - 0.01 / R)))));
       w.polyline(ellipseSamples(g, n), L, true);
+    }
+    else if (e.type === "text") { // Schriftzug als geschlossene Polylinien (Laser schneidet/graviert die Kontur)
+      for (const pl of textPolylines(e, pts.get(e.p), vars, 12)) w.polyline(pl.slice(0, -1), L, true);
     }
     else if (e.type === "arc") {
       const c = pts.get(e.c), a = pts.get(e.p1), b = pts.get(e.p2);

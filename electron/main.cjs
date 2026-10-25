@@ -7,6 +7,7 @@ const updater = require("./updater.cjs");
 const log = require("./log.cjs");
 const { rotateBackups, backupCount } = require("./backups.cjs");
 const recent = require("./recent.cjs");
+const versionen = require("./versionen.cjs");
 
 // Benutzerdaten bleiben nach der Umbenennung WerkCAD → PBCAD im bisherigen Ordner %APPDATA%\WerkCAD
 // (Einstellungen, Token, automatische Sicherung, Fehlerprotokoll). Muss vor allem anderen gesetzt werden.
@@ -246,6 +247,16 @@ ipcMain.handle("project:save", async (_e, { path: p, text, defaultName, backups,
   lastDir("project", file);
   addRecent(file);
   return { path: file };
+});
+// Versionen mit Notiz (FU6) neben der Projektdatei
+ipcMain.handle("versions:list", async (_e, p) => (isProjectPath(p) ? versionen.listVersions(p) : []));
+ipcMain.handle("versions:save", async (_e, { path: p, text, note, changes }) => {
+  if (!isProjectPath(p)) return { error: "Keine PBCAD-Projektdatei" };
+  try { return versionen.saveVersion(p, { text, note, changes }); } catch (e) { return { error: e.message }; }
+});
+ipcMain.handle("versions:read", async (_e, { path: p, n }) => {
+  if (!isProjectPath(p)) return { error: "Keine PBCAD-Projektdatei" };
+  try { return { text: versionen.readVersion(p, n) }; } catch (e) { return { error: e.code === "ENOENT" ? "Versionsdatei nicht gefunden" : e.message }; }
 });
 ipcMain.handle("file:save", async (_e, { defaultName, filters, data, binary, siblings }) => {
   const r = await dialog.showSaveDialog(win, { title: "Exportieren", defaultPath: path.join(lastDir("export"), defaultName || "Export"), filters: filters || [] });
