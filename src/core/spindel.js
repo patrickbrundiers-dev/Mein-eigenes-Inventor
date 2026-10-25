@@ -96,11 +96,13 @@ export const SPINDEL = {
           const f = (j + 0.5) / perStep - 0.5, aj = pa + sg * theta * f, zt = top + f * s, nm = `Geländerstab ${i}${perStep > 1 ? "." + (j + 1) : ""}`;
           const q = at(R - postOff, aj, zt - drop);
           const tg = [-Math.sin(aj * DEG) * sg, Math.cos(aj * DEG) * sg];
-          if (mcfg && overrideFor(mcfg.per, nm) !== "aus") {
+          const ov = mcfg ? overrideFor(mcfg.per, nm) : null;
+          if (ov === "seitlich") throw fieldError(`${nm}: Stäbe der Spindeltreppe nur »oben« oder »aus« – seitlich gibt es kein Bauteil`, sk("mPer"));
+          if (mcfg && ov !== "aus") {
             // Fußplatte auf der Stufe (Platte entlang der Tangente), Bohrungen in die Stufe
             const step = plates.find((x) => x.name === `Stufe ${i}`), face = plateFace(step);
             const r = topMount(mcfg, { name: nm, post: p.post, top: q, along: [tg[0], tg[1], 0], face, plateName: `${nm} Fußplatte` });
-            members.push({ section: p.post, a: r.a, b: q, name: nm, up: [1, 0, 0] });
+            members.push({ section: p.post, a: r.a, b: q, name: nm, up: [tg[0], tg[1], 0] }); // Lage wie bei der Prüfung der Fußplatte
             plates.push(r.plate); applyTargetHoles(plates, face, r.targetHoles); issues.push(...r.issues); mounted.push(r);
           } else members.push({ section: p.post, a: at(R - postOff, aj, z), b: q, name: nm, up: [1, 0, 0] });
           railPts.push(at(R - postOff, aj, zt + p.rail.geom.width / 2));

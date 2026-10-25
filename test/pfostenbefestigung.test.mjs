@@ -427,3 +427,12 @@ test("Einzelne Pfosten abweichend: aus, andere Art, Seite, verständlicher Fehle
   assert.ok(!g.plates.some((x) => x.name === "Fußplatte 1") && g.plates.some((x) => x.name === "Fußplatte 2"));
   near(g.members.find((m) => m.name === "Pfosten 1").a[2], 0, 1e-9);
 });
+
+test("Spindeltreppe: Stab mit Fußplatte liegt wie geprüft (entlang der Tangente), »seitlich« abgelehnt", () => {
+  const sp = (patch = {}) => GENERATORS.spindel.plan(resolveGenParams("spindel", { ...defaultGenerator("spindel").params, ...patch }, E));
+  const s = sp({ stabMount: "oben", post: { kind: "rechteck", size: "80x40x3" }, stabOL: "100" });
+  const m = s.members.find((x) => /^Geländerstab 1(\.1)?$/.test(x.name)), fp = s.plates.find((x) => x.name === `${m.name} Fußplatte`);
+  nearV(m.up, fp.xDir, 1e-9, "Stab und Fußplatte gleich ausgerichtet");
+  assert.doesNotMatch(s.issues.map((i) => i.message).join(), /unter dem Pfosten/, "40 entlang der Tangente: Bohrungen bei ± 38 frei, so wie der Stab gebaut wird");
+  assert.throws(() => sp({ stabMount: "oben", stabMPer: "2 seitlich" }), (e) => e.key === "stabMPer");
+});
