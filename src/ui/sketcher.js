@@ -9,8 +9,9 @@ import { parseDxf, dxfToSketch, primsBounds } from "../core/dxfread.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
 import { inferLine, inferCircle } from "../core/autoconstraints.js";
-import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities } from "../core/sketchshapes.js";
+import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
 import { splineSamples, splineNearest } from "../core/spline.js";
+import { specialSnap, alignSnap } from "../core/sketchsnap.js";
 import { autoDimension } from "../core/autodim.js";
 import { cleanSketch, cleanReportText, CLEAN_KINDS, CLEAN_DEFAULTS } from "../core/sketchclean.js";
 import { splineCtrl } from "../core/sketch.js";
@@ -39,6 +40,10 @@ export const SKETCH_TOOLS = {
   offset: "Versatz: Kontur anklicken (oder vorher Elemente wählen), dann die Seite klicken und den Abstand eingeben",
   pattern: "Rechteckmuster: vorher Elemente wählen, dann ins Bild klicken und Anzahl/Abstände in X und Y eingeben",
   cpattern: "Kreismuster: vorher Elemente wählen, dann den Mittelpunkt klicken und Anzahl/Winkel eingeben",
+  smove: "Verschieben: vorher Elemente wählen, dann den Basispunkt klicken und die Verschiebung eingeben",
+  scopy: "Kopieren: vorher Elemente wählen, dann den Basispunkt klicken und den Versatz der Kopie eingeben",
+  srotate: "Drehen: vorher Elemente wählen, dann den Drehpunkt klicken und den Winkel eingeben",
+  sscale: "Skalieren: vorher Elemente wählen, dann den Bezugspunkt klicken und den Faktor eingeben",
   mirror: "Spiegeln: vorher Elemente wählen (Auswählen, Umschalt für mehrere), dann die Spiegellinie anklicken",
   dimension: "Bemaßung: Linie, Kreis, zwei Punkte oder zwei Linien wählen, dann Lage klicken",
   project: "Kante des 3D-Modells anklicken, um sie in die Skizze zu übernehmen",
@@ -269,22 +274,11 @@ export class Sketcher {
     const hit = this.hitTest(sx, sy, { dims: false, exclude });
     const P = this.pts();
     if (hit?.kind === "point") { const p = P.get(hit.id); return { x: p.x, y: p.y, pointId: p.id, label: "Punkt" }; }
-    // Mittelpunkte von Linien
-    for (const e of this.sk.entities) {
-      if (e.type !== "line") continue;
-      const a = P.get(e.p1), b = P.get(e.p2);
-      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-      const [x, y] = this.S(mx, my);
-      if (Math.hypot(x - sx, y - sy) < this.snapR) return { x: mx, y: my, mid: e.id, label: "Mitte" };
-      if (e.type === "circle") continue;
-    }
-    for (const e of this.sk.entities) {
-      if (e.type !== "circle" && e.type !== "arc" && e.type !== "ellipse") continue;
-      const c = P.get(e.c);
-      const [x, y] = this.S(c.x, c.y);
-      if (Math.hypot(x - sx, y - sy) < this.snapR) return { x: c.x, y: c.y, pointId: c.id, label: "Mitte" };
-    }
     let [lx, ly] = this.L(sx, sy);
+    const tol = this.snapR / (this.M?.scale || 1);
+    // Schnittpunkt, Linienmitte, Mittelpunkt, Quadrant, Bogenmitte (sketchsnap.js)
+    const sp = specialSnap(this.sk, lx, ly, tol, { exclude });
+    if (sp) return sp;
     if (hit?.kind === "entity") {
       const e = this.sk.entities.find((q) => q.id === hit.id);
       if (e.type === "line") {
@@ -299,6 +293,12 @@ export class Sketcher {
       const r = e.type === "circle" ? e.r : Math.hypot(P.get(e.p1).x - c.x, P.get(e.p1).y - c.y);
       const ang = Math.atan2(ly - c.y, lx - c.x);
       return { x: c.x + r * Math.cos(ang), y: c.y + r * Math.sin(ang), on: e.id, onType: "circle", label: "Auf Kreis" };
+    }
+    // Ausrichtung waagrecht/senkrecht zu vorhandenen Punkten und zum Startpunkt (gestrichelte Hilfslinie)
+    if (this.prefs?.["skizze.ausrichten"] !== false) {
+      const st = this.state, refs = [st?.start, ...(st?.pts || [])].filter((q) => q && Number.isFinite(q.x));
+      const al = alignSnap(this.sk, lx, ly, tol, { refs });
+      if (al) return al;
     }
     if (this.gridSnap) {
       const step = this.gridFixed || gridStep(this.M.scale);
@@ -315,6 +315,7 @@ export class Sketcher {
     const id = uid("p");
     sk.points.push({ id, x: sn.x, y: sn.y });
     if (sn.on) cons.push({ id: uid("k"), type: sn.onType === "line" ? "pointOnLine" : "pointOnCircle", p: id, e: sn.on });
+    if (sn.on2) cons.push({ id: uid("k"), type: sn.onType2 === "line" ? "pointOnLine" : "pointOnCircle", p: id, e: sn.on2 });
     if (sn.mid) cons.push({ id: uid("k"), type: "midpoint", p: id, e: sn.mid });
     return id;
   }
@@ -894,6 +895,39 @@ export class Sketcher {
     this.inputBox = box;
     setTimeout(() => { inp.focus(); inp.select(); }, 10);
   }
+  /** Verschieben / Kopieren / Drehen / Skalieren der gewählten Elemente um den geklickten Punkt */
+  transformDialog(t, ids, at) {
+    const scope = this.scope();
+    const kind = { smove: "move", scopy: "move", srotate: "rotate", sscale: "scale" }[t];
+    const title = { smove: "Verschieben", scopy: "Kopieren", srotate: "Drehen", sscale: "Skalieren" }[t];
+    const last = this.lastValue("trafo-" + kind) || { move: { dx: "10", dy: "0" }, rotate: { angle: "90" }, scale: { factor: "2" } }[kind];
+    const fields = { move: [["dx", "Verschiebung X"], ["dy", "Verschiebung Y"]], rotate: [["angle", "Winkel ° (gegen Uhrzeigersinn)"]], scale: [["factor", "Faktor"]] }[kind];
+    const inputs = Object.fromEntries(fields.map(([k]) => [k, h("input", { class: "inp", value: last[k], spellcheck: "false", "data-k": k })]));
+    const copy = h("input", { type: "checkbox", checked: t === "scopy" });
+    const err = h("div", { class: "hint" });
+    modal({
+      title,
+      body: h("div", { class: "pattern-dlg" }, ...fields.map(([k, label]) => h("div", { class: "field" }, h("label", {}, label), inputs[k])),
+        h("label", { class: "check" }, copy, " Als Kopie (Original bleibt)"),
+        h("p", { class: "hint" }, kind === "move" ? "Verschiebung relativ zum geklickten Basispunkt." : `${kind === "rotate" ? "Drehpunkt" : "Bezugspunkt"}: ${fmtNum(at.x, 2)} / ${fmtNum(at.y, 2)}`), err),
+      buttons: [{ label: "Abbrechen", value: null }, { label: title, primary: true, run: () => {
+        const v = Object.fromEntries(fields.map(([k]) => [k, inputs[k].value.trim()]));
+        let op;
+        try {
+          const E = (x) => evaluate(x, scope);
+          op = kind === "move" ? { kind, dx: E(v.dx), dy: E(v.dy) } : kind === "rotate" ? { kind, cx: at.x, cy: at.y, angle: E(v.angle) } : { kind, cx: at.x, cy: at.y, factor: E(v.factor) };
+          op.copy = copy.checked;
+          transformEntities(JSON.parse(JSON.stringify(this.sk)), ids, op, { uid });
+        } catch (e) { err.textContent = e.message; return false; }
+        this.rememberValue("trafo-" + kind, v);
+        this.commit(title, (sk) => transformEntities(sk, ids, op, { uid }));
+        this.sel.clear();
+        this.app.selectSketchItems([]);
+        this.render();
+        return true;
+      } }],
+    });
+  }
   /** Dialog für Rechteck- bzw. Kreismuster; center = Fangpunkt (bestehender Punkt oder freie Lage) */
   patternDialog(mode, ids, center) {
     const scope = this.scope();
@@ -1140,6 +1174,12 @@ export class Sketcher {
       if (!ids.length) return toast("Zuerst die Elemente für das Muster wählen (Auswählen, Umschalt oder Fenster), dann hier klicken");
       const sn = t === "cpattern" ? this.snap(sx, sy) : null;
       this.patternDialog(t === "cpattern" ? "rot" : "lin", ids, sn);
+      return;
+    }
+    if (t === "smove" || t === "scopy" || t === "srotate" || t === "sscale") {
+      const ids = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => k.slice(2));
+      if (!ids.length) return toast("Zuerst die Elemente wählen (Auswählen, Umschalt oder Fenster), dann den Bezugspunkt klicken");
+      this.transformDialog(t, ids, this.snap(sx, sy));
       return;
     }
     if (t === "mirror") {
@@ -1790,7 +1830,9 @@ export class Sketcher {
     const sn = this.snapInfo;
     if (sn) {
       const [x, y] = this.S(sn.x, sn.y);
-      if (sn.pointId || sn.mid || sn.on) g.append(svgEl("circle", { cx: x, cy: y, r: 6, class: "sk-snap" }));
+      for (const gl of sn.guides || []) { const [x1, y1] = this.S(gl.x1, gl.y1); g.append(svgEl("line", { x1, y1, x2: x, y2: y, class: "sk-guide" })); }
+      if (sn.on2) g.append(svgEl("path", { d: `M${x - 6} ${y - 6}L${x + 6} ${y + 6}M${x - 6} ${y + 6}L${x + 6} ${y - 6}`, class: "sk-snap" }));
+      else if (sn.pointId || sn.mid || sn.on) g.append(svgEl("circle", { cx: x, cy: y, r: 6, class: "sk-snap" }));
       if (sn.label) { const t = svgEl("text", { x: x + 9, y: y - 8, class: "sk-infer" }); t.textContent = sn.label; g.append(t); }
     }
     const st = this.state;

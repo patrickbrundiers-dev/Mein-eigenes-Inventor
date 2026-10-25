@@ -19,7 +19,7 @@
   --radius-m: 6px;
   --din: "Bahnschrift", "DIN Alternate", "DIN 2014", "Roboto Condensed", "Arial Narrow", sans-serif;
   --ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
-  --ribbon-h: 112px;
+  --ribbon-h: 122px;
   --status-h: 26px;
   --surface: #fff;
   --stage-a: #f3f6f9;
@@ -105,7 +105,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .rb-btn.on { background: var(--laser-soft); border-color: #f3c08f; }
 .rb-btn:disabled { opacity: .4; cursor: default; }
 .rb-stack { display: flex; flex-direction: column; gap: 1px; }
-.rb-small { display: flex; align-items: center; gap: 6px; padding: 2px 6px; border: 1px solid transparent; border-radius: var(--radius-s); background: transparent; cursor: pointer; font-size: 12px; white-space: nowrap; text-align: left; }
+.rb-small { display: flex; align-items: center; gap: 6px; padding: 1px 6px; line-height: 17px; border: 1px solid transparent; border-radius: var(--radius-s); background: transparent; cursor: pointer; font-size: 12px; white-space: nowrap; text-align: left; }
 .rb-small svg { width: 16px; height: 16px; flex: none; }
 .rb-small:hover:not(:disabled) { background: var(--dye-soft); border-color: #b6c8ea; }
 .rb-small.on { background: var(--laser-soft); border-color: #f3c08f; }
@@ -505,6 +505,8 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .field-msg.hint { color: var(--steel-4); border-color: var(--steel-4); }
 .field-bad input, .field-bad select { border-color: var(--err); }
 .field-warn input, .field-warn select { border-color: var(--warn); }
+.rb-small.icon-only { padding: 1px 4px; gap: 0; }
+.sk-guide { stroke: var(--laser); stroke-width: 1; stroke-dasharray: 4 3; opacity: .8; }
 
 /* Problemliste und Freigabe (FU13/FU15) */
 #status .status-btn.err { border-color: var(--err); color: var(--err); font-weight: 600; }
