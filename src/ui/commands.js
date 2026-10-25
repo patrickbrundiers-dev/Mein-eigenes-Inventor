@@ -14,6 +14,7 @@ export function commandRunners(app) {
     "file.newPart": () => app.newPart(),
     "file.listsXlsx": () => app.files.exportListsXlsx(),
     "file.png": () => app.files.exportPng(),
+    "file.render": () => app.files.exportPng({ photo: true }),
     "file.newAssembly": () => app.newAssembly(),
     "file.importStep": () => app.files.importStepAsPart(),
     "app.settings": () => app.props.settingsDialog(),
@@ -57,7 +58,7 @@ export function commandRunners(app) {
     "asm.collide": () => app.props.collisionDialog(),
   };
   for (const v of ["iso", "front", "back", "left", "right", "top", "bottom"]) run["view." + v] = () => app.viewer.setView(v);
-  for (const m of ["kanten", "schattiert", "draht", "transparent"]) run["view.mode." + m] = () => app.prefs.set("ansicht.darstellung", m);
+  for (const m of ["kanten", "schattiert", "draht", "transparent", "foto"]) run["view.mode." + m] = () => app.prefs.set("ansicht.darstellung", m);
   for (const c of COMMANDS) {
     if (run[c.id]) continue;
     if (c.id.startsWith("part.")) run[c.id] = r(c.id.slice(5));

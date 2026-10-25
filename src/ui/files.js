@@ -251,10 +251,15 @@ export class Files {
     toast(`Abwicklung ${fmtNum(plan.flat, 1)} × ${fmtNum(sh.length, 1)} mm gespeichert`, { kind: "ok" });
   }
   /** Bild der 3D-Ansicht als PNG (doppelte Auflösung, weißer Hintergrund) */
-  async exportPng() {
+  /** Bild der Ansicht; photo: fotorealistisch (vorübergehend Fotodarstellung) in vierfacher Auflösung */
+  async exportPng({ photo = false } = {}) {
     const d = this.app.activeDoc();
-    const img = this.app.viewer.snapshotPng({ scale: 2 });
-    await this.saveBinary(img.data, safeName(d?.number || d?.name || "Ansicht") + ".png", [{ name: "PNG-Bild", extensions: ["png"] }]);
+    const v = this.app.viewer;
+    const prev = v.displayMode;
+    if (photo && prev !== "foto") v.setDisplayMode("foto");
+    let img;
+    try { img = v.snapshotPng({ scale: photo ? 4 : 2 }); } finally { if (photo && prev !== "foto") v.setDisplayMode(prev); }
+    await this.saveBinary(img.data, safeName(d?.number || d?.name || "Ansicht") + (photo ? "_Render" : "") + ".png", [{ name: "PNG-Bild", extensions: ["png"] }]);
     toast(`Bild ${img.width} × ${img.height} px gespeichert`, { kind: "ok" });
   }
   async exportListsXlsx() {

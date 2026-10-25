@@ -1,6 +1,6 @@
 # Abgleich MegaCAD Metall 3D ↔ PBCAD
 
-Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **freigegeben 25.10.2026, Umsetzung läuft** (erledigt: Block A – M1 #71, M2 #73, M3 #74, M4 #76; Block B – M5 und M6 #79, M7, M8, M9, M10, M11 erste Stufe #81; M12, M13 #83; M18, M19 #84; M20 #85; M21 #86; Block C – M14, M16 #87; M15 #88; M17)
+Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **freigegeben 25.10.2026, Umsetzung läuft** (erledigt: Block A – M1 #71, M2 #73, M3 #74, M4 #76; Block B – M5 und M6 #79, M7, M8, M9, M10, M11 erste Stufe #81; M12, M13 #83; M18, M19 #84; M20 #85; M21 #86; Block C – M14, M16 #87; M15 #88; M17 #89; M22)
 
 Auftrag: Patrick hat den Funktionsumfang der Produktseite „MegaCAD Metall 3D“ geschickt („Das möchte ich auch alles
 drin haben“). Übernommen wird nur der **Funktionsumfang als Ziel**; keine Texte, Bilder, Dialoge oder Daten von
@@ -148,7 +148,7 @@ den Entwicklungsplan-Thread. Große Stufen (L) werden beim Start in 2–3 PRs ge
 | M15 ✓ | Stahlbau-Anschlüsse: biegesteifer Eckstoß, Pfettenschuh, Pfettenstoß, Windverband mit Spannschloss (Generatoren Rahmenecke, Pfette, Windverband; Stirnplatte mit Gegenplatte und Verschraubung) | L |
 | M16 ✓ | Balkon-Generator | M |
 | M17 ✓ | Blech, erste Ausbaustufe: Kantteil aus Querschnitt (gerade Kanten), Abwicklung mit Biegezugabe, DXF; **neuer ADR-0005 ersetzt ADR-0002** | L |
-| M22 | Fotorealistische Darstellung (PBR-Materialien, Umgebungslicht, Bodenschatten), Bild in hoher Auflösung; **ADR-0004 wird dafür aufgehoben** | M |
+| M22 ✓ | Fotorealistische Darstellung (PBR-Materialien, Umgebungslicht, Bodenschatten), Bild in hoher Auflösung; **ADR-0004 wird dafür aufgehoben** | M |
 
 ### Block D (P3) – nur bei konkretem Bedarf
 

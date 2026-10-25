@@ -1,10 +1,12 @@
 // 3D-Ansicht: Darstellung, Kamera, ViewCube, Auswahl von Flächen/Kanten
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { placementMatrix, toWorld } from "../core/geom.js";
 import { segmentsInBox, trianglesInBox } from "../core/boxselect.js";
 import { ellipseGeom, ellipseSamples } from "../core/ellipse.js";
 import { splineSamples } from "../core/spline.js";
+import { photoSurface, photoStage } from "../core/rendering.js";
 
 const COL = {
   edge: 0x1c2733,
@@ -40,11 +42,13 @@ export class Viewer {
     this.camera = this.ortho;
     this.camera.up.set(0, 0, 1);
     this.camera.position.set(400, -400, 400);
+    this.lights = { heads: [] };
     for (const cam of [this.ortho, this.persp]) {
       this.scene.add(cam);
       const head = new THREE.DirectionalLight(0xffffff, 1.9);
       head.position.set(0.4, 0.6, 1);
       cam.add(head);
+      this.lights.heads.push(head);
     }
     this.perspective = false;
     this.hidden = new Set(); // nur Anzeige: "key#body" bzw. "key#*"
@@ -54,8 +58,11 @@ export class Viewer {
     this.fillSection = true; // Schnittflächen geschlossen zeigen (Stencil-Verfahren)
     this.capGroup = new THREE.Group(); // Deckflächen in Weltkoordinaten, nicht in root (sonst Teil der Inhaltsbox)
     this.scene.add(this.capGroup);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.95));
-    this.scene.add(new THREE.HemisphereLight(0xf4f7fb, 0x5b6773, 0.55));
+    this.lights.ambient = new THREE.AmbientLight(0xffffff, 0.95);
+    this.lights.hemi = new THREE.HemisphereLight(0xf4f7fb, 0x5b6773, 0.55);
+    this.scene.add(this.lights.ambient, this.lights.hemi);
+    this.stage = new THREE.Group(); // Fotodarstellung: Sonne mit Schatten und Bodenfläche (nicht Teil der Inhaltsbox)
+    this.scene.add(this.stage);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: null }; // Drehen: bindPivotOrbit bzw. applyPrefs
@@ -260,7 +267,7 @@ export class Viewer {
     c.rotateSpeed = v["ansicht.drehGeschwindigkeit"];
     this.animate = v["darstellung.animation"];
     this.showGrid = v["ansicht.raster"];
-    if (!this.sketchFrame) this.grid.visible = this.showGrid;
+    if (!this.sketchFrame) this.grid.visible = this.showGrid && !this.photo;
     this.showCube = v["ansicht.viewcube"];
     const dark = document.documentElement.dataset.theme === "dark";
     if (dark !== !!this.dark) { this.dark = dark; if (this.grid) { const old = this.grid; this.makeGrid(this.gridSize || 400); this.grid.position.copy(old.position); this.grid.quaternion.copy(old.quaternion); this.grid.visible = old.visible; } }
@@ -417,16 +424,16 @@ export class Viewer {
   }
 
   /** Bauteil-Ergebnis anzeigen. bodies: Ergebnis des Workers */
-  showPart(bodies, { color = "#8d99a6", opacity = 1, key = "part" } = {}) {
+  showPart(bodies, { color = "#8d99a6", opacity = 1, key = "part", material } = {}) {
     this.clear();
-    const g = this.makePartGroup(bodies, color, key, opacity);
+    const g = this.makePartGroup(bodies, color, key, opacity, null, material);
     this.root.add(g);
     this.updateCaps();
     this.render();
     return g;
   }
 
-  makePartGroup(bodies, color, key, opacity = 1, shared) {
+  makePartGroup(bodies, color, key, opacity = 1, shared, material) {
     const g = new THREE.Group();
     g.userData.key = key;
     bodies.forEach((b, bi) => {
@@ -441,7 +448,7 @@ export class Viewer {
         clippingPlanes: this.clipPlanes(),
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.userData = { key, body: bi, faces: b.mesh.faces, baseColor: c.clone(), baseOpacity: opacity };
+      mesh.userData = { key, body: bi, faces: b.mesh.faces, baseColor: c.clone(), baseOpacity: opacity, material, meta: b.meta };
       g.add(mesh);
       const edgeObjs = [];
       const eg = shared?.[bi]?.edgeGeo || edgeGeometry(b.mesh.edges);
@@ -466,7 +473,7 @@ export class Viewer {
         shared = c.bodies.map((b) => (b.mesh ? { geo: meshGeometry(b.mesh), edgeGeo: edgeGeometry(b.mesh.edges) } : null));
         geoCache.set(c.partKey, shared);
       }
-      const g = this.makePartGroup(c.bodies, c.color, "comp:" + c.id, c.opacity ?? 1, shared);
+      const g = this.makePartGroup(c.bodies, c.color, "comp:" + c.id, c.opacity ?? 1, shared, c.material);
       g.matrixAutoUpdate = false;
       g.matrix.fromArray(c.matrix || placementMatrix(c.pos, c.rot));
       g.userData.comp = c.id;
@@ -579,7 +586,7 @@ export class Viewer {
     if (this.wantPerspective) this.setPerspective(true);
     this.wantPerspective = false;
     this.setModelOpacity(1);
-    this.grid.visible = this.showGrid;
+    this.grid.visible = this.showGrid && !this.photo;
   }
   setModelOpacity(op) {
     for (const pk of this.pickables) {
@@ -589,11 +596,13 @@ export class Viewer {
     this.render();
   }
   /**
-   * Darstellungsmodus: kanten (schattiert mit Kanten), schattiert, draht (nur Kanten), transparent.
+   * Darstellungsmodus: kanten (schattiert mit Kanten), schattiert, draht (nur Kanten), transparent,
+   * foto (PBR-Oberflächen, Umgebungslicht, Bodenschatten; ohne Kanten).
    * Wirkt nur auf die Anzeige; Auswahl richtet sich nach dem Sichtbaren.
    */
   setDisplayMode(mode) {
     this.displayMode = mode;
+    this.setPhoto(mode === "foto");
     for (const pk of this.pickables) this.applyDisplay(pk.mesh, pk.lines);
     this.edgeCache = null;
     this.updateCaps();
@@ -602,8 +611,15 @@ export class Viewer {
   applyDisplay(mesh, lines) {
     const mode = this.displayMode;
     const base = mesh.userData.baseOpacity ?? 1;
-    const op = mode === "transparent" ? Math.min(base, 0.3) : base;
+    const photo = mode === "foto";
+    const surf = photo ? photoSurface(mesh.userData.material, mesh.userData.meta) : null;
+    const op = mode === "transparent" ? Math.min(base, 0.3) : surf?.opacity != null ? Math.min(base, surf.opacity) : base;
     const m = mesh.material;
+    m.metalness = surf ? surf.metalness : 0.08;
+    m.roughness = surf ? surf.roughness : 0.5;
+    if (mesh.userData.baseColor) m.color.copy(surf?.color ? new THREE.Color(surf.color) : mesh.userData.baseColor);
+    mesh.castShadow = photo && op >= 1;
+    mesh.receiveShadow = photo;
     m.transparent = op < 1;
     m.opacity = op;
     m.depthWrite = op >= 1;
@@ -614,7 +630,58 @@ export class Viewer {
     l.transparent = op < 1;
     l.opacity = Math.max(0.35, op);
     l.needsUpdate = true;
-    lines.visible = mode !== "schattiert" && base > 0 && !hid;
+    lines.visible = mode !== "schattiert" && !photo && base > 0 && !hid;
+  }
+  /** Fotodarstellung ein/aus: Umgebungsbild (Raum) für Spiegelungen, Filmkurve, Schatten; Raster aus */
+  setPhoto(on) {
+    if (!!this.photo === on) return;
+    this.photo = on;
+    const r = this.renderer;
+    if (on && !this.envMap) {
+      const pm = new THREE.PMREMGenerator(r);
+      this.envMap = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      pm.dispose();
+    }
+    this.scene.environment = on ? this.envMap : null;
+    r.toneMapping = on ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+    r.toneMappingExposure = 1;
+    r.shadowMap.enabled = on;
+    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    for (const h of this.lights.heads) h.intensity = on ? 0.6 : 1.9;
+    this.lights.ambient.intensity = on ? 0.15 : 0.95;
+    this.lights.hemi.intensity = on ? 0.25 : 0.55;
+    if (this.grid) this.grid.visible = on ? false : this.showGrid;
+    this.updateStage();
+  }
+  /** Sonne und Bodenfläche an die Inhaltsbox anpassen (nur in der Fotodarstellung) */
+  updateStage() {
+    this.stage.traverse((o) => o.isLight && o.dispose?.());
+    disposeTree(this.stage);
+    this.stage.clear();
+    if (!this.photo) return;
+    const box = new THREE.Box3();
+    for (const pk of this.pickables) if (pk.mesh.visible) box.expandByObject(pk.mesh);
+    if (box.isEmpty()) return;
+    const st = photoStage(box.min.toArray(), box.max.toArray());
+    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+    sun.position.set(...st.sun);
+    sun.target.position.set(...st.center);
+    sun.castShadow = true;
+    const sc = sun.shadow.camera;
+    sc.left = sc.bottom = -st.shadowHalf;
+    sc.right = sc.top = st.shadowHalf;
+    sc.near = st.radius * 0.5;
+    sc.far = st.shadowFar;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = st.radius * 0.002;
+    sun.shadow.radius = 3;
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(st.groundSize, st.groundSize), new THREE.ShadowMaterial({ opacity: 0.28 }));
+    ground.position.set(st.center[0], st.center[1], st.groundZ);
+    ground.receiveShadow = true;
+    ground.raycast = () => {};
+    ground.userData = { ground: true };
+    this.stage.add(sun, sun.target, ground);
   }
   isHidden(key, body) { return this.hidden.has(key + "#*") || this.hidden.has(key + "#" + body); }
   /** Körper/Komponenten nur in der Anzeige aus- oder einblenden (keine Modelländerung) */
@@ -657,6 +724,7 @@ export class Viewer {
    * (Körperfarbe abgedunkelt) und der Stencil wieder genullt. Nur bei undurchsichtigen, sichtbaren Körpern.
    */
   updateCaps() {
+    this.updateStage();
     for (const pk of this.pickables) {
       if (pk.stencil) { for (const m of pk.stencil) { m.parent?.remove(m); m.material.dispose(); } pk.stencil = null; }
     }
@@ -1045,8 +1113,9 @@ export class Viewer {
     const r = this.renderer;
     const ratio = r.getPixelRatio();
     const helpers = this.helpers.visible;
-    r.setPixelRatio(scale);
     const size = r.getSize(new THREE.Vector2());
+    scale = Math.min(scale, Math.min(8192, r.capabilities.maxTextureSize || 8192) / Math.max(1, size.x, size.y)); // Zeichenfläche begrenzen
+    r.setPixelRatio(scale);
     r.setSize(size.x, size.y, false);
     if (background != null) r.setClearColor(background, 1);
     this.helpers.visible = false;
