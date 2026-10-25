@@ -87,6 +87,9 @@ export function pathAt(chain, t) {
   return { p: P[0].a, d: [1, 0] };
 }
 
+/** Obergrenzen, damit große Eingaben den Rechenkern nicht lahmlegen (wie beim Muster im Kern) */
+export const MAX_COPIES = 500, MAX_TURNS = 500;
+
 /**
  * Lagen für »Muster entlang Pfad«: count Exemplare gleichmäßig über die ganze Länge oder mit Abstand.
  * Rückgabe [{ p, d, angle }] ab dem 2. Exemplar; angle = Drehung der Tangente gegenüber dem Start (Grad, gegen Uhrzeigersinn).
@@ -94,6 +97,7 @@ export function pathAt(chain, t) {
 export function pathPatternStations(chain, { count, spacing = null, align = true }) {
   const n = Math.round(count);
   if (!(n >= 2)) throw new Error("Anzahl mindestens 2");
+  if (n > MAX_COPIES) throw new Error(`Höchstens ${MAX_COPIES} Exemplare`);
   const L = pathLength(chain);
   const step = spacing != null ? spacing : chain.closed ? L / n : L / (n - 1);
   if (!(step > 0)) throw new Error("Abstand muss > 0 sein");
@@ -118,10 +122,11 @@ export function coilParams({ mode = "umdrehungen", pitch, turns, height }) {
   if (!(pitch > 0)) throw new Error("Steigung muss > 0 sein");
   if (mode === "hoehe") {
     if (!(height > 0)) throw new Error("Höhe muss > 0 sein");
+    if (height / pitch > MAX_TURNS) throw new Error(`Höchstens ${MAX_TURNS} Umdrehungen (Höhe ÷ Steigung)`);
     return { pitch, height, turns: height / pitch };
   }
   if (!(turns > 0)) throw new Error("Umdrehungen müssen > 0 sein");
-  if (turns > 500) throw new Error("Höchstens 500 Umdrehungen");
+  if (turns > MAX_TURNS) throw new Error(`Höchstens ${MAX_TURNS} Umdrehungen`);
   return { pitch, turns, height: pitch * turns };
 }
 

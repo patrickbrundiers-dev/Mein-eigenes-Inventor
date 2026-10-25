@@ -830,7 +830,7 @@ export class Props {
         break;
       }
       case "pattern": {
-        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "kantteil", "import"].includes(g.type) && g.id !== f.id);
+        const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "kantteil", "sweep", "loft", "spirale", "import"].includes(g.type) && g.id !== f.id);
         const dAxes = this.datumsBefore(part, f, "arbeitsachse");
         const axisSeg = (label, key, def) => [this.seg(label, [["X", "X"], ["Y", "Y"], ["Z", "Z"], ["-X", "−X"], ["-Y", "−Y"], ["-Z", "−Z"]], f[key] || def, (v) => this.set(f, key, v, label)),
           dAxes.length ? this.select(label + " (Arbeitsachse)", [["", "–"], ...dAxes.map((g) => ["datum:" + g.id, g.name])], String(f[key] || "").startsWith("datum:") ? f[key] : "", (v) => this.set(f, key, v || def, label)) : null];

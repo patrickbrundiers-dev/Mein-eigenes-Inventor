@@ -140,6 +140,9 @@ test("Muster entlang Pfad: Stationen gleichmäßig oder mit Abstand, Drehung mit
 test("Spirale, Schwerpunkt, Erhebung: Prüfungen", () => {
   assert.deepEqual(coilParams({ pitch: 10, turns: 3 }), { pitch: 10, turns: 3, height: 30 });
   assert.deepEqual(coilParams({ mode: "hoehe", pitch: 10, height: 25 }), { pitch: 10, height: 25, turns: 2.5 });
+  // Obergrenzen greifen vor dem Rechnen (auch im Höhen-Modus und bei gleichmäßig verteiltem Muster)
+  assert.throws(() => coilParams({ mode: "hoehe", pitch: 0.01, height: 1000 }), /500 Umdrehungen/);
+  assert.throws(() => pathPatternStations({ segs: [], closed: false }, { count: 1e9 }), /500 Exemplare/);
   assert.throws(() => coilParams({ pitch: 0, turns: 3 }), /Steigung/);
   assert.throws(() => coilParams({ pitch: 1, turns: 501 }), /500/);
   nearV(loopCentroid([[0, 0], [10, 0], [10, 4], [0, 4]]), [5, 2]);
