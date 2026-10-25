@@ -423,6 +423,9 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .mat-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--steel-3); margin-right: 6px; vertical-align: -2px; }
 .mat-actions { text-align: right; white-space: nowrap; }
 .mat-actions .btn { padding: 1px 6px; font-size: 11px; margin-left: 4px; }
+.bend-grid { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 12px; margin: 6px 0; resize: vertical; }
+.bend-preview { max-height: 220px; overflow: auto; margin: 6px 0; }
+.bend-preview td.empty { color: var(--muted, #8a96a3); }
 
 /* Skizze und Bildkacheln der Generator-Einstellungen */
 .gsk-wrap { background: var(--surface); border: 1px solid var(--steel-2); border-radius: var(--radius-m); padding: 4px; }

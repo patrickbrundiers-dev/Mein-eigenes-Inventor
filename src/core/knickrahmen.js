@@ -126,7 +126,7 @@ export function planKnickrahmen(input) {
     if (i < bends.length) {
       const b = bends[i];
       const theta = Math.abs(b.angle) * DEG;
-      const zone = bendAllowance(ri, k, t, theta); // Biegezugabe (Länge der neutralen Faser in der Biegezone)
+      const zone = bendAllowance(ri, input.kOf ? input.kOf(Math.abs(b.angle)) : k, t, theta); // Biegezugabe (Länge der neutralen Faser in der Biegezone); kOf aus Biegetabelle oder DIN 6935
       // σ: Seite der Außenwand in Profil-u-Richtung (u zeigt nach links); Linksknick → Außenwand rechts
       const kn = { index: i, angle: b.angle, sigma: b.angle > 0 ? -1 : 1, x1: x, x2: x + zone, zone, tanHalf: tanHalf[i] };
       // Freistellung (Pflicht): Seitenwände an der Außenwand über die ganze Biegezone frei, und dort,

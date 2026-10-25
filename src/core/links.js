@@ -60,13 +60,16 @@ export function partContent(d) {
 
 /**
  * Bauteil aus der Quelldatei übernehmen: Inhalt der Quelle, eigene id und Verknüpfung bleiben.
- * Rückgabe { doc, changed }. Eigene Werkstoffe der Quelle, die im Projekt fehlen, kommen in prj.materials.
+ * Rückgabe { doc, changed }. Eigene Werkstoffe und Biegetabellen der Quelle, die im Projekt fehlen, kommen in prj.materials bzw. prj.bendTables.
  */
 export function applyLinked(prj, local, remotePrj, remote, now = new Date()) {
   const doc = JSON.parse(JSON.stringify({ ...remote, id: local.id, link: { ...local.link, docId: remote.id, number: remote.number || "", name: remote.name, time: now.toISOString() } }));
   const changed = partContent(doc) !== partContent(local);
   const mats = (remotePrj.materials || []).filter((m) => m?.key === remote.material && !(prj.materials || []).some((x) => x.key === m.key));
   if (mats.length) prj.materials = [...(prj.materials || []), ...mats];
+  const key = (tb) => `${tb?.material}|${tb?.t}`;
+  const tabs = (remotePrj.bendTables || []).filter((tb) => tb?.material === remote.material && !(prj.bendTables || []).some((x) => key(x) === key(tb)));
+  if (tabs.length) prj.bendTables = [...(prj.bendTables || []), ...tabs];
   return { doc, changed };
 }
 
@@ -76,6 +79,8 @@ export function partProject(prj, part, now = new Date()) {
   const out = { format: "werkcad", version: prj.version || 1, name: part.name, docs: [clean], created: now.toISOString() };
   const mats = (prj.materials || []).filter((m) => m.key === part.material);
   if (mats.length) out.materials = mats;
+  const tabs = (prj.bendTables || []).filter((tb) => tb.material === part.material);
+  if (tabs.length) out.bendTables = tabs;
   return out;
 }
 

@@ -1,4 +1,5 @@
 // Eigenschaften-Fenster und Dialoge (Parameter, Stückliste, Zuschnittliste, Einstellungen)
+import { RULES } from "../core/bendtable.js";
 import { settingsCenter } from "./settings.js";
 import { h, icon, toast, modal, fmtNum, confirmDialog, promptDialog } from "./dom.js";
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
@@ -546,9 +547,11 @@ export class Props {
           this.seg("Maßbezug", [["aussen", "außen"], ["innen", "innen"], ["mitte", "Mitte Blech"]], f.ref || "aussen", (v) => this.set(f, "ref", v, "Maßbezug")),
           E("Blechdicke", "t", { allowNeg: false, allowZero: false }),
           E("Innenradius", "ri", { allowNeg: false }),
-          E("K-Faktor", "k", { unit: "", allowNeg: false }),
+          this.select("Biegeregel", RULES.map((x) => [x.value, x.label]), f.rule || "k", (v) => this.set(f, "rule", v, "Biegeregel")),
+          E((f.rule || "k") === "k" ? "K-Faktor" : "K-Faktor ohne Tabelle", "k", { unit: "", allowNeg: false }),
           E("Länge (Kantlänge)", "length", { allowNeg: false, allowZero: false }),
-          h("p", { class: "hint" }, "Schenkel von Biegung zu Biegung, Winkel zwischen den Schenkeln (90 = rechtwinklig nach oben, −90 nach unten). Biegezugabe = (ri + K · t) · Winkel – wie beim Knickrahmen; K-Faktor aus der Biegetabelle der Abkantpresse.")));
+          sh?.rule && (f.rule || "k") !== "k" ? h("p", { class: "hint" }, "Gerechnet: " + sh.rule) : null,
+          h("p", { class: "hint" }, "Schenkel von Biegung zu Biegung, Winkel zwischen den Schenkeln (90 = rechtwinklig nach oben, −90 nach unten). Biegezugabe = (ri + K · t) · Winkel – wie beim Knickrahmen. Mit »Biegetabelle« kommt K je Biegung aus Einstellungen → Blechparameter (Werkstoff und Dicke des Bauteils).")));
         out.push(this.section("Lage und Ansicht",
           this.vec3("Startpunkt (Mitte Blech)", f.pos || ["0", "0", "0"], (v) => this.set(f, "pos", v, "Startpunkt")),
           this.seg("Ansicht", [["gefaltet", "gefaltet"], ["abgewickelt", "abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
@@ -753,8 +756,10 @@ export class Props {
         });
         out.push(this.section("Biegung der Außenwand",
           E("Innenradius", "bendRadius", { allowNeg: false }),
-          E("K-Faktor", "kFactor", { unit: "", allowNeg: false }),
-          h("p", { class: "hint" }, "Biegezugabe je Knick = (Innenradius + K-Faktor · Wandstärke) · Winkel im Bogenmaß. Werte aus der Biegetabelle der Abkantung eintragen – die Vorgabe ist nur ein Startwert.")));
+          this.select("Biegeregel", RULES.map((x) => [x.value, x.label]), f.bendRule || "k", (v) => this.set(f, "bendRule", v, "Biegeregel")),
+          E((f.bendRule || "k") === "k" ? "K-Faktor" : "K-Faktor ohne Tabelle", "kFactor", { unit: "", allowNeg: false }),
+          r?.bodies?.find((b) => b.fid === f.id)?.meta?.rule && (f.bendRule || "k") !== "k" ? h("p", { class: "hint" }, "Gerechnet: " + r.bodies.find((b) => b.fid === f.id).meta.rule) : null,
+          h("p", { class: "hint" }, "Biegezugabe je Knick = (Innenradius + K-Faktor · Wandstärke) · Winkel im Bogenmaß. Mit »Biegetabelle« kommt K aus Einstellungen → Blechparameter (Werkstoff des Bauteils, Dicke = Wandstärke) – sonst ist die Vorgabe nur ein Startwert.")));
         const rk = f.relief === "rechteck" || f.relief === "keine" ? f.relief : "rund";
         const kmeta = r?.bodies?.find((b) => b.fid === f.id)?.meta;
         const mins = kmeta?.reliefMin || [];

@@ -22,7 +22,7 @@ export { splitList } from "./expr.js";
  * Rückgabe { center: [{a, b, n}] gerade Stücke der Mittellinie, bends: [{c, rm, theta, sgn, from, to}],
  *   flat: Abwicklungslänge, flatParts: [gerade, Biegezone, gerade, …], bendLines: [x in der Abwicklung], issues }
  */
-export function planKantteil({ legs, angles, t, ri, k, ref = "aussen" }) {
+export function planKantteil({ legs, angles, t, ri, k, kOf = null, ref = "aussen" }) {
   if (!legs.length || legs.some((x) => !(x > 0))) throw new Error("Schenkellängen > 0 angeben");
   if (angles.length !== legs.length - 1) throw new Error(`${legs.length} Schenkel brauchen ${legs.length - 1} Biegewinkel`);
   if (!(t > 0)) throw new Error("Blechdicke muss > 0 sein");
@@ -60,7 +60,7 @@ export function planKantteil({ legs, angles, t, ri, k, ref = "aussen" }) {
     if (i < angles.length) {
       const th = Math.abs(angles[i]) * DEG, sgn = Math.sign(angles[i]);
       const c = [b[0] + n[0] * sgn * rm, b[1] + n[1] * sgn * rm];
-      const ba = bendAllowance(ri, k, t, th);
+      const ba = bendAllowance(ri, kOf ? kOf(Math.abs(angles[i])) : k, t, th); // kOf: K je Biegung aus Biegetabelle oder DIN 6935
       bends.push({ c, rm, theta: th, sgn, angle: angles[i] });
       bendLines.push(s + ba / 2);
       flatParts.push(ba);

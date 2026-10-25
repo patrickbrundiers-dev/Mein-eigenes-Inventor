@@ -2,6 +2,7 @@
 // Pfettenschuhen und Pfettenstoß, biegesteife Rahmenecke mit Stirnplatte. Schrauben, Muttern, Scheiben und
 // Spannschlösser kommen als Normteile in die Stückliste (Bauplan »norms«). Reine Rechnung, keine Statik.
 
+import { orientRot, rotExtent } from "./orient.js";
 import { NORM_THREADS, boltSet, turnbuckleDims } from "./normteile.js";
 import { sectionGeometry } from "./sections.js";
 
@@ -77,7 +78,7 @@ export const PFETTE = {
   label: "Pfette",
   schema: [
     { key: "spans", label: "Feldlängen (Binderabstände)", type: "list", default: "5000; 5000", group: "Pfette" },
-    { key: "profile", label: "Pfettenprofil", type: "section", kinds: ["rechteck", "vierkant", "ipe", "upn"], default: { kind: "rechteck", size: "120x60x5" }, group: "Pfette" },
+    { key: "profile", label: "Pfettenprofil", type: "section", default: { kind: "rechteck", size: "120x60x5" }, group: "Pfette" },
     { key: "overhang", label: "Überstand an den Enden", type: "num", default: "100", group: "Pfette" },
     { key: "maxLen", label: "Stoß über Binder ab Länge", type: "num", default: "6000", group: "Pfette" },
     { key: "shoeT", label: "Pfettenschuh Blechdicke", type: "num", default: "8", group: "Pfettenschuh" },
@@ -89,11 +90,11 @@ export const PFETTE = {
     const issues = [];
     const spans = p.spans;
     if (!spans.length || spans.some((x) => !(x > 0))) throw new Error("Feldlängen > 0 angeben");
-    const pr = p.profile, hollow = pr.kind === "rechteck" || pr.kind === "vierkant";
-    // Pfette hochkant: Höhe H senkrecht
-    const hb = Math.min(pr.geom.width, pr.geom.height), hh = Math.max(pr.geom.width, pr.geom.height);
-    const rot = pr.geom.width > pr.geom.height ? 90 : 0;
-    const web = hollow ? hb : pr.dims.s;
+    const pr = p.profile, hollow = pr.kind === "rechteck" || pr.kind === "vierkant" || pr.kind === "rohr";
+    // Pfette hochkant: Höhe H senkrecht; U/UPN mit dem Steg am Pfettenschuh (−Y), offen nach +Y
+    const rot = orientRot(pr, [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, 1, 0], legs: [0, 1, -1], stem: [0, 0, -1] });
+    const { high: hh, wide: hb } = rotExtent(pr, rot);
+    const web = hollow ? hb : pr.dims.s ?? pr.dims.t ?? hb;
     const ts = p.shoeT, ls = p.shoeL, leg = p.shoeLeg;
     const xs = [0];
     for (const s of spans) xs.push(xs[xs.length - 1] + s);
@@ -142,7 +143,7 @@ export const RAHMENECKE = {
   label: "Rahmenecke",
   schema: [
     { key: "column", label: "Stütze", type: "section", kinds: ["hea", "heb", "ipe"], default: { kind: "hea", size: "200" }, group: "Profile" },
-    { key: "rafter", label: "Riegel", type: "section", kinds: ["ipe", "hea"], default: { kind: "ipe", size: "240" }, group: "Profile" },
+    { key: "rafter", label: "Riegel", type: "section", kinds: ["ipe", "hea", "heb"], default: { kind: "ipe", size: "240" }, group: "Profile" },
     { key: "height", label: "Höhe OK Riegel an der Stütze", type: "num", default: "4000", group: "Geometrie" },
     { key: "pitch", label: "Dachneigung", type: "num", unit: "°", default: "10", group: "Geometrie" },
     { key: "rafterLen", label: "Riegellänge (Stück im Modell)", type: "num", default: "1500", group: "Geometrie" },

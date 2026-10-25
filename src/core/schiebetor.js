@@ -8,6 +8,7 @@
 
 const isLeaf = (name) => name.startsWith("Flügel");
 
+import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
 export const SCHIEBETOR = {
   label: "Schiebetor",
@@ -18,15 +19,15 @@ export const SCHIEBETOR = {
     { key: "tail", label: "Gegengewicht (0 = 40 % der Öffnung)", type: "num", default: "0", group: "Tor" },
     { key: "tailForm", label: "Gegengewicht", type: "select", options: [["gerade", "rechteckig"], ["schraeg", "abgeschrägt"]], default: "schraeg", tiles: "front", group: "Tor" },
     { key: "teil", label: "Teil", type: "select", options: [["alles", "alles"], ["fluegel", "nur Flügel (bewegt)"], ["fest", "nur feste Teile"]], default: "alles", group: "Tor" },
-    { key: "frame", label: "Rahmen", type: "section", kinds: ["vierkant", "rechteck", "rohr"], default: { kind: "vierkant", size: "60x3" }, group: "Rahmen und Füllung" },
-    { key: "beam", label: "Laufprofil", type: "section", kinds: ["rechteck", "vierkant"], default: { kind: "rechteck", size: "120x80x5" }, group: "Rahmen und Füllung" },
+    { key: "frame", label: "Rahmen", type: "section", default: { kind: "vierkant", size: "60x3" }, group: "Rahmen und Füllung" },
+    { key: "beam", label: "Laufprofil", type: "section", default: { kind: "rechteck", size: "120x80x5" }, group: "Rahmen und Füllung" },
     { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["keine", "keine"]], default: "staketen", tiles: "front", group: "Rahmen und Füllung" },
-    { key: "bar", label: "Stäbe", type: "section", kinds: ["vierkantvoll", "rund", "vierkant", "rohr", "flach"], default: { kind: "vierkant", size: "20x2" }, group: "Rahmen und Füllung", when: (p) => p.fill !== "keine" },
+    { key: "bar", label: "Stäbe", type: "section", default: { kind: "vierkant", size: "20x2" }, group: "Rahmen und Füllung", when: (p) => p.fill !== "keine" },
     { key: "gapMax", label: "Öffnung max.", type: "num", default: "110", group: "Rahmen und Füllung", when: (p) => p.fill !== "keine" },
     { key: "rollerL", label: "Rollenbock Länge", type: "num", default: "250", group: "Rollen und Pfosten" },
     { key: "rollerDepth", label: "Rollenbock im Fundament", type: "num", default: "100", group: "Rollen und Pfosten" },
     { key: "posts", label: "Führungs- und Fangpfosten", type: "check", default: true, group: "Rollen und Pfosten" },
-    { key: "post", label: "Pfostenprofil", type: "section", kinds: ["vierkant", "rechteck", "rohr"], default: { kind: "vierkant", size: "100x4" }, group: "Rollen und Pfosten", when: (p) => p.posts },
+    { key: "post", label: "Pfostenprofil", type: "section", default: { kind: "vierkant", size: "100x4" }, group: "Rollen und Pfosten", when: (p) => p.posts },
     { key: "postTop", label: "Pfosten über Flügel", type: "num", default: "50", group: "Rollen und Pfosten", when: (p) => p.posts },
     { key: "embed", label: "Einbetonieren (unter Boden)", type: "num", default: "600", group: "Rollen und Pfosten", when: (p) => p.posts },
   ],
@@ -35,7 +36,8 @@ export const SCHIEBETOR = {
     const issues = [];
     const W = p.width, H = p.height, z0 = p.clearance;
     const T = p.tail > 0 ? p.tail : Math.round(W * 0.4);
-    const fw = p.frame.geom.width, bh = p.beam.geom.width;
+    const beamRot = orientRot(p.beam, [1, 0, 0], [0, -1, 0], { open: [0, 0, -1], legs: [0, 1, -1], stem: [0, 0, 1] });
+    const fw = p.frame.geom.width, bh = rotExtent(p.beam, beamRot).wide;
     if (!(W > 1000)) throw fieldError("Durchfahrt mindestens 1000 mm", "width");
     if (!(T >= 2 * p.rollerL + 2 * fw)) throw fieldError(`Gegengewicht zu kurz für zwei Rollenböcke (mindestens ${Math.ceil(2 * p.rollerL + 2 * fw)} mm)`, "tail");
     if (!(H > bh + 4 * fw)) throw fieldError("Höhe zu klein", "height");
@@ -45,7 +47,8 @@ export const SCHIEBETOR = {
     const P = (x, z) => [x, 0, z];
     const xs = -T;
     // Laufprofil unter dem ganzen Flügel, darauf der Rahmen
-    members.push({ section: p.beam, a: P(xs, z0 + bh / 2), b: P(W, z0 + bh / 2), name: "Flügel Laufprofil", up });
+    // Laufprofil: U/UPN wie das C-Laufprofil offen nach unten zu den Rollen
+    members.push({ section: p.beam, a: P(xs, z0 + bh / 2), b: P(W, z0 + bh / 2), name: "Flügel Laufprofil", up, rot: beamRot });
     const zb = z0 + bh + fw / 2, zt = z0 + H - fw / 2;
     const zEnd = p.tailForm === "schraeg" ? zb + Math.max(2 * fw, (zt - zb) * 0.25) : zt;
     const topAt = (x) => (x >= 0 ? zt : zEnd + ((zt - zEnd) * (x - (xs + fw / 2))) / (-(xs + fw / 2)));

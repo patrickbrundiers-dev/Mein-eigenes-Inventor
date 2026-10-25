@@ -194,14 +194,16 @@ test("Generator-Gerüst und Geländer-Plan: Parameter, Aufteilung, Öffnungen, V
   const f = defaultGenerator("gelaender");
   assert.equal(f.type, "generator");
   const E = (x) => Number(String(x).replace(",", "."));
-  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...patch }, E));
+  // frühere Standardprofile (Maße unten darauf gerechnet)
+  const OLD_GEL = { post: { kind: "vierkant", size: "40x3" }, bar: { kind: "vierkantvoll", size: "12" }, belt: { kind: "flach", size: "40x8" }, beltMode: "zwischen" };
+  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...OLD_GEL, ...patch }, E));
   const p1 = plan({ runs: "2500" });
-  assert.equal(p1.members.filter((m) => /^Pfosten/.test(m.name)).length, 4, "2500 / 1200 → 3 Felder, 4 Pfosten");
+  assert.equal(p1.members.filter((m) => /^Pfosten \d+$/.test(m.name)).length, 4, "2500 / 1200 → 3 Felder, 4 Pfosten");
   const bars = p1.members.filter((m) => /^Stab 1\./.test(m.name)).map((m) => m.a[0]).sort((a, b) => a - b);
   const gaps = [bars[0] - 6 - 20, ...bars.slice(1).map((x, i) => x - bars[i] - 12), 2500 / 3 - 20 - bars[bars.length - 1] - 6];
   assert.ok(gaps.every((g) => g <= 110 + 1e-9 && g > 0), "alle Öffnungen ≤ 110 mm: " + gaps.map((g) => g.toFixed(1)));
   assert.ok(Math.max(...gaps) - Math.min(...gaps) < 1e-6, "gleichmäßig verteilt");
-  assert.equal(p1.plates.length, 4, "Fußplatten");
+  assert.equal(p1.plates.filter((x) => /^Fußplatte/.test(x.name)).length, 4, "Fußplatten");
   assert.deepEqual(p1.chains[0].points.map((q) => q[2]), [1000 - 42.4 / 2, 1000 - 42.4 / 2]);
   const p2 = plan({ runs: "2000", fill: "glas", panelT: "10", height: "850" });
   assert.equal(p2.plates.filter((x) => x.glass).length, 2);
@@ -335,7 +337,7 @@ test("Generatoren: Standardprofile stehen im Katalog (Auswahlliste nicht leer)",
     for (const s of G.schema.filter((x) => x.type === "section")) {
       const c = CATALOG[s.default.kind];
       assert.ok(Array.isArray(c) ? c.includes(s.default.size) : c && String(s.default.size) in c, `${g}.${s.key}: ${s.default.kind} ${s.default.size}`);
-      assert.ok(s.kinds.includes(s.default.kind), `${g}.${s.key}: Art ${s.default.kind} nicht erlaubt`);
+      assert.ok(!s.kinds || s.kinds.includes(s.default.kind), `${g}.${s.key}: Art ${s.default.kind} nicht erlaubt`);
     }
 });
 
@@ -399,7 +401,9 @@ test("Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCA
   const { defaultGenerator, resolveGenParams, GENERATORS } = await import("../src/core/generator.js");
   const f = defaultGenerator("gelaender");
   const E = (x) => Number(String(x).replace(",", "."));
-  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...patch }, E));
+  // frühere Standardprofile (Maße unten darauf gerechnet)
+  const OLD_GEL = { post: { kind: "vierkant", size: "40x3" }, bar: { kind: "vierkantvoll", size: "12" }, belt: { kind: "flach", size: "40x8" }, beltMode: "zwischen" };
+  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...OLD_GEL, ...patch }, E));
   const k = plan({ runs: "2400", fill: "kreuz" });
   const diag = k.members.filter((m) => /^Diagonale/.test(m.name));
   assert.equal(diag.length, 4, "2 Felder × 2 Diagonalen");
@@ -409,7 +413,7 @@ test("Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCA
   assert.equal(rings.length, 2);
   const r0 = rings[0].points, c0 = [600, 0, (r0[0][2] + r0[12][2]) / 2];
   assert.ok(r0.every((q) => Math.abs(Math.hypot(q[0] - c0[0], q[2] - c0[2]) - 150) < 1e-6 && Math.abs(q[1]) < 1e-9), "Kreis ⌀ 300 in der Feldebene");
-  assert.match(k.issues.map((x) => x.message).join(), /Öffnung \d+ mm größer als 120/, "Kreuz hält 120 mm nicht ein → Warnung");
+  assert.match(k.issues.map((x) => x.message).join(), /Öffnung \d+ mm über 120/, "Kreuz hält 120 mm nicht ein → Warnung");
   const open = Number(/Öffnung (\d+) mm/.exec(k.issues.map((x) => x.message).join())[1]);
   assert.ok(open < 580, `Inkreis kleiner als das halbe Feld (${open})`);
   assert.throws(() => plan({ runs: "2400", fill: "kreuz", ringD: "900" }), /Ring ⌀ 900 passt nicht/);
@@ -585,4 +589,149 @@ test("Generator-Meldungen am Feld und Körper je Feld (V5)", async () => {
   assert.ok(fieldParts(g.GENERATORS.zaun, "post").test("Pfosten 3"));
   assert.ok(fieldParts(g.GENERATORS.treppe, "gelRail").test("Geländer links Handlauf"));
   assert.ok(fieldParts(g.GENERATORS.schiebetor, "beam").test("Flügel Laufprofil"));
+});
+
+test("Generatoren: jede Profilart in jedem Profilfeld rechnet (oder meldet am Feld), keine NaN-Koordinaten", async () => {
+  const { CATALOG, SECTION_KINDS } = await import("../src/core/sections.js");
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  for (const [gen, G] of Object.entries(g.GENERATORS)) {
+    const base = g.defaultGenerator(gen).params;
+    for (const s of G.schema.filter((x) => x.type === "section")) {
+      for (const kind of s.kinds || Object.keys(SECTION_KINDS)) {
+        const size = CATALOG[kind][Math.floor(CATALOG[kind].length / 2)];
+        let plan;
+        try { plan = G.plan(g.resolveGenParams(gen, { ...base, [s.key]: { kind, size } }, E)); } catch (e) { assert.ok(e.key || /zu |passt|prüfen|Platz/.test(e.message), `${gen}.${s.key} ${kind}: ${e.stack}`); continue; }
+        const pts = [...plan.members.flatMap((m) => [m.a, m.b]), ...plan.chains.flatMap((c) => c.points)];
+        assert.ok(pts.every((q) => q.every(Number.isFinite)), `${gen}.${s.key} ${kind}: NaN`);
+        assert.ok([...plan.members, ...plan.chains].every((m) => m.rot === undefined || [0, 90, 180, 270].includes(Number(m.rot))), `${gen}.${s.key} ${kind}: Drehung`);
+      }
+    }
+  }
+});
+
+test("Profillage: Treppenwangen U/UPN offen nach außen, Rahmen offen nach außen, Riegel offen zu den Stäben", async () => {
+  const g = await import("../src/core/generator.js");
+  const { orientRot } = await import("../src/core/orient.js");
+  const { sectionOf } = g;
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (gen, patch) => g.GENERATORS[gen].plan(g.resolveGenParams(gen, { ...g.defaultGenerator(gen).params, ...patch }, E));
+  // offene Seite eines UPN (Steg bei −u) in Weltrichtung nach der Drehung
+  const openDir = (z, up, rot) => {
+    const n = (a) => { const l = Math.hypot(...a); return a.map((x) => x / l); };
+    const v0 = n(up.map((x, i) => x - z[i] * (up[0] * z[0] + up[1] * z[1] + up[2] * z[2]))), u0 = [v0[1] * z[2] - v0[2] * z[1], v0[2] * z[0] - v0[0] * z[2], v0[0] * z[1] - v0[1] * z[0]];
+    const t = (rot * Math.PI) / 180;
+    return u0.map((x, i) => Math.round(x * Math.cos(t) + v0[i] * Math.sin(t)));
+  };
+  const st = plan("treppe", { support: "upn" });
+  for (const m of st.members.filter((x) => /^Wange/.test(x.name))) {
+    const z = m.b.map((x, i) => x - m.a[i]).map((x, _, a) => x / Math.hypot(...a));
+    const out = openDir(z, m.up, m.rot);
+    assert.equal(Math.sign(out[1]), m.a[1] < 0 ? -1 : 1, `${m.name}: offene Seite nach außen`);
+  }
+  assert.deepEqual(st.members.filter((x) => /^Wange/.test(x.name)).map((x) => [x.name, Math.sign(x.a[1])]), [["Wange rechts", -1], ["Wange links", 1]], "rechts/links beim Hinaufgehen (+X)");
+  // Podest- und Balkonrahmen: UPN offen nach außen (erstes Stück entlang +X, außen = −Y)
+  const upn = { kind: "upn", size: "120" };
+  assert.equal(orientRot(sectionOf(upn), [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, -1, 0] }), 180);
+  assert.equal(plan("treppe", { form: "L", podestRahmen: upn }).chains.find((c) => c.name === "Podestrahmen").rot, 180);
+  assert.equal(plan("balkon", { frame: upn }).chains.find((c) => c.name === "Rahmen").rot, 180);
+  // Zaun: Unterriegel offen nach oben, Oberriegel nach unten
+  const z = plan("zaun", { frame: upn });
+  const ur = z.members.find((m) => m.name === "Feld 1 Unterriegel"), or = z.members.find((m) => m.name === "Feld 1 Oberriegel");
+  assert.deepEqual([openDir([1, 0, 0], ur.up, ur.rot)[2], openDir([1, 0, 0], or.up, or.rot)[2]], [1, -1]);
+  // Schiebetor: Laufprofil offen nach unten
+  const bm = plan("schiebetor", { beam: upn }).members.find((m) => m.name === "Flügel Laufprofil");
+  assert.equal(openDir([1, 0, 0], bm.up, bm.rot)[2], -1);
+});
+
+test("Handlaufhalter: Pfosten endet unter dem Handlauf, Endkappe, Stift, Bohrung 12,1 im Handlauf", async () => {
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (gen, patch) => g.GENERATORS[gen].plan(g.resolveGenParams(gen, { ...g.defaultGenerator(gen).params, ...patch }, E));
+  const p = plan("gelaender", { runs: "2500" });
+  const post = p.members.find((m) => m.name === "Pfosten 1"), pin = p.members.find((m) => m.name === "Pfosten 1 Handlaufhalter");
+  assert.ok(Math.abs(post.b[2] - (1000 - 42.4 - 60 - 4)) < 1e-9, "60 mm frei + 4 mm Endkappe");
+  assert.ok(p.plates.some((x) => x.name === "Pfosten 1 Endkappe" && x.t === 4));
+  assert.deepEqual([pin.section.kind, pin.section.dims.D, pin.a[2], pin.b[2]], ["rund", 12, 1000 - 42.4 - 60, 1000 - 42.4 / 2]);
+  const hd = p.drills.filter((d) => d.target === "Handlauf");
+  assert.equal(hd.length, 4);
+  assert.deepEqual([hd[0].d, hd[0].dir], [12.1, [0, 0, -1]]);
+  assert.match(p.info, /4 Handlaufhalter \(Bohrung Ø 12,1\)/);
+  // ohne Halter (auch ältere Features): Pfosten bis unter den Handlauf
+  const o = plan("gelaender", { runs: "2500", holder: "keine" });
+  assert.ok(Math.abs(o.members.find((m) => m.name === "Pfosten 1").b[2] - (1000 - 42.4)) < 1e-9 && !o.drills.some((d) => d.target === "Handlauf"));
+  assert.equal(g.genValues("gelaender", { runs: "2000" }).holder, "keine");
+  // massiver Pfosten (Flachstahl): ohne Endkappe
+  const fl = plan("gelaender", { runs: "2500", post: { kind: "flach", size: "40x10" }, beltMode: "zwischen" });
+  assert.ok(!fl.plates.some((x) => /Endkappe/.test(x.name)) && Math.abs(fl.members.find((m) => m.name === "Pfosten 1").b[2] - (1000 - 42.4 - 60)) < 1e-9);
+  // Treppe: Halter an jedem Pfosten, Bohrung im Handlauf desselben Zugs; Balkon reicht durch
+  const t = plan("treppe", {});
+  const tp = t.members.filter((m) => /Pfosten \d+$/.test(m.name)).length;
+  assert.equal(t.members.filter((m) => /Handlaufhalter$/.test(m.name)).length, tp);
+  assert.ok(t.drills.every((d) => /^Geländer (links|rechts) Handlauf$/.test(d.target)) && t.drills.length === tp);
+  const b = plan("balkon", {});
+  assert.ok(b.drills.length > 0 && b.drills.every((d) => d.target === "Geländer Handlauf"));
+  assert.equal(plan("balkon", { railHolder: false }).drills.length, 0);
+});
+
+test("Gurte durch die Pfosten: ein Stück bis 5800 mm, Stoß im Pfosten, Durchbrüche und Stabbohrungen mit Aufmaß", async () => {
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (patch) => g.GENERATORS.gelaender.plan(g.resolveGenParams("gelaender", { ...g.defaultGenerator("gelaender").params, ...patch }, E));
+  const a = plan({ runs: "4800" });
+  const og = a.members.filter((m) => /^Obergurt/.test(m.name)), ug = a.members.filter((m) => /^Untergurt/.test(m.name));
+  assert.deepEqual([og.length, ug.length], [1, 1], "4800 mm: je ein Stück");
+  assert.deepEqual([og[0].a[0], og[0].b[0]], [0, 4800], "von Pfostenmitte zu Pfostenmitte");
+  // Durchbrüche im Pfosten: Ø Gurt 26,9 + 1 = 27,9; Endpfosten einseitig, dazwischen durchgehend
+  const pd = a.drills.filter((d) => /^Pfosten \d+$/.test(d.target));
+  assert.ok(pd.every((d) => Math.abs(d.d - 27.9) < 1e-9));
+  assert.equal(pd.filter((d) => d.target === "Pfosten 1").length, 2, "Ober- und Untergurt");
+  assert.ok(pd.filter((d) => d.target === "Pfosten 2").every((d) => Math.abs(d.len - (42.4 + 2)) < 1e-9), "durchgehend");
+  assert.ok(pd.filter((d) => d.target === "Pfosten 1").every((d) => Math.abs(d.len - (21.2 + 1)) < 1e-9 && d.dir[0] === 1), "einseitig nach innen");
+  // Stäbe: durch beide Gurte bis bündig außen, je Stab eine Bohrung Ø 13 in jedem Gurt
+  const bars = a.members.filter((m) => /^Stab /.test(m.name));
+  const zTop = 1000 - 42.4 - 100, zBot = 100;
+  assert.ok(bars.every((m) => Math.abs(m.a[2] - (zBot - 26.9 / 2)) < 1e-9 && Math.abs(m.b[2] - (zTop + 26.9 / 2)) < 1e-9));
+  const sd = a.drills.filter((d) => /gurt/.test(d.target));
+  assert.equal(sd.length, 2 * bars.length);
+  assert.ok(sd.every((d) => d.d === 13 && d.dir[2] === -1));
+  // 9000 mm: Stoß in einem Pfosten (Stücke ≤ 5800), dort durchgehender Durchbruch für beide Stücke
+  const b = plan({ runs: "9000" });
+  const pieces = b.members.filter((m) => /^Obergurt/.test(m.name));
+  assert.equal(pieces.length, 2);
+  assert.ok(pieces.every((m) => Math.abs(m.b[0] - m.a[0]) <= 5800 + 1e-6));
+  assert.equal(pieces[0].b[0], pieces[1].a[0], "Stoß in Pfostenmitte");
+  // Gurt zu dick für den Pfosten → Meldung am Feld
+  assert.throws(() => plan({ belt: { kind: "rohr", size: "48.3x2.6" } }), (e) => e.key === "belt");
+  // Vierkant-Gurt: rechteckiger Durchbruch mit Aufmaß
+  const v = plan({ runs: "2000", belt: { kind: "vierkant", size: "20x2" }, post: { kind: "vierkant", size: "40x3" } });
+  const vd = v.drills.find((d) => d.target === "Pfosten 1");
+  assert.deepEqual([vd.w, vd.h], [21, 21]);
+  // zwischen den Pfosten (ältere Features): Gurte je Feld wie bisher
+  const z = plan({ runs: "2400", beltMode: "zwischen" });
+  assert.equal(z.members.filter((m) => /^Obergurt/.test(m.name)).length, 2);
+  assert.equal(g.genValues("gelaender", { runs: "2000" }).beltMode, "zwischen");
+});
+
+test("Geländernorm Deutschland: Höhe, Öffnungen, Leitereffekt, Boden nach Nutzung", async () => {
+  const { defaultGenerator, resolveGenParams, GENERATORS } = await import("../src/core/generator.js");
+  const { normRules, railingIssues } = await import("../src/core/gelaendernorm.js");
+  assert.deepEqual([normRules("wohn", 3000).minH, normRules("wohn", 13000).minH, normRules("arbeit", 3000).minH, normRules("arbeit", 13000).minH, normRules("industrie", 0).minH], [900, 1100, 1000, 1100, 1100]);
+  const E = (x) => Number(String(x).replace(",", "."));
+  const run = (g, patch) => { const f = defaultGenerator(g); return GENERATORS[g].plan(resolveGenParams(g, { ...f.params, ...patch }, E)).issues; };
+  const msg = (is) => is.map((x) => `${x.key}:${x.message}`).join(" | ");
+  for (const g of ["gelaender", "treppe", "balkon", "spindel"]) assert.equal(run(g, {}).length, 0, `${g}: Standardwerte normgerecht – ${msg(run(g, {}))}`);
+  assert.match(msg(run("gelaender", { height: "950", fall: "13000" })), /height:Höhe 950 mm unter 1100 mm/, "Absturzhöhe über 12 m");
+  assert.match(msg(run("gelaender", { height: "950", use: "arbeit" })), /height:Höhe 950 mm unter 1000 mm \(ASR A2\.1\)/);
+  assert.match(msg(run("gelaender", { fill: "quer" })), /fill:Waagrechte Füllstäbe/, "Leitereffekt im Wohnbereich");
+  assert.doesNotMatch(msg(run("gelaender", { fill: "quer", use: "arbeit" })), /Waagrechte/);
+  assert.match(msg(run("gelaender", { gapMax: "150" })), /gapMax:Öffnung \d+ mm über 120 mm/);
+  assert.doesNotMatch(msg(run("gelaender", { gapMax: "150", use: "arbeit" })), /Öffnung/, "Arbeitsstätte: Stäbe bis 180 mm");
+  assert.match(msg(run("gelaender", { bottomZ: "250" })), /bottomZ:Abstand Boden bis Unterkante Geländer \d+ mm über 120 mm/);
+  assert.match(msg(run("gelaender", { use: "industrie" })), /use:Fußleiste ≥ 100 mm/);
+  assert.match(msg(run("treppe", { gelUse: "wohn" })), /gelFill:Waagrechte/, "Treppe mit Knieleisten im Wohnhaus");
+  assert.match(msg(run("balkon", { railH: "850" })), /railH:Höhe 850 mm unter 900 mm/);
+  assert.equal(run("spindel", { height: "2222.5", steps: "14", D: "3065", angle: "22.5" }).filter((x) => /Öffnung/.test(x.message)).length, 0, "automatisch genug Stäbe je Stufe (Abstand je Teilung gerechnet)");
+  assert.match(msg(run("spindel", { bars: "1" })), /post:Öffnung \d+ mm über 120 mm/, "ein Stab je Stufe reicht im Wohnhaus nicht");
+  assert.match(msg(railingIssues({ use: "wohn", height: 1000, fill: "staketen", gap: 100, rail: { kind: "rohr", geom: { width: 60.3 } } }, { rail: "rail" })), /rail:Handlauf Ø 60,3 mm/);
 });
