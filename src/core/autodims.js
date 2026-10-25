@@ -182,7 +182,8 @@ export function planAutoDims(views, used = {}) {
     // Hohlprofil ohne Profil-Feature: Wandstärke einmal in der Ansicht, in der sie ringsum gleich ist
     if (!prof && !used.wall) {
       const t = wallThickness(b, v.lines, v.arcs);
-      if (t) { used.wall = true; out.push({ view: v.id, kind: "h", p1: [b.x0, b.y1], p2: [b.x0 + t, b.y1], off: -8, wall: true }); }
+      // Fasen ringsum sehen von oben wie eine Wand aus
+      if (t && !(used.chamfers || []).some((c) => Math.abs(c - t) < 1e-3)) { used.wall = true; out.push({ view: v.id, kind: "h", p1: [b.x0, b.y1], p2: [b.x0 + t, b.y1], off: -8, wall: true }); }
     }
     const groups = new Map();
     for (const c of circles) {
@@ -253,6 +254,49 @@ export function planAutoDims(views, used = {}) {
     };
     axisDims("cx", "h", pick("cx", (c, o) => c.cy < o.cy), b.x0, b.x1, 1);
     axisDims("cy", "v", pick("cy", (c, o) => c.cx < o.cx), b.y0, b.y1, -1);
+    // Rundungen (DIN 406-11): je Radius ein Maß „n× R5“, Maßlinie vom Mittelpunkt durch den Bogen
+    if (!used.noRadii && !endView) {
+      const rads = used.rads || (used.rads = new Set());
+      const near = (a, c, tol = 1e-3) => Math.abs(c.cx - a.cx) < tol && Math.abs(c.cy - a.cy) < tol;
+      const all = v.arcs || [];
+      const arcs = all.filter((a) => !a.full && a.r > EPS && a.sweep > 0.2 && a.sweep < Math.PI + 1e-3 && a.a1 !== undefined
+        && !circles.some((c) => near(a, c))
+        // Halbkreise, die zusammen einen Kreis ergeben (Bohrung in Stücken)
+        && all.filter((o) => near(a, o, 0.01) && Math.abs(o.r - a.r) < 1e-3).reduce((sum, o) => sum + o.sweep, 0) < 2 * Math.PI - 0.1
+        // konzentrisch zu einem größeren Bogen (z. B. Fasenkante an einer Rundung): nur der äußere zählt
+        && !all.some((o) => o !== a && near(a, o) && o.r > a.r + 1e-3));
+      const byR = new Map();
+      for (const a of arcs) { const k = key(a.r); if (!byR.has(k)) byR.set(k, []); byR.get(k).push(a); }
+      for (const [k, list] of byR) {
+        if (rads.has(k)) continue;
+        rads.add(k);
+        const midPt = (a) => { const t = (a.a0 + a.a1) / 2; return [a.cx + a.r * Math.cos(t), a.cy + a.r * Math.sin(t)]; };
+        const a = list.reduce((m, x) => (midPt(x)[0] + midPt(x)[1] > midPt(m)[0] + midPt(m)[1] ? x : m));
+        const dm = { view: v.id, kind: "rad", circle: { cx: a.cx, cy: a.cy, r: a.r }, span: [a.a0, a.a1], angle: -Math.PI / 4 };
+        // gleiche Bögen: die Platzierung darf sich den freiesten aussuchen
+        if (list.length > 1) dm.alts = list.map((x) => ({ cx: x.cx, cy: x.cy, span: [x.a0, x.a1] }));
+        if (list.length > 1) dm.count = list.length;
+        out.push(dm);
+      }
+    }
+    // Fasen aus den Fasen-Features: 45°-Kante mit Länge a·√2 -> Hinweis „2 × 45°“, je Fasenmaß einmal
+    for (const ch of used.chamfers || []) {
+      const done = used.chamfersDone || (used.chamfersDone = new Set());
+      if (done.has(key(ch))) continue;
+      const segs = [];
+      for (const pl of v.lines || []) for (let i = 0; i + 1 < pl.length; i++) {
+        const [p, q] = [pl[i], pl[i + 1]];
+        const dx = q[0] - p[0], dy = q[1] - p[1];
+        if (Math.abs(Math.abs(dx) - Math.abs(dy)) > 0.01 * Math.abs(dx) + 1e-4) continue;
+        if (Math.abs(Math.hypot(dx, dy) - ch * Math.SQRT2) > 0.02 * ch + 0.01) continue;
+        const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+        if (!segs.some((s) => Math.hypot(s[0] - m[0], s[1] - m[1]) < 1e-3)) segs.push(m);
+      }
+      if (!segs.length) continue;
+      done.add(key(ch));
+      const m = segs.reduce((a, c) => (c[0] + c[1] > a[0] + a[1] ? c : a));
+      out.push({ view: v.id, kind: "fase", p: m, fase: ch, count: segs.length, text: (segs.length > 1 ? segs.length + "× " : "") + fmt(ch) + " × 45°" });
+    }
   }
   return out;
 }
@@ -315,8 +359,10 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null, note
       const ordRows = ordW ? Math.ceil((ordW + (kind === "h" ? 2 : 2 - TEXT_H)) / ROW_STEP) + 1 : 0;
       const rowsOf = (list) => (list.some((it) => it.m.ord) ? ordRows : 0) + list.filter((it) => !it.m.ord).length;
       const band = (list, side) => {
-        const lo = Math.min(...list.map((it) => Math.min(it.A[1 - c], it.B[1 - c])));
-        const hi = Math.max(...list.map((it) => Math.max(it.A[1 - c], it.B[1 - c])));
+        // enge Maße: der Text steht neben der Maßlinie und braucht dort Platz
+        const extra = Math.max(0, ...list.filter((it) => !it.m.ord && it.len < textWidth(dimLabel(it.m)) + 7).map((it) => textWidth(dimLabel(it.m)) + 3));
+        const lo = Math.min(...list.map((it) => Math.min(it.A[1 - c], it.B[1 - c]))) - extra;
+        const hi = Math.max(...list.map((it) => Math.max(it.A[1 - c], it.B[1 - c]))) + extra;
         const depth = ROW_FIRST + ROW_STEP * (rowsOf(list) - 1) + TEXT_H;
         const q = side === "max" ? [R[c + 2], R[c + 2] + depth] : [R[c] - depth, R[c]];
         return kind === "h" ? [lo, q[0], hi, q[1]] : [q[0], lo, q[1], hi];
@@ -343,11 +389,19 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null, note
     }
     // Durchmesser/Radien: Hinweislinie mit Text in freien Raum, nicht durch andere Bohrungen
     const circles = (v.circles || []).map((k) => ({ c: v.to(k.cx, k.cy), r: k.r * v.scale }));
+    // Richtung eines Winkels der Ansicht auf dem Blatt (Ansichten können gespiegelt sein)
+    const sheetAng = (cx, cy, t) => { const P = v.to(cx, cy), Q = v.to(cx + Math.cos(t), cy + Math.sin(t)); return Math.atan2(Q[1] - P[1], Q[0] - P[0]); };
     for (const m of dims.filter((x) => x.view === id && (x.kind === "dia" || x.kind === "rad"))) {
-      const c = v.to(m.circle.cx, m.circle.cy), r = m.circle.r * v.scale;
+      const r = m.circle.r * v.scale;
       const shelf = Math.max(10, textWidth(dimLabel(m)) + 2);
       let best = null;
-      for (const ang of [-Math.PI / 4, -3 * Math.PI / 4, Math.PI / 4, 3 * Math.PI / 4]) {
+      // Radius: die Maßlinie muss den Bogen treffen
+      const arcsOf = m.kind === "rad" && m.span ? m.alts || [{ cx: m.circle.cx, cy: m.circle.cy, span: m.span }] : [{ cx: m.circle.cx, cy: m.circle.cy }];
+      const tries = arcsOf.flatMap((a) => (a.span ? [0.5, 0.3, 0.7].map((t) => ({ a, ang: sheetAng(a.cx, a.cy, a.span[0] + t * (a.span[1] - a.span[0])) }))
+        : [-Math.PI / 4, -3 * Math.PI / 4, Math.PI / 4, 3 * Math.PI / 4].map((ang) => ({ a, ang }))));
+      const first = tries[0].ang;
+      for (const { a: arc, ang } of tries) {
+        const c = v.to(arc.cx, arc.cy);
         const ux = Math.cos(ang), uy = Math.sin(ang);
         for (let lead = LEAD; lead <= 60; lead += 4) {
           const p = [c[0] + ux * (r + lead), c[1] + uy * (r + lead)];
@@ -359,14 +413,33 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null, note
             const t = Math.max(0, Math.min(1, ((k.c[0] - c[0]) * ux + (k.c[1] - c[1]) * uy) / (r + lead)));
             if (Math.hypot(c[0] + ux * (r + lead) * t - k.c[0], c[1] + uy * (r + lead) * t - k.c[1]) < k.r + 0.5) cross++;
           }
-          const score = 3 * overlap(box, R) + 3 * cost(box, id) + 50 * cross + 0.3 * (lead - LEAD) + (ang === -Math.PI / 4 ? 0 : 0.1);
-          if (!best || score < best.score) best = { score, ang, lead, box };
+          const score = 3 * overlap(box, R) + 3 * cost(box, id) + 50 * cross + 0.3 * (lead - LEAD) + (ang === first ? 0 : 0.1);
+          if (!best || score < best.score) best = { score, ang, lead, box, arc };
         }
       }
       m.angle = best.ang;
+      if (m.alts) { m.circle = { ...m.circle, cx: best.arc.cx, cy: best.arc.cy }; m.span = best.arc.span; delete m.alts; }
       if (best.lead !== LEAD) m.lead = best.lead; else delete m.lead;
       placed.push(best.box);
     }
+  }
+  // Fasenhinweise: schräge Hinweislinie aus der Ansicht heraus, Text auf der Bezugslinie (at = Knick)
+  for (const m of dims.filter((x) => x.kind === "fase" && views[x.view])) {
+    const v = views[m.view], R = v.rect, c = v.to(...m.p);
+    const w = textWidth(m.text) + 2, mid = [(R[0] + R[2]) / 2, (R[1] + R[3]) / 2];
+    let best = null;
+    for (const [ux, uy] of [[1, -1], [-1, -1], [1, 1], [-1, 1]]) {
+      const outward = (c[0] - mid[0]) * ux + (c[1] - mid[1]) * uy > 0 ? 0 : 5;
+      for (let lead = LEAD; lead <= 40; lead += 4) {
+        const p = [c[0] + ux * lead * 0.7, c[1] + uy * lead * 0.7];
+        const box = ux >= 0 ? [p[0], p[1] - TEXT_H - 0.5, p[0] + w, p[1] + 0.5] : [p[0] - w, p[1] - TEXT_H - 0.5, p[0], p[1] + 0.5];
+        const pad = [box[0] - 1.5, box[1] - 1.5, box[2] + 1.5, box[3] + 1.5]; // Abstand zu Maßzahlen
+        const score = 3 * overlap(pad, R) + 3 * cost(pad, m.view) + 0.3 * (lead - LEAD) + outward;
+        if (!best || score < best.score) best = { score, p, box };
+      }
+    }
+    m.at = best.p.map((x) => Math.round(x * 1000) / 1000);
+    placed.push(best.box);
   }
   // Hinweise (z. B. Profilangabe) unter, sonst über der Ansicht an die erste freie Stelle
   for (const n of notes) {

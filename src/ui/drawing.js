@@ -729,7 +729,7 @@ export class DrawingEditor {
     const L = d.leaders.find((x) => x.id === id);
     const text = await promptDialog("Hinweis ändern", "Text", L.text);
     if (text === null) return;
-    this.app.edit("Hinweis", () => { if (text) L.text = text; else d.leaders = d.leaders.filter((x) => x !== L); }, { rebuild: false });
+    this.app.edit("Hinweis", () => { if (text) { L.text = text; if (L.auto) L.touched = true; } else d.leaders = d.leaders.filter((x) => x !== L); }, { rebuild: false });
     this.render();
   }
 
@@ -1012,6 +1012,11 @@ export class DrawingEditor {
         cl.push(`M${r3(cx - r)} ${r3(cy)}H${r3(cx + r)}M${r3(cx)} ${r3(cy - r)}V${r3(cy + r)}`);
       }
       if (cl.length) g.append(svgEl("path", { d: cl.join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.thin, "stroke-dasharray": "6 1 1 1" }));
+    }
+    // Gewinde in Draufsicht (DIN ISO 6410): Kernloch breit, Nenndurchmesser als dünner Dreiviertelkreis, offen oben rechts
+    if (v.type !== "iso") {
+      const th = this.threadArcs(d, p);
+      if (th.length) g.append(svgEl("path", { d: th.map((a) => { const [cx, cy] = xf.to(a.cx, a.cy), R = a.r * v.scale; return `M${r3(cx + R)} ${r3(cy)}A${r3(R)} ${r3(R)} 0 1 1 ${r3(cx)} ${r3(cy - R)}`; }).join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.thin }));
     }
     const bb = xf.bb;
     const [x0, y0] = xf.to(bb.x0, bb.y1), [x1, y1] = xf.to(bb.x1, bb.y0);
@@ -1506,6 +1511,7 @@ export class DrawingEditor {
           const o = (drag.kind === "holetable" ? d.holeTables : drag.kind === "leader" ? d.leaders : d.symbols).find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [...o.at];
           o.at = [r3(drag.o[0] + dx), r3(drag.o[1] + dy)];
+          if (o.auto) o.touched = true;
         } else if (drag.kind === "weld") {
           const w = d.welds.find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [...w.at];
@@ -1801,31 +1807,55 @@ export class DrawingEditor {
       if (m.axis) used.axes.add(m.axis);
       if (m.wall) used.wall = true;
       if (m.kind === "dia" && !m.pcd) used.radii.add(Math.round(m.circle.r * 1000));
+      if (m.kind === "rad") (used.rads ||= new Set()).add(Math.round(m.circle.r * 1000));
     }
+    const keepLeaders = (d.leaders || []).filter((L) => !(L.auto && !L.touched && ids.has(L.view)));
+    for (const L of keepLeaders) if (L.auto && L.fase) (used.chamfersDone ||= new Set()).add(Math.round(L.fase * 1000));
     const items = this.sourceItems(d) || [];
     const ev = (part) => { const scope = resolveParams(part.params || []).values; return (x) => evaluate(String(x), scope); };
     const holes = items.flatMap((it) => holeSpecs(it.part.features, ev(it.part)));
+    // Fasenmaße aus den Fasen-Features (Hinweis „2 × 45°“)
+    used.chamfers = [...new Set(items.flatMap((it) => { const e = ev(it.part); return it.part.features.filter((f) => f.type === "chamfer" && !f.suppressed).map((f) => { try { return e(f.radius); } catch { return null; } }).filter((x) => x > 0); }))];
     // Einzelteil aus einem Profil: Querschnitt als Profilangabe statt Einzelmaßen
     const src = d.source && this.app.doc(d.source.id);
     used.profile = this.profileOf(d);
     // Wandstärke nur bei einem einzelnen Hohlkörper, nicht bei Rahmen/Schweißbaugruppen aus mehreren Profilen
-    if (src?.kind !== "part" || src.features.some((f) => !f.suppressed && ["frame", "profilzug", "biegerohr", "knickrahmen", "profile"].includes(f.type))) used.wall = true;
+    const profiled = src?.kind !== "part" || src.features.some((f) => !f.suppressed && ["frame", "profilzug", "biegerohr", "knickrahmen", "profile"].includes(f.type));
+    if (profiled) used.wall = true;
+    // Eckradien von Profilen gehören zur Profilangabe und werden nicht als Rundung bemaßt
+    if (profiled) used.noRadii = true;
     const views = cands.filter((v) => !keep.some((m) => m.view === v.id && m.auto)).map((v) => {
       const c = this.viewCam(d, v), p = this.proj.get(v.id);
       return { id: v.id, axes: v.type === "flat" ? ["F1", "F2"] : viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, lines: p.visible, holes };
     });
-    const add = planAutoDims(views, used).map((m) => ({ id: uid("m"), ...m, auto: true }));
+    const planned = planAutoDims(views, used);
+    const add = planned.filter((m) => m.kind !== "fase").map((m) => ({ id: uid("m"), ...m, auto: true }));
+    const fasen = planned.filter((m) => m.kind === "fase");
     const keepNotes = (d.notes || []).filter((n) => !(n.auto && !n.touched));
     const notes = []; // Profilangabe steht im Schriftfeld (Halbzeug)
-    if (!add.length && !notes.length && keep.length === d.dims.length) return silent ? undefined : toast("Keine weiteren Hauptmaße gefunden");
-    layoutAutoDims(add, this.sheetRects(d), { ...this.sheetObstacles(d, keep), notes });
+    if (!add.length && !notes.length && !fasen.length && keep.length === d.dims.length && keepLeaders.length === (d.leaders || []).length) return silent ? undefined : toast("Keine weiteren Hauptmaße gefunden");
+    layoutAutoDims([...add, ...fasen], this.sheetRects(d), { ...this.sheetObstacles(d, keep), notes });
     const apply = () => {
       d.dims = [...keep, ...add];
+      d.leaders = [...keepLeaders, ...fasen.map((m) => ({ id: uid("l"), view: m.view, p: m.p.map(r3), at: m.at, text: m.text, fase: m.fase, auto: true }))];
       d.notes = [...keepNotes, ...notes.map((n) => ({ id: uid("n"), x: n.x, y: n.y, text: n.text, size: 3.5, auto: true }))];
     };
     if (silent) { apply(); this.app.changed({ rebuild: false }); }
     else this.app.edit("Hauptmaße", apply, { rebuild: false });
     this.render();
+  }
+  /** Gewindebohrungen der Ansicht: Kreise mit Kernloch-Ø eines Gewinde-Features -> Kreise mit Nenndurchmesser */
+  threadArcs(d, p) {
+    const full = (p.arcs || []).filter((a) => a.full);
+    if (!full.length) return [];
+    const specs = (this.sourceItems(d) || []).flatMap((it) => { const scope = resolveParams(it.part.params || []).values; return holeSpecs(it.part.features, (x) => evaluate(String(x), scope)); }).filter((s) => s.hole.thread);
+    const out = [];
+    for (const a of full) {
+      const s = specs.find((x) => Math.abs(x.r - a.r) < 0.02);
+      const nom = s && parseFloat(s.hole.thread.slice(1));
+      if (nom > a.r * 2 && !out.some((o) => Math.abs(o.cx - a.cx) < 1e-3 && Math.abs(o.cy - a.cy) < 1e-3)) out.push({ cx: a.cx, cy: a.cy, r: nom / 2 });
+    }
+    return out;
   }
   /** Profilangabe des Quellteils (Halbzeug), Länge wie in der Zuschnittliste */
   profileOf(d) {
