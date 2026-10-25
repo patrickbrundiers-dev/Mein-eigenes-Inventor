@@ -62,3 +62,17 @@ test("Summen je Profil: Stück, Gesamtlänge, Gewicht (Megacad-Abgleich M1)", as
   assert.ok(Math.abs(qr.kgm - kgPerMeter(100, 7.85)) < 1e-12);
   assert.ok(Math.abs(kgPerMeter(444, 7.85) - 3.4854) < 1e-9); // QR 40x40x3: 4,44 cm² → 3,49 kg/m
 });
+
+test("Gehrung in zwei Ebenen: Anteile Breite/Höhe, Kennzeichen und Kopf unverändert (MegaCAD-Abgleich M3)", async () => {
+  const { twoPlaneParts, partsText } = await import("../src/core/cutlist.js");
+  assert.equal(twoPlaneParts({ A: { b: 45, h: 0 }, B: { b: 0, h: 0 } }), null, "eine Ebene");
+  assert.deepEqual(twoPlaneParts({ A: { b: -41.8, h: 24.1 }, B: { b: 0, h: 0 } }), [{ b: 0, h: 0 }, { b: 41.8, h: 24.1 }]);
+  const mp = { A: { b: 0, h: 0 }, B: { b: 41.8, h: -24.1 } };
+  const rows = cutListRows([src("Zug", [member("QR 40x40x3", 1024.8, 0, 45, { miterParts: mp }), member("QR 40x40x3", 1024.8, 45, 0, { miterParts: { A: mp.B, B: mp.A } }), member("QR 40x40x3", 1024.8, 0, 45)])]);
+  assert.equal(rows.length, 2, "gleiche räumliche Teile zusammen, ebene Gehrung extra");
+  const r2 = rows.find((r) => r.miterParts);
+  assert.equal(r2.qty, 2);
+  assert.match(endsText(r2), /2 Ebenen/);
+  assert.equal(partsText(r2), "Ende B: 41,8° Breite / 24,1° Höhe");
+  assert.equal(cutListCsv(rows).replace(/^\ufeff/, "").split("\r\n")[0].split(";").length, 13, "CSV-Kopf bleibt gleich");
+});

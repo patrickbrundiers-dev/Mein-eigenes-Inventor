@@ -541,6 +541,7 @@ export function createKernel(R) {
             const name = sectionName(f.section, dims);
             const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
             meta.endCuts = ends;
+            meta.miterParts = { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) };
             if (tc.items.length) Object.assign(meta, { tube: { kind: f.section, W: geom.width, H: geom.height, t: dims.t, r: dims.r ?? 0, L }, contours: tc.items, cutLength: tc.cutLength, pierces: tc.pierces, cutSig: hashString(JSON.stringify(tc.items)) });
             state.tools.set(f.id, { op: f.op || "member", shapes: [{ shape: solid, kind: "member", meta, name: f.name || name }] });
             pushMember(state, solid, f, meta, f.name || name);
@@ -1021,6 +1022,7 @@ export function createKernel(R) {
         length: memberLength(solid, m.fr),
         miterStart: cutAngle(m.cuts.start, m.fr.z),
         miterEnd: cutAngle(m.cuts.end, m.fr.z),
+        miterParts: { A: cutParts(m.cuts.start, m.fr), B: cutParts(m.cuts.end, m.fr) },
         coped: m.envCuts.length > 0,
         butt: !!m.butt,
         frameZ: m.fr.z,
@@ -1215,6 +1217,16 @@ export function createKernel(R) {
     if (!(R.measureVolume(shape) > 0)) throw new Error(`Knickrahmen (${label}): Volumen ist 0`);
   }
 
+  /**
+   * Schnittwinkel eines Endes in zwei Ebenen: b = gekippt über die Breite (Ebene u–z), h = über die Höhe (Ebene v–z),
+   * je Winkel der Schnittspur zur Senkrechten auf die Achse in °, mit Vorzeichen. Gehrung in einer Ebene: ein Wert 0.
+   */
+  function cutParts(list, fr) {
+    if (!list.length) return { b: 0, h: 0 };
+    const n = v3.norm(list[0].n), cz = Math.abs(v3.dot(n, fr.z)) || 1e-12, s = Math.sign(v3.dot(n, fr.z)) || 1;
+    const deg = (x) => Math.round((Math.atan(x) * 180) / Math.PI * 10) / 10 || 0;
+    return { b: deg((s * v3.dot(n, fr.u)) / cz), h: deg((s * v3.dot(n, fr.v)) / cz) };
+  }
   function cutAngle(list, z) {
     if (!list.length) return 0;
     const c = Math.abs(v3.dot(v3.norm(list[0].n), z));
