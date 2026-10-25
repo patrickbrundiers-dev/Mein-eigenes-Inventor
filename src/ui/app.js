@@ -423,6 +423,7 @@ export class App {
     this.sel = { type: "feature", id };
     this.setMode("sketch");
     this.sketcher.start(id);
+    this.sketchBefore = JSON.stringify(part.features.find((f) => f.id === id));
     const res = this.results.get(part.id);
     if (res) this.showPart(part, res);
     this.refreshAll();
@@ -436,9 +437,17 @@ export class App {
     this.setHint("");
     this.hud.replaceChildren();
     this.refreshAll();
-    this.rebuild();
+    const part = this.activeDoc();
+    if (this.prefs.get("kernel.automatisch")) this.rebuild();
+    else {
+      // Neuberechnen aus: letztes Ergebnis wieder voll zeigen; geänderte Skizze wartet auf F5
+      if (JSON.stringify(part?.features.find((f) => f.id === id)) !== this.sketchBefore) this.stale = true;
+      const res = part && this.results.get(part.id);
+      if (res) this.showPart(part, res);
+      this.ribbon.render();
+      this.updateStatus();
+    }
     if (!silent) {
-      const part = this.activeDoc();
       const sk = part.features.find((f) => f.id === id);
       const used = part.features.some((f) => f.sketch === id);
       if (sk && !used && (sk.entities.length > 1)) toast("Skizze fertig. Jetzt z. B. Extrusion, Drehung, Bohrung oder Rahmen wählen.", { timeout: 3500 });
