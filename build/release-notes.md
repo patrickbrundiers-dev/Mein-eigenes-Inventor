@@ -1,24 +1,19 @@
-**Neu in 0.9.0**
+**Neu in 0.10.0**
 
-- **Generatoren** (3D-Modell → Generatoren, alles rechnet live neu, Stäbe stehen in der Zuschnittliste):
-  - Geländer: Läufe über Eck, Pfosten automatisch verteilt, Handlauf mit Gehrung. Füllung aus Staketen, Querstäben, Blech, Glas, Kreuz (mit Ring) oder Rahmen mit Staketen. Einstellungen lassen sich als Vorlage speichern.
-  - Tor: Einzel- oder Doppeltor, Oberkante gerade oder als Bogen.
-  - Treppe: geradläufig, L- oder U-Form mit Podest, mit Hinweisen zu ausgewählten Maßen nach DIN 18065 (Schrittmaß, Steigung, Auftritt). Das ersetzt keine Prüfung durch Fachleute. Dazu eine Spindeltreppe.
-  - Balkon mit Belag, Stützen oder Kragarm, Wandanschluss und Geländer.
-  - Stahlbau: Rahmenecke, Pfette und Windverband.
-- **Anschlüsse:**
-  - Stirn-/Fußplatte und Rippe am Profilende. Stirnplatten können eine Gegenplatte bekommen und verschraubt werden.
-  - Schweißnähte an Kanten, mit Nahtliste (CSV) und Symbolen nach ISO 2553 in der Zeichnung.
-  - Normteile in M6–M30: Schrauben ISO 4014/4017, Muttern ISO 4032, Scheiben ISO 7089, Gewindestangen DIN 976-1, Spannschlösser DIN 1480.
-- **Kantteil:** Blechquerschnitt aus Schenkeln und Biegewinkeln. Er lässt sich gefaltet oder abgewickelt zeigen und die Abwicklung als DXF mit Biegelinien exportieren.
-- **Baugruppen:**
-  - Unterbaugruppen. Die Stückliste hat Mengen-, Struktur- und Baukastenansicht.
-  - Drehgelenk mit Öffnungswinkel, „Bewegen“ als Animation mit Kollisionsprüfung, Explosionsdarstellung.
-  - Bauteile als eigene Dateien speichern und in andere Projekte verknüpfen. Beim Öffnen wird der neueste Stand geholt.
-- **Skizze:** „Säubern“ räumt lose Enden, doppelte Elemente und schiefe Linien auf. „DXF importieren“ übernimmt Fremdzeichnungen und Laserkonturen.
-- **Export:**
-  - „Listen (Excel)“: Stückliste, Zuschnitt, Summen je Profil und Nahtliste als .xlsx.
-  - „Bild (PNG)“ der aktuellen Ansicht.
-  - „Rendern“ im neuen Darstellungsmodus „Fotorealistisch“.
-- **Masse:** Glas, Gitterrost und Holz werden mit eigener Dichte gewogen.
-- **Korrekturen** an Kantteil-Ausdrücken, Bodenschatten, Geländer-Kreuz, Füllungsrahmen und Drehgelenk.
+- **Treppe mit Geländer:** Der Treppen-Generator baut auf Wunsch das Geländer mit, links, rechts oder beidseitig, bei L- und U-Treppen ums Podest herum. Als Füllung gibt es Knieleisten oder Staketen, dazu einen Handlauf-Auslauf. Treppen aus älteren Projekten bleiben unverändert.
+- **Generator-Einstellungen mit Skizze:**
+  - Über den Feldern steht eine Skizze mit Maßen. Klickst du in ein Feld, leuchtet das passende Maß auf.
+  - Varianten wählst du über kleine Bilder.
+  - Listen-Eingaben nehmen auch Ausdrücke, z. B. „L/2; L/2 + 5“.
+- **Werkstatt:**
+  - „Einzelteilzeichnungen“ erzeugt für jede Position einer Baugruppe eine Zeichnung.
+  - Die „Fertigungsmappe“ packt alles in eine ZIP-Datei: PDF mit Zeichnungen und Listen, Excel-Listen, STEP gesamt und je Position, Profil-STEPs für den Rohrlaser, DXF.
+  - Das „Angebotsblatt“ wird ein PDF mit Firmenkopf, Bild, Hauptmaßen, Gewicht und Preis samt MwSt.
+- **Oberfläche:** Jedes Bauteil hat ein Feld Oberfläche (roh, feuerverzinkt, pulverbeschichtet …) mit RAL-Farbe. Ansicht, Rendern und alle Stücklisten zeigen sie.
+- **Dateien:**
+  - Einstellbare Zahl früherer Fassungen neben der Datei.
+  - „Schreibgeschützt öffnen“.
+  - „Projekt paketieren“, mit allen verknüpften Bauteilen in einer Datei.
+  - Rechtsklick auf ein verknüpftes Bauteil bietet Aktualisieren, Quelldatei öffnen und Verknüpfung lösen.
+- **Dokument-Vorgaben:** Namensregeln für neue Bauteile, Baugruppen und Zeichnungen (z. B. „Carport-01“), optionale Sachnummer, Standardwerkstoff und Startinhalt neuer Projekte.
+- **Menüband selbst anordnen:** Gruppen per Rechtsklick verschieben oder ausblenden, mit Zurücksetzen. Ausgeblendete Befehle bleiben über Strg+K erreichbar.
