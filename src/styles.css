@@ -364,3 +364,5 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .massbild .mb-dim { fill: none; stroke: var(--dye, #1f4fa8); stroke-width: 1; }
 .massbild .mb-ext { fill: none; stroke: var(--ink-soft, #4a5866); stroke-width: .6; }
 .massbild .mb-dot { fill: var(--ink-soft, #4a5866); }
+.pz-point { border-bottom: 1px solid var(--steel-2); padding-bottom: 4px; margin-bottom: 4px; }
+.pz-point .pz-opts { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin: 2px 0; }

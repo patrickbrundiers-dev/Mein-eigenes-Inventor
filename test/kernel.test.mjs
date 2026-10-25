@@ -793,3 +793,30 @@ test("Ellipse extrudieren: Volumen π·a·b·h, auch mit b > a", async () => {
   okAll(res2);
   near(vol(res2), Math.PI * 12 * 25 * 5, 1e-3 * Math.PI * 12 * 25 * 5, "Ellipse b>a");
 });
+
+test("3D-Profilzug: räumlicher Zug mit Gehrungen, Längen und Masse (MegaCAD-Abgleich M2)", async () => {
+  const f = { id: "pz", type: "profilzug", section: "vierkant", dims: { B: "40", t: "3", r: "6" }, corner: "gehrung", align: "mitte", up: "Z", rotation: "0", cutMode: "3D",
+    points: [{ x: "0", y: "0", z: "0" }, { x: "1000", y: "0", z: "0", rel: true }, { x: "0", y: "600", z: "300", rel: true }, { x: "-1000", y: "0", z: "0", rel: true }] };
+  const res = await K.buildPart(part([f]));
+  okAll(res);
+  assert.equal(res.bodies.length, 3);
+  for (const b of res.bodies) assert.equal(b.kind, "member");
+  const lens = res.bodies.map((b) => b.meta.length);
+  log("Profilzug Längen", lens.map((x) => x.toFixed(2)).join(", "), "Gehrungen", res.bodies.map((b) => `${b.meta.miterStart}/${b.meta.miterEnd}`).join(", "));
+  // Ecke 1 und 2: je ein Ende gegehrt; Zuschnittlänge > Mittellinie, < Mittellinie + Profilbreite
+  const mid = [1000, Math.hypot(600, 300), 1000];
+  lens.forEach((L, i) => assert.ok(L > mid[i] && L < mid[i] + 40 * 1.5, `Segment ${i + 1}: ${L}`));
+  // Gehrungsflächen gleich: beide Hälften am Knoten haben denselben Winkel zur eigenen Achse
+  near(res.bodies[0].meta.miterEnd, res.bodies[1].meta.miterStart, 0.01, "Gehrung Ecke 1");
+  // Masse ≈ Fläche × Mittellinie (Gehrungen gleichen sich am Knoten aus)
+  const area = res.bodies[0].meta.area;
+  near(vol(res), area * (mid[0] + mid[1] + mid[2]), area * 30, "Volumen");
+  // eben (alle z = 0) entspricht dem Rahmen aus Skizze: offener Zug 1000 × 600
+  const flat = await K.buildPart(part([{ ...f, points: [{ x: "0", y: "0", z: "0" }, { x: "1000", y: "0", z: "0" }, { x: "1000", y: "600", z: "0" }], closed: false }]));
+  okAll(flat);
+  assert.deepEqual(flat.bodies.map((b) => Math.round(b.meta.length * 100) / 100), [1020, 620]);
+  // geschlossen, stumpf: 4 Stäbe, zwei laufen durch
+  const box = await K.buildPart(part([{ ...f, corner: "stumpf", closed: true, points: [{ x: "0", y: "0", z: "0" }, { x: "1000", y: "0", z: "0" }, { x: "1000", y: "600", z: "0" }, { x: "0", y: "600", z: "0" }] }]));
+  okAll(box);
+  assert.deepEqual(box.bodies.map((b) => Math.round(b.meta.length * 100) / 100).sort((a, b) => a - b), [560, 600, 1000, 1040]);
+});
