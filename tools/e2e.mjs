@@ -670,6 +670,7 @@ try {
   await page.locator("#ribbon button", { hasText: /^Schiebetor$/ }).click();
   await idle(120000);
   const st0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok), tiles: document.querySelectorAll("#props .tile").length, dims: document.querySelectorAll("#props svg.gsk .dim").length }; });
+  await evalApp(() => { const a = window.__werkcad; a.activeDoc().finish = { kind: "pulver", ral: "6005" }; });
   await page.locator("#props button", { hasText: "Als Baugruppe mit Schiebegelenk" }).click();
   await idle(120000);
   await evalApp(() => { const s = document.querySelector("#props input.joint-angle"); s.value = "2000"; s.dispatchEvent(new Event("input")); s.dispatchEvent(new Event("change")); });
@@ -680,9 +681,10 @@ try {
     const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.joint);
     const text = document.querySelector("#props")?.textContent || "";
     const rows = await a.props.jointSweepCheck(c, { steps: 2, silent: true });
-    return { kind: asm.kind, comps: asm.components.length, slide: c.joint.kind, max: c.joint.max, pos: c.pos.map((x) => Math.round(x)), section: /Schiebegelenk/.test(text) && /mm/.test(text), sweep: rows?.map((r) => [r.angle, r.hits.length]) };
+    const fin = asm.components.map((x) => a.doc(x.part).finish?.ral).join();
+    return { fin, kind: asm.kind, comps: asm.components.length, slide: c.joint.kind, max: c.joint.max, pos: c.pos.map((x) => Math.round(x)), section: /Schiebegelenk/.test(text) && /mm/.test(text), sweep: rows?.map((r) => [r.angle, r.hits.length]) };
   });
-  step("Schiebetor mit Schiebegelenk", st0.ok && st0.n > 30 && /Gegengewicht 1600/.test(st0.info) && st0.tiles >= 5 && st0.dims >= 4 && st1.kind === "assembly" && st1.comps === 2 && st1.slide === "schiebe" && st1.max === 4000 && st1.pos.join() === "-2000,0,0" && st1.section && st1.sweep?.every(([, n]) => n === 0), JSON.stringify({ st0, st1 }));
+  step("Schiebetor mit Schiebegelenk", st0.ok && st0.n > 30 && /Gegengewicht 1600/.test(st0.info) && st0.tiles >= 5 && st0.dims >= 4 && st1.fin === "6005,6005" && st1.kind === "assembly" && st1.comps === 2 && st1.slide === "schiebe" && st1.max === 4000 && st1.pos.join() === "-2000,0,0" && st1.section && st1.sweep?.every(([, n]) => n === 0), JSON.stringify({ st0, st1 }));
   // Zaun (E9): Generator, Gelände per Bildkachel auf »gestuft«
   await evalApp(() => window.__werkcad.newPart("Zaun"));
   await idle();

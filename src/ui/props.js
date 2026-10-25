@@ -1389,6 +1389,8 @@ export class Props {
     const mk = (teil, label) => {
       const p = app.withPartDefaults(newPart(`${base} ${label}`));
       p.material = src.material || p.material;
+      p.color = src.color ?? null;
+      if (src.finish) p.finish = JSON.parse(JSON.stringify(src.finish));
       p.params = JSON.parse(JSON.stringify(src.params || []));
       p.features = [{ ...JSON.parse(JSON.stringify(f)), id: uid("f"), name: `${base} ${label}`, params: { ...f.params, teil } }];
       return p;
