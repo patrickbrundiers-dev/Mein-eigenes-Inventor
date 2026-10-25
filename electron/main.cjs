@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const updater = require("./updater.cjs");
 const log = require("./log.cjs");
+const { rotateBackups, backupCount } = require("./backups.cjs");
 
 // Benutzerdaten bleiben nach der Umbenennung WerkCAD → PBCAD im bisherigen Ordner %APPDATA%\WerkCAD
 // (Einstellungen, Token, automatische Sicherung, Fehlerprotokoll). Muss vor allem anderen gesetzt werden.
@@ -118,12 +119,12 @@ const lastDir = (key, p) => {
   if (p) { s.dirs = { ...(s.dirs || {}), [key]: path.dirname(p) }; writeSettings(s); return; }
   return s.dirs?.[key] || app.getPath("documents");
 };
-function atomicWrite(file, data, { backup = true } = {}) {
+function atomicWrite(file, data, { backup = true, keep = 1 } = {}) {
   const tmp = file + ".tmp" + process.pid;
   // erst vollständig auf die Platte, dann umbenennen – ein Absturz hinterlässt nie eine halbe Datei
   const fd = fs.openSync(tmp, "w");
   try { fs.writeSync(fd, data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-  if (backup && fs.existsSync(file)) { try { fs.copyFileSync(file, file + ".bak"); } catch { /* */ } }
+  if (backup) rotateBackups(file, keep);
   try { fs.renameSync(tmp, file); } catch (e) { try { fs.unlinkSync(tmp); } catch { /* */ } throw e; }
 }
 // Projektdatei lesen; Fehler als Text zurück, damit die Oberfläche eine verständliche Meldung zeigen kann
@@ -131,7 +132,15 @@ function readProjectFile(p) {
   const bak = p + ".bak";
   const backup = fs.existsSync(bak) ? { time: fs.statSync(bak).mtimeMs } : null;
   try {
-    return { path: p, text: fs.readFileSync(p, "utf8"), backup };
+    const text = fs.readFileSync(p, "utf8");
+    // Speichern schreibt eine Temp-Datei im Ordner und benennt um: Ordner muss beschreibbar sein und die
+    // Datei darf nicht von einem anderen Programm gesperrt sein (r+ öffnet ohne zu ändern)
+    let readOnly = false;
+    try {
+      fs.accessSync(path.dirname(p), fs.constants.W_OK);
+      fs.closeSync(fs.openSync(p, "r+"));
+    } catch { readOnly = true; }
+    return { path: p, text, backup, readOnly };
   } catch (e) {
     const why = e.code === "ENOENT" ? "Datei nicht gefunden" : e.code === "EACCES" || e.code === "EPERM" ? "Kein Zugriff (gesperrt oder schreibgeschützt)" : e.message;
     return { path: p, error: why, backup };
@@ -206,14 +215,14 @@ ipcMain.handle("autosave:write", async (_e, { time, path: p, json }) => {
 ipcMain.handle("autosave:read", async () => {
   try { return JSON.parse(fs.readFileSync(autosaveFile(), "utf8")); } catch { return null; }
 });
-ipcMain.handle("project:save", async (_e, { path: p, text, defaultName }) => {
+ipcMain.handle("project:save", async (_e, { path: p, text, defaultName, backups }) => {
   let file = p;
   if (!file) {
     const r = await dialog.showSaveDialog(win, { title: "Projekt speichern", defaultPath: path.join(lastDir("project"), defaultName || "Projekt.wcad"), filters: [{ name: "PBCAD-Projekt", extensions: ["wcad"] }] });
     if (r.canceled || !r.filePath) return null;
     file = r.filePath;
   }
-  atomicWrite(file, text);
+  atomicWrite(file, text, { keep: backupCount(backups) });
   lastDir("project", file);
   addRecent(file);
   return { path: file };

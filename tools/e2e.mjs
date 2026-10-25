@@ -1699,6 +1699,34 @@ try {
       made.d === `Zeichnung ${p}-02` && content.kinds === "assembly,part" && content.comp === 1 && content.linked, JSON.stringify({ err, made, content }));
   }
 
+  // Dateien (Werkzeuge Stufe 27): schreibgeschützt im Titel, Speichern erzwingt »unter«, Projekt paketieren löst Verknüpfungen
+  {
+    const ro = await evalApp(() => {
+      const app = window.__werkcad;
+      app.readOnly = true;
+      app.updateTitle();
+      const title = document.title;
+      app.readOnly = false;
+      app.updateTitle();
+      return { title, after: document.title };
+    });
+    const dlWait = page.waitForEvent("download", { timeout: 5000 }).catch(() => null);
+    const pk = await evalApp(async () => {
+      const app = window.__werkcad;
+      const p = app.parts()[0];
+      p.link = { path: "C:/Teile/X.wcad", rel: "X.wcad", docId: "x", time: 1 };
+      const r = await app.files.packageProject();
+      const still = !!p.link;
+      delete p.link;
+      return { name: r?.path, packed: r?.packed, still };
+    });
+    const dl = await dlWait;
+    const packedText = dl ? fs.readFileSync(await dl.path(), "utf8") : "";
+    const menu = await (async () => { await page.locator("#ribbon .rb-file").click(); const t = await page.locator(".file-menu").textContent(); await page.locator(".file-menu button", { hasText: "Projekt paketieren" }).count() && await evalApp(() => document.querySelector(".file-menu")?.remove()); return t; })();
+    step("Schreibgeschützt und paketieren", /\[schreibgeschützt\]/.test(ro.title) && !/schreibgeschützt/.test(ro.after) && pk.packed?.length === 1 && pk.still && !!dl && !packedText.includes("C:/Teile/X.wcad") && /Projekt paketieren/.test(menu),
+      JSON.stringify({ ro, pk, dl: dl?.suggestedFilename(), menu: /paketieren/.test(menu) }));
+  }
+
   // Skizze säubern (MegaCAD-Abgleich M7): lose Ecken, doppelte Linie, leicht schief → eine geschlossene Kontur
   {
     await evalApp(() => window.__werkcad.newPart("Saeubern"));

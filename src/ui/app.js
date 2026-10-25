@@ -168,6 +168,7 @@ export class App {
     if (this.mode === "sketch") this.finishSketch(true);
     this.project = prj;
     this.filePath = filePath;
+    this.readOnly = false;
     const matIssues = adoptProjectMaterials(prj);
     this.syncMaterials();
     for (const i of matIssues) toast(i.message, { timeout: 8000 });
@@ -890,7 +891,7 @@ export class App {
   }
   updateTitle() {
     const name = this.filePath ? this.filePath.split(/[\\/]/).pop() : this.project.name;
-    document.title = `${this.dirty ? "• " : ""}${name} – PBCAD`;
+    document.title = `${this.dirty ? "• " : ""}${name}${this.readOnly ? " [schreibgeschützt]" : ""} – PBCAD`;
     window.werkcad?.setTitle?.(document.title);
     this.ribbon.renderDocLabel?.();
   }

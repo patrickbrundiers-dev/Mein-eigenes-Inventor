@@ -67,6 +67,19 @@ try {
   const savedPrj = JSON.parse(fs.readFileSync(file, "utf8"));
   await win.evaluate((p) => window.werkcad.saveProject({ path: p, text: window.__werkcad.files.serialize() }), file);
   check("Speichern atomar mit Sicherung", saved?.path === file && savedPrj.docs.length === 5 && fs.existsSync(file + ".bak") && !fs.readdirSync(tmp).some((f) => f.includes(".tmp")), fs.readdirSync(tmp).join(","));
+  {
+    for (let k = 0; k < 3; k++) await win.evaluate((p) => window.werkcad.saveProject({ path: p, text: window.__werkcad.files.serialize(), backups: 2 }), file);
+    const has = (suf) => fs.existsSync(file + suf);
+    fs.chmodSync(file, 0o444);
+    const ro = await win.evaluate((p) => window.werkcad.readProject(p), file);
+    fs.chmodSync(file, 0o644);
+    fs.chmodSync(tmp, 0o555); // Ordner schreibgeschützt: Speichern (Temp-Datei + Umbenennen) ginge nicht
+    const roDir = await win.evaluate((p) => window.werkcad.readProject(p), file);
+    fs.chmodSync(tmp, 0o755);
+    const rw = await win.evaluate((p) => window.werkcad.readProject(p), file);
+    const root = process.getuid?.() === 0; // root darf trotz Schreibschutz schreiben
+    check("Mehrere Sicherungen, schreibgeschützte Datei erkannt", has(".bak") && has(".bak2") && !has(".bak3") && (root || (ro.readOnly === true && roDir.readOnly === true)) && rw.readOnly === false, JSON.stringify({ files: fs.readdirSync(tmp), readOnly: ro.readOnly, dir: roDir.readOnly, rw: rw.readOnly, root }));
+  }
   fs.writeFileSync(file, "{ kaputt");
   await win.evaluate(() => { window.__werkcad.dirty = false; window.__werkcad.newProject(); });
   await win.evaluate(() => { window.__werkcad.dirty = false; });
