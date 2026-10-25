@@ -3,7 +3,7 @@
 // Die Baugruppe hält die Einstellungen (asm.gestell, siehe src/core/gestell.js); jeder Stab ist ein Bauteil mit
 // Feature »genteil« (gen »gestell«), gleiche Stäbe teilen sich ein Bauteil (app.syncGenAssembly).
 import { h, toast, modal, fmtNum, downloadBlob } from "./dom.js";
-import { skeletonSegments, defaultGestell, addMember, removeMember, setJoint, gestellPlan, gestellCsv, JOINT_KINDS, PLACES, CORNER_AUTO, TEE_AUTO } from "../core/gestell.js";
+import { skeletonSegments, defaultGestell, addMember, removeMember, setJoint, gestellPlan, gestellCsv, JOINT_KINDS, GAP_KINDS, PLACES, CORNER_AUTO, TEE_AUTO } from "../core/gestell.js";
 import { planeFrame } from "../core/geom.js";
 import { resolvePlane } from "../core/datums.js";
 import { resolveParams, evaluate } from "../core/expr.js";
@@ -27,6 +27,13 @@ export function skeletonSegs(app, part) {
 /** Eingabe des Bauplans: Einstellungen der Baugruppe plus aktuelle Skelett-Linien */
 export function gestellInput(app, asm) {
   return { ...clone(asm.gestell), segments: skeletonSegs(app, app.doc(asm.gestell.skeleton)) };
+}
+
+/** Spalt aus einer Eingabe (mm, nicht negativ) */
+function gapOf(v, scope = {}) {
+  const x = Number(evaluate(String(v ?? "0").trim() || "0", scope));
+  if (!Number.isFinite(x) || x < 0) throw new Error("Spalt ungültig");
+  return x;
 }
 
 /** Bauplan der Gestell-Baugruppe (wie gespeichert) */
@@ -127,6 +134,8 @@ export function gestellSections(P, asm) {
     P.expr("Drehung", String(g.rot ?? 0), (v) => upd("Drehung", (G) => { G.rot = Number(evaluate(v, {})) || 0; }), { unit: "°" }),
     P.seg("Ecken", CORNER_AUTO, g.corner || "gehrung", (v) => upd("Ecken", (G) => { G.corner = v; })),
     P.seg("T-Stöße", TEE_AUTO, g.tee || "stutzen", (v) => upd("T-Stöße", (G) => { G.tee = v; })),
+    P.expr("Spalt", String(g.gap ?? 0), (v) => { try { const x = gapOf(v, P.scope()); upd("Spalt", (G) => { if (x) G.gap = x; else delete G.gap; }); } catch (e) { toast(e.message, { kind: "err" }); } }, { allowNeg: false }),
+    h("p", { class: "hint" }, "Spalt zwischen den Stäben bei Gehrung, Eckverbindung und Stutzen – gilt für die Automatik und die Werkzeuge im Menüband."),
     ...plan.issues.map((x) => h("div", { class: "msg warn" }, x.message)),
     free.length ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => upd("Stäbe einfügen", (G) => { for (const s of free) addMember(G, s.id); }) }, `${free.length} Linie(n) ohne Stab einfügen`)) : null,
     h("div", { class: "btn-row" },
@@ -136,18 +145,22 @@ export function gestellSections(P, asm) {
   // Verbindungen von Hand
   const name = (id) => { const m = g.members.find((x) => x.id === id); return m ? memberLabel(m) : "?"; };
   const opts = g.members.map((m) => [m.id, memberLabel(m)]);
-  const nj = { kind: "gehrung", a: opts[0]?.[0], b: opts[1]?.[0] };
+  const nj = { kind: "gehrung", a: opts[0]?.[0], b: opts[1]?.[0], gap: String(g.gap ?? 0) };
+  const gapCell = (j) => GAP_KINDS.includes(j.kind)
+    ? h("input", { class: "inp num", value: String(j.gap ?? 0), title: "Spalt in mm", style: "width:4.5em", onchange: (e) => { try { const v = gapOf(e.target.value); upd("Spalt", (G) => { const x = G.joints.find((y) => y.id === j.id); if (x) { if (v) x.gap = v; else delete x.gap; } }); } catch (err) { toast(err.message, { kind: "err" }); } } })
+    : "";
   out.push(P.section("Verbindungen von Hand",
     g.joints.length ? h("table", { class: "grid" }, h("tbody", {}, ...g.joints.map((j) => h("tr", {},
       h("td", {}, j.kind === "keine" ? "keine (ohne Automatik)" : JOINT_KINDS[j.kind]?.label || j.kind),
       h("td", {}, `${name(j.a)} – ${name(j.b)}`),
-      h("td", { class: "num" }, j.gap ? `Spalt ${fmtNum(j.gap, 1)}` : ""),
+      h("td", { class: "num" }, gapCell(j)),
       h("td", {}, h("button", { class: "btn", title: "Verbindung entfernen", onclick: () => upd("Verbindung entfernen", (G) => { G.joints = G.joints.filter((x) => x.id !== j.id); }) }, "✕")))))) : h("p", { class: "hint" }, "Keine – es gelten die Ecken und T-Stöße oben."),
     opts.length > 1 ? h("div", {},
       P.select("Art", [...Object.entries(JOINT_KINDS).map(([k, d]) => [k, d.label]), ["keine", "keine (Automatik aus)"]], nj.kind, (v) => { nj.kind = v; }),
       P.select("Erster Stab", opts, nj.a, (v) => { nj.a = v; }),
       P.select("Zweiter Stab", opts, nj.b, (v) => { nj.b = v; }),
-      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { try { upd("Verbindung", (G) => setJoint(G, nj.kind, nj.a, nj.b)); } catch (e) { toast(e.message, { kind: "err" }); } } }, "Verbindung setzen"))) : null,
+      P.expr("Spalt", nj.gap, (v) => { nj.gap = v; }, { allowNeg: false }),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { try { const gap = gapOf(nj.gap, P.scope()); upd("Verbindung", (G) => setJoint(G, nj.kind, nj.a, nj.b, gap)); } catch (e) { toast(e.message, { kind: "err" }); } } }, "Verbindung setzen"))) : null,
     h("p", { class: "hint" }, Object.values(JOINT_KINDS).map((d) => `${d.label}: ${d.hint}.`).join(" ") + " Schneller: Knopf im Menüband, dann die zwei Stäbe im 3D-Fenster anklicken.")));
   return out;
 }
@@ -219,7 +232,7 @@ export function gestellPick(app, hit) {
   app.pick = null;
   try {
     if (p.tool === "reuse") editGestell(app, asm, "Wiederverwenden", (G) => { G.members.find((x) => x.id === m.id).reuse = a; });
-    else editGestell(app, asm, TOOL_TEXT[p.tool], (G) => setJoint(G, p.tool, a, m.id));
+    else editGestell(app, asm, TOOL_TEXT[p.tool], (G) => setJoint(G, p.tool, a, m.id, gapOf(G.gap ?? 0)));
   } catch (e) { toast(e.message, { kind: "err" }); }
   app.ribbon.render();
 }

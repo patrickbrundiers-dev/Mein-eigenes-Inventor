@@ -276,3 +276,62 @@ test("Rahmen: Endkappe, Kürzen an Ebene, Gleichteile (Stufe 40)", () => {
   const sp = (name, b, hh) => ({ ...mk(name, 800, 50, 0), meta: { ...mk(name, 800, 50, 0).meta, miterParts: { A: { b, h: hh }, B: { b: 0, h: 0 } } } });
   assert.deepEqual(equalParts([sp("T1", 30, 40), sp("T2", 40, 30), sp("T3", 30, 40)]).map((g) => g.names.join()), ["T1,T3", "T2"]);
 });
+
+test("Stecksystem: Lage der Zapfen, Wanddicke, Schlitzmaß (Stufe 45)", async () => {
+  const S = await import("../src/core/stecksystem.js");
+  assert.deepEqual(S.tabLayout(160, { count: 3, width: 20, edge: 15 }), [25, 80, 135]);
+  assert.deepEqual(S.tabLayout(100, { count: 1, width: 20, edge: 15 }), [50]);
+  // Höchstabstand 50 auf 200 mm: Zapfenmitten höchstens 50 auseinander
+  const c = S.tabLayout(200, { mode: "abstand", spacing: 50, width: 20, edge: 10 });
+  assert.equal(c.length, 5);
+  assert.ok(c.every((x, i) => !i || x - c[i - 1] <= 50 + 1e-9));
+  assert.throws(() => S.tabLayout(40, { count: 1, width: 20, edge: 15 }), /zu kurz/);
+  assert.throws(() => S.tabLayout(100, { count: 6, width: 20, edge: 0 }), /passen nicht/);
+  // Rohr: Sonde trifft zwei Wände (0 … 3 und 47 … 50) – Wand 3
+  assert.equal(S.wallFromDepths([0, 3, 0, 3, 47, 50, 47, 50]), 3);
+  assert.throws(() => S.wallFromDepths([0, 0]), /kein Material/);
+  assert.deepEqual(S.slotSize(20, 4, 0.2), { w: 20.4, t: 4.4 });
+});
+
+test("Stecksystem zwischen Baugruppen-Teilen: prüfen, schreiben, löschen (Stufe 46)", async () => {
+  const S = await import("../src/core/stecksystem.js");
+  const s = S.defaultSteckverbindung("st1", "c1", "c2");
+  assert.equal(s.type, undefined);
+  assert.equal(s.count, "3");
+  const docs = [
+    { id: "pa", kind: "part", features: [{ id: "x", type: "extrude" }] },
+    { id: "pb", kind: "part", features: [] },
+    { id: "pl", kind: "part", link: { file: "a.wcad" }, features: [] },
+    { id: "sub", kind: "assembly", components: [] },
+  ];
+  const docOf = (id) => docs.find((d) => d.id === id);
+  const asm = { id: "a", kind: "assembly", name: "Rahmen", components: [{ id: "c1", part: "pa" }, { id: "c2", part: "pb" }, { id: "c3", part: "pa" }, { id: "c4", part: "pl" }, { id: "c5", part: "sub" }] };
+  assert.equal(S.steckProblem(asm, s, docOf), null);
+  assert.match(S.steckProblem(asm, { ...s, slot: "c1" }, docOf), /verschiedene/);
+  assert.match(S.steckProblem(asm, { ...s, slot: "c3" }, docOf), /dasselbe Bauteil/);
+  assert.match(S.steckProblem(asm, { ...s, slot: "c4" }, docOf), /Verknüpfte/);
+  assert.match(S.steckProblem(asm, { ...s, slot: "c5" }, docOf), /Unterbaugruppen/);
+  assert.match(S.steckProblem(asm, { ...s, slot: "zz" }, docOf), /fehlt/);
+  const box = { c: [1.00000001, 2, 3], u: [1, 0, 0], n: [0, 0, 1], w: 20, t: 4, depth: 5 };
+  let n = 0;
+  const newId = () => "f" + ++n;
+  S.applySteck(docs, asm, s, { tabs: [box, box], slots: [box], tabBody: "x", slotBody: "y" }, newId);
+  assert.equal(docs[0].features.length, 2);
+  const z = docs[0].features[1];
+  assert.equal(z.type, "steckzapfen");
+  assert.equal(z.steck, "st1");
+  assert.equal(z.body, "x");
+  assert.equal(z.boxes.length, 2);
+  assert.equal(z.boxes[0].c[0], 1);
+  assert.equal(docs[1].features[0].type, "steckschlitz");
+  // erneut anwenden ersetzt, statt zu verdoppeln
+  S.applySteck(docs, asm, s, { tabs: [box], slots: [box], tabBody: "x", slotBody: "y" }, newId);
+  assert.equal(docs[0].features.length, 2);
+  assert.equal(docs[0].features[1].boxes.length, 1);
+  // Planung sieht das Bauteil ohne die eigenen Zapfen
+  assert.equal(S.withoutSteck(docs[0], "st1").features.length, 1);
+  assert.equal(docs[0].features.length, 2, "Original unverändert");
+  S.removeSteck(docs, "st1");
+  assert.equal(docs[0].features.length, 1);
+  assert.equal(docs[1].features.length, 0);
+});
