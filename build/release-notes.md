@@ -1,28 +1,24 @@
-**Neu in 0.8.0**
+**Neu in 0.9.0**
 
-- **Skizze:**
-  - Neue Elemente Ellipse und Spline (Kontrollpunkte). Beide lassen sich bemaßen, extrudieren und als DXF exportieren.
-  - Verlängern und Teilen von Linien und Bögen, Rechteck- und Kreismuster (Kopien folgen dem Original, „Muster auflösen“ löst die Bindung).
-  - Mehr automatische Bedingungen beim Zeichnen: parallel, senkrecht, tangential, gleich. Strg gedrückt halten setzt für diesen Klick keine.
-  - Bewegliche Elemente erscheinen hellblau, bestimmte dunkel. Die Anzeige unten nennt, wie viele Elemente noch frei sind.
-  - „Voll bemaßen“ setzt auf Knopfdruck die fehlenden Maße, bis die Skizze voll bestimmt ist.
-- **3D-Modell:**
-  - „Prägen“: eine Skizze als Gravur oder Prägung auf die Oberfläche bringen, auf Rundrohren um den Mantel abgewickelt.
-  - „Regelkörper“: Quader, Zylinder, Kugel, Kegel/Kegelstumpf, Torus und Pyramide, als neuer Körper, vereinigt, abgezogen oder geschnitten.
-  - Fensterauswahl im 3D-Modell. Strg+A wählt alles, Strg+I kehrt die Auswahl um.
-- **Rohr / Profil und Rahmen:**
-  - Warmgewalzte Stahlprofile nach DSTV: IPE, HEA, HEB, UPN und T, mit Metergewicht.
-  - „Profilzug 3D“: Profile über Eckpunkte im Raum, an den Ecken gegehrt, auch in zwei Ebenen.
-  - „Rohr gebogen“: Polygonzug mit Biegeradius, Biegeliste (auch als CSV) und Abwicklungslänge in der Zuschnittliste.
-  - Neue Konturen am Rohr: Schlitz am Ende und Polygon (Eckpunkte, Bögen als Bulge wie in DXF).
-  - 2D- oder 3D-Schnitt wählst du jetzt einmal je Profil bzw. Rahmen. Die Eckrundungen im Schnitt sind glatt.
-  - Im Querschnitt stehen Fläche und Metergewicht. Die Zuschnittliste zeigt „Summen je Profil“ (Stück, Meter, Gewicht) und kennzeichnet Gehrungen in zwei Ebenen. Die CSV bleibt gleich.
-- **Zeichnung:** Die Profilangabe nennt die Zuschnittlänge und steht im neuen Schriftfeld-Feld „Halbzeug“.
-- **Messen:** Die Masse-Eigenschaften zeigen jetzt auch Trägheitsmomente um Schwerpunkt und Ursprung.
-- **Ansicht und Oberfläche:**
-  - Drehen mit der Maus dreht um den Modellpunkt unter dem Mauszeiger (abschaltbar).
-  - Im 3D-Schnitt sind die Schnittflächen gefüllt.
-  - Dunkles Farbschema (Hell, Dunkel oder „wie Windows“).
-  - Modellbrowser und Eigenschaften lassen sich links oder rechts andocken und in der Breite ziehen.
-  - Schnellzugriff: Befehle in der Befehlssuche anheften. Standardwerte je Werkzeug im Einstellungscenter, zuletzt eingegebene Werte werden gemerkt.
-- **Material:** Eigene Werkstoffe mit Dichte und Farbe anlegen, importieren und exportieren. Benutzte eigene Werkstoffe werden in der Projektdatei mitgespeichert.
+- **Generatoren** (3D-Modell → Generatoren, alles rechnet live neu, Stäbe stehen in der Zuschnittliste):
+  - Geländer: Läufe über Eck, Pfosten automatisch verteilt, Handlauf mit Gehrung. Füllung aus Staketen, Querstäben, Blech, Glas, Kreuz (mit Ring) oder Rahmen mit Staketen. Einstellungen lassen sich als Vorlage speichern.
+  - Tor: Einzel- oder Doppeltor, Oberkante gerade oder als Bogen.
+  - Treppe: geradläufig, L- oder U-Form mit Podest, mit Prüfung nach DIN 18065. Dazu eine Spindeltreppe.
+  - Balkon mit Belag, Stützen oder Kragarm, Wandanschluss und Geländer.
+  - Stahlbau: Rahmenecke, Pfette und Windverband.
+- **Anschlüsse:**
+  - Stirn-/Fußplatte und Rippe am Profilende. Stirnplatten können eine Gegenplatte bekommen und verschraubt werden.
+  - Schweißnähte an Kanten, mit Nahtliste (CSV) und Symbolen nach ISO 2553 in der Zeichnung.
+  - Normteile in M6–M30: Schrauben ISO 4014/4017, Muttern ISO 4032, Scheiben ISO 7089, Gewindestangen DIN 976-1, Spannschlösser DIN 1480.
+- **Kantteil:** Blechquerschnitt aus Schenkeln und Biegewinkeln. Er lässt sich gefaltet oder abgewickelt zeigen und die Abwicklung als DXF mit Biegelinien exportieren.
+- **Baugruppen:**
+  - Unterbaugruppen. Die Stückliste hat Mengen-, Struktur- und Baukastenansicht.
+  - Drehgelenk mit Öffnungswinkel, „Bewegen“ als Animation mit Kollisionsprüfung, Explosionsdarstellung.
+  - Bauteile als eigene Dateien speichern und in andere Projekte verknüpfen. Beim Öffnen wird der neueste Stand geholt.
+- **Skizze:** „Säubern“ räumt lose Enden, doppelte Elemente und schiefe Linien auf. „DXF importieren“ übernimmt Fremdzeichnungen und Laserkonturen.
+- **Export:**
+  - „Listen (Excel)“: Stückliste, Zuschnitt, Summen je Profil und Nahtliste als .xlsx.
+  - „Bild (PNG)“ der aktuellen Ansicht.
+  - „Rendern“ im neuen Darstellungsmodus „Fotorealistisch“.
+- **Masse:** Glas, Gitterrost und Holz werden mit eigener Dichte gewogen.
+- **Korrekturen** an Kantteil-Ausdrücken, Bodenschatten, Geländer-Kreuz, Füllungsrahmen und Drehgelenk.
