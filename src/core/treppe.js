@@ -6,21 +6,25 @@
 // Wangen bzw. Stufenlänge). n Steigungen, n − 1 Stufen; die letzte Steigung führt auf die obere Decke bei
 // x = (n − 1) · a. Wangen/Holme sind unten waagrecht (Boden) und oben senkrecht (Deckenstirn) geschnitten.
 // Prüfung nach DIN 18065: 2s + a = 590 … 650 mm, Steigung ≤ 200 mm, Auftritt ≥ 230 mm (Hinweise, keine Statik).
+// Geländer (wie MegaCAD): links, rechts oder beidseitig, ums Podest herum, Knieleisten oder Staketen, Auslauf oben;
+// Höhe über Stufenvorderkante. Ältere Treppen ohne diese Angabe bleiben ohne Geländer (missing: "keine").
 
 import { sectionGeometry } from "./sections.js";
+import { railAlong } from "./treppengelaender.js";
 
 const podest = (p) => p.form === "L" || p.form === "U";
+const gel = (p) => p.gel !== "keine";
 
 export const TREPPE = {
   label: "Treppe",
   schema: [
-    { key: "form", label: "Form", type: "select", options: [["gerade", "geradläufig"], ["L", "L-Form (viertelgewendelt mit Podest)"], ["U", "U-Form (halbgewendelt mit Podest)"]], default: "gerade", group: "Lauf" },
+    { key: "form", label: "Form", type: "select", options: [["gerade", "geradläufig"], ["L", "L-Form (viertelgewendelt mit Podest)"], ["U", "U-Form (halbgewendelt mit Podest)"]], default: "gerade", tiles: "top", group: "Lauf" },
     { key: "height", label: "Geschosshöhe (Steigungshöhe gesamt)", type: "num", default: "2800", group: "Lauf" },
     { key: "steps", label: "Steigungen (0 = automatisch)", type: "num", unit: "Stk", default: "0", group: "Lauf" },
     { key: "going", label: "Auftritt a (0 = aus 2s + a = 630)", type: "num", default: "0", group: "Lauf" },
     { key: "nosing", label: "Unterschneidung", type: "num", default: "20", group: "Lauf" },
     { key: "width", label: "Laufbreite (lichte)", type: "num", default: "1000", group: "Lauf" },
-    { key: "support", label: "Tragwerk", type: "select", options: [["flach", "Wangen Flachstahl"], ["upn", "Wangen UPN"], ["holm2", "Zwei Holme"], ["holm1", "Mittelholm"]], default: "flach", group: "Tragwerk" },
+    { key: "support", label: "Tragwerk", type: "select", options: [["flach", "Wangen Flachstahl"], ["upn", "Wangen UPN"], ["holm2", "Zwei Holme"], ["holm1", "Mittelholm"]], default: "flach", tiles: "side", group: "Tragwerk" },
     { key: "wangeH", label: "Wangenhöhe", type: "num", default: "250", group: "Tragwerk", when: (p) => p.support === "flach" },
     { key: "wangeT", label: "Wangendicke", type: "num", default: "12", group: "Tragwerk", when: (p) => p.support === "flach" },
     { key: "upn", label: "UPN", type: "section", kinds: ["upn"], default: { kind: "upn", size: "200" }, group: "Tragwerk", when: (p) => p.support === "upn" },
@@ -35,6 +39,19 @@ export const TREPPE = {
     { key: "stuetze", label: "Stützenprofil", type: "section", kinds: ["vierkant", "rechteck", "rohr"], default: { kind: "vierkant", size: "80x4" }, group: "Podest", when: (p) => podest(p) && p.stuetzen !== "keine" },
     { key: "tread", label: "Stufen", type: "select", options: [["gitterrost", "Gitterrost"], ["blech", "Blech"], ["holz", "Holz"]], default: "gitterrost", group: "Stufen" },
     { key: "treadT", label: "Stufendicke", type: "num", default: "30", group: "Stufen" },
+    { key: "gel", label: "Geländer (beim Hinaufgehen)", type: "select", options: [["beide", "beidseitig"], ["links", "links"], ["rechts", "rechts"], ["keine", "kein Geländer"]], default: "beide", missing: "keine", tiles: "top", group: "Geländer" },
+    { key: "gelPodest", label: "Geländer ums Podest", type: "check", default: true, group: "Geländer", when: (p) => gel(p) && podest(p) },
+    { key: "gelH", label: "Höhe über Stufenvorderkante", type: "num", default: "1000", group: "Geländer", when: gel },
+    { key: "gelFill", label: "Füllung", type: "select", options: [["quer", "Knieleisten"], ["staketen", "Staketen"], ["keine", "nur Handlauf"]], default: "quer", tiles: "front", group: "Geländer", when: gel },
+    { key: "gelBars", label: "Anzahl Knieleisten", type: "num", unit: "Stk", default: "2", group: "Geländer", when: (p) => gel(p) && p.gelFill === "quer" },
+    { key: "gelGap", label: "Öffnung max.", type: "num", default: "110", group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
+    { key: "gelBar", label: "Knieleiste / Stab", type: "section", kinds: ["rohr", "vierkant", "vierkantvoll", "rund", "flach"], default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => gel(p) && p.gelFill !== "keine" },
+    { key: "gelBelt", label: "Untergurt", type: "section", kinds: ["flach", "vierkant", "rechteck"], default: { kind: "flach", size: "40x8" }, group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
+    { key: "gelPost", label: "Pfosten", type: "section", kinds: ["vierkant", "rechteck", "rohr", "flach"], default: { kind: "vierkant", size: "40x3" }, group: "Geländer", when: gel },
+    { key: "gelPostMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Geländer", when: gel },
+    { key: "gelDown", label: "Pfosten unter Stufenkante (Befestigung)", type: "num", default: "150", group: "Geländer", when: gel },
+    { key: "gelRail", label: "Handlauf", type: "section", kinds: ["rohr", "vierkant", "rechteck", "flach", "rund"], default: { kind: "rohr", size: "42.4x2.6" }, group: "Geländer", when: gel },
+    { key: "gelAuslauf", label: "Auslauf oben (waagrecht)", type: "num", default: "300", group: "Geländer", when: gel },
   ],
 
   plan(p) {
@@ -83,7 +100,9 @@ export const TREPPE = {
 
     // Ein Lauf mit nR Steigungen in eigener Lage (Antritt x = 0, Höhe z0); T dreht um Z und verschiebt.
     // Unten: auf dem Boden waagrecht geschnitten, vom Podest aus senkrecht an der Podestkante; oben senkrecht.
+    const flights = [];
     const flight = (nR, z0, T, label, fromFloor, stepNo0) => {
+      flights.push({ nR, z0, T, fromFloor });
       const xTop = (nR - 1) * a;
       const zAt = (x) => z0 + tanA * x + c;
       const ext = depth * 2;
@@ -101,16 +120,19 @@ export const TREPPE = {
       const d = (v) => [v[0] * cs - v[1] * sn, v[0] * sn + v[1] * cs, v[2]];
       return { d, p: (v) => { const q = d(v); return [q[0] + o[0], q[1] + o[1], q[2] + o[2]]; } };
     };
-    let info;
+    let info, x1 = 0, D = B, zP = 0;
+    const geo = { s, a, u, n, H, B };
     if (!podest(p)) {
       const xTop = flight(n, 0, rotZ(0, [0, 0, 0]), "", true, 0);
       info = `${n} Steigungen à ${fmt(s)} mm, Auftritt ${fmt(a)} mm, 2s + a = ${Math.round(step)} mm, Neigung ${fmt((alpha * 180) / Math.PI)}°, Lauflänge ${Math.round(xTop)} mm`;
     } else {
       const n1 = p.n1 > 0 ? Math.round(p.n1) : Math.floor(n / 2), n2 = n - n1;
       if (n1 < 2 || n2 < 2) throw new Error("Jeder Lauf braucht mindestens 2 Steigungen – Steigungen bis Podest prüfen");
-      const zP = n1 * s, left = p.turn !== "rechts";
-      const x1 = flight(n1, 0, rotZ(0, [0, 0, 0]), " Lauf 1", true, 0);
-      const g = p.gap || 0, D = p.form === "U" ? (p.podestD > 0 ? p.podestD : B) : B;
+      zP = n1 * s;
+      const left = p.turn !== "rechts";
+      x1 = flight(n1, 0, rotZ(0, [0, 0, 0]), " Lauf 1", true, 0);
+      const g = p.gap || 0;
+      D = p.form === "U" ? (p.podestD > 0 ? p.podestD : B) : B;
       if (p.form === "U" && D < B - 1e-6) issues.push({ level: "Warnung", message: `Podesttiefe ${fmt(D)} mm kleiner als die Laufbreite` });
       // Podestfläche [x1, x1 + D] × [yLo, yHi] und Lage des zweiten Laufs
       let yLo = 0, yHi = B, T2;
@@ -120,6 +142,7 @@ export const TREPPE = {
       const x2 = flight(n2, zP, T2, " Lauf 2", false, n1);
       // Podestbelag, Rahmen darunter (bündig mit dem Belagrand), Stützen
       const PW = D, PH = yHi - yLo, cx = x1 + D / 2, cy = (yLo + yHi) / 2;
+      geo.yLo = yLo; geo.yHi = yHi; geo.n1 = n1; geo.x2 = x2;
       plates.push({ center: [cx, cy, zP - tt], xDir: [1, 0, 0], normal: [0, 0, 1], W: PW, H: PH, t: tt, name: "Podest", tread: p.tread });
       const fr = p.podestRahmen, frRot = fr.geom.width > fr.geom.height ? 90 : 0; // hochkant
       const fw = Math.min(fr.geom.width, fr.geom.height), fh = Math.max(fr.geom.width, fr.geom.height), zf = zP - tt - fh / 2;
@@ -135,8 +158,113 @@ export const TREPPE = {
       }
       info = `${n} Steigungen à ${fmt(s)} mm (${n1} + ${n2}), Auftritt ${fmt(a)} mm, 2s + a = ${Math.round(step)} mm, Neigung ${fmt((alpha * 180) / Math.PI)}°, Podest auf ${Math.round(zP)} mm (${fmt(PW)} × ${fmt(PH)} mm), Läufe ${Math.round(x1)} / ${Math.round(x2)} mm`;
     }
-    return { chains, members, plates, info, issues };
+    if (gel(p)) {
+      const r = railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off: (side ? thick : 0) + p.gelPost.geom.width / 2, rotZ });
+      chains.push(...r.chains);
+      members.push(...r.members);
+      issues.push(...r.issues);
+      info += `, Geländer: ${r.info}`;
+    }
+    Object.assign(geo, { x1: podest(p) ? x1 : (n - 1) * a, D, zP });
+    return { chains, members, plates, info, issues, geo };
+  },
+
+  views: ["top", "front"],
+  /** Maßlinien der Skizze im Eigenschaftenfeld (siehe genskizze.js); Lage wie der Bauplan */
+  dims(p, plan, view) {
+    const g = plan.geo;
+    if (!g) return [];
+    const { s, a, u, H, B, x1, D, zP } = g, r = Math.round;
+    const gap = Math.max(250, B * 0.25), out = [];
+    if (view === "top") {
+      out.push({ key: "width", a: [0, 0], b: [0, B], off: gap, text: r(B) });
+      out.push({ key: "going", a: [-u, B], b: [a - u, B], off: gap, text: r(a) });
+      out.push({ key: podest(p) ? "n1" : "steps", a: [0, 0], b: [x1, 0], off: -gap, text: r(x1) });
+      if (podest(p)) {
+        out.push({ key: p.form === "U" ? "podestD" : null, a: [x1, g.yLo], b: [x1 + D, g.yLo], off: -gap, text: r(D) });
+        if (p.form === "U") {
+          const yb = g.yLo < 0 ? -(p.gap || 0) : B, yt = g.yLo < 0 ? 0 : B + (p.gap || 0);
+          out.push({ key: "gap", a: [x1 - a, yb], b: [x1 - a, yt], off: gap / 2, text: r(p.gap || 0) });
+        }
+      }
+    } else if (view === "front") {
+      const xe = x1 + (podest(p) ? D : 0);
+      out.push({ key: "height", a: [xe, 0], b: [xe, H], off: -gap, text: r(H) });
+      out.push({ key: "steps", a: [-u, 0], b: [-u, s], off: -gap * 0.6, text: `s ${String(r(s * 10) / 10).replace(".", ",")}` });
+      if (gel(p)) out.push({ key: "gelH", a: [-u, s], b: [-u, s + p.gelH], off: gap, text: r(p.gelH) });
+      if (podest(p)) out.push({ key: "n1", a: [x1 + D, 0], b: [x1 + D, zP], off: gap, text: r(zP) });
+    }
+    return out;
   },
 };
+
+/**
+ * Geländerzüge der Treppe. Gerechnet wird in der Lage »Podest nach links« (rechts = außen); bei »nach rechts« wird an
+ * y = B / 2 gespiegelt, dann ist links außen. Läufe: Lauflinie auf Höhe Stufenvorderkante; vom Podest aus beginnt sie
+ * eine Auftrittsbreite vor der ersten Stufenkante auf Podesthöhe (Schnitt mit der Podestebene), vom Boden aus an der
+ * ersten Stufenkante.
+ */
+function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
+  const issues = [];
+  const left = p.turn !== "rechts", form = podest(p) ? p.form : "gerade";
+  const f1 = flights[0];
+  // zweiter Lauf in der Lage »nach links«
+  const f2 = form === "gerade" ? null : { ...flights[1], T: form === "L" ? rotZ(90, [x1 + B, B, 0]) : rotZ(180, [x1, 2 * B + (p.gap || 0), 0]) };
+  const start = (f, y, nosing = f.fromFloor) => f.T.p(nosing ? [-u, y, f.z0 + s] : [-u - a, y, f.z0]);
+  const at = (f, y, x) => f.T.p([x, y, f.z0 + s + (x + u) * tanA]);
+  const end = (f, y) => f.T.p([(f.nR - 1) * a - u, y, f.z0 + f.nR * s]);
+  const aus = (f, y) => (p.gelAuslauf > 0 ? [f.T.p([(f.nR - 1) * a + p.gelAuslauf, y, f.z0 + f.nR * s])] : []);
+  const yo = -off, yi = B + off, post = p.gelPost.geom.width;
+  let outer, inner;
+  if (form === "gerade") {
+    outer = [[start(f1, yo), end(f1, yo), ...aus(f1, yo)]];
+    inner = [[start(f1, yi), end(f1, yi), ...aus(f1, yi)]];
+  } else if (!p.gelPodest) {
+    const sep = (y) => [[start(f1, y), end(f1, y)], [start(f2, y, true), end(f2, y), ...aus(f2, y)]];
+    outer = sep(yo);
+    inner = sep(yi);
+    if (form === "L") {
+      // innen: Lauf 1 endet vor dem Geländer von Lauf 2, Lauf 2 beginnt hinter dem von Lauf 1
+      inner[0][1] = at(f1, yi, Math.min((f1.nR - 1) * a - u, x1 - off - post));
+      inner[1][0] = at(f2, yi, Math.max(-u, off + post));
+    }
+  } else if (form === "L") {
+    if (B - u - a < -off + post) throw new Error("Podest zu klein für das Geländer – Laufbreite prüfen");
+    outer = [[start(f1, yo), end(f1, yo), [x1 + B + off, -off, zP], start(f2, yo), end(f2, yo), ...aus(f2, yo)]];
+    inner = [[start(f1, yi), at(f1, yi, Math.min((f1.nR - 1) * a - u, x1 - off - post))], [at(f2, yi, Math.max(-u, off + post)), end(f2, yi), ...aus(f2, yi)]];
+  } else {
+    const g = p.gap || 0, X = x1 + u + a;
+    if (X > x1 + D + off - post) throw new Error("Podest zu schmal für das Geländer – Podesttiefe prüfen");
+    outer = [[start(f1, yo), end(f1, yo), [x1 + D + off, -off, zP], [x1 + D + off, 2 * B + g + off, zP], start(f2, yo), end(f2, yo), ...aus(f2, yo)]];
+    // innen über das Treppenauge: zu schmal für zwei Geländer → eins in der Mitte
+    const wi = g >= 2 * off + post ? off : g / 2;
+    if (wi < off) issues.push({ level: "Hinweis", message: `Treppenauge ${Math.round(g)} mm: inneres Geländer mittig im Auge` });
+    const y1 = B + wi, y2 = B + wi; // lokal; Lauf 2 liegt gedreht, global y = B + g − wi
+    inner = [[start(f1, y1), end(f1, y1), [X, B + wi, zP], start(f2, y2), end(f2, y2), ...aus(f2, y2)]];
+  }
+  const mirror = (path) => (left ? path : path.map((q) => [q[0], B - q[1], q[2]]));
+  // links/rechts beim Hinaufgehen: in der Lage »nach links« ist rechts außen
+  const wantRight = p.gel === "beide" || p.gel === "rechts", wantLeft = p.gel === "beide" || p.gel === "links";
+  const sides = [];
+  if (left ? wantRight : wantLeft) sides.push([left ? "rechts" : "links", outer]);
+  if (left ? wantLeft : wantRight) sides.push([left ? "links" : "rechts", inner]);
+  const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100 };
+  if (!(o.H > 300)) throw new Error("Geländerhöhe zu klein");
+  if (!(o.postMax > post)) throw new Error("Pfostenabstand zu klein");
+  if (o.H < 900 - 1e-6) issues.push({ level: "Warnung", message: `Geländerhöhe ${Math.round(o.H)} mm unter 900 mm – Landesbauordnung bzw. DIN 18065 prüfen` });
+  const chains = [], members = [];
+  let posts = 0, bars = 0, gapMax = 0;
+  for (const [name, paths] of sides) {
+    paths.forEach((path, i) => {
+      const r = railAlong(mirror(path), o, `Geländer ${name}${paths.length > 1 ? " " + (i + 1) : ""}`);
+      chains.push(...r.chains);
+      members.push(...r.members);
+      posts += r.posts; bars += r.bars; gapMax = Math.max(gapMax, r.gapMax);
+    });
+  }
+  if (gapMax > 120 + 1e-6) issues.push({ level: p.gelFill === "quer" ? "Hinweis" : "Warnung", message: p.gelFill === "quer" ? `Knieleisten: Öffnung ${Math.round(gapMax)} mm – nur für Arbeitsstätten/Industrie (EN ISO 14122-3), nicht für Wohngebäude` : `Öffnung ${Math.round(gapMax)} mm größer als 120 mm` });
+  const what = p.gelFill === "quer" ? `${bars} Knieleisten` : p.gelFill === "staketen" ? `${bars} Stäbe` : "nur Handlauf";
+  return { chains, members, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` };
+}
 
 const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");

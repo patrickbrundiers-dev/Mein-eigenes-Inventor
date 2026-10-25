@@ -2,7 +2,8 @@
 // Ein Generator beschreibt seine Parameter (Schema) und rechnet daraus einen Bauplan; den Körper baut
 // src/kernel/build.js (Stäbe wie beim Profil/Rahmen, also mit Zuschnittliste, Gewicht und STEP).
 //
-// Schema-Einträge: { key, label, type, default, unit?, options?, kinds?, when?(p), group? }
+// Schema-Einträge: { key, label, type, default, missing?, unit?, options?, kinds?, when?(p), group? }
+//   missing: Wert für ältere Features ohne diesen Parameter (sonst default), damit sie sich nicht verändern
 //   type "num"     Ausdruck (Parameter erlaubt), Ergebnis Zahl
 //   type "select"  options [[wert, text]]
 //   type "check"   Ja/Nein
@@ -34,13 +35,20 @@ export function defaultGenerator(gen) {
   return { type: "generator", gen, params: Object.fromEntries(g.schema.map((s) => [s.key, structuredCloneSafe(s.default)])) };
 }
 
+/** Rohwerte aller Parameter (fehlende: missing bzw. default), z. B. für die when-Bedingungen im Eigenschaftenfeld */
+export function genValues(gen, params) {
+  const g = GENERATORS[gen];
+  return Object.fromEntries(g.schema.map((s) => [s.key, params?.[s.key] ?? (s.missing !== undefined ? s.missing : s.default)]));
+}
+
 /** Parameter auflösen: Ausdrücke rechnen, Profile in Maße (Zahlen) wandeln. E(expr, label) → Zahl */
 export function resolveGenParams(gen, params, E) {
   const g = GENERATORS[gen];
   if (!g) throw new Error("Unbekannter Generator " + gen);
   const out = {};
+  const vals = genValues(gen, params);
   for (const s of g.schema) {
-    const v = params?.[s.key] ?? s.default;
+    const v = vals[s.key];
     if (s.type === "num") out[s.key] = E(String(v), s.label);
     else if (s.type === "list") out[s.key] = splitList(v).map((x, i) => E(x, `${s.label} ${i + 1}`));
     else if (s.type === "section") out[s.key] = sectionOf(v, s.label);

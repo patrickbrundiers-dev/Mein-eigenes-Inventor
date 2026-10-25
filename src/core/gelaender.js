@@ -30,7 +30,7 @@ export const GELAENDER = {
     { key: "bottom", label: "Untergurt", type: "check", default: true, group: "Handlauf und Gurte" },
     { key: "bottomZ", label: "Untergurt über Boden", type: "num", default: "100", group: "Handlauf und Gurte", when: (p) => p.bottom },
     { key: "belt", label: "Gurtprofil", type: "section", kinds: ["flach", "vierkant", "rechteck"], default: { kind: "flach", size: "40x8" }, group: "Handlauf und Gurte", when: (p) => p.top || p.bottom },
-    { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz"], ["rahmen", "Rahmen mit Staketen"], ["keine", "keine"]], default: "staketen", group: "Füllung" },
+    { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz"], ["rahmen", "Rahmen mit Staketen"], ["keine", "keine"]], default: "staketen", tiles: "front", group: "Füllung" },
     { key: "bar", label: "Stab", type: "section", kinds: ["vierkantvoll", "rund", "vierkant", "rohr", "flach"], default: { kind: "vierkantvoll", size: "12" }, group: "Füllung", when: (p) => ["staketen", "quer", "kreuz", "rahmen"].includes(p.fill) },
     { key: "gapMax", label: "Öffnung max.", type: "num", default: "110", group: "Füllung", when: (p) => ["staketen", "quer", "rahmen"].includes(p.fill) },
     { key: "ring", label: "Ring in der Kreuzmitte", type: "check", default: true, group: "Füllung", when: (p) => p.fill === "kreuz" },
@@ -174,6 +174,26 @@ export const GELAENDER = {
     const total = runs.reduce((a, b) => a + b, 0);
     const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm`;
     return { chains, members, plates, info, issues, sections: SEC };
+  },
+
+  views: ["front", "top"],
+  /** Maßlinien: Ansicht des ersten Laufs (Höhe, Feld), Grundriss der Läufe */
+  dims(p, plan, view) {
+    const gap = Math.max(150, p.height * 0.12), r = Math.round;
+    const posts = plan.members.filter((m) => /^Pfosten \d+$/.test(m.name)).map((m) => m.a);
+    if (view === "front") {
+      const out = [{ key: "height", a: [0, 0], b: [0, p.height], off: gap, text: r(p.height) }, { key: "runs", a: [0, 0], b: [p.runs[0], 0], off: -gap, text: r(p.runs[0]) }];
+      if (posts.length > 1 && Math.abs(posts[1][1]) < 1e-6) out.push({ key: "postMax", a: [posts[0][0], p.height], b: [posts[1][0], p.height], off: gap / 2, text: r(posts[1][0] - posts[0][0]) });
+      if (p.bottom) out.push({ key: "bottomZ", a: [p.runs[0], 0], b: [p.runs[0], p.bottomZ], off: -gap / 2, text: r(p.bottomZ) });
+      return out;
+    }
+    let x = 0, y = 0, ang = 0;
+    return p.runs.map((L, i) => {
+      if (i > 0) ang += (p.angle * Math.PI) / 180;
+      const a = [x, y];
+      x += L * Math.cos(ang); y += L * Math.sin(ang);
+      return { key: "runs", a, b: [x, y], off: -gap, text: r(L) };
+    });
   },
 };
 

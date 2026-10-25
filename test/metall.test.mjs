@@ -464,3 +464,32 @@ test("Oberfläche und RAL-Farbe je Bauteil (E7)", async () => {
   assert.equal(sh[0].rows[1][5], "feuerverzinkt");
   assert.equal(sh[0].rows.at(-1)[7], 6, "Summe in der letzten Spalte");
 });
+
+test("Generator-Skizze: Ansicht und Maße je Generator, Maße gehören zu Parametern", async () => {
+  const g = await import("../src/core/generator.js");
+  const { evaluate } = await import("../src/core/expr.js");
+  const sk = await import("../src/core/genskizze.js");
+  for (const gen of Object.keys(g.GENERATORS)) {
+    const G = g.GENERATORS[gen], f = g.defaultGenerator(gen);
+    const p = g.resolveGenParams(gen, f.params, (x) => evaluate(String(x), {}));
+    const plan = G.plan(p);
+    for (const v of sk.sketchViews(G)) {
+      const view = sk.sketchView(plan, v);
+      assert.ok(view.lines.length + view.fills.length > 0, `${gen} ${v}`);
+      const dims = sk.sketchDims(G, p, plan, v, view);
+      assert.ok(dims.length > 0, `${gen} ${v}: Maße`);
+      const keys = new Set(G.schema.map((s) => s.key));
+      assert.ok(dims.every((d) => d.key === null || keys.has(d.key)), `${gen}: Maß gehört zu einem Parameter`);
+    }
+  }
+  // Treppe: Laufbreite und Auftritt im Grundriss, Geländerhöhe in der Ansicht
+  const f = g.defaultGenerator("treppe");
+  const p = g.resolveGenParams("treppe", f.params, (x) => evaluate(String(x), {}));
+  const plan = g.GENERATORS.treppe.plan(p);
+  const top = sk.sketchDims(g.GENERATORS.treppe, p, plan, "top");
+  assert.deepEqual(top.filter((d) => d.key).map((d) => [d.key, d.text]).slice(0, 2), [["width", 1000], ["going", 280]]);
+  assert.ok(sk.sketchDims(g.GENERATORS.treppe, p, plan, "front").some((d) => d.key === "gelH" && d.text === 1000));
+  // ältere Treppe ohne Geländer-Angabe: genValues liefert »keine«
+  assert.equal(g.genValues("treppe", { form: "L" }).gel, "keine");
+  assert.equal(g.genValues("treppe", g.defaultGenerator("treppe").params).gel, "beide");
+});

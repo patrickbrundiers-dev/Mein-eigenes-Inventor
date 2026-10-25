@@ -401,3 +401,41 @@ test("Kantteil: Volumen = Mittellinie × t × Länge, Abwicklung als Platte (Meg
   near(flat.bodies[0].shape.boundingBox.bounds[1][0], 172.357, 0.01);
   near(b.meta.sheet.flat, 172.357, 0.001);
 });
+
+test("Treppe mit Geländer: beidseitig, ums Podest, Knieleisten/Staketen, Höhe über Stufenkante", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const bb = (b) => b.shape.boundingBox.bounds;
+  const by = (r, re) => r.bodies.filter((b) => re.test(b.name));
+  // gerade, beidseitig, 2 Knieleisten: Handlauf-OK 1000 über der Stufenkante
+  const f = { id: "g", ...defaultGenerator("treppe") };
+  const r = await K.buildPart(part([f]));
+  okAll(r);
+  const hl = by(r, /^Geländer (links|rechts) Handlauf/);
+  assert.ok(hl.length >= 2);
+  const s = 175, a = 280, u = 20;
+  // erste Stufenkante bei x = −20, z = 175: Handlauf dort 1000 höher; oben 15 · 175 + 1000 (Auslauf waagrecht)
+  near(Math.max(...hl.map((b) => bb(b)[1][2])), 16 * s + 1000, 1, "Handlauf-OK oben");
+  const posts = by(r, /^Geländer rechts Pfosten/);
+  assert.ok(posts.length >= 5);
+  assert.ok(posts.every((b) => bb(b)[1][1] < 0), "rechts außerhalb der Wange (y < 0)");
+  assert.ok(by(r, /^Geländer links Pfosten/).every((b) => bb(b)[0][1] > 1000), "links jenseits der Laufbreite");
+  assert.equal(by(r, /Knieleiste/).length % 2, 0);
+  const kl = r.bodies.filter((b) => /Knieleiste/.test(b.name));
+  // schräge Knieleisten: senkrechter Schnitt am Pfosten = Neigung des Laufs (atan 175/280 ≈ 32°)
+  assert.ok(kl.some((b) => Math.abs(b.meta.miterStart - 32) < 1), JSON.stringify(kl.map((b) => [b.name, b.meta.miterStart])).slice(0, 300));
+  assert.match(r.status.g.info, /Geländer: rechts und links, \d+ Pfosten, \d+ Knieleisten/);
+  // L links mit Podestgeländer: der äußere Zug läuft ums Podest (Pfosten an der Podestecke außen)
+  const fL = { id: "l", ...defaultGenerator("treppe") };
+  Object.assign(fL.params, { form: "L", turn: "links", gelFill: "staketen" });
+  const rL = await K.buildPart(part([fL]));
+  okAll(rL);
+  const corner = by(rL, /^Geländer rechts Pfosten/).find((b) => bb(b)[0][0] > 7 * a + 1000 && bb(b)[1][1] < 0);
+  assert.ok(corner, "Eckpfosten außen am Podest");
+  near(bb(corner)[1][2], 8 * s + 1000 - 42.4, 0.5, "Pfosten bis unter den Handlauf (Podesthöhe + 1000)");
+  assert.ok(by(rL, /Stab/).length > 40 && by(rL, /Untergurt/).length > 4);
+  // ältere Treppe ohne Angabe: kein Geländer
+  const old = { id: "o", type: "generator", gen: "treppe", params: { ...defaultGenerator("treppe").params } };
+  delete old.params.gel;
+  const rO = await K.buildPart(part([old]));
+  assert.equal(by(rO, /^Geländer/).length, 0);
+});

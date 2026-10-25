@@ -92,4 +92,18 @@ export const TOR = {
     const info = `${n === 1 ? "Einzeltor" : "Doppeltor"}, Flügel ${Math.round(leafW)} mm breit, ${nBars} Stäbe` + (p.form !== "gerade" ? `, Scheitel ${Math.round(peak)} mm` : "");
     return { chains, members, plates, info, issues };
   },
+
+  views: ["front"],
+  /** Maßlinien der Skizze (Ansicht von vorne: x, z) */
+  dims(p, plan, view) {
+    const gap = Math.max(200, p.width * 0.06), r = Math.round;
+    const out = [
+      { key: "width", a: [0, 0], b: [p.width, 0], off: -gap, text: r(p.width) },
+      { key: "height", a: [p.width, p.clearance], b: [p.width, p.clearance + p.height], off: -gap, text: r(p.height) },
+      { key: "clearance", a: [0, 0], b: [0, p.clearance], off: gap, text: r(p.clearance) },
+    ];
+    if (p.form === "stich" || p.form === "unten") out.push({ key: "rise", a: [p.width / 2, p.clearance + p.height], b: [p.width / 2, p.clearance + p.height + (p.form === "unten" ? -p.rise : p.rise)], off: gap / 2, text: r(p.rise) });
+    if (p.mid) out.push({ key: "midZ", a: [p.width * 0.25, p.clearance], b: [p.width * 0.25, p.clearance + p.midZ], off: gap / 2, text: r(p.midZ) });
+    return out;
+  },
 };
