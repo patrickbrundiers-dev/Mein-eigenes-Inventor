@@ -15,6 +15,7 @@ import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
+import { GENERATORS, resolveGenParams } from "../core/generator.js";
 
 const BIG = 20000;
 
@@ -645,6 +646,39 @@ export function createKernel(R) {
             }
             state.tools.set(f.id, { op: "new", shapes: list });
             st.info = `${list.length} Rippe(n) ${round(o.length)} mm lang, ${round(o.thickness)} mm dick`;
+            break;
+          }
+          case "generator": {
+            const gen = GENERATORS[f.gen];
+            if (!gen) throw new Error("Unbekannter Generator");
+            const plan = gen.plan(resolveGenParams(f.gen, f.params, E));
+            const list = [];
+            const cut = cutCfg(f);
+            const add = (solid, meta, name) => { pushMember(state, solid, f, meta, name); list.push({ shape: solid, kind: "member", meta, name }); };
+            const metaOf = (sec, solid, fr, extra = {}) => ({ section: sectionName(sec.kind, sec.dims), profileId: profileId(sec.kind, sec.dims), area: sec.geom.area, length: memberLength(solid, fr), miterStart: 0, miterEnd: 0, frameZ: fr.z, axis: memberAxis(solid, fr, sec.geom), generator: f.gen, ...extra });
+            for (const ch of plan.chains) {
+              const segs = ch.points.slice(1).map((b, i) => ({ id: "s" + (i + 1), a: ch.points[i], b }));
+              const ms = buildMembers(segs, { kind: ch.section.kind, dims: ch.section.dims }, { corner: "gehrung", align: "mitte", rotation: "0" }, E, cut, () => ch.up || [0, 0, 1], ch.name);
+              for (const m of ms) add(m.solid, { ...m.meta, generator: f.gen }, ms.length > 1 ? m.name : ch.name);
+            }
+            for (const m of plan.members) {
+              const L = v3.dist(m.a, m.b);
+              if (!(L > 1e-6)) continue;
+              const fr = memberFrame(m.a, v3.sub(m.b, m.a), m.rot || 0, m.up);
+              const { solid } = memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, { start: [], end: [] }, cut);
+              add(solid, metaOf(m.section, solid, fr), m.name);
+            }
+            for (const pl of plan.plates) {
+              let d = R.drawRoundedRectangle(pl.W, pl.H, pl.r || 0);
+              for (const [x, y] of pl.holes || []) d = d.cut(R.drawCircle(pl.d / 2).translate(x, y));
+              const solid = d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t);
+              const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length, d: pl.d }, glass: !!pl.glass, generator: f.gen };
+              state.bodies.push({ shape: solid, kind: "solid", name: pl.name, fid: f.id, meta });
+              list.push({ shape: solid, kind: "solid", meta, name: pl.name });
+            }
+            state.tools.set(f.id, { op: "member", shapes: list });
+            st.info = plan.info;
+            if (plan.issues.length) st.warning = plan.issues.map((x) => x.message).join("; ");
             break;
           }
           case "naht": {

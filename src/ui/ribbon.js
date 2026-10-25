@@ -6,6 +6,7 @@ import { defaultProfilzug } from "../core/profilzug.js";
 import { defaultBiegerohr } from "../core/biegerohr.js";
 import { defaultRegelkoerper } from "../core/regelkoerper.js";
 import { defaultPlatte, defaultRippe } from "../core/anschluss.js";
+import { defaultGenerator, GENERATORS } from "../core/generator.js";
 import { DISPLAY } from "../core/settings.js";
 import { commandDef, inScope } from "../core/commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
@@ -62,6 +63,7 @@ export class Ribbon {
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
         app.addFeature(defaultPlatte(t));
       },
+      gelaender: () => this.addGenerator("gelaender"),
       naht: () => app.addFeature({ type: "naht", kind: "kehl", a: "4", side: "pfeil", around: false, field: false, edges: selEdges() }),
       rippe: () => {
         const p = this.lastOf(["platte"]);
@@ -104,6 +106,11 @@ export class Ribbon {
     if (sel && ok(sel)) return sel.id;
     const list = part.features.filter(ok);
     return list.length ? list[list.length - 1].id : null;
+  }
+  addGenerator(gen) {
+    const part = this.app.activeDoc();
+    const n = (part?.features || []).filter((x) => x.gen === gen).length + 1;
+    this.app.addFeature({ ...defaultGenerator(gen), name: `${GENERATORS[gen].label} ${n}` });
   }
   /** gewähltes Feature eines der Typen, sonst das letzte im Bauteil */
   lastOf(types) {
@@ -177,6 +184,7 @@ export class Ribbon {
           { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch")] },
           { label: "Erstellen", buttons: [B("extrude", "Extrusion", "extrude"), B("cutExtrude", "Ausschnitt", "cut"), B("revolve", "Drehung", "revolve"), B("hole", "Bohrung", "hole"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper")] },
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
+          { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender")] },
           { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
           { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("mirror", "Spiegeln", "mirror")] },

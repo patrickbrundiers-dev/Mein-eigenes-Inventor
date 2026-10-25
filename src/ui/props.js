@@ -1,6 +1,6 @@
 // Eigenschaften-Fenster und Dialoge (Parameter, Stückliste, Zuschnittliste, Einstellungen)
 import { settingsCenter } from "./settings.js";
-import { h, icon, toast, modal, fmtNum, confirmDialog } from "./dom.js";
+import { h, icon, toast, modal, fmtNum, confirmDialog, promptDialog } from "./dom.js";
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
 import { SECTION_KINDS, fieldLabel, CATALOG, catalogToDims, profileId, sectionGeometry, kgPerMeter, THREADS, CLEARANCE } from "../core/sections.js";
 import { profileMatches, resolveProfile } from "../core/profilesearch.js";
@@ -15,6 +15,8 @@ import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
 import { PLATE_HOLES, RIB_SIDES } from "../core/anschluss.js";
+import { GENERATORS, applyTemplate } from "../core/generator.js";
+import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gentemplates.js";
 import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { patternOf } from "../core/sketchshapes.js";
@@ -444,6 +446,44 @@ export class Props {
           Number(f.holes ?? 4) ? [E("Bohrung Ø", "holeDia", { allowNeg: false, allowZero: false }), E("Randabstand (Mitte Bohrung)", "edge", { allowNeg: false })] : null,
           h("p", { class: "hint" }, "2 Bohrungen liegen auf der längeren Seite, 4 in den Ecken. Hinweis bei Randabstand unter 1,2 · d. Als DXF für den Laser: Fläche der Platte wählen → Export → Platte als DXF.")));
         out.push(this.weldListSection(part));
+        break;
+      }
+      case "generator": {
+        const gen = GENERATORS[f.gen];
+        if (!gen) break;
+        const P = f.params || {};
+        const setP = (key, v, label) => this.set(f, (x) => { x.params = { ...x.params, [key]: v }; }, label);
+        const groups = [];
+        for (const s of gen.schema) {
+          if (s.when && !s.when(P)) continue;
+          let g = groups.find((x) => x.name === (s.group || ""));
+          if (!g) groups.push((g = { name: s.group || "", items: [] }));
+          const v = P[s.key] ?? s.default;
+          if (s.type === "num") g.items.push(this.expr(s.label, String(v), (x) => setP(s.key, x, s.label), { unit: s.unit || "mm" }));
+          else if (s.type === "list") g.items.push(this.text(s.label + " (mm, mit ; trennen)", String(v), (x) => setP(s.key, x, s.label), { placeholder: "3000; 1500" }));
+          else if (s.type === "check") g.items.push(this.check(s.label, !!v, (x) => setP(s.key, x, s.label)));
+          else if (s.type === "select") g.items.push(this.select(s.label, s.options, v, (x) => setP(s.key, x, s.label)));
+          else if (s.type === "section") {
+            const kinds = s.kinds || Object.keys(CATALOG);
+            g.items.push(this.select(s.label, kinds.map((k) => [k, SECTION_KINDS[k].label]), v.kind, (k) => setP(s.key, { kind: k, size: CATALOG[k][Math.floor(CATALOG[k].length / 2)] }, s.label)));
+            g.items.push(this.select("", (CATALOG[v.kind] || []).map((c) => [c, c.replace(/\./g, ",")]), v.size, (z) => setP(s.key, { kind: v.kind, size: z }, s.label)));
+          }
+        }
+        for (const g of groups) out.push(this.section(g.name, ...g.items));
+        const tpls = listTemplates(f.gen);
+        out.push(this.section("Vorlagen",
+          tpls.length ? this.select("Vorlage laden", [["", "– wählen –"], ...tpls.map((t) => [t, t])], "", (name) => name && this.set(f, (x) => { x.params = applyTemplate(f.gen, x.params, getTemplate(f.gen, name)); }, "Vorlage " + name)) : null,
+          h("div", { class: "btn-row" },
+            h("button", { class: "btn", onclick: async () => {
+              const name = await promptDialog("Vorlage speichern", "Name der Vorlage", f.name || gen.label);
+              if (!name) return;
+              if (saveTemplate(f.gen, name.trim(), f.params)) { toast(`Vorlage „${name.trim()}“ gespeichert`, { kind: "ok" }); this.render(); } else toast("Vorlage konnte nicht gespeichert werden", { kind: "err" });
+            } }, "Als Vorlage speichern"),
+            tpls.length ? h("button", { class: "btn", onclick: async () => {
+              const name = await promptDialog("Vorlage löschen", "Name der Vorlage", tpls[0]);
+              if (name && tpls.includes(name.trim())) { deleteTemplate(f.gen, name.trim()); this.render(); }
+            } }, "Vorlage löschen") : null),
+          h("p", { class: "hint" }, "Vorlagen merken sich alle Werte dieses Generators auf diesem Rechner. Das Modell rechnet bei jeder Änderung neu; Zuschnittliste, Gewicht und STEP enthalten alle Stäbe.")));
         break;
       }
       case "naht": {

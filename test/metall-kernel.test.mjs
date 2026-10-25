@@ -111,3 +111,27 @@ test("Schweißnähte: Kehlnaht der Platte umlaufend, Rippen beidseitig, Naht an 
   near(nw.length, 2 * (40 - 2 * 6), 0.01, "zwei gerade Kanten der Stirnseite (ohne Radien)");
   assert.equal(nw.kind, "v");
 });
+
+test("Geländer-Generator: Pfostenaufteilung, Staketen, Handlauf über Eck, Fußplatten (MegaCAD-Abgleich M10/M11)", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const f = { id: "g", ...defaultGenerator("gelaender") };
+  f.params.runs = "3000; 1500";
+  const res = await K.buildPart(part([f]));
+  okAll(res);
+  const by = (re) => res.bodies.filter((b) => re.test(b.name));
+  assert.equal(by(/^Pfosten/).length, 3 + 1 + 2, "3 Felder à 1000 + 2 Felder à 750 → 6 Pfosten");
+  assert.equal(by(/^Fußplatte/).length, 6);
+  assert.equal(by(/^Handlauf/).length, 2, "zwei Handlaufstäbe, an der Ecke gegehrt");
+  assert.ok(Math.abs(by(/^Handlauf/)[0].meta.miterEnd) > 40, "Gehrung 45° an der Ecke");
+  assert.equal(by(/^Obergurt/).length, 5);
+  const bars = by(/^Stab /);
+  assert.ok(bars.length > 20);
+  // Öffnung zwischen Pfostenfläche und erstem Stab ≤ 110 mm
+  const bb = (b) => b.shape.boundingBox.bounds;
+  const firstBar = bars.filter((b) => Math.abs(bb(b)[0][1] + bb(b)[1][1]) < 1 && bb(b)[1][0] < 1000).sort((a, b) => bb(a)[0][0] - bb(b)[0][0])[0];
+  assert.ok(bb(firstBar)[0][0] - 20 <= 110 + 1e-6, "Öffnung am ersten Pfosten");
+  // Oberkante Handlauf = 1000
+  const top = Math.max(...res.bodies.map((b) => bb(b)[1][2]));
+  near(top, 1000, 0.01, "OK Handlauf");
+  assert.match(res.status.g.info, /6 Pfosten, 5 Feld/);
+});

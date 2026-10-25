@@ -188,3 +188,27 @@ test("Schweißnähte: Querschnitt, Text, Nahtliste, Symbol ISO 2553 (MegaCAD-Abg
   assert.ok(g.polys[0].pts.every(([, y]) => y <= -11.2 + 1e-9), "Gegenseite: Symbol über der Strichlinie");
   assert.ok(g.polys.some((p) => p.fill), "Montagefahne");
 });
+
+test("Generator-Gerüst und Geländer-Plan: Parameter, Aufteilung, Öffnungen, Vorlagen (MegaCAD-Abgleich M10/M11)", async () => {
+  const { defaultGenerator, resolveGenParams, applyTemplate, GENERATORS } = await import("../src/core/generator.js");
+  const f = defaultGenerator("gelaender");
+  assert.equal(f.type, "generator");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...patch }, E));
+  const p1 = plan({ runs: "2500" });
+  assert.equal(p1.members.filter((m) => /^Pfosten/.test(m.name)).length, 4, "2500 / 1200 → 3 Felder, 4 Pfosten");
+  const bars = p1.members.filter((m) => /^Stab 1\./.test(m.name)).map((m) => m.a[0]).sort((a, b) => a - b);
+  const gaps = [bars[0] - 6 - 20, ...bars.slice(1).map((x, i) => x - bars[i] - 12), 2500 / 3 - 20 - bars[bars.length - 1] - 6];
+  assert.ok(gaps.every((g) => g <= 110 + 1e-9 && g > 0), "alle Öffnungen ≤ 110 mm: " + gaps.map((g) => g.toFixed(1)));
+  assert.ok(Math.max(...gaps) - Math.min(...gaps) < 1e-6, "gleichmäßig verteilt");
+  assert.equal(p1.plates.length, 4, "Fußplatten");
+  assert.deepEqual(p1.chains[0].points.map((q) => q[2]), [1000 - 42.4 / 2, 1000 - 42.4 / 2]);
+  const p2 = plan({ runs: "2000", fill: "glas", panelT: "10", height: "850" });
+  assert.equal(p2.plates.filter((x) => x.glass).length, 2);
+  assert.match(p2.issues.map((x) => x.message).join(), /unter 900 mm/);
+  assert.throws(() => plan({ runs: "0" }), /Längen > 0/);
+  // Vorlage: nur bekannte Schlüssel
+  const merged = applyTemplate("gelaender", f.params, { height: "1100", fremd: 1 });
+  assert.equal(merged.height, "1100");
+  assert.equal(merged.fremd, undefined);
+});

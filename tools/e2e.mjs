@@ -525,6 +525,24 @@ try {
   await shot("20e-schweissnaehte");
   step("Schweißnähte: Nahtliste und Symbole", wl.n === 3 && wl.rows.length === 2 && ws.marks === 3 && ws.texts.includes("a5") && ws.texts.filter((t) => t === "a4").length === 4, JSON.stringify({ wl, ws }));
 
+  // Geländer-Generator (MegaCAD-Abgleich M10/M11): anlegen, über Eck, Füllung Glas, Zuschnittliste
+  await evalApp(() => window.__werkcad.newPart("Geländer"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Geländer$/ }).click();
+  await idle(120000);
+  const gl0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
+  const runs = page.locator("#props .field", { hasText: "Läufe" }).locator("input");
+  await runs.fill("3000; 1500");
+  await runs.press("Enter");
+  await idle(120000);
+  await page.locator("#props .field", { hasText: "Füllung" }).locator("select").selectOption("glas");
+  await idle(120000);
+  const gl1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, glass: r.bodies.filter((b) => b.meta?.glass).length, members: r.bodies.filter((b) => b.kind === "member").length, info: Object.values(r.status)[0]?.info }; });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20f-gelaender");
+  step("Geländer-Generator", gl0.ok && gl0.n > 30 && /Pfosten/.test(gl0.info) && gl1.glass === 5 && gl1.members === 6 + 2 + 10 && /6 Pfosten/.test(gl1.info), JSON.stringify({ gl0, gl1 }));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();
