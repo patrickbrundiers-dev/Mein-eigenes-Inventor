@@ -1658,6 +1658,47 @@ try {
       JSON.stringify({ g1: g1.length, plus, g2, saved, unchecked, shown, cleared, same: g3.join() === g0.join() }));
   }
 
+  // Dokument-Vorgaben (Werkzeuge Stufe 26): Namensregel, Sachnummer, Standardwerkstoff, Inhalt neuer Projekte
+  {
+    await evalApp(() => window.__werkcad.props.settingsDialog({ category: "dokument" }));
+    await page.waitForTimeout(300);
+    const row = page.locator('.dialog .set-row[data-key="dokument.name.bauteil"]');
+    await row.locator("input").fill("Teil {x}");
+    await row.locator("input").press("Tab");
+    const err = (await row.locator(".set-err").textContent()) || "";
+    await row.locator("input").fill("{projekt}-{n:2}");
+    await row.locator("input").press("Tab");
+    await page.locator('.dialog .set-row[data-key="dokument.werkstoff"] select').selectOption("S355");
+    const nr = page.locator('.dialog .set-row[data-key="dokument.nummer"] input');
+    await nr.fill("BT-{n:3}");
+    await nr.press("Tab");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(200);
+    const made = await evalApp(() => {
+      const app = window.__werkcad;
+      window.__savedPrj = { prj: JSON.parse(JSON.stringify(app.project)), path: app.filePath };
+      app.setProject({ ...JSON.parse(JSON.stringify(app.project)), docs: [] });
+      const prj = app.project.name;
+      const a = app.newPart(), b = app.newPart();
+      const d = app.newDrawing({ kind: "part", id: b.id });
+      return { prj, a: [a.name, a.number, a.material], b: [b.name, b.number], d: d.name };
+    });
+    const content = await evalApp(() => {
+      const app = window.__werkcad;
+      app.prefs.set("dokument.neuesProjekt", "baugruppe");
+      app.setProject({ ...app.project, docs: [] });
+      app.startContent(app.prefs.get("dokument.neuesProjekt"));
+      const kinds = app.project.docs.map((x) => x.kind).join();
+      const asm = app.project.docs.find((x) => x.kind === "assembly");
+      return { kinds, comp: asm?.components.length, linked: asm?.components[0]?.part === app.project.docs.find((x) => x.kind === "part")?.id };
+    });
+    await evalApp(() => { const app = window.__werkcad; app.prefs.reset(["dokument.name.bauteil", "dokument.werkstoff", "dokument.nummer", "dokument.neuesProjekt"]); app.setProject(window.__savedPrj.prj, window.__savedPrj.path); });
+    await idle();
+    const p = made.prj;
+    step("Dokument-Vorgaben", /Unbekannter Platzhalter/.test(err) && made.a[0] === `${p}-01` && made.a[1] === "BT-001" && made.a[2] === "S355" && made.b[0] === `${p}-02` && made.b[1] === "BT-002" &&
+      made.d === `Zeichnung ${p}-02` && content.kinds === "assembly,part" && content.comp === 1 && content.linked, JSON.stringify({ err, made, content }));
+  }
+
   // Skizze säubern (MegaCAD-Abgleich M7): lose Ecken, doppelte Linie, leicht schief → eine geschlossene Kontur
   {
     await evalApp(() => window.__werkcad.newPart("Saeubern"));

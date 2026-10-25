@@ -437,7 +437,7 @@ export class Files {
   async importStepAsPart() {
     const f = await this.pickStep();
     if (!f) return;
-    const p = newPart(f.name.replace(/\.(step|stp|stl)$/i, ""));
+    const p = this.app.withPartDefaults(newPart(f.name.replace(/\.(step|stp|stl)$/i, "")));
     p.features.push(importFeature(f));
     this.app.addDoc(p);
   }

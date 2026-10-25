@@ -25,6 +25,7 @@ import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
 import { partContent, baseName } from "../core/links.js";
 import { finishColor } from "../core/oberflaeche.js";
 import { Docking } from "./layout.js";
+import { nextName } from "../core/naming.js";
 
 const linkedMessage = (part) => `»${part.name}« ist mit ${baseName(part.link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`;
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
@@ -115,14 +116,25 @@ export class App {
     if (open) this.openDoc(doc.id);
     return doc;
   }
-  newPart(name) {
-    const n = this.parts().length + 1;
-    return this.addDoc(newPart(name || `Bauteil ${n}`));
+  /** Name nach der Namensregel aus den Einstellungen (Dokument und Modell) */
+  docName(kind, extra = {}) {
+    const key = { part: "dokument.name.bauteil", assembly: "dokument.name.baugruppe", drawing: "dokument.name.zeichnung" }[kind];
+    const same = this.project.docs.filter((d) => d.kind === kind);
+    return nextName(this.prefs.get(key), this.project.docs.map((d) => d.name), { projekt: this.project.name, ...extra }, same.length + 1);
   }
-  newAssembly() { return this.addDoc(newAssembly(`Baugruppe ${this.project.docs.filter((d) => d.kind === "assembly").length + 1}`)); }
+  newPart(name) { return this.addDoc(this.withPartDefaults(newPart(name || this.docName("part")))); }
+  /** Werkstoff und Sachnummer neuer Bauteile aus den Einstellungen (auch für importierte Bauteile) */
+  withPartDefaults(p) {
+    const mat = this.prefs.get("dokument.werkstoff");
+    p.material = materialOf(mat).source === "fallback" ? "S235" : mat;
+    const num = this.prefs.get("dokument.nummer");
+    if (num) p.number = nextName(num, this.parts().map((d) => d.number).filter(Boolean), { projekt: this.project.name }, this.parts().length + 1);
+    return p;
+  }
+  newAssembly() { return this.addDoc(newAssembly(this.docName("assembly"))); }
   newDrawing(source) {
     const src = source || (this.activeDoc() && this.activeDoc().kind !== "drawing" ? { kind: this.activeDoc().kind, id: this.activeId } : null);
-    const name = src ? "Zeichnung " + this.doc(src.id).name : "Zeichnung";
+    const name = this.docName("drawing", { quelle: src ? this.doc(src.id).name : "" });
     const d = newDrawing(name, src);
     if (src) {
       const sd = this.doc(src.id);
@@ -173,7 +185,19 @@ export class App {
   async newProject() {
     if (!(await this.files.confirmDiscard())) return;
     this.setProject(newProject());
-    this.newPart("Bauteil 1");
+    this.startContent(this.prefs.get("dokument.neuesProjekt"));
+  }
+  /** Inhalt eines neuen Projekts: Bauteil, Baugruppe mit Bauteil oder nichts */
+  startContent(kind = "bauteil") {
+    if (kind === "leer") { this.setMode("start"); this.refreshAll(); return; }
+    if (kind === "baugruppe") {
+      const a = this.newAssembly();
+      const p = this.newPart();
+      a.components.push({ id: uid("c"), part: p.id, name: p.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+      this.changed({ rebuild: false });
+      return;
+    }
+    this.newPart();
   }
   async openExample() {
     if (!(await this.files.confirmDiscard())) return;

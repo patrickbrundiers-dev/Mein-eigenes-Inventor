@@ -1,6 +1,7 @@
 import { DEFAULT_LAYOUT, validateLayout } from "./layout.js";
 import { validateMaterialLib } from "./materials.js";
 import { validateRibbonLayout } from "./ribbonlayout.js";
+import { validateNameTemplate } from "./naming.js";
 import { validateKeymap, commandDef } from "./commands.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
@@ -23,7 +24,7 @@ export const CATEGORIES = [
   { id: "skizze", label: "Skizzen", status: "teilweise", planned: ["Standardebene"] },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
   { id: "darstellung", label: "Darstellung", status: "teilweise", planned: ["Tooltip-Verzögerung"] },
-  { id: "dokument", label: "Dokument und Modell", status: "geplant", planned: ["Standardvorlagen", "Namensregeln", "Standardmaterial", "Modelltoleranz"], note: "Dokumentwerte werden später in der Projektdatei gespeichert, nicht hier." },
+  { id: "dokument", label: "Dokument und Modell", status: "teilweise", planned: ["Modelltoleranz"], note: "Gilt für neu angelegte Dokumente; vorhandene bleiben, wie sie sind. Platzhalter: {n} laufende Nummer ({n:3} = dreistellig), {projekt}, {datum}, bei Zeichnungen {quelle}." },
   { id: "material", label: "Materialien", status: "aktiv", note: "Eigene Werkstoffe gelten für Masse, Trägheit, Zuschnittliste und Zeichnung. Benutzte eigene Werkstoffe werden als Kopie in der Projektdatei gespeichert, damit sie auf anderen Rechnern stimmen." },
   { id: "kernel", label: "CAD-Kernel und Leistung", status: "geplant", planned: ["automatische Neuberechnung aus", "Berechnungsprotokoll/Debug-Modus"], note: "Kernel-Toleranzen werden nicht freigegeben, solange sie nicht abgesichert sind." },
   { id: "dateien", label: "Dateien und Datensicherheit", status: "teilweise", planned: ["Anzahl Sicherungen", "Projekt paketieren", "schreibgeschützter Modus"], note: "Speichern ist immer atomar mit einer Sicherung (.bak) der vorherigen Fassung." },
@@ -101,6 +102,12 @@ export const SETTINGS = [
   { key: "fertigung.knickWand", cat: "fertigung", label: "Knickrahmen: Wand höchstens", unit: "mm", type: "number", default: 4, min: 0, max: 30, help: "Dickere Wände lassen sich schwer von Hand knicken (Hinweis). 0 = nicht prüfen." },
 
   { key: "darstellung.schema", cat: "darstellung", label: "Farbschema", type: "enum", default: "hell", options: [{ value: "hell", label: "Hell" }, { value: "dunkel", label: "Dunkel" }, { value: "system", label: "Wie Windows" }], help: "Gilt für Menüband, Panels, Dialoge und den 3D-Hintergrund. Zeichnungsblätter bleiben weiß." },
+  { key: "dokument.neuesProjekt", cat: "dokument", label: "Neues Projekt beginnt mit", type: "enum", default: "bauteil", options: [{ value: "bauteil", label: "einem Bauteil" }, { value: "baugruppe", label: "Baugruppe mit einem Bauteil" }, { value: "leer", label: "leerem Projekt" }], help: "Datei → Neues Projekt (Strg+N). Die Kacheln auf der Startseite bleiben, wie sie heißen." },
+  { key: "dokument.werkstoff", cat: "dokument", label: "Werkstoff neuer Bauteile", type: "materialkey", default: "S235", help: "Eingebaute und eigene Werkstoffe (Einstellungen → Material). Fehlt der gewählte, gilt S235." },
+  { key: "dokument.name.bauteil", cat: "dokument", label: "Name neuer Bauteile", type: "name", default: "Bauteil {n}", placeholders: ["n", "projekt", "datum"], help: "Beispiel: »{projekt}-{n:2}« → »Carport-01«. Ist der Name schon vergeben, zählt {n} weiter." },
+  { key: "dokument.name.baugruppe", cat: "dokument", label: "Name neuer Baugruppen", type: "name", default: "Baugruppe {n}", placeholders: ["n", "projekt", "datum"] },
+  { key: "dokument.name.zeichnung", cat: "dokument", label: "Name neuer Zeichnungen", type: "name", default: "Zeichnung {quelle}", placeholders: ["n", "projekt", "datum", "quelle"] },
+  { key: "dokument.nummer", cat: "dokument", label: "Sachnummer neuer Bauteile", type: "name", default: "", allowEmpty: true, placeholders: ["n", "projekt", "datum"], help: "Leer = keine Sachnummer. Beispiel: »BT-{n:3}« → »BT-001«; steht im Schriftfeld und in der Stückliste." },
   { key: "material.eigene", cat: "material", label: "Eigene Werkstoffe", type: "materials", default: [], custom: true },
   { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },
@@ -148,6 +155,10 @@ export function validateValue(def, v) {
     }
     case "layout":
       return validateLayout(v);
+    case "name":
+      return validateNameTemplate(v, def.placeholders, { allowEmpty: !!def.allowEmpty });
+    case "materialkey":
+      return typeof v === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,19}$/.test(v) ? { ok: true, value: v } : { ok: false, error: "Werkstoff-Kürzel erwartet" };
     case "ribbon":
       return validateRibbonLayout(v);
     case "materials":

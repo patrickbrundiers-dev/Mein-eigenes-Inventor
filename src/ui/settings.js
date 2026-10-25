@@ -51,6 +51,15 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
     } else if (s.type === "enum") {
       input = h("select", { class: "inp" }, ...s.options.map((o) => h("option", { value: String(o.value), selected: o.value === v ? true : undefined }, o.label)));
       input.addEventListener("change", () => commit(input.value));
+    } else if (s.type === "materialkey") {
+      const list = materialList().filter((m) => m.source !== "project");
+      const known = list.some((m) => m.key === v);
+      input = h("select", { class: "inp" }, ...(known ? [] : [h("option", { value: v, selected: true }, v + " (fehlt)")]),
+        ...list.map((m) => h("option", { value: m.key, selected: m.key === v ? true : undefined }, m.label + (m.source === "user" ? " (eigen)" : ""))));
+      input.addEventListener("change", () => commit(input.value));
+    } else if (s.type === "name") {
+      input = h("input", { class: "inp", value: v, spellcheck: "false", placeholder: s.allowEmpty ? "leer = keine" : "" });
+      input.addEventListener("change", () => commit(input.value));
     } else if (s.type === "color") {
       input = h("input", { type: "color", class: "inp set-color", value: v });
       input.addEventListener("input", () => commit(input.value));
