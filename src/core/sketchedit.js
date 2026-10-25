@@ -9,7 +9,7 @@ const norm2pi = (a) => { a %= TAU; return a < 0 ? a + TAU : a; };
 function pts(sk) { return new Map(sk.points.map((p) => [p.id, p])); }
 
 /** Geometrie eines Elements in einfacher Form */
-function geo(sk, e, P = pts(sk)) {
+export function geo(sk, e, P = pts(sk)) {
   if (e.type === "line") { const a = P.get(e.p1), b = P.get(e.p2); return { kind: "line", ax: a.x, ay: a.y, bx: b.x, by: b.y }; }
   if (e.type === "circle") { const c = P.get(e.c); return { kind: "circle", cx: c.x, cy: c.y, r: e.r, a1: 0, sweep: TAU }; }
   if (e.type === "arc") { const g = arcGeometry(P.get(e.c), P.get(e.p1), P.get(e.p2)); const c = P.get(e.c); return { kind: "arc", cx: c.x, cy: c.y, r: g.r, a1: g.a1, sweep: g.sweep }; }

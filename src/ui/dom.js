@@ -176,6 +176,8 @@ const P = {
   extend: '<path d="M3 12h10"/><path d="M13 12h6" stroke-dasharray="2 2"/><path d="M20 5v14"/>',
   split: '<path d="M3 18L10 11"/><path d="M14 7l7-4"/><circle cx="12" cy="9" r="1.6"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="1"/><path d="M4 16V4h12"/>',
+  rotate: '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/><circle cx="12" cy="12" r="1.5"/>',
+  scale: '<rect x="3" y="11" width="10" height="10"/><path d="M13 11V3h8v8h-8"/><path d="M9 15l10-10M15 5h4v4"/>',
 };
 
 export function icon(name, cls = "") {

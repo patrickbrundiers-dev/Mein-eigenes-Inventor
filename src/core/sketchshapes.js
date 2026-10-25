@@ -404,3 +404,77 @@ export function constraintLabel(c) {
   if (c.value !== undefined && c.value !== null && c.value !== "") return `${n} ${c.value}${c.type === "angle" ? "°" : ""}`;
   return n;
 }
+
+/** Punkte, auf denen ein Element liegt */
+const entityPoints = (e) => (e.type === "line" ? [e.p1, e.p2] : e.type === "arc" ? [e.c, e.p1, e.p2] : e.type === "circle" ? [e.c] : e.type === "ellipse" ? [e.c, e.a] : e.type === "spline" ? [...(e.pts || [])] : e.type === "point" ? [e.p] : []);
+const PT_KEYS = ["p1", "p2", "c", "a", "p"];
+
+/**
+ * Verschieben, Drehen, Skalieren (wie Inventor Move / Rotate / Scale), wahlweise als Kopie.
+ * op: { kind: "move", dx, dy } | { kind: "rotate", cx, cy, angle (°) } | { kind: "scale", cx, cy, factor }, copy.
+ * Ohne Kopie werden die Punkte selbst bewegt: fixierte Punkte bleiben am neuen Ort fixiert, der Skizzenursprung
+ * bleibt stehen (das Element löst sich von ihm), beim Drehen fallen horizontal/vertikal der bewegten Linien weg,
+ * beim Skalieren wachsen Zahlenmaße (auch Versatz) innerhalb der Auswahl mit; Achswinkel gedrehter Ellipsen fallen weg. Kopien sind frei (ohne Bedingungen).
+ */
+export function transformEntities(sk, entityIds, op, { uid }) {
+  const ents = entityIds.map((id) => sk.entities.find((e) => e.id === id)).filter((e) => e && !e.origin && entityPoints(e).length);
+  if (!ents.length) throw new Error("Zuerst Elemente wählen");
+  const k = op.kind === "scale" ? Number(op.factor) : 1;
+  if (op.kind === "scale" && !(k > 0)) throw new Error("Faktor muss größer 0 sein");
+  const th = op.kind === "rotate" ? (Number(op.angle) * Math.PI) / 180 : 0, co = Math.cos(th), si = Math.sin(th);
+  if (op.kind === "move" && !(Number.isFinite(Number(op.dx)) && Number.isFinite(Number(op.dy)))) throw new Error("Verschiebung ungültig");
+  if (op.kind === "rotate" && !Number.isFinite(th)) throw new Error("Winkel ungültig");
+  const T = (p) => {
+    if (op.kind === "move") return { x: p.x + Number(op.dx), y: p.y + Number(op.dy) };
+    const dx = p.x - op.cx, dy = p.y - op.cy;
+    if (op.kind === "rotate") return { x: op.cx + co * dx - si * dy, y: op.cy + si * dx + co * dy };
+    return { x: op.cx + k * dx, y: op.cy + k * dy };
+  };
+  const P = new Map(sk.points.map((p) => [p.id, p]));
+  const map = new Map();
+  const newPt = (pid) => {
+    if (map.has(pid)) return map.get(pid);
+    const q = T(P.get(pid)), id = uid("p");
+    sk.points.push({ id, x: q.x, y: q.y });
+    map.set(pid, id);
+    return id;
+  };
+  const scaled = (e) => (k !== 1 && (e.type === "circle" || e.type === "ellipse") ? { r: e.r * k } : {});
+  if (op.copy) {
+    const created = [];
+    for (const e of ents) {
+      const c = { ...e, id: uid(e.type === "line" ? "l" : e.type === "arc" ? "b" : e.type === "circle" ? "k" : e.type === "ellipse" ? "el" : e.type === "spline" ? "sp" : "pt"), ...scaled(e) };
+      for (const key of PT_KEYS) if (typeof e[key] === "string" && P.has(e[key])) c[key] = newPt(e[key]);
+      if (e.pts) c.pts = e.pts.map(newPt);
+      sk.entities.push(c);
+      created.push(c.id);
+    }
+    return { entities: created };
+  }
+  // ohne Kopie: Ursprung durch eigenen Punkt ersetzen, alle übrigen Punkte bewegen
+  const moved = new Set();
+  for (const e of ents) {
+    for (const key of PT_KEYS) if (e[key] === "O") e[key] = newPt("O");
+    if (e.pts) e.pts = e.pts.map((id) => (id === "O" ? newPt("O") : id));
+    for (const pid of entityPoints(e)) moved.add(pid);
+    Object.assign(e, scaled(e));
+  }
+  for (const pid of moved) {
+    if (map.has(pid) && [...map.values()].includes(pid)) continue; // gerade neu angelegt, schon am Ziel
+    const p = P.get(pid);
+    if (!p) continue;
+    Object.assign(p, T(p));
+  }
+  const ids = new Set(ents.map((e) => e.id));
+  const inSel = (c) => [c.p, c.q].filter(Boolean).every((x) => moved.has(x)) && [c.e, c.e1, c.e2].filter(Boolean).every((x) => ids.has(x));
+  sk.constraints = sk.constraints.filter((c) => {
+    if (c.type === "fix" && moved.has(c.p)) { const p = P.get(c.p); c.x = p.x; c.y = p.y; }
+    if (op.kind === "rotate" && (c.type === "horizontal" || c.type === "vertical" || c.type === "axisAngle") && inSel(c)) return false;
+    if (op.kind === "rotate" && c.type === "distance" && c.dir && inSel(c)) delete c.dir;
+    if (k !== 1 && ["distance", "length", "diameter", "radius", "semiAxis", "offset"].includes(c.type) && inSel(c) && /^\s*\d+([.,]\d+)?\s*$/.test(String(c.value))) {
+      c.value = String(Math.round(Number(String(c.value).replace(",", ".")) * k * 1e6) / 1e6);
+    }
+    return true;
+  });
+  return { entities: [...ids] };
+}

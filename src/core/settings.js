@@ -82,7 +82,8 @@ export const SETTINGS = [
   { key: "skizze.standardebene", cat: "skizze", label: "Erste Skizze in leerem Bauteil auf", type: "enum", default: "waehlen", options: [{ value: "waehlen", label: "Ebene jedes Mal wählen" }, { value: "XY", label: "XY-Ebene" }, { value: "XZ", label: "XZ-Ebene" }, { value: "YZ", label: "YZ-Ebene" }], help: "Hat das Bauteil schon Körper, wählst du die Ebene oder Fläche wie gewohnt." },
   { key: "skizze.rasterfang", cat: "skizze", label: "Rasterfang beim Öffnen einer Skizze", type: "bool", default: false },
   { key: "skizze.rasterweite", cat: "skizze", label: "Rasterweite", unit: "mm", type: "number", default: 0, min: 0, max: 1000, help: "0 = automatisch passend zum Zoom." },
-  { key: "skizze.fangradius", cat: "skizze", label: "Fangradius", unit: "px", type: "int", default: 7, min: 3, max: 30, help: "Abstand, ab dem Punkte und Mittelpunkte gefangen werden." },
+  { key: "skizze.fangradius", cat: "skizze", label: "Fangradius", unit: "px", type: "int", default: 7, min: 3, max: 30, help: "Abstand, ab dem Punkte, Schnittpunkte, Mitten, Quadranten und Ausrichtungen gefangen werden." },
+  { key: "skizze.ausrichten", cat: "skizze", label: "Ausrichtungslinien beim Zeichnen", type: "bool", default: true, help: "Fängt waagrecht bzw. senkrecht zu vorhandenen Punkten (gestrichelte Hilfslinie, wie Inventor)." },
   { key: "skizze.symbole", cat: "skizze", label: "Symbole der Abhängigkeiten anzeigen", type: "bool", default: true },
   { key: "skizze.bestimmtheit", cat: "skizze", label: "Bestimmtheit farbig zeigen", type: "bool", default: true, help: "Noch bewegliche Elemente hellblau, vollständig bestimmte dunkel, Widersprüche rot." },
   { key: "skizze.auto.hv", cat: "skizze", label: "Automatisch: horizontal/vertikal", type: "bool", default: true, help: "Beim Zeichnen gesetzte Bedingungen. Strg gedrückt halten unterdrückt alle für diesen Klick." },
@@ -138,7 +139,7 @@ export const SETTINGS = [
 ];
 
 /** Werkzeuge, deren letzte Eingabe gemerkt wird (werkzeuge.letzte) */
-export const TOOL_MEMO_KEYS = ["rundung", "versatz", "polygon", "muster", "kreismuster"];
+export const TOOL_MEMO_KEYS = ["rundung", "versatz", "polygon", "muster", "kreismuster", "trafo-move", "trafo-rotate", "trafo-scale"];
 
 const BY_KEY = new Map(SETTINGS.map((s) => [s.key, s]));
 export const settingDef = (key) => BY_KEY.get(key);
