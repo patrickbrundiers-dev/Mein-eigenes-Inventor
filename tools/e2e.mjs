@@ -2433,6 +2433,79 @@ try {
   await shot("29-sweep-loft-spirale");
   step("Sweeping, Erhebung, Spirale", fm.length === 4 && fm.slice(0, 3).every((x) => x.ok) && /Pfad 147,1 mm/.test(fm[0].info) && /2 Querschnitte/.test(fm[1].info) && /5 Umdrehungen/.test(fm[2].info) && fm[3].bodies >= 1, JSON.stringify(fm));
 
+  // Körper-Werkzeuge: zwei Quader, Kombinieren über das Menüband (Differenz), Fläche verschieben, Trennen
+  await evalApp(() => {
+    const a = window.__werkcad;
+    a.newPart("Koerper");
+    const P = (id, x, y) => ({ id, x, y });
+    const box = (id, x) => ({ type: "sketch", id, name: id, plane: { ref: "XY" }, offset: "0", points: [P(id + 1, x, 0), P(id + 2, x + 100, 0), P(id + 3, x + 100, 40), P(id + 4, x, 40)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: id + "l" + p, type: "line", p1: id + p, p2: id + q })), constraints: [] });
+    a.addFeature(box("k1", 0), { select: false });
+    a.addFeature({ type: "extrude", id: "ke1", sketch: "k1", distance: "10", op: "new" }, { select: false });
+    a.addFeature(box("k2", 50), { select: false });
+    a.addFeature({ type: "extrude", id: "ke2", sketch: "k2", distance: "10", op: "new" }, { select: false });
+  });
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Kombinieren$/ }).click();
+  await idle();
+  const kb = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features.at(-1); return { type: f.type, st: r.status[f.id], bodies: r.bodies.length, vol: Math.round(r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0)), checks: document.querySelectorAll("#props .checks input").length }; });
+  await page.locator("#ribbon button", { hasText: /^Fläche verschieben$/ }).click();
+  await idle();
+  await evalApp(() => { const a = window.__werkcad, f = a.activeDoc().features.at(-1); a.edit("Fläche", () => { f.faces = [{ p: [25, 20, 10] }]; f.distance = "5"; }); });
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Trennen$/ }).click();
+  await idle();
+  await page.locator("#props .field", { hasText: "Abstand" }).first().locator("input").fill("25");
+  await page.locator("#props .field", { hasText: "Abstand" }).first().locator("input").press("Enter");
+  await idle();
+  const kb2 = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), fs = a.activeDoc().features; return { st: fs.slice(-2).map((f) => r.status[f.id]), bodies: r.bodies.length, vol: Math.round(r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0)) }; });
+  await shot("30-koerper");
+  step("Körper kombinieren, Fläche verschieben, trennen", kb.type === "kombinieren" && kb.st.ok && kb.bodies === 1 && kb.vol === 20000 && kb.checks === 1 && kb2.st.every((x) => x.ok) && kb2.vol === 30000 && kb2.bodies === 2, JSON.stringify({ kb, kb2 }));
+
+  // Baugruppe: Komponentenmuster über das Menüband, Kopien in der Stückliste, Winkel-Abhängigkeit, Zylindergelenk
+  await evalApp(() => {
+    const a = window.__werkcad;
+    const asm = a.newAssembly();
+    a.edit("Komponenten", () => {
+      asm.components.push({ id: "mp1", part: "beispiel_platte", name: "Platte:1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+      asm.components.push({ id: "mp2", part: "beispiel_rohr", name: "Rohr:1", pos: [0, 0, 300], rot: [0, 0, 0] });
+    });
+    a.sel = { type: "component", id: "mp2" };
+  });
+  await idle(120000);
+  await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+  await page.locator("#ribbon button", { hasText: /^Muster$/ }).click();
+  await idle(60000);
+  const am = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { copies: asm.components.filter((c) => c.pat).length, sel: a.sel?.type, tree: [...document.querySelectorAll("#browser .node .label")].some((x) => /^Muster 1$/.test(x.textContent)), bomRohr: asm.components.filter((c) => c.part === "beispiel_rohr").length }; });
+  await page.locator("#props .field", { hasText: "Anzahl 1" }).locator("input").fill("5");
+  await page.locator("#props .field", { hasText: "Anzahl 1" }).locator("input").press("Enter");
+  await idle(60000);
+  const am2 = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); const cp = asm.components.filter((c) => c.pat); return { copies: cp.length, xs: cp.map((c) => Math.round(c.pos[0])) }; });
+  await evalApp(() => { const a = window.__werkcad; a.viewer.fit?.(); });
+  await shot("31-komponentenmuster");
+  step("Komponentenmuster", am.copies === 2 && am.sel === "asmpattern" && am.tree && am.bomRohr === 3 && am2.copies === 4 && new Set(am2.xs).size === 4, JSON.stringify({ am, am2 }));
+
+  // Rahmen: Endkappe und Kürzen über das Menüband, Gleichteile in den Bauteil-Eigenschaften
+  await evalApp(() => {
+    const a = window.__werkcad;
+    a.newPart("Gestell");
+    for (const y of ["0", "300"]) a.addFeature({ type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "4" }, length: "800", start: ["0", y, "0"], axis: "X", rotation: "0", miterStart: "0", miterEnd: "0" }, { select: false });
+  });
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "Metallbau" }).click();
+  await page.locator("#ribbon button", { hasText: /^Endkappe$/ }).click();
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Kürzen\/Verlängern$/ }).click();
+  await idle();
+  await page.locator("#props .field", { hasText: "Abstand der Ebene" }).locator("input").fill("700");
+  await page.locator("#props .field", { hasText: "Abstand der Ebene" }).locator("input").press("Enter");
+  await idle();
+  const rk = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), fs = a.activeDoc().features; return { st: fs.slice(-2).map((f) => ({ t: f.type, ok: r.status[f.id]?.ok, info: r.status[f.id]?.info })), caps: r.bodies.filter((b) => b.meta?.endcap).length, lens: r.bodies.filter((b) => b.kind === "member").map((b) => Math.round(b.meta.length)) }; });
+  await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); });
+  const eqp = await evalApp(() => [...document.querySelectorAll("#props .section h3")].some((x) => x.textContent === "Gleichteile"));
+  await shot("32-rahmen-endkappe");
+  step("Endkappe, Kürzen, Gleichteile", rk.st.every((x) => x.ok) && rk.caps === 2 && rk.lens.sort().join() === "700,800" && !eqp, JSON.stringify({ rk, eqp }));
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

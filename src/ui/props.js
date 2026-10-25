@@ -9,6 +9,10 @@ import { LIB_GROUPS, groupOfMaterial, groupKinds, mainSizes, wallsFor, wallLabel
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { PLANE_MODES, AXIS_MODES, POINT_MODES } from "../core/datums.js";
 import { sketchRefs } from "../core/featurerefs.js";
+import { COMBINE_OPS, SPLIT_KEEP, THICKEN_SIDES } from "../core/koerper.js";
+import { CONSTRAINT_TYPES } from "../core/asmsolve.js";
+import { defaultAsmPattern } from "../core/asmmuster.js";
+import { CAP_MODES, equalParts } from "../core/rahmen.js";
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
@@ -31,7 +35,7 @@ import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
-import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, jointUnit, jointLabel } from "../core/kinematik.js";
+import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel } from "../core/kinematik.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom } from "../core/subasm.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { FINISHES, RAL, finishOf, finishLabel, ralName } from "../core/oberflaeche.js";
@@ -288,9 +292,13 @@ export class Props {
       else if (app.sel?.type === "constraint") {
         const c = (d.constraints || []).find((x) => x.id === app.sel.id);
         if (c) { title = "Abhängigkeit"; body.append(...this.constraintProps(d, c)); }
+      } else if (app.sel?.type === "asmpattern") {
+        const p = (d.patterns || []).find((x) => x.id === app.sel.id);
+        if (p) { title = p.name || "Komponentenmuster"; body.append(...this.asmPatternProps(d, p)); }
       } else if (app.sel?.type === "component") {
         const c = d.components.find((x) => x.id === app.sel.id);
-        if (c) { title = c.name || "Komponente"; body.append(...this.componentProps(d, c)); }
+        if (c?.pat) { title = c.name; body.append(...this.patternCopyProps(d, c)); }
+        else if (c) { title = c.name || "Komponente"; body.append(...this.componentProps(d, c)); }
       } else { title = "Baugruppe"; body.append(...this.assemblyProps(d)); }
     }
     this.el.replaceChildren(h("div", { class: "pane-head" }, h("span", { class: "grow" }, title)), body);
@@ -343,6 +351,11 @@ export class Props {
         const rows = cutListRows([{ part, result: r, qty: 1 }]);
         out.push(this.section("Zuschnittliste", cutListTable(rows, true), this.dfmList(rows),
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.exportMembers() }, "Profile als STEP"), h("button", { class: "btn", onclick: () => app.files.exportCutList() }, "CSV"))));
+        // Gleichteile: welche Stäbe gleich gefertigt werden (gleiches Profil, Länge, Enden, Ausklinkungen)
+        const eq = equalParts(members, part.material).filter((g) => g.count > 1);
+        if (eq.length) out.push(this.section("Gleichteile",
+          h("dl", { class: "kv eqparts" }, ...eq.flatMap((g, i) => [h("dt", {}, `${String.fromCharCode(65 + (i % 26))} · ${g.count}×`), h("dd", {}, `${g.profileId} L ${fmtNum(g.length, 1)}: ${g.names.join(", ")}`)])),
+          h("p", { class: "hint" }, "Gleich gefertigte Stäbe: in der Zuschnittliste eine Zeile mit Anzahl.")));
       }
       const errs = Object.entries(r.status).filter(([, s]) => !s.ok);
       if (errs.length) out.push(this.section("Probleme", ...errs.map(([id, s]) => h("div", { class: "msg err" }, `${app.feature(id)?.name || id.replace("param:", "Parameter ")}: ${s.error}`))));
@@ -914,6 +927,36 @@ export class Props {
           this.opSeg(f)));
         break;
       }
+      case "endkappe": case "kuerzen": {
+        const targets = part.features.filter((g) => ["profile", "frame", "profilzug", "generator"].includes(g.type));
+        const members = (r?.bodies || []).filter((b) => b.fid === f.target && b.kind === "member");
+        const cur = f.members || [];
+        const memberChecks = members.length > 1 ? this.field("Stäbe (keiner gewählt = alle)", h("div", { class: "checks" }, ...members.map((b, i) => {
+          const c = h("input", { type: "checkbox", checked: cur.includes(i) ? true : undefined });
+          c.addEventListener("change", () => this.set(f, (x) => { x.members = c.checked ? [...new Set([...cur, i])].sort((a, b2) => a - b2) : cur.filter((y) => y !== i); }, "Stäbe"));
+          return h("label", { class: "check" }, c, " ", b.name);
+        })), true) : null;
+        const tsel = this.select("Profil / Rahmen", [["", "– wählen –"], ...targets.map((g) => [g.id, g.name])], f.target || "", (v) => this.set(f, (x) => { x.target = v; x.members = []; }, "Profil"));
+        if (f.type === "endkappe") {
+          out.push(this.section("Endkappe", tsel, memberChecks,
+            this.seg("Ende", [["A", "A"], ["B", "B"], ["beide", "Beide"]], f.end || "beide", (v) => this.set(f, "end", v, "Ende")),
+            this.seg("Art", CAP_MODES, f.mode || "aufgesetzt", (v) => this.set(f, "mode", v, "Art")),
+            E("Dicke", "thickness", { allowNeg: false, allowZero: false }),
+            E(f.mode === "eingesetzt" ? "Spiel je Seite" : "Überstand je Seite (negativ = kleiner)", "overhang"),
+            E("Nahtdicke a (0 = keine Naht)", "weldA", { allowNeg: false }),
+            h("p", { class: "hint" }, "Aufgesetzt: Platte mit der Außenkontur des Profils auf dem Stabende. Eingesetzt: Stopfen mit der Innenkontur, bündig im Rohr. Gehrungsenden bleiben ohne Kappe.")));
+        } else {
+          out.push(this.section("Kürzen / Verlängern", tsel, memberChecks,
+            this.select("Ebene", this.planeChoices(part, f), f.plane || "YZ", (v) => this.set(f, "plane", v, "Ebene")),
+            E("Abstand der Ebene", "offset"),
+            this.seg("Ende", [["auto", "Näheres"], ["A", "A"], ["B", "B"]], f.end || "auto", (v) => this.set(f, "end", v, "Ende")),
+            h("p", { class: "hint" }, "Das Stabende endet genau an der Ebene: liegt sie innerhalb, wird gekürzt, sonst gerade verlängert und an der Ebene geschnitten (schräge Ebene = Gehrung). Für Flächen eines Bauteils vorher eine Arbeitsebene auf die Fläche legen.")));
+        }
+        break;
+      }
+      case "kombinieren": case "trennen": case "verschieben": case "aufdicken": case "flaeche": case "entformung":
+        out.push(...this.bodyToolProps(part, f, E));
+        break;
       case "arbeitsebene": case "arbeitsachse": case "arbeitspunkt":
         out.push(...this.datumProps(part, f, E));
         break;
@@ -928,6 +971,75 @@ export class Props {
       h("button", { class: "btn", onclick: () => this.set(f, "suppressed", !f.suppressed, "Unterdrücken") }, f.suppressed ? "Aktivieren" : "Unterdrücken"),
       h("button", { class: "btn danger", onclick: () => app.deleteFeature(f.id) }, icon("trash"), " Löschen")));
     return out;
+  }
+  /** Körper des Bauteils nach erzeugendem Feature (fid) für die Auswahl */
+  bodyChoices(part) {
+    const seen = new Map();
+    for (const b of this.app.results.get(part.id)?.bodies || []) if (b.fid && !seen.has(b.fid)) seen.set(b.fid, b.name || part.features.find((f) => f.id === b.fid)?.name || b.fid);
+    for (const f of part.features) if (!seen.has(f.id) && ["extrude", "revolve", "sweep", "loft", "spirale", "regelkoerper", "import"].includes(f.type) && f.op === "new") seen.set(f.id, f.name);
+    return [...seen];
+  }
+  /** Auswahl mehrerer Körper als Kästchen */
+  bodyChecks(part, f, key, label, exclude = []) {
+    const list = this.bodyChoices(part).filter(([id]) => !exclude.includes(id) && id !== f.id);
+    const cur = f[key] || [];
+    return this.field(label, h("div", { class: "checks" }, ...list.map(([id, name]) => {
+      const c = h("input", { type: "checkbox", checked: cur.includes(id) ? true : undefined });
+      c.addEventListener("change", () => this.set(f, (x) => { x[key] = c.checked ? [...new Set([...cur, id])] : cur.filter((y) => y !== id); }, label));
+      return h("label", { class: "check" }, c, " ", name);
+    })), true);
+  }
+  /** Ebenen- und Achsenwahl mit Arbeitselementen */
+  planeChoices(part, f) { return [["XY", "XY-Ebene"], ["XZ", "XZ-Ebene"], ["YZ", "YZ-Ebene"], ...this.datumsBefore(part, f, "arbeitsebene").map((g) => ["datum:" + g.id, g.name])]; }
+  axisChoices(part, f) { return [["X", "X-Achse"], ["Y", "Y-Achse"], ["Z", "Z-Achse"], ...this.datumsBefore(part, f, "arbeitsachse").map((g) => ["datum:" + g.id, g.name])]; }
+  /** Eigenschaften der Körper-Werkzeuge (Stufe 38) */
+  bodyToolProps(part, f, E) {
+    const app = this.app;
+    const facePick = (hint) => {
+      const picking = app.pick?.kind === "faces" && app.pick.feature === f.id;
+      return h("div", { class: picking ? "picking" : "" }, `${(f.faces || []).length} Fläche(n) gewählt`,
+        h("p", { class: "hint" }, hint),
+        h("div", { class: "btn-row" }, h("button", { class: "btn" + (picking ? " primary" : ""), onclick: () => (picking ? app.cancelPick() : app.selectFeature(f.id)) }, picking ? "Auswahl beenden" : "Flächen wählen"),
+          (f.faces || []).length ? h("button", { class: "btn", onclick: () => this.set(f, "faces", [], "Flächen leeren") }, "Leeren") : null));
+    };
+    const bodies = this.bodyChoices(part);
+    switch (f.type) {
+      case "kombinieren":
+        return [this.section("Kombinieren",
+          this.select("Zielkörper", [["", "– wählen –"], ...bodies.filter(([id]) => id !== f.id)], f.target || "", (v) => this.set(f, (x) => { x.target = v; x.tools = (x.tools || []).filter((t) => t !== v); }, "Zielkörper")),
+          this.bodyChecks(part, f, "tools", "Werkzeugkörper", [f.target]),
+          this.seg("Vorgang", COMBINE_OPS, f.op || "join", (v) => this.set(f, "op", v, "Vorgang")),
+          this.check("Werkzeugkörper behalten", f.keep, (v) => this.set(f, "keep", v || undefined, "Behalten")))];
+      case "trennen":
+        return [this.section("Trennen",
+          this.select("Trennebene", this.planeChoices(part, f), f.plane || "YZ", (v) => this.set(f, "plane", v, "Ebene")),
+          E("Abstand", "offset"),
+          this.seg("Ergebnis", SPLIT_KEEP, f.keep || "beide", (v) => this.set(f, "keep", v, "Ergebnis")),
+          this.bodyChecks(part, f, "bodies", "Nur diese Körper (leer = alle)"))];
+      case "verschieben":
+        return [this.section("Körper verschieben",
+          this.bodyChecks(part, f, "bodies", "Körper (leer = alle)"),
+          this.vec3("Verschiebung X/Y/Z", f.move, (v) => this.set(f, "move", v, "Verschiebung")),
+          this.select("Drehachse", this.axisChoices(part, f), f.axis || "Z", (v) => this.set(f, "axis", v, "Drehachse")),
+          E("Drehwinkel", "angle", { unit: "°" }),
+          this.check("Als Kopie", f.copy, (v) => this.set(f, "copy", v || undefined, "Kopie")))];
+      case "aufdicken":
+        return [this.section("Aufdicken",
+          facePick("Ebene Flächen im 3D-Fenster anklicken (nochmal klicken entfernt)."),
+          E("Dicke", "thickness", { allowNeg: false, allowZero: false }),
+          this.seg("Richtung", THICKEN_SIDES, f.side || "aussen", (v) => this.set(f, "side", v, "Richtung")),
+          this.seg("Vorgang", [["new", "Neuer Körper"], ["join", "Vereinigen"]], f.op || "new", (v) => this.set(f, "op", v, "Vorgang")))];
+      case "flaeche":
+        return [this.section("Fläche verschieben",
+          facePick("Ebene Flächen anklicken; positiver Abstand zieht heraus, negativer setzt zurück."),
+          E("Abstand", "distance", { allowZero: false }))];
+      default:
+        return [this.section("Entformung",
+          facePick("Seitenflächen anklicken, die eine Formschräge bekommen."),
+          E("Winkel", "angle", { unit: "°", allowZero: false }),
+          this.select("Neutrale Ebene (Zugrichtung = Normale)", this.planeChoices(part, f), f.plane || "XY", (v) => this.set(f, "plane", v, "Ebene")),
+          E("Abstand der Ebene", "offset"))];
+    }
   }
   /** Frühere, aktive Arbeitselemente einer Art (nur sie dürfen Bezug sein) */
   datumsBefore(part, f, type) {
@@ -1371,7 +1483,7 @@ export class Props {
   jointSection(asm, c) {
     const app = this.app, j = c.joint;
     if (!j) return this.section("Gelenk", h("p", { class: "hint" }, "Drehgelenk für Tor-Flügel, Klappen, Deckel; Schiebegelenk für Schiebetore und Auszüge: Achse bzw. Richtung festlegen, dann im Bereich bewegen."),
-      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.jointDialog(c) }, "Drehgelenk anlegen"), h("button", { class: "btn", onclick: () => this.jointDialog(c, "schiebe") }, "Schiebegelenk anlegen")));
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.jointDialog(c) }, "Drehgelenk anlegen"), h("button", { class: "btn", onclick: () => this.jointDialog(c, "schiebe") }, "Schiebegelenk anlegen"), h("button", { class: "btn", onclick: () => this.jointDialog(c, "zylinder") }, "Zylindergelenk anlegen")));
     const u = jointUnit(j), slide = isSlide(j);
     const out = h("span", { class: "num" }, fmtNum(j.angle, 1) + " " + u);
     const slider = h("input", { type: "range", class: "joint-angle", min: Math.min(j.min, j.max), max: Math.max(j.min, j.max), step: slide ? "5" : "0.5", value: j.angle, style: { width: "100%" } });
@@ -1394,9 +1506,19 @@ export class Props {
       return this.field(label, h("div", { class: "expr-wrap" }, inp, h("span", { class: "val" }, u)));
     };
     const f = (v) => v.map((x) => fmtNum(x, 1)).join(" / ");
+    // Zylindergelenk: zweiter Regler für den Weg entlang der Achse
+    let slideRow = null;
+    if (isCylinder(j)) {
+      const so = h("span", { class: "num" }, fmtNum(j.s || 0, 1) + " mm");
+      const ss = h("input", { type: "range", class: "joint-slide", min: Math.min(j.smin, j.smax), max: Math.max(j.smin, j.smax), step: "1", value: j.s || 0, style: { width: "100%" } });
+      ss.addEventListener("input", () => { so.textContent = fmtNum(Number(ss.value), 1) + " mm"; const d = slideDelta(j, Number(ss.value)); app.viewer.setComponentDeltas(new Map(movers.map((id) => [id, d]))); });
+      ss.addEventListener("change", () => app.edit("Gelenkweg", () => { setJointSlide(c, Number(ss.value), movers.slice(1).map((id) => asm.components.find((x) => x.id === id)).filter(Boolean)); }));
+      slideRow = [this.field("Weg", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, ss, so)), h("p", { class: "hint" }, `Weg ${fmtNum(j.smin, 0)} … ${fmtNum(j.smax, 0)} mm entlang der Achse`)];
+    }
     return this.section(jointLabel(j),
       this.field(slide ? "Weg" : "Winkel", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, slider, out)),
       lim("von", "min"), lim("bis", "max"),
+      slideRow,
       h("dl", { class: "kv" }, slide ? null : h("dt", {}, "Achse durch"), slide ? null : h("dd", {}, f(j.p)), h("dt", {}, "Richtung"), h("dd", {}, f(j.d)),
         movers.length > 1 ? h("dt", {}, "Geht mit") : null, movers.length > 1 ? h("dd", {}, movers.slice(1).map((id) => asm.components.find((x) => x.id === id)?.name).join(", ")) : null),
       h("p", { class: "hint" }, "Abhängigkeiten verschieben diese Komponente nicht mehr; daran hängende Teile gehen mit."),
@@ -1442,7 +1564,7 @@ export class Props {
     const conc = (asm.constraints || []).find((k) => !k.suppressed && k.type === "konzentrisch" && (k.a.comp === c.id || k.b.comp === c.id));
     let concAxis = null;
     if (conc) { const ref = conc.a.comp === c.id ? conc.b : conc.a, other = asm.components.find((x) => x.id === ref.comp); if (other) { const M = placementMatrix(other.pos, other.rot); concAxis = { p: matApply(M, ref.p), d: matApplyDir(M, ref.d) }; } }
-    const st = { at: concAxis ? "bolzen" : "links", dir: "z", min: 0, max: 90 };
+    const st = { at: concAxis ? "bolzen" : "links", dir: "z", min: 0, max: 90, smin: 0, smax: 100 };
     const point = () => {
       if (st.at === "bolzen") return concAxis.p;
       const [lo, hi] = box, mid = lo.map((x, k) => (x + hi[k]) / 2);
@@ -1466,12 +1588,16 @@ export class Props {
       this.field("Punkt auf der Achse", h("div", { class: "vec3" }, ...pIn)),
       this.field("Winkel von", h("div", { class: "expr-wrap" }, num("min"), h("span", { class: "val" }, "°"))),
       this.field("Winkel bis", h("div", { class: "expr-wrap" }, num("max"), h("span", { class: "val" }, "°"))),
+      kind === "zylinder" ? this.field("Weg von", h("div", { class: "expr-wrap" }, num("smin"), h("span", { class: "val" }, "mm"))) : null,
+      kind === "zylinder" ? this.field("Weg bis", h("div", { class: "expr-wrap" }, num("smax"), h("span", { class: "val" }, "mm"))) : null,
       h("p", { class: "hint" }, "Positiv = gegen den Uhrzeigersinn, wenn man entgegen der Achsrichtung schaut (bei Z: von oben). Für die andere Richtung negative Winkel angeben."));
-    modal({ title: "Drehgelenk anlegen", width: "520px", body, buttons: [{ label: "Abbrechen" }, { label: "Anlegen", primary: true, run: () => {
+    const label = kind === "zylinder" ? "Zylindergelenk" : "Drehgelenk";
+    modal({ title: label + " anlegen", width: "520px", body, buttons: [{ label: "Abbrechen" }, { label: "Anlegen", primary: true, run: () => {
       const p = pIn.map((i) => Number(String(i.value).replace(",", ".")));
       if (p.some((x) => !Number.isFinite(x))) { toast("Punkt auf der Achse prüfen", { kind: "err" }); return false; }
       if (!(Math.min(st.min, st.max) <= 0 && Math.max(st.min, st.max) >= 0) || st.min === st.max) { toast("Der Bereich muss 0° (heutige Lage) enthalten", { kind: "err" }); return false; }
-      app.edit("Drehgelenk", () => { c.joint = defaultJoint(p, dirVec(), { min: st.min, max: st.max }); });
+      if (kind === "zylinder" && (!(Math.min(st.smin, st.smax) <= 0 && Math.max(st.smin, st.smax) >= 0) || st.smin === st.smax)) { toast("Der Weg muss 0 (heutige Lage) enthalten", { kind: "err" }); return false; }
+      app.edit(label, () => { c.joint = defaultJoint(p, dirVec(), { min: st.min, max: st.max, kind, smin: st.smin, smax: st.smax }); });
       app.sel = { type: "component", id: c.id };
       this.render();
     } }] });
@@ -1549,8 +1675,9 @@ export class Props {
       err ? h("div", { class: "msg err" }, err) : null,
       this.section(c.name || "Abhängigkeit",
         h("dl", { class: "kv" }, h("dt", {}, "Bewegt"), h("dd", {}, comp(c.b.comp)?.name || "–"), h("dt", {}, "Ziel"), h("dd", {}, comp(c.a.comp)?.name || "–")),
-        this.seg("Art", [["gegen", "Gegeneinander"], ["buendig", "Bündig"]], c.type, (v) => app.edit("Abhängigkeit", () => { c.type = v; c.name = c.name?.replace(/^[^:]+/, v === "buendig" ? "Bündig" : "Fläche an Fläche"); })),
-        this.expr("Abstand", c.gap || "0", (v) => app.edit("Abstand", () => { c.gap = v; })),
+        ["gegen", "buendig"].includes(c.type) ? this.seg("Art", [["gegen", "Gegeneinander"], ["buendig", "Bündig"]], c.type, (v) => app.edit("Abhängigkeit", () => { c.type = v; c.name = c.name?.replace(/^[^:]+/, v === "buendig" ? "Bündig" : "Fläche an Fläche"); })) : h("dl", { class: "kv" }, h("dt", {}, "Art"), h("dd", {}, CONSTRAINT_TYPES[c.type] || c.type)),
+        c.type === "winkel" ? this.expr("Winkel", c.angle ?? "90", (v) => app.edit("Winkel", () => { c.angle = v; }), { unit: "°", allowNeg: false })
+          : c.type === "konzentrisch" ? null : this.expr("Abstand", c.gap || "0", (v) => app.edit("Abstand", () => { c.gap = v; })),
         this.check("Unterdrückt", c.suppressed, (v) => app.edit("Abhängigkeit", () => { c.suppressed = v; }))),
       h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => this.deleteConstraint(c.id) }, "Löschen")),
     ];
@@ -1562,11 +1689,21 @@ export class Props {
   alignProps() {
     const app = this.app;
     const a = app.align || {};
-    const conc = a.mode === "konzentrisch";
-    return [this.section(conc ? "Konzentrisch ausrichten" : a.mode === "buendig" ? "Bündig ausrichten" : "Fläche an Fläche",
-      h("p", {}, conc ? (a.first ? "2. Zylinderfläche (Bohrung, Rohr) am anderen Bauteil anklicken." : "1. Zylinderfläche am Bauteil anklicken, das bewegt wird.") : a.first ? "2. Zielfläche am anderen Bauteil anklicken." : "1. Fläche am Bauteil anklicken, das bewegt wird."),
-      this.seg("Art", [["gegen", "Gegeneinander"], ["buendig", "Bündig"], ["konzentrisch", "Konzentrisch"]], a.mode || "gegen", (v) => { app.align.mode = v; app.align.first = null; app.refreshSelectionHits(); this.render(); }),
-      conc ? h("p", { class: "hint" }, "Achsen fluchten; Lage entlang der Achse und Drehung um sie bleiben frei – mit »Fläche an Fläche« festlegen.") : this.expr("Abstand", a.gap || "0", (v) => { app.align.gap = v; }),
+    const mode = a.mode || "gegen";
+    const conc = mode === "konzentrisch" || mode === "einfuegen";
+    const titles = { konzentrisch: "Konzentrisch ausrichten", buendig: "Bündig ausrichten", winkel: "Winkel", tangential: "Tangential", einfuegen: "Einfügen" };
+    const steps = {
+      konzentrisch: ["1. Zylinderfläche am Bauteil anklicken, das bewegt wird.", "2. Zylinderfläche (Bohrung, Rohr) am anderen Bauteil anklicken."],
+      einfuegen: ["1. Zylinderfläche nahe der Stirnfläche am Bauteil anklicken, das bewegt wird (z. B. Schraubenschaft unter dem Kopf).", "2. Bohrung nahe der Fläche anklicken, auf der es aufliegen soll."],
+      tangential: ["1. Ebene oder zylindrische Fläche am Bauteil anklicken, das bewegt wird.", "2. Die andere Art (Zylinder bzw. Ebene) am anderen Bauteil anklicken."],
+    };
+    const st = steps[mode] || ["1. Fläche am Bauteil anklicken, das bewegt wird.", "2. Zielfläche am anderen Bauteil anklicken."];
+    return [this.section(titles[mode] || "Fläche an Fläche",
+      h("p", {}, a.first ? st[1] : st[0]),
+      this.select("Art", [["gegen", "Gegeneinander"], ["buendig", "Bündig"], ["konzentrisch", "Konzentrisch"], ["einfuegen", "Einfügen"], ["winkel", "Winkel"], ["tangential", "Tangential"]], mode, (v) => { app.align.mode = v; app.align.first = null; app.refreshSelectionHits(); this.render(); }),
+      mode === "konzentrisch" ? h("p", { class: "hint" }, "Achsen fluchten; Lage entlang der Achse und Drehung um sie bleiben frei – mit »Fläche an Fläche« festlegen.")
+        : mode === "winkel" ? this.expr("Winkel", a.angle || "90", (v) => { app.align.angle = v; }, { unit: "°", allowNeg: false })
+        : this.expr("Abstand", a.gap || "0", (v) => { app.align.gap = v; }),
       this.check("Als Abhängigkeit speichern (folgt Änderungen)", a.persist !== false, (v) => { app.align.persist = v; }),
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.cancelPick() }, "Abbrechen")))];
   }
@@ -1631,11 +1768,68 @@ export class Props {
     app.edit("Bauteil einfügen", () => { asm.components.push({ id: uid("c"), part: p.id, name: p.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0] }); }, { rebuild: false });
     toast(`»${p.name}« angelegt und in »${asm.name}« eingefügt`);
   }
+  /** Komponentenmuster aus der gewählten Komponente anlegen */
+  newAsmPattern() {
+    const app = this.app, asm = app.activeDoc();
+    if (asm?.kind !== "assembly") return;
+    const c = app.sel?.type === "component" ? asm.components.find((x) => x.id === app.sel.id && !x.pat) : null;
+    if (!c) return toast("Erst die Komponente wählen, die vervielfältigt werden soll");
+    const box = app.viewer.componentBox(c.id);
+    const p = defaultAsmPattern(uid("pm"), [c.id]);
+    p.name = `Muster ${(asm.patterns || []).length + 1}`;
+    if (box) p.spacing = String(Math.round((box[1][0] - box[0][0]) * 1.5) || 100);
+    app.edit("Komponentenmuster", () => { asm.patterns = [...(asm.patterns || []), p]; });
+    app.sel = { type: "asmpattern", id: p.id };
+    this.render();
+  }
+  asmPatternProps(asm, p) {
+    const app = this.app;
+    const set = (label, fn) => app.edit(label, fn);
+    const E = (label, key, opts) => this.expr(label, p[key] ?? "", (v) => set(label, () => { p[key] = v; }), opts);
+    const dirs = [["X", "X"], ["Y", "Y"], ["Z", "Z"], ["-X", "−X"], ["-Y", "−Y"], ["-Z", "−Z"]];
+    const err = app.asmErrors?.[p.id];
+    const srcs = asm.components.filter((c) => !c.pat);
+    const n = asm.components.filter((c) => c.pat === p.id).length;
+    return [
+      err ? h("div", { class: "msg err" }, err) : null,
+      this.section("Komponentenmuster",
+        this.text("Name", p.name || "", (v) => set("Name", () => { p.name = v; })),
+        this.field("Komponenten", h("div", { class: "checks" }, ...srcs.map((c) => {
+          const box = h("input", { type: "checkbox", checked: p.comps.includes(c.id) ? true : undefined });
+          box.addEventListener("change", () => set("Komponenten", () => { p.comps = box.checked ? [...new Set([...p.comps, c.id])] : p.comps.filter((x) => x !== c.id); }));
+          return h("label", { class: "check" }, box, " ", c.name);
+        })), true),
+        this.seg("Art", [["linear", "Rechteckig"], ["circular", "Kreisförmig"]], p.kind, (v) => set("Art", () => { Object.assign(p, defaultAsmPattern(p.id, p.comps, v), { name: p.name }); })),
+        p.kind === "circular" ? [
+          this.seg("Achse", dirs.slice(0, 3), p.axis || "Z", (v) => set("Achse", () => { p.axis = v; })),
+          this.vec3("Mittelpunkt", p.center, (v) => set("Mittelpunkt", () => { p.center = v; })),
+          E("Anzahl", "count", { unit: "Stk" }), E("Gesamtwinkel", "angle", { unit: "°" }),
+        ] : [
+          this.seg("Richtung 1", dirs, p.dir || "X", (v) => set("Richtung", () => { p.dir = v; })),
+          E("Anzahl 1", "count", { unit: "Stk" }), E("Abstand 1", "spacing"),
+          this.check("Zweite Richtung", !!p.dir2, (v) => set("Richtung 2", () => { p.dir2 = v ? "Y" : undefined; p.count2 = p.count2 || "2"; p.spacing2 = p.spacing2 || p.spacing; })),
+          p.dir2 ? [this.seg("Richtung 2", dirs, p.dir2, (v) => set("Richtung 2", () => { p.dir2 = v; })), E("Anzahl 2", "count2", { unit: "Stk" }), E("Abstand 2", "spacing2")] : null,
+        ],
+        h("p", { class: "hint" }, `${n} Kopie(n). Sie folgen der Quelle und zählen in Stückliste und Zeichnung.`),
+        this.check("Unterdrückt", p.suppressed, (v) => set("Muster", () => { p.suppressed = v || undefined; }))),
+      h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => set("Muster löschen", () => { asm.patterns = asm.patterns.filter((x) => x.id !== p.id); asm.components = asm.components.filter((c) => c.pat !== p.id); app.sel = null; }) }, "Muster löschen")),
+    ];
+  }
+  patternCopyProps(asm, c) {
+    const app = this.app, p = (asm.patterns || []).find((x) => x.id === c.pat), src = asm.components.find((x) => x.id === c.src);
+    return [this.section("Musterkopie",
+      h("p", {}, `Kopie von »${src?.name || "?"}« aus ${p?.name || "Muster"}. Lage und Bauteil kommen aus der Quelle.`),
+      h("div", { class: "btn-row" },
+        p ? h("button", { class: "btn primary", onclick: () => { app.sel = { type: "asmpattern", id: p.id }; app.tree.render(); this.render(); } }, "Muster bearbeiten") : null,
+        src ? h("button", { class: "btn", onclick: () => { app.sel = { type: "component", id: src.id }; app.refreshSelectionHits(); app.tree.render(); this.render(); } }, "Quelle wählen") : null))];
+  }
   deleteComponent(id) {
     const asm = this.app.activeDoc();
     this.app.edit("Komponente entfernen", () => {
-      asm.components = asm.components.filter((c) => c.id !== id);
+      asm.components = asm.components.filter((c) => c.id !== id && c.src !== id);
       asm.constraints = (asm.constraints || []).filter((c) => c.a.comp !== id && c.b.comp !== id);
+      for (const p of asm.patterns || []) p.comps = p.comps.filter((x) => x !== id);
+      asm.patterns = (asm.patterns || []).filter((p) => p.comps.length);
       this.app.sel = null;
     });
   }
