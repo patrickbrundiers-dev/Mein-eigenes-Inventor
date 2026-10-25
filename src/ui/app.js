@@ -444,7 +444,13 @@ export class App {
     const part = this.activeDoc();
     const f = this.feature(id);
     if (!f) return;
-    const deps = part.features.filter((g) => g.sketch === id || g.feature === id);
+    // abhängige Features, auch über mehrere Stufen (Profil → Platte → Rippe)
+    const gone = new Set([id]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const g of part.features) if (!gone.has(g.id) && [g.sketch, g.feature, g.target, g.plate].some((x) => x && gone.has(x))) { gone.add(g.id); grew = true; }
+    }
+    const deps = part.features.filter((g) => g.id !== id && gone.has(g.id));
     this.edit(`${f.name} löschen`, () => {
       part.features = part.features.filter((g) => g.id !== id && !deps.includes(g));
       if (this.sel?.id === id) this.sel = null;
@@ -1014,7 +1020,7 @@ export class App {
 
 export const CONSTRAINT_NAMES = { gegen: "Fläche an Fläche", buendig: "Bündig", konzentrisch: "Konzentrisch" };
 export const FEATURE_NAMES = {
-  sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", emboss: "Prägen",
+  sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", platte: "Anschlussplatte", rippe: "Rippe", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
 };
 

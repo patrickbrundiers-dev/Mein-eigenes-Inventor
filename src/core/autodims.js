@@ -55,7 +55,7 @@ export function holeText(hole, count = 1) {
 export function profileSpec(features, ev, cutLength = null) {
   const act = (features || []).filter((f) => !f.suppressed);
   const prof = act.filter((f) => f.type === "profile");
-  if (prof.length !== 1 || act.some((f) => ["extrude", "revolve", "frame", "profilzug", "biegerohr", "knickrahmen", "import"].includes(f.type) && (f.op || "join") !== "cut")) return null;
+  if (prof.length !== 1 || act.some((f) => ["extrude", "revolve", "frame", "profilzug", "biegerohr", "knickrahmen", "platte", "rippe", "import"].includes(f.type) && (f.op || "join") !== "cut")) return null;
   const f = prof[0];
   const axis = String(f.axis || "X").replace("-", "");
   if (!"XYZ".includes(axis) || axis.length !== 1) return null;

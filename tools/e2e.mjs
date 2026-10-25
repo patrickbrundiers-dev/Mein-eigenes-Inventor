@@ -487,6 +487,26 @@ try {
   const rk1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { bodies: r.bodies.length, vol: r.bodies[0]?.props?.volume, kind: a.activeDoc().features[0].kind }; });
   step("Regelkörper", rk0.bodies === 1 && Math.abs(rk0.vol - Math.PI / 4 * 2500 * 100) < 200 && rk1.kind === "kugel" && Math.abs(rk1.vol - Math.PI / 6 * 216000) < 200, JSON.stringify({ rk0, rk1 }));
 
+  // Stirnplatte und Rippe (MegaCAD-Abgleich M8): Profil, Platte am Ende, 2 Rippen, Bohrungen auf 2
+  await evalApp(() => window.__werkcad.newPart("Stirnplatte"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: "Rohr / Profil" }).click();
+  await idle();
+  await page.locator("#ribbon button", { hasText: "Stirn-/Fußplatte" }).click();
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Rippe$/ }).click();
+  await idle();
+  const sp0 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, kinds: r.bodies.map((b) => b.kind).join(), bad: Object.values(r.status).filter((s) => !s.ok).length }; });
+  await evalApp(() => { const a = window.__werkcad; a.selectFeature(a.activeDoc().features.find((x) => x.type === "platte").id); });
+  await idle();
+  await page.locator("#props .seg button", { hasText: /^2$/ }).click();
+  await idle();
+  const sp1 = await evalApp(() => { const a = window.__werkcad; const f = a.activeDoc().features.find((x) => x.type === "platte"); return { holes: f.holes, info: a.results.get(a.activeId).status[f.id].info }; });
+  await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+  await shot("20d-stirnplatte");
+  step("Stirnplatte und Rippe", sp0.n === 4 && sp0.kinds === "member,solid,solid,solid" && sp0.bad === 0 && sp1.holes === "2" && /2 × Ø/.test(sp1.info), JSON.stringify({ sp0, sp1 }));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();

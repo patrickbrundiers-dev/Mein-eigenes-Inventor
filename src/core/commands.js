@@ -56,6 +56,8 @@ export const COMMANDS = [
   { id: "part.profile", label: "Rohr / Profil", group: "3D-Modell", scope: "part" },
   { id: "part.frame", label: "Rahmen aus Skizze", group: "3D-Modell", scope: "part" },
   { id: "part.knickrahmen", label: "Knickrahmen", group: "3D-Modell", scope: "part" },
+  { id: "part.platte", label: "Stirn-/Fußplatte", group: "3D-Modell", scope: "part", keywords: "kopfplatte fussplatte stirnplatte anschlussblech platte bohrbild stahlbau" },
+  { id: "part.rippe", label: "Rippe (Steife)", group: "3D-Modell", scope: "part", keywords: "steife rippe knotenblech versteifung stahlbau" },
   { id: "part.regelkoerper", label: "Regelkörper", group: "3D-Modell", scope: "part", keywords: "quader zylinder kugel kegel kegelstumpf torus ring pyramide grundkörper primitiv" },
   { id: "part.biegerohr", label: "Rohr gebogen (über Polygonzug)", group: "3D-Modell", scope: "part", keywords: "biegen bogen biegeradius biegeliste handlauf bügel rohrconnect" },
   { id: "part.profilzug", label: "Profilzug 3D", group: "3D-Modell", scope: "part", keywords: "räumlich eckpunkte polygonzug rahmen gehrung zwei ebenen" },

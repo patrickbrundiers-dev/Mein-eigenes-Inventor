@@ -14,6 +14,7 @@ import { END_CUT_SECTIONS, featureCutSettings } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
+import { PLATE_HOLES, RIB_SIDES } from "../core/anschluss.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
@@ -410,6 +411,39 @@ export class Props {
           this.seg("Achse", [["Z", "Z"], ["Y", "Y"], ["X", "X"], ["-Z", "−Z"], ["-Y", "−Y"], ["-X", "−X"], ["custom", "frei"]], f.axis || "Z", (v) => this.set(f, "axis", v, "Achse")),
           f.axis === "custom" ? this.vec3("Richtungsvektor", f.dir || ["0", "0", "1"], (v) => this.set(f, "dir", v, "Richtung")) : null,
           this.opSeg(f)));
+        break;
+      }
+      case "platte": {
+        const targets = part.features.filter((g) => ["profile", "frame", "profilzug"].includes(g.type));
+        const members = (r?.bodies || []).filter((b) => b.fid === f.target && b.kind === "member");
+        out.push(this.section("Anschluss am Stabende",
+          this.select("Profil", targets.map((g) => [g.id, g.name]), f.target, (v) => this.set(f, (x) => { x.target = v; x.member = 0; }, "Profil")),
+          members.length > 1 ? this.select("Stab", members.map((b, i) => [String(i), b.name]), String(f.member ?? 0), (v) => this.set(f, "member", Number(v), "Stab")) : null,
+          this.seg("Ende", [["A", "Anfang (A)"], ["B", "Ende (B)"]], f.end || "A", (v) => this.set(f, "end", v, "Ende")),
+          h("p", { class: "hint" }, "Die Platte sitzt außen am Stabende, mittig auf der Achse; das Profil wird nicht gekürzt. Automatische Größe = Profil + 2 × Überstand. So entstehen Stirn-, Kopf- und Fußplatten.")));
+        out.push(this.section("Platte",
+          E("Dicke", "thickness", { allowNeg: false, allowZero: false }),
+          E("Überstand je Seite", "overhang", { allowNeg: false }),
+          E("Breite (0 = automatisch)", "width", { allowNeg: false }),
+          E("Höhe (0 = automatisch)", "height", { allowNeg: false }),
+          E("Eckradius", "radius", { allowNeg: false })));
+        out.push(this.section("Bohrbild",
+          this.seg("Bohrungen", PLATE_HOLES.map((n) => [String(n), String(n)]), String(f.holes ?? "4"), (v) => this.set(f, "holes", v, "Bohrungen")),
+          Number(f.holes ?? 4) ? [E("Bohrung Ø", "holeDia", { allowNeg: false, allowZero: false }), E("Randabstand (Mitte Bohrung)", "edge", { allowNeg: false })] : null,
+          h("p", { class: "hint" }, "2 Bohrungen liegen auf der längeren Seite, 4 in den Ecken. Hinweis bei Randabstand unter 1,2 · d. Als DXF für den Laser: Fläche der Platte wählen → Export → Platte als DXF.")));
+        break;
+      }
+      case "rippe": {
+        const plates = part.features.filter((g) => g.type === "platte");
+        const sides = f.sides || [];
+        out.push(this.section("Rippe (Steife)",
+          this.select("Platte", plates.map((g) => [g.id, g.name]), f.plate, (v) => this.set(f, "plate", v, "Platte")),
+          h("div", { class: "chk-col" }, ...Object.entries(RIB_SIDES).map(([k, label]) => this.check(label, sides.includes(k), (on) => this.set(f, (x) => { x.sides = Object.keys(RIB_SIDES).filter((s) => (s === k ? on : (x.sides || []).includes(s))); }, "Seiten")))),
+          E("Länge am Profil", "length", { allowNeg: false, allowZero: false }),
+          E("Höhe an der Platte (0 = bis Plattenrand)", "height", { allowNeg: false }),
+          E("Dicke", "thickness", { allowNeg: false, allowZero: false }),
+          E("Freischnitt Schweißecke", "chamfer", { allowNeg: false }),
+          h("p", { class: "hint" }, "Dreieckige Steife zwischen Platte und Profilseite, mittig auf der Seite. Der Freischnitt lässt Platz für die Kehlnaht in der Ecke.")));
         break;
       }
       case "biegerohr": {

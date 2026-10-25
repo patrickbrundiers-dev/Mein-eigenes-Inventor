@@ -2,7 +2,7 @@
 import { h, icon, contextMenu, promptDialog } from "./dom.js";
 import { FEATURE_NAMES } from "./app.js";
 
-const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import" };
+const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", platte: "platte", rippe: "rippe", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import" };
 
 export class Tree {
   constructor(app) {

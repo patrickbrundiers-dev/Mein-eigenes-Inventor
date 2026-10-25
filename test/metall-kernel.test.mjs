@@ -61,3 +61,29 @@ test("Stahlprofile DSTV als Profil und Rahmen: Volumen = Fläche × Länge (Mega
   okAll(pz);
   assert.equal(pz.bodies.length, 2);
 });
+
+test("Stirn-/Fußplatte mit Bohrbild und Rippen am Profilende (MegaCAD-Abgleich M8)", async () => {
+  const { catalogToDims } = await import("../src/core/sections.js");
+  const dims = catalogToDims("ipe", "200");
+  const prof = { id: "p1", type: "profile", section: "ipe", dims, length: "1000", start: ["0", "0", "0"], axis: "X", rotation: "0", miterStart: "0", miterEnd: "0" };
+  const plB = { id: "pl", type: "platte", target: "p1", member: 0, end: "B", thickness: "15", overhang: "40", width: "0", height: "0", radius: "0", holes: "4", holeDia: "18", edge: "30" };
+  const res = await K.buildPart(part([prof, plB, { id: "pa", type: "platte", target: "p1", member: 0, end: "A", thickness: "10", overhang: "20", holes: "0" }, { id: "r", type: "rippe", plate: "pl", sides: ["oben", "unten"], length: "80", thickness: "8", chamfer: "10" }]));
+  okAll(res);
+  const byFid = (id) => res.bodies.filter((b) => b.fid === id);
+  const [pb] = byFid("pl"), [pa] = byFid("pa");
+  near(R.measureVolume(pb.shape), 180 * 280 * 15 - 4 * Math.PI * 81 * 15, 5, "Plattenvolumen");
+  const bb = pb.shape.boundingBox.bounds;
+  near(bb[0][0], 1000, 0.01, "Platte B beginnt am Stabende"); near(bb[1][0], 1015, 0.01, "Dicke nach außen");
+  near(bb[1][2] - bb[0][2], 280, 0.01, "Höhe entlang Profilhöhe");
+  const ba = pa.shape.boundingBox.bounds;
+  near(ba[0][0], -10, 0.01, "Platte A nach außen"); near(ba[1][1] - ba[0][1], 140, 0.01, "Breite A = 100 + 2 × 20");
+  const ribs = byFid("r");
+  assert.equal(ribs.length, 2);
+  const rb = ribs.map((x) => x.shape.boundingBox.bounds).sort((a, b) => b[1][2] - a[1][2]);
+  near(rb[0][1][2], 140, 0.01, "Rippe oben bis Plattenrand"); near(rb[0][0][2], 100, 0.01, "Rippe oben ab Flansch");
+  near(rb[0][0][0], 920, 0.01, "Rippe 80 mm in den Stab"); near(rb[0][1][1] - rb[0][0][1], 8, 0.01, "Rippendicke");
+  near(rb[1][0][2], -140, 0.01, "Rippe unten");
+  // Platte am Gehrungsende: Warnung
+  const res2 = await K.buildPart(part([{ ...prof, miterEnd: "30" }, plB]));
+  assert.match(res2.status.pl.warning || "", /Gehrung/);
+});

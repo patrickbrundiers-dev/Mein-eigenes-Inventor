@@ -13,6 +13,7 @@ import { endCutEdge, endCutSupported, featureCutSettings } from "../core/endcut.
 import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../core/profilzug.js";
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
+import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 
 const BIG = 20000;
 
@@ -233,6 +234,11 @@ export function createKernel(R) {
 
   /** Zuschnittlänge = Ausdehnung entlang der Stabachse */
   function memberLength(shape, frame) {
+    const sp = memberSpan(shape, frame);
+    return sp.hi - sp.lo;
+  }
+  /** Ausdehnung eines Stabs entlang seiner Achse: { lo, hi } in mm ab frame.origin */
+  function memberSpan(shape, frame) {
     const m = shape.mesh({ tolerance: 0.01, angularTolerance: 0.1 });
     let lo = Infinity, hi = -Infinity;
     const vs = m.vertices;
@@ -241,8 +247,10 @@ export function createKernel(R) {
       if (t < lo) lo = t;
       if (t > hi) hi = t;
     }
-    return hi - lo;
+    return { lo, hi };
   }
+  /** Stabachse für Anschlussbleche (M8): Rahmen, tatsächliche Enden, Profilgröße quer (Breite u, Höhe v) */
+  const memberAxis = (solid, fr, g) => ({ origin: fr.origin, z: fr.z, u: fr.u, v: fr.v, ...memberSpan(solid, fr), width: g.width, height: g.height });
 
   const AXES = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1], "-X": [-1, 0, 0], "-Y": [0, -1, 0], "-Z": [0, 0, -1] };
   /** Lokales Stab-Koordinatensystem für Achsrichtung + Drehung um die Achse */
@@ -543,6 +551,7 @@ export function createKernel(R) {
             const name = sectionName(f.section, dims);
             const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: memberLength(solid, fr), miterStart: m1, miterEnd: m2, frameZ: fr.z };
             meta.endCuts = ends;
+            meta.axis = memberAxis(solid, fr, geom);
             meta.miterParts = { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) };
             if (tc.items.length) Object.assign(meta, { tube: { kind: f.section, W: geom.width, H: geom.height, t: dims.t, r: dims.r ?? 0, L }, contours: tc.items, cutLength: tc.cutLength, pierces: tc.pierces, cutSig: hashString(JSON.stringify(tc.items)) });
             state.tools.set(f.id, { op: f.op || "member", shapes: [{ shape: solid, kind: "member", meta, name: f.name || name }] });
@@ -580,6 +589,56 @@ export function createKernel(R) {
             state.tools.set(f.id, { op: "member", shapes: list });
             st.info = `${members.length} Profil(e), Mittellinie ${round(pathLength(pts, !!f.closed))} mm`;
             if (members.warnings?.length) st.warning = members.warnings.join("; ");
+            break;
+          }
+          case "platte": {
+            const tool = state.tools.get(f.target);
+            if (!tool) throw new Error(missingRef(f.target, "Profil", f));
+            const mi = Math.round(E(String(f.member ?? 0), "Stab"));
+            const mem = tool.shapes.filter((x) => x.kind === "member")[mi];
+            if (!mem?.meta?.axis) throw new Error(`Stab ${mi + 1} nicht gefunden – Profil, Rahmen oder Profilzug wählen`);
+            const ax = mem.meta.axis, endB = f.end === "B";
+            const num = (k, label) => E(f[k] === "" || f[k] == null ? "0" : String(f[k]), label);
+            const plan = platePlan(ax, { thickness: num("thickness", "Dicke"), overhang: num("overhang", "Überstand"), width: num("width", "Breite"), height: num("height", "Höhe"), radius: num("radius", "Eckradius"), holes: num("holes", "Bohrungen"), holeDia: num("holeDia", "Bohrung Ø"), edge: num("edge", "Randabstand") });
+            const miter = endB ? mem.meta.miterEnd : mem.meta.miterStart;
+            if (Math.abs(miter || 0) > 0.05) plan.issues.push({ level: "Warnung", message: `Stabende ${endB ? "B" : "A"} ist auf Gehrung geschnitten (${round(miter)}°) – Platte steht schräg ab` });
+            const P = v3.add(ax.origin, v3.mul(ax.z, endB ? ax.hi : ax.lo));
+            const nrm = endB ? ax.z : v3.mul(ax.z, -1);
+            let d = R.drawRoundedRectangle(plan.W, plan.H, plan.r || 0);
+            for (const [x, y] of plan.holes) d = d.cut(R.drawCircle(plan.d / 2).translate(x, endB ? y : -y));
+            const solid = d.sketchOnPlane(new R.Plane(P, ax.u, nrm)).extrude(plan.t);
+            const name = f.name || `Platte ${round(plan.W)}x${round(plan.H)}x${round(plan.t)}`;
+            const meta = { plate: { W: plan.W, H: plan.H, t: plan.t, holes: plan.holes.length, d: plan.d }, partOf: mem.name };
+            state.tools.set(f.id, { op: "new", shapes: [{ shape: solid, kind: "solid", meta, name }], plate: { ax, P, nrm, W: plan.W, H: plan.H, t: plan.t } });
+            state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
+            st.info = `${round(plan.W)} × ${round(plan.H)} × ${round(plan.t)} mm` + (plan.holes.length ? `, ${plan.holes.length} × Ø ${round(plan.d)}` : "") + ` an ${mem.name}, Ende ${endB ? "B" : "A"}`;
+            if (plan.issues.length) st.warning = plan.issues.map((x) => x.message).join("; ");
+            break;
+          }
+          case "rippe": {
+            const pt = state.tools.get(f.plate)?.plate;
+            if (!pt) throw new Error(missingRef(f.plate, "Platte", f));
+            const num = (k, label) => E(f[k] === "" || f[k] == null ? "0" : String(f[k]), label);
+            const o = { length: num("length", "Länge"), height: num("height", "Höhe"), thickness: num("thickness", "Dicke"), chamfer: num("chamfer", "Freischnitt") };
+            const sides = (f.sides || []).filter((x) => RIB_SIDES[x]);
+            if (!sides.length) throw new Error("Rippe: mindestens eine Seite wählen");
+            const inward = v3.mul(pt.nrm, -1);
+            const list = [];
+            for (const side of sides) {
+              const rp = ribPlan(side, pt.ax, pt, o);
+              const n = { oben: pt.ax.v, unten: v3.mul(pt.ax.v, -1), rechts: pt.ax.u, links: v3.mul(pt.ax.u, -1) }[side];
+              const w = v3.cross(n, inward); // Plattennormale der Rippe; Skizze: x = Seite (s), y = in den Stab (a)
+              const pts = rp.poly.map(([s, a]) => [s, a]);
+              let dr = R.draw(pts[0]);
+              for (const q of pts.slice(1)) dr = dr.lineTo(q);
+              const solid = dr.close().sketchOnPlane(new R.Plane(v3.sub(pt.P, v3.mul(w, rp.t / 2)), n, w)).extrude(rp.t);
+              const name = `${f.name || "Rippe"} ${RIB_SIDES[side].split(" ")[0].toLowerCase()}`;
+              const meta = { rib: { L: rp.L, H: rp.Hr, t: rp.t, c: rp.c } };
+              list.push({ shape: solid, kind: "solid", meta, name });
+              state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
+            }
+            state.tools.set(f.id, { op: "new", shapes: list });
+            st.info = `${list.length} Rippe(n) ${round(o.length)} mm lang, ${round(o.thickness)} mm dick`;
             break;
           }
           case "regelkoerper": {
@@ -1097,6 +1156,7 @@ export function createKernel(R) {
         frameZ: m.fr.z,
         line: m.l.id,
         endCuts: ends,
+        axis: memberAxis(solid, m.fr, g),
       };
       built.set(m, { solid, meta, name: `${baseName} ${m.idx + 1}` });
     }

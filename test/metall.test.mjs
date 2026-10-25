@@ -106,3 +106,20 @@ test("Stahlprofile DSTV: Metergewicht gegen Tabellenwerte, Profil-ID, Schnellein
   assert.equal(resolveProfile("HEB 160").dims.H, "160");
   assert.throws(() => sectionGeometry("ipe", { H: 50, B: 100, s: 5, t: 20, r: 10 }), /passen nicht/);
 });
+
+test("Anschlussplatte und Rippe: Maße, Bohrbild, Prüfungen (MegaCAD-Abgleich M8)", async () => {
+  const { platePlan, ribPlan } = await import("../src/core/anschluss.js");
+  const prof = { width: 100, height: 200 }; // IPE 200
+  const p = platePlan(prof, { thickness: 15, overhang: 40, holes: 4, holeDia: 18, edge: 30 });
+  assert.equal(p.W, 180); assert.equal(p.H, 280);
+  assert.deepEqual(p.holes, [[-60, -110], [60, -110], [60, 110], [-60, 110]]);
+  assert.equal(p.issues.length, 0);
+  const p2 = platePlan(prof, { thickness: 10, overhang: 0, width: 300, height: 220, holes: 2, holeDia: 14, edge: 30 });
+  assert.deepEqual(p2.holes, [[-120, 0], [120, 0]]);
+  assert.throws(() => platePlan(prof, { thickness: 10, overhang: 20, holes: 4, holeDia: 18, edge: 5 }), /Randabstand 5 mm zu klein/);
+  assert.match(platePlan(prof, { thickness: 10, overhang: 10, holes: 4, holeDia: 13, edge: 20 }).issues.map((x) => x.message).join(), /Bohrung liegt im Profil/);
+  const r = ribPlan("oben", prof, p, { length: 80, thickness: 8, chamfer: 10 });
+  assert.equal(r.s0, 100); assert.equal(r.Hr, 40);
+  assert.deepEqual(r.poly, [[110, 0], [140, 0], [100, 80], [100, 10]]);
+  assert.throws(() => ribPlan("links", prof, { W: 100, H: 280 }, { length: 80, thickness: 8 }), /steht nicht über das Profil hinaus/);
+});
