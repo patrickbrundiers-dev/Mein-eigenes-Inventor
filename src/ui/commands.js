@@ -25,6 +25,8 @@ export function commandRunners(app) {
     "app.settings": () => app.props.settingsDialog(),
     "app.search": () => commandPalette(app),
     "edit.undo": () => app.undo(),
+    "model.rebuild": () => app.rebuildNow(),
+    "model.buildLog": () => app.props.buildLogDialog(),
     "edit.redo": () => app.redo(),
     "view.fit": () => app.viewer.fit(),
     "view.fitSel": () => app.zoomToSelection(),

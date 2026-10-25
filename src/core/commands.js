@@ -17,6 +17,9 @@ export const COMMANDS = [
   { id: "edit.undo", label: "Rückgängig", group: "Bearbeiten", scope: "global", key: "Strg+Z" },
   { id: "edit.redo", label: "Wiederholen", group: "Bearbeiten", scope: "global", key: "Strg+Y" },
 
+  { id: "model.rebuild", label: "Neu berechnen", group: "Modell", scope: "3d", key: "F5", keywords: "aktualisieren neuaufbau kernel" },
+  { id: "model.buildLog", label: "Berechnungsprotokoll", group: "Modell", scope: "global", keywords: "debug kernel dauer fehler protokoll" },
+
   { id: "view.fit", label: "Alles zeigen", group: "Ansicht", scope: "3d", key: "F6", keywords: "zoom einpassen" },
   { id: "view.fitSel", label: "Auswahl zeigen", group: "Ansicht", scope: "3d", key: "Umschalt+F6", keywords: "zoom" },
   { id: "view.saveNamed", label: "Ansicht speichern", group: "Ansicht", scope: "3d", keywords: "benannte ansicht merken kamera" },

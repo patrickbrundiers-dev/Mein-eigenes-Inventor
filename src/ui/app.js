@@ -26,6 +26,7 @@ import { partContent, baseName } from "../core/links.js";
 import { finishColor } from "../core/oberflaeche.js";
 import { Docking } from "./layout.js";
 import { nextName } from "../core/naming.js";
+import { BuildLog, buildEntry } from "../core/buildlog.js";
 
 const linkedMessage = (part) => `»${part.name}« ist mit ${baseName(part.link.path)} verknüpft – dort ändern oder hier die Verknüpfung lösen`;
 const hitKey = (x) => `${x.kind}:${x.key}:${x.body}:${x.edge ?? x.face}:${x.end ?? ""}`;
@@ -34,6 +35,8 @@ const freeCount = (sk, free) => sk.entities.filter((e) => !e.origin && !e.constr
 export class App {
   constructor() {
     this.project = newProject();
+    this.buildLog = new BuildLog();
+    this.stale = false;
     this.filePath = null;
     this.dirty = false;
     this.activeId = null;
@@ -252,13 +255,19 @@ export class App {
   changed({ rebuild = true } = {}) {
     this.dirty = true;
     if (rebuild && this.sel?.type === "geometry") { this.sel = null; this.selHits = []; }
+    // Einstellung »Automatisch neu berechnen« aus: Änderungen sammeln, F5 rechnet (Zeichnungen immer sofort)
+    const now = rebuild && (this.prefs.get("kernel.automatisch") || this.mode === "drawing");
+    if (rebuild && !now) this.stale = true;
     this.updateTitle();
     this.files.autosave();
     this.tree.render();
     this.props.render();
     this.ribbon.render();
-    if (rebuild) this.rebuild();
+    if (now) this.rebuild();
+    else if (rebuild) this.updateStatus();
   }
+  /** F5: aufgeschobene Änderungen jetzt rechnen */
+  rebuildNow() { this.rebuild(); this.ribbon.render(); this.updateStatus(); }
   /**
    * Bequeme Variante: Änderung mit Rückgängig-Punkt. Atomar: wirft fn, wird der Stand
    * vor der Änderung wiederhergestellt (kein halb geändertes Modell). Rückgabe: true bei Erfolg.
@@ -315,12 +324,15 @@ export class App {
 
   // ---------- Neuaufbau ----------
   rebuild() {
+    this.stale = false;
     clearTimeout(this.rebuildTimer);
     this.rebuildTimer = setTimeout(() => this.doRebuild(), 90);
   }
   async buildPart(part) {
+    const t0 = performance.now();
     const res = await this.kernel.build(part, this.quality);
     this.results.set(part.id, { ...res, hash: JSON.stringify(part).length });
+    if (this.prefs.get("kernel.protokoll")) this.buildLog.add(buildEntry(part, res, performance.now() - t0));
     return res;
   }
   async doRebuild() {
@@ -449,6 +461,7 @@ export class App {
     this.sel = { type: "feature", id };
     this.setMode("sketch");
     this.sketcher.start(id);
+    this.sketchBefore = JSON.stringify(part.features.find((f) => f.id === id));
     const res = this.results.get(part.id);
     if (res) this.showPart(part, res);
     this.refreshAll();
@@ -462,9 +475,17 @@ export class App {
     this.setHint("");
     this.hud.replaceChildren();
     this.refreshAll();
-    this.rebuild();
+    const part = this.activeDoc();
+    if (this.prefs.get("kernel.automatisch")) this.rebuild();
+    else {
+      // Neuberechnen aus: letztes Ergebnis wieder voll zeigen; geänderte Skizze wartet auf F5
+      if (JSON.stringify(part?.features.find((f) => f.id === id)) !== this.sketchBefore) this.stale = true;
+      const res = part && this.results.get(part.id);
+      if (res) this.showPart(part, res);
+      this.ribbon.render();
+      this.updateStatus();
+    }
     if (!silent) {
-      const part = this.activeDoc();
       const sk = part.features.find((f) => f.id === id);
       const used = part.features.some((f) => f.sketch === id);
       if (sk && !used && (sk.entities.length > 1)) toast("Skizze fertig. Jetzt z. B. Extrusion, Drehung, Bohrung oder Rahmen wählen.", { timeout: 3500 });
@@ -947,6 +968,7 @@ export class App {
     const d = this.activeDoc();
     const parts = [];
     if (this.busy) parts.push(h("span", { class: "busy" }, "Berechne…"));
+    if (this.stale) parts.push(h("button", { class: "status-btn stale", title: "Automatisches Neuberechnen ist aus (Einstellungen → CAD-Kernel)", onclick: () => this.rebuildNow() }, `Nicht aktuell – neu berechnen (${this.commands?.label("model.rebuild") || "F5"})`));
     parts.push(h("span", { class: "grow" }, this.hint || defaultHint(this.mode, this.prefs.get("ansicht.maus"))));
     if (d?.kind === "part") {
       const r = this.results.get(d.id);

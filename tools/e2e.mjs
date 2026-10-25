@@ -1779,6 +1779,31 @@ try {
       JSON.stringify({ ro, pk, dl: dl?.suggestedFilename(), menu: /paketieren/.test(menu) }));
   }
 
+  // Kernel (Werkzeuge Stufe 28): automatisches Neuberechnen aus → F5, Berechnungsprotokoll
+  {
+    await evalApp(() => { const app = window.__werkcad; app.newPart("Kernprobe"); app.ribbon.run("profile"); });
+    await idle();
+    const hash = () => evalApp(() => { const app = window.__werkcad; return app.results.get(app.activeId)?.hash; });
+    const h0 = await hash();
+    await evalApp(() => { const app = window.__werkcad; app.prefs.set("kernel.automatisch", false); app.prefs.set("kernel.protokoll", true); app.buildLog.clear();
+      const f = app.activeDoc().features.find((x) => x.type === "profile"); app.edit("Länge", () => { f.length = "500"; }); });
+    await page.waitForTimeout(600);
+    const h1 = await hash();
+    const status = await page.locator("#status .status-btn.stale").textContent().catch(() => "");
+    await page.locator("#stage canvas").first().click({ position: { x: 20, y: 20 } }).catch(() => {});
+    await page.keyboard.press("F5");
+    await idle();
+    const h2 = await hash();
+    const stale = await page.locator("#status .status-btn.stale").count();
+    await evalApp(() => window.__werkcad.commands.exec("model.buildLog"));
+    await page.waitForTimeout(200);
+    const rows = await page.locator(".dialog .buildlog tbody tr").count();
+    const cell = await page.locator(".dialog .buildlog tbody tr td").nth(1).textContent().catch(() => "");
+    await page.keyboard.press("Escape");
+    await evalApp(() => { const app = window.__werkcad; app.prefs.reset(["kernel.automatisch", "kernel.protokoll"]); app.buildLog.clear(); });
+    step("Neu berechnen mit F5, Berechnungsprotokoll", h0 && h1 === h0 && /Nicht aktuell/.test(status) && h2 !== h0 && stale === 0 && rows >= 1 && cell === "Kernprobe", JSON.stringify({ h0, h1, h2, status, stale, rows, cell }));
+  }
+
   // Skizze säubern (MegaCAD-Abgleich M7): lose Ecken, doppelte Linie, leicht schief → eine geschlossene Kontur
   {
     await evalApp(() => window.__werkcad.newPart("Saeubern"));
