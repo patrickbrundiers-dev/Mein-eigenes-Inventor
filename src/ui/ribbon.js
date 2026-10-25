@@ -10,6 +10,7 @@ import { defaultKantteil } from "../core/blech.js";
 import { defaultPlatte, defaultRippe } from "../core/anschluss.js";
 import { DISPLAY } from "../core/settings.js";
 import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generator.js";
+import { insertGestellDialog, startGestellTool, changeMemberDialog, lengthenDialog, gestellInfoDialog } from "./gestell.js";
 import { evaluate } from "../core/expr.js";
 import { commandDef, inScope } from "../core/commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
@@ -69,6 +70,16 @@ export class Ribbon {
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
         app.addFeature(defaultPlatte(t));
       },
+      // Gestell (Inventor Konstruktion → Gestell), siehe src/ui/gestell.js
+      gestellInsert: () => insertGestellDialog(app),
+      gestellChange: () => changeMemberDialog(app),
+      gestellMiter: () => startGestellTool(app, "gehrung"),
+      gestellCorner: () => startGestellTool(app, "ecke"),
+      gestellTrim: () => startGestellTool(app, "stutzen"),
+      gestellNotch: () => startGestellTool(app, "nuten"),
+      gestellLength: () => lengthenDialog(app),
+      gestellReuse: () => startGestellTool(app, "reuse"),
+      gestellInfo: () => gestellInfoDialog(app),
       gelaender: () => this.addGenerator("gelaender"),
       tor: () => this.addGenerator("tor"),
       schiebetor: () => this.addGenerator("schiebetor"),
@@ -235,7 +246,7 @@ export class Ribbon {
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
-          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick")] },
+          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame")] },
           { label: "Blech", buttons: [B("kantteil", "Kantteil", "kantteil")] },
           { label: "Anschluss", buttons: [B("naht", "Schweißnaht", "naht"), B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("normteil", "Normteil", "normteil")] },
         ] },
@@ -292,6 +303,20 @@ export class Ribbon {
         { id: "metallbau", label: "Metallbau", groups: [
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun")] },
           { label: "Stahlbau", buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband")] },
+          { label: "Gestell", small: true, buttons: (() => {
+            const g = !!app.activeDoc()?.gestell, on = (t) => app.pick?.kind === "gestell" && app.pick.tool === t;
+            return [
+              B("gestellInsert", "Gestell einfügen", "frame"),
+              B("gestellChange", "Ändern", "edit", { disabled: !g }),
+              B("gestellMiter", "Gehrung", "frame", { disabled: !g, on: on("gehrung") }),
+              B("gestellCorner", "Eckverbindung", "frame", { disabled: !g, on: on("ecke") }),
+              B("gestellTrim", "Auf Gestell stutzen", "trim", { disabled: !g, on: on("stutzen") }),
+              B("gestellNotch", "Nuten", "cut", { disabled: !g, on: on("nuten") }),
+              B("gestellLength", "Verlängern/Kürzen", "extend", { disabled: !g }),
+              B("gestellReuse", "Wiederverwenden", "copy", { disabled: !g, on: on("reuse") }),
+              B("gestellInfo", "Gestell-Info", "info", { disabled: !g }),
+            ];
+          })() },
         ] },
         this.exportTab("assembly"),
         view,

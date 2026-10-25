@@ -21,6 +21,7 @@ import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, thre
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
 import { GENERATORS, resolveGenParams } from "../core/generator.js";
+import { gestellPlan } from "../core/gestell.js";
 import { planBodies, localPlan } from "../core/genteil.js";
 import { FILL_DENSITY } from "../core/mass.js";
 
@@ -703,8 +704,9 @@ export function createKernel(R) {
           case "genteil": // Einzelteil eines Generators (Baugruppe mit Einzelteilen): ein Körper des Bauplans in eigener Lage
           case "generator": {
             const gen = GENERATORS[f.gen];
-            if (!gen) throw new Error("Unbekannter Generator");
-            let plan = gen.plan(resolveGenParams(f.gen, f.params, E));
+            if (!gen && f.gen !== "gestell") throw new Error("Unbekannter Generator");
+            // Gestell (Inventor-Gestellgenerator): Skelettlinien und Einstellungen liegen fertig in params.input
+            let plan = f.gen === "gestell" ? gestellPlan(f.params?.input) : gen.plan(resolveGenParams(f.gen, f.params, E));
             if (f.type === "genteil") {
               const body = planBodies(plan).find((b) => b.key === f.key);
               if (!body) throw new Error(`Teil »${f.body || f.key}« gibt es im Generator nicht mehr`);
@@ -738,9 +740,14 @@ export function createKernel(R) {
               if (!(L > 1e-6)) continue;
               const fr = memberFrame(m.a, v3.sub(m.b, m.a), m.rot || 0, m.up);
               const cuts = m.cuts || { start: [], end: [] };
-              const { solid } = memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts, cut);
+              let { solid } = memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts, cut);
+              // Hüllkörper anderer Stäbe abziehen (Gestell: Nuten, Stutzen an Rundrohr)
+              for (const c of m.copes || []) {
+                const cl = v3.dist(c.a, c.b);
+                if (cl > 1e-6) solid = solid.cut(makeMember({ kind: c.section.kind, dims: c.section.dims }, cl, memberFrame(c.a, v3.sub(c.b, c.a), c.rot || 0, c.up), c.cuts || { start: [], end: [] }, { envelope: true }).solid);
+              }
               const ds = drillsOf(m.name, m.a, m.b, Math.max(m.section.geom.width, m.section.geom.height));
-              add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }), m.name);
+              add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), miterParts: { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) }, ...(m.copes?.length ? { coped: true } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }), m.name);
             }
             for (const pl of plan.plates) {
               let d;

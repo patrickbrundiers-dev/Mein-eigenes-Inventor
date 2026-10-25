@@ -41,6 +41,7 @@ import { splineLength, splineDegree } from "../core/spline.js";
 const INERTIA = new WeakMap(); // Ergebnis → Trägheitswerte
 import { FEATURE_NAMES } from "./app.js";
 import { scaleLabel } from "./tree.js";
+import { gestellSections, memberSection } from "./gestell.js";
 
 export class Props {
   constructor(app) {
@@ -689,7 +690,7 @@ export class Props {
       case "genteil": {
         const asm = app.project.docs.find((d) => d.id === part.genAsm);
         out.push(this.section("Teil aus Generator",
-          h("p", {}, `${f.body || f.key} aus ${GENERATORS[f.gen]?.label || f.gen}${asm ? ` in der Baugruppe »${asm.name}«` : ""}.`),
+          h("p", {}, `${f.body || f.key} aus ${GENERATORS[f.gen]?.label || (f.gen === "gestell" ? "Gestell" : f.gen)}${asm ? ` in der Baugruppe »${asm.name}«` : ""}.`),
           h("p", { class: "hint" }, "Maße und Profile werden in der Baugruppe eingestellt und gelten für alle Teile. Hier weitere Features anhängen (Bohrung, Ausschnitt, Fase …) – sie bleiben beim Aktualisieren erhalten."),
           asm ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { app.openDoc(asm.id); app.sel = null; this.render(); } }, "Baugruppe öffnen")) : null));
         break;
@@ -1326,6 +1327,7 @@ export class Props {
       out.push(...this.genFields(asm.generator, asm, (fn, label) => app.edit(label, () => { fn(asm.generator); app.syncGenAssembly(asm); })));
       out.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.paramsDialog() }, "Parameter…")));
     }
+    if (asm.gestell) out.push(...gestellSections(this, asm));
     const rows = bomRows(app, asm);
     const total = rows.reduce((s, r) => s + (r.mass || 0) * r.qty, 0);
     out.push(this.section("Stückliste", bomTable(rows, true), h("dl", { class: "kv", style: { marginTop: "6px" } }, h("dt", {}, "Gesamtmasse"), h("dd", {}, fmtNum(total, 2) + " kg")),
@@ -1337,6 +1339,7 @@ export class Props {
     const p = app.doc(c.part);
     const upd = (label, fn) => app.edit(label, fn);
     return [
+      ...(asm.gestell ? memberSection(this, asm, c) : []),
       this.section("Komponente",
         this.text("Name", c.name, (v) => upd("Name", () => { c.name = v; })),
         this.select("Bauteil", app.parts().map((x) => [x.id, x.name]), c.part, (v) => upd("Bauteil", () => { c.part = v; })),

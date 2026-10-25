@@ -1,6 +1,10 @@
-**Neu in 0.15.0**
+**Neu in 0.17.0**
 
-- **Treppe, Gurte durchgesteckt:** Knieleisten bzw. der Untergurt gehen jetzt durch die Pfosten und die Staketen durch den Untergurt, jeweils mit Bohrungen und Aufmaß. Ein Stück ist bis 5800 mm lang.
-- **Treppe, Stufen verschraubt:** Die Stufen werden angelehnt an DIN 24531 verschraubt. Jede Stufe hat Seitenbleche mit Bohrung und Langloch Ø 14 (M12), die Wangen sind passend gebohrt, und der Lochabstand richtet sich nach dem Auftritt.
-- **Balkon:** Die Gurte gehen als Rundrohr durch die Pfosten.
-- **Spindeltreppe:** Jeder Stab hat einen Handlaufhalter, im Handlauf sitzt eine Bohrung Ø 12,1 mm.
+- **Gestell wie in Inventor:** Auf einem Skelett-Bauteil aus Skizzenlinien oder einem Profilzug fügst du mit »Gestell einfügen« ein Gestell ein. Jeder Stab wird ein eigenes Bauteil in einer Gestell-Baugruppe, das Skelett steht als Referenzmodell im Baum. Ändert sich das Skelett, folgen die Stäbe.
+- **Werkzeuge in der Gruppe »Gestell«:**
+  - Ändern: Profil, Lage zur Linie und Drehung, auch für alle gleichen Stäbe.
+  - Gehrung und Eckverbindung.
+  - Auf Gestell stutzen und Verlängern/Kürzen.
+  - Nuten: Ausklinken an der Form des Gegenprofils, Sattelschnitt bei Rohren.
+  - Wiederverwenden.
+  - Gestell-Info: Liste mit Länge, Schnittwinkeln und Verbindungen, auch als CSV.

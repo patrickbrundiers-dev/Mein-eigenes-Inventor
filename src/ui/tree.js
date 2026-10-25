@@ -126,6 +126,19 @@ export class Tree {
   componentList(asm) {
     const app = this.app;
     const ul = h("ul");
+    // Gestell: Skelett als Referenzmodell (wie Inventor), Doppelklick bearbeitet es
+    const sk = asm.gestell && app.doc(asm.gestell.skeleton);
+    if (asm.gestell) {
+      const toggle = () => app.edit("Referenzmodell", () => { asm.gestell.hideSkeleton = !asm.gestell.hideSkeleton; }, { rebuild: false });
+      ul.append(h("li", {}, this.node({
+        label: `Gestell-Referenzmodell${sk ? ": " + sk.name : " fehlt"}`, ic: "sketch", cls: (asm.gestell.hideSkeleton ? "suppressed" : "") + (sk ? "" : " err"), meta: "Skelett",
+        onDbl: () => sk && app.openDoc(sk.id),
+        onMenu: (e) => contextMenu(e.clientX, e.clientY, [
+          { label: "Skelett bearbeiten", icon: "edit", disabled: !sk, run: () => app.openDoc(sk.id) },
+          { label: asm.gestell.hideSkeleton ? "Linien einblenden" : "Linien ausblenden", icon: asm.gestell.hideSkeleton ? "eye" : "eyeoff", run: () => { toggle(); app.showSketches3D(); } },
+        ]),
+      })));
+    }
     for (const c of asm.components) {
       const p = app.doc(c.part);
       const sel = app.sel?.type === "component" && app.sel.id === c.id;

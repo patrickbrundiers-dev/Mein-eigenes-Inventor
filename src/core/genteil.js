@@ -56,7 +56,9 @@ export function localPlan(plan, body) {
   const out = { members: [], chains: [], plates: [], drills: [], issues: [], info: "" };
   if (body.kind === "member") {
     const m = plan.members[body.index];
-    out.members.push({ ...m, a: P(m.a), b: P(m.b), up: D(body.frame.up), ...(m.cuts ? { cuts: cutsL(m.cuts) } : {}) });
+    // copes: Hüllkörper anderer Stäbe, die abgezogen werden (Gestell: Nuten, Stutzen an Rundrohr)
+    const copes = m.copes && { copes: m.copes.map((c) => ({ ...c, a: P(c.a), b: P(c.b), up: D(c.up || [0, 0, 1]), cuts: cutsL(c.cuts || { start: [], end: [] }) })) };
+    out.members.push({ ...m, a: P(m.a), b: P(m.b), up: D(body.frame.up), ...(m.cuts ? { cuts: cutsL(m.cuts) } : {}), ...copes });
     out.drills = drillsFor(m.name);
   } else if (body.kind === "chain") {
     const ch = plan.chains[body.index];
@@ -86,7 +88,7 @@ export function eulerOf({ x, y, z }) {
 
 /** Kennung gleicher Teile: Geometrie in eigener Lage, Namen zählen nicht */
 export function bodySignature(lp) {
-  const r = (v) => (typeof v === "number" ? Math.round(v * 100) / 100 + 0 : Array.isArray(v) ? v.map(r) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().filter((k) => !["name", "target", "segName", "geom"].includes(k)).map((k) => [k, r(v[k])])) : v);
+  const r = (v) => (typeof v === "number" ? Math.round(v * 100) / 100 + 0 : Array.isArray(v) ? v.map(r) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().filter((k) => !["name", "target", "segName", "geom", "gid"].includes(k)).map((k) => [k, r(v[k])])) : v);
   return JSON.stringify(r({ m: lp.members, c: lp.chains, p: lp.plates, d: lp.drills, n: lp.norms || [] }));
 }
 
