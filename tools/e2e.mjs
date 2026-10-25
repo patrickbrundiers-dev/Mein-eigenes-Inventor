@@ -2773,6 +2773,59 @@ try {
     const z = 4 * Math.SQRT2, expect = Math.round(100 * 60 * 10 + 10 * 60 * 50 + 60 * z * z - Math.PI * 25 * 10);
     step("Schweißbaugruppe", wb0.kind === "part" && wb0.name === "Konsole geschweißt" && wb0.first === "schweissbaugruppe" && wb0.st?.ok && wb0.bodies === 2 && wb.ok && wb.bodies === 3 && wb.weld === 1 && Math.abs(wb.vol - expect) <= 2 && /Nahtkörper 1,92 cm³/.test(wb.info || "") && /Schweißnähte1 Feature/.test(wb.panel) && /Nachbearbeitung2 Features/.test(wb.panel), JSON.stringify({ wb0, wb: { ...wb, panel: wb.panel.slice(0, 300) }, expect }));
   }
+  // Werkzeuge Stufe 54: Bereichseigenschaften der Skizze, Entformungsanalyse am Bauteil (Schweißbaugruppe von oben)
+  {
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    await page.locator("#ribbon button", { hasText: /^Entformungsanalyse$/ }).click();
+    await page.locator("#modal-root .dialog footer .btn", { hasText: "Anzeigen" }).click();
+    await idle(30000);
+    const da = await evalApp(() => {
+      const a = window.__werkcad, v = a.viewer, m = v.pickables.map((p) => p.mesh);
+      return { on: v.draftOn, colored: m.length > 0 && m.every((x) => x.material.vertexColors && x.geometry.getAttribute("color")), toast: [...document.querySelectorAll("#toasts .toast")].map((t) => t.textContent).find((t) => /Entformung Z\+/.test(t)) || "" };
+    });
+    await shot("54-entformung");
+    await page.locator("#ribbon button", { hasText: /^Entformungsanalyse$/ }).click();
+    const daOff = await evalApp(() => { const v = window.__werkcad.viewer; return { on: v.draftOn, plain: v.pickables.every((p) => !p.mesh.material.vertexColors) }; });
+    await evalApp(() => {
+      const a = window.__werkcad;
+      a.newPart("Bereich");
+      const P = (id, x, y) => ({ id, x, y });
+      a.addFeature({ type: "sketch", id: "rq", name: "Querschnitt", plane: { ref: "XY" }, offset: "0", points: [P("r1", 0, 0), P("r2", 100, 0), P("r3", 100, 40), P("r4", 0, 40)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: "rl" + p, type: "line", p1: "r" + p, p2: "r" + q })), constraints: [] });
+    });
+    await idle(30000);
+    await evalApp(() => { const a = window.__werkcad; a.editSketch?.("rq"); });
+    await idle(30000);
+    const mode = await evalApp(() => window.__werkcad.mode);
+    if (mode === "sketch") {
+      await page.locator("#ribbon button", { hasText: /^Bereichseigenschaften$/ }).click();
+    } else {
+      await evalApp(() => { const a = window.__werkcad; a.sel = { type: "feature", id: "rq" }; });
+      await page.locator("#ribbon button", { hasText: /^Bereichseigenschaften$/ }).click();
+    }
+    const rpd = await evalApp(() => { const t = document.querySelector("#modal-root .dialog")?.textContent || ""; document.querySelectorAll("#modal-root .dialog footer .btn").forEach((b) => { if (b.textContent === "Schließen") b.click(); }); return t; });
+    if (mode === "sketch") await evalApp(() => window.__werkcad.finishSketch?.());
+    await idle(30000);
+    step("Bereichseigenschaften und Entformungsanalyse", da.on && da.colored && /Zugseite/.test(da.toast) && !daOff.on && daOff.plain && /Fläche4\.000 mm²/.test(rpd) && /Ix \(um Schwerpunkt, ∥ X\)533\.333,3 mm⁴/.test(rpd), JSON.stringify({ da, daOff, mode, rpd: rpd.slice(0, 400) }));
+  }
+  // Werkzeuge Stufe 55: Konstruktions-Assistent – Welle, Stirnrad, Lager, Druckfeder über das Menüband
+  {
+    await evalApp(() => window.__werkcad.newPart("Antrieb"));
+    await idle(30000);
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    for (const label of ["Welle", "Stirnrad", "Lager", "Druckfeder"]) {
+      await page.locator("#ribbon button", { hasText: new RegExp("^" + label + "$") }).click();
+      await idle(60000);
+    }
+    const ka = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId);
+      return { types: d.features.map((f) => f.type).join(), st: d.features.map((f) => r.status[f.id]), bodies: r.bodies.length, norm: r.bodies.filter((b) => b.meta?.norm).map((b) => b.meta.norm.designation), panel: [...document.querySelectorAll("#props .section h3")].map((x) => x.textContent) };
+    });
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await shot("55-konstruktion");
+    step("Konstruktions-Assistent", ka.types === "welle,zahnrad,lager,feder" && ka.st.every((x) => x?.ok) && ka.bodies === 4 && ka.norm.includes("Rillenkugellager DIN 625 - 6204") && ka.norm.includes("Druckfeder 2 x 18 x 40") && ka.panel.some((t) => /Druckfeder/.test(t)) && /d 48, da 52, df 43 mm/.test(ka.st[1]?.info || ""), JSON.stringify(ka));
+  }
+
+
 
 
 

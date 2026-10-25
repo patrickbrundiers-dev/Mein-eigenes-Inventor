@@ -1,4 +1,5 @@
 // Befehle ausführen, Tastaturkürzel verteilen, Befehlssuche (Strg+K) und Kürzel-Editor
+import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
 import { h, toast } from "./dom.js";
 import { t } from "../core/i18n.js";
@@ -83,6 +84,12 @@ export function commandRunners(app) {
     "asm.animate": () => app.props.animateJoints(),
     "part.ifeatExtract": () => ifeatExtractDialog(app),
     "part.ifeatInsert": () => ifeatInsertDialog(app),
+    "sketch.regionProps": () => regionDialog(app),
+    "part.draftAnalysis": () => draftDialog(app),
+    "part.welle": () => app.ribbon.run("welle"),
+    "part.zahnrad": () => app.ribbon.run("zahnrad"),
+    "part.lager": () => app.ribbon.run("lager"),
+    "part.feder": () => app.ribbon.run("feder"),
     "asm.weldment": () => app.props.makeWeldment(),
     "asm.contactSolver": () => app.props.toggleContactSolver(),
     "asm.contactSet": () => app.props.toggleContactSet(),

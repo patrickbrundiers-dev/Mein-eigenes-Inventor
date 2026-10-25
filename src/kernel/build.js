@@ -6,6 +6,7 @@ import { solveSketch } from "../core/solver.js";
 import { extractProfiles, holeCenters, sketchLines } from "../core/sketch.js";
 import { planeFrame, toWorld, v3, decomposePlacement } from "../core/geom.js";
 import { beadSection, filletPair } from "../core/schweissbaugruppe.js";
+import { parseSections, shaftProfile, gearData, gearOutline, bearingGeometry, bearingDesignation, springData, springDesignation } from "../core/assistent.js";
 import { resolveDatums, resolvePlane, mirrorPlane, patternAxis, datumSummary } from "../core/datums.js";
 import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "../core/koerper.js";
 import { capPlan, trimPlan } from "../core/rahmen.js";
@@ -1294,6 +1295,22 @@ export function createKernel(R) {
             if (r.warn) st.warning = r.warn;
             break;
           }
+          case "welle":
+          case "zahnrad":
+          case "lager":
+          case "feder": {
+            // Konstruktions-Assistent (Stufe 55): Körper in Achse Z am Ursprung bauen, dann an pos / axis drehen
+            const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Basispunkt " + "XYZ"[k]));
+            const dir = f.axis === "custom" ? (f.dir || ["0", "0", "1"]).map((x) => E(x, "Richtung")) : AXES[f.axis || "Z"];
+            const r = assistSolid(f, E);
+            const solid = orientZ(r.shape, dir, pos);
+            const body = { shape: solid, kind: "solid", name: f.name || r.name, fid: f.id, meta: r.meta };
+            state.bodies.push(body);
+            state.tools.set(f.id, { op: "new", shapes: [{ shape: solid, kind: r.meta?.norm ? "norm" : "solid", meta: r.meta, name: body.name }] });
+            st.info = r.info;
+            if (r.warn) st.warning = r.warn;
+            break;
+          }
           case "normteil": {
             const kind = f.kind || "schraube4017";
             const L = NORM_KINDS[kind]?.length ? E(f.length ?? "40", "Länge") : 0;
@@ -1773,6 +1790,42 @@ export function createKernel(R) {
   }
 
   /** Normteil als eigener Körper (Stückliste mit Normbezeichnung); n = { kind, size, length, grade, galv, name? } */
+  /** Körper des Konstruktions-Assistenten (Achse Z, Ursprung): Welle, Stirnrad, Rillenkugellager, Druckfeder */
+  function assistSolid(f, E) {
+    const poly = (pts, plane = "XY") => { let d = R.draw(pts[0]); for (const p of pts.slice(1)) d = d.lineTo(p); return d.close().sketchOnPlane(plane); };
+    if (f.type === "welle") {
+      const secs = parseSections(f.sections);
+      const pr = shaftProfile(secs, E(f.chamfer || "0", "Fase"));
+      const shape = poly(pr.pts, "XZ").revolve([0, 0, 1], { origin: [0, 0, 0] });
+      return { shape, name: "Welle", info: `Welle ${secs.length} Abschnitt(e), Länge ${round(pr.length)} mm, größter Ø ${round(Math.max(...secs.map((x) => x.d)))} mm`, meta: { assist: "welle" } };
+    }
+    if (f.type === "zahnrad") {
+      const g = gearData(E(f.m, "Modul"), Math.round(E(f.z, "Zähnezahl")), E(f.alpha || "20", "Eingriffswinkel"));
+      const b = E(f.b, "Breite"), bore = E(f.bore || "0", "Bohrung");
+      if (!(b > 0)) throw new Error("Zahnrad: Breite > 0 angeben");
+      if (bore >= g.df - 2 * g.m) throw new Error(`Zahnrad: Bohrung Ø ${round(bore)} zu groß für Fußkreis Ø ${round(g.df)}`);
+      let shape = poly(gearOutline(g)).extrude(b);
+      if (bore > 0) shape = shape.cut(R.makeCylinder(bore / 2, b + 2, [0, 0, -1], [0, 0, 1]));
+      const num = (x) => String(round(x)).replace(".", ",");
+      return { shape, name: `Stirnrad m${num(g.m)} z${g.z}`, info: `d ${num(g.d)}, da ${num(g.da)}, df ${num(g.df)} mm`, warn: g.undercut ? `z = ${g.z} unter der Grenzzähnezahl – Unterschnitt ohne Profilverschiebung` : "", meta: { assist: "zahnrad", gear: g } };
+    }
+    if (f.type === "lager") {
+      const L = bearingGeometry(f.series);
+      const ring = (ro, ri) => R.makeCylinder(ro, L.B, [0, 0, 0], [0, 0, 1]).cut(R.makeCylinder(ri, L.B + 2, [0, 0, -1], [0, 0, 1]));
+      let shape = ring(L.D / 2, L.outerIn / 2).fuse(ring(L.innerOut / 2, L.d / 2));
+      for (let i = 0; i < L.n; i++) { const t = (2 * Math.PI * i) / L.n; shape = shape.fuse(R.makeSphere(L.dw / 2).translate([(L.dm / 2) * Math.cos(t), (L.dm / 2) * Math.sin(t), L.B / 2])); }
+      const designation = bearingDesignation(f.series, f.seal);
+      return { shape, name: designation, info: `${designation}: d ${L.d}, D ${L.D}, B ${L.B} mm`, meta: { norm: { kind: "lager", size: f.series, length: 0, grade: "100Cr6", designation }, density: 7.81 } };
+    }
+    const sp = springData(E(f.d, "Draht-Ø"), E(f.D, "Mittlerer Ø"), E(f.n, "Federnde Windungen"), E(f.L0, "Länge"));
+    const helix = R.makeHelix(sp.pitch, sp.L0 - sp.d, sp.D / 2, [0, 0, sp.d / 2], [0, 0, 1], false);
+    const S = vecOf(helix.startPoint), T = vecOf(helix.tangentAt ? helix.tangentAt(0) : [0, 1, 0]);
+    const prof = R.drawCircle(sp.d / 2).sketchOnPlane(new R.Plane(S, v3.norm(v3.cross(T, [0, 0, 1])), v3.norm(T)));
+    const shape = R.genericSweep(prof.wire, helix, { frenet: true });
+    const num = (x, d = 1) => String(Math.round(x * 10 ** d) / 10 ** d).replace(".", ",");
+    const designation = springDesignation(sp);
+    return { shape, name: designation, info: `R = ${num(sp.rate, 2)} N/mm, Blocklänge ${num(sp.Lc)} mm, Fc ${num(sp.Fc, 0)} N, τkc ${num(sp.tauKc, 0)} N/mm²`, meta: { norm: { kind: "feder", size: designation, length: sp.L0, grade: "Federdraht EN 10270-1", designation }, spring: sp, density: 7.85 } };
+  }
   function pushNorm(state, f, list, n, pos, dir) {
     const solid = orientZ(normSolid(n.kind, n.size, n.length || 0), dir, pos);
     const designation = normDesignation(n);

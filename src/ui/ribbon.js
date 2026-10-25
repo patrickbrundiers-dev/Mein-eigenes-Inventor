@@ -1,4 +1,6 @@
 // Menüband mit kontextabhängigen Registerkarten
+import { defaultWelle, defaultZahnrad, defaultLager, defaultFeder } from "../core/assistent.js";
+import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
 import { defaultStecksystem } from "../core/stecksystem.js";
 import { h, icon, toast, closeMenu, contextMenu } from "./dom.js";
@@ -73,6 +75,10 @@ export class Ribbon {
       profilzug: () => app.addFeature(defaultProfilzug(catalogToDims("vierkant", "40x3"))),
       regelkoerper: () => app.addFeature(defaultRegelkoerper("zylinder")),
       normteil: () => app.addFeature(defaultNormteil("schraube4017")),
+      welle: () => app.addFeature(defaultWelle()),
+      zahnrad: () => app.addFeature(defaultZahnrad()),
+      lager: () => app.addFeature(defaultLager()),
+      feder: () => app.addFeature(defaultFeder()),
       schraubverbindung: () => {
         const sk = app.lastSketchId((s) => s.entities.some((e) => e.type === "point" && !e.construction));
         if (!sk) return toast("Zuerst eine Skizze mit Punkten auf der Oberfläche zeichnen (Werkzeug »Punkt«, ein Punkt je Schraube)");
@@ -339,10 +345,11 @@ export class Ribbon {
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend")] },
           { label: "Blech", buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar"), B("eckeschliessen", "Ecke schließen", "cornerseam"), B("stanzung", "Stanzwerkzeug", "punch"), B("konturwalzen", "Konturwalzen", "contourroll"), B("trennfuge", "Trennfuge", "rip")] },
           { label: "Anschluss", buttons: [B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("naht", "Schweißnaht", "naht"), B("normteil", "Normteil", "normteil"), B("schraubverbindung", "Schraubenverbindung", "bolt")] },
+          { label: "Konstruktion", small: true, buttons: [B("welle", "Welle", "shaft"), B("zahnrad", "Stirnrad", "gear"), B("lager", "Lager", "bearing"), B("feder", "Druckfeder", "spring")] },
           { label: "Ändern", buttons: [B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell")] },
           { label: "Körper", buttons: [B("kombinieren", "Kombinieren", "combine"), B("stecksystem", "Stecksystem", "tabslot"), B("trennen", "Trennen", "split"), B("verschieben", "Verschieben", "move"), B("aufdicken", "Aufdicken", "thicken"), B("flaeche", "Fläche verschieben", "pushpull"), B("entformung", "Entformung", "draft")] },
           { label: "Muster", buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
-          { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() })] },
+          { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("draftAnalysis", "Entformungsanalyse", "draftan", { on: !!app.viewer.draftOn, run: () => draftDialog(app) }), B("regionPropsPart", "Bereichseigenschaften", "area", { run: () => regionDialog(app) })] },
           { label: "Verwalten", buttons: [B("params", "Parameter", "params"), B("importStep", "STEP einfügen", "import"), B("abgeleitet", "Abgeleitetes Bauteil", "derive"), B("variants", "Variantentabelle", "table"), B("rules", "Regeln", "rules"), B("macros", "Makros", "macro"), B("ifeatExtract", "iFeature erstellen", "ifeature"), B("ifeatInsert", "iFeature einfügen", "ifeature"), B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },
         ] },
@@ -373,6 +380,7 @@ export class Ribbon {
             B("gridsnap", "Rasterfang", "grid", { on: sk.gridSnap, run: () => { sk.gridSnap = !sk.gridSnap; sk.render(); this.render(); } }),
             B("params", "Parameter", "params"),
           ] },
+          { label: "Prüfen", buttons: [B("regionProps", "Bereichseigenschaften", "area", { run: () => regionDialog(app) })] },
           { label: "Beenden", buttons: [B("finishSketch", "Skizze fertig", "finish", { finish: true })] },
         ] },
         view,

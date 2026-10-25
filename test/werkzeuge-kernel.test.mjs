@@ -536,3 +536,35 @@ test("Schweißbaugruppe: Teile an ihrer Lage, Vorbereitung, Kehlnaht als Körper
   const r3 = await K.buildPart(inlineDerived({ ...weld, features: [{ ...weld.features[0], source: "weg" }] }, (id) => docs.get(id)));
   assert.match(r3.status.sb.error, /Baugruppe fehlt/);
 });
+
+test("Konstruktions-Assistent: Welle, Stirnrad, Rillenkugellager, Druckfeder (Stufe 55)", async () => {
+  const A = await import("../src/core/assistent.js");
+  const res = await K.buildPart(part([
+    { id: "w", type: "welle", sections: "30x40; 40x80; 30x40", chamfer: "1", axis: "Z", pos: ["0", "0", "0"] },
+    { id: "z", type: "zahnrad", m: "2", z: "24", b: "20", alpha: "20", bore: "20", axis: "Z", pos: ["100", "0", "0"] },
+    { id: "l", type: "lager", series: "6204", seal: "2RS", axis: "X", pos: ["0", "100", "0"] },
+    { id: "f", type: "feder", d: "2", D: "16", n: "6", L0: "40", axis: "Z", pos: ["0", "-100", "0"] },
+  ]));
+  okAll(res);
+  assert.equal(res.bodies.length, 4);
+  const v = (i) => R.measureVolume(res.bodies[i].shape);
+  // Welle: Zylinder minus zwei Fasenringe (Kegelstumpf-Differenz 1 × 1)
+  const cham = Math.PI * (15 * 15 - (1 / 3) * (15 * 15 + 15 * 14 + 14 * 14)) * 1;
+  near(v(0), Math.PI * (15 * 15 * 80 + 20 * 20 * 80) - 2 * cham, 0.5, "Welle");
+  const bb = res.bodies[0].shape.boundingBox.bounds; near(bb[1][2] - bb[0][2], 160, 1e-6, "Wellenlänge");
+  // Stirnrad: Fläche zwischen Fuß- und Kopfkreis, Volumen grob (Zahnhälfte ≈ Lücke)
+  const g = A.gearData(2, 24, 20);
+  const gv = v(1), lo = Math.PI * ((g.df / 2) ** 2 - 100) * 20, hi = Math.PI * ((g.da / 2) ** 2 - 100) * 20;
+  assert.ok(gv > lo && gv < hi, `Zahnrad-Volumen ${gv}`);
+  const gb = res.bodies[1].shape.boundingBox.bounds; near(gb[1][0] - gb[0][0], g.da, 0.2, "Kopfkreis");
+  assert.match(res.status.z.info, /d 48, da 52, df 43 mm/);
+  // Lager 6204: Außen 47, Breite 14, entlang X gedreht
+  const lb = res.bodies[2].shape.boundingBox.bounds;
+  near(lb[1][0] - lb[0][0], 14, 1e-3, "Lagerbreite"); near(lb[1][1] - lb[0][1], 47, 1e-3, "Außen-Ø");
+  assert.equal(res.bodies[2].meta.norm.designation, "Rillenkugellager DIN 625 - 6204-2RS");
+  // Feder: Drahtvolumen ≈ π²·D·d²/4 · Windungen (Steigung klein)
+  const sp = A.springData(2, 16, 6, 40);
+  const wire = (Math.PI * 1) * Math.hypot(Math.PI * 16, sp.pitch) * sp.nt;
+  near(v(3), wire, wire * 0.02, "Federdraht");
+  assert.match(res.status.f.info, /R = 6,63 N\/mm, Blocklänge 16 mm/);
+});

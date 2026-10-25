@@ -435,7 +435,42 @@ export class Viewer {
   }
 
   /** Bauteil-Ergebnis anzeigen. bodies: Ergebnis des Workers */
+  /**
+   * Entformungsanalyse (Stufe 54): Netz des Bauteils je Ecke nach dem Entformungswinkel einfärben;
+   * colorOf(Normale in Weltkoordinaten) → [r, g, b]. null schaltet ab. Neu Anzeigen des Bauteils schaltet ebenfalls ab.
+   */
+  setDraftColors(colorOf) {
+    const nm = new THREE.Matrix3(), n = new THREE.Vector3();
+    for (const p of this.pickables) {
+      const mesh = p.mesh, geo = mesh.geometry, m = mesh.material;
+      if (!colorOf) {
+        if (geo.getAttribute("color") && mesh.userData.draft) geo.deleteAttribute("color");
+        mesh.userData.draft = false;
+        m.vertexColors = false;
+        if (mesh.userData.baseColor) m.color.copy(mesh.userData.baseColor);
+        m.needsUpdate = true;
+        continue;
+      }
+      if (!geo.getAttribute("normal")) geo.computeVertexNormals();
+      mesh.updateMatrixWorld();
+      nm.getNormalMatrix(mesh.matrixWorld);
+      const N = geo.getAttribute("normal"), cols = new Float32Array(N.count * 3);
+      for (let i = 0; i < N.count; i++) {
+        n.fromBufferAttribute(N, i).applyMatrix3(nm).normalize();
+        cols.set(colorOf([n.x, n.y, n.z]), i * 3);
+      }
+      geo.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+      mesh.userData.draft = true;
+      m.vertexColors = true;
+      m.color.set(0xffffff);
+      m.needsUpdate = true;
+    }
+    this.draftOn = !!colorOf;
+    this.render();
+  }
+
   showPart(bodies, { color = "#8d99a6", opacity = 1, key = "part", material, finish } = {}) {
+    this.draftOn = false;
     this.clear();
     const g = this.makePartGroup(bodies, color, key, opacity, null, material, finish);
     this.root.add(g);
@@ -719,7 +754,8 @@ export class Viewer {
     const m = mesh.material;
     m.metalness = surf ? surf.metalness : 0.08;
     m.roughness = surf ? surf.roughness : 0.5;
-    if (mesh.userData.baseColor) m.color.copy(surf?.color ? new THREE.Color(surf.color) : mesh.userData.baseColor);
+    if (mesh.userData.draft) m.color.set(0xffffff);
+    else if (mesh.userData.baseColor) m.color.copy(surf?.color ? new THREE.Color(surf.color) : mesh.userData.baseColor);
     mesh.castShadow = photo && op >= 1;
     mesh.receiveShadow = photo;
     m.transparent = op < 1;

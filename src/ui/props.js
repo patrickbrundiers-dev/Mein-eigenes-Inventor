@@ -1,4 +1,5 @@
 // Eigenschaften-Fenster und Dialoge (Parameter, Stückliste, Zuschnittliste, Einstellungen)
+import { gearData, centerDistance, BEARINGS, BEARING_SEALS } from "../core/assistent.js";
 import { defaultSchweissbaugruppe, phaseCounts, WELD_PHASES } from "../core/schweissbaugruppe.js";
 import { RULES } from "../core/bendtable.js";
 import { applySheetRule } from "../core/blechregeln.js";
@@ -893,6 +894,39 @@ export class Props {
             opt("Vorloch in der Abwicklung (mm)", "d0", "leer = Näherung"),
             h("p", { class: "hint" }, "Kragen (Durchzug) für Gewindeformer oder als Lagerstelle. Das Vorloch der Abwicklung ist eine Näherung über die Volumenkonstanz (Wand auf etwa 0,7 · t gezogen) – mit Probeteil oder Werkzeugangabe überschreiben.")));
         }
+        break;
+      }
+      case "welle":
+      case "zahnrad":
+      case "lager":
+      case "feder": {
+        // Konstruktions-Assistent (Stufe 55)
+        const info = st?.info ? h("dl", { class: "kv" }, h("dt", {}, "Ergebnis"), h("dd", {}, st.info)) : null;
+        if (f.type === "welle") out.push(this.section("Welle",
+          this.text("Abschnitte (Ø x Länge; …)", f.sections || "", (v) => this.set(f, "sections", v, "Abschnitte")),
+          E("Fase an den Enden", "chamfer", { allowNeg: false }), info,
+          h("p", { class: "hint" }, "Abschnitte von unten nach oben entlang der Achse, z. B. »30x40; 40x80; 30x40«. Lager zur Wellen-Ø über »Lager«.")));
+        if (f.type === "zahnrad") {
+          let g = null;
+          try { const sc = this.scope(); g = gearData(evaluate(String(f.m), sc), Math.round(evaluate(String(f.z), sc)), evaluate(String(f.alpha || "20"), sc)); } catch { /* Fehler zeigt der Kern */ }
+          out.push(this.section("Stirnrad (Evolvente, Normalprofil DIN 867)",
+            E("Modul m", "m", { allowNeg: false, allowZero: false }), E("Zähnezahl z", "z", { unit: "", allowNeg: false, allowZero: false }),
+            E("Zahnbreite b", "b", { allowNeg: false, allowZero: false }), E("Eingriffswinkel", "alpha", { unit: "°", allowNeg: false }), E("Bohrung (0 = voll)", "bore", { allowNeg: false }),
+            g ? h("dl", { class: "kv" }, ...[["Teilkreis d", g.d], ["Kopfkreis da", g.da], ["Fußkreis df", g.df], ["Grundkreis db", g.db], ["Teilung p", g.p]].flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, fmtNum(v, 3) + " mm")])) : null,
+            g ? h("p", { class: "hint" }, `Achsabstand zu einem Gegenrad mit z₂ Zähnen: a = m·(z + z₂)/2, z. B. z₂ = ${g.z * 2}: ${fmtNum(centerDistance(g.m, g.z, g.z * 2), 2)} mm.`) : null));
+        }
+        if (f.type === "lager") out.push(this.section("Rillenkugellager DIN 625",
+          this.select("Reihe", Object.entries(BEARINGS).map(([k, [d, D, B]]) => [k, `${k}  (d ${d} · D ${D} · B ${B})`]), f.series || "6204", (v) => this.set(f, "series", v, "Lagerreihe")),
+          this.select("Abdichtung", BEARING_SEALS, f.seal || "", (v) => this.set(f, "seal", v || undefined, "Abdichtung")), info,
+          h("p", { class: "hint" }, "Vereinfachte Darstellung mit Ringen und Kugeln; steht mit Normbezeichnung in der Stückliste.")));
+        if (f.type === "feder") out.push(this.section("Druckfeder (DIN EN 13906-1)",
+          E("Draht-Ø d", "d", { allowNeg: false, allowZero: false }), E("Mittlerer Windungs-Ø D", "D", { allowNeg: false, allowZero: false }),
+          E("Federnde Windungen n", "n", { unit: "", allowNeg: false, allowZero: false }), E("Ungespannte Länge L0", "L0", { allowNeg: false, allowZero: false }), info,
+          h("p", { class: "hint" }, "Enden angelegt und geschliffen (n + 2 Windungen), Gleitmodul 81 500 N/mm². Darstellung vereinfacht mit gleicher Steigung.")));
+        out.push(this.section("Lage",
+          this.vec3(f.type === "zahnrad" || f.type === "lager" ? "Basispunkt (Mitte Stirnseite)" : "Basispunkt (Achse, Anfang)", f.pos || ["0", "0", "0"], (v) => this.set(f, "pos", v, "Basispunkt")),
+          this.seg("Achse", [["Z", "Z"], ["Y", "Y"], ["X", "X"], ["-Z", "−Z"], ["-Y", "−Y"], ["-X", "−X"], ["custom", "frei"]], f.axis || "Z", (v) => this.set(f, "axis", v, "Achse")),
+          f.axis === "custom" ? this.vec3("Richtungsvektor", f.dir || ["0", "0", "1"], (v) => this.set(f, "dir", v, "Richtung")) : null));
         break;
       }
       case "normteil": {

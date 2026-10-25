@@ -833,3 +833,68 @@ test("Schweißbaugruppe: Phasen, Kehlnaht-Querschnitt, Flächenpaar", async () =
   assert.deepEqual(pair.map((x) => x.n), [[1, 0, 0], [0, 0, 1]]);
   assert.equal(W.filletPair([{ body: 0, n: [0, 0, -1] }, { body: 1, n: [0, 0, 1] }]), null);
 });
+
+test("Bereichseigenschaften: Rechteck, Kreisring, gedrehtes Rechteck, Halbkreis", async () => {
+  const B = await import("../src/core/bereich.js");
+  const { rectSketchFeature } = await import("../src/core/examples.js");
+  const r = B.regionProperties(rectSketchFeature("s", "XY", 0, 0, 0, "100", "40")).total;
+  near(r.area, 4000, 1e-9); near(r.perimeter, 280, 1e-9); nearV(r.centroid, [50, 20], 1e-9);
+  near(r.Ix, (100 * 40 ** 3) / 12, 1e-6); near(r.Iy, (40 * 100 ** 3) / 12, 1e-6); near(r.Ixy, 0, 1e-6);
+  near(r.Wx, (100 * 40 ** 2) / 6, 1e-6); near(r.ix, 40 / Math.sqrt(12), 1e-9);
+  // Kreisring Ø 60 / Ø 40 um (10, 5): exakt
+  const ring = { points: [{ id: "c", x: 10, y: 5 }], entities: [{ id: "k1", type: "circle", c: "c", r: 30 }, { id: "k2", type: "circle", c: "c", r: 20 }], constraints: [] };
+  const k = B.regionProperties(ring).total;
+  near(k.area, Math.PI * (900 - 400), 1e-9); near(k.Ix, (Math.PI / 4) * (30 ** 4 - 20 ** 4), 1e-6); near(k.Ix, k.Iy, 1e-6);
+  nearV(k.centroid, [10, 5], 1e-9); near(k.perimeter, 2 * Math.PI * 50, 1e-9); assert.equal(k.holes, 1);
+  // gedrehtes Rechteck 60 × 20 unter 30°: Hauptmomente wie ungedreht, Achse von I1 (größtes Moment) quer dazu bei −60°
+  const c = Math.cos(Math.PI / 6), s = Math.sin(Math.PI / 6), P = (id, u, v) => ({ id, x: u * c - v * s, y: u * s + v * c });
+  const rot = { points: [P("a", 0, 0), P("b", 60, 0), P("c", 60, 20), P("d", 0, 20)], entities: [["a", "b"], ["b", "c"], ["c", "d"], ["d", "a"]].map(([p, q], i) => ({ id: "l" + i, type: "line", p1: p, p2: q })), constraints: [] };
+  const g = B.regionProperties(rot).total;
+  near(g.I2, (60 * 20 ** 3) / 12, 1e-6); near(g.I1, (20 * 60 ** 3) / 12, 1e-6); near(g.angle, -60, 1e-9);
+  // Halbkreis r = 10 (Bogen + Sehne): Schwerpunkt 4r/3π über der Sehne
+  const half = { points: [{ id: "m", x: 0, y: 0 }, { id: "p", x: 10, y: 0 }, { id: "q", x: -10, y: 0 }], entities: [{ id: "b", type: "arc", c: "m", p1: "p", p2: "q" }, { id: "l", type: "line", p1: "q", p2: "p" }], constraints: [] };
+  const hk = B.regionProperties(half).total;
+  near(hk.area, (Math.PI * 100) / 2, 1e-3); near(hk.centroid[1], 40 / (3 * Math.PI), 1e-4);
+  assert.throws(() => B.regionProperties({ points: [], entities: [], constraints: [] }), /Keine geschlossene/);
+});
+
+test("Entformungsanalyse: Winkel, Einteilung, Flächenanteile", async () => {
+  const D = await import("../src/core/entformanalyse.js");
+  near(D.draftAngle([0, 0, 1], [0, 0, 1]), 90, 1e-9); near(D.draftAngle([1, 0, 0], [0, 0, 1]), 0, 1e-9);
+  near(D.draftAngle([Math.cos(0.1), 0, Math.sin(0.1)], [0, 0, 1]), (0.1 * 180) / Math.PI, 1e-9);
+  assert.equal(D.draftClass(3, 1), "positiv"); assert.equal(D.draftClass(0.5, 1), "gering"); assert.equal(D.draftClass(-2, 1), "negativ"); assert.equal(D.draftClass(0, 0), "gering");
+  assert.throws(() => D.draftClass(1, 95), /Mindestwinkel/);
+  // Würfel 10 mm (12 Dreiecke): Deckel Zugseite, Boden Gegenseite, 4 Wände zu wenig Schräge
+  const V = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0], [0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]];
+  const F = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
+  const st = D.draftStats([{ positions: Float32Array.from(V.flat()), indices: Uint32Array.from(F.flat()) }], D.PULL_DIRS["Z+"], 1);
+  near(st.total, 600, 1e-6); near(st.area.positiv, 100, 1e-6); near(st.area.negativ, 100, 1e-6); near(st.area.gering, 400, 1e-6);
+});
+
+test("Konstruktions-Assistent: Wellenabschnitte, Verzahnung, Lager, Feder", async () => {
+  const A = await import("../src/core/assistent.js");
+  assert.deepEqual(A.parseSections("30x40; 40,5 × 80"), [{ d: 30, l: 40 }, { d: 40.5, l: 80 }]);
+  assert.throws(() => A.parseSections("30-40"), /Abschnitt 1/);
+  assert.throws(() => A.parseSections(""), /mindestens/);
+  const pr = A.shaftProfile([{ d: 30, l: 40 }, { d: 40, l: 80 }], 1);
+  assert.deepEqual(pr.pts, [[0, 0], [14, 0], [15, 1], [15, 40], [20, 40], [20, 119], [19, 120], [0, 120]]);
+  assert.throws(() => A.shaftProfile([{ d: 4, l: 10 }], 2), /Fase/);
+  const g = A.gearData(2, 24);
+  assert.deepEqual([g.d, g.da, g.df], [48, 52, 43]); near(g.db, 48 * Math.cos(Math.PI / 9), 1e-9); assert.equal(g.undercut, false);
+  assert.equal(A.gearData(1, 12).undercut, true, "unter 17 Zähnen Unterschnitt");
+  assert.throws(() => A.gearData(2, 5), /Zähnezahl/);
+  assert.equal(A.centerDistance(2, 24, 48), 72);
+  const o = A.gearOutline(g);
+  const rs = o.map((p) => Math.hypot(...p));
+  near(Math.max(...rs), 26, 1e-9); near(Math.min(...rs), 21.5, 1e-9);
+  let area = 0; for (let i = 0; i < o.length; i++) { const [a, b] = o[i], [c, d] = o[(i + 1) % o.length]; area += a * d - c * b; }
+  assert.ok(area > 0, "gegen den Uhrzeigersinn");
+  assert.deepEqual(A.bearingsForShaft(20), ["6004", "6204", "6304"]);
+  assert.throws(() => A.bearingGeometry("6999"), /DIN 625/);
+  const L = A.bearingGeometry("6204"); assert.ok(L.outerIn < 47 && L.innerOut > 20 && L.n >= 6);
+  const s = A.springData(2, 16, 6, 40);
+  near(s.rate, (81500 * 16) / (8 * 4096 * 6), 1e-9); assert.equal(s.Lc, 16); near(s.Fc, s.rate * 24, 1e-9);
+  assert.equal(A.springDesignation(s), "Druckfeder 2 x 18 x 40");
+  assert.throws(() => A.springData(2, 6, 6, 40), /Wickelverhältnis/);
+  assert.throws(() => A.springData(2, 16, 6, 15), /Blocklänge/);
+});
