@@ -199,3 +199,14 @@ Jeder Block sind kleine PRs von `main`, CI grün → mergen, Release über den R
    Strichschrift für Gravuren. Windows-Schriften einzulesen wäre möglich, macht die Dateien aber vom Rechner abhängig.
 3. **Feature-Matrix:** `docs/roadmap/feature-matrix.md` im Repo ist vom 24.10. und führt viele Punkte noch als „fehlt",
    die längst fertig sind. Sie wird mit dem ersten PR dieses Plans auf den Stand von hier gebracht.
+
+## 8. Umsetzungsstand
+
+| Block | PR | Bemerkung |
+|---|---|---|
+| G1 | #129 | |
+| G2 + G3 | #137 | Text-Knopf unter »Bemaßung«, Bild unter »Übernehmen« (Skizzen-Menüband darf nicht breiter werden) |
+| G4 Teil 1 (FU8, FU9, FU4) | #146 | Positionen und Explosion auch je Zeichnungsansicht |
+| G4 Teil 2 (FU21) | folgt | Nachbarteile halbdurchsichtig an ihrer Einbaulage relativ zum Bauteil; Projizieren holt auch ihre Kanten (nicht assoziativ) |
+| G4 Teil 3 (FU19) | folgt | Falz = Umschlag, Konturlasche, Eckfreischnitt gab es schon (Stufen 41/48). Neu: Blechkasten mit Ecken auftrennen und »In Blech umwandeln« für quaderförmige Körper |
+

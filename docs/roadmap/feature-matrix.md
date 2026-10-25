@@ -107,7 +107,7 @@ Status: **vorhanden** · **teilweise** · **fehlt** · **unklar** · **blockiert
 | Gehrung am Knick als echte Schnittfläche | vorhanden (Baustein) | Winkelhalbierende in `buildFrame` |
 | Stumpfstoß / überlappend | teilweise | Stumpf existiert im Rahmen; überlappend fehlt |
 | Runde Freistellungen, Laschen, Langlöcher | teilweise | Freistellung (Pflicht, Mindestmaß), Schweißspalt, Positionier-Zapfen mit Spiel vorhanden; Laschen, Langlöcher fehlen |
-| Gekantetes Blech mit Abwicklung | blockiert | keine Blechfunktion, keine Biegelogik im Projekt; braucht eigenen ADR |
+| Gekantetes Blech mit Abwicklung | vorhanden | Kantteil, Konturlasche, Laschen, Umschlag, Blechkasten, In Blech umwandeln (ADR-0005, ADR-0008, FU19) |
 | Gebogenes Rohr (Biegeradius) | teilweise | Außenwand am Knick mit Innenradius + K-Faktor (Stufe 1); voll gebogenes Rohr braucht Sweep, Stufe 3 |
 | Gelenke, Bewegungsgrenzen, Auf-/Zuklappen (Entwicklungsplan 5.2/5.3) | n. r. | Knickrahmen ist starr (Entscheidung 24.10.2026); Min/Max nur als Prüfung |
 | Stück-/Zuschnittliste | vorhanden (Baustein) | jedes Segment als `member` → automatisch in der Liste |
@@ -122,12 +122,12 @@ Status: **vorhanden** · **teilweise** · **fehlt** · **unklar** · **blockiert
 | Komponenten platzieren, numerisch positionieren, fixieren | vorhanden | |
 | Abhängigkeiten Fläche an Fläche, Bündig mit Abstand | vorhanden | `asmsolve.js` |
 | Konzentrisch, Winkel, Freiheitsgrade | fehlt | |
-| Unterbaugruppen, Explosion, Kollision | fehlt | |
+| Unterbaugruppen, Explosion, Kollision | vorhanden | Unterbaugruppen, Explosion in Schritten (FU9), Kollision, Positionsdarstellungen (FU8) |
 | Stückliste mit Masse | vorhanden | |
 | Zeichnungsblätter A4–A0, Schriftfeld | vorhanden | `drawing.js` |
 | Grund-, Iso-, Schnittansichten, verdeckte Kanten, Mittellinien | vorhanden | |
 | Bemaßung, Hauptmaße automatisch, Texte | vorhanden | |
-| Detailansicht, Positionsnummern, Stückliste auf dem Blatt | fehlt | |
+| Detailansicht, Positionsnummern, Stückliste auf dem Blatt | vorhanden | Positionsnummern auch auf explodierten Ansichten (FU9) |
 | PDF/DXF/SVG | vorhanden | |
 
 ## 8. Export
@@ -153,3 +153,18 @@ Seit dem Einstellungscenter (Stufe 1, Masterplan Werkzeuge) siehe [werkzeuge-ein
 | Signierte Releases | fehlt | README weist auf SmartScreen hin |
 | Lizenzprüfung Abhängigkeiten | teilweise | MIT + LGPL-2.1 (OCCT); LGPL-Text im Installer unklar |
 | Linter/Formatter | fehlt | |
+
+## Nachtrag 25.10.2026: Fusion-360-Abgleich (G1–G4)
+
+Die Zeilen oben stammen größtenteils vom 24.10.2026; seitdem ist vieles fertig geworden. Für den Fusion-Abgleich
+(`docs/roadmap/fusion360-abgleich.md`) gilt:
+
+| Block | Inhalt | Status |
+|---|---|---|
+| G1 | FU15 Problemliste, FU13 Freigabe-Prüfung, FU14 Referenzfälle | vorhanden (#129) |
+| G2 | FU1 Text in der Skizze, FU6 Versionen, FU7 Komponente ersetzen | vorhanden (#137) |
+| G3 | FU3 Parameter-CSV, FU5 Bauteilende, FU16 Bauteilfarben, FU18 benannte Schnitte, FU2 Bild in Skizze, FU11 Zeichnungsbemaßung, FU12 Zeichnungsvorlage | vorhanden (#137) |
+| G4 | FU8 Positionsdarstellungen, FU9 Explosion in Schritten mit Positionsnummern, FU4 Baugruppenparameter an Bauteile | vorhanden (#146) |
+| G4 | FU21 Bauteil im Kontext der Baugruppe bearbeiten, Nachbarkanten projizieren | vorhanden |
+| G4 | FU19 Blech erweitert: Falz (Umschlag), Konturlasche und Eckfreischnitt gab es schon; neu Blechkasten, In Blech umwandeln, Ecken auftrennen | vorhanden |
+| G5 | FU20, FU10 | nicht freigegeben |
