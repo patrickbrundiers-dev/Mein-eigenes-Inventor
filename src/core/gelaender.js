@@ -13,7 +13,9 @@ import { splitList } from "./expr.js";
 import { holderSchema, holderDrop, holderParts, entryWall } from "./handlaufhalter.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
+import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, findPlateFace, faceCoords, holesBelow, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
+const mountKind = (p) => (p.base === "oben" || p.base === "seitlich" ? p.base : null);
 const SEC = { rohr: "Rundrohr", vierkant: "Quadratrohr", rechteck: "Rechteckrohr", flach: "Flachstahl", rund: "Rundstahl", vierkantvoll: "Vierkantstahl" };
 
 export const GELAENDER = {
@@ -25,9 +27,13 @@ export const GELAENDER = {
     ...normSchema(undefined, "Lauflinie"),
     { key: "post", label: "Pfosten", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Pfosten" },
     { key: "postMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Pfosten" },
-    { key: "base", label: "Befestigung", type: "select", options: [["fussplatte", "Fußplatte"], ["keine", "ohne (eingespannt)"]], default: "fussplatte", group: "Pfosten" },
+    { key: "base", label: "Befestigung", type: "select", options: [["oben", "oben mit Fußplatte, Bohrbild ins Anschlussbauteil"], ["seitlich", "seitlich mit Befestigungsblech (Deckenstirn bzw. Randprofil links)"], ["fussplatte", "einfache Fußplatte (bisher)"], ["keine", "ohne (eingespannt)"]], default: "oben", group: "Pfosten" },
     { key: "baseSize", label: "Fußplatte Größe", type: "num", default: "120", group: "Pfosten", when: (p) => p.base === "fussplatte" },
     { key: "baseT", label: "Fußplatte Dicke", type: "num", default: "10", group: "Pfosten", when: (p) => p.base === "fussplatte" },
+    { key: "mTarget", label: "Anschlussbauteil", type: "select", options: [["boden", "Boden / Decke (nicht im Modell, Bohrbild für Dübel)"], ["profil", "Randprofil (wird erzeugt)"]], default: "boden", group: "Pfostenbefestigung", when: (p) => mountKind(p) },
+    { key: "mProfile", label: "Randprofil", type: "section", default: { kind: "upn", size: "200" }, group: "Pfostenbefestigung", when: (p) => mountKind(p) && p.mTarget === "profil" },
+    { key: "mSlab", label: "Deckenstärke (Stirnseite)", type: "num", default: "200", group: "Pfostenbefestigung", when: (p) => mountKind(p) === "seitlich" && p.mTarget !== "profil" },
+    ...mountSchema(undefined, "Pfostenbefestigung", (p) => mountKind(p)),
     { key: "rail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Handlauf und Gurte" },
     ...holderSchema(undefined, "Handlauf und Gurte"),
     { key: "overhang", label: "Handlauf-Überstand an den Enden", type: "num", default: "50", group: "Handlauf und Gurte" },
@@ -79,15 +85,67 @@ export const GELAENDER = {
       for (let k = 0; k < n; k++) fields.push({ a: [a[0] + d[0] * (L * k) / n, a[1] + d[1] * (L * k) / n], d, len: L / n, run: i });
     });
     const railH = rail.geom.height, railW = rail.geom.width;
-    const zBase = p.base === "fussplatte" ? p.baseT : 0;
+    const zBase = p.base === "fussplatte" ? p.baseT : p.base === "oben" ? p.oT : 0;
+    const kind = mountKind(p);
     const holder = p.holder !== "keine";
     const zPostTop = H - railH - holderDrop(holder, post, p.holderGap);
     const members = [], plates = [], chains = [], drills = [];
     const P3 = (xy, z) => [xy[0], xy[1], z];
     const up = [0, 0, 1];
+    // Pfostenbefestigung oben (pfostenbefestigung.js): Fußplatte auf dem Boden oder auf einem Randprofil, dessen
+    // Oberseite auf z = 0 liegt (U/UPN offen nach außen = rechts der Lauflinie); Bohrbild geht ins Randprofil
+    // Pfostenbefestigung (pfostenbefestigung.js). Oben: Fußplatte auf dem Boden oder auf einem Randprofil unter der
+    // Lauflinie, Oberseite auf z = 0 (U/UPN offen nach außen = rechts). Seitlich: Decke bzw. Randprofil links der
+    // Lauflinie (Innenseite), Oberkante z = 0, Befestigungsblech an der Stirnseite, Pfosten rechts davor.
+    const mount = kind ? mountConfig(p, undefined, kind) : null, mounted = [];
+    const mountTop = kind ? mountConfig(p, undefined, "oben") : null, mountSide = kind ? mountConfig(p, undefined, "seitlich") : null;
+    const sOff = kind === "seitlich" ? sideOffset(mount, post) : 0;
+    let rand = null;
+    const sup = mount && p.supports ? p.supports : null; // vom Balkon: Rahmen (Stäbe) und Belag in Geländer-Lage
+    if (mount && !sup && p.mTarget === "profil") {
+      const sec = p.mProfile, d0 = norm2(sub2(pts[1], pts[0])), side = kind === "seitlich";
+      const open = side ? [-d0[1], d0[0], 0] : [d0[1], -d0[0], 0];
+      const rot = orientRot(sec, [d0[0], d0[1], 0], up, { tall: up, open, legs: [-d0[1], d0[0], -1], stem: [0, 0, -1] });
+      const ex = rotExtent(sec, rot), zr = -ex.high / 2, ext = (side ? mount.sW : mount.L) / 2 + 20;
+      const line = side ? offsetLine(pts, sOff + ex.wide / 2) : pts;
+      const rp = line.map((q) => P3(q, zr));
+      const e0 = norm2(sub2(line[0], line[1])), e1 = norm2(sub2(line[line.length - 1], line[line.length - 2]));
+      rp[0] = P3([line[0][0] + e0[0] * ext, line[0][1] + e0[1] * ext], zr);
+      rp[rp.length - 1] = P3([line[line.length - 1][0] + e1[0] * ext, line[line.length - 1][1] + e1[1] * ext], zr);
+      chains.push({ section: sec, points: rp, name: "Randprofil", up, rot });
+      rand = rp.slice(1).map((b, k) => ({ name: "Randprofil", a: rp[k], b, section: sec, up, rot }));
+    }
     // Pfosten (Breite quer zur Lauflinie): Profil-u zeigt quer → Drehung so, dass Breite u ⟂ Lauf
     posts.forEach((q, i) => {
-      members.push({ section: post, a: P3(q.at, zBase), b: P3(q.at, zPostTop), name: `Pfosten ${i + 1}`, up: [q.d[0], q.d[1], 0] });
+      const top = P3(q.at, zPostTop), name = `Pfosten ${i + 1}`, along = [q.d[0], q.d[1], 0];
+      const ov = mount ? overrideFor(mount.per, name) : null, kindP = ov || kind; // einzelne Pfosten abweichend
+      if (mount && ov !== "aus") {
+        let r;
+        if (kindP === "oben") {
+          let face;
+          if (sup) {
+            // Balkon: auf dem Belag (Bohrungen auch in den Rahmen darunter) bzw. direkt auf dem Rahmen
+            face = findPlateFace(sup.plates, top);
+            if (!face) { face = findMemberFace(sup.members, P3(q.at, 0), up, 400); if (face?.cPhys) { const c = faceCoords(face, P3(q.at, 0))[1]; if (c < face.cPhys[0] - 1 || c > face.cPhys[1] + 1) face = null; } }
+            if (!face) throw fieldError(`${name}: weder Belag noch Rahmen unter dem Pfosten – Geländer vom Rand prüfen`, "mTarget");
+          } else face = rand ? findMemberFace(rand, P3(q.at, 0), up) : planeFace([0, 0, 0], up, along, "Boden");
+          if (!face) throw fieldError(`${name}: kein Randprofil unter dem Pfosten`, "mTarget");
+          r = topMount(mountTop, { name, post, top, along, face, plateName: `Fußplatte ${i + 1}` });
+          if (sup && face.targetKind === "plate") {
+            applyTargetHoles(sup.plates, face, r.targetHoles);
+            const below = holesBelow(mount, r.holes, sup.members, name);
+            r.drills.push(...below.drills); r.issues.push(...below.issues); r.transferred += below.drills.length; r.below = below.drills.length;
+          }
+        } else {
+          const left = [-q.d[1], q.d[0], 0];
+          let face;
+          try { face = sup ? findSideFace(sup.members, P3(q.at, 0), along, 2 * sOff + 500, 100 + mountSide.gap) : rand ? findSideFace(rand, P3(q.at, 0), along, 2 * sOff + 500) : slabFace(P3([q.at[0] + left[0] * sOff, q.at[1] + left[1] * sOff], 0), [-left[0], -left[1], 0], along, p.mSlab, "Deckenstirn"); } catch (e) { throw fieldError(e.message, "mProfile"); }
+          if (!face) throw fieldError(`${name}: ${sup ? "kein Rahmen" : "kein Randprofil"} neben dem Pfosten`, "mTarget");
+          r = sideMount(mountSide, { name, post, top, base: P3(q.at, 0), along, face, plateName: `Befestigungsblech ${i + 1}` });
+        }
+        members.push({ section: post, a: r.a, b: top, name, up: along, ...(r.cuts ? { cuts: r.cuts } : {}) });
+        plates.push(r.plate, ...(r.parts || [])); drills.push(...r.drills); issues.push(...r.issues); mounted.push(r);
+      } else members.push({ section: post, a: P3(q.at, mount ? 0 : zBase), b: top, name, up: [q.d[0], q.d[1], 0] });
       if (holder) {
         const hp = holderParts({ q: P3(q.at, zPostTop), along: q.d, axisZ: H - railH / 2, post, railH, d: p.holderD, name: `Pfosten ${i + 1}`, target: "Handlauf" });
         members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
@@ -244,12 +302,13 @@ export const GELAENDER = {
         }
       });
     }
+    issues.push(...mountCollisions(mounted, { members, plates }));
     // Geländernorm: Höhe, Öffnungen, Abstand zum Boden nach Nutzung (gelaendernorm.js)
     const bottomEdge = p.bottom ? zBot - beltExt([1, 0], [0, 0, 1]).high / 2 : ["blech", "glas", "rahmen"].includes(p.fill) ? fillLo + p.panelGap : 0;
     const gapKey = ["staketen", "quer", "rahmen"].includes(p.fill) ? "gapMax" : ["blech", "glas"].includes(p.fill) ? "panelGap" : p.fill === "kreuz" ? (p.ring ? "ringD" : "fill") : "fill";
     issues.push(...railingIssues({ use: p.use, fall: p.fall, height: H, fill: p.fill, gap: gapMaxSeen, bottom: bottomEdge, open: fillHi - fillLo, rail }, { height: "height", fill: "fill", gap: gapKey, bottom: p.bottom ? "bottomZ" : "fill", rail: "rail", use: "use" }));
     const total = runs.reduce((a, b) => a + b, 0);
-    const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "");
+    const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, kind === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "");
     return { chains, members, plates, drills, info, issues, sections: SEC };
   },
 
@@ -275,4 +334,14 @@ export const GELAENDER = {
 };
 
 const sub2 = (a, b) => [a[0] - b[0], a[1] - b[1]];
+/** Linienzug um off nach links versetzt (Ecken auf der Winkelhalbierenden) */
+function offsetLine(pts, off) {
+  return pts.map((q, i) => {
+    const dA = i > 0 ? norm2(sub2(q, pts[i - 1])) : null, dB = i < pts.length - 1 ? norm2(sub2(pts[i + 1], q)) : null;
+    const nA = dA && [-dA[1], dA[0]], nB = dB && [-dB[1], dB[0]];
+    if (!nA || !nB) { const n = nA || nB; return [q[0] + n[0] * off, q[1] + n[1] * off]; }
+    const m = norm2([nA[0] + nB[0], nA[1] + nB[1]]), k = off / Math.max(0.2, m[0] * nA[0] + m[1] * nA[1]);
+    return [q[0] + m[0] * k, q[1] + m[1] * k];
+  });
+}
 const norm2 = (a) => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; };

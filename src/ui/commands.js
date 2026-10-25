@@ -1,6 +1,7 @@
 // Befehle ausführen, Tastaturkürzel verteilen, Befehlssuche (Strg+K) und Kürzel-Editor
 import { h, toast } from "./dom.js";
 import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
+import { problemsDialog } from "./pruefung.js";
 
 /** id → Funktion. Ribbon-Aktionen werden wiederverwendet, damit Knopf und Kürzel dasselbe tun. */
 export function commandRunners(app) {
@@ -26,6 +27,7 @@ export function commandRunners(app) {
     "app.search": () => commandPalette(app),
     "edit.undo": () => app.undo(),
     "model.rebuild": () => app.rebuildNow(),
+    "model.problems": () => problemsDialog(app),
     "model.buildLog": () => app.props.buildLogDialog(),
     "edit.redo": () => app.redo(),
     "view.fit": () => app.viewer.fit(),
@@ -61,6 +63,10 @@ export function commandRunners(app) {
     "asm.align": r("align"),
     "asm.alignFlush": r("alignFlush"),
     "asm.alignConc": r("alignConc"),
+    "asm.alignInsert": r("alignInsert"),
+    "asm.alignAngle": r("alignAngle"),
+    "asm.alignTangent": r("alignTangent"),
+    "asm.pattern": r("asmPattern"),
     "asm.bom": r("bom"),
     "asm.cutlist": () => app.props.cutListDialog(),
     "asm.collide": () => app.props.collisionDialog(),

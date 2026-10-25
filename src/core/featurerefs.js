@@ -12,6 +12,7 @@ const datumId = (x) => (typeof x === "string" && x.startsWith("datum:") ? x.slic
 export function featureRefs(f) {
   const out = new Set(sketchRefs(f));
   for (const k of ["feature", "target", "plate"]) if (typeof f[k] === "string" && f[k]) out.add(f[k]);
+  for (const k of ["tools", "bodies"]) if (Array.isArray(f[k])) for (const x of f[k]) if (typeof x === "string" && x) out.add(x);
   if (f.type === "sketch" && f.plane?.ref === "datum" && f.plane.id) out.add(f.plane.id);
   for (const k of ["plane", "axis", "dir", "dir2"]) { const d = datumId(f[k]); if (d) out.add(d); }
   if (["arbeitsebene", "arbeitsachse", "arbeitspunkt"].includes(f.type)) {

@@ -1115,12 +1115,73 @@ try {
       const info = made.map((d) => ({ views: d.views.length, dims: d.dims.length, pend: !!(d.pendingAutoViews || d.pendingAutoDims), title: d.title.benennung }));
       const orig = a.files.saveBinary; let zip = null, name = "";
       a.files.saveBinary = async (buf, n) => { zip = new TextDecoder().decode(buf); name = n; };
-      try { await a.files.exportMappe(a.doc("beispiel_bg")); } finally { a.files.saveBinary = orig; }
+      // Prüfung vor der Mappe (FU13): bei offenen Punkten erscheint ein Dialog → »Trotzdem erstellen«
+      let asked = "";
+      try {
+        let done = false;
+        const run = a.files.exportMappe(a.doc("beispiel_bg")).finally(() => { done = true; });
+        while (!done) {
+          const b = [...document.querySelectorAll(".dialog footer .btn")].find((x) => x.textContent === "Trotzdem erstellen");
+          if (b) { asked = b.closest(".dialog").querySelector(".body").textContent; b.click(); }
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        await run;
+      } finally { a.files.saveBinary = orig; }
+      const openPage = zip ? zip.includes("Offene Punkte") : false;
+      if (!!asked !== openPage) return { asked, openPage };
       return { before, made: made.length, again: again.length, after: drawn().length, info, name, pages: zip ? (zip.match(/class="pg"/g) || []).length : 0, lists: zip ? zip.includes("<h1>Stückliste") && zip.includes("<h1>Zuschnittliste") : false,
         dxf: zip ? (zip.match(/Zeichnungen\/[^\x00]*?\.dxf/g) || []).length : 0, pos: zip ? /Positionen\/01_/.test(zip) : false, laser: zip ? /Laser\/[^\x00]*?\.step/.test(zip) : false, step: zip ? zip.includes("ISO-10303-21") : false, xlsx: zip ? /_Listen\.xlsx/.test(zip) : false };
     });
     step("Einzelteilzeichnungen und Fertigungsmappe", ez.after === 3 && ez.made === 3 - ez.before && ez.made > 0 && ez.again === 0 && ez.info.every((x) => x.views >= 2 && x.dims > 0 && !x.pend) && /_Fertigungsmappe\.zip$/.test(ez.name) && ez.pages >= 4 && ez.lists && ez.dxf >= 3 && ez.pos && ez.laser && ez.step && ez.xlsx,
       JSON.stringify(ez));
+  }
+
+  // Problemliste (FU15) und Freigabe (FU13): Fehler einbauen, Liste zeigt ihn, Klick springt zum Feature;
+  // Freigabe ohne Teilenummer nur mit Rückfrage, nach einer Maßänderung »Nach Freigabe geändert«
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    const pl = await evalApp(async () => {
+      const a = window.__werkcad, d = a.activeDoc();
+      const wait = async (pred, ms = 8000) => { const t = Date.now(); while (!pred() && Date.now() - t < ms) await new Promise((r) => setTimeout(r, 50)); return pred(); };
+      const out = {};
+      // Fehler: Rundung mit riesigem Radius
+      const f = d.features.find((x) => x.type === "extrude");
+      a.edit("Test", () => { d.features.push({ id: "e2e_fillet", type: "fillet", name: "Zu große Rundung", mode: "dir", dir: "Z", radius: "5000" }); });
+      await wait(() => a.results.get(d.id)?.status?.e2e_fillet && !a.busy);
+      await new Promise((r) => setTimeout(r, 300));
+      out.statusBtn = document.querySelector("#status .status-btn.err")?.textContent || "";
+      document.querySelector("#status .status-btn.err")?.click();
+      await wait(() => document.querySelector(".problems-dialog"));
+      const row = [...document.querySelectorAll(".problem-list .problem")].find((x) => x.textContent.includes("Zu große Rundung"));
+      out.row = row?.textContent || "";
+      row?.click();
+      await new Promise((r) => setTimeout(r, 200));
+      out.selected = a.sel?.id;
+      out.closed = !document.querySelector(".problems-dialog");
+      a.edit("Test", () => { d.features = d.features.filter((x) => x.id !== "e2e_fillet"); });
+      await wait(() => !a.results.get(d.id)?.status?.e2e_fillet);
+      // Freigabe: ohne Fehler, Teilenummer vorhanden → direkt freigegeben
+      a.sel = null; a.props.render();
+      const sel = () => [...document.querySelectorAll("#props .section")].find((s) => s.querySelector("h3")?.textContent === "Freigabe")?.querySelector("select");
+      await wait(() => sel());
+      const s1 = sel(); s1.value = "freigegeben"; s1.dispatchEvent(new Event("change"));
+      await wait(() => d.release?.status === "freigegeben" || document.querySelector(".dialog"));
+      const ok = [...document.querySelectorAll(".dialog footer .btn")].find((x) => x.textContent === "Freigeben");
+      if (ok) ok.click();
+      await wait(() => d.release?.status === "freigegeben");
+      out.released = d.release?.status;
+      // Maß ändern → geändert nach Freigabe
+      const before = f.depth;
+      a.edit("Test", () => { f.depth = String(Number(f.depth) + 1); });
+      await new Promise((r) => setTimeout(r, 300));
+      a.props.render();
+      out.changed = [...document.querySelectorAll("#props .msg.warn")].some((x) => x.textContent.includes("Nach der Freigabe geändert"));
+      a.edit("Test", () => { f.depth = before; delete d.release; });
+      return out;
+    });
+    step("Problemliste und Freigabe", /Fehler/.test(pl.statusBtn) && pl.row.includes("Zu große Rundung") && pl.selected === "e2e_fillet" && pl.closed && pl.released === "freigegeben" && pl.changed, JSON.stringify(pl));
+    await idle();
   }
 
   // Angebotsblatt (E4): Dialog ausfüllen, Preis von Hand, Seite mit Bild und Summen
@@ -2385,6 +2446,79 @@ try {
   await evalApp(() => window.__werkcad.viewer.fit?.());
   await shot("29-sweep-loft-spirale");
   step("Sweeping, Erhebung, Spirale", fm.length === 4 && fm.slice(0, 3).every((x) => x.ok) && /Pfad 147,1 mm/.test(fm[0].info) && /2 Querschnitte/.test(fm[1].info) && /5 Umdrehungen/.test(fm[2].info) && fm[3].bodies >= 1, JSON.stringify(fm));
+
+  // Körper-Werkzeuge: zwei Quader, Kombinieren über das Menüband (Differenz), Fläche verschieben, Trennen
+  await evalApp(() => {
+    const a = window.__werkcad;
+    a.newPart("Koerper");
+    const P = (id, x, y) => ({ id, x, y });
+    const box = (id, x) => ({ type: "sketch", id, name: id, plane: { ref: "XY" }, offset: "0", points: [P(id + 1, x, 0), P(id + 2, x + 100, 0), P(id + 3, x + 100, 40), P(id + 4, x, 40)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: id + "l" + p, type: "line", p1: id + p, p2: id + q })), constraints: [] });
+    a.addFeature(box("k1", 0), { select: false });
+    a.addFeature({ type: "extrude", id: "ke1", sketch: "k1", distance: "10", op: "new" }, { select: false });
+    a.addFeature(box("k2", 50), { select: false });
+    a.addFeature({ type: "extrude", id: "ke2", sketch: "k2", distance: "10", op: "new" }, { select: false });
+  });
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Kombinieren$/ }).click();
+  await idle();
+  const kb = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features.at(-1); return { type: f.type, st: r.status[f.id], bodies: r.bodies.length, vol: Math.round(r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0)), checks: document.querySelectorAll("#props .checks input").length }; });
+  await page.locator("#ribbon button", { hasText: /^Fläche verschieben$/ }).click();
+  await idle();
+  await evalApp(() => { const a = window.__werkcad, f = a.activeDoc().features.at(-1); a.edit("Fläche", () => { f.faces = [{ p: [25, 20, 10] }]; f.distance = "5"; }); });
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Trennen$/ }).click();
+  await idle();
+  await page.locator("#props .field", { hasText: "Abstand" }).first().locator("input").fill("25");
+  await page.locator("#props .field", { hasText: "Abstand" }).first().locator("input").press("Enter");
+  await idle();
+  const kb2 = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), fs = a.activeDoc().features; return { st: fs.slice(-2).map((f) => r.status[f.id]), bodies: r.bodies.length, vol: Math.round(r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0)) }; });
+  await shot("30-koerper");
+  step("Körper kombinieren, Fläche verschieben, trennen", kb.type === "kombinieren" && kb.st.ok && kb.bodies === 1 && kb.vol === 20000 && kb.checks === 1 && kb2.st.every((x) => x.ok) && kb2.vol === 30000 && kb2.bodies === 2, JSON.stringify({ kb, kb2 }));
+
+  // Baugruppe: Komponentenmuster über das Menüband, Kopien in der Stückliste, Winkel-Abhängigkeit, Zylindergelenk
+  await evalApp(() => {
+    const a = window.__werkcad;
+    const asm = a.newAssembly();
+    a.edit("Komponenten", () => {
+      asm.components.push({ id: "mp1", part: "beispiel_platte", name: "Platte:1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+      asm.components.push({ id: "mp2", part: "beispiel_rohr", name: "Rohr:1", pos: [0, 0, 300], rot: [0, 0, 0] });
+    });
+    a.sel = { type: "component", id: "mp2" };
+  });
+  await idle(120000);
+  await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+  await page.locator("#ribbon button", { hasText: /^Muster$/ }).click();
+  await idle(60000);
+  const am = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { copies: asm.components.filter((c) => c.pat).length, sel: a.sel?.type, tree: [...document.querySelectorAll("#browser .node .label")].some((x) => /^Muster 1$/.test(x.textContent)), bomRohr: asm.components.filter((c) => c.part === "beispiel_rohr").length }; });
+  await page.locator("#props .field", { hasText: "Anzahl 1" }).locator("input").fill("5");
+  await page.locator("#props .field", { hasText: "Anzahl 1" }).locator("input").press("Enter");
+  await idle(60000);
+  const am2 = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); const cp = asm.components.filter((c) => c.pat); return { copies: cp.length, xs: cp.map((c) => Math.round(c.pos[0])) }; });
+  await evalApp(() => { const a = window.__werkcad; a.viewer.fit?.(); });
+  await shot("31-komponentenmuster");
+  step("Komponentenmuster", am.copies === 2 && am.sel === "asmpattern" && am.tree && am.bomRohr === 3 && am2.copies === 4 && new Set(am2.xs).size === 4, JSON.stringify({ am, am2 }));
+
+  // Rahmen: Endkappe und Kürzen über das Menüband, Gleichteile in den Bauteil-Eigenschaften
+  await evalApp(() => {
+    const a = window.__werkcad;
+    a.newPart("Gestell");
+    for (const y of ["0", "300"]) a.addFeature({ type: "profile", section: "vierkant", dims: { B: "40", t: "3", r: "4" }, length: "800", start: ["0", y, "0"], axis: "X", rotation: "0", miterStart: "0", miterEnd: "0" }, { select: false });
+  });
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Endkappe$/ }).click();
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Kürzen\/Verlängern$/ }).click();
+  await idle();
+  await page.locator("#props .field", { hasText: "Abstand der Ebene" }).locator("input").fill("700");
+  await page.locator("#props .field", { hasText: "Abstand der Ebene" }).locator("input").press("Enter");
+  await idle();
+  const rk = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), fs = a.activeDoc().features; return { st: fs.slice(-2).map((f) => ({ t: f.type, ok: r.status[f.id]?.ok, info: r.status[f.id]?.info })), caps: r.bodies.filter((b) => b.meta?.endcap).length, lens: r.bodies.filter((b) => b.kind === "member").map((b) => Math.round(b.meta.length)) }; });
+  await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); });
+  const eqp = await evalApp(() => [...document.querySelectorAll("#props .section h3")].some((x) => x.textContent === "Gleichteile"));
+  await shot("32-rahmen-endkappe");
+  step("Endkappe, Kürzen, Gleichteile", rk.st.every((x) => x.ok) && rk.caps === 2 && rk.lens.sort().join() === "700,800" && !eqp, JSON.stringify({ rk, eqp }));
 
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));

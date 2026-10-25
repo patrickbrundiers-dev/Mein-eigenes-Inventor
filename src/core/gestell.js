@@ -10,7 +10,7 @@
 //
 // asm.gestell = {
 //   skeleton: Bauteil-ID (Skelett: Skizzenlinien und Profilzüge), section: { kind, size, group? } (Vorgabe),
-//   place: "mm" (Lage zur Linie, siehe PLACES), rot: Drehung in °, corner: Ecken automatisch, tee: T-Stöße automatisch,
+//   place: "mm" (Lage zur Linie, siehe PLACES), rot: Drehung in °, corner: Ecken automatisch, tee: T-Stöße automatisch, gap?: Spalt der Automatik und der Werkzeuge,
 //   members: [{ id, no, seg, section?, place?, rot?, offU?, offV?, extA?, extB?, reuse? }],
 //   joints: [{ id, kind (JOINT_KINDS), a, b (Stab-IDs), gap? }], next: nächste Stabnummer }
 // Verbindungen von Hand gehen vor; was an einem Ende von Hand gesetzt ist, setzt die Automatik nicht mehr.
@@ -35,6 +35,8 @@ export const JOINT_KINDS = Object.freeze({
   stutzen: { label: "Auf Gestell stutzen", hint: "zweiter Stab wird an der zugewandten Fläche des ersten gekürzt oder verlängert" },
   nuten: { label: "Nuten", hint: "zweiter Stab wird mit der Form des ersten ausgeklinkt (Endbearbeitung bleibt)" },
 });
+/** Verbindungen, bei denen ein Spalt (mm) zwischen den Stäben möglich ist */
+export const GAP_KINDS = Object.freeze(["gehrung", "ecke", "stutzen"]);
 export const CORNER_AUTO = Object.freeze([["gehrung", "Gehrung"], ["ecke", "Eckverbindung"], ["keine", "keine"]]);
 export const TEE_AUTO = Object.freeze([["stutzen", "Auf Gestell stutzen"], ["nuten", "Nuten"], ["keine", "keine"]]);
 
@@ -107,7 +109,8 @@ export function setJoint(g, kind, a, b, gap = 0) {
   if (a === b) throw new Error("Zwei verschiedene Stäbe wählen");
   if (kind !== "keine" && !JOINT_KINDS[kind]) throw new Error("Unbekannte Verbindung " + kind);
   g.joints = g.joints.filter((j) => !((j.a === a && j.b === b) || (j.a === b && j.b === a)));
-  const j = { id: "gj" + Math.random().toString(36).slice(2, 9), kind, a, b, ...(gap ? { gap } : {}) };
+  gap = Math.max(0, Number(gap) || 0);
+  const j = { id: "gj" + Math.random().toString(36).slice(2, 9), kind, a, b, ...(gap && GAP_KINDS.includes(kind) ? { gap } : {}) };
   g.joints.push(j);
   return j;
 }
@@ -250,7 +253,7 @@ export function gestellPlan(input) {
     if (!nodes.has(k)) nodes.set(k, []);
     nodes.get(k).push({ o, end, p });
   }
-  const corner = input?.corner || "gehrung", tee = input?.tee || "stutzen";
+  const corner = input?.corner || "gehrung", tee = input?.tee || "stutzen", autoGap = Math.max(0, num(input?.gap));
   for (const [, list] of nodes) {
     const free = list.filter((x) => !x.o.taken[x.end]);
     if (list.length === 1 && free.length === 1) {
@@ -261,7 +264,7 @@ export function gestellPlan(input) {
         if (q === o || isManual(q, o)) continue;
         const t = v3.dot(v3.sub(p, q.s.a), q.z), L = v3.dist(q.s.a, q.s.b);
         const perp = v3.dist(p, v3.add(q.s.a, v3.mul(q.z, t)));
-        if (perp < 1e-3 && t > 1e-3 && t < L - 1e-3) { apply(tee, q, o, 0, "(automatisch)"); break; }
+        if (perp < 1e-3 && t > 1e-3 && t < L - 1e-3) { apply(tee, q, o, autoGap, "(automatisch)"); break; }
       }
       continue;
     }
@@ -271,7 +274,7 @@ export function gestellPlan(input) {
       const dX = into(x.o, x.end), dY = into(y.o, y.end);
       if (Math.abs(v3.dot(dX, dY)) > 0.9999) continue; // gerade weiter: Stoß ohne Bearbeitung
       const [A, B] = x.o.m.no < y.o.m.no ? [x.o, y.o] : [y.o, x.o];
-      apply(corner, A, B, 0, "(automatisch)");
+      apply(corner, A, B, autoGap, "(automatisch)");
       continue;
     }
     if (list.length > 2 && free.length > 1) warn(`Knoten mit ${list.length} Stäben (${list.map((x) => x.o.label).join(", ")}): Verbindung von Hand setzen`);

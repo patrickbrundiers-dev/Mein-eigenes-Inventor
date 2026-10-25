@@ -77,3 +77,15 @@ test("Gestell: Nuten statt Stutzen, Verbindung »keine«, Wiederverwenden, Entfe
   const issues = gestellPlan({ ...g, segments: segments.filter((s) => s.id !== "s1") }).issues;
   assert.ok(issues.some((x) => /Skelettlinie fehlt/.test(x.message)));
 });
+
+test("Gestell: Spalt der Automatik gilt für Ecken und T-Stöße, setJoint nimmt Spalt nur wo er wirkt", () => {
+  const segments = rect(), g = defaultGestell("sk", segments);
+  const base = gestellPlan({ ...g, segments }).rows;
+  const rows = gestellPlan({ ...g, gap: 4, segments }).rows;
+  near(rows[0].len, base[0].len - 4 * Math.SQRT2, 0.05, "Gehrung an zwei Enden: je halber Spalt senkrecht zur Schnittfläche");
+  near(rows[4].len, base[4].len - 8, 0.05, "Mittelstab an beiden Enden um den Spalt gestutzt");
+  const [a, b] = g.members;
+  assert.equal(setJoint(g, "gehrung", a.id, b.id, "2.5").gap, 2.5);
+  assert.equal(setJoint(g, "nuten", a.id, b.id, 3).gap, undefined, "Nuten ohne Spalt");
+  assert.equal(setJoint(g, "stutzen", a.id, b.id, -1).gap, undefined, "negativer Spalt zählt nicht");
+});

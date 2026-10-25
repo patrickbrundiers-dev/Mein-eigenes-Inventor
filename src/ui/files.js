@@ -15,6 +15,8 @@ import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
 import { decomposePlacement } from "../core/geom.js";
 import { buildXlsx, zipFiles } from "../core/xlsx.js";
 import { mappeHtml, listPages, mappeName } from "../core/mappe.js";
+import { checkBeforeMappe, openPointsPage } from "./pruefung.js";
+import { releaseText } from "../core/pruefung.js";
 import { angebotPage } from "../core/angebot.js";
 import { bendListCsv } from "../core/biegerohr.js";
 import { bodiesMass } from "../core/mass.js";
@@ -484,6 +486,10 @@ export class Files {
   async exportMappe(d = this.app.activeDoc()) {
     const app = this.app;
     if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Fertigungsmappe gibt es für Bauteile und Baugruppen");
+    // Vollständigkeit vorher prüfen (FU13); offene Punkte kommen auf eine eigene Seite
+    const check = await checkBeforeMappe(app, d);
+    if (!check.go) return;
+    const open = check.items.filter((x) => x.level !== "Hinweis");
     await this.withBusy("Fertigungsmappe", async () => {
       const parts = await app.builtParts(d);
       const made = await app.partDrawings(d.id, { quiet: true });
@@ -497,7 +503,8 @@ export class Files {
       const cut = cutListRows(cutSrc);
       const bends = parts.flatMap((p) => (app.results.get(p.id)?.bodies || []).filter((b) => b.meta?.bends?.length).map((b) => ({ name: `${p.name} – ${b.name}`, bends: b.meta.bends, last: b.meta.lastStraight || 0, length: b.meta.length })));
       const base = mappeName(d.number || d.name);
-      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, bom, cut, bends })], { title: "Fertigungsmappe " + d.name });
+      const status = open.length ? "nicht freigegeben" : releaseText(d, (id) => app.doc(id));
+      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends }), ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
       const files = [];
       const pdf = this.bridge?.renderPdf ? await this.bridge.renderPdf(html) : null;
       files.push(pdf ? [base + "_Fertigungsmappe.pdf", new Uint8Array(pdf)] : [base + "_Fertigungsmappe.html", html]);
