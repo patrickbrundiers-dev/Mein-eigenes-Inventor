@@ -14,6 +14,7 @@ import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
 import { planKantteil, kantteilOutline, splitList } from "../core/blech.js";
+import { bendRule, ruleSummary } from "../core/bendtable.js";
 import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims, boltSizeForHole, boltSet } from "../core/normteile.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
@@ -346,7 +347,7 @@ export function createKernel(R) {
       return { mode: c.mode, swivel: sw };
     };
     const keys = [];
-    let acc = JSON.stringify(values);
+    let acc = JSON.stringify(values) + (part.material || ""); // Werkstoff wählt die Biegetabelle
     for (const f of feats) { acc = hashString(acc + JSON.stringify(f)); keys.push(acc); }
     let startAt = 0;
     const cacheList = prefixCache.get(part.id) || [];
@@ -757,7 +758,9 @@ export function createKernel(R) {
             const list = (x, label) => splitList(x).map((v, i) => E(v, `${label} ${i + 1}`));
             const t = E(f.t ?? "2", "Blechdicke"), L = E(f.length ?? "1000", "Länge");
             if (!(L > 0)) throw new Error("Länge muss > 0 sein");
-            const plan = planKantteil({ legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), t, ri: E(f.ri ?? "0", "Innenradius"), k: E(f.k ?? "0.33", "K-Faktor"), ref: f.ref || "aussen" });
+            const ri = E(f.ri ?? "0", "Innenradius"), K0 = E(f.k ?? "0.33", "K-Faktor");
+            const br = bendRule({ rule: f.rule || "k", material: part.material || "S235", t, ri, k: K0 });
+            const plan = planKantteil({ legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), t, ri, k: K0, kOf: br.kOf, ref: f.ref || "aussen" });
             const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Lage " + "XYZ"[k]));
             let solid;
             if (f.view === "abgewickelt") solid = R.makeBaseBox(plan.flat, L, t).translate([plan.flat / 2, L / 2, -t / 2]);
@@ -773,11 +776,12 @@ export function createKernel(R) {
             }
             solid = solid.translate(pos);
             const name = f.name || `Kantteil ${round(t)} mm, Abw. ${round(plan.flat)} × ${round(L)}`;
-            const meta = { sheet: { t, flat: plan.flat, length: L, bends: plan.bends.map((b) => ({ angle: b.angle, r: b.rm - t / 2 })), bendLines: plan.bendLines } };
+            const meta = { sheet: { t, flat: plan.flat, length: L, bends: plan.bends.map((b, i) => ({ angle: b.angle, r: b.rm - t / 2, k: br.used[i]?.k })), bendLines: plan.bendLines, rule: ruleSummary(br) } };
             state.tools.set(f.id, { op: "new", shapes: [{ shape: solid, kind: "solid", meta, name }], sheet: { plan, L, t } });
             state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
-            st.info = `Abwicklung ${round(plan.flat)} × ${round(L)} mm, ${plan.bends.length} Biegung(en)` + (plan.bends.length ? `, Biegezugabe ${plan.flatParts.filter((_, i) => i % 2).map(round).join(" / ")} mm` : "") + (f.view === "abgewickelt" ? "" : " · Abwicklung als DXF in den Eigenschaften");
-            if (plan.issues.length) st.warning = plan.issues.map((x) => x.message).join("; ");
+            st.info = `Abwicklung ${round(plan.flat)} × ${round(L)} mm, ${plan.bends.length} Biegung(en)` + (plan.bends.length ? `, Biegezugabe ${plan.flatParts.filter((_, i) => i % 2).map(round).join(" / ")} mm` : "") + (plan.bends.length && (f.rule || "k") !== "k" ? ` · ${ruleSummary(br)}` : "") + (f.view === "abgewickelt" ? "" : " · Abwicklung als DXF in den Eigenschaften");
+            const warn = [...plan.issues.map((x) => x.message), ...new Set(br.warnings)];
+            if (warn.length) st.warning = warn.join("; ");
             break;
           }
           case "normteil": {
@@ -809,12 +813,13 @@ export function createKernel(R) {
             break;
           }
           case "knickrahmen": {
-            const kr = buildKnickrahmen(f, E);
+            const kr = buildKnickrahmen(f, E, part.material || "S235");
             // ein Bauteil (eine Zuschnittzeile in Abwicklungslänge); gefaltet mit sichtbarer Gehrungslinie
             const shown = [{ shape: f.view === "abgewickelt" ? kr.flat : kr.folded, kind: "member", meta: kr.meta, name: kr.name }];
             state.tools.set(f.id, { op: "member", shapes: shown });
             for (const x of shown) pushMember(state, x.shape, f, x.meta, x.name);
-            st.info = `Abwicklung ${round(kr.meta.length)} mm, ${kr.meta.knicks} Ausklinkung(en)` + (kr.meta.knicks ? `, Biegezugabe ${kr.meta.bendAllowances.map(round).join(" / ")} mm` : "") + (f.view === "abgewickelt" ? "" : " · für den Rohrlaser Ansicht »Abgewickelt« exportieren");
+            st.info = `Abwicklung ${round(kr.meta.length)} mm, ${kr.meta.knicks} Ausklinkung(en)` + (kr.meta.knicks ? `, Biegezugabe ${kr.meta.bendAllowances.map(round).join(" / ")} mm` : "") + (kr.meta.knicks && (f.bendRule || "k") !== "k" ? ` · ${kr.meta.rule}` : "") + (f.view === "abgewickelt" ? "" : " · für den Rohrlaser Ansicht »Abgewickelt« exportieren");
+            if (kr.warnings.length) st.warning = kr.warnings.join("; ");
             break;
           }
           case "fillet":
@@ -1358,8 +1363,10 @@ export function createKernel(R) {
    * Baut beide Zustände: gefaltet (gerade Abschnitte + Außenwand mit Biegeradius) und abgewickelt
    * (gerades Rohr mit Ausklinkungen). Erst wenn beide gültig sind, wird etwas übernommen.
    */
-  function buildKnickrahmen(f, E) {
+  function buildKnickrahmen(f, E, material = "S235") {
     const input = knickInput(f, E);
+    const br = bendRule({ rule: f.bendRule || "k", material, t: input.dims.t, ri: input.bendRadius, k: input.kFactor });
+    input.kOf = br.kOf;
     const plan = planKnickrahmen(input);
     if (plan.issues.length) throw new Error(plan.issues.map((x) => x.message).join("; "));
     const section = { kind: input.section, dims: input.dims };
@@ -1518,8 +1525,9 @@ export function createKernel(R) {
       inPlane: plan.W, // Rohrmaß in der Knickebene
       wall: plan.t,
       frameZ: z0,
+      rule: ruleSummary(br),
     };
-    return { folded, segments, flat, meta, name, plan };
+    return { folded, segments, flat, meta, name, plan, warnings: [...new Set(br.warnings)] };
   }
 
   /** Körperprüfung: genau ein gültiger Volumenkörper mit Volumen > 0 */

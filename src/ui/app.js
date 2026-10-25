@@ -16,6 +16,7 @@ import { entityFree } from "../core/solver.js";
 import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./dom.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { classText } from "../core/tolerance.js";
+import { setUserBendTables, adoptProjectBendTables, projectBendTableCopies } from "../core/bendtable.js";
 import { newSketch } from "../core/sketch.js";
 import { planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir } from "../core/geom.js";
 import { flattenAssembly } from "../core/subasm.js";
@@ -218,6 +219,7 @@ export class App {
     this.filePath = filePath;
     this.readOnly = false;
     const matIssues = adoptProjectMaterials(prj);
+    adoptProjectBendTables(prj);
     this.syncMaterials();
     for (const i of matIssues) toast(i.message, { timeout: 8000 });
     this.dirty = false;
@@ -921,7 +923,7 @@ export class App {
     const p = this.prefs;
     if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
     if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
-    if (!keys || keys.includes("material.eigene")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte neu
+    if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
     this.viewer.applyPrefs(p.values);
     this.sketcher.applyPrefs(p.values);
     if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);
@@ -935,11 +937,16 @@ export class App {
     const user = this.prefs.get("material.eigene") || [];
     setUserMaterials(user);
     this.kernel?.call("materials", { user, project: this.project?.materials || [] }).catch(() => {});
+    const tables = this.prefs.get("blech.biegetabellen") || [];
+    setUserBendTables(tables);
+    this.kernel?.call("bendTables", { user: tables, project: this.project?.bendTables || [] }).catch(() => {});
   }
   /** Eigene Werkstoffe, die das Projekt benutzt, als Kopie in die Datei */
   embedMaterials() {
     const copies = projectMaterialCopies(this.project);
     if (copies.length) this.project.materials = copies; else delete this.project.materials;
+    const tables = projectBendTableCopies(this.project);
+    if (tables.length) this.project.bendTables = tables; else delete this.project.bendTables;
   }
   /** Farbschema setzen (hell/dunkel/wie System); „System“ folgt Windows auch während der Sitzung */
   applyTheme() {

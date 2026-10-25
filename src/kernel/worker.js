@@ -3,6 +3,7 @@ import * as R from "replicad";
 import ocInit from "replicad-opencascadejs";
 import { createKernel, hashString, errorText } from "./build.js";
 import { materialOf, setUserMaterials, setProjectMaterials } from "../core/materials.js";
+import { setUserBendTables, setProjectBendTables } from "../core/bendtable.js";
 import { svgPathSegments } from "../core/svgpath.js";
 import { segmentsToDxf } from "../core/dxf.js";
 
@@ -18,6 +19,7 @@ const ready = (async () => {
 const built = new Map();
 const meshCache = new Map();
 const projCache = new Map();
+let bendKey = "[[],[]]";
 function remember(map, key, val, max) {
   map.delete(key);
   map.set(key, val);
@@ -61,6 +63,16 @@ async function placedShapes(items) {
 const handlers = {
   // eigene Werkstoffe (Farbe im STEP) – die Oberfläche schickt sie bei jeder Änderung
   materials({ user, project }) { setUserMaterials(user); setProjectMaterials(project); return true; },
+  // Biegetabellen (eigene und Projektkopien); bei Änderung alles neu rechnen, Abwicklungen hängen daran
+  async bendTables({ user, project }) {
+    const key = JSON.stringify([user, project]);
+    if (key === bendKey) return false;
+    bendKey = key;
+    setUserBendTables(user); setProjectBendTables(project);
+    await ready;
+    built.clear(); meshCache.clear(); projCache.clear(); K.prefixCache.clear();
+    return true;
+  },
   async build({ part, quality = "normal" }) {
     const t0 = performance.now();
     const res = await getBuilt(part);

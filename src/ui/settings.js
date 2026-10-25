@@ -4,6 +4,7 @@ import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings } fro
 import { materialList, validateMaterial, exportMaterialLib, importMaterialLib, usedMaterialKeys } from "../core/materials.js";
 import { keymapEditor, quickAccessEditor } from "./commands.js";
 import { orderedLabels, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
+import { MODES, ANGLE_REFS, validateBendTable, tableToCsv, parseTableText, dinK, bendTableUses, tableId, sameTable } from "../core/bendtable.js";
 
 const STATUS = { aktiv: "", teilweise: "teilweise", geplant: "geplant" };
 
@@ -113,6 +114,7 @@ function extras(app, cat) {
     return [forget, quickAccessEditor(app), ribbonEditor(app), keymapEditor(app)];
   }
   if (cat === "material") return [materialsEditor(app)];
+  if (cat === "blech") return [bendTablesEditor(app)];
   if (cat === "dateien") {
     return [h("ul", { class: "hint" },
       h("li", {}, "Wiederherstellung: nach einem Absturz bietet der Startbildschirm die letzte automatische Sicherung an."),
@@ -261,14 +263,110 @@ function materialsEditor(app) {
   return wrap;
 }
 
-async function pickText(app, filterName = "PBCAD-Einstellungen") {
+const nf = (v, d = 3) => (v === null || v === undefined ? "" : String(Math.round(v * 10 ** d) / 10 ** d).replace(".", ","));
+
+/** Biegetabellen: je Werkstoff und Dicke ein Raster Winkel × Innenradius; Eingabe als Text (aus Excel einfügen) mit Vorschau */
+function bendTablesEditor(app) {
+  const prefs = app.prefs;
+  const wrap = h("div", { class: "mat-editor bend-editor" });
+  const lib = () => [...(prefs.get("blech.biegetabellen") || [])];
+  const save = (next) => { const r = prefs.set("blech.biegetabellen", next); if (!r.ok) toast(r.error, { kind: "err", timeout: 6000 }); render(); return r.ok; };
+  const label = (key) => materialList().find((m) => m.key === key)?.label || key;
+  const edit = (tb, { isNew = false } = {}) => {
+    const sel = (opts, v) => h("select", { class: "inp" }, ...opts.map((o) => h("option", { value: o.value, selected: o.value === v }, o.label)));
+    const f = {
+      material: sel(materialList().map((m) => ({ value: m.key, label: m.label })), tb.material || app.prefs.get("dokument.werkstoff") || "S235"),
+      t: h("input", { class: "inp", value: nf(tb.t) || "2", inputmode: "decimal", "aria-label": "Blechdicke" }),
+      mode: sel(MODES, tb.mode || "verkuerzung"),
+      ref: sel(ANGLE_REFS, tb.ref || "biege"),
+      fallbackK: h("input", { class: "inp", value: nf(tb.fallbackK ?? 0.33), inputmode: "decimal", "aria-label": "Ersatz-K-Faktor" }),
+      note: h("input", { class: "inp", value: tb.note || "", placeholder: "z. B. Matrize V16, Oberwerkzeug R2", "aria-label": "Notiz" }),
+      grid: h("textarea", { class: "inp bend-grid", rows: 8, spellcheck: false, "aria-label": "Tabelle" }, tb.radii ? tableToCsv(tb) : "Winkel\\Radius;1;2;3\r\n90;;;"),
+    };
+    const preview = h("div", { class: "bend-preview" });
+    const err = h("div", { class: "set-err", role: "alert" });
+    const collect = () => {
+      const g = parseTableText(f.grid.value);
+      if (!g.ok) return g;
+      return validateBendTable({ material: f.material.value, t: f.t.value, mode: f.mode.value, ref: f.ref.value, fallbackK: f.fallbackK.value, note: f.note.value, radii: g.radii, angles: g.angles, values: g.values });
+    };
+    const show = () => {
+      const r = collect();
+      err.textContent = r.ok ? "" : r.error;
+      if (!r.ok) return preview.replaceChildren();
+      const v = r.value;
+      preview.replaceChildren(h("table", { class: "grid" },
+        h("thead", {}, h("tr", {}, h("th", {}, v.ref === "oeffnung" ? "Öffnung ° \\ ri mm" : "Biegung ° \\ ri mm"), ...v.radii.map((x) => h("th", { class: "num" }, nf(x))))),
+        h("tbody", {}, ...v.angles.map((a, i) => h("tr", {}, h("th", {}, nf(a)), ...v.values[i].map((x) => h("td", { class: "num" + (x === null ? " empty" : "") }, x === null ? "–" : nf(x))))))));
+    };
+    for (const el of Object.values(f)) el.addEventListener("input", show);
+    const din = () => {
+      const t = Number(String(f.t.value).replace(",", "."));
+      if (!(t > 0)) return (err.textContent = "Erst die Blechdicke angeben");
+      const radii = [0.5, 1, 1.5, 2, 3].map((q) => Math.round(q * t * 100) / 100), angles = [30, 45, 60, 90, 120, 135];
+      f.mode.value = "k"; f.ref.value = "biege";
+      f.grid.value = tableToCsv({ radii, angles, values: angles.map(() => radii.map((r) => Math.round(dinK(r, t) * 1000) / 1000)) });
+      show();
+    };
+    const row = (lbl, el) => h("div", { class: "field wide" }, h("label", {}, lbl), el);
+    modal({
+      title: isNew ? "Biegetabelle anlegen" : "Biegetabelle bearbeiten", width: "620px",
+      body: h("div", { class: "mat-form" }, row("Werkstoff", f.material), row("Blechdicke (mm)", f.t), row("Werte in den Zellen", f.mode), row("Winkelbezug", f.ref), row("Ersatz-K-Faktor", f.fallbackK), row("Notiz", f.note),
+        h("p", { class: "hint" }, "Erste Zeile: leere Zelle, dann die Innenradien (mm). Darunter je Zeile ein Winkel und die Werte; leere Zelle = kein Wert. Trennzeichen Semikolon oder Tab – Zellen lassen sich direkt aus Excel einfügen. Verkürzung: Abwicklung = Summe der Außenmaße (bis zum Schnittpunkt der Außenflächen) + v, v ist also meist negativ."),
+        f.grid, h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: din }, "Mit DIN 6935 vorbelegen (K-Faktoren)")), preview, err),
+      buttons: [{ label: "Abbrechen" }, { label: "Übernehmen", primary: true, run: () => {
+        const r = collect();
+        if (!r.ok) { err.textContent = r.error; return false; }
+        const list = lib();
+        const i = isNew ? -1 : list.findIndex((x) => tableId(x) === tableId(tb));
+        if (list.some((x, j) => j !== i && sameTable(x, r.value))) { err.textContent = `Für ${label(r.value.material)} ${nf(r.value.t)} mm gibt es schon eine Tabelle`; return false; }
+        if (i >= 0) list[i] = r.value; else list.push(r.value);
+        return save(list) ? true : false;
+      } }],
+    });
+    show();
+  };
+  const remove = async (tb) => {
+    if (await confirmDialog("Biegetabelle löschen", `Biegetabelle ${label(tb.material)} ${nf(tb.t)} mm löschen?`, { ok: "Löschen", danger: true })) save(lib().filter((x) => tableId(x) !== tableId(tb)));
+  };
+  const exportCsv = (tb) => app.files.saveText(tableToCsv(tb), `Biegetabelle_${tb.material}_${nf(tb.t)}mm.csv`, "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
+  const importCsv = async () => {
+    const text = await pickText(app, "Biegetabelle (CSV)", ["csv", "txt"]);
+    if (text === null) return;
+    const g = parseTableText(text);
+    if (!g.ok) return toast("Import fehlgeschlagen: " + g.error, { kind: "err", timeout: 6000 });
+    edit({ radii: g.radii, angles: g.angles, values: g.values }, { isNew: true });
+  };
+  const render = () => {
+    const uses = bendTableUses(app.project).map(([material, t]) => ({ material, t }));
+    const btn = (lbl, run, attrs = {}) => h("button", { class: "btn", onclick: run, ...attrs }, lbl);
+    const list = lib();
+    const rows = list.map((tb) => h("tr", {},
+      h("td", {}, label(tb.material), tb.note ? h("span", { class: "hint" }, " · " + tb.note) : null),
+      h("td", { class: "num" }, nf(tb.t)),
+      h("td", {}, MODES.find((m) => m.value === tb.mode)?.label || tb.mode),
+      h("td", { class: "num" }, `${tb.angles.length} × ${tb.radii.length}`),
+      h("td", { class: "mat-actions" }, uses.some((u) => sameTable(u, tb)) ? h("span", { class: "hint" }, "benutzt ") : null,
+        btn("Bearbeiten", () => edit(tb)), btn("Duplizieren", () => edit({ ...tb, t: tb.t + 1 }, { isNew: true })), btn("CSV", () => exportCsv(tb)), btn("Löschen", () => remove(tb)))));
+    wrap.replaceChildren(
+      h("div", { class: "btn-row" }, btn("Biegetabelle anlegen …", () => edit({}, { isNew: true })), btn("CSV importieren …", importCsv)),
+      list.length ? h("table", { class: "grid" },
+        h("thead", {}, h("tr", {}, h("th", {}, "Werkstoff"), h("th", {}, "Dicke mm"), h("th", {}, "Werte"), h("th", {}, "Winkel × Radien"), h("th", {}, ""))),
+        h("tbody", {}, ...rows))
+        : h("p", { class: "hint" }, "Noch keine Biegetabelle. Ohne Tabelle rechnen Kantteil und Knickrahmen mit ihrem K-Faktor."));
+  };
+  render();
+  return wrap;
+}
+
+async function pickText(app, filterName = "PBCAD-Einstellungen", exts = ["json"]) {
   const bridge = window.werkcad;
   if (bridge?.openFile) {
-    const r = await bridge.openFile({ filters: [{ name: filterName, extensions: ["json"] }] });
+    const r = await bridge.openFile({ filters: [{ name: filterName, extensions: exts }] });
     return r ? (r.data ?? null) : null;
   }
   return new Promise((res) => {
-    const inp = h("input", { type: "file", accept: ".json,application/json" });
+    const inp = h("input", { type: "file", accept: exts.map((e) => "." + e).join(",") });
     inp.addEventListener("change", async () => res(inp.files[0] ? await inp.files[0].text() : null));
     inp.click();
   });
