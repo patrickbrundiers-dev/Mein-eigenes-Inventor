@@ -1162,7 +1162,14 @@ try {
     const f1 = await evalApp(() => { const d = window.__werkcad.activeDoc(); return { n: d.features.length, type: d.features.at(-1).type }; });
     // Kürzel G für Rundung im Einstellungscenter, E (belegt) wird abgelehnt
     await page.keyboard.press("Control+,");
-    await page.locator(".set-search input").fill("tastatur");
+    // Suche wird neu gerendert; auf den Kürzel-Bereich warten, sonst Suche einmal wiederholen (CI-Abbruch #113)
+    for (let k = 0; k < 2; k++) {
+      await page.locator(".set-search input").fill(k ? "" : "tastatur");
+      if (k) await page.locator(".set-search input").fill("tastatur");
+      try { await page.locator(".km input[type=search]").waitFor({ state: "visible", timeout: 10000 }); break; } catch (e) {
+        if (k) throw new Error(`Kürzel-Bereich fehlt: ${await page.locator(".set-center").innerText().catch(() => "kein Dialog")}`.slice(0, 600));
+      }
+    }
     const row = page.locator('.km-row[data-cmd="part.fillet"] .km-key');
     // Liste wird bei jeder Eingabe neu gebaut; auf die Zeile warten, einmal neu filtern, falls sie fehlt (CI-Abbruch #94)
     for (let k = 0; k < 2; k++) {
