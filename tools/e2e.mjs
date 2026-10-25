@@ -816,6 +816,29 @@ try {
   await shot("20o-kantteil");
   step("Kantteil mit Abwicklung", kt.ok && /Abwicklung 172[.,]36 × 1000 mm/.test(kt.info) && /_2mm\.dxf$/.test(kt.dxf?.name || "") && kt.dxf.bend >= 3, JSON.stringify(kt));
 
+  // Biegetabelle (Stufe 31): im Einstellungscenter aus Excel-Zellen anlegen, Kantteil auf »Biegetabelle« → Abwicklung mit Tabellen-K
+  {
+    await evalApp(() => window.__werkcad.props.settingsDialog({ category: "blech" }));
+    await page.locator(".bend-editor button", { hasText: "Biegetabelle anlegen" }).click();
+    const dlg = page.locator(".dialog").last();
+    await dlg.locator('input[aria-label="Blechdicke"]').fill("2");
+    await dlg.locator("select").nth(1).selectOption("k");
+    await dlg.locator("textarea.bend-grid").fill("\t1\t3\n45\t0,5\t0,5\n135\t0,5\t0,5");
+    await dlg.locator("textarea.bend-grid").dispatchEvent("input");
+    const cells = await dlg.locator(".bend-preview td").count();
+    await shot("20o2-biegetabelle");
+    await dlg.locator("button", { hasText: /^Übernehmen$/ }).click();
+    await page.waitForTimeout(200);
+    const listed = await page.locator(".bend-editor tbody tr").count();
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(200);
+    await page.locator("#props .field", { hasText: "Biegeregel" }).locator("select").selectOption("tabelle");
+    await idle(60000);
+    const bt = await evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId), f = a.activeDoc().features[0]; return { info: r.status[f.id]?.info, flat: r.bodies[0]?.meta?.sheet?.flat, stored: a.prefs.get("blech.biegetabellen").length, hint: [...document.querySelectorAll("#props .hint")].some((x) => /Gerechnet: Biegetabelle/.test(x.textContent)) }; });
+    await evalApp(() => window.__werkcad.prefs.set("blech.biegetabellen", []));
+    step("Biegetabelle anlegen und am Kantteil nutzen", cells === 4 && listed === 1 && bt.stored === 1 && Math.abs(bt.flat - (164 + 3 * Math.PI)) < 0.01 && /Biegetabelle S235 2 mm/.test(bt.info) && bt.hint, JSON.stringify({ cells, listed, bt }));
+  }
+
   // Fotorealistische Darstellung (MegaCAD-Abgleich M22): PBR, Umgebungslicht, Bodenschatten, Bild hoch aufgelöst
   await evalApp(() => window.__werkcad.prefs.set("ansicht.darstellung", "foto"));
   await idle();

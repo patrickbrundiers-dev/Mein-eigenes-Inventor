@@ -92,7 +92,7 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 | E Werkzeuge und Tastatur | ja | Kürzel verwalten, Konflikte, Werkzeugsuche, Schnellzugriff, Standardwerte je Werkzeug (Stufe 15), Menüband anordnen (Stufe 25) |
 | F Kernel | aktiv | Stufe 28: automatisches Neuberechnen abschaltbar (F5), Berechnungsprotokoll; Rechengenauigkeit bewusst fest (Recherche Stufe 30: Inventor, SolidWorks und Fusion stellen sie auch nicht frei) |
 | G Materialien | ja | Stufe 24: eigene Werkstoffe (Name, Kürzel, Dichte, Farbe, Werkstoffnummer) anlegen, bearbeiten, duplizieren, löschen; Import/Export als JSON; benutzte eigene Werkstoffe als Kopie in der Projektdatei |
-| H Blech | fehlt | ADR-0002 |
+| H Blech | aktiv | Stufe 31: Biegetabellen je Werkstoff und Dicke (Winkel × Innenradius, Verkürzung/Biegezugabe/K), Biegeregel K-Faktor, Biegetabelle oder DIN 6935 an Kantteil und Knickrahmen; Blechkörper darüber hinaus siehe ADR-0005 |
 | I Rohrlaser/Maschinen | teilweise | Grenzen einer Maschine für die Fertigungsprüfung (`src/core/dfm.js`); mehrere Maschinenprofile eigenes Format (P3) |
 | J Leistung | teilweise | Darstellungsqualität; Rest geplant |
 | K Dateien und Datensicherheit | ja | atomar, Autosave, Migration; Stufe 27: Anzahl Sicherungen (.bak, .bak2 …), schreibgeschützt öffnen (auch automatisch bei gesperrter Datei), Projekt paketieren |
@@ -137,3 +137,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 28 | Kernel: automatisches Neuberechnen abschaltbar, F5 »Neu berechnen«, Berechnungsprotokoll (Dauer, Features, Meldungen) | Unit-Test `buildlog.js`, Oberflächentest |
 | 29 | Restpunkte: Standardordner für Projekte, Standardebene der ersten Skizze, Beleuchtung (Standard/kontrastreich/weich) | Unit-Test Beleuchtung/Einstellungen, Oberflächentest |
 | 30 | Standardtoleranz: Allgemeintoleranz ISO 2768-1 (f/m/c/v) und Nachkommastellen neuer Zeichnungen, Toleranz am Maß (Allgemeintoleranz anzeigen, ±, Grenzabmaße, Passung) | Unit-Test `tolerance.js`, Oberflächentest |
+| 31 | Biegetabellen: Raster je Werkstoff und Dicke im Einstellungscenter (aus Excel einfügen, CSV), Interpolation, Ersatz-K-Faktor, Biegeregel an Kantteil und Knickrahmen, DIN 6935, Kopie in der Projektdatei | Unit-Test `bendtable.js`, Kernel-Test, Oberflächentest |

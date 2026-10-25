@@ -2,6 +2,7 @@
 import { toast, choiceDialog, downloadBlob, h, modal } from "./dom.js";
 import { sketchToDxf, DxfWriter } from "../core/dxf.js";
 import { planKantteil, kantteilFlatDxf, splitList } from "../core/blech.js";
+import { bendRule } from "../core/bendtable.js";
 import { evaluate } from "../core/expr.js";
 import { newPart, uid } from "../core/examples.js";
 import { serializeProject, loadProject, validateProject, parseProject } from "../core/project.js";
@@ -371,7 +372,9 @@ export class Files {
     try {
       const sc = app.props.scope();
       const E = (x) => evaluate(String(x), sc);
-      plan = planKantteil({ legs: splitList(f.legs).map(E), angles: splitList(f.angles).map(E), t: E(f.t), ri: E(f.ri), k: E(f.k), ref: f.ref || "aussen" });
+      const t = E(f.t), ri = E(f.ri), k = E(f.k);
+      const br = bendRule({ rule: f.rule || "k", material: part.material || "S235", t, ri, k });
+      plan = planKantteil({ legs: splitList(f.legs).map(E), angles: splitList(f.angles).map(E), t, ri, k, kOf: br.kOf, ref: f.ref || "aussen" });
     } catch (e) { return toast("Kantteil: " + e.message, { kind: "err" }); }
     const name = `${safeName(part.number || part.name)}_${safeName(f.name || "Kantteil")}_${String(sh.t).replace(".", ",")}mm.dxf`.replace(/\s+/g, "_");
     await this.saveText(kantteilFlatDxf(DxfWriter, plan, sh.length, { name: f.name || part.name, t: sh.t }), name, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);

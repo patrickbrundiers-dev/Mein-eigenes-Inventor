@@ -402,6 +402,31 @@ test("Kantteil: Volumen = Mittellinie × t × Länge, Abwicklung als Platte (Meg
   near(b.meta.sheet.flat, 172.357, 0.001);
 });
 
+test("Kantteil und Knickrahmen mit Biegetabelle bzw. DIN 6935 (Werkzeuge Stufe 31)", async () => {
+  const { defaultKantteil } = await import("../src/core/blech.js");
+  const { setUserBendTables, dinK } = await import("../src/core/bendtable.js");
+  const { defaultKnickrahmen } = await import("../src/core/knickrahmen.js");
+  setUserBendTables([{ material: "S235", t: 2, mode: "k", ref: "biege", fallbackK: 0.33, radii: [1, 3], angles: [45, 135], values: [[0.5, 0.5], [0.5, 0.5]] }]);
+  try {
+    const f = { id: "kt", ...defaultKantteil(), rule: "tabelle" };
+    const res = await K.buildPart(part([f]));
+    okAll(res);
+    near(res.bodies[0].meta.sheet.flat, 36 + 92 + 36 + 2 * (2 + 0.5 * 2) * Math.PI / 2, 0.001, "Abwicklung mit K 0,5 aus der Tabelle");
+    assert.match(res.status.kt.info, /Biegetabelle S235 2 mm, K 0,5 \/ 0,5/);
+    const other = await K.buildPart({ ...part([f]), material: "S355" });
+    near(other.bodies[0].meta.sheet.flat, 172.357, 0.001, "ohne Tabelle für S355 gilt der K-Faktor des Features");
+    assert.match(other.status.kt.warning, /Keine Biegetabelle für S355/);
+    const { catalogToDims } = await import("../src/core/sections.js");
+    const kr = { id: "kr", ...defaultKnickrahmen(catalogToDims("rechteck", "60x40x3")), bendRule: "din" };
+    const r2 = await K.buildPart(part([kr]));
+    okAll(r2);
+    const m = r2.bodies[0].meta;
+    const t = Number(kr.dims.t), ri = Number(kr.bendRadius);
+    assert.match(m.rule, /DIN 6935/);
+    near(m.bendAllowances[0], (ri + dinK(ri, t) * t) * Math.abs(Number(kr.bends[0].angle)) * Math.PI / 180, 1e-6, "Biegezugabe nach DIN");
+  } finally { setUserBendTables([]); }
+});
+
 test("Treppe mit Geländer: beidseitig, ums Podest, Knieleisten/Staketen, Höhe über Stufenkante", async () => {
   const { defaultGenerator } = await import("../src/core/generator.js");
   const bb = (b) => b.shape.boundingBox.bounds;

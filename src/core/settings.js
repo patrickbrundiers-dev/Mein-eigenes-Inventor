@@ -3,6 +3,7 @@ import { validateMaterialLib } from "./materials.js";
 import { validateRibbonLayout } from "./ribbonlayout.js";
 import { validateNameTemplate } from "./naming.js";
 import { CLASSES } from "./tolerance.js";
+import { validateBendTables } from "./bendtable.js";
 import { validateKeymap, commandDef } from "./commands.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
@@ -29,7 +30,7 @@ export const CATEGORIES = [
   { id: "material", label: "Materialien", status: "aktiv", note: "Eigene Werkstoffe gelten für Masse, Trägheit, Zuschnittliste und Zeichnung. Benutzte eigene Werkstoffe werden als Kopie in der Projektdatei gespeichert, damit sie auf anderen Rechnern stimmen." },
   { id: "kernel", label: "CAD-Kernel und Leistung", status: "aktiv", note: "Die Rechengenauigkeit des Kernels ist fest und bewusst nicht einstellbar: gröbere Werte können Körper beschädigen. Maßtoleranzen stehen unter Dokument und Modell. Neu berechnen: F5 oder Menüband 3D-Modell → Verwalten. Berechnungsprotokoll: Befehlssuche (Strg+K) → »Berechnungsprotokoll«." },
   { id: "dateien", label: "Dateien und Datensicherheit", status: "aktiv", note: "Speichern ist immer atomar: erst vollständig schreiben, dann umbenennen. Datei → Schreibgeschützt öffnen bzw. Projekt paketieren." },
-  { id: "blech", label: "Blechparameter", status: "geplant", planned: ["Biegetabellen", "K-Faktor je Material"], note: "Keine allgemeine Blechfunktion (ADR-0002); Biegewerte des Knickrahmens stehen im Feature." },
+  { id: "blech", label: "Blechparameter", status: "aktiv", note: "Biegetabellen gelten für Kantteil und Knickrahmen, wenn dort als Biegeregel »Biegetabelle des Werkstoffs« gewählt ist. Benutzte Tabellen werden als Kopie in der Projektdatei gespeichert." },
   { id: "fertigung", label: "Rohrlaser und Fertigung", status: "teilweise", planned: ["mehrere Maschinenprofile (getrennt von den CAD-Einstellungen gespeichert)"], note: "Fertigungsprüfung der Zuschnittliste (Bauteil und Zuschnittliste). Startwerte aus den Beispielmaschinen der Rohrlaser-Kalkulation – bitte an die eigene Maschine anpassen. 0 = Regel aus." },
   { id: "updates", label: "Updates", status: "aktiv" },
   { id: "datenschutz", label: "Datenschutz und Diagnose", status: "teilweise", note: "PBCAD sendet keine Diagnosedaten. Das Fehlerprotokoll bleibt lokal und enthält keine Projektdaten." },
@@ -114,6 +115,7 @@ export const SETTINGS = [
   { key: "dokument.nummer", cat: "dokument", label: "Sachnummer neuer Bauteile", type: "name", default: "", allowEmpty: true, placeholders: ["n", "projekt", "datum"], help: "Leer = keine Sachnummer. Beispiel: »BT-{n:3}« → »BT-001«; steht im Schriftfeld und in der Stückliste." },
   { key: "dokument.toleranzklasse", cat: "dokument", label: "Allgemeintoleranz neuer Zeichnungen", type: "enum", default: "m", options: CLASSES.map((c) => ({ value: c.value, label: "ISO 2768-" + c.label })), help: "Steht im Schriftfeld. »Allgemeintoleranz anzeigen« am Maß nimmt das ± aus dieser Klasse (Längen, Radien und Fasen nach ISO 2768-1)." },
   { key: "dokument.nachkomma", cat: "dokument", label: "Nachkommastellen neuer Zeichnungsmaße", type: "int", default: 1, min: 0, max: 3, help: "Gilt für neue Zeichnungen; jedes Maß lässt sich einzeln ändern." },
+  { key: "blech.biegetabellen", cat: "blech", label: "Biegetabellen", type: "bendtables", default: [], custom: true, help: "Je Werkstoff und Blechdicke ein Raster Biegewinkel × Innenradius mit Werten der Abkantpresse. Zwischen den Zellen wird interpoliert, außerhalb gilt der Ersatz-K-Faktor der Tabelle." },
   { key: "material.eigene", cat: "material", label: "Eigene Werkstoffe", type: "materials", default: [], custom: true },
   { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },
@@ -170,6 +172,8 @@ export function validateValue(def, v) {
       return { ok: true, value: v.trim() };
     case "name":
       return validateNameTemplate(v, def.placeholders, { allowEmpty: !!def.allowEmpty });
+    case "bendtables":
+      return validateBendTables(v);
     case "materialkey":
       return typeof v === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,19}$/.test(v) ? { ok: true, value: v } : { ok: false, error: "Werkstoff-Kürzel erwartet" };
     case "ribbon":
