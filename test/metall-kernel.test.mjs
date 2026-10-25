@@ -87,3 +87,27 @@ test("Stirn-/Fußplatte mit Bohrbild und Rippen am Profilende (MegaCAD-Abgleich 
   const res2 = await K.buildPart(part([{ ...prof, miterEnd: "30" }, plB]));
   assert.match(res2.status.pl.warning || "", /Gehrung/);
 });
+
+test("Schweißnähte: Kehlnaht der Platte umlaufend, Rippen beidseitig, Naht an gewählten Kanten (MegaCAD-Abgleich M9)", async () => {
+  const { catalogToDims, loopLength, sectionGeometry } = await import("../src/core/sections.js");
+  const dims = catalogToDims("vierkant", "40x3");
+  const prof = { id: "p1", type: "profile", section: "vierkant", dims, length: "500", start: ["0", "0", "0"], axis: "Z", rotation: "0", miterStart: "0", miterEnd: "0" };
+  const res = await K.buildPart(part([prof,
+    { id: "pl", type: "platte", target: "p1", member: 0, end: "A", thickness: "10", overhang: "40", holes: "4", holeDia: "13", edge: "25", weldA: "4" },
+    { id: "r", type: "rippe", plate: "pl", sides: ["oben", "unten", "links", "rechts"], length: "60", thickness: "6", chamfer: "10", weldA: "3" },
+    { id: "n", type: "naht", kind: "v", a: "5", side: "pfeil", edges: [{ p: [0, 20, 500], type: "LINE" }, { p: [0, -20, 500], type: "LINE" }] },
+  ]));
+  okAll(res);
+  const per = loopLength(sectionGeometry("vierkant", Object.fromEntries(Object.entries(dims).map(([k, v]) => [k, Number(v)]))).outer);
+  const pw = res.welds.filter((w) => w.fid === "pl");
+  assert.equal(pw.length, 1);
+  near(pw[0].length, per, 1e-6, "umlaufend = Profilumfang");
+  assert.ok(pw[0].around && pw[0].a === 4);
+  const rw = res.welds.filter((w) => w.fid === "r");
+  assert.equal(rw.length, 4);
+  near(rw[0].length, 60 - 10 + 40 - 10, 1e-6, "Rippe: zwei Schenkel ohne Freischnitt");
+  assert.equal(rw[0].side, "beide");
+  const nw = res.welds.find((w) => w.fid === "n");
+  near(nw.length, 2 * (40 - 2 * 6), 0.01, "zwei gerade Kanten der Stirnseite (ohne Radien)");
+  assert.equal(nw.kind, "v");
+});

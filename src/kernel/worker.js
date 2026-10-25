@@ -76,7 +76,7 @@ const handlers = {
     }
     const sketches = {};
     for (const [id, s] of res.sketches) sketches[id] = { dof: s.dof, errors: s.prof.errors, regions: s.prof.regions.length, openPoints: s.prof.openPoints, frame: s.frame };
-    return { status: res.status, values: res.values, bodies, sketches, ms: performance.now() - t0 };
+    return { status: res.status, values: res.values, welds: res.welds, bodies, sketches, ms: performance.now() - t0 };
   },
 
   /** Messen: items = [{part, pos, rot, body, kind: "face"|"edge", idx}] (Lage aus meshBody) */

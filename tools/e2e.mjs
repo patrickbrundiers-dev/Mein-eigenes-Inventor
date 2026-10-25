@@ -507,6 +507,24 @@ try {
   await shot("20d-stirnplatte");
   step("Stirnplatte und Rippe", sp0.n === 4 && sp0.kinds === "member,solid,solid,solid" && sp0.bad === 0 && sp1.holes === "2" && /2 × Ø/.test(sp1.info), JSON.stringify({ sp0, sp1 }));
 
+  // Schweißnähte (MegaCAD-Abgleich M9): a-Maß an Platte und Rippe, Nahtliste, Symbole in der Zeichnung
+  const fillField = async (label, value) => { const inp = page.locator("#props .field", { hasText: label }).locator("input"); await inp.fill(value); await inp.press("Enter"); await idle(); };
+  await fillField("Kehlnaht a, umlaufend", "5");
+  await evalApp(() => { const a = window.__werkcad; a.selectFeature(a.activeDoc().features.find((x) => x.type === "rippe").id); });
+  await idle();
+  await fillField("Kehlnaht a, beidseitig", "4");
+  const wl = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.welds?.length, rows: [...document.querySelectorAll("#props table.grid tbody tr")].map((tr) => tr.textContent) }; });
+  const partId = await evalApp(() => window.__werkcad.activeId);
+  await evalApp((id) => window.__werkcad.newDrawing({ kind: "part", id }), partId);
+  await idle(120000);
+  await page.waitForTimeout(1000);
+  await idle(120000);
+  await evalApp(() => window.__werkcad.drawing.autoWelds());
+  await page.waitForTimeout(300);
+  const ws = await evalApp(() => { const dr = window.__werkcad.drawing; return { marks: dr.doc.welds?.length, texts: [...dr.svg.querySelectorAll("[data-weld] text")].map((t) => t.textContent) }; });
+  await shot("20e-schweissnaehte");
+  step("Schweißnähte: Nahtliste und Symbole", wl.n === 3 && wl.rows.length === 2 && ws.marks === 3 && ws.texts.includes("a5") && ws.texts.filter((t) => t === "a4").length === 4, JSON.stringify({ wl, ws }));
+
   // Profil-Schnelleingabe (aus der Rohrlaser-Kalkulation): Profil-ID tippen, Treffer anklicken, Rückgängig
   await evalApp(() => window.__werkcad.newPart("Profil-ID"));
   await idle();

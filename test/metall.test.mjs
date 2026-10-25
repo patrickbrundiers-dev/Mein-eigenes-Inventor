@@ -159,3 +159,32 @@ test("Skizze säubern: Punkte, Nulllängen, Doppelte, Überlappungen, Geradestel
   assert.match(cleanReportText(rep), /6 Punkt\(e\) zusammengeführt/);
   assert.equal(cleanReportText(cleanSketch(sk)), "Nichts zu säubern", "zweiter Lauf ändert nichts");
 });
+
+test("Schweißnähte: Querschnitt, Text, Nahtliste, Symbol ISO 2553 (MegaCAD-Abgleich M9)", async () => {
+  const { weldArea, weldMass, weldText, weldRows, weldCsv, weldSymbol } = await import("../src/core/weld.js");
+  assert.equal(weldArea("kehl", 4), 16);
+  assert.ok(Math.abs(weldMass({ kind: "kehl", a: 4, length: 1000, side: "beide" }) - 0.2512) < 1e-9, "2 · 16 mm² · 1 m · 7,85");
+  assert.equal(weldText({ kind: "kehl", a: 4, side: "beide", around: true, field: true }), "a4 Kehlnaht beidseitig, umlaufend, Montage");
+  const rows = weldRows([
+    { kind: "kehl", a: 4, length: 480, around: true, part: "Stütze" },
+    { kind: "kehl", a: 4, length: 480, around: true, part: "Stütze", qty: 2 },
+    { kind: "kehl", a: 3, length: 140, side: "beide", part: "Rippe" },
+    { kind: "v", a: 5, length: 200 },
+  ]);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map((r) => [r.kind, r.a, r.count, r.length]), [["kehl", 3, 1, 140], ["kehl", 4, 3, 1440], ["v", 5, 1, 200]]);
+  const csv = weldCsv(rows).replace(/^﻿/, "").split("\r\n");
+  assert.equal(csv[0].split(";").length, 10);
+  assert.match(csv[2], /^2;Kehlnaht;a4;Pfeilseite;ja;;3;1440;/);
+  // Symbol: Knick rechts vom Anker → Bezugslinie nach rechts, Kehlnaht unter der Linie, Strichlinie darüber
+  const s = weldSymbol({ kind: "kehl", a: 4, around: true }, [0, 0], [10, -10]);
+  assert.deepEqual(s.lines[1], { x1: 10, y1: -10, x2: 32, y2: -10 });
+  assert.ok(s.lines.some((l) => l.dashed && l.y1 < -10), "Identifikationslinie über der Volllinie");
+  assert.ok(s.polys[0].pts.every(([, y]) => y >= -10), "Pfeilseite: Symbol unter der Linie");
+  assert.equal(s.texts[0].text, "a4");
+  assert.equal(s.circles.length, 1);
+  const g = weldSymbol({ kind: "hv", a: 6, side: "gegen", field: true }, [50, 0], [40, -10]);
+  assert.ok(g.lines[1].x2 < 40, "Knick links vom Anker → Linie nach links");
+  assert.ok(g.polys[0].pts.every(([, y]) => y <= -11.2 + 1e-9), "Gegenseite: Symbol über der Strichlinie");
+  assert.ok(g.polys.some((p) => p.fill), "Montagefahne");
+});

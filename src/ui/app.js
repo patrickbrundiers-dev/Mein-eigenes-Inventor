@@ -429,6 +429,7 @@ export class App {
     const f = part?.features?.find((x) => x.id === id);
     this.pick = null;
     if (f && (f.type === "fillet" || f.type === "chamfer") && (f.mode || "edges") === "edges") this.pick = { kind: "edges", feature: f.id };
+    if (f && f.type === "naht") this.pick = { kind: "edges", feature: f.id };
     if (f && f.type === "shell") this.pick = { kind: "faces", feature: f.id };
     const wasEditing = this._editingFeature;
     this._editingFeature = this.pick?.feature || null;
@@ -1020,7 +1021,7 @@ export class App {
 
 export const CONSTRAINT_NAMES = { gegen: "Fläche an Fläche", buendig: "Bündig", konzentrisch: "Konzentrisch" };
 export const FEATURE_NAMES = {
-  sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", platte: "Anschlussplatte", rippe: "Rippe", emboss: "Prägen",
+  sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
 };
 

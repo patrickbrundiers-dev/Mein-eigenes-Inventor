@@ -163,6 +163,31 @@ function polyLoop(pts) {
   return { kind: "path", start: pts[0], segs: pts.slice(1).concat([pts[0]]).map((p) => ({ t: "line", to: p })) };
 }
 
+/** Umfang einer Kontur (Kreis oder Pfad aus Linien und Bögen über 3 Punkte) in mm */
+export function loopLength(loop) {
+  if (loop.kind === "circle") return 2 * Math.PI * loop.r;
+  let cur = loop.start, L = 0;
+  for (const sg of loop.segs) {
+    if (sg.t === "arc" && sg.mid) {
+      const [ax, ay] = cur, [bx, by] = sg.mid, [cx, cy] = sg.to;
+      const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+      if (Math.abs(d) < 1e-12) L += Math.hypot(cx - ax, cy - ay);
+      else {
+        const ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d;
+        const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d;
+        const r = Math.hypot(ax - ux, ay - uy);
+        const ang = (p) => Math.atan2(p[1] - uy, p[0] - ux);
+        const norm = (x) => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        const a1 = norm(ang(sg.mid) - ang(cur)), a2 = norm(ang(sg.to) - ang(cur));
+        const sweep = a1 <= a2 ? a2 : 2 * Math.PI - a2; // Richtung über den Mittelpunkt
+        L += r * sweep;
+      }
+    } else L += Math.hypot(sg.to[0] - cur[0], sg.to[1] - cur[1]);
+    cur = sg.to;
+  }
+  return L;
+}
+
 /**
  * Querschnitt in lokalen Koordinaten (u = Breite, v = Höhe), zentriert auf die Hüllbox.
  * Rückgabe {outer, holes, area, width, height}

@@ -15,6 +15,7 @@ import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
 import { PLATE_HOLES, RIB_SIDES } from "../core/anschluss.js";
+import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
@@ -292,6 +293,16 @@ export class Props {
     return this.seg("Vorgang", [["join", "Vereinigen"], ["cut", "Differenz"], ["intersect", "Schnitt"], ["new", "Neuer Körper"]], f.op || "join", (v) => this.set(f, "op", v, "Vorgang"));
   }
 
+  /** Nahtliste des Bauteils (alle Nähte: Feature „Schweißnaht“, Platten und Rippen mit a-Maß) */
+  weldListSection(part) {
+    const rows = weldRows(collectWelds(collectCutSources(this.app, part)));
+    if (!rows.length) return null;
+    return this.section("Nahtliste",
+      h("table", { class: "grid" },
+        h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Naht"), h("th", {}, "Anz."), h("th", {}, "Länge mm"), h("th", {}, "kg"))),
+        h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, weldText(r)), h("td", { class: "num" }, String(r.count)), h("td", { class: "num" }, fmtNum(r.length, 0)), h("td", { class: "num" }, fmtNum(r.mass, 3)))))),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportWeldList() }, "Nahtliste CSV")));
+  }
   featureProps(part, f) {
     const app = this.app;
     const r = app.results.get(part.id);
@@ -426,11 +437,32 @@ export class Props {
           E("Überstand je Seite", "overhang", { allowNeg: false }),
           E("Breite (0 = automatisch)", "width", { allowNeg: false }),
           E("Höhe (0 = automatisch)", "height", { allowNeg: false }),
-          E("Eckradius", "radius", { allowNeg: false })));
+          E("Eckradius", "radius", { allowNeg: false }),
+          E("Kehlnaht a, umlaufend (0 = keine)", "weldA", { allowNeg: false })));
         out.push(this.section("Bohrbild",
           this.seg("Bohrungen", PLATE_HOLES.map((n) => [String(n), String(n)]), String(f.holes ?? "4"), (v) => this.set(f, "holes", v, "Bohrungen")),
           Number(f.holes ?? 4) ? [E("Bohrung Ø", "holeDia", { allowNeg: false, allowZero: false }), E("Randabstand (Mitte Bohrung)", "edge", { allowNeg: false })] : null,
           h("p", { class: "hint" }, "2 Bohrungen liegen auf der längeren Seite, 4 in den Ecken. Hinweis bei Randabstand unter 1,2 · d. Als DXF für den Laser: Fläche der Platte wählen → Export → Platte als DXF.")));
+        out.push(this.weldListSection(part));
+        break;
+      }
+      case "naht": {
+        const picking = app.pick?.kind === "edges" && app.pick.feature === f.id;
+        const kind = f.kind || "kehl";
+        out.push(this.section("Schweißnaht",
+          this.select("Nahtart", Object.entries(WELD_KINDS).map(([k, d]) => [k, d.label]), kind, (v) => this.set(f, "kind", v, "Nahtart")),
+          E(kind === "kehl" ? "Nahtdicke a" : "Nahtdicke s", "a", { allowNeg: false, allowZero: false }),
+          this.seg("Seite", Object.entries(WELD_SIDES), f.side || "pfeil", (v) => this.set(f, "side", v, "Seite")),
+          this.check("Umlaufend", !!f.around, (v) => this.set(f, "around", v, "Umlaufend")),
+          this.check("Montagenaht (auf der Baustelle)", !!f.field, (v) => this.set(f, "field", v, "Montagenaht")),
+          h("div", { class: picking ? "picking" : "" },
+            h("div", {}, `${(f.edges || []).length} Kante(n) gewählt`),
+            h("p", { class: "hint" }, picking ? "Nahtkanten im 3D-Fenster anklicken (nochmal klicken entfernt)." : ""),
+            h("div", { class: "btn-row" },
+              h("button", { class: "btn" + (picking ? " primary" : ""), onclick: () => { if (picking) app.cancelPick(); else app.selectFeature(f.id); } }, picking ? "Auswahl beenden" : "Kanten wählen"),
+              (f.edges || []).length ? h("button", { class: "btn", onclick: () => this.set(f, "edges", [], "Kanten leeren") }, "Leeren") : null)),
+          h("p", { class: "hint" }, "Die Naht verändert den Körper nicht. Sie erscheint in der Nahtliste (Export) und als Symbol nach ISO 2553 in der Zeichnung (Zeichnung → Schweißnähte).")));
+        out.push(this.weldListSection(part));
         break;
       }
       case "rippe": {
@@ -443,7 +475,9 @@ export class Props {
           E("Höhe an der Platte (0 = bis Plattenrand)", "height", { allowNeg: false }),
           E("Dicke", "thickness", { allowNeg: false, allowZero: false }),
           E("Freischnitt Schweißecke", "chamfer", { allowNeg: false }),
+          E("Kehlnaht a, beidseitig (0 = keine)", "weldA", { allowNeg: false }),
           h("p", { class: "hint" }, "Dreieckige Steife zwischen Platte und Profilseite, mittig auf der Seite. Der Freischnitt lässt Platz für die Kehlnaht in der Ecke.")));
+        out.push(this.weldListSection(part));
         break;
       }
       case "biegerohr": {

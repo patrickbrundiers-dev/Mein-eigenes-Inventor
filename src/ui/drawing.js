@@ -4,9 +4,10 @@ import { DxfWriter } from "../core/dxf.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { uid } from "../core/examples.js";
 import { scaleLabel } from "./tree.js";
-import { v3 } from "../core/geom.js";
+import { v3, placementMatrix, matApply } from "../core/geom.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
+import { weldSymbol } from "../core/weld.js";
 import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
 import { bomRows } from "./props.js";
@@ -412,6 +413,7 @@ export class DrawingEditor {
     const posOf = new Map(rows.map((r) => [r.part.id, r.pos]));
     for (const b of d.balloons || []) { const g = this.renderBalloon(d, b, posOf, interactive); if (g) svg.append(g); }
     if (d.bomTable?.show && rows.length) svg.append(this.bomTableSvg(rows, W, H));
+    for (const m of d.welds || []) { const g = this.renderWeld(d, m, interactive); if (g) svg.append(g); }
     for (const n of d.notes || []) {
       const t = svgEl("text", { x: n.x, y: n.y, "font-size": n.size || 3.5, fill: "#111a24", class: interactive ? "dw-dimgrp" + (this.sel?.id === n.id ? " sel" : "") : undefined, "data-note": n.id });
       t.textContent = n.text;
@@ -595,6 +597,46 @@ export class DrawingEditor {
       d.bomTable = { show: true };
     }, { rebuild: false });
     this.render();
+  }
+  /** Schweißnaht-Symbole (ISO 2553) für alle Nähte der Quelle in der gewählten Ansicht (sonst Vorderansicht) */
+  autoWelds() {
+    const d = this.doc;
+    const src = d?.source && this.app.doc(d.source.id);
+    if (!src) return toast("Zuerst Ansichten erzeugen");
+    const v = (this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "front") || d.views[0];
+    if (!v || !this.proj.get(v.id)) return toast("Zuerst Ansichten erzeugen");
+    // Nähte je Bauteil; in Baugruppen an der ersten Komponente des Bauteils
+    const anchors = [];
+    const add = (pid, M) => (this.app.results.get(pid)?.welds || []).forEach((w, i) => anchors.push({ key: `${pid}:${w.fid}:${i}`, p3: M ? matApply(M, w.p3) : w.p3, w }));
+    if (src.kind === "part") add(src.id, null);
+    else { const seen = new Set(); for (const c of src.components || []) if (!c.hidden && !seen.has(c.part)) { seen.add(c.part); add(c.part, placementMatrix(c.pos, c.rot)); } }
+    if (!anchors.length) return toast("Keine Schweißnähte im Modell – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
+    const cam = this.viewCam(d, v);
+    const xf = this.viewXf(v);
+    const at = anchors.map((a) => ({ key: a.key, at: xf.to(...projectPoint(a.p3, cam.dir, cam.up)) }));
+    const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
+    const pos = placeBalloons(at, { x0, y0, x1, y1 }, { r: 8, gap: 6 });
+    const [W, H] = this.sheetSize(d);
+    for (const [k, [x, y]] of pos) pos.set(k, [Math.min(W - 40, Math.max(45, x)), Math.min(H - 60, Math.max(20, y))]);
+    this.app.edit("Schweißnähte", () => {
+      d.welds = anchors.map((a) => ({ id: uid("w"), view: v.id, p3: a.p3, at: pos.get(a.key), w: { kind: a.w.kind, a: a.w.a, side: a.w.side, around: a.w.around, field: a.w.field } }));
+    }, { rebuild: false });
+    this.render();
+    toast(`${anchors.length} Nahtsymbol(e) gesetzt – ziehen zum Verschieben, Entf löscht`);
+  }
+  renderWeld(d, m, interactive) {
+    const v = d.views.find((x) => x.id === m.view);
+    if (!v || !this.proj.get(v.id)) return null;
+    const cam = this.viewCam(d, v);
+    const a = this.viewXf(v).to(...projectPoint(m.p3, cam.dir, cam.up));
+    const s = weldSymbol(m.w, a, m.at);
+    const g = svgEl("g", { "data-weld": m.id, class: interactive ? "dw-dimgrp" + (this.sel?.id === m.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    for (const l of s.lines) g.append(svgEl("line", { x1: r3(l.x1), y1: r3(l.y1), x2: r3(l.x2), y2: r3(l.y2), "stroke-dasharray": l.dashed ? "2 1" : undefined }));
+    g.append(svgEl("polygon", { points: s.arrow.pts.map((p) => p.map(r3).join(",")).join(" "), fill: "#111a24" }));
+    for (const p of s.polys) g.append(svgEl(p.closed ? "polygon" : "polyline", { points: p.pts.map((q) => q.map(r3).join(",")).join(" "), fill: p.fill ? "#111a24" : "none" }));
+    for (const c of s.circles) g.append(svgEl("circle", { cx: r3(c.cx), cy: r3(c.cy), r: c.r }));
+    for (const t of s.texts) { const el = svgEl("text", { x: r3(t.x), y: r3(t.y), "text-anchor": t.anchor, "font-size": 3, fill: "#111a24", stroke: "none" }); el.textContent = t.text; g.append(el); }
+    return g;
   }
   toggleBomTable() {
     const d = this.doc;
@@ -784,8 +826,10 @@ export class DrawingEditor {
       const dimEl = e.target.closest("[data-dim]");
       const noteEl = e.target.closest("[data-note]");
       const balloonEl = e.target.closest("[data-balloon]");
+      const weldEl = e.target.closest("[data-weld]");
       const viewEl = e.target.closest("[data-view]");
-      if (balloonEl) { this.select({ type: "balloon", id: balloonEl.getAttribute("data-balloon") }); drag = { kind: "balloon", id: this.sel.id, start: [sx, sy], moved: false }; }
+      if (weldEl) { this.select({ type: "weld", id: weldEl.getAttribute("data-weld") }); drag = { kind: "weld", id: this.sel.id, start: [sx, sy], moved: false }; }
+      else if (balloonEl) { this.select({ type: "balloon", id: balloonEl.getAttribute("data-balloon") }); drag = { kind: "balloon", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (dimEl) { this.select({ type: "dim", id: dimEl.getAttribute("data-dim") }); drag = { kind: "dim", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (noteEl) { this.select({ type: "note", id: noteEl.getAttribute("data-note") }); drag = { kind: "note", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (viewEl) {
@@ -832,6 +876,10 @@ export class DrawingEditor {
           const b = d.balloons.find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [...b.at];
           b.at = [drag.o[0] + dx, drag.o[1] + dy];
+        } else if (drag.kind === "weld") {
+          const w = d.welds.find((x) => x.id === drag.id);
+          if (!drag.o) drag.o = [...w.at];
+          w.at = [drag.o[0] + dx, drag.o[1] + dy];
         } else if (drag.kind === "note") {
           const n = d.notes.find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [n.x, n.y];
@@ -1044,6 +1092,7 @@ export class DrawingEditor {
       const d = this.doc;
       if (this.sel.type === "view") this.deleteView(this.sel.id);
       else if (this.sel.type === "dim") { this.app.edit("Maß löschen", () => { d.dims = d.dims.filter((m) => m.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
+      else if (this.sel.type === "weld") { this.app.edit("Nahtsymbol löschen", () => { d.welds = d.welds.filter((w) => w.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "balloon") { this.app.edit("Positionsnummer löschen", () => { d.balloons = d.balloons.filter((b) => b.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "note") { this.app.edit("Text löschen", () => { d.notes = d.notes.filter((m) => m.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       return true;
@@ -1232,12 +1281,14 @@ export class DrawingEditor {
     const rows = this.bomRowsOf(d);
     const posOf = new Map(rows.map((r) => [r.part.id, r.pos]));
     const groups = (d.balloons || []).map((b) => this.renderBalloon(d, b, posOf, false)).filter(Boolean);
+    groups.push(...(d.welds || []).map((m) => this.renderWeld(d, m, false)).filter(Boolean));
     if (d.bomTable?.show && rows.length) groups.push(this.bomTableSvg(rows, Wd, H));
     for (const g of groups) {
       for (const el of g.querySelectorAll("line")) w.line(+el.getAttribute("x1"), Y(+el.getAttribute("y1")), +el.getAttribute("x2"), Y(+el.getAttribute("y2")), "MASSE");
       for (const el of g.querySelectorAll("circle")) w.circle(+el.getAttribute("cx"), Y(+el.getAttribute("cy")), +el.getAttribute("r"), "MASSE");
       for (const el of g.querySelectorAll("rect")) { const x = +el.getAttribute("x"), y = +el.getAttribute("y"), ww = +el.getAttribute("width"), hh = +el.getAttribute("height"); w.polyline([[x, Y(y)], [x + ww, Y(y)], [x + ww, Y(y + hh)], [x, Y(y + hh)]], "RAHMEN", true); }
-      for (const el of g.querySelectorAll("text")) if (el.textContent) w.text(+el.getAttribute("x"), Y(+el.getAttribute("y")), +el.getAttribute("font-size"), el.textContent, "TEXT", { align: el.getAttribute("text-anchor") === "middle" ? "center" : "left" });
+      for (const el of g.querySelectorAll("polygon, polyline")) w.polyline(el.getAttribute("points").trim().split(/\s+/).map((q) => { const [x, y] = q.split(",").map(Number); return [x, Y(y)]; }), "MASSE", el.tagName === "polygon");
+      for (const el of g.querySelectorAll("text")) if (el.textContent) w.text(+el.getAttribute("x"), Y(+el.getAttribute("y")), +el.getAttribute("font-size"), el.textContent, "TEXT", { align: { middle: "center", end: "right" }[el.getAttribute("text-anchor")] || "left" });
     }
     await this.app.files.saveText(w.toString(), this.fileBase() + ".dxf", "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
   }

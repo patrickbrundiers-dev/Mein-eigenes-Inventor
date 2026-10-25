@@ -5,7 +5,7 @@ import { evaluate, resolveParams } from "../core/expr.js";
 import { solveSketch } from "../core/solver.js";
 import { extractProfiles, holeCenters, sketchLines } from "../core/sketch.js";
 import { planeFrame, toWorld, v3 } from "../core/geom.js";
-import { sectionGeometry, sectionName, profileId, THREADS } from "../core/sections.js";
+import { sectionGeometry, sectionName, profileId, THREADS, loopLength } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
 import { planKnickrahmen, knickInput } from "../core/knickrahmen.js";
 import { planTubeCuts, atEnd as openAtEnd } from "../core/tubecuts.js";
@@ -14,6 +14,7 @@ import { resolvePathPoints, pathSegments, pathLength, upFor, UP_AXES } from "../
 import { planBends, BIEGEROHR_SECTIONS } from "../core/biegerohr.js";
 import { checkRegel, REGEL_KINDS } from "../core/regelkoerper.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
+import { WELD_KINDS } from "../core/weld.js";
 
 const BIG = 20000;
 
@@ -250,7 +251,7 @@ export function createKernel(R) {
     return { lo, hi };
   }
   /** Stabachse für Anschlussbleche (M8): Rahmen, tatsächliche Enden, Profilgröße quer (Breite u, Höhe v) */
-  const memberAxis = (solid, fr, g) => ({ origin: fr.origin, z: fr.z, u: fr.u, v: fr.v, ...memberSpan(solid, fr), width: g.width, height: g.height });
+  const memberAxis = (solid, fr, g) => ({ origin: fr.origin, z: fr.z, u: fr.u, v: fr.v, ...memberSpan(solid, fr), width: g.width, height: g.height, perimeter: loopLength(g.outer) });
 
   const AXES = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1], "-X": [-1, 0, 0], "-Y": [0, -1, 0], "-Z": [0, 0, -1] };
   /** Lokales Stab-Koordinatensystem für Achsrichtung + Drehung um die Achse */
@@ -314,6 +315,7 @@ export function createKernel(R) {
       tools: new Map([...st.tools].map(([k, t]) => [k, { ...t, shapes: t.shapes.map((s) => ({ ...s, shape: s.shape.clone() })) }])),
       sketches: new Map(st.sketches),
       status: { ...st.status },
+      welds: [...(st.welds || [])],
     };
   }
 
@@ -330,7 +332,7 @@ export function createKernel(R) {
     const E = (expr, label) => {
       try { return evaluate(expr, scope); } catch (e) { throw new Error(`${label}: ${e.message}`); }
     };
-    let state = { bodies: [], tools: new Map(), sketches: new Map(), status: {} };
+    let state = { bodies: [], tools: new Map(), sketches: new Map(), status: {}, welds: [] };
     const feats = part.features || [];
     // 2D/3D und Winkelkorrektur je Profil bzw. Rahmen (gilt für alle Schnitte dieses Features)
     const cutCfg = (f) => {
@@ -611,6 +613,8 @@ export function createKernel(R) {
             const meta = { plate: { W: plan.W, H: plan.H, t: plan.t, holes: plan.holes.length, d: plan.d }, partOf: mem.name };
             state.tools.set(f.id, { op: "new", shapes: [{ shape: solid, kind: "solid", meta, name }], plate: { ax, P, nrm, W: plan.W, H: plan.H, t: plan.t } });
             state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
+            const wa = num("weldA", "Nahtdicke a");
+            if (wa > 0) state.welds.push({ fid: f.id, kind: "kehl", a: wa, side: "pfeil", around: true, field: false, length: ax.perimeter, p3: v3.add(P, v3.mul(ax.v, ax.height / 2)), name });
             st.info = `${round(plan.W)} × ${round(plan.H)} × ${round(plan.t)} mm` + (plan.holes.length ? `, ${plan.holes.length} × Ø ${round(plan.d)}` : "") + ` an ${mem.name}, Ende ${endB ? "B" : "A"}`;
             if (plan.issues.length) st.warning = plan.issues.map((x) => x.message).join("; ");
             break;
@@ -636,9 +640,39 @@ export function createKernel(R) {
               const meta = { rib: { L: rp.L, H: rp.Hr, t: rp.t, c: rp.c } };
               list.push({ shape: solid, kind: "solid", meta, name });
               state.bodies.push({ shape: solid, kind: "solid", name, fid: f.id, meta });
+              const wa = num("weldA", "Nahtdicke a");
+              if (wa > 0) state.welds.push({ fid: f.id, kind: "kehl", a: wa, side: "beide", around: false, field: false, length: rp.L - rp.c + rp.Hr - rp.c, p3: v3.add(v3.add(pt.P, v3.mul(n, rp.s0 + rp.Hr / 3)), v3.mul(inward, rp.L / 3)), name });
             }
             state.tools.set(f.id, { op: "new", shapes: list });
             st.info = `${list.length} Rippe(n) ${round(o.length)} mm lang, ${round(o.thickness)} mm dick`;
+            break;
+          }
+          case "naht": {
+            if (!WELD_KINDS[f.kind || "kehl"]) throw new Error("Unbekannte Nahtart");
+            const a = E(f.a || "0", WELD_KINDS[f.kind || "kehl"].dim + "-Maß");
+            if (!(a > 0)) throw new Error("Nahtmaß muss > 0 sein");
+            const refs = f.edges || [];
+            if (!refs.length) throw new Error("Keine Kanten gewählt – Kanten im 3D-Fenster anklicken");
+            let length = 0, miss = 0, p3 = null;
+            for (const ref of refs) {
+              let best = null, bd = Infinity;
+              for (const b of state.bodies) {
+                const bb = b.shape.boundingBox;
+                if (!pointInBox(ref.p, bb, 1)) continue;
+                for (const e of b.shape.edges) {
+                  if (ref.type && e.geomType !== ref.type) continue;
+                  const d = v3.dist(edgeMid(e), ref.p);
+                  if (d < bd) { bd = d; best = e; }
+                }
+              }
+              if (!best || bd > 0.5) { miss++; continue; }
+              length += R.measureLength(best);
+              p3 = p3 || edgeMid(best);
+            }
+            if (!p3) throw new Error("Gewählte Kanten nicht mehr gefunden");
+            state.welds.push({ fid: f.id, kind: f.kind || "kehl", a, side: f.side || "pfeil", around: !!f.around, field: !!f.field, length, p3, name: f.name });
+            st.info = `${WELD_KINDS[f.kind || "kehl"].dim}${round(a)}, ${round(length)} mm an ${refs.length - miss} Kante(n)`;
+            if (miss) st.warning = `${miss} Kante(n) nicht mehr gefunden`;
             break;
           }
           case "regelkoerper": {
@@ -807,7 +841,7 @@ export function createKernel(R) {
         if (!prev.warning?.includes(INVALID_BODY)) state.status[key] = { ...prev, warning: prev.warning ? prev.warning + "; " + INVALID_BODY : INVALID_BODY };
       }
     }
-    return { bodies: state.bodies, status: state.status, sketches: state.sketches, values };
+    return { bodies: state.bodies, status: state.status, sketches: state.sketches, values, welds: state.welds || [] };
   }
 
   function pushMember(state, solid, f, meta, name) {
