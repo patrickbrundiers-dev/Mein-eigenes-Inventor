@@ -808,6 +808,12 @@ test("3D-Profilzug: räumlicher Zug mit Gehrungen, Längen und Masse (MegaCAD-Ab
   lens.forEach((L, i) => assert.ok(L > mid[i] && L < mid[i] + 40 * 1.5, `Segment ${i + 1}: ${L}`));
   // Gehrungsflächen gleich: beide Hälften am Knoten haben denselben Winkel zur eigenen Achse
   near(res.bodies[0].meta.miterEnd, res.bodies[1].meta.miterStart, 0.01, "Gehrung Ecke 1");
+  // M3: räumliche Ecke = Gehrung in zwei Ebenen; Anteile tan²b + tan²h = tan²(Gesamt)
+  const p1 = res.bodies[0].meta.miterParts.B;
+  log("Ecke 1 Anteile", JSON.stringify(p1));
+  near(Math.abs(p1.b), 41.8, 0.05, "über die Breite");
+  near(Math.abs(p1.h), 24.1, 0.05, "über die Höhe");
+  near(Math.hypot(Math.tan(p1.b * Math.PI / 180), Math.tan(p1.h * Math.PI / 180)), Math.tan(res.bodies[0].meta.miterEnd * Math.PI / 180), 0.003, "Gesamtwinkel");
   // Masse ≈ Fläche × Mittellinie (Gehrungen gleichen sich am Knoten aus)
   const area = res.bodies[0].meta.area;
   near(vol(res), area * (mid[0] + mid[1] + mid[2]), area * 30, "Volumen");
