@@ -3,7 +3,8 @@ import { svgEl, h, toast, fmtNum, choiceDialog, modal } from "./dom.js";
 import { solveSketch, checkNewConstraint, measureConstraint, DIMENSION_TYPES, entityFree } from "../core/solver.js";
 import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../core/sketch.js";
 import { evaluate, resolveParams } from "../core/expr.js";
-import { planeFrame, toLocal, v3 } from "../core/geom.js";
+import { planeFrame, toLocal, toWorld, v3 } from "../core/geom.js";
+import { parseDxf, dxfToSketch, primsBounds } from "../core/dxfread.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
 import { inferLine, inferCircle } from "../core/autoconstraints.js";
@@ -441,6 +442,54 @@ export class Sketcher {
     });
   }
   /** „Skizze säubern“ (MegaCAD-Abgleich M7): Vorschau der Änderungen, ein Rückgängig-Schritt */
+  /** DXF in die offene Skizze übernehmen: Layer wählen, Lage, als Konstruktion, danach säubern (M21) */
+  async importDxfDialog(file) {
+    if (!this.sk) return;
+    file = file || (await this.app.files.pickDxf());
+    if (!file) return;
+    let dx;
+    try { dx = parseDxf(file.text); } catch (e) { toast("DXF: " + e.message, { kind: "err" }); return; }
+    if (!dx.prims.length) { toast("DXF enthält keine Linien, Bögen oder Kreise", { kind: "err" }); return; }
+    const on = new Set(dx.layers.map((l) => l.name));
+    const opt = { place: "origin", construction: false, clean: true };
+    const info = h("p", { class: "hint" });
+    const chosen = () => dx.prims.filter((p) => on.has(p.layer));
+    const update = () => {
+      const bb = primsBounds(chosen());
+      info.textContent = bb ? `${chosen().length} Elemente, ${fmtNum(bb[1][0] - bb[0][0], 1)} × ${fmtNum(bb[1][1] - bb[0][1], 1)} mm, Einheit der Datei: ${dx.unit}` : "Kein Layer gewählt";
+    };
+    const skipped = Object.entries(dx.skipped).map(([k, n]) => `${n} × ${k}`).join(", ");
+    const radio = (val, label) => h("label", { class: "chk" }, h("input", { type: "radio", name: "dxfplace", checked: opt.place === val, onchange: () => { opt.place = val; } }), label);
+    const chk = (key, label) => h("label", { class: "chk" }, h("input", { type: "checkbox", checked: opt[key], onchange: (e) => { opt[key] = e.target.checked; } }), label);
+    update();
+    modal({
+      title: "DXF importieren – " + file.name,
+      body: h("div", {},
+        h("h4", {}, "Layer"),
+        ...dx.layers.map((l) => h("label", { class: "chk" }, h("input", { type: "checkbox", checked: true, onchange: (e) => { if (e.target.checked) on.add(l.name); else on.delete(l.name); update(); } }), `${l.name} (${l.count})`)),
+        h("h4", {}, "Lage"), radio("origin", "Koordinaten wie in der Datei"), radio("corner", "linke untere Ecke auf den Skizzen-Nullpunkt"), radio("center", "Mitte auf den Skizzen-Nullpunkt"),
+        h("h4", {}, "Optionen"), chk("construction", "als Konstruktionslinien"), chk("clean", "danach säubern (Endpunkte zusammenführen, doppelte entfernen)"),
+        info,
+        skipped ? h("p", { class: "hint" }, "Nicht übernommen: " + skipped + ".") : null,
+        dx.warnings.length ? h("p", { class: "hint" }, dx.warnings.join("; ")) : null,
+        h("p", { class: "hint" }, "Splines und Ellipsenbögen werden als Polygonzug übernommen. Maße und Bedingungen entstehen nicht; Maße danach mit »Automatisch bemaßen«.")),
+      buttons: [{ label: "Abbrechen", value: null }, { label: "Importieren", primary: true, run: () => {
+        const prims = chosen();
+        if (!prims.length) { toast("Kein Layer gewählt"); return false; }
+        const bb = primsBounds(prims);
+        const offset = opt.place === "corner" ? [-bb[0][0], -bb[0][1]] : opt.place === "center" ? [-(bb[0][0] + bb[1][0]) / 2, -(bb[0][1] + bb[1][1]) / 2] : [0, 0];
+        let rep = null, cnt = null;
+        this.sel.clear();
+        this.commit("DXF importieren", (sk) => {
+          cnt = dxfToSketch(sk, prims, { uid, offset, construction: opt.construction });
+          if (opt.clean) rep = cleanSketch(sk, { ...CLEAN_DEFAULTS, kinds: { ...Object.fromEntries(Object.keys(CLEAN_KINDS).map((k) => [k, true])), straighten: false }, uid });
+        });
+        const corners = [[bb[0][0], bb[0][1]], [bb[1][0], bb[1][1]]].map(([x, y]) => toWorld(this.frame, x + offset[0], y + offset[1]));
+        this.viewer.fitPoints(corners);
+        toast(`DXF: ${cnt.entities} Elemente übernommen` + (rep?.total ? ` · ${cleanReportText(rep)}` : ""), { kind: "ok" });
+      } }],
+    });
+  }
   cleanDialog() {
     if (!this.sk) return;
     const kinds = Object.fromEntries(Object.keys(CLEAN_KINDS).map((k) => [k, true]));

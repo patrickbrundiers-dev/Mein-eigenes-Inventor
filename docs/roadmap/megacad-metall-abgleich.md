@@ -1,6 +1,6 @@
 # Abgleich MegaCAD Metall 3D ↔ PBCAD
 
-Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **freigegeben 25.10.2026, Umsetzung läuft** (erledigt: Block A – M1 #71, M2 #73, M3 #74, M4 #76; Block B – M5 und M6 #79, M7, M8, M9, M10, M11 erste Stufe #81; M12, M13 #83; M18, M19 #84; M20)
+Stand: 25.10.2026 · PBCAD `main` @ `ac8c811` (nach #68) · Status: **freigegeben 25.10.2026, Umsetzung läuft** (erledigt: Block A – M1 #71, M2 #73, M3 #74, M4 #76; Block B – M5 und M6 #79, M7, M8, M9, M10, M11 erste Stufe #81; M12, M13 #83; M18, M19 #84; M20 #85; M21)
 
 Auftrag: Patrick hat den Funktionsumfang der Produktseite „MegaCAD Metall 3D“ geschickt („Das möchte ich auch alles
 drin haben“). Übernommen wird nur der **Funktionsumfang als Ziel**; keine Texte, Bilder, Dialoge oder Daten von
@@ -81,7 +81,7 @@ Sonderwege, und jede Änderung (z. B. Pfosten verschieben) baut alle abhängigen
 | CADENAS PARTS4CAD | – | n. m. | kostenpflichtiger Dienst mit eigener Lizenz/Schnittstelle; Ersatz: Herstellerteile als STEP laden (geht schon) + eigene Normteile (M20) | – | P3 | – |
 | STEP, STL | Import und Export | vorhanden | – | – | – | – |
 | DXF (2D) | Export aus Skizze/Platte/Zeichnung; Import fehlt (P2 im Rohrlaser-Abgleich) | teilweise | Fremdzeichnungen und alte Laserkonturen in Skizze übernehmen | M | P1 | M21 |
-| IGES | fehlt; ob der eingebaute OpenCascade-Build IGES enthält, wird in M21 geprüft | fehlt | ältere Kundendaten | S–M | P2 | M21 |
+| IGES | geprüft in M21: der eingebaute OpenCascade-Build (replicad-opencascadejs) enthält keinen IGES-Leser, nur STEP | n. m. | ältere Kundendaten; Ersatz: beim Kunden als STEP anfordern. Ginge nur mit eigenem OpenCascade-WASM-Build (groß, eigener Pflegeaufwand) | – | P3 | – |
 | Bildexport (PNG), 3MF, glTF/OBJ, VRML | fehlt | fehlt | Bilder fürs Angebot, 3D für Kunden/Webseite | S | P2 | M21 |
 | Native Formate Inventor, SolidWorks, Parasolid, Solid Edge, NX, ACIS/SAT, DWG | – | n. m. | geschlossene Formate, nur mit Lizenz-Bibliotheken; Austausch läuft über STEP (DWG über DXF) | – | – | – |
 
@@ -138,7 +138,7 @@ den Entwicklungsplan-Thread. Große Stufen (L) werden beim Start in 2–3 PRs ge
 | M18 ✓ | Excel-Export (`.xlsx`) für Zuschnitt- und Stückliste | S |
 | M19 ✓ | Unterbaugruppen, dann Struktur- und Baukastenstückliste | L (2 PRs) |
 | M20 ✓ | Normteile parametrisch: Sechskantschrauben (ISO 4014/4017), Muttern (ISO 4032), Scheiben (ISO 7089), Gewindestange, Spannschloss; in Stückliste mit Normbezeichnung | M |
-| M21 | DXF-Import in Skizze; IGES prüfen; PNG-Bildexport | M |
+| M21 ✓ | DXF-Import in Skizze; IGES prüfen (Ergebnis: im Kern nicht enthalten); PNG-Bildexport | M |
 
 ### Block C (P2) – Erweiterte Generatoren, Stahlbau, Blech, Darstellung
 
