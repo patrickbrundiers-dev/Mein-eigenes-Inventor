@@ -8,6 +8,7 @@
 
 const DEG = Math.PI / 180;
 
+import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
 export const SPINDEL = {
   label: "Spindeltreppe",
@@ -18,14 +19,14 @@ export const SPINDEL = {
     { key: "angle", label: "Winkel je Stufe (0 = aus 2s + a = 630)", type: "num", unit: "°", default: "0", group: "Lauf" },
     { key: "dir", label: "Drehrichtung aufwärts", type: "select", options: [["links", "gegen den Uhrzeigersinn"], ["rechts", "im Uhrzeigersinn"]], default: "links", group: "Lauf" },
     { key: "overlap", label: "Überdeckung auf der Gehlinie", type: "num", default: "30", group: "Lauf" },
-    { key: "spindle", label: "Spindel (Mittelrohr)", type: "section", kinds: ["rohr"], default: { kind: "rohr", size: "114.3x3.6" }, group: "Tragwerk" },
-    { key: "arm", label: "Stufenträger", type: "section", kinds: ["flach", "rechteck", "u"], default: { kind: "flach", size: "60x10" }, group: "Tragwerk" },
+    { key: "spindle", label: "Spindel (Mittelrohr)", type: "section", default: { kind: "rohr", size: "114.3x3.6" }, group: "Tragwerk" },
+    { key: "arm", label: "Stufenträger", type: "section", default: { kind: "flach", size: "60x10" }, group: "Tragwerk" },
     { key: "tread", label: "Stufen", type: "select", options: [["blech", "Blech (Riffelblech)"], ["gitterrost", "Gitterrost"], ["holz", "Holz"]], default: "blech", group: "Stufen" },
     { key: "treadT", label: "Stufendicke", type: "num", default: "6", group: "Stufen" },
     { key: "railing", label: "Geländer außen", type: "check", default: true, group: "Geländer" },
     { key: "railH", label: "Geländerhöhe über Stufenvorderkante", type: "num", default: "900", group: "Geländer", when: (p) => p.railing },
-    { key: "post", label: "Geländerstab", type: "section", kinds: ["rohr", "rund", "vierkant"], default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => p.railing },
-    { key: "rail", label: "Handlauf", type: "section", kinds: ["rohr"], default: { kind: "rohr", size: "42.4x2.6" }, group: "Geländer", when: (p) => p.railing },
+    { key: "post", label: "Geländerstab", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => p.railing },
+    { key: "rail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Geländer", when: (p) => p.railing },
   ],
 
   plan(p) {
@@ -53,7 +54,8 @@ export const SPINDEL = {
     const topZ = H + (p.railing ? p.railH : 0);
     members.push({ section: p.spindle, a: [0, 0, 0], b: [0, 0, topZ], name: "Spindel", up: [1, 0, 0] });
     const arm = p.arm, armH = Math.max(arm.geom.width, arm.geom.height);
-    const armRot = arm.kind === "flach" ? 90 : arm.geom.width > arm.geom.height ? 90 : 0;
+    // Stufenträger hochkant, U/UPN offen nach unten, T mit dem Flansch oben
+    const armRot = orientRot(arm, [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, 0, -1], legs: [0, 1, -1], stem: [0, 0, -1] });
     const postOff = p.railing ? Math.max(p.post.geom.width, p.post.geom.height) / 2 + 15 : 0;
     const railPts = [];
     for (let i = 1; i < n; i++) {

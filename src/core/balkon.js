@@ -5,6 +5,7 @@
 // Lage: Hauswand in der XZ-Ebene (y = 0), Balkon ragt in +Y, Breite entlang +X ab x = 0, Gelände z = 0,
 // Oberkante Belag auf »Höhe«.
 
+import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
 import { catalogToDims, sectionGeometry } from "./sections.js";
 import { splitList } from "./expr.js";
@@ -22,18 +23,19 @@ export const BALKON = {
     { key: "width", label: "Breite (an der Wand)", type: "num", default: "3000", group: "Balkon" },
     { key: "depth", label: "Tiefe (Auskragung)", type: "num", default: "1500", group: "Balkon" },
     { key: "height", label: "Höhe OK Belag über Gelände", type: "num", default: "2800", group: "Balkon" },
-    { key: "frame", label: "Rahmenprofil", type: "section", kinds: ["rechteck", "vierkant", "u"], default: { kind: "rechteck", size: "140x80x5" }, group: "Tragwerk" },
-    { key: "joist", label: "Querträger", type: "section", kinds: ["rechteck", "vierkant", "u", "winkel"], default: { kind: "rechteck", size: "80x40x3" }, group: "Tragwerk" },
+    { key: "frame", label: "Rahmenprofil", type: "section", default: { kind: "rechteck", size: "140x80x5" }, group: "Tragwerk" },
+    { key: "joist", label: "Querträger", type: "section", default: { kind: "rechteck", size: "80x40x3" }, group: "Tragwerk" },
     { key: "joistMax", label: "Querträgerabstand max.", type: "num", default: "600", group: "Tragwerk" },
     { key: "support", label: "Stützen", type: "select", options: [["2", "2 vorne"], ["auto", "vorne nach Abstand"], ["keine", "keine (Kragarm an der Wand)"]], default: "2", group: "Tragwerk" },
     { key: "supportMax", label: "Stützenabstand max.", type: "num", default: "2500", group: "Tragwerk", when: (p) => p.support === "auto" },
-    { key: "column", label: "Stützenprofil", type: "section", kinds: ["vierkant", "rechteck", "rohr"], default: { kind: "vierkant", size: "100x5" }, group: "Tragwerk", when: (p) => p.support !== "keine" },
+    { key: "column", label: "Stützenprofil", type: "section", default: { kind: "vierkant", size: "100x5" }, group: "Tragwerk", when: (p) => p.support !== "keine" },
     { key: "wallPlate", label: "Wandanschlussplatte (Dicke)", type: "num", default: "15", group: "Tragwerk" },
     { key: "deck", label: "Belag", type: "select", options: [["gitterrost", "Gitterrost"], ["holz", "Holz (Dielen)"], ["blech", "Blech (Riffelblech)"], ["keiner", "kein Belag"]], default: "gitterrost", group: "Belag" },
     { key: "deckT", label: "Belagdicke", type: "num", default: "30", group: "Belag", when: (p) => p.deck !== "keiner" },
     { key: "railing", label: "Geländer", type: "check", default: true, group: "Geländer" },
     { key: "railH", label: "Geländerhöhe über Belag", type: "num", default: "1000", group: "Geländer", when: (p) => p.railing },
     { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz mit Ring"], ["rahmen", "Rahmen mit Staketen"]], default: "staketen", tiles: "front", group: "Geländer", when: (p) => p.railing },
+    { key: "railHolder", label: "Handlaufhalter (Stift, Bohrung im Handlauf)", type: "check", default: true, missing: false, group: "Geländer", when: (p) => p.railing },
     { key: "inset", label: "Geländer vom Rand", type: "num", default: "60", group: "Geländer", when: (p) => p.railing },
   ],
 
@@ -43,18 +45,19 @@ export const BALKON = {
     if (!(W > 500 && T > 300)) throw fieldError("Breite und Tiefe prüfen", "width");
     const tt = p.deck === "keiner" ? 0 : p.deckT;
     if (p.deck !== "keiner" && !(tt > 0)) throw fieldError("Belagdicke muss > 0 sein", "deckT");
-    // Rahmen und Querträger hochkant (größere Profilseite senkrecht)
-    const fr = p.frame, frRot = fr.geom.width > fr.geom.height ? 90 : 0;
-    const fw = Math.min(fr.geom.width, fr.geom.height), fh = Math.max(fr.geom.width, fr.geom.height);
+    // Rahmen und Querträger hochkant (größere Profilseite senkrecht); Rahmen offen nach außen, Winkel mit dem
+    // Schenkel oben innen (Auflager für den Belag)
+    const fr = p.frame, frRot = orientRot(fr, [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, -1, 0], legs: [0, Math.SQRT1_2, -Math.SQRT1_2], stem: [0, 0, -1] });
+    const { high: fh, wide: fw } = rotExtent(fr, frRot);
     const tw = p.wallPlate || 0;
     if (!(Hb > fh + tt + 200)) throw fieldError("Höhe zu klein für den Rahmen", "height");
-    const members = [], plates = [], chains = [];
+    const members = [], plates = [], chains = [], drills = [];
     const zf = Hb - tt - fh / 2; // Achse Rahmen
     const y0 = tw; // Rahmen beginnt vor der Wandplatte
     const x0 = fw / 2, x1 = W - fw / 2, ya = y0 + fw / 2, yb = T - fw / 2;
     chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[x0, ya, zf], [x1, ya, zf], [x1, yb, zf], [x0, yb, zf], [x0, ya, zf]], name: "Rahmen", up: [0, 0, 1], rot: frRot });
     // Querträger zwischen Wand- und Stirnträger, oben bündig mit dem Rahmen
-    const jRot = p.joist.geom.width > p.joist.geom.height ? 90 : 0, jh = Math.max(p.joist.geom.width, p.joist.geom.height);
+    const jRot = orientRot(p.joist, [0, 1, 0], [0, 0, 1], { tall: [0, 0, 1], legs: [-Math.SQRT1_2, 0, -Math.SQRT1_2], stem: [0, 0, -1] }), jh = rotExtent(p.joist, jRot).high;
     const clearW = W - 2 * fw;
     const nJ = Math.max(0, Math.ceil(clearW / p.joistMax - 1e-9) - 1);
     const zj = Hb - tt - jh / 2;
@@ -95,7 +98,7 @@ export const BALKON = {
       const i = p.inset, yStart = y0 + 20;
       const side = T - i - yStart, front = W - 2 * i;
       if (!(side > 100 && front > 100)) throw fieldError("Geländer passt nicht – Abstand vom Rand prüfen", "inset");
-      const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill });
+      const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill, holder: p.railHolder ? "stift" : "keine" });
       // Parameter des Geländers heißen hier anders: Meldungen auf die Balkon-Felder umschlüsseln
       const KEY = { height: "railH", fill: "fill" };
       let g;
@@ -106,11 +109,12 @@ export const BALKON = {
       for (const c of g.chains) chains.push({ ...c, points: c.points.map(P), up: c.up ? D(c.up) : [0, 0, 1], name: "Geländer " + c.name });
       for (const m of g.members) members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: "Geländer " + m.name, cuts: m.cuts && { start: m.cuts.start.map((c) => ({ p: P(c.p), n: D(c.n) })), end: m.cuts.end.map((c) => ({ p: P(c.p), n: D(c.n) })) } });
       for (const pl of g.plates) plates.push({ ...pl, center: P(pl.center), xDir: D(pl.xDir), normal: D(pl.normal), name: "Geländer " + pl.name });
+      for (const d of g.drills || []) drills.push({ ...d, p: P(d.p), dir: D(d.dir), target: "Geländer " + d.target });
       issues.push(...g.issues.map(({ key, ...x }) => ({ ...x, key: KEY[key] || "railing" })));
       railInfo = `, Geländer: ${g.info}`;
     }
     const info = `Balkon ${Math.round(W)} × ${Math.round(T)} mm auf ${Math.round(Hb)} mm, ${nJ} Querträger` + (p.support !== "keine" ? `, ${members.filter((m) => /^Stütze/.test(m.name)).length} Stützen` : ", ohne Stützen") + railInfo;
-    return { chains, members, plates, info, issues };
+    return { chains, members, plates, drills, info, issues };
   },
 
   parts: { support: /Stütze/, railing: /^Geländer/, inset: /^Geländer/, fill: /^Geländer .*(Stab|Staket|Querstab|Kreuz|Ring|Blech|Glas)/ },

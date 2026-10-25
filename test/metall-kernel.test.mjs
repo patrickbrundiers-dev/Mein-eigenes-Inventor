@@ -119,7 +119,7 @@ test("Geländer-Generator: Pfostenaufteilung, Staketen, Handlauf über Eck, Fuß
   const res = await K.buildPart(part([f]));
   okAll(res);
   const by = (re) => res.bodies.filter((b) => re.test(b.name));
-  assert.equal(by(/^Pfosten/).length, 3 + 1 + 2, "3 Felder à 1000 + 2 Felder à 750 → 6 Pfosten");
+  assert.equal(by(/^Pfosten \d+$/).length, 3 + 1 + 2, "3 Felder à 1000 + 2 Felder à 750 → 6 Pfosten");
   assert.equal(by(/^Fußplatte/).length, 6);
   assert.equal(by(/^Handlauf/).length, 2, "zwei Handlaufstäbe, an der Ecke gegehrt");
   assert.ok(Math.abs(by(/^Handlauf/)[0].meta.miterEnd) > 40, "Gehrung 45° an der Ecke");
@@ -431,7 +431,7 @@ test("Treppe mit Geländer: beidseitig, ums Podest, Knieleisten/Staketen, Höhe 
   okAll(rL);
   const corner = by(rL, /^Geländer rechts Pfosten/).find((b) => bb(b)[0][0] > 7 * a + 1000 && bb(b)[1][1] < 0);
   assert.ok(corner, "Eckpfosten außen am Podest");
-  near(bb(corner)[1][2], 8 * s + 1000 - 42.4, 0.5, "Pfosten bis unter den Handlauf (Podesthöhe + 1000)");
+  near(bb(corner)[1][2], 8 * s + 1000 - 42.4 - 60 - 4, 0.5, "Pfostenende unter dem Handlauf (Podesthöhe + 1000 − Halter 60 − Endkappe 4)");
   assert.ok(by(rL, /Stab/).length > 40 && by(rL, /Untergurt/).length > 4);
   // ältere Treppe ohne Angabe: kein Geländer
   const old = { id: "o", type: "generator", gen: "treppe", params: { ...defaultGenerator("treppe").params } };
@@ -472,4 +472,31 @@ test("Zaun: eben, Gefälle mit schrägen Riegeln, gestuft, Blech mit Fußplatten
       near(bb(u)[1][2], 0.06 * 9970 + 80 + 40, 1, "Unterriegel folgt dem Gelände (OK am Pfosten 5)");
     }
   }
+});
+
+test("Handlaufhalter: Bohrung 12,1 mm im Handlauf, Stift und Endkappe als Körper; UPN-Wangen offen nach außen", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const bb = (b) => b.shape.boundingBox.bounds;
+  const f = { id: "g", ...defaultGenerator("gelaender") };
+  Object.assign(f.params, { runs: "2500" });
+  const r = await K.buildPart(part([f]));
+  okAll(r);
+  const rail = r.bodies.find((b) => b.name === "Handlauf");
+  assert.equal(rail.meta.drills, 4);
+  assert.equal(rail.meta.drillD, 12.1);
+  const f0 = { ...f, params: { ...f.params, holder: "keine" } };
+  const r0 = await K.buildPart(part([f0]));
+  const lost = R.measureVolume(r0.bodies.find((b) => b.name === "Handlauf").shape) - R.measureVolume(rail.shape);
+  near(lost, 4 * Math.PI * (12.1 / 2) ** 2 * 2.6, 40, "4 Bohrungen nur durch die untere Wand");
+  assert.equal(r.bodies.filter((b) => /Handlaufhalter$/.test(b.name)).length, 4);
+  assert.equal(r.bodies.filter((b) => /Endkappe$/.test(b.name)).length, 4);
+  near(bb(r.bodies.find((b) => b.name === "Pfosten 1"))[1][2], 1000 - 42.4 - 64, 0.5, "Pfostenende");
+  // Treppe mit UPN-Wangen: Steg innen an den Stufen (rechte Wange: Steg bei y = 0), offen nach außen
+  const t = { id: "t", ...defaultGenerator("treppe") };
+  Object.assign(t.params, { support: "upn", gel: "keine" });
+  const rt = await K.buildPart(part([t]));
+  okAll(rt);
+  const w = rt.bodies.find((b) => b.name === "Wange rechts");
+  near(bb(w)[1][1], 0, 0.5, "Steg bündig an der Stufe");
+  near(bb(w)[0][1], -75, 0.5, "Flansche nach außen (UPN 200: 75 mm)");
 });

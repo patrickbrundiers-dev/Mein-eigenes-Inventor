@@ -15,6 +15,8 @@
 //              poly = Umriss [[x, y]…] in der Plattenebene statt Rechteck W × H)
 //            norms?: [{ kind, size, length?, grade?, pos, dir, name? } | { bolt: true, size, clamp, pos, dir, grade? }],
 //              – Normteile bzw. Verschraubungen (Schraube, Scheiben, Mutter; Klemmpaket ab pos in Richtung dir)
+//            drills?: [{ target, p, dir, d, len }], – Bohrung Ø d ab p in Richtung dir (Länge len) im Stab bzw. Zug
+//              namens target, nur im Stück, durch dessen Achse p geht (z. B. Handlaufhalter im Handlauf)
 //            info, issues: [{ level, message }] }
 
 import { catalogToDims, sectionGeometry, CATALOG } from "./sections.js";

@@ -196,12 +196,12 @@ test("Generator-Gerüst und Geländer-Plan: Parameter, Aufteilung, Öffnungen, V
   const E = (x) => Number(String(x).replace(",", "."));
   const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...patch }, E));
   const p1 = plan({ runs: "2500" });
-  assert.equal(p1.members.filter((m) => /^Pfosten/.test(m.name)).length, 4, "2500 / 1200 → 3 Felder, 4 Pfosten");
+  assert.equal(p1.members.filter((m) => /^Pfosten \d+$/.test(m.name)).length, 4, "2500 / 1200 → 3 Felder, 4 Pfosten");
   const bars = p1.members.filter((m) => /^Stab 1\./.test(m.name)).map((m) => m.a[0]).sort((a, b) => a - b);
   const gaps = [bars[0] - 6 - 20, ...bars.slice(1).map((x, i) => x - bars[i] - 12), 2500 / 3 - 20 - bars[bars.length - 1] - 6];
   assert.ok(gaps.every((g) => g <= 110 + 1e-9 && g > 0), "alle Öffnungen ≤ 110 mm: " + gaps.map((g) => g.toFixed(1)));
   assert.ok(Math.max(...gaps) - Math.min(...gaps) < 1e-6, "gleichmäßig verteilt");
-  assert.equal(p1.plates.length, 4, "Fußplatten");
+  assert.equal(p1.plates.filter((x) => /^Fußplatte/.test(x.name)).length, 4, "Fußplatten");
   assert.deepEqual(p1.chains[0].points.map((q) => q[2]), [1000 - 42.4 / 2, 1000 - 42.4 / 2]);
   const p2 = plan({ runs: "2000", fill: "glas", panelT: "10", height: "850" });
   assert.equal(p2.plates.filter((x) => x.glass).length, 2);
@@ -335,7 +335,7 @@ test("Generatoren: Standardprofile stehen im Katalog (Auswahlliste nicht leer)",
     for (const s of G.schema.filter((x) => x.type === "section")) {
       const c = CATALOG[s.default.kind];
       assert.ok(Array.isArray(c) ? c.includes(s.default.size) : c && String(s.default.size) in c, `${g}.${s.key}: ${s.default.kind} ${s.default.size}`);
-      assert.ok(s.kinds.includes(s.default.kind), `${g}.${s.key}: Art ${s.default.kind} nicht erlaubt`);
+      assert.ok(!s.kinds || s.kinds.includes(s.default.kind), `${g}.${s.key}: Art ${s.default.kind} nicht erlaubt`);
     }
 });
 
@@ -585,4 +585,86 @@ test("Generator-Meldungen am Feld und Körper je Feld (V5)", async () => {
   assert.ok(fieldParts(g.GENERATORS.zaun, "post").test("Pfosten 3"));
   assert.ok(fieldParts(g.GENERATORS.treppe, "gelRail").test("Geländer links Handlauf"));
   assert.ok(fieldParts(g.GENERATORS.schiebetor, "beam").test("Flügel Laufprofil"));
+});
+
+test("Generatoren: jede Profilart in jedem Profilfeld rechnet (oder meldet am Feld), keine NaN-Koordinaten", async () => {
+  const { CATALOG, SECTION_KINDS } = await import("../src/core/sections.js");
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  for (const [gen, G] of Object.entries(g.GENERATORS)) {
+    const base = g.defaultGenerator(gen).params;
+    for (const s of G.schema.filter((x) => x.type === "section")) {
+      for (const kind of s.kinds || Object.keys(SECTION_KINDS)) {
+        const size = CATALOG[kind][Math.floor(CATALOG[kind].length / 2)];
+        let plan;
+        try { plan = G.plan(g.resolveGenParams(gen, { ...base, [s.key]: { kind, size } }, E)); } catch (e) { assert.ok(e.key || /zu |passt|prüfen|Platz/.test(e.message), `${gen}.${s.key} ${kind}: ${e.stack}`); continue; }
+        const pts = [...plan.members.flatMap((m) => [m.a, m.b]), ...plan.chains.flatMap((c) => c.points)];
+        assert.ok(pts.every((q) => q.every(Number.isFinite)), `${gen}.${s.key} ${kind}: NaN`);
+        assert.ok([...plan.members, ...plan.chains].every((m) => m.rot === undefined || [0, 90, 180, 270].includes(Number(m.rot))), `${gen}.${s.key} ${kind}: Drehung`);
+      }
+    }
+  }
+});
+
+test("Profillage: Treppenwangen U/UPN offen nach außen, Rahmen offen nach außen, Riegel offen zu den Stäben", async () => {
+  const g = await import("../src/core/generator.js");
+  const { orientRot } = await import("../src/core/orient.js");
+  const { sectionOf } = g;
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (gen, patch) => g.GENERATORS[gen].plan(g.resolveGenParams(gen, { ...g.defaultGenerator(gen).params, ...patch }, E));
+  // offene Seite eines UPN (Steg bei −u) in Weltrichtung nach der Drehung
+  const openDir = (z, up, rot) => {
+    const n = (a) => { const l = Math.hypot(...a); return a.map((x) => x / l); };
+    const v0 = n(up.map((x, i) => x - z[i] * (up[0] * z[0] + up[1] * z[1] + up[2] * z[2]))), u0 = [v0[1] * z[2] - v0[2] * z[1], v0[2] * z[0] - v0[0] * z[2], v0[0] * z[1] - v0[1] * z[0]];
+    const t = (rot * Math.PI) / 180;
+    return u0.map((x, i) => Math.round(x * Math.cos(t) + v0[i] * Math.sin(t)));
+  };
+  const st = plan("treppe", { support: "upn" });
+  for (const m of st.members.filter((x) => /^Wange/.test(x.name))) {
+    const z = m.b.map((x, i) => x - m.a[i]).map((x, _, a) => x / Math.hypot(...a));
+    const out = openDir(z, m.up, m.rot);
+    assert.equal(Math.sign(out[1]), m.a[1] < 0 ? -1 : 1, `${m.name}: offene Seite nach außen`);
+  }
+  assert.deepEqual(st.members.filter((x) => /^Wange/.test(x.name)).map((x) => [x.name, Math.sign(x.a[1])]), [["Wange rechts", -1], ["Wange links", 1]], "rechts/links beim Hinaufgehen (+X)");
+  // Podest- und Balkonrahmen: UPN offen nach außen (erstes Stück entlang +X, außen = −Y)
+  const upn = { kind: "upn", size: "120" };
+  assert.equal(orientRot(sectionOf(upn), [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, -1, 0] }), 180);
+  assert.equal(plan("treppe", { form: "L", podestRahmen: upn }).chains.find((c) => c.name === "Podestrahmen").rot, 180);
+  assert.equal(plan("balkon", { frame: upn }).chains.find((c) => c.name === "Rahmen").rot, 180);
+  // Zaun: Unterriegel offen nach oben, Oberriegel nach unten
+  const z = plan("zaun", { frame: upn });
+  const ur = z.members.find((m) => m.name === "Feld 1 Unterriegel"), or = z.members.find((m) => m.name === "Feld 1 Oberriegel");
+  assert.deepEqual([openDir([1, 0, 0], ur.up, ur.rot)[2], openDir([1, 0, 0], or.up, or.rot)[2]], [1, -1]);
+  // Schiebetor: Laufprofil offen nach unten
+  const bm = plan("schiebetor", { beam: upn }).members.find((m) => m.name === "Flügel Laufprofil");
+  assert.equal(openDir([1, 0, 0], bm.up, bm.rot)[2], -1);
+});
+
+test("Handlaufhalter: Pfosten endet unter dem Handlauf, Endkappe, Stift, Bohrung 12,1 im Handlauf", async () => {
+  const g = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (gen, patch) => g.GENERATORS[gen].plan(g.resolveGenParams(gen, { ...g.defaultGenerator(gen).params, ...patch }, E));
+  const p = plan("gelaender", { runs: "2500" });
+  const post = p.members.find((m) => m.name === "Pfosten 1"), pin = p.members.find((m) => m.name === "Pfosten 1 Handlaufhalter");
+  assert.ok(Math.abs(post.b[2] - (1000 - 42.4 - 60 - 4)) < 1e-9, "60 mm frei + 4 mm Endkappe");
+  assert.ok(p.plates.some((x) => x.name === "Pfosten 1 Endkappe" && x.t === 4));
+  assert.deepEqual([pin.section.kind, pin.section.dims.D, pin.a[2], pin.b[2]], ["rund", 12, 1000 - 42.4 - 60, 1000 - 42.4 / 2]);
+  assert.equal(p.drills.length, 4);
+  assert.deepEqual([p.drills[0].target, p.drills[0].d, p.drills[0].dir], ["Handlauf", 12.1, [0, 0, -1]]);
+  assert.match(p.info, /4 Handlaufhalter \(Bohrung Ø 12,1\)/);
+  // ohne Halter (auch ältere Features): Pfosten bis unter den Handlauf
+  const o = plan("gelaender", { runs: "2500", holder: "keine" });
+  assert.ok(Math.abs(o.members.find((m) => m.name === "Pfosten 1").b[2] - (1000 - 42.4)) < 1e-9 && !o.drills.length);
+  assert.equal(g.genValues("gelaender", { runs: "2000" }).holder, "keine");
+  // massiver Pfosten (Flachstahl): ohne Endkappe
+  const fl = plan("gelaender", { runs: "2500", post: { kind: "flach", size: "40x10" } });
+  assert.ok(!fl.plates.some((x) => /Endkappe/.test(x.name)) && Math.abs(fl.members.find((m) => m.name === "Pfosten 1").b[2] - (1000 - 42.4 - 60)) < 1e-9);
+  // Treppe: Halter an jedem Pfosten, Bohrung im Handlauf desselben Zugs; Balkon reicht durch
+  const t = plan("treppe", {});
+  const tp = t.members.filter((m) => /Pfosten \d+$/.test(m.name)).length;
+  assert.equal(t.members.filter((m) => /Handlaufhalter$/.test(m.name)).length, tp);
+  assert.ok(t.drills.every((d) => /^Geländer (links|rechts) Handlauf$/.test(d.target)) && t.drills.length === tp);
+  const b = plan("balkon", {});
+  assert.ok(b.drills.length > 0 && b.drills.every((d) => d.target === "Geländer Handlauf"));
+  assert.equal(plan("balkon", { railHolder: false }).drills.length, 0);
 });

@@ -4,13 +4,16 @@
 // Untergurt. Reine Rechnung; Bauplan-Format siehe generator.js. Genutzt vom Treppen-Generator.
 //
 // path: Punkte [x, y, z] der Lauflinie auf Höhe Stufenvorderkante bzw. Podest-Oberkante; jeder Abschnitt ist gerade.
-// o: { H, post, postMax, postDown, rail, fill ("quer" | "staketen" | "keine"), bar, bars, gap, belt, bottomZ }
+// o: { H, post, postMax, postDown, rail, fill ("quer" | "staketen" | "keine"), bar, bars, gap, belt, bottomZ,
+//      holder, holderGap, holderD } – mit holder endet der Pfosten unter dem Handlauf, Stift + Bohrung (handlaufhalter.js)
+
+import { holderDrop, holderParts } from "./handlaufhalter.js";
 
 /** Bauplan-Teile eines Geländerzugs; label steht vor allen Namen (z. B. »Geländer links«) */
 export function railAlong(path, o, label) {
-  const members = [], chains = [];
+  const members = [], chains = [], plates = [], drills = [];
   const pts = path.filter((q, i) => i === 0 || Math.hypot(q[0] - path[i - 1][0], q[1] - path[i - 1][1], q[2] - path[i - 1][2]) > 1e-6);
-  if (pts.length < 2) return { members, chains, posts: 0, fields: 0, bars: 0, gapMax: 0 };
+  if (pts.length < 2) return { members, chains, plates, drills, posts: 0, fields: 0, bars: 0, gapMax: 0 };
   const railH = o.rail.geom.height, postW = o.post.geom.width, half = o.post.geom.height / 2;
   const segs = [];
   for (let i = 0; i + 1 < pts.length; i++) {
@@ -30,13 +33,26 @@ export function railAlong(path, o, label) {
       const prev = posts[posts.length - 1];
       if (k === 0 && i > 0) { sg.ts.push(t); continue; } // Knick: Pfosten steht schon (Ende des vorigen Abschnitts)
       if (prev && Math.hypot(q[0] - prev.q[0], q[1] - prev.q[1]) < postW + 1) { if (k === n) prev.q = q; continue; }
-      posts.push({ q, d: sg.d });
+      posts.push({ q, d: sg.d, slope: sg.slope });
       sg.ts.push(t);
     }
     if (sg.ts[sg.ts.length - 1] < sg.L - 1e-6) sg.ts.push(sg.L);
   }
-  posts.forEach((p, i) => members.push({ section: o.post, a: [p.q[0], p.q[1], p.q[2] - o.postDown], b: [p.q[0], p.q[1], p.q[2] + o.H - railH], name: `${label} Pfosten ${i + 1}`, up: [p.d[0], p.d[1], 0] }));
-  chains.push({ section: o.rail, points: pts.map((q) => [q[0], q[1], q[2] + o.H - railH / 2]), name: `${label} Handlauf` });
+  const drop = holderDrop(!!o.holder, o.post, o.holderGap);
+  posts.forEach((p, i) => {
+    const top = [p.q[0], p.q[1], p.q[2] + o.H - railH - drop];
+    members.push({ section: o.post, a: [p.q[0], p.q[1], p.q[2] - o.postDown], b: top, name: `${label} Pfosten ${i + 1}`, up: [p.d[0], p.d[1], 0] });
+    if (!o.holder) return;
+    const hp = holderParts({ q: top, along: p.d, axisZ: p.q[2] + o.H - railH / 2, post: o.post, railH, d: o.holderD, slope: p.slope, name: `${label} Pfosten ${i + 1}`, target: `${label} Handlauf` });
+    members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
+  });
+  // Handlauf; mit Haltern an beiden Enden 50 mm über den Endpfosten hinaus, damit die Bohrung ganz im Rohr liegt
+  const rp = pts.map((q) => [q[0], q[1], q[2] + o.H - railH / 2]);
+  if (o.holder) {
+    const ext = (i, j) => { const d = [rp[i][0] - rp[j][0], rp[i][1] - rp[j][1], rp[i][2] - rp[j][2]], l = Math.hypot(...d) || 1; rp[i] = rp[i].map((x, k) => x + (d[k] / l) * 50); };
+    ext(0, 1); ext(rp.length - 1, rp.length - 2);
+  }
+  chains.push({ section: o.rail, points: rp, name: `${label} Handlauf` });
   // Felder zwischen den Pfosten eines Abschnitts
   let fields = 0, bars = 0, gapMax = 0;
   const top = o.H - railH;
@@ -74,5 +90,5 @@ export function railAlong(path, o, label) {
       }
     }
   }
-  return { members, chains, posts: posts.length, fields, bars, gapMax };
+  return { members, chains, plates, drills, posts: posts.length, fields, bars, gapMax };
 }

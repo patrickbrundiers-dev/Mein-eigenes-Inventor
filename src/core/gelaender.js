@@ -10,6 +10,8 @@
 import { fieldError } from "./generror.js";
 import { platePlan } from "./anschluss.js";
 import { splitList } from "./expr.js";
+import { holderSchema, holderDrop, holderParts } from "./handlaufhalter.js";
+import { orientRot } from "./orient.js";
 
 const SEC = { rohr: "Rundrohr", vierkant: "Quadratrohr", rechteck: "Rechteckrohr", flach: "Flachstahl", rund: "Rundstahl", vierkantvoll: "Vierkantstahl" };
 
@@ -19,24 +21,25 @@ export const GELAENDER = {
     { key: "runs", label: "Läufe (Längen)", type: "list", default: "3000", group: "Lauflinie" },
     { key: "angle", label: "Eckwinkel", type: "num", unit: "°", default: "90", group: "Lauflinie", when: (p) => splitList(p.runs).length > 1 },
     { key: "height", label: "Höhe (OK Handlauf)", type: "num", default: "1000", group: "Lauflinie" },
-    { key: "post", label: "Pfosten", type: "section", kinds: ["vierkant", "rechteck", "rohr", "flach"], default: { kind: "vierkant", size: "40x3" }, group: "Pfosten" },
+    { key: "post", label: "Pfosten", type: "section", default: { kind: "vierkant", size: "40x3" }, group: "Pfosten" },
     { key: "postMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Pfosten" },
     { key: "base", label: "Befestigung", type: "select", options: [["fussplatte", "Fußplatte"], ["keine", "ohne (eingespannt)"]], default: "fussplatte", group: "Pfosten" },
     { key: "baseSize", label: "Fußplatte Größe", type: "num", default: "120", group: "Pfosten", when: (p) => p.base === "fussplatte" },
     { key: "baseT", label: "Fußplatte Dicke", type: "num", default: "10", group: "Pfosten", when: (p) => p.base === "fussplatte" },
-    { key: "rail", label: "Handlauf", type: "section", kinds: ["rohr", "vierkant", "rechteck", "flach", "rund"], default: { kind: "rohr", size: "42.4x2.6" }, group: "Handlauf und Gurte" },
-    { key: "overhang", label: "Handlauf-Überstand an den Enden", type: "num", default: "0", group: "Handlauf und Gurte" },
+    { key: "rail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Handlauf und Gurte" },
+    ...holderSchema(undefined, "Handlauf und Gurte"),
+    { key: "overhang", label: "Handlauf-Überstand an den Enden", type: "num", default: "50", group: "Handlauf und Gurte" },
     { key: "top", label: "Obergurt", type: "check", default: true, group: "Handlauf und Gurte" },
     { key: "topGap", label: "Obergurt unter Handlauf", type: "num", default: "100", group: "Handlauf und Gurte", when: (p) => p.top },
     { key: "bottom", label: "Untergurt", type: "check", default: true, group: "Handlauf und Gurte" },
     { key: "bottomZ", label: "Untergurt über Boden", type: "num", default: "100", group: "Handlauf und Gurte", when: (p) => p.bottom },
-    { key: "belt", label: "Gurtprofil", type: "section", kinds: ["flach", "vierkant", "rechteck"], default: { kind: "flach", size: "40x8" }, group: "Handlauf und Gurte", when: (p) => p.top || p.bottom },
+    { key: "belt", label: "Gurtprofil", type: "section", default: { kind: "flach", size: "40x8" }, group: "Handlauf und Gurte", when: (p) => p.top || p.bottom },
     { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz"], ["rahmen", "Rahmen mit Staketen"], ["keine", "keine"]], default: "staketen", tiles: "front", group: "Füllung" },
-    { key: "bar", label: "Stab", type: "section", kinds: ["vierkantvoll", "rund", "vierkant", "rohr", "flach"], default: { kind: "vierkantvoll", size: "12" }, group: "Füllung", when: (p) => ["staketen", "quer", "kreuz", "rahmen"].includes(p.fill) },
+    { key: "bar", label: "Stab", type: "section", default: { kind: "vierkantvoll", size: "12" }, group: "Füllung", when: (p) => ["staketen", "quer", "kreuz", "rahmen"].includes(p.fill) },
     { key: "gapMax", label: "Öffnung max.", type: "num", default: "110", group: "Füllung", when: (p) => ["staketen", "quer", "rahmen"].includes(p.fill) },
     { key: "ring", label: "Ring in der Kreuzmitte", type: "check", default: true, group: "Füllung", when: (p) => p.fill === "kreuz" },
     { key: "ringD", label: "Ring-Durchmesser (Mitte Stab)", type: "num", default: "300", group: "Füllung", when: (p) => p.fill === "kreuz" && p.ring },
-    { key: "frame", label: "Füllungsrahmen", type: "section", kinds: ["vierkant", "rechteck", "flach", "vierkantvoll"], default: { kind: "vierkant", size: "20x2" }, group: "Füllung", when: (p) => p.fill === "rahmen" },
+    { key: "frame", label: "Füllungsrahmen", type: "section", default: { kind: "vierkant", size: "20x2" }, group: "Füllung", when: (p) => p.fill === "rahmen" },
     { key: "panelT", label: "Dicke", type: "num", default: "3", group: "Füllung", when: (p) => p.fill === "blech" || p.fill === "glas" },
     { key: "panelGap", label: "Abstand zu Pfosten/Gurt", type: "num", default: "15", group: "Füllung", when: (p) => ["blech", "glas", "rahmen"].includes(p.fill) },
   ],
@@ -71,13 +74,18 @@ export const GELAENDER = {
     });
     const railH = rail.geom.height, railW = rail.geom.width;
     const zBase = p.base === "fussplatte" ? p.baseT : 0;
-    const zPostTop = H - railH;
-    const members = [], plates = [], chains = [];
+    const holder = p.holder !== "keine";
+    const zPostTop = H - railH - holderDrop(holder, post, p.holderGap);
+    const members = [], plates = [], chains = [], drills = [];
     const P3 = (xy, z) => [xy[0], xy[1], z];
     const up = [0, 0, 1];
     // Pfosten (Breite quer zur Lauflinie): Profil-u zeigt quer → Drehung so, dass Breite u ⟂ Lauf
     posts.forEach((q, i) => {
       members.push({ section: post, a: P3(q.at, zBase), b: P3(q.at, zPostTop), name: `Pfosten ${i + 1}`, up: [q.d[0], q.d[1], 0] });
+      if (holder) {
+        const hp = holderParts({ q: P3(q.at, zPostTop), along: q.d, axisZ: H - railH / 2, post, railH, d: p.holderD, name: `Pfosten ${i + 1}`, target: "Handlauf" });
+        members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
+      }
       if (p.base === "fussplatte") {
         const pl = platePlan({ width: post.geom.width, height: post.geom.height }, { thickness: p.baseT, width: p.baseSize, height: p.baseSize, holes: 4, holeDia: 11, edge: Math.min(20, p.baseSize / 4) });
         plates.push({ center: P3(q.at, 0), xDir: [q.d[0], q.d[1], 0], normal: up, W: pl.W, H: pl.H, t: pl.t, holes: pl.holes, d: pl.d, name: `Fußplatte ${i + 1}` });
@@ -104,8 +112,10 @@ export const GELAENDER = {
     fields.forEach((fd, i) => {
       const s0 = half, s1 = fd.len - half, clear = s1 - s0;
       const at = (s) => [fd.a[0] + fd.d[0] * s, fd.a[1] + fd.d[1] * s];
-      if (p.top) members.push({ section: belt, a: P3(at(s0), zTop), b: P3(at(s1), zTop), name: `Obergurt ${i + 1}` });
-      if (p.bottom) members.push({ section: belt, a: P3(at(s0), zBot), b: P3(at(s1), zBot), name: `Untergurt ${i + 1}` });
+      // Gurte: U/UPN offen zur Füllung (Obergurt nach unten, Untergurt nach oben), Flachstahl liegend wie bisher
+      const beltRot = (open) => orientRot(belt, [fd.d[0], fd.d[1], 0], up, { open, legs: [-fd.d[1], fd.d[0], open[2]], stem: [0, 0, -open[2]] });
+      if (p.top) members.push({ section: belt, a: P3(at(s0), zTop), b: P3(at(s1), zTop), name: `Obergurt ${i + 1}`, rot: beltRot([0, 0, -1]) });
+      if (p.bottom) members.push({ section: belt, a: P3(at(s0), zBot), b: P3(at(s1), zBot), name: `Untergurt ${i + 1}`, rot: beltRot([0, 0, 1]) });
       if (p.fill === "staketen") {
         const b = p.bar.geom.height; // Stabdicke entlang der Lauflinie (v zeigt entlang d)
         const n = Math.max(0, Math.ceil((clear - p.gapMax) / (b + p.gapMax) - 1e-9));
@@ -170,11 +180,12 @@ export const GELAENDER = {
         gapMaxSeen = Math.max(gapMaxSeen, p.panelGap);
       }
     });
+    if (holder && p.overhang < p.holderD / 2 + 10) issues.push({ key: "overhang", level: "Hinweis", message: `Handlauf-Überstand ${Math.round(p.overhang)} mm: die Bohrung für den Halter am Endpfosten liegt am Rohrende – mindestens ${Math.ceil(p.holderD / 2 + 10)} mm vorsehen` });
     if (gapMaxSeen > 120 + 1e-6) issues.push({ key: "gapMax", level: "Warnung", message: `Öffnung ${Math.round(gapMaxSeen)} mm größer als 120 mm` });
     if (p.fill === "keine" && (fillHi - fillLo) > 120) issues.push({ key: "fill", level: "Hinweis", message: "Ohne Füllung: Öffnungen größer als 120 mm" });
     const total = runs.reduce((a, b) => a + b, 0);
-    const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm`;
-    return { chains, members, plates, info, issues, sections: SEC };
+    const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(drills[0]?.d).replace(".", ",")})` : "");
+    return { chains, members, plates, drills, info, issues, sections: SEC };
   },
 
   views: ["front", "top"],

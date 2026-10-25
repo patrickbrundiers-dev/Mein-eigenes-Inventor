@@ -12,6 +12,8 @@
 import { fieldError } from "./generror.js";
 import { sectionGeometry } from "./sections.js";
 import { railAlong } from "./treppengelaender.js";
+import { orientRot, rotExtent } from "./orient.js";
+import { holderSchema } from "./handlaufhalter.js";
 
 const podest = (p) => p.form === "L" || p.form === "U";
 const gel = (p) => p.gel !== "keine";
@@ -25,19 +27,19 @@ export const TREPPE = {
     { key: "going", label: "Auftritt a (0 = aus 2s + a = 630)", type: "num", default: "0", group: "Lauf" },
     { key: "nosing", label: "Unterschneidung", type: "num", default: "20", group: "Lauf" },
     { key: "width", label: "Laufbreite (lichte)", type: "num", default: "1000", group: "Lauf" },
-    { key: "support", label: "Tragwerk", type: "select", options: [["flach", "Wangen Flachstahl"], ["upn", "Wangen UPN"], ["holm2", "Zwei Holme"], ["holm1", "Mittelholm"]], default: "flach", tiles: "side", group: "Tragwerk" },
+    { key: "support", label: "Tragwerk", type: "select", options: [["flach", "Wangen Flachstahl"], ["upn", "Wangen aus Profil (UPN, U …)"], ["holm2", "Zwei Holme"], ["holm1", "Mittelholm"]], default: "flach", tiles: "side", group: "Tragwerk" },
     { key: "wangeH", label: "Wangenhöhe", type: "num", default: "250", group: "Tragwerk", when: (p) => p.support === "flach" },
     { key: "wangeT", label: "Wangendicke", type: "num", default: "12", group: "Tragwerk", when: (p) => p.support === "flach" },
-    { key: "upn", label: "UPN", type: "section", kinds: ["upn"], default: { kind: "upn", size: "200" }, group: "Tragwerk", when: (p) => p.support === "upn" },
-    { key: "holm", label: "Holmprofil", type: "section", kinds: ["rechteck", "vierkant"], default: { kind: "rechteck", size: "160x80x5" }, group: "Tragwerk", when: (p) => p.support === "holm2" || p.support === "holm1" },
+    { key: "upn", label: "Wangenprofil", type: "section", default: { kind: "upn", size: "200" }, group: "Tragwerk", when: (p) => p.support === "upn" },
+    { key: "holm", label: "Holmprofil", type: "section", default: { kind: "rechteck", size: "160x80x5" }, group: "Tragwerk", when: (p) => p.support === "holm2" || p.support === "holm1" },
     { key: "holmInset", label: "Holm vom Stufenrand", type: "num", default: "150", group: "Tragwerk", when: (p) => p.support === "holm2" },
     { key: "turn", label: "Richtung am Podest", type: "select", options: [["links", "nach links"], ["rechts", "nach rechts"]], default: "links", group: "Podest", when: podest },
     { key: "n1", label: "Steigungen bis Podest (0 = Hälfte)", type: "num", unit: "Stk", default: "0", group: "Podest", when: podest },
     { key: "podestD", label: "Podesttiefe (0 = Laufbreite)", type: "num", default: "0", group: "Podest", when: (p) => p.form === "U" },
     { key: "gap", label: "Abstand der Läufe (Treppenauge)", type: "num", default: "100", group: "Podest", when: (p) => p.form === "U" },
-    { key: "podestRahmen", label: "Podestrahmen", type: "section", kinds: ["rechteck", "vierkant", "u"], default: { kind: "rechteck", size: "100x50x4" }, group: "Podest", when: podest },
+    { key: "podestRahmen", label: "Podestrahmen", type: "section", default: { kind: "rechteck", size: "100x50x4" }, group: "Podest", when: podest },
     { key: "stuetzen", label: "Podeststützen", type: "select", options: [["aussen", "2 außen"], ["alle", "4 (alle Ecken)"], ["keine", "keine (an der Wand)"]], default: "aussen", group: "Podest", when: podest },
-    { key: "stuetze", label: "Stützenprofil", type: "section", kinds: ["vierkant", "rechteck", "rohr"], default: { kind: "vierkant", size: "80x4" }, group: "Podest", when: (p) => podest(p) && p.stuetzen !== "keine" },
+    { key: "stuetze", label: "Stützenprofil", type: "section", default: { kind: "vierkant", size: "80x4" }, group: "Podest", when: (p) => podest(p) && p.stuetzen !== "keine" },
     { key: "tread", label: "Stufen", type: "select", options: [["gitterrost", "Gitterrost"], ["blech", "Blech"], ["holz", "Holz"]], default: "gitterrost", group: "Stufen" },
     { key: "treadT", label: "Stufendicke", type: "num", default: "30", group: "Stufen" },
     { key: "gel", label: "Geländer (beim Hinaufgehen)", type: "select", options: [["beide", "beidseitig"], ["links", "links"], ["rechts", "rechts"], ["keine", "kein Geländer"]], default: "beide", missing: "keine", tiles: "top", group: "Geländer" },
@@ -46,12 +48,13 @@ export const TREPPE = {
     { key: "gelFill", label: "Füllung", type: "select", options: [["quer", "Knieleisten"], ["staketen", "Staketen"], ["keine", "nur Handlauf"]], default: "quer", tiles: "front", group: "Geländer", when: gel },
     { key: "gelBars", label: "Anzahl Knieleisten", type: "num", unit: "Stk", default: "2", group: "Geländer", when: (p) => gel(p) && p.gelFill === "quer" },
     { key: "gelGap", label: "Öffnung max.", type: "num", default: "110", group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
-    { key: "gelBar", label: "Knieleiste / Stab", type: "section", kinds: ["rohr", "vierkant", "vierkantvoll", "rund", "flach"], default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => gel(p) && p.gelFill !== "keine" },
-    { key: "gelBelt", label: "Untergurt", type: "section", kinds: ["flach", "vierkant", "rechteck"], default: { kind: "flach", size: "40x8" }, group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
-    { key: "gelPost", label: "Pfosten", type: "section", kinds: ["vierkant", "rechteck", "rohr", "flach"], default: { kind: "vierkant", size: "40x3" }, group: "Geländer", when: gel },
+    { key: "gelBar", label: "Knieleiste / Stab", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => gel(p) && p.gelFill !== "keine" },
+    { key: "gelBelt", label: "Untergurt", type: "section", default: { kind: "flach", size: "40x8" }, group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
+    { key: "gelPost", label: "Pfosten", type: "section", default: { kind: "vierkant", size: "40x3" }, group: "Geländer", when: gel },
     { key: "gelPostMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Geländer", when: gel },
     { key: "gelDown", label: "Pfosten unter Stufenkante (Befestigung)", type: "num", default: "150", group: "Geländer", when: gel },
-    { key: "gelRail", label: "Handlauf", type: "section", kinds: ["rohr", "vierkant", "rechteck", "flach", "rund"], default: { kind: "rohr", size: "42.4x2.6" }, group: "Geländer", when: gel },
+    { key: "gelRail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Geländer", when: gel },
+    ...holderSchema((k) => "gel" + k[0].toUpperCase() + k.slice(1), "Geländer", gel),
     { key: "gelAuslauf", label: "Auslauf oben (waagrecht)", type: "num", default: "300", group: "Geländer", when: gel },
   ],
 
@@ -72,20 +75,17 @@ export const TREPPE = {
     if (a < 230 - 1e-6) issues.push({ key: "going", level: "Warnung", message: `Auftritt ${fmt(a)} mm unter 230 mm` });
     if (a < 260 - 1e-6 && u < 30 - 1e-6) issues.push({ key: "nosing", level: "Hinweis", message: "Auftritt unter 260 mm: Unterschneidung ≥ 30 mm vorsehen" });
     const tanA = s / a, alpha = Math.atan(tanA), cosA = Math.cos(alpha), sinA = Math.sin(alpha);
-    const members = [], plates = [], chains = [];
-    // Tragwerk: Querschnitt, Ausdehnung senkrecht zur Achse in der Laufebene (depth), Dicke quer (thick), Drehung
-    let sec, depth, thick, rot = 0;
-    if (p.support === "flach") {
-      const dims = { B: p.wangeH, t: p.wangeT };
-      sec = { kind: "flach", dims, geom: sectionGeometry("flach", dims) };
-      depth = p.wangeH; thick = p.wangeT; rot = 90;
-    } else if (p.support === "upn") {
-      sec = p.upn; depth = sec.geom.height; thick = sec.geom.width;
-    } else {
-      sec = p.holm; depth = Math.max(sec.geom.width, sec.geom.height); thick = Math.min(sec.geom.width, sec.geom.height);
-      rot = sec.geom.width > sec.geom.height ? 90 : 0;
-    }
+    const members = [], plates = [], chains = [], drills = [];
+    // Tragwerk: Querschnitt, Ausdehnung senkrecht zur Achse in der Laufebene (depth), Dicke quer (thick), Drehung je
+    // Seite: hohe Seite senkrecht zum Lauf; offene Seite (U, UPN) nach außen, Steg an den Stufen; Winkel mit dem
+    // Schenkel innen unter den Stufen; Mittelholm nur hochkant
     const side = p.support === "flach" || p.support === "upn";
+    const sec = p.support === "flach" ? { kind: "flach", dims: { B: p.wangeH, t: p.wangeT }, geom: sectionGeometry("flach", { B: p.wangeH, t: p.wangeT }) } : side ? p.upn : p.holm;
+    const axis = [cosA, 0, sinA], upL = [-sinA, 0, cosA];
+    const rotFor = (out) => orientRot(sec, axis, upL, { tall: upL, open: out, legs: [-out[0] + upL[0], -out[1] + upL[1], -out[2] + upL[2]], stem: [sinA, 0, -cosA] });
+    const sideOut = [[0, -1, 0], [0, 1, 0]]; // erste Wange/Holm bei kleinem y (rechts beim Hinaufgehen), zweite bei großem y
+    const rots = p.support === "holm1" ? [orientRot(sec, axis, upL, { tall: upL, stem: [sinA, 0, -cosA] })] : sideOut.map(rotFor);
+    const { high: depth, wide: thick } = rotExtent(sec, rots[0]);
     // Achse: seitlich = durch die Stufenmitten; aufgesattelt = Oberkante an den hinteren Stufenunterkanten
     let c; // z = tanA · x + c (Lauf mit Antritt bei x = 0, z = 0)
     if (side) {
@@ -93,11 +93,11 @@ export const TREPPE = {
       c = z1 - tanA * x1;
       // passen die Stufen in die Wange?
       const corner = Math.max(...[[-u, s - tt], [-u, s], [a, s - tt], [a, s]].map(([x, z]) => Math.abs((z - (tanA * x + c)) * cosA)));
-      if (corner > depth / 2 + 1e-6) throw fieldError(`Wange zu niedrig für die Stufen: mindestens ${Math.ceil(2 * corner)} mm`, "wangeH");
+      if (corner > depth / 2 + 1e-6) throw fieldError(`Wange zu niedrig für die Stufen: mindestens ${Math.ceil(2 * corner)} mm`, p.support === "flach" ? "wangeH" : "upn");
     } else c = -tt - depth / 2 / cosA;
     if (p.support === "holm2" && !(B - 2 * p.holmInset > thick)) throw fieldError("Holme zu weit innen", "holmInset");
     const ys = side ? [-thick / 2, B + thick / 2] : p.support === "holm2" ? [p.holmInset, B - p.holmInset] : [B / 2];
-    const sideNames = side ? ["Wange links", "Wange rechts"] : ys.length > 1 ? ["Holm links", "Holm rechts"] : ["Mittelholm"];
+    const sideNames = side ? ["Wange rechts", "Wange links"] : ys.length > 1 ? ["Holm rechts", "Holm links"] : ["Mittelholm"];
 
     // Ein Lauf mit nR Steigungen in eigener Lage (Antritt x = 0, Höhe z0); T dreht um Z und verschiebt.
     // Unten: auf dem Boden waagrecht geschnitten, vom Podest aus senkrecht an der Podestkante; oben senkrecht.
@@ -109,7 +109,7 @@ export const TREPPE = {
       const ext = depth * 2;
       const x0 = fromFloor ? (0 - c) / tanA - ext : -ext, x1 = xTop + ext;
       const cuts = { start: [fromFloor ? { p: T.p([0, 0, z0]), n: [0, 0, -1] } : { p: T.p([0, 0, z0]), n: T.d([-1, 0, 0]) }], end: [{ p: T.p([xTop, 0, z0]), n: T.d([1, 0, 0]) }] };
-      ys.forEach((y, i) => members.push({ section: sec, a: T.p([x0, y, zAt(x0)]), b: T.p([x1, y, zAt(x1)]), name: sideNames[i] + label, up: T.d([-sinA, 0, cosA]), rot: side && i === 1 && p.support === "upn" ? 180 : rot, cuts }));
+      ys.forEach((y, i) => members.push({ section: sec, a: T.p([x0, y, zAt(x0)]), b: T.p([x1, y, zAt(x1)]), name: sideNames[i] + label, up: T.d(upL), rot: rots[i], cuts }));
       for (let i = 1; i < nR; i++) {
         const xa = (i - 1) * a - u, xb = i * a;
         plates.push({ center: T.p([(xa + xb) / 2, B / 2, z0 + i * s - tt]), xDir: T.d([0, 1, 0]), normal: [0, 0, 1], W: B, H: xb - xa, t: tt, name: `Stufe ${stepNo0 + i}`, tread: p.tread });
@@ -145,8 +145,9 @@ export const TREPPE = {
       const PW = D, PH = yHi - yLo, cx = x1 + D / 2, cy = (yLo + yHi) / 2;
       geo.yLo = yLo; geo.yHi = yHi; geo.n1 = n1; geo.x2 = x2;
       plates.push({ center: [cx, cy, zP - tt], xDir: [1, 0, 0], normal: [0, 0, 1], W: PW, H: PH, t: tt, name: "Podest", tread: p.tread });
-      const fr = p.podestRahmen, frRot = fr.geom.width > fr.geom.height ? 90 : 0; // hochkant
-      const fw = Math.min(fr.geom.width, fr.geom.height), fh = Math.max(fr.geom.width, fr.geom.height), zf = zP - tt - fh / 2;
+      // Podestrahmen hochkant; offene Seite nach außen, Winkel mit dem Schenkel oben innen (Auflager für den Belag)
+      const fr = p.podestRahmen, frRot = orientRot(fr, [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, -1, 0], legs: [0, Math.SQRT1_2, -Math.SQRT1_2], stem: [0, 0, -1] });
+      const { high: fh, wide: fw } = rotExtent(fr, frRot), zf = zP - tt - fh / 2;
       const rx0 = x1 + fw / 2, rx1 = x1 + D - fw / 2, ry0 = yLo + fw / 2, ry1 = yHi - fw / 2;
       chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[rx0, ry0, zf], [rx1, ry0, zf], [rx1, ry1, zf], [rx0, ry1, zf], [rx0, ry0, zf]], name: "Podestrahmen", up: [0, 0, 1], rot: frRot });
       if (p.stuetzen !== "keine") {
@@ -163,11 +164,13 @@ export const TREPPE = {
       const r = railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off: (side ? thick : 0) + p.gelPost.geom.width / 2, rotZ });
       chains.push(...r.chains);
       members.push(...r.members);
+      plates.push(...r.plates);
+      drills.push(...r.drills);
       issues.push(...r.issues);
       info += `, Geländer: ${r.info}`;
     }
     Object.assign(geo, { x1: podest(p) ? x1 : (n - 1) * a, D, zP });
-    return { chains, members, plates, info, issues, geo };
+    return { chains, members, plates, drills, info, issues, geo };
   },
 
   parts: { support: /Wange|Holm/, stuetze: /Stütze/, podestRahmen: /Podest/, podestD: /Podest/, gel: /^Geländer/, gelPodest: /^Geländer/ },
@@ -250,23 +253,25 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ }) {
   const sides = [];
   if (left ? wantRight : wantLeft) sides.push([left ? "rechts" : "links", outer]);
   if (left ? wantLeft : wantRight) sides.push([left ? "links" : "rechts", inner]);
-  const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100 };
+  const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100, holder: p.gelHolder !== "keine", holderGap: p.gelHolderGap, holderD: p.gelHolderD };
   if (!(o.H > 300)) throw fieldError("Geländerhöhe zu klein", "gelH");
   if (!(o.postMax > post)) throw fieldError("Pfostenabstand zu klein", "gelPostMax");
   if (o.H < 900 - 1e-6) issues.push({ key: "gelH", level: "Warnung", message: `Geländerhöhe ${Math.round(o.H)} mm unter 900 mm – Landesbauordnung bzw. DIN 18065 prüfen` });
-  const chains = [], members = [];
+  const chains = [], members = [], plates = [], drills = [];
   let posts = 0, bars = 0, gapMax = 0;
   for (const [name, paths] of sides) {
     paths.forEach((path, i) => {
       const r = railAlong(mirror(path), o, `Geländer ${name}${paths.length > 1 ? " " + (i + 1) : ""}`);
       chains.push(...r.chains);
       members.push(...r.members);
+      plates.push(...r.plates);
+      drills.push(...r.drills);
       posts += r.posts; bars += r.bars; gapMax = Math.max(gapMax, r.gapMax);
     });
   }
   if (gapMax > 120 + 1e-6) issues.push({ key: "gelGap", level: p.gelFill === "quer" ? "Hinweis" : "Warnung", message: p.gelFill === "quer" ? `Knieleisten: Öffnung ${Math.round(gapMax)} mm – nur für Arbeitsstätten/Industrie (EN ISO 14122-3), nicht für Wohngebäude` : `Öffnung ${Math.round(gapMax)} mm größer als 120 mm` });
   const what = p.gelFill === "quer" ? `${bars} Knieleisten` : p.gelFill === "staketen" ? `${bars} Stäbe` : "nur Handlauf";
-  return { chains, members, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` };
+  return { chains, members, plates, drills, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` + (o.holder ? `, Handlaufhalter mit Bohrung Ø ${String(drills[0]?.d).replace(".", ",")}` : "") };
 }
 
 const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
