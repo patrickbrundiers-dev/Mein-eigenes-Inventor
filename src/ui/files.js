@@ -103,6 +103,7 @@ export class Files {
         if (!r) return false;
         app.filePath = r.path;
         app.readOnly = false;
+        this.storePreview();
       } else {
         downloadBlob(new Blob([text], { type: "application/json" }), this.browserName || defaultName);
       }
@@ -115,6 +116,14 @@ export class Files {
       toast("Speichern fehlgeschlagen: " + e.message, { kind: "err", timeout: 6000 });
       return false;
     }
+  }
+  /** Vorschaubild der aktuellen 3D-Ansicht für die Startseite ablegen (nur Desktop, nur Bauteil/Baugruppe) */
+  storePreview() {
+    const app = this.app;
+    if (!this.bridge?.writePreview || !app.filePath || !["part", "assembly"].includes(app.mode)) return;
+    let url = null;
+    try { url = app.viewer.thumbnail(); } catch { /* WebGL nicht bereit */ }
+    if (url) this.bridge.writePreview(app.filePath, url).catch(() => { /* nur Komfort */ });
   }
   /** Projekt paketieren: eine Datei mit allen verknüpften Bauteilen als eigenem Inhalt, zum Weitergeben */
   async packageProject() {

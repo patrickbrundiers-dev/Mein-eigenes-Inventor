@@ -6,6 +6,7 @@ const os = require("node:os");
 const updater = require("./updater.cjs");
 const log = require("./log.cjs");
 const { rotateBackups, backupCount } = require("./backups.cjs");
+const recent = require("./recent.cjs");
 
 // Benutzerdaten bleiben nach der Umbenennung WerkCAD → PBCAD im bisherigen Ordner %APPDATA%\WerkCAD
 // (Einstellungen, Token, automatische Sicherung, Fehlerprotokoll). Muss vor allem anderen gesetzt werden.
@@ -44,7 +45,7 @@ function getToken() {
 }
 function addRecent(p) {
   const s = readSettings();
-  s.recent = [p, ...(s.recent || []).filter((x) => x !== p)].slice(0, 12);
+  s.recent = recent.addRecent(s.recent, p);
   writeSettings(s);
   app.addRecentDocument?.(p);
 }
@@ -181,7 +182,20 @@ ipcMain.on("app:version-sync", (e) => { e.returnValue = app.getVersion(); });
 ipcMain.handle("app:initialFile", () => { const f = pendingFile; pendingFile = null; return f; });
 ipcMain.on("app:close-confirmed", (_e, ok) => { if (ok) { allowClose = true; win.close(); } });
 ipcMain.on("app:title", (_e, t) => win && win.setTitle(String(t)));
-ipcMain.handle("recent:list", () => (readSettings().recent || []).filter((p) => fs.existsSync(p)));
+// Startbildschirm: zuletzt geöffnete Projekte mit Änderungsdatum, Größe und Vorschaubild
+const previewDir = () => path.join(app.getPath("userData"), "vorschau");
+const inRecent = (p) => typeof p === "string" && (readSettings().recent || []).includes(p);
+ipcMain.handle("recent:list", () => recent.recentEntries(readSettings().recent, previewDir()));
+ipcMain.handle("recent:remove", (_e, p) => {
+  const s = readSettings();
+  s.recent = recent.removeRecent(s.recent, p);
+  writeSettings(s);
+  return true;
+});
+ipcMain.handle("recent:reveal", (_e, p) => { if (inRecent(p)) shell.showItemInFolder(p); return inRecent(p); });
+ipcMain.handle("preview:write", (_e, { path: p, url } = {}) => {
+  try { return recent.writePreview(previewDir(), p, url); } catch (e) { log.write("warn", "vorschau", e.message); return false; }
+});
 
 // Standardordner aus den Benutzereinstellungen (allgemein.ordner), sonst zuletzt benutzter Ordner
 const startDir = (dir) => (typeof dir === "string" && dir && fs.existsSync(dir) && fs.statSync(dir).isDirectory() ? dir : lastDir("project"));

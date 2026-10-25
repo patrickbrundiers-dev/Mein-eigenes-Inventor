@@ -50,6 +50,8 @@ export const SETTINGS = [
   { key: "allgemein.ordner", cat: "allgemein", label: "Standardordner für Projekte", type: "folder", default: "", help: "Hier starten »Öffnen« und »Speichern unter«. Leer = zuletzt benutzter Ordner. Nur in der Desktop-Version." },
   { key: "allgemein.autosaveSekunden", cat: "allgemein", label: "Automatische Sicherung nach", unit: "s", type: "number", default: 1.5, min: 0.5, max: 120, help: "Wartezeit nach der letzten Änderung, bevor die Wiederherstellungsdatei geschrieben wird. Abschalten ist nicht vorgesehen." },
   { key: "allgemein.loeschenBestaetigen", cat: "allgemein", label: "Löschen von Dokumenten bestätigen", type: "bool", default: true },
+  { key: "allgemein.startAnsicht", cat: "allgemein", label: "Startseite: zuletzt verwendete Dateien als", type: "enum", default: "kacheln", options: [{ value: "kacheln", label: "Kacheln mit Vorschaubild" }, { value: "liste", label: "Liste" }], help: "Auch direkt auf der Startseite umschaltbar." },
+  { key: "allgemein.startSortierung", cat: "allgemein", label: "Startseite: sortieren nach", type: "enum", default: "geaendert", options: [{ value: "geaendert", label: "Änderungsdatum" }, { value: "geoeffnet", label: "zuletzt geöffnet" }, { value: "name", label: "Name" }] },
   { key: "allgemein.dezimalstellen", cat: "allgemein", label: "Dezimalstellen für Messwerte", type: "int", default: 3, min: 0, max: 6, help: "Anzeige beim Messen (Abstand, Winkel). Gerechnet wird immer mit voller Genauigkeit." },
 
   { key: "ansicht.qualitaet", cat: "ansicht", label: "Darstellungsqualität beim Start", type: "enum", default: "normal", options: QUAL, help: "Feinheit der Dreiecksvernetzung. Wirkt nur auf die Anzeige, nicht auf Export oder Masse." },
