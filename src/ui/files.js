@@ -15,6 +15,7 @@ import { decomposePlacement } from "../core/geom.js";
 import { buildXlsx, zipFiles } from "../core/xlsx.js";
 import { mappeHtml, listPages, mappeName } from "../core/mappe.js";
 import { angebotPage } from "../core/angebot.js";
+import { bendListCsv } from "../core/biegerohr.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf } from "../core/materials.js";
 import { finishLabel } from "../core/oberflaeche.js";
@@ -467,14 +468,17 @@ export class Files {
     await this.withBusy("Fertigungsmappe", async () => {
       const parts = await app.builtParts(d);
       const made = await app.partDrawings(d.id, { quiet: true });
-      const bom = d.kind === "assembly" ? bomRows(app, d) : [];
+      const cutSrc = collectCutSources(app, d);
+      // Bauteil: Stückliste = seine Normteile (wie im Excel), Baugruppe: Positionen
+      const bom = d.kind === "assembly" ? bomRows(app, d) : collectNorm(cutSrc.map((s) => ({ bodies: s.result.bodies, qty: s.qty }))).map((x, i) => ({ ...x, pos: i + 1, number: "" }));
       const order = [d.id, ...bom.filter((r) => r.part).map((r) => r.part.id), ...parts.map((p) => p.id)];
       const drawings = [...new Set(order)].flatMap((id) => app.project.docs.filter((x) => x.kind === "drawing" && x.source?.id === id));
       const sheets = [];
       for (const dr of drawings) sheets.push(await app.drawing.sheetExport(dr));
-      const cut = cutListRows(collectCutSources(app, d));
+      const cut = cutListRows(cutSrc);
+      const bends = parts.flatMap((p) => (app.results.get(p.id)?.bodies || []).filter((b) => b.meta?.bends?.length).map((b) => ({ name: `${p.name} – ${b.name}`, bends: b.meta.bends, last: b.meta.lastStraight || 0, length: b.meta.length })));
       const base = mappeName(d.number || d.name);
-      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, bom, cut })], { title: "Fertigungsmappe " + d.name });
+      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, bom, cut, bends })], { title: "Fertigungsmappe " + d.name });
       const files = [];
       const pdf = this.bridge?.renderPdf ? await this.bridge.renderPdf(html) : null;
       files.push(pdf ? [base + "_Fertigungsmappe.pdf", new Uint8Array(pdf)] : [base + "_Fertigungsmappe.html", html]);
@@ -484,6 +488,7 @@ export class Files {
       const xl = this.listSheetsFor(d);
       if (xl.length) files.push([base + "_Listen.xlsx", buildXlsx(xl)]);
       if (cut.length) files.push([base + "_Zuschnitt.csv", cutListCsv(cut)]);
+      for (const b of bends) files.push([unique("Biegelisten", b.name, ".csv"), bendListCsv(b, b.name)]);
       files.push([base + ".step", await app.kernel.call("exportStep", { items: this.exportItems(d) })]);
       if (d.kind === "assembly") for (const r of bom.filter((x) => x.part)) files.push([unique("Positionen", `${String(r.pos).padStart(2, "0")}_${r.number || r.name}`, ".step"), await app.kernel.call("exportStep", { items: [{ part: r.part, name: r.part.name }] })]);
       for (const p of parts) for (const x of await app.kernel.call("bodySteps", { part: p, onlyMembers: true })) files.push([unique("Laser", x.name, ".step"), x.text]);

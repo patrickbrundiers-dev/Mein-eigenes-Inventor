@@ -394,3 +394,11 @@ test("Angebotsblatt: Preis von Hand, MwSt., Fakten aus dem Modell", () => {
   assert.match(leer.html, /3 × Einzelpreis netto<\/td><td class="n"><\/td>/, "ohne Preis bleibt das Feld zum Eintragen");
   assert.match(leer.html, /Oberfläche<\/td><td>roh/);
 });
+
+test("Fertigungsmappe: Biegeliste je Rohr", () => {
+  const pages = listPages({ bends: [{ name: "Handlauf – Rohr", bends: [{ straight: 300, rotation: 0, angle: 90, arc: 157.1 }, { straight: 500, rotation: 180, angle: 45, arc: 78.5 }], last: 200, length: 1235.6 }] });
+  assert.equal(pages.length, 1);
+  assert.match(pages[0].html, /<h1>Biegeliste<\/h1>/);
+  assert.match(pages[0].html, /Handlauf – Rohr – Abwicklung 1\.235,6 mm/);
+  assert.match(pages[0].html, /<td class="n">Ende<\/td><td class="n">200<\/td>/);
+});

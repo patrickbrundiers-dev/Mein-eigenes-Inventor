@@ -46,10 +46,11 @@ const table = (head, rows, foot) =>
 const ROWS_PER_PAGE = 42;
 
 /**
- * Listenseiten (A4 hoch): Stückliste und Zuschnittliste. bom/cut wie bomRows bzw. cutListRows.
+ * Listenseiten (A4 hoch): Stückliste, Zuschnittliste und Biegelisten. bom/cut wie bomRows bzw. cutListRows,
+ * bends = [{ name, bends: [{ straight, rotation, angle, arc }], last, length }] je Biegerohr.
  * Gibt Seiten für mappeHtml zurück; leere Listen entfallen.
  */
-export function listPages({ title = "", number = "", bom = [], cut = [] } = {}) {
+export function listPages({ title = "", number = "", bom = [], cut = [], bends = [] } = {}) {
   const head = (name, part, of) => `<h1>${esc(name)}${of > 1 ? ` (${part}/${of})` : ""}</h1><div class="sub">${esc([title, number].filter(Boolean).join(" · "))}</div>`;
   const pages = [];
   const chunked = (rows, name, render) => {
@@ -70,6 +71,21 @@ export function listPages({ title = "", number = "", bom = [], cut = [] } = {}) 
       [["Pos", 1], ["Profil"], ["Länge mm", 1], ["Menge", 1], ["Gehrung"], ["Werkstoff"], ["kg gesamt", 1], ["Bauteil"]],
       rows.map((r) => [r.pos, r.section, fmtNum(r.length, 1), r.qty, miter(r), r.material, fmtNum(r.mass * r.qty, 2), r.parts]),
       last ? ["", "Summe", "", cut.reduce((a, r) => a + r.qty, 0), "", "", fmtNum(total, 2), ""] : null));
+  }
+  if (bends.length) {
+    // Biegeliste je Rohr: Gerade vor der Biegung, Drehung, Biegewinkel (L-R-A); mehrere Rohre auf einer Seite
+    const blocks = bends.map((b) => `<h2>${esc(b.name)} – Abwicklung ${fmtNum(b.length, 1)} mm</h2>${table(
+      [["Nr", 1], ["Gerade vor mm", 1], ["Drehung °", 1], ["Biegewinkel °", 1], ["Bogen mm", 1]],
+      [...b.bends.map((x, i) => [i + 1, fmtNum(x.straight, 1), fmtNum(x.rotation, 1), fmtNum(x.angle, 1), fmtNum(x.arc, 1)]), ["Ende", fmtNum(b.last, 1), "", "", ""]])}`);
+    const per = [];
+    let cur = [], rows = 0;
+    for (const [i, blk] of blocks.entries()) {
+      const n = bends[i].bends.length + 4;
+      if (cur.length && rows + n > ROWS_PER_PAGE) { per.push(cur); cur = []; rows = 0; }
+      cur.push(blk); rows += n;
+    }
+    per.push(cur);
+    per.forEach((c, i) => pages.push({ html: `<div class="lst">${head("Biegeliste", i + 1, per.length)}${c.join("")}</div>`, width: A4[0], height: A4[1] }));
   }
   return pages;
 }
