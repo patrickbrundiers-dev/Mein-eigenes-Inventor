@@ -264,12 +264,16 @@ export class Ribbon {
             B("dv_sec", "Schnitt", "cut", { run: () => dr.addSectionDialog() }),
             B("dv_hsec", "Schnitt Hohlprofil", "cut", { run: () => dr.hollowSection() }),
             B("dv_det", "Detail", "detail", { on: dr.tool === "detail", run: () => (dr.tool === "detail" ? dr.setTool(null) : dr.startDetail()) }),
+            B("dv_aux", "Hilfsansicht", "view", { on: dr.tool === "aux", run: () => (dr.tool === "aux" ? dr.setTool(null) : dr.startAux()) }),
           ] },
           { label: "Beschriften", buttons: [
             B("dd_dim", "Bemaßung", "dimension", { on: dr.tool === "dim", run: () => dr.setTool(dr.tool === "dim" ? null : "dim") }),
             B("dd_auto", "Hauptmaße", "dimension", { run: () => dr.autoDims() }),
             B("dd_text", "Text", "text", { on: dr.tool === "text", run: () => dr.setTool(dr.tool === "text" ? null : "text") }),
+            B("dd_leader", "Hinweis", "text", { on: dr.tool === "leader", run: () => dr.setTool(dr.tool === "leader" ? null : "leader") }),
+            B("dd_holes", "Bohrungstabelle", "bom", { run: () => dr.addHoleTable() }),
             B("dd_weld", "Schweißnähte", "naht", { run: () => dr.autoWelds() }),
+            B("dd_rev", "Änderung", "text", { run: () => dr.addRevisionDialog() }),
           ] },
           { label: "Baugruppe", buttons: [
             B("dd_pos", "Pos.-Nummern", "circle", { run: () => dr.autoBalloons() }),

@@ -16,6 +16,7 @@ import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
 import { bomRows } from "./props.js";
 import { evaluate, resolveParams } from "../core/expr.js";
+import { holeTable, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
 export const CAMS = {
@@ -196,10 +197,12 @@ export class DrawingEditor {
   deleteView(id) {
     const d = this.doc;
     this.app.edit("Ansicht löschen", () => {
-      const gone = new Set([id, ...d.views.filter((v) => (v.type === "section" || v.type === "detail") && v.parent === id).map((v) => v.id)]);
+      const gone = new Set([id, ...d.views.filter((v) => ["section", "detail", "aux"].includes(v.type) && v.parent === id).map((v) => v.id)]);
       d.views = d.views.filter((v) => !gone.has(v.id));
       for (const v of d.views) if (gone.has(v.parent)) delete v.parent;
-      d.dims = d.dims.filter((m) => m.view !== id);
+      d.dims = d.dims.filter((m) => !gone.has(m.view));
+      if (d.holeTables) d.holeTables = d.holeTables.filter((t) => !gone.has(t.view));
+      if (d.leaders) d.leaders = d.leaders.filter((t) => !gone.has(t.view));
     }, { rebuild: false });
     this.sel = null;
     this.render();
@@ -287,6 +290,214 @@ export class DrawingEditor {
     t.textContent = s.letter;
     g.append(t);
     return g;
+  }
+
+  // ---------- Hilfsansicht ----------
+  startAux() {
+    const d = this.doc;
+    const parent = this.sel?.type === "view" ? d.views.find((x) => x.id === this.sel.id) : null;
+    if (!parent || parent.type === "iso" || parent.type === "detail" || !this.proj.get(parent.id)) return toast("Zuerst eine Ansicht (nicht Isometrie oder Detail) anklicken, dann »Hilfsansicht«");
+    this.setTool("aux");
+    this.pendingAux = { parent: parent.id };
+    this.app.setHint("Hilfsansicht: schräge Kante anklicken – die Ansicht schaut senkrecht auf diese Fläche");
+  }
+  auxClick(sx, sy) {
+    const d = this.doc;
+    const parent = d.views.find((x) => x.id === this.pendingAux?.parent);
+    const p = parent && this.proj.get(parent.id);
+    if (!p) return this.setTool(null);
+    const xf = this.viewXf(parent);
+    const seg = nearestSegment(p.visible, xf.from(sx, sy), 2.5 / (parent.scale * this.zoom));
+    if (!seg) return toast("Keine Kante getroffen – näher an die schräge Kante klicken");
+    const cam = auxiliaryCamera(this.viewCam(d, parent), seg.a, seg.b, [xf.cu, xf.cv]);
+    if (!cam) return toast("Die Kante ist waagerecht oder senkrecht – diese Fläche zeigt schon eine Normalansicht");
+    const used = new Set(d.views.filter((x) => x.letter).map((x) => x.letter));
+    let letter = "X";
+    for (let i = 0; i < 26; i++) { const l = String.fromCharCode(65 + i); if (!used.has(l)) { letter = l; break; } }
+    const mid = [(seg.a[0] + seg.b[0]) / 2, (seg.a[1] + seg.b[1]) / 2];
+    const n = cam.normal2d;
+    const size = Math.max(xf.bb.x1 - xf.bb.x0, xf.bb.y1 - xf.bb.y0) * parent.scale;
+    const [mx, my] = xf.to(...mid);
+    const [x, y] = this.freeSpot(d, size / 2 + 8, mx + n[0] * (size / 2 + 30), my - n[1] * (size / 2 + 30));
+    const v = { id: uid("v"), type: "aux", parent: parent.id, dir: cam.dir.map(r6), up: cam.up.map(r6), mark: { p: mid.map(r3), n: n.map(r6) }, letter, scale: parent.scale, hidden: false, x, y };
+    this.setTool(null);
+    this.app.edit("Hilfsansicht", () => d.views.push(v));
+    this.sel = { type: "view", id: v.id };
+  }
+  /** Pfeil mit Buchstabe senkrecht auf die Kante in der Elternansicht (Blickrichtung der Hilfsansicht) */
+  auxMark(v, s, xf) {
+    const g = svgEl("g", { fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    const [px, py] = xf.to(...s.mark.p);
+    const n = [s.mark.n[0], -s.mark.n[1]]; // Blattkoordinaten (y nach unten)
+    const tip = [px + n[0] * 2, py + n[1] * 2], tail = [px + n[0] * 14, py + n[1] * 14];
+    g.append(svgEl("line", { x1: r3(tail[0]), y1: r3(tail[1]), x2: r3(tip[0] + n[0] * 3), y2: r3(tip[1] + n[1] * 3) }));
+    const w = [-n[1] * 1, n[0] * 1];
+    g.append(svgEl("polygon", { points: [tip, [tip[0] + n[0] * 3 + w[0], tip[1] + n[1] * 3 + w[1]], [tip[0] + n[0] * 3 - w[0], tip[1] + n[1] * 3 - w[1]]].map((q) => q.map(r3).join(",")).join(" "), fill: "#111a24", stroke: "none" }));
+    const t = svgEl("text", { x: r3(tail[0] + n[0] * 3), y: r3(tail[1] + n[1] * 3 + 1.8), "text-anchor": "middle", "font-size": 5, fill: "#111a24", stroke: "none" });
+    t.textContent = s.letter;
+    g.append(t);
+    return g;
+  }
+
+  // ---------- Bohrungstabelle ----------
+  /** Bohrungen der gewählten Ansicht (sonst der Ansicht mit den meisten Bohrungen) als Tabelle mit Kennungen */
+  addHoleTable() {
+    const d = this.doc;
+    const full = (v) => (this.proj.get(v.id)?.arcs || []).filter((a) => a.full).length;
+    const sel = this.sel?.type === "view" ? d.views.find((x) => x.id === this.sel.id) : null;
+    const v = sel && sel.type !== "iso" && full(sel) ? sel : d.views.filter((x) => x.type !== "iso" && x.type !== "detail").sort((a, b) => full(b) - full(a))[0];
+    if (!v || !full(v)) return toast("Keine Bohrungen in den Ansichten gefunden");
+    const t = this.holeTableOf(d, { view: v.id });
+    const [W] = this.sheetSize(d);
+    const h0 = 5 * (t.rows.length + 1);
+    const ht = { id: uid("t"), view: v.id, at: [25, Math.max(15, 10 + 5)] };
+    // links oben ins Blatt, sonst an die nächste freie Stelle
+    const [x, y] = this.freeSpot(d, h0 / 2 + 1, 25 + 55, 15 + h0 / 2);
+    ht.at = [Math.max(22, Math.min(W - 115, x - 52)), Math.max(12, y - h0 / 2)];
+    this.app.edit("Bohrungstabelle", () => { d.holeTables = (d.holeTables || []).filter((x) => x.view !== v.id).concat(ht); }, { rebuild: false });
+    this.sel = { type: "holetable", id: ht.id };
+    this.render();
+    toast(`${t.rows.length} Bohrung(en) in der Tabelle – ziehen zum Verschieben, Entf löscht`);
+  }
+  holeTableOf(d, ht) {
+    const v = d.views.find((x) => x.id === ht.view);
+    const p = v && this.proj.get(v.id);
+    if (!p?.bbox) return { rows: [], groups: [] };
+    const items = this.sourceItems(d) || [];
+    const specs = items.flatMap((it) => { const scope = resolveParams(it.part.params || []).values; return holeSpecs(it.part.features, (x) => evaluate(String(x), scope)); });
+    return holeTable((p.arcs || []).filter((a) => a.full), specs, [p.bbox.x0, p.bbox.y0]);
+  }
+  renderHoleTable(d, ht, interactive) {
+    const v = d.views.find((x) => x.id === ht.view);
+    if (!v || !this.proj.get(v.id)) return null;
+    const t = this.holeTableOf(d, ht);
+    if (!t.rows.length) return null;
+    const xf = this.viewXf(v);
+    const g = svgEl("g", { "data-holetable": ht.id, class: interactive ? "dw-dimgrp" + (this.sel?.id === ht.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    const txt = (x, y, s, size = 2.5, anchor = "start") => { const e = svgEl("text", { x: r3(x), y: r3(y), "font-size": size, "text-anchor": anchor, fill: "#111a24", stroke: "none" }); e.textContent = s; g.append(e); };
+    // Kennung an jeder Bohrung und Nullpunkt der Tabelle
+    for (const r of t.rows) {
+      const [cx, cy] = xf.to(r.cx, r.cy);
+      const rr = (t.groups.find((x) => x.tag === r.group)?.r || 0) * v.scale;
+      txt(cx + rr * 0.7 + 0.8, cy - rr * 0.7 - 0.8, r.tag, 2.5);
+    }
+    const [ox, oy] = xf.to(xf.bb.x0, xf.bb.y0);
+    g.append(svgEl("circle", { cx: r3(ox), cy: r3(oy), r: 1.2 }));
+    g.append(svgEl("line", { x1: r3(ox), y1: r3(oy), x2: r3(ox + 6), y2: r3(oy) }), svgEl("line", { x1: r3(ox), y1: r3(oy), x2: r3(ox), y2: r3(oy - 6) }));
+    txt(ox - 1.5, oy + 3.5, "0", 2.5, "end");
+    // Tabelle
+    const cells = holeTableCells(t, d.nachkomma ?? 1);
+    const cols = [14, 20, 20, 50], rh = 5, [x0, y0] = ht.at, Wt = cols.reduce((a, b) => a + b, 0);
+    g.append(svgEl("rect", { x: r3(x0), y: r3(y0), width: Wt, height: rh * cells.length, "stroke-width": LW.vis, fill: "#fff" }));
+    for (let i = 1; i < cells.length; i++) g.append(svgEl("line", { x1: r3(x0), y1: r3(y0 + rh * i), x2: r3(x0 + Wt), y2: r3(y0 + rh * i), "stroke-width": i === 1 ? LW.vis : LW.thin }));
+    let cx = x0;
+    for (const w of cols.slice(0, -1)) { cx += w; g.append(svgEl("line", { x1: r3(cx), y1: r3(y0), x2: r3(cx), y2: r3(y0 + rh * cells.length) })); }
+    cells.forEach((row, k) => {
+      let x = x0;
+      row.forEach((s, i) => { const max = Math.floor(cols[i] / 1.4); txt(x + 1.2, y0 + rh * k + 3.6, s.length > max ? s.slice(0, max - 1) + "…" : s, k ? 2.5 : 2.2); x += cols[i]; });
+    });
+    if (interactive) g.append(svgEl("rect", { x: r3(x0), y: r3(y0), width: Wt, height: rh * cells.length, fill: "transparent", stroke: "none" }));
+    return g;
+  }
+
+  // ---------- Hinweis mit Hinweislinie (Bohrungs-/Gewinde-, Fasen- oder freier Hinweis) ----------
+  async leaderClick(sx, sy) {
+    const d = this.doc;
+    const v = d.views.find((x) => { if (x.type === "iso" || !this.proj.get(x.id)) return false; const r = this.sheetRects(d)[x.id]?.rect; return r && sx >= r[0] - 3 && sx <= r[2] + 3 && sy >= r[1] - 3 && sy <= r[3] + 3; });
+    if (!v) return toast("Hinweis: in eine Ansicht klicken");
+    const p = this.proj.get(v.id), xf = this.viewXf(v);
+    const s = this.snapAt(sx, sy);
+    const q = s?.view === v.id ? s.p : xf.from(sx, sy);
+    const items = this.sourceItems(d) || [];
+    const specs = items.flatMap((it) => { const scope = resolveParams(it.part.params || []).values; return holeSpecs(it.part.features, (x) => evaluate(String(x), scope)); });
+    const chamfers = [...new Set(items.flatMap((it) => {
+      const scope = resolveParams(it.part.params || []).values;
+      return it.part.features.filter((f) => f.type === "chamfer" && !f.suppressed).map((f) => { try { return evaluate(String(f.radius), scope); } catch { return null; } }).filter((x) => x > 0);
+    }))];
+    const sug = noteSuggestion(xf.from(sx, sy), { circles: (p.arcs || []).filter((a) => a.full), lines: p.visible, specs, chamfers, pick: 1.8 / (v.scale * this.zoom) });
+    const text = await promptDialog(sug.kind === "bohrung" ? "Bohrungshinweis" : sug.kind === "fase" ? "Fasenhinweis" : "Hinweis", "Text", sug.text);
+    if (!text) return;
+    const [ax, ay] = xf.to(...q);
+    const L = { id: uid("l"), view: v.id, p: q.map(r3), at: [r3(ax + 12), r3(ay - 10)], text };
+    this.app.edit("Hinweis", () => { d.leaders = (d.leaders || []).concat(L); }, { rebuild: false });
+    this.sel = { type: "leader", id: L.id };
+    this.render();
+  }
+  renderLeader(d, L, interactive) {
+    const v = d.views.find((x) => x.id === L.view);
+    if (!v || !this.proj.get(v.id)) return null;
+    const [ax, ay] = this.viewXf(v).to(...L.p);
+    const [bx, by] = L.at, w = textWidth(L.text) + 2, right = bx >= ax;
+    const g = svgEl("g", { "data-leader": L.id, class: interactive ? "dw-dimgrp" + (this.sel?.id === L.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    g.append(svgEl("line", { x1: r3(ax), y1: r3(ay), x2: r3(bx), y2: r3(by) }));
+    g.append(svgEl("line", { x1: r3(bx), y1: r3(by), x2: r3(bx + (right ? w : -w)), y2: r3(by) }));
+    g.append(svgEl("circle", { cx: r3(ax), cy: r3(ay), r: 0.6, fill: "#111a24" }));
+    const t = svgEl("text", { x: r3(bx + (right ? w / 2 : -w / 2)), y: r3(by - 1), "text-anchor": "middle", "font-size": 3.5, fill: "#111a24", stroke: "none" });
+    t.textContent = L.text;
+    g.append(t);
+    return g;
+  }
+  async editLeader(id) {
+    const d = this.doc;
+    const L = d.leaders.find((x) => x.id === id);
+    const text = await promptDialog("Hinweis ändern", "Text", L.text);
+    if (text === null) return;
+    this.app.edit("Hinweis", () => { if (text) L.text = text; else d.leaders = d.leaders.filter((x) => x !== L); }, { rebuild: false });
+    this.render();
+  }
+
+  // ---------- Änderungstabelle (DIN EN ISO 7200) ----------
+  addRevisionDialog() {
+    const d = this.doc;
+    const f = { rev: nextRevision(d.revisions || [], d.title?.revision), datum: new Date().toLocaleDateString("de-DE"), text: "", name: d.title?.ersteller || "" };
+    const inp = (k, ph) => h("input", { class: "inp", value: f[k], placeholder: ph || "", oninput: (e) => { f[k] = e.target.value; } });
+    modal({
+      title: "Änderung eintragen",
+      body: h("div", {}, h("div", { class: "field" }, h("label", {}, "Index"), inp("rev")), h("div", { class: "field" }, h("label", {}, "Änderung"), inp("text", "z. B. Bohrung Ø11 → Ø13")),
+        h("div", { class: "field" }, h("label", {}, "Datum"), inp("datum")), h("div", { class: "field" }, h("label", {}, "Name"), inp("name")),
+        h("p", { class: "hint" }, "Die Tabelle steht oben rechts im Blatt, das Schriftfeld zeigt den neuesten Index.")),
+      buttons: [{ label: "Abbrechen" }, { label: "Eintragen", primary: true, run: () => {
+        const r = validateRevision(f);
+        if (!r.ok) { toast(r.error, { kind: "err" }); return false; }
+        if ((d.revisions || []).some((x) => x.rev === r.value.rev)) { toast("Index " + r.value.rev + " gibt es schon", { kind: "err" }); return false; }
+        this.app.edit("Änderung", () => { d.revisions = (d.revisions || []).concat(r.value); }, { rebuild: false });
+        this.render();
+        this.app.props.render();
+      } }],
+    });
+  }
+  revisionTableSvg(d, W) {
+    const rows = d.revisions || [];
+    const cols = [["Index", 12], ["Änderung", 108], ["Datum", 30], ["Name", 30]];
+    const rh = 5, x0 = W - 10 - 180, y0 = 10;
+    const g = svgEl("g", { "data-revisions": "1", fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    g.append(svgEl("rect", { x: x0, y: y0, width: 180, height: rh * (rows.length + 1), "stroke-width": LW.frame, fill: "#fff" }));
+    for (let i = 1; i <= rows.length; i++) g.append(svgEl("line", { x1: x0, y1: y0 + rh * i, x2: x0 + 180, y2: y0 + rh * i, "stroke-width": i === 1 ? LW.vis : LW.thin }));
+    let x = x0;
+    for (const [, w] of cols.slice(0, -1)) { x += w; g.append(svgEl("line", { x1: x, y1: y0, x2: x, y2: y0 + rh * (rows.length + 1) })); }
+    const cell = (ci, k, s, size = 2.5) => {
+      const cx = x0 + cols.slice(0, ci).reduce((a, c) => a + c[1], 0), max = Math.floor(cols[ci][1] / (size * 0.55));
+      const e = svgEl("text", { x: r3(cx + 1.2), y: r3(y0 + rh * k + 3.6), "font-size": size, fill: "#111a24", stroke: "none" });
+      e.textContent = String(s ?? "").length > max ? String(s).slice(0, max - 1) + "…" : String(s ?? "");
+      g.append(e);
+    };
+    cols.forEach(([t], i) => cell(i, 0, t, 2.2));
+    rows.forEach((r, k) => [r.rev, r.text, r.datum, r.name].forEach((s, i) => cell(i, k + 1, s)));
+    return g;
+  }
+  /** Zusätze auf dem Blatt, die SVG und DXF gleich ausgeben (nur line/rect/circle/polygon/text) */
+  extraGroups(d, interactive) {
+    const [W] = this.sheetSize(d);
+    const out = [];
+    for (const v of d.views) {
+      if (v.type !== "aux" || !v.mark) continue;
+      const parent = d.views.find((x) => x.id === v.parent);
+      if (parent && this.proj.get(parent.id)) out.push(this.auxMark(parent, v, this.viewXf(parent)));
+    }
+    for (const t of d.holeTables || []) { const g = this.renderHoleTable(d, t, interactive); if (g) out.push(g); }
+    for (const L of d.leaders || []) { const g = this.renderLeader(d, L, interactive); if (g) out.push(g); }
+    if (d.revisions?.length) out.push(this.revisionTableSvg(d, W));
+    return out;
   }
 
   async addSectionDialog() {
@@ -440,6 +651,7 @@ export class DrawingEditor {
     for (const b of d.balloons || []) { const g = this.renderBalloon(d, b, posOf, interactive); if (g) svg.append(g); }
     if (d.bomTable?.show && rows.length) svg.append(this.bomTableSvg(rows, W, H));
     for (const m of d.welds || []) { const g = this.renderWeld(d, m, interactive); if (g) svg.append(g); }
+    for (const g of this.extraGroups(d, interactive)) svg.append(g);
     for (const n of d.notes || []) {
       const t = svgEl("text", { x: n.x, y: n.y, "font-size": n.size || 3.5, fill: "#111a24", class: interactive ? "dw-dimgrp" + (this.sel?.id === n.id ? " sel" : "") : undefined, "data-note": n.id });
       t.textContent = n.text;
@@ -482,8 +694,9 @@ export class DrawingEditor {
     const bb = xf.bb;
     const [x0, y0] = xf.to(bb.x0, bb.y1), [x1, y1] = xf.to(bb.x1, bb.y0);
     if (v.type === "detail") g.append(svgEl("circle", { cx: r3(v.x), cy: r3(v.y), r: r3(v.r * v.scale), fill: "none", stroke: "#111a24", "stroke-width": LW.thin }));
-    const lbl = v.type === "section" ? `${v.letter}–${v.letter}` : v.type === "detail" ? `${v.letter} (${scaleLabel(v.scale).replace(/^M\s*/, "")})` : v.label;
-    if (lbl) { const t = svgEl("text", { x: (x0 + x1) / 2, y: v.type === "section" ? y0 - 4 : y1 + 6, "text-anchor": "middle", "font-size": v.type === "section" ? 5 : 3.5, fill: "#111a24" }); t.textContent = lbl; g.append(t); }
+    const lbl = v.type === "section" ? `${v.letter}–${v.letter}` : v.type === "aux" ? v.letter + (v.parent && d.views.find((x) => x.id === v.parent)?.scale !== v.scale ? ` (${scaleLabel(v.scale).replace(/^M\s*/, "")})` : "") : v.type === "detail" ? `${v.letter} (${scaleLabel(v.scale).replace(/^M\s*/, "")})` : v.label;
+    const big = v.type === "section" || v.type === "aux";
+    if (lbl) { const t = svgEl("text", { x: (x0 + x1) / 2, y: big ? y0 - 4 : y1 + 6, "text-anchor": "middle", "font-size": big ? 5 : 3.5, fill: "#111a24" }); t.textContent = lbl; g.append(t); }
     // Schnittverläufe der abgeleiteten Schnittansichten
     for (const s of this.sectionChildren(d, v)) g.append(this.sectionLine(v, s, xf));
     for (const s of d.views.filter((x) => x.type === "detail" && x.parent === v.id)) g.append(this.detailMark(v, s, xf));
@@ -761,7 +974,7 @@ export class DrawingEditor {
     label(x0 + 120, y0 + 20, "Datum"); value(x0 + 120, y0 + 26.8, t.datum, 2.8);
     label(x0 + 120, y0 + 28, "Gezeichnet"); value(x0 + 120, y0 + 34.8, t.ersteller, 2.8);
     label(x0, y0 + 36, "Zeichnungsnummer"); value(x0, y0 + 44.3, t.nummer, 4.2);
-    label(x0 + 120, y0 + 36, "Rev."); value(x0 + 120, y0 + 44.3, t.revision, 3.5);
+    label(x0 + 120, y0 + 36, "Rev."); value(x0 + 120, y0 + 44.3, currentRevision(d), 3.5);
     label(x0 + 150, y0 + 36, "Blatt"); value(x0 + 150, y0 + 44.3, t.blatt || "1/1", 3.5);
     // Projektionssymbol Methode 1
     const sx = x0 + 70, sy = y0 + 15;
@@ -826,7 +1039,8 @@ export class DrawingEditor {
   setTool(t) {
     this.tool = t;
     this.pendingDim = null;
-    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : "");
+    if (t !== "aux") this.pendingAux = null;
+    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : "");
     this.app.ribbon.render();
     this.render();
   }
@@ -853,12 +1067,18 @@ export class DrawingEditor {
       if (this.tool === "dim") return this.dimClick(sx, sy);
       if (this.tool === "text") return this.textClick(sx, sy);
       if (this.tool === "detail") return this.detailClick(sx, sy);
+      if (this.tool === "aux") return this.auxClick(sx, sy);
+      if (this.tool === "leader") return this.leaderClick(sx, sy);
       const dimEl = e.target.closest("[data-dim]");
       const noteEl = e.target.closest("[data-note]");
       const balloonEl = e.target.closest("[data-balloon]");
       const weldEl = e.target.closest("[data-weld]");
+      const tableEl = e.target.closest("[data-holetable]");
+      const leaderEl = e.target.closest("[data-leader]");
       const viewEl = e.target.closest("[data-view]");
-      if (weldEl) { this.select({ type: "weld", id: weldEl.getAttribute("data-weld") }); drag = { kind: "weld", id: this.sel.id, start: [sx, sy], moved: false }; }
+      if (tableEl) { this.select({ type: "holetable", id: tableEl.getAttribute("data-holetable") }); drag = { kind: "holetable", id: this.sel.id, start: [sx, sy], moved: false }; }
+      else if (leaderEl) { this.select({ type: "leader", id: leaderEl.getAttribute("data-leader") }); drag = { kind: "leader", id: this.sel.id, start: [sx, sy], moved: false }; }
+      else if (weldEl) { this.select({ type: "weld", id: weldEl.getAttribute("data-weld") }); drag = { kind: "weld", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (balloonEl) { this.select({ type: "balloon", id: balloonEl.getAttribute("data-balloon") }); drag = { kind: "balloon", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (dimEl) { this.select({ type: "dim", id: dimEl.getAttribute("data-dim") }); drag = { kind: "dim", id: this.sel.id, start: [sx, sy], moved: false }; }
       else if (noteEl) { this.select({ type: "note", id: noteEl.getAttribute("data-note") }); drag = { kind: "note", id: this.sel.id, start: [sx, sy], moved: false }; }
@@ -887,7 +1107,7 @@ export class DrawingEditor {
           const O = new Map(drag.orig.map((o) => [o.id, o]));
           const v = drag.v;
           let mdx = dx, mdy = dy;
-          if (v.parent && v.type !== "detail") { const t = v.type; if (t === "top" || t === "bottom" || (t === "section" && v.axis !== "v")) mdx = 0; else mdy = 0; }
+          if (v.parent && v.type !== "detail" && v.type !== "aux") { const t = v.type; if (t === "top" || t === "bottom" || (t === "section" && v.axis !== "v")) mdx = 0; else mdy = 0; }
           v.x = O.get(v.id).x + mdx;
           v.y = O.get(v.id).y + mdy;
           for (const c of d.views) if (c.parent === v.id && c.type !== "detail") {
@@ -906,6 +1126,10 @@ export class DrawingEditor {
           const b = d.balloons.find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [...b.at];
           b.at = [drag.o[0] + dx, drag.o[1] + dy];
+        } else if (drag.kind === "holetable" || drag.kind === "leader") {
+          const o = (drag.kind === "holetable" ? d.holeTables : d.leaders).find((x) => x.id === drag.id);
+          if (!drag.o) drag.o = [...o.at];
+          o.at = [r3(drag.o[0] + dx), r3(drag.o[1] + dy)];
         } else if (drag.kind === "weld") {
           const w = d.welds.find((x) => x.id === drag.id);
           if (!drag.o) drag.o = [...w.at];
@@ -938,6 +1162,8 @@ export class DrawingEditor {
       if (dimEl) this.editDimText(dimEl.getAttribute("data-dim"));
       const noteEl = e.target.closest("[data-note]");
       if (noteEl) this.editNote(noteEl.getAttribute("data-note"));
+      const leaderEl = e.target.closest("[data-leader]");
+      if (leaderEl) this.editLeader(leaderEl.getAttribute("data-leader"));
     });
   }
   offsetFor(m, xf, sx, sy) {
@@ -1136,6 +1362,8 @@ export class DrawingEditor {
       const d = this.doc;
       if (this.sel.type === "view") this.deleteView(this.sel.id);
       else if (this.sel.type === "dim") { this.app.edit("Maß löschen", () => { d.dims = d.dims.filter((m) => m.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
+      else if (this.sel.type === "holetable") { this.app.edit("Bohrungstabelle löschen", () => { d.holeTables = d.holeTables.filter((x) => x.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
+      else if (this.sel.type === "leader") { this.app.edit("Hinweis löschen", () => { d.leaders = d.leaders.filter((x) => x.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "weld") { this.app.edit("Nahtsymbol löschen", () => { d.welds = d.welds.filter((w) => w.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "balloon") { this.app.edit("Positionsnummer löschen", () => { d.balloons = d.balloons.filter((b) => b.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
       else if (this.sel.type === "note") { this.app.edit("Text löschen", () => { d.notes = d.notes.filter((m) => m.id !== this.sel.id); }, { rebuild: false }); this.sel = null; this.render(); }
@@ -1171,6 +1399,15 @@ export class DrawingEditor {
           h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Schnitt löschen"))));
         return out;
       }
+      if (v && v.type === "aux") {
+        out.push(P.section(`Hilfsansicht ${v.letter}`,
+          P.text("Buchstabe", v.letter, (t) => app.edit("Hilfsansicht", () => { v.letter = (t || "X").slice(0, 2).toUpperCase(); }, { rebuild: false })),
+          P.select("Maßstab", SCALES.map((s) => [String(s), scaleLabel(s)]), String(v.scale), (s) => app.edit("Maßstab", () => { v.scale = Number(s); }, { rebuild: false })),
+          P.check("Verdeckte Kanten", v.hidden !== false, (on) => app.edit("Verdeckte Kanten", () => { v.hidden = on; })),
+          h("p", { class: "hint" }, "Blickrichtung senkrecht auf die gewählte Kante der Elternansicht (Pfeil mit Buchstabe)."),
+          h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.startDetail() }, "Detail erzeugen"), h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Hilfsansicht löschen"))));
+        return out;
+      }
       if (v && v.type === "detail") {
         out.push(P.section(`Detail ${v.letter}`,
           P.text("Buchstabe", v.letter, (t) => app.edit("Detail", () => { v.letter = (t || "Z").slice(0, 2).toUpperCase(); }, { rebuild: false })),
@@ -1186,7 +1423,7 @@ export class DrawingEditor {
           P.check("Verdeckte Kanten", v.hidden !== false, (on) => app.edit("Verdeckte Kanten", () => { v.hidden = on; })),
           P.check("Mittellinien", v.centerlines !== false, (on) => app.edit("Mittellinien", () => { v.centerlines = on; }, { rebuild: false })),
           P.text("Beschriftung", v.label || "", (t) => app.edit("Beschriftung", () => { v.label = t; }, { rebuild: false })),
-          h("div", { class: "btn-row" }, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.addSectionDialog() }, "Schnitt erzeugen") : null, h("button", { class: "btn", onclick: () => this.startDetail() }, "Detail erzeugen"), h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Ansicht löschen"))));
+          h("div", { class: "btn-row" }, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.addSectionDialog() }, "Schnitt erzeugen") : null, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.startAux() }, "Hilfsansicht") : null, h("button", { class: "btn", onclick: () => this.startDetail() }, "Detail erzeugen"), h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Ansicht löschen"))));
         return out;
       }
     }
@@ -1199,6 +1436,11 @@ export class DrawingEditor {
     const t = d.title;
     const T = (label, key, area) => P.text(label, t[key], (v) => app.edit(label, () => { t[key] = v; }, { rebuild: false }), { area });
     out.push(P.section("Schriftfeld", T("Benennung", "benennung"), T("Zeichnungsnr.", "nummer"), T("Halbzeug", "halbzeug"), T("Werkstoff", "werkstoff"), T("Masse", "masse"), h("p", { class: "hint" }, "Halbzeug, Werkstoff und Masse leer lassen: sie kommen dann automatisch aus dem Modell."), T("Maßstab", "massstab"), T("Allgemeintol.", "toleranz"), T("Firma", "firma"), T("Gezeichnet", "ersteller"), T("Datum", "datum"), T("Revision", "revision"), T("Blatt", "blatt")));
+    const revs = d.revisions || [];
+    out.push(P.section("Änderungen",
+      revs.length ? h("dl", { class: "kv" }, ...revs.flatMap((r, i) => [h("dt", {}, r.rev), h("dd", {}, `${r.text} (${r.datum || "–"}) `, h("button", { class: "btn", title: "Zeile löschen", onclick: () => { app.edit("Änderung löschen", () => { d.revisions = revs.filter((_, k) => k !== i); }, { rebuild: false }); this.render(); app.props.render(); } }, "×"))]))
+        : h("p", { class: "hint" }, "Noch keine Änderung eingetragen – das Schriftfeld zeigt den Index aus »Revision«."),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.addRevisionDialog() }, "Änderung eintragen"))));
     out.push(P.section("Beschriften", h("p", { class: "hint" }, "Maße ziehen zum Verschieben, Doppelklick zum Bearbeiten, Entf zum Löschen."),
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.setTool("dim") }, "Bemaßung"), h("button", { class: "btn", onclick: () => this.autoDims() }, "Hauptmaße"))));
     return out;
@@ -1279,6 +1521,11 @@ export class DrawingEditor {
         w.circle(v.x, Y(v.y), rr, "MASSE");
         w.text(v.x, Y(v.y + rr + 6), 3.5, `${v.letter} (${scaleLabel(v.scale)})`, "TEXT", { align: "center" });
       }
+      if (v.type === "aux") {
+        const bb = xf.bb;
+        const [x0, y0] = xf.to(bb.x0, bb.y1), [x1] = xf.to(bb.x1, bb.y0);
+        w.text((x0 + x1) / 2, Y(y0 - 4), 5, v.letter, "TEXT", { align: "center" });
+      }
       if (v.type === "section") {
         const bb = xf.bb;
         const [x0, y0] = xf.to(bb.x0, bb.y1), [x1] = xf.to(bb.x1, bb.y0);
@@ -1330,6 +1577,7 @@ export class DrawingEditor {
     const groups = (d.balloons || []).map((b) => this.renderBalloon(d, b, posOf, false)).filter(Boolean);
     groups.push(...(d.welds || []).map((m) => this.renderWeld(d, m, false)).filter(Boolean));
     if (d.bomTable?.show && rows.length) groups.push(this.bomTableSvg(rows, Wd, H));
+    groups.push(...this.extraGroups(d, false));
     for (const g of groups) {
       for (const el of g.querySelectorAll("line")) w.line(+el.getAttribute("x1"), Y(+el.getAttribute("y1")), +el.getAttribute("x2"), Y(+el.getAttribute("y2")), "MASSE");
       for (const el of g.querySelectorAll("circle")) w.circle(+el.getAttribute("cx"), Y(+el.getAttribute("cy")), +el.getAttribute("r"), "MASSE");
@@ -1341,3 +1589,4 @@ export class DrawingEditor {
   }
 }
 const r3 = (x) => Math.round(x * 1000) / 1000;
+const r6 = (x) => Math.round(x * 1e6) / 1e6;

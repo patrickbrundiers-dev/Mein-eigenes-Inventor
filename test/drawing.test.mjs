@@ -402,3 +402,49 @@ test("Fertigungsmappe: Biegeliste je Rohr", () => {
   assert.match(pages[0].html, /Handlauf – Rohr – Abwicklung 1\.235,6 mm/);
   assert.match(pages[0].html, /<td class="n">Ende<\/td><td class="n">200<\/td>/);
 });
+
+test("Bohrungstabelle: Kennbuchstaben je Ø, Lage ab Nullpunkt, Gewinde aus dem Feature", async () => {
+  const { holeTable, holeTableCells } = await import("../src/core/zeichnung.js");
+  const circles = [{ cx: 20, cy: 20, r: 5.5 }, { cx: 280, cy: 20, r: 5.5 }, { cx: 280, cy: 20, r: 5.5 }, { cx: 150, cy: 100, r: 3.4 }, { cx: 150, cy: 100, r: 4 }];
+  const specs = [{ r: 3.4, hole: { d: 6.8, thread: "M8", depth: 15 } }];
+  const t = holeTable(circles, specs, [0, 0]);
+  assert.deepEqual(t.groups.map((g) => [g.tag, g.count]), [["A", 1], ["B", 2]], "Doppelte und Gewinde-Außenkreis zählen nicht");
+  assert.equal(t.groups[0].desc, "M8, 15 tief");
+  assert.equal(t.groups[1].desc, "Ø11");
+  assert.deepEqual(t.rows.map((r) => r.tag), ["A1", "B1", "B2"]);
+  const cells = holeTableCells(holeTable(circles, [], [10, 10]));
+  assert.deepEqual(cells[0], ["Pos.", "X", "Y", "Bohrung"]);
+  assert.deepEqual(cells[2], ["B1", "10", "10", "Ø11"]);
+});
+
+test("Hilfsansicht: Blick senkrecht auf die schräge Kante, von außen", async () => {
+  const { auxiliaryCamera, nearestSegment } = await import("../src/core/zeichnung.js");
+  const cam = { dir: [0, 1, 0], up: [0, 0, 1] }; // Vorderansicht: u = X, v = Z
+  const c = auxiliaryCamera(cam, [0, 100], [100, 0], [0, 0]);
+  const s = Math.SQRT1_2;
+  [-s, 0, -s].forEach((x, i) => near(c.dir[i], x, 1e-9));
+  near(c.dir[0] * c.up[0] + c.dir[1] * c.up[1] + c.dir[2] * c.up[2], 0, 1e-9);
+  assert.ok(c.up[2] > 0, "Kante zeigt nach oben");
+  assert.equal(auxiliaryCamera(cam, [0, 0], [100, 0], [50, 50]), null, "waagerechte Kante");
+  const seg = nearestSegment([[[0, 0], [10, 0], [10, 10]]], [9, 5], 2);
+  assert.deepEqual([seg.a, seg.b], [[10, 0], [10, 10]]);
+  assert.equal(nearestSegment([[[0, 0], [10, 0]]], [5, 5], 2), null);
+});
+
+test("Hinweise: Bohrung, Fase oder frei; Änderungsindex", async () => {
+  const { noteSuggestion, nextRevision, validateRevision, currentRevision } = await import("../src/core/zeichnung.js");
+  const circles = [{ cx: 0, cy: 0, r: 5.5 }, { cx: 50, cy: 0, r: 5.5 }];
+  assert.equal(noteSuggestion([5.4, 0], { circles }).text, "2× Ø11");
+  assert.equal(noteSuggestion([0, 0], { circles, specs: [{ r: 5.5, hole: { d: 11 } }] }).text, "2× Ø11 durch");
+  const lines = [[[100, 0], [102, 2]]];
+  assert.deepEqual(noteSuggestion([101, 1], { lines, chamfers: [2] }), { kind: "fase", text: "2 × 45°" });
+  assert.equal(noteSuggestion([101, 1], { lines, chamfers: [3] }).kind, "frei");
+  assert.equal(nextRevision([{ rev: "A" }, { rev: "B" }]), "C");
+  assert.equal(nextRevision([]), "A");
+  assert.equal(nextRevision([], "A"), "B", "erste Änderung nach dem Schriftfeld-Index");
+  assert.deepEqual(validateRevision({ rev: " b ", text: " Bohrung geändert ", datum: "25.10.2026" }).value, { rev: "B", datum: "25.10.2026", text: "Bohrung geändert", name: "" });
+  assert.equal(validateRevision({ rev: "B", text: "" }).ok, false);
+  assert.equal(validateRevision({ rev: "B-1", text: "x" }).ok, false);
+  assert.equal(currentRevision({ title: { revision: "A" } }), "A");
+  assert.equal(currentRevision({ title: { revision: "A" }, revisions: [{ rev: "B" }, { rev: "C" }] }), "C");
+});
