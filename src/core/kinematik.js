@@ -72,6 +72,37 @@ export function sweepAngles(j, n = 6) {
   return Array.from({ length: n + 1 }, (_, k) => j.min + ((j.max - j.min) * k) / n);
 }
 
+/**
+ * Kontaktsatz (Werkzeuge Stufe 51): freier Bereich eines Gelenks ab dem aktuellen Wert, bis sich Teile des
+ * Kontaktsatzes durchdringen. collides(a) → Promise<boolean>. Je Richtung grob in steps Schritten, dann durch
+ * Halbieren genauer. Rückgabe { min, max, hitMin, hitMax } (hit = an dieser Seite angestoßen).
+ */
+export async function contactRange(j, collides, { steps = 12, refine = 7 } = {}) {
+  const a0 = clampAngle(j, j.angle || 0);
+  const side = async (end) => {
+    if (Math.abs(end - a0) < 1e-9) return { at: end, hit: false };
+    let free = a0;
+    for (let k = 1; k <= steps; k++) {
+      const a = a0 + ((end - a0) * k) / steps;
+      if (await collides(a)) {
+        let lo = free, hi = a;
+        for (let r = 0; r < refine; r++) { const m = (lo + hi) / 2; if (await collides(m)) hi = m; else lo = m; }
+        return { at: lo, hit: true };
+      }
+      free = a;
+    }
+    return { at: end, hit: false };
+  };
+  const lo = await side(Math.min(j.min, j.max)), hi = await side(Math.max(j.min, j.max));
+  return { min: lo.at, max: hi.at, hitMin: lo.hit, hitMax: hi.hit };
+}
+
+/** Video-Format der Bewegungsaufnahme: MP4, wenn der Rekorder es kann, sonst WebM */
+export function videoFormat(isSupported) {
+  for (const type of ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"]) if (isSupported(type)) return { type, ext: type.startsWith("video/mp4") ? "mp4" : "webm" };
+  return null;
+}
+
 /** Winkel einer Hin-und-zurück-Bewegung zum Zeitpunkt t ∈ [0, 1]: min → max → min, weich beschleunigt */
 export function swingAngle(j, t) {
   const s = 0.5 - 0.5 * Math.cos(2 * Math.PI * Math.min(1, Math.max(0, t)));
@@ -117,4 +148,54 @@ export function jointFollowers(asm, compId) {
     }
   }
   return [...out];
+}
+
+// ---------- Bewegungs-Abhängigkeiten (Werkzeuge Stufe 44, wie Inventor »Bewegung«) ----------
+// asm.motions = [{ id, kind, a, b, ratio, sense, suppressed? }] zwischen zwei Komponenten mit Gelenk:
+//   drehung:        beide drehen (Dreh- oder Zylindergelenk), Δb = ratio · Δa (Zahnrad, Riemen; Übersetzung)
+//   drehschiebung:  a dreht, b schiebt (Schiebegelenk), Δb = Δa / 360 · ratio (ratio = Weg je Umdrehung in mm; Zahnstange, Spindel)
+// sense "gegen" kehrt die Richtung um. Bewegt man eine Komponente, folgen alle gekoppelten (Kette, ohne Rückwirkung).
+export const MOTION_KINDS = Object.freeze([["drehung", "Drehung"], ["drehschiebung", "Drehung – Verschiebung"]]);
+const turns = (j) => !!j && !isSlide(j);
+
+/** Passt die Bewegung zu den Gelenken der beiden Komponenten? Rückgabe Fehlertext oder null */
+export function motionProblem(asm, m) {
+  const A = asm.components.find((c) => c.id === m.a), B = asm.components.find((c) => c.id === m.b);
+  if (!A || !B) return "Komponente fehlt";
+  if (A.id === B.id) return "Zwei verschiedene Komponenten wählen";
+  if (!(Number(m.ratio) > 0 || Number(m.ratio) < 0)) return "Übersetzung bzw. Weg je Umdrehung angeben";
+  if (m.kind === "drehschiebung") {
+    if (!turns(A.joint)) return `»${A.name}« braucht ein Dreh- oder Zylindergelenk`;
+    if (!isSlide(B.joint)) return `»${B.name}« braucht ein Schiebegelenk`;
+  } else if (!turns(A.joint) || !turns(B.joint)) return "Beide Komponenten brauchen ein Dreh- oder Zylindergelenk";
+  return null;
+}
+
+/**
+ * Gelenkwert einer Komponente setzen und die Werte aller gekoppelten Gelenke ausrechnen (ohne etwas zu ändern).
+ * Rückgabe { values: Map compId → Wert (im Bereich), clamped: [Namen, die an ihre Grenze stoßen] }
+ */
+export function coupledJointValues(asm, compId, value) {
+  const comps = new Map(asm.components.map((c) => [c.id, c]));
+  const start = comps.get(compId);
+  const values = new Map([[compId, clampAngle(start.joint, value)]]);
+  const clamped = [];
+  const todo = [compId];
+  while (todo.length) {
+    const x = todo.shift();
+    const X = comps.get(x), dx = values.get(x) - (X.joint.angle || 0);
+    for (const m of asm.motions || []) {
+      if (m.suppressed || motionProblem(asm, m)) continue;
+      const fwd = m.a === x, other = fwd ? m.b : m.b === x ? m.a : null;
+      if (!other || values.has(other)) continue;
+      const Y = comps.get(other);
+      const f = (m.kind === "drehschiebung" ? Number(m.ratio) / 360 : Number(m.ratio)) * (m.sense === "gegen" ? -1 : 1);
+      const dy = fwd ? dx * f : dx / f;
+      const want = (Y.joint.angle || 0) + dy, got = clampAngle(Y.joint, want);
+      if (Math.abs(got - want) > 1e-9) clamped.push(Y.name || Y.id);
+      values.set(other, got);
+      todo.push(other);
+    }
+  }
+  return { values, clamped };
 }

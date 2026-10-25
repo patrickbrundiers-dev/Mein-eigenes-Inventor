@@ -4,6 +4,8 @@ import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings } fro
 import { materialList, validateMaterial, exportMaterialLib, importMaterialLib, usedMaterialKeys } from "../core/materials.js";
 import { keymapEditor, quickAccessEditor } from "./commands.js";
 import { orderedLabels, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
+import { RULES as BEND_RULES } from "../core/bendtable.js";
+import { DEFAULT_SHEET_RULES, RELIEFS, outdatedSheetRules } from "../core/blechregeln.js";
 import { MODES, ANGLE_REFS, validateBendTable, tableToCsv, parseTableText, dinK, bendTableUses, tableId, sameTable } from "../core/bendtable.js";
 
 const STATUS = { aktiv: "", teilweise: "teilweise", geplant: "geplant" };
@@ -114,7 +116,7 @@ function extras(app, cat) {
     return [forget, quickAccessEditor(app), ribbonEditor(app), keymapEditor(app)];
   }
   if (cat === "material") return [materialsEditor(app)];
-  if (cat === "blech") return [bendTablesEditor(app)];
+  if (cat === "blech") return [sheetRulesEditor(app), bendTablesEditor(app)];
   if (cat === "dateien") {
     return [h("ul", { class: "hint" },
       h("li", {}, "Wiederherstellung: nach einem Absturz bietet der Startbildschirm die letzte automatische Sicherung an."),
@@ -264,6 +266,45 @@ function materialsEditor(app) {
 }
 
 const nf = (v, d = 3) => (v === null || v === undefined ? "" : String(Math.round(v * 10 ** d) / 10 ** d).replace(".", ","));
+
+/** Blechregeln (Stufe 44): Tabelle zum direkten Bearbeiten; jede gültige Änderung wird sofort gespeichert */
+function sheetRulesEditor(app) {
+  const prefs = app.prefs;
+  const wrap = h("div", { class: "mat-editor sheet-rules" });
+  const lib = () => (prefs.get("blech.regeln") || []).map((r) => ({ ...r }));
+  const save = (next) => { const r = prefs.set("blech.regeln", next); if (!r.ok) toast(r.error, { kind: "err", timeout: 6000 }); render(); return r.ok; };
+  const newId = (list) => { let n = list.length + 1; while (list.some((r) => r.id === "r" + n)) n++; return "r" + n; };
+  const num = (v) => Number(String(v).replace(",", "."));
+  const render = () => {
+    const list = lib();
+    const cell = (r, i, key, kind = "num") => {
+      const upd = (v) => { const next = lib(); next[i] = { ...next[i], [key]: kind === "num" ? num(v) : v }; save(next); };
+      if (kind === "mat") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...materialList().map((m) => h("option", { value: m.key, selected: m.key === r.material }, m.label)));
+      if (kind === "rule") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...BEND_RULES.map((x) => h("option", { value: x.value, selected: x.value === r.rule }, x.label)));
+      if (kind === "relief") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...RELIEFS.map(([v, l]) => h("option", { value: v, selected: v === r.relief }, l)));
+      return h("input", { class: "inp" + (kind === "num" ? " num" : ""), value: kind === "num" ? String(r[key]).replace(".", ",") : r[key], onchange: (e) => upd(e.target.value.trim()) });
+    };
+    const outdated = outdatedSheetRules(app.project?.docs || [], list);
+    wrap.replaceChildren(
+      h("h3", {}, "Blechregeln"),
+      h("p", { class: "hint" }, "Freischnitt 0 = Breite t, Tiefe t/2. Kantteile speichern eine Kopie der Regel; geänderte Regeln werden am Kantteil oder hier für das ganze Projekt übernommen."),
+      h("table", { class: "grid" },
+        h("thead", {}, h("tr", {}, ...["Name", "Werkstoff", "Dicke", "Innenradius", "Abwicklung", "K-Faktor", "Freischnitt", "Breite", "Tiefe", ""].map((x) => h("th", {}, x)))),
+        h("tbody", {}, ...list.map((r, i) => h("tr", {},
+          h("td", {}, cell(r, i, "name", "text")), h("td", {}, cell(r, i, "material", "mat")), h("td", {}, cell(r, i, "t")), h("td", {}, cell(r, i, "ri")),
+          h("td", {}, cell(r, i, "rule", "rule")), h("td", {}, cell(r, i, "k")), h("td", {}, cell(r, i, "relief", "relief")), h("td", {}, cell(r, i, "reliefW")), h("td", {}, cell(r, i, "reliefD")),
+          h("td", {}, h("button", { class: "btn", onclick: () => save(lib().filter((_, k) => k !== i)) }, "Löschen")))))),
+      h("div", { class: "btn-row" },
+        h("button", { class: "btn", onclick: () => { const l = lib(); const last = l.at(-1) || DEFAULT_SHEET_RULES[0]; let n = 1; while (l.some((r) => r.name === `${last.name} (${n})`)) n++; save([...l, { ...last, id: newId(l), name: `${last.name} (${n})` }]); } }, "Regel anlegen"),
+        h("button", { class: "btn", onclick: async () => { if (await confirmDialog("Blechregeln zurücksetzen", "Blechregeln auf die Vorgaben zurücksetzen? Eigene Regeln gehen verloren.", { ok: "Zurücksetzen", danger: true })) save(DEFAULT_SHEET_RULES.map((r) => ({ ...r }))); } }, "Vorgaben"),
+        outdated.length ? h("button", { class: "btn primary", onclick: () => {
+          app.edit("Blechregeln übernehmen", () => { for (const o of outdated) { const d = app.doc(o.doc), f = d?.features.find((x) => x.id === o.feature); if (!f) continue; f.sheetRule = { ...o.rule }; if (f.matFromRule !== false) d.material = o.rule.material; } });
+          toast(`${outdated.length} Kantteil(e) aktualisiert`, { kind: "ok" }); render();
+        } }, `Geänderte Regeln in ${outdated.length} Kantteil(e) übernehmen`) : null));
+  };
+  render();
+  return wrap;
+}
 
 /** Biegetabellen: je Werkstoff und Dicke ein Raster Winkel × Innenradius; Eingabe als Text (aus Excel einfügen) mit Vorschau */
 function bendTablesEditor(app) {

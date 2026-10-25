@@ -312,7 +312,7 @@ export class DrawingEditor {
     const src = d?.source && this.app.doc(d.source.id);
     if (src?.kind !== "part") return [];
     const bodies = this.app.results.get(src.id)?.bodies || [];
-    return src.features.filter((f) => f.type === "kantteil" && !f.suppressed && bodies.some((b) => b.fid === f.id && b.meta?.sheet));
+    return src.features.filter((f) => ["kantteil", "konturwalzen"].includes(f.type) && !f.suppressed && bodies.some((b) => b.fid === f.id && b.meta?.sheet?.flatModel));
   }
   flatOf(d, v) {
     const src = d.source && this.app.doc(d.source.id);
