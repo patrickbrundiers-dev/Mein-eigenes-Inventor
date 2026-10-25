@@ -1348,6 +1348,34 @@ try {
       /dock-right/.test(reset.parent) && reset.cols === "260px minmax(0px, 1fr) 300px", JSON.stringify({ docked, widened, reset }));
   }
 
+  // Skizze säubern (MegaCAD-Abgleich M7): lose Ecken, doppelte Linie, leicht schief → eine geschlossene Kontur
+  {
+    await evalApp(() => window.__werkcad.newPart("Saeubern"));
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    await page.locator("#props button", { hasText: "XY-Ebene" }).click();
+    await page.waitForTimeout(800);
+    await evalApp(() => window.__werkcad.sketcher.commit("Fremddaten", (sk) => {
+      sk.points.push({ id: "qa", x: 10, y: 5 }, { id: "qb", x: 90, y: 5.2 }, { id: "qb2", x: 90.004, y: 5.2 }, { id: "qc", x: 90, y: 45 }, { id: "qc2", x: 90, y: 45.003 }, { id: "qd", x: 10, y: 45 }, { id: "qd2", x: 10.002, y: 45 }, { id: "qa2", x: 10, y: 5.001 });
+      sk.entities.push({ id: "q1", type: "line", p1: "qa", p2: "qb" }, { id: "q2", type: "line", p1: "qb2", p2: "qc" }, { id: "q3", type: "line", p1: "qc2", p2: "qd" }, { id: "q4", type: "line", p1: "qd2", p2: "qa2" }, { id: "q1x", type: "line", p1: "qb", p2: "qa" });
+    }));
+    await page.waitForTimeout(200);
+    const before = await evalApp(() => { const s = window.__werkcad.sketcher.sk; return { lines: s.entities.filter((e) => e.type === "line").length, pts: s.points.length }; });
+    await page.locator("#ribbon button", { hasText: /^Säubern$/ }).click();
+    await page.waitForTimeout(300);
+    const hint = await page.locator(".dialog .hint").last().textContent();
+    await page.locator(".dialog button", { hasText: /^Säubern$/ }).click();
+    await page.waitForTimeout(300);
+    const after = await evalApp(() => { const s = window.__werkcad.sketcher.sk; return { lines: s.entities.filter((e) => e.type === "line").length, pts: s.points.length, hor: s.constraints.filter((c) => c.type === "horizontal").length }; });
+    await shot("26f-skizze-gesaeubert");
+    await evalApp(() => window.__werkcad.undo());
+    await page.waitForTimeout(300);
+    const undone = await evalApp(() => window.__werkcad.sketcher.sk.entities.filter((e) => e.type === "line").length);
+    await page.keyboard.press("Escape");
+    step("Skizze säubern", before.lines === 5 && after.lines === 4 && after.pts === before.pts - 4 && after.hor === 1 && undone === 5 && /4 Punkt/.test(hint), JSON.stringify({ before, hint, after, undone }));
+  }
+
   // Farbschema dunkel und gemerkte Werkzeugwerte
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));

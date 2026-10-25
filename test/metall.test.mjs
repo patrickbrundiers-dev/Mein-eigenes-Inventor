@@ -123,3 +123,39 @@ test("Anschlussplatte und Rippe: Maße, Bohrbild, Prüfungen (MegaCAD-Abgleich M
   assert.deepEqual(r.poly, [[110, 0], [140, 0], [100, 80], [100, 10]]);
   assert.throws(() => ribPlan("links", prof, { W: 100, H: 280 }, { length: 80, thickness: 8 }), /steht nicht über das Profil hinaus/);
 });
+
+test("Skizze säubern: Punkte, Nulllängen, Doppelte, Überlappungen, Geradestellen (MegaCAD-Abgleich M7)", async () => {
+  const { cleanSketch, cleanReportText } = await import("../src/core/sketchclean.js");
+  const { solveSketch } = await import("../src/core/solver.js");
+  const { extractProfiles } = await import("../src/core/sketch.js");
+  // Rechteck 100 × 50 wie aus einem DXF: lose Endpunkte, eine doppelte Linie, eine Überlappung, leicht schief
+  const p = (id, x, y) => ({ id, x, y });
+  const sk = {
+    points: [p("O", 0, 0), p("a", 0, 0.004), p("b", 100, 0.3), p("b2", 100.003, 0.3), p("c", 100, 50), p("c2", 100, 50.002), p("d", 0, 50), p("d2", 0.001, 50), p("a2", 0.002, 0), p("m", 40, 50), p("n", 70, 50), p("z", 20, 20), p("z2", 20, 20.005)],
+    entities: [
+      { id: "Oe", type: "point", p: "O", construction: true, origin: true },
+      { id: "l1", type: "line", p1: "a", p2: "b" },
+      { id: "l2", type: "line", p1: "b2", p2: "c" },
+      { id: "l3", type: "line", p1: "c2", p2: "d" },
+      { id: "l4", type: "line", p1: "d2", p2: "a2" },
+      { id: "l1x", type: "line", p1: "b", p2: "a" }, // doppelt
+      { id: "l3o", type: "line", p1: "m", p2: "n" }, // liegt auf l3
+      { id: "z0", type: "line", p1: "z", p2: "z2" }, // fast Nulllänge
+    ],
+    constraints: [{ id: "Of", type: "fix", p: "O", x: 0, y: 0 }, { id: "k1", type: "length", e: "l1x", value: "100" }],
+  };
+  const rep = cleanSketch(sk, { tol: 0.01, angle: 0.5 });
+  assert.equal(rep.merged, 6, JSON.stringify(rep));
+  assert.equal(rep.zero, 1);
+  assert.equal(rep.dupes, 1);
+  assert.equal(rep.overlap, 1);
+  assert.equal(rep.straightened, 1, "l1 mit 0,17° wird waagrecht");
+  assert.equal(sk.entities.filter((e) => e.type === "line").length, 4);
+  assert.ok(sk.constraints.some((c) => c.type === "length" && c.e === "l1"), "Maß der doppelten Linie geht auf die verbliebene über");
+  assert.ok(sk.entities.find((e) => e.id === "l1").p1 === "O", "Ursprung bleibt Ankerpunkt");
+  const r = solveSketch(sk, {});
+  assert.ok(r.ok);
+  assert.equal(extractProfiles(sk).regions.length, 1, "geschlossene Kontur");
+  assert.match(cleanReportText(rep), /6 Punkt\(e\) zusammengeführt/);
+  assert.equal(cleanReportText(cleanSketch(sk)), "Nichts zu säubern", "zweiter Lauf ändert nichts");
+});

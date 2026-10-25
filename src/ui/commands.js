@@ -42,6 +42,7 @@ export function commandRunners(app) {
     "select.everything": () => app.selectEverything(),
     "select.invert": () => app.invertSelection(),
     "sketch.autodim": () => app.sketcher.autoDimensionDialog(),
+    "sketch.clean": () => app.sketcher.cleanDialog(),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
     "asm.align": r("align"),
