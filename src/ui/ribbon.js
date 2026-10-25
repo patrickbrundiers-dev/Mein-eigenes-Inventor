@@ -380,10 +380,10 @@ export class Ribbon {
           { label: "Erstellen", big: 3, buttons: [
             T("line", "Linie", "line"), T("circle", "Kreis", "circle"), T("rect", "Rechteck", "rect"), T("arc3", "Bogen", "arc"),
             T("rectc", "Rechteck Mitte", "rectc"), T("arcc", "Bogen Mitte", "arcc"), T("spline", "Spline", "spline"),
-            T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"), T("text", "Text", "text"), T("image", "Bild", "import"),
+            T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"), C("text", "Text", "text"),
             T("sfillet", "Rundung", "fillet"), T("point", "Punkt", "point"),
           ] },
-          { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() })] },
+          { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() }), T("image", "Bild", "import")] },
           { label: "Ändern", small: true, buttons: [
             T("smove", "Verschieben", "move"), T("scopy", "Kopieren", "copy"), T("srotate", "Drehen", "rotate"),
             T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"),
