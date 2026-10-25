@@ -188,7 +188,7 @@ test("Treppen-Generator: Wangen unten waagrecht/oben senkrecht geschnitten, Stuf
   const res = await K.buildPart(part([f]));
   okAll(res);
   const by = (re) => res.bodies.filter((b) => re.test(b.name));
-  assert.equal(by(/^Stufe/).length, 15, "2800 / 175 → 16 Steigungen, 15 Stufen");
+  assert.equal(by(/^Stufe \d+$/).length, 15, "2800 / 175 → 16 Steigungen, 15 Stufen");
   const w = by(/^Wange/);
   assert.equal(w.length, 2);
   const bb = (b) => b.shape.boundingBox.bounds;
@@ -196,10 +196,10 @@ test("Treppen-Generator: Wangen unten waagrecht/oben senkrecht geschnitten, Stuf
   near(bb(w[0])[1][0], 15 * 280, 0.01, "Wange oben an der Deckenstirn (x = 15 · 280)");
   assert.ok(w[0].meta.miterStart > 50 && w[0].meta.miterEnd > 20, "Schnitte schräg zur Achse");
   // oberste Stufe: Oberkante = 15 · 175
-  const top = Math.max(...by(/^Stufe/).map((b) => bb(b)[1][2]));
+  const top = Math.max(...by(/^Stufe \d+$/).map((b) => bb(b)[1][2]));
   near(top, 15 * 175, 0.01, "OK oberste Stufe");
   assert.match(res.status.tr.info, /16 Steigungen à 175 mm, Auftritt 280 mm, 2s \+ a = 630 mm/);
-  assert.equal(by(/^Stufe/)[0].meta.density, 1, "Gitterrost mit Ersatzdichte");
+  assert.equal(by(/^Stufe \d+$/)[0].meta.density, 1, "Gitterrost mit Ersatzdichte");
   // Zwei Holme, aufgesattelt
   const f2 = { id: "h", ...defaultGenerator("treppe") };
   f2.params.support = "holm2";
@@ -252,7 +252,7 @@ test("Treppe L- und U-Form mit Podest, Rahmen und Stützen (MegaCAD-Abgleich M14
   const rL = await K.buildPart(part([fL]));
   okAll(rL);
   const by = (r, re) => r.bodies.filter((b) => re.test(b.name));
-  assert.equal(by(rL, /^Stufe/).length, 14, "7 + 7 Stufen");
+  assert.equal(by(rL, /^Stufe \d+$/).length, 14, "7 + 7 Stufen");
   assert.equal(by(rL, /^Wange/).length, 4);
   assert.equal(by(rL, /^Podeststütze/).length, 2);
   assert.ok(by(rL, /^Podestrahmen/).length >= 4, "Rahmen aus vier gegehrten Stäben");
@@ -260,7 +260,7 @@ test("Treppe L- und U-Form mit Podest, Rahmen und Stützen (MegaCAD-Abgleich M14
   near(bb(pod)[1][2], 8 * 175, 0.01, "Podest-OK"); near(bb(pod)[0][0], 7 * 280, 0.01, "Podestkante = Ende Lauf 1"); near(bb(pod)[1][1], 1000, 0.01);
   // Lauf 2 geht in +Y, oberste Stufe auf 15 · 175, über dem Podest (x zwischen 1960 und 2960)
   const s15 = by(rL, /^Stufe 15$/)[0];
-  near(bb(s15)[1][2], 15 * 175, 0.01); near(bb(s15)[0][0], 7 * 280, 0.01); near(bb(s15)[1][0], 7 * 280 + 1000, 0.01);
+  near(bb(s15)[1][2], 15 * 175, 0.01); near(bb(s15)[0][0], 7 * 280 + 5, 0.01); near(bb(s15)[1][0], 7 * 280 + 1000 - 5, 0.01); // zwischen den Seitenblechen (5 mm)
   near(bb(s15)[1][1], 1000 + 7 * 280, 0.01, "letzte Stufe endet an der Deckenstirn");
   assert.match(rL.status.l.info, /\(8 \+ 8\).*Podest auf 1400 mm/);
   // Stützen stehen auf dem Boden und tragen den Rahmen
@@ -291,7 +291,7 @@ test("Spindeltreppe: Stufen als Ringausschnitt, Träger, Geländer, Prüfung Dur
   const by = (re) => res.bodies.filter((b) => re.test(b.name));
   const bb = (b) => b.shape.boundingBox.bounds;
   // 2800 / 190 → 15 Steigungen à 186,7; 14 Stufen, 14 Träger, 4 Stäbe je Stufe, Handlauf
-  assert.equal(by(/^Stufe /).length, 14); assert.equal(by(/^Stufenträger/).length, 14); assert.equal(by(/^Geländerstab/).length, 14 * 4, "4 Stäbe je Stufe: lichter Abstand ≤ 120 mm (Geländernorm Wohngebäude)");
+  assert.equal(by(/^Stufe \d+$/).length, 14); assert.equal(by(/^Stufenträger/).length, 14); assert.equal(by(/^Geländerstab [\d.]+$/).length, 14 * 4, "4 Stäbe je Stufe: lichter Abstand ≤ 120 mm (Geländernorm Wohngebäude)");
   assert.ok(by(/^Handlauf/).length >= 13);
   const sp = by(/^Spindel/)[0];
   near(bb(sp)[1][2], 2800 + 900, 0.01, "Spindel bis Handlaufhöhe über der Decke");
@@ -450,8 +450,18 @@ test("Treppe mit Geländer: beidseitig, ums Podest, Knieleisten/Staketen, Höhe 
   assert.ok(posts.every((b) => bb(b)[1][1] < 0), "rechts außerhalb der Wange (y < 0)");
   assert.ok(by(r, /^Geländer links Pfosten/).every((b) => bb(b)[0][1] > 1000), "links jenseits der Laufbreite");
   assert.equal(by(r, /Knieleiste/).length % 2, 0);
-  const kl = r.bodies.filter((b) => /Knieleiste/.test(b.name));
-  // schräge Knieleisten: senkrechter Schnitt am Pfosten = Neigung des Laufs (atan 175/280 ≈ 32°)
+  // Knieleisten am Stück je Abschnitt durch die Pfosten: jeder Pfosten zweimal durchbrochen (Ø 26,9 + 1)
+  assert.equal(by(r, /Knieleiste/).length, 8);
+  const pr = posts.filter((b) => /Pfosten \d+$/.test(b.name));
+  assert.ok(pr.every((b) => b.meta.drills >= 2 && Math.abs(b.meta.drillD - 27.9) < 1e-9), JSON.stringify(pr.map((b) => b.meta.drills)));
+  // Stufen nach DIN 24531: Seitenbleche mit Bohrung + Langloch, Wangen je Stufe 2 × Ø 14 auf jeder Seite
+  const sb = by(r, /Seitenblech/);
+  assert.equal(sb.length, 2 * 15);
+  assert.ok(sb.every((b) => b.meta.plate.holes === 1 && b.meta.plate.slots === 1));
+  assert.ok(by(r, /^Wange/).every((b) => b.meta.drills === 2 * 15 && b.meta.drillD === 14), JSON.stringify(by(r, /^Wange/).map((b) => b.meta.drills)));
+  // zwischen den Pfosten (wie bisher): schräger Schnitt am Pfosten = Neigung des Laufs (atan 175/280 ≈ 32°)
+  const rZ = await K.buildPart(part([{ ...f, id: "z", params: { ...f.params, gelBeltMode: "zwischen" } }]));
+  const kl = rZ.bodies.filter((b) => /Knieleiste/.test(b.name));
   assert.ok(kl.some((b) => Math.abs(b.meta.miterStart - 32) < 1), JSON.stringify(kl.map((b) => [b.name, b.meta.miterStart])).slice(0, 300));
   assert.match(r.status.g.info, /Geländer: rechts und links, \d+ Pfosten, \d+ Knieleisten/);
   // L links mit Podestgeländer: der äußere Zug läuft ums Podest (Pfosten an der Podestecke außen)

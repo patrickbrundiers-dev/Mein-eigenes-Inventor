@@ -668,10 +668,15 @@ test("Handlaufhalter: Pfosten endet unter dem Handlauf, Endkappe, Stift, Bohrung
   const t = plan("treppe", {});
   const tp = t.members.filter((m) => /Pfosten \d+$/.test(m.name)).length;
   assert.equal(t.members.filter((m) => /Handlaufhalter$/.test(m.name)).length, tp);
-  assert.ok(t.drills.every((d) => /^Geländer (links|rechts) Handlauf$/.test(d.target)) && t.drills.length === tp);
+  const thd = t.drills.filter((d) => /^Geländer (links|rechts) Handlauf$/.test(d.target));
+  assert.ok(thd.length === tp && thd.every((d) => d.d === 12.1));
   const b = plan("balkon", {});
-  assert.ok(b.drills.length > 0 && b.drills.every((d) => d.target === "Geländer Handlauf"));
-  assert.equal(plan("balkon", { railHolder: false }).drills.length, 0);
+  assert.ok(b.drills.some((d) => d.target === "Geländer Handlauf"));
+  assert.equal(plan("balkon", { railHolder: false, beltMode: "zwischen" }).drills.length, 0);
+  // Spindeltreppe: jeder Stab mit Halter, Bohrung im Handlauf
+  const sp = plan("spindel", {});
+  const bars = sp.members.filter((m) => /^Geländerstab [\d.]+$/.test(m.name)).length;
+  assert.ok(bars > 0 && sp.members.filter((m) => /Handlaufhalter$/.test(m.name)).length === bars && sp.drills.filter((d) => d.target === "Handlauf" && d.d === 12.1).length === bars);
 });
 
 test("Gurte durch die Pfosten: ein Stück bis 5800 mm, Stoß im Pfosten, Durchbrüche und Stabbohrungen mit Aufmaß", async () => {
@@ -734,4 +739,40 @@ test("Geländernorm Deutschland: Höhe, Öffnungen, Leitereffekt, Boden nach Nut
   assert.equal(run("spindel", { height: "2222.5", steps: "14", D: "3065", angle: "22.5" }).filter((x) => /Öffnung/.test(x.message)).length, 0, "automatisch genug Stäbe je Stufe (Abstand je Teilung gerechnet)");
   assert.match(msg(run("spindel", { bars: "1" })), /post:Öffnung \d+ mm über 120 mm/, "ein Stab je Stufe reicht im Wohnhaus nicht");
   assert.match(msg(railingIssues({ use: "wohn", height: 1000, fill: "staketen", gap: 100, rail: { kind: "rohr", geom: { width: 60.3 } } }, { rail: "rail" })), /rail:Handlauf Ø 60,3 mm/);
+});
+
+test("Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, Stufen nach DIN 24531 verschraubt", async () => {
+  const { defaultGenerator, resolveGenParams, GENERATORS } = await import("../src/core/generator.js");
+  const E = (x) => Number(String(x).replace(",", "."));
+  const plan = (patch) => GENERATORS.treppe.plan(resolveGenParams("treppe", { ...defaultGenerator("treppe").params, ...patch }, E));
+  const t = plan({});
+  // Knieleisten je Lauf am Stück durch alle Pfosten, Durchbrüche in den Pfosten
+  const kl = t.members.filter((m) => /Knieleiste/.test(m.name));
+  const posts = t.members.filter((m) => /Pfosten \d+$/.test(m.name));
+  assert.equal(kl.length, 2 * 2 * 2, "je Seite und Abschnitt (Lauf, Auslauf) ein Stück je Knieleiste, Stoß im Knickpfosten");
+  const ph = t.drills.filter((d) => /Pfosten \d+$/.test(d.target));
+  assert.ok(posts.every((m) => ph.filter((d) => d.target === m.name).length >= 2), "jeder Pfosten für beide Knieleisten durchbrochen (Knickpfosten von beiden Seiten)");
+  assert.ok(ph.every((d) => Math.abs(d.d - 27.9) < 1e-9), "Knieleiste 26,9 + 1 mm Aufmaß");
+  assert.match(t.info, /Knieleisten durch die Pfosten/);
+  // Staketen: Untergurt durch die Pfosten, Stäbe (Rundstahl 12) durch Bohrungen im Gurt
+  const st = plan({ gelFill: "staketen" });
+  const belts = st.members.filter((m) => /Untergurt/.test(m.name)), stabs = st.members.filter((m) => / Stab \d+\.\d+$/.test(m.name));
+  assert.ok(belts.length === 4 && stabs.length > 10, `${belts.length} ${stabs.length}`);
+  assert.equal(st.drills.filter((d) => /Untergurt/.test(d.target)).length, stabs.length);
+  assert.ok(st.drills.filter((d) => /Untergurt/.test(d.target)).every((d) => d.d === 13 && d.dir[2] === -1));
+  assert.ok(new Set(stabs.map((m) => m.name)).size === stabs.length, "Stabnamen eindeutig");
+  assert.throws(() => plan({ gelFill: "staketen", gelStab: { kind: "rohr", size: "26.9x2.3" } }), (e) => e.key === "gelStab");
+  assert.throws(() => plan({ gelBar: { kind: "rohr", size: "42.4x2.6" } }), (e) => e.key === "gelBar");
+  assert.equal(plan({ gelBeltMode: "zwischen" }).drills.filter((d) => /Pfosten/.test(d.target)).length, 0, "zwischen: wie bisher");
+  // Stufen: Seitenbleche mit Bohrung und Langloch, Wangen je Stufe zweimal Ø 14
+  const steps = t.plates.filter((p) => /^Stufe \d+$/.test(p.name)), sp = t.plates.filter((p) => /Seitenblech/.test(p.name));
+  assert.equal(sp.length, 2 * steps.length);
+  assert.ok(sp.every((p) => p.holes.length === 1 && p.slots.length === 1 && p.d === 14 && p.t === 5));
+  assert.equal(steps[0].W, 1000 - 10, "Stufe zwischen den Seitenblechen");
+  const wh = t.drills.filter((d) => /^Wange/.test(d.target));
+  assert.equal(wh.length, 4 * steps.length);
+  const A = t.plates.find((p) => p.name === "Stufe 1").H;
+  assert.match(t.info, new RegExp(`Lochabstand ${A <= 250 ? 120 : A <= 285 ? 150 : A <= 320 ? 180 : "\\d+"} mm`));
+  assert.equal(plan({ stepFix: "keine" }).plates.filter((p) => /Seitenblech/.test(p.name)).length, 0);
+  assert.equal(plan({ support: "holm2" }).plates.filter((p) => /Seitenblech/.test(p.name)).length, 0, "nur bei Wangen");
 });
