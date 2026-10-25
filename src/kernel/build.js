@@ -28,6 +28,7 @@ import { path3d } from "../core/ableiten.js";
 import { applyRules } from "../core/regeln.js";
 import { bendRule, ruleSummary } from "../core/bendtable.js";
 import { effectiveSheet } from "../core/blechregeln.js";
+import { planBlechkasten, boxFromBody, boxSideFrame } from "../core/blechkasten.js";
 import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims, boltSizeForHole, boltSet } from "../core/normteile.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
@@ -718,6 +719,57 @@ export function createKernel(R) {
       return { solid, meta, name, info, warn: warn.join("; ") };
     };
 
+    /**
+     * Blechkasten (FU19/E12): Boden, hochgekantete Wände, aufgetrennte Ecken. Mit f.from »In Blech umwandeln«:
+     * Außenmaße aus dem quaderförmigen Körper dieses Features, der Körper wird ersetzt.
+     */
+    const boxBuild = (f) => {
+      const eff = effectiveSheet(f, E, part.material || "S235");
+      const { t, ri, k } = eff;
+      const br = bendRule({ rule: eff.rule, material: eff.material, t, ri, k });
+      let L, B, H, pos, src = null;
+      if (f.from) {
+        src = state.bodies.find((b) => b.fid === f.from && b.kind === "solid" && !b.meta?.sheet);
+        if (!src) throw new Error(missingRef(f.from, "Körper zum Umwandeln", f));
+        let vol = NaN;
+        try { vol = R.measureShapeVolumeProperties(src.shape).volume; } catch { /* unten gemeldet */ }
+        ({ pos, L, B, H } = boxFromBody(src.shape.boundingBox.bounds, vol));
+      } else {
+        L = E(f.L ?? "300", "Länge"); B = E(f.B ?? "200", "Breite"); H = E(f.H ?? "60", "Höhe");
+        pos = (f.pos || ["0", "0", "0"]).map((x, i) => E(x, "Lage " + "XYZ"[i]));
+      }
+      const gap = String(f.gap ?? "").trim() === "" ? 0.5 : E(f.gap, "Spalt");
+      const plan = planBlechkasten({ L, B, H, t, ri, k, kOf: br.kOf, walls: f.walls ?? "vorne; rechts; hinten; links", through: f.through === "y" ? "y" : "x", gap });
+      const fm = plan.flat;
+      const box = (x0, x1, y0, y1, z0, z1) => R.makeBaseBox(x1 - x0, y1 - y0, z1 - z0).translate([(x0 + x1) / 2, (y0 + y1) / 2, z0]);
+      let solid;
+      if (f.view === "abgewickelt") {
+        let d = R.draw(fm.outer[0]);
+        for (const q of fm.outer.slice(1)) d = d.lineTo(q);
+        solid = d.close().sketchOnPlane(new R.Plane([0, 0, 0], [1, 0, 0], [0, 0, 1])).extrude(t);
+      } else {
+        const { base: b0, R: Rb } = plan, s45 = Math.SQRT1_2;
+        solid = box(b0.x0, b0.x1, b0.y0, b0.y1, 0, t);
+        // Biegung als Viertelring um (R, R) in der Seitenebene (a nach innen, b nach oben), Wand darüber
+        const ring = ri > 1e-6
+          ? R.draw([Rb, 0]).threePointsArcTo([0, Rb], [Rb - Rb * s45, Rb - Rb * s45]).lineTo([t, Rb]).threePointsArcTo([Rb, t], [Rb - ri * s45, Rb - ri * s45]).close()
+          : R.draw([Rb, 0]).threePointsArcTo([0, Rb], [Rb - Rb * s45, Rb - Rb * s45]).lineTo([Rb, Rb]).close();
+        for (const sd of plan.sides) {
+          const fr = boxSideFrame(sd.side, L, B);
+          const pl = (s) => new R.Plane([fr.O[0] + fr.d[0] * s, fr.O[1] + fr.d[1] * s, 0], [fr.inw[0], fr.inw[1], 0], [fr.d[0], fr.d[1], 0]);
+          solid = solid.fuse(ring.clone().sketchOnPlane(pl(sd.bend[0])).extrude(sd.bend[1] - sd.bend[0]));
+          solid = solid.fuse(R.drawRectangle(t, H - Rb).translate(t / 2, (H + Rb) / 2).sketchOnPlane(pl(sd.wall[0])).extrude(sd.wall[1] - sd.wall[0]));
+        }
+        if (f.open === "unten") solid = solid.mirror([0, 0, 1], [0, 0, H / 2]);
+      }
+      solid = solid.translate(pos);
+      const nW = plan.sides.length;
+      const name = f.name || `Blechkasten ${round(t)} mm, Abw. ${round(fm.width)} × ${round(fm.height)}`;
+      const meta = { sheet: { t, flat: fm.width, length: fm.height, bends: fm.bends.map((b) => ({ angle: b.angle, r: b.ri, k: b.k })), bendLines: [], rule: ruleSummary(br), flatModel: fm } };
+      const info = `${round(L)} × ${round(B)} × ${round(H)} mm, ${nW} Wand/Wände` + (plan.corners ? `, ${plan.corners} Ecke(n) aufgetrennt (Spalt ${round(gap)} mm, Eckfreischnitt ${round(plan.R)} × ${round(plan.R)})` : "") + ` · Abwicklung ${round(fm.width)} × ${round(fm.height)} mm, Biegezugabe ${round(plan.ba)} mm` + (src ? " · aus Körper umgewandelt" : "") + (eff.ruleName ? ` · Blechregel ${eff.ruleName}` : "");
+      return { solid, meta, name, info, src, warn: [...new Set(br.warnings)].join("; ") };
+    };
+
     /** Konturwalzen: offene Skizzenlinie als Blech (Biegungen mit Innenradius) um eine Skizzenachse gewalzt; cut = Trennfuge */
     const rollBuild = (f, cut = null) => {
       const eff = effectiveSheet(f, E, part.material || "S235");
@@ -1210,6 +1262,14 @@ export function createKernel(R) {
             const spec = sheetSpec(f);
             const r = sheetBuild(f, spec, []);
             state.tools.set(f.id, { op: "new", shapes: [{ shape: r.solid, kind: "solid", meta: r.meta, name: r.name }], sheet: { spec, extras: [] } });
+            state.bodies.push({ shape: r.solid, kind: "solid", name: r.name, fid: f.id, meta: r.meta });
+            st.info = r.info;
+            if (r.warn) st.warning = r.warn;
+            break;
+          }
+          case "blechkasten": {
+            const r = boxBuild(f);
+            if (r.src) state.bodies.splice(state.bodies.indexOf(r.src), 1);
             state.bodies.push({ shape: r.solid, kind: "solid", name: r.name, fid: f.id, meta: r.meta });
             st.info = r.info;
             if (r.warn) st.warning = r.warn;

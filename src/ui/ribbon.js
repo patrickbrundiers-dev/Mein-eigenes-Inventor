@@ -13,6 +13,7 @@ import { defaultRegelkoerper } from "../core/regelkoerper.js";
 import { defaultNormteil } from "../core/normteile.js";
 import { defaultSchraubverbindung } from "../core/schraubverbindung.js";
 import { defaultKantteil } from "../core/blech.js";
+import { defaultBlechkasten } from "../core/blechkasten.js";
 import { defaultLasche, defaultUmschlag, defaultDurchzug, defaultEckeSchliessen, defaultStanzung, SHEET_FEATURES } from "../core/blechplus.js";
 import { defaultKonturwalzen, defaultTrennfuge } from "../core/konturwalzen.js";
 import { derivableSources } from "../core/ableiten.js";
@@ -85,6 +86,8 @@ export class Ribbon {
         app.addFeature(defaultSchraubverbindung(sk));
       },
       kantteil: () => app.addFeature(defaultKantteil()),
+      blechkasten: () => app.addFeature(defaultBlechkasten()),
+      inBlech: () => this.convertToSheet(),
       konturlasche: () => {
         const sk = app.lastSketchId();
         if (!sk) return toast("Zuerst eine Skizze mit offener Linie zeichnen (Blechkante von der Seite gesehen)");
@@ -250,6 +253,16 @@ export class Ribbon {
     while (at < part.features.length && SHEET_FEATURES.includes(part.features[at].type)) at++;
     app.addFeature(make(baseId), { at });
   }
+  /** »In Blech umwandeln« (FU19): gewählter (sonst letzter) Volumenkörper wird ein Blechkasten mit seinen Außenmaßen */
+  convertToSheet() {
+    const app = this.app, part = app.activeDoc();
+    const bodies = (app.results.get(part.id)?.bodies || []).filter((b) => b.kind === "solid" && !b.meta?.sheet && b.fid);
+    const sel = app.sel?.type === "feature" ? app.sel.id : null;
+    const from = bodies.some((b) => b.fid === sel) ? sel : bodies.at(-1)?.fid;
+    if (!from) return toast("Zuerst einen quaderförmigen Körper modellieren (z. B. Rechteck extrudieren)");
+    const { L, B, H, pos, ...rest } = defaultBlechkasten();
+    app.addFeature({ ...rest, from, name: `Blech aus ${app.feature(from)?.name || "Körper"}` });
+  }
   lastPatternSource() {
     const part = this.app.activeDoc();
     const sel = this.app.sel?.type === "feature" ? this.app.feature(this.app.sel.id) : null;
@@ -354,7 +367,7 @@ export class Ribbon {
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
           { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend")] },
-          { label: "Blech", big: 1, buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar"), B("eckeschliessen", "Ecke schließen", "cornerseam"), B("stanzung", "Stanzwerkzeug", "punch"), B("konturwalzen", "Konturwalzen", "contourroll"), B("trennfuge", "Trennfuge", "rip")] },
+          { label: "Blech", big: 1, buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("blechkasten", "Blechkasten", "kantteil"), B("inBlech", "In Blech umwandeln", "kantteil"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar"), B("eckeschliessen", "Ecke schließen", "cornerseam"), B("stanzung", "Stanzwerkzeug", "punch"), B("konturwalzen", "Konturwalzen", "contourroll"), B("trennfuge", "Trennfuge", "rip")] },
           { label: "Anschluss", buttons: [B("naht", "Schweißnaht", "naht"), B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("normteil", "Normteil", "normteil")] },
         ] },
         { id: "verwalten", label: "Verwalten", groups: [

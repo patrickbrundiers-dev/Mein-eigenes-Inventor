@@ -103,6 +103,7 @@ export function commandRunners(app) {
     "asm.explode": () => app.props.explodeDialog(),
     "asm.positionSave": () => savePosition(app, app.activeDoc()),
     "asm.params": () => app.props.paramsDialog(),
+    "asm.inContext": () => (app.sel?.type === "component" ? app.editInContext(app.activeId, app.sel.id) : toast("Erst eine Komponente wählen")),
   };
   for (const v of ["iso", "front", "back", "left", "right", "top", "bottom"]) run["view." + v] = () => app.viewer.setView(v);
   for (const m of ["kanten", "schattiert", "draht", "transparent", "foto"]) run["view.mode." + m] = () => app.prefs.set("ansicht.darstellung", m);

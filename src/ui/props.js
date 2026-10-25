@@ -3,6 +3,7 @@ import { gearData, centerDistance, BEARINGS, BEARING_SEALS } from "../core/assis
 import { defaultSchweissbaugruppe, phaseCounts, WELD_PHASES } from "../core/schweissbaugruppe.js";
 import { RULES } from "../core/bendtable.js";
 import { applySheetRule } from "../core/blechregeln.js";
+import { BOX_SIDES, BOX_THROUGH, wallSet } from "../core/blechkasten.js";
 import { TAB_MODES } from "../core/stecksystem.js";
 import { axisDistance, measureSums, measureFormat, SECOND_UNITS } from "../core/messen.js";
 import { placeProps, constraintEditor, motionEditor } from "./abhaengigkeit.js";
@@ -379,10 +380,19 @@ export class Props {
   }
 
   // ---------- Bauteil ----------
+  /** Bearbeiten im Kontext (FU21): Hinweis, Nachbarn ein/aus, zurück zur Baugruppe */
+  contextSection(part) {
+    const app = this.app, ctx = app.context;
+    if (!ctx || ctx.part !== part.id) return null;
+    return this.section("Im Kontext: " + ctx.label,
+      h("div", { class: "hint" }, "Die übrigen Teile der Baugruppe stehen halbdurchsichtig daneben. In einer Skizze holt »Projizieren« auch ihre Kanten."),
+      this.check("Nachbarteile zeigen", ctx.ghosts, (v) => app.toggleContextGhosts(v)),
+      h("div", { class: "btn-row" }, h("button", { class: "btn primary", "data-act": "leave-context", onclick: () => app.leaveContext() }, "Zurück zur Baugruppe")));
+  }
   partProps(part) {
     const app = this.app;
     const r = app.results.get(part.id);
-    const out = [this.linkSection(part), ...[variantSection(this, part), rulesSection(this, part)].filter(Boolean)];
+    const out = [...[this.contextSection(part)].filter(Boolean), this.linkSection(part), ...[variantSection(this, part), rulesSection(this, part)].filter(Boolean)];
     out.push(this.section("Allgemein",
       this.text("Name", part.name, (v) => app.edit("Name", () => { part.name = v; }, { rebuild: false })),
       this.text("Teilenummer", part.number, (v) => app.edit("Nummer", () => { part.number = v; }, { rebuild: false })),
@@ -790,6 +800,37 @@ export class Props {
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportKantteilDxf(f) }, "Abwicklung als DXF"))));
         const extras = part.features.filter((g) => SHEET_FEATURES.includes(g.type) && g.base === f.id);
         if (extras.length) out.push(this.section("Blech-Features", h("ul", { class: "hint" }, ...extras.map((g) => h("li", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); this.app.selectFeature(g.id); } }, g.name))))));
+        break;
+      }
+      case "blechkasten": {
+        const sh = r?.bodies?.find((b) => b.fid === f.id)?.meta?.sheet;
+        const srcs = (r?.bodies || []).filter((b) => b.kind === "solid" && !b.meta?.sheet && b.fid && b.fid !== f.id).map((b) => b.fid);
+        const conv = !!f.from;
+        const walls = wallSet(f.walls ?? "vorne; rechts; hinten; links");
+        const setWall = (k, on) => this.set(f, (x) => { const w = wallSet(x.walls ?? "vorne; rechts; hinten; links"); if (on) w.add(k); else w.delete(k); x.walls = BOX_SIDES.map(([s]) => s).filter((s) => w.has(s)).join("; "); }, "Wände");
+        const fname = (id) => part.features.find((g) => g.id === id)?.name || id;
+        out.push(this.section("Blechkasten",
+          this.seg("Maße aus", [["masse", "Maßen"], ["koerper", "Körper (In Blech umwandeln)"]], conv ? "koerper" : "masse", (v) => this.set(f, (x) => { if (v === "koerper") x.from = x.from || srcs.at(-1) || ""; else delete x.from; }, "Maße aus")),
+          ...(conv ? [
+            this.select("Körper", [["", "– wählen –"], ...[...new Set([...srcs, f.from].filter(Boolean))].map((id) => [id, fname(id)])], f.from || "", (v) => this.set(f, "from", v, "Körper")),
+            h("p", { class: "hint" }, "Der quaderförmige Körper wird durch den Blechkasten ersetzt; seine Außenmaße werden die Außenmaße des Kastens. Ändert sich der Körper, geht der Kasten mit."),
+          ] : [
+            E("Länge (X, außen)", "L", { allowNeg: false, allowZero: false }),
+            E("Breite (Y, außen)", "B", { allowNeg: false, allowZero: false }),
+            E("Höhe (Z, außen)", "H", { allowNeg: false, allowZero: false }),
+            this.vec3("Lage (Ecke unten)", f.pos || ["0", "0", "0"], (v) => this.set(f, "pos", v, "Lage")),
+          ]),
+          this.seg("Offen", [["oben", "oben"], ["unten", "unten"]], f.open === "unten" ? "unten" : "oben", (v) => this.set(f, "open", v, "Offen")),
+          ...BOX_SIDES.map(([k, label]) => this.check("Wand " + label, walls.has(k), (v) => setWall(k, v)))));
+        out.push(this.section("Ecken auftrennen",
+          this.select("Durchlaufend", BOX_THROUGH, f.through === "y" ? "y" : "x", (v) => this.set(f, "through", v, "Durchlaufend")),
+          E("Spalt an der Ecke", "gap", { allowNeg: false }),
+          h("p", { class: "hint" }, "An jeder Ecke zwischen zwei Wänden wird das Blech aufgetrennt: eine Wand läuft bis zur Außenkante durch, die andere endet um Blechdicke + Spalt davor. Im Boden bleibt ein Eckfreischnitt (Innenradius + Dicke im Quadrat), damit sich die Biegungen nicht stören.")));
+        out.push(this.section("Blech",
+          ...this.sheetRuleFields(f, part, E),
+          this.seg("Ansicht", [["gefaltet", "gefaltet"], ["abgewickelt", "abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
+          sh?.flatModel ? h("dl", { class: "kv" }, h("dt", {}, "Abwicklung"), h("dd", {}, `${fmtNum(sh.flat, 2)} × ${fmtNum(sh.length, 2)} mm`)) : null,
+          sh?.flatModel ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportKantteilDxf(f) }, "Abwicklung als DXF")) : null));
         break;
       }
       case "schraubverbindung": {
@@ -1805,6 +1846,7 @@ export class Props {
           h("button", { class: "btn", disabled: c.fixed, onclick: () => app.beginAlign("buendig") }, "Bündig"))),
       h("div", { class: "btn-row" },
         p ? h("button", { class: "btn", onclick: () => app.openDoc(p.id) }, "Bauteil bearbeiten") : null,
+        p?.kind === "part" ? h("button", { class: "btn", "data-act": "in-context", title: "Bauteil öffnen, die übrigen Teile der Baugruppe halbdurchsichtig daneben; ihre Kanten lassen sich in Skizzen projizieren", onclick: () => app.editInContext(asm.id, c.id) }, "Im Kontext bearbeiten") : null,
         h("button", { class: "btn", onclick: () => this.duplicateComponent(c.id) }, "Duplizieren"),
         h("button", { class: "btn", onclick: () => this.replaceComponentDialog(c.id) }, "Ersetzen…"),
         h("button", { class: "btn danger", onclick: () => this.deleteComponent(c.id) }, "Entfernen")),

@@ -97,6 +97,9 @@ export class Viewer {
     this.showCube = true;
     this.cameraListeners = [];
     this.pickables = []; // {mesh, edges[], key}
+    this.ghosts = []; // Nachbarteile beim Bearbeiten im Kontext (FU21): wie pickables, nur mit pick({ghosts})
+    this.ghostRoot = new THREE.Group();
+    this.scene.add(this.ghostRoot);
     this.edgeCache = null;
     this.sketchFrame = null;
     this.selection = { edges: [], faces: [], bodies: [], components: [] };
@@ -507,6 +510,31 @@ export class Viewer {
       this.applyDisplay(mesh, lines);
     });
     return g;
+  }
+
+  /**
+   * Nachbarteile beim Bearbeiten im Kontext (FU21): list = [{id, bodies, color, matrix}] halbdurchsichtig
+   * anzeigen; bleiben beim Neuaufbau des Bauteils stehen, zählen nicht zum Einpassen. Leere Liste räumt ab.
+   */
+  setGhosts(list = [], { opacity = 0.18 } = {}) {
+    disposeTree(this.ghostRoot);
+    this.ghostRoot.clear();
+    const keep = this.pickables;
+    this.pickables = [];
+    for (const c of list) {
+      if (!c.bodies?.length) continue;
+      const g = this.makePartGroup(c.bodies, c.color, "ghost:" + c.id, opacity);
+      g.matrixAutoUpdate = false;
+      g.matrix.fromArray(c.matrix);
+      g.userData.ghost = c.id;
+      this.ghostRoot.add(g);
+    }
+    for (const pk of this.pickables) pk.lines.material.color.set(0x5b7da8); // bläuliche Kanten: deutlich vom eigenen Bauteil abgesetzt
+    this.ghosts = this.pickables;
+    this.pickables = keep;
+    this.ghostRoot.updateMatrixWorld(true);
+    this.edgeCache = null;
+    this.render();
   }
 
   /** Baugruppe: comps = [{id, bodies, color, pos, rot}] */
@@ -1023,7 +1051,7 @@ export class Viewer {
     const w = this.container.clientWidth, h = this.container.clientHeight;
     const list = [];
     const v = new THREE.Vector3();
-    for (const pk of this.pickables) {
+    for (const pk of [...this.pickables, ...this.ghosts]) {
       const lines = pk.lines;
       lines.updateMatrixWorld();
       const pos = lines.geometry.attributes.position.array;
@@ -1034,7 +1062,7 @@ export class Viewer {
         scr[j] = ((v.x + 1) / 2) * w;
         scr[j + 1] = ((1 - v.y) / 2) * h;
       }
-      list.push({ pk, scr, ranges: lines.userData.edgeRanges });
+      list.push({ pk, scr, ranges: lines.userData.edgeRanges, ghost: this.ghosts.includes(pk) });
     }
     this.edgeCache = list;
     return list;
@@ -1044,20 +1072,20 @@ export class Viewer {
    * opts: {edges, faces}
    * -> {kind:'edge', key, body, edge, info} | {kind:'face', key, body, face, info, point, normal}
    */
-  pick(cx, cy, { edges = true, faces = true, vertices = false } = {}) {
+  pick(cx, cy, { edges = true, faces = true, vertices = false, ghosts = false } = {}) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const x = cx - rect.left, y = cy - rect.top;
     let faceHit = null;
     if (faces || edges) {
       const rc = this.raycaster(cx, cy);
-      const meshes = this.pickables.filter((p) => p.mesh.visible).map((p) => p.mesh);
+      const meshes = [...this.pickables, ...(ghosts ? this.ghosts : [])].filter((p) => p.mesh.visible).map((p) => p.mesh);
       const hits = rc.intersectObjects(meshes, false).filter((x) => !this.clipped(x.point));
       if (hits.length) faceHit = hits[0];
     }
     if (edges) {
       let best = null, bd = 7, bestV = null, bdV = 9;
-      for (const { pk, scr, ranges } of this.ensureEdgeCache()) {
-        if (!pk.lines.visible) continue;
+      for (const { pk, scr, ranges, ghost } of this.ensureEdgeCache()) {
+        if (!pk.lines.visible || (ghost && !ghosts)) continue;
         for (let ei = 0; ei < ranges.length; ei++) {
           const mid = this.clip && pk.lines.userData.edges[ei]?.mid;
           if (mid && this.clipped(new THREE.Vector3(...mid).applyMatrix4(pk.lines.matrixWorld))) continue;
@@ -1113,7 +1141,7 @@ export class Viewer {
       const fi = flist.findIndex((f) => tri * 3 >= f.start && tri * 3 < f.start + f.count);
       const info = flist[fi] || {};
       const nrm = faceHit.face ? faceHit.face.normal.clone().transformDirection(mesh.matrixWorld) : null;
-      const pk = this.pickables.find((p) => p.mesh === mesh);
+      const pk = this.findPickable(mesh);
       return { kind: "face", key: pk.key, body: pk.body, face: fi, info, point: faceHit.point.toArray(), normal: nrm ? nrm.toArray() : null, group: pk.group, mesh };
     }
     return null;
@@ -1128,8 +1156,8 @@ export class Viewer {
     const w = this.container.clientWidth, h = this.container.clientHeight;
     const v = new THREE.Vector3();
     if (edges) {
-      for (const { pk, scr, ranges } of this.ensureEdgeCache()) {
-        if (!pk.lines.visible) continue;
+      for (const { pk, scr, ranges, ghost } of this.ensureEdgeCache()) {
+        if (!pk.lines.visible || ghost) continue;
         for (let ei = 0; ei < ranges.length; ei++) {
           const info = pk.lines.userData.edges[ei];
           if (this.clip && info?.mid && this.clipped(new THREE.Vector3(...info.mid).applyMatrix4(pk.lines.matrixWorld))) continue;
@@ -1165,6 +1193,12 @@ export class Viewer {
     return out;
   }
 
+  /** Eintrag zu einem Treffer ({key, body}) oder Netz – auch unter den Nachbarteilen im Kontext */
+  findPickable(x) {
+    const ok = x?.isMesh ? (p) => p.mesh === x : (p) => p.key === x.key && p.body === x.body;
+    return this.pickables.find(ok) || this.ghosts.find(ok);
+  }
+
   clearHover() {
     disposeTree(this.hoverGroup);
     this.hoverGroup.clear();
@@ -1176,7 +1210,7 @@ export class Viewer {
     group.clear();
     for (const hit of hits) {
       if (!hit) continue;
-      const pk = this.pickables.find((p) => p.key === hit.key && p.body === hit.body);
+      const pk = this.findPickable(hit);
       if (!pk) continue;
       pk.group.updateMatrixWorld();
       if (hit.kind === "vertex") {

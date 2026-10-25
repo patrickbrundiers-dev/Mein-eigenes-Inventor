@@ -990,11 +990,18 @@ export class Sketcher {
   projectEdge(hit) {
     const info = hit.info;
     if (!info) return;
-    const pk = this.viewer.pickables.find((p) => p.key === hit.key && p.body === hit.body);
+    const pk = this.viewer.findPickable(hit);
+    if (!pk) return;
     const [s, c] = pk.lines.userData.edgeRanges[hit.edge];
     const arr = pk.lines.geometry.attributes.position.array;
+    // Weltlage der Kante: Nachbarteile im Kontext (FU21) stehen mit eigener Matrix neben dem Bauteil
+    pk.lines.updateMatrixWorld();
+    const mw = pk.lines.matrixWorld.elements;
     const pts3 = [];
-    for (let i = s; i < s + c; i++) pts3.push([arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2]]);
+    for (let i = s; i < s + c; i++) {
+      const x = arr[i * 3], y = arr[i * 3 + 1], z = arr[i * 3 + 2];
+      pts3.push([0, 1, 2].map((k) => mw[k] * x + mw[4 + k] * y + mw[8 + k] * z + mw[12 + k]));
+    }
     const loc = pts3.map((p) => toLocal(this.frame, p));
     const flat = loc.every((p) => Math.abs(p[2] - loc[0][2]) < 1e-3);
     if (info.type === "LINE" || !flat) {
@@ -1125,7 +1132,7 @@ export class Sketcher {
       return;
     }
     if (t === "project") {
-      const hit = this.viewer.pick(e.clientX, e.clientY, { edges: true, faces: false });
+      const hit = this.viewer.pick(e.clientX, e.clientY, { edges: true, faces: false, ghosts: true });
       if (hit?.kind === "edge") this.projectEdge(hit);
       else toast("Keine Modellkante getroffen");
       return;
@@ -1344,7 +1351,7 @@ export class Sketcher {
       return;
     }
     if (this.tool === "project") {
-      const hit = this.viewer.pick(e.clientX, e.clientY, { edges: true, faces: false });
+      const hit = this.viewer.pick(e.clientX, e.clientY, { edges: true, faces: false, ghosts: true });
       this.viewer.highlight(hit ? [hit] : []);
     }
     this.hover = this.hitTest(sx, sy, { dims: this.tool === "select" });
