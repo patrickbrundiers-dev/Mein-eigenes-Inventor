@@ -7,7 +7,7 @@ import { materialOf, materialList } from "../core/materials.js";
 import { finishLabel } from "../core/oberflaeche.js";
 import { uid } from "../core/examples.js";
 import { scaleLabel } from "./tree.js";
-import { v3, matApply, decomposePlacement } from "../core/geom.js";
+import { v3, matApply, matApplyDir, placementMatrix, decomposePlacement } from "../core/geom.js";
 import { flattenAssembly } from "../core/subasm.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
@@ -16,7 +16,7 @@ import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
 import { bomRows } from "./props.js";
 import { evaluate, resolveParams } from "../core/expr.js";
-import { holeTable, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision } from "../core/zeichnung.js";
+import { holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
 export const CAMS = {
@@ -365,7 +365,25 @@ export class DrawingEditor {
     if (!p?.bbox) return { rows: [], groups: [] };
     const items = this.sourceItems(d) || [];
     const specs = items.flatMap((it) => { const scope = resolveParams(it.part.params || []).values; return holeSpecs(it.part.features, (x) => evaluate(String(x), scope)); });
-    return holeTable((p.arcs || []).filter((a) => a.full), specs, [p.bbox.x0, p.bbox.y0]);
+    return holeTable(holeCircles((p.arcs || []).filter((a) => a.full), this.holeCenters(d, v)), specs, [p.bbox.x0, p.bbox.y0]);
+  }
+  /** Bohrungsachsen der Quelle in Blickrichtung der Ansicht als Ansichtspunkte; null, wenn der Kern keine Angaben liefert */
+  holeCenters(d, v) {
+    const cam = this.viewCam(d, v), dir = v3.norm(cam.dir);
+    let any = false;
+    const out = [];
+    for (const it of this.sourceItems(d) || []) {
+      const M = placementMatrix(it.pos, it.rot);
+      for (const b of this.app.results.get(it.part.id)?.bodies || []) {
+        if (!b.props?.holes) continue;
+        any = true;
+        for (const hl of b.props.holes) {
+          const dw = v3.norm(matApplyDir(M, hl.d));
+          if (Math.abs(v3.dot(dw, dir)) > 0.999) out.push({ c: projectPoint(matApply(M, hl.p), cam.dir, cam.up), r: hl.r });
+        }
+      }
+    }
+    return any ? out : null;
   }
   renderHoleTable(d, ht, interactive) {
     const v = d.views.find((x) => x.id === ht.view);
@@ -414,7 +432,7 @@ export class DrawingEditor {
       const scope = resolveParams(it.part.params || []).values;
       return it.part.features.filter((f) => f.type === "chamfer" && !f.suppressed).map((f) => { try { return evaluate(String(f.radius), scope); } catch { return null; } }).filter((x) => x > 0);
     }))];
-    const sug = noteSuggestion(xf.from(sx, sy), { circles: (p.arcs || []).filter((a) => a.full), lines: p.visible, specs, chamfers, pick: 1.8 / (v.scale * this.zoom) });
+    const sug = noteSuggestion(xf.from(sx, sy), { circles: holeCircles((p.arcs || []).filter((a) => a.full), this.holeCenters(d, v)), lines: p.visible, specs, chamfers, pick: 1.8 / (v.scale * this.zoom) });
     const text = await promptDialog(sug.kind === "bohrung" ? "Bohrungshinweis" : sug.kind === "fase" ? "Fasenhinweis" : "Hinweis", "Text", sug.text);
     if (!text) return;
     const [ax, ay] = xf.to(...q);

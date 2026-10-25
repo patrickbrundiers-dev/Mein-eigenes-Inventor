@@ -1620,7 +1620,23 @@ export function createKernel(R) {
     try { const vp = R.measureShapeVolumeProperties(shape); volume = vp.volume; center = vp.centerOfMass; } catch { /* ignore */ }
     try { area = R.measureArea(shape); } catch { /* ignore */ }
     const bb = shape.boundingBox;
-    return { volume, area, center, bbox: bb.bounds };
+    let holes = [];
+    try { holes = holeAxes(shape); } catch { /* ignore */ }
+    return { volume, area, center, bbox: bb.bounds, holes };
+  }
+  /** Bohrungen eines Körpers: Zylinderflächen, deren Normale zur Achse zeigt (innen) → [{p, d, r}] */
+  function holeAxes(shape) {
+    const out = [];
+    for (const fc of shape.faces) {
+      if (fc.geomType !== "CYLINDRE" && fc.geomType !== "CYLINDER") continue;
+      try {
+        const ax = cylinderAxis(fc);
+        const q = tuple(fc.pointOnSurface(0.5, 0.5)), n = tuple(fc.normalAt(q));
+        const foot = v3.add(ax.axisP, v3.mul(ax.axisD, v3.dot(v3.sub(q, ax.axisP), ax.axisD)));
+        if (v3.dot(v3.sub(q, foot), n) < 0) out.push({ p: foot, d: ax.axisD, r: ax.radius });
+      } catch { /* ignore */ }
+    }
+    return out;
   }
 
   /**

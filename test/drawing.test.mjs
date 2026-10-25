@@ -415,6 +415,14 @@ test("Bohrungstabelle: Kennbuchstaben je Ø, Lage ab Nullpunkt, Gewinde aus dem 
   const cells = holeTableCells(holeTable(circles, [], [10, 10]));
   assert.deepEqual(cells[0], ["Pos.", "X", "Y", "Bohrung"]);
   assert.deepEqual(cells[2], ["B1", "10", "10", "Ø11"]);
+  // gleiche Ø, aber verschiedene Angaben (Durchgang und Sackloch): nur der Ø, keine falsche Tiefe
+  const amb = holeTable(circles, [{ r: 5.5, hole: { d: 11 } }, { r: 5.5, hole: { d: 11, depth: 8 } }], [0, 0]);
+  assert.equal(amb.groups[1].desc, "Ø11");
+  // nur Kreise mit Bohrungsachse aus dem Modell (Wellenende/Zapfen fällt weg); ohne Angaben alle
+  const { holeCircles } = await import("../src/core/zeichnung.js");
+  assert.deepEqual(holeCircles(circles, [{ c: [20, 20] }]).map((c) => c.cx), [20]);
+  assert.equal(holeCircles(circles, []).length, 0);
+  assert.equal(holeCircles(circles, null).length, circles.length);
 });
 
 test("Hilfsansicht: Blick senkrecht auf die schräge Kante, von außen", async () => {
@@ -442,6 +450,9 @@ test("Hinweise: Bohrung, Fase oder frei; Änderungsindex", async () => {
   assert.equal(nextRevision([{ rev: "A" }, { rev: "B" }]), "C");
   assert.equal(nextRevision([]), "A");
   assert.equal(nextRevision([], "A"), "B", "erste Änderung nach dem Schriftfeld-Index");
+  assert.equal(nextRevision([{ rev: "B" }], "A"), "C", "nach B folgt C, nicht das freie A");
+  assert.equal(nextRevision([{ rev: "A" }, { rev: "c" }]), "D");
+  assert.equal(noteSuggestion([0, 0], { circles, specs: [{ r: 5.5, hole: { d: 11 } }, { r: 5.5, hole: { d: 11, depth: 8 } }] }).text, "2× Ø11", "mehrdeutig: nur Ø");
   assert.deepEqual(validateRevision({ rev: " b ", text: " Bohrung geändert ", datum: "25.10.2026" }).value, { rev: "B", datum: "25.10.2026", text: "Bohrung geändert", name: "" });
   assert.equal(validateRevision({ rev: "B", text: "" }).ok, false);
   assert.equal(validateRevision({ rev: "B-1", text: "x" }).ok, false);

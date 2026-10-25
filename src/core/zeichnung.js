@@ -25,12 +25,26 @@ export function holeTable(circles, specs = [], origin = [0, 0], { tol = 1e-3 } =
   radii.forEach((r, gi) => {
     const tag = letterOf(gi);
     const list = uniq.filter((c) => Math.abs(c.r - r) < tol * 1.5).sort((a, b) => a.cx - b.cx || b.cy - a.cy);
-    const spec = specs.find((s) => Math.abs(s.r - r) < 0.05);
-    const desc = spec ? holeText(spec.hole) : "Ø" + fmt(r * 2);
+    const desc = specText(specs, r) || "Ø" + fmt(r * 2);
     groups.push({ tag, desc, r, count: list.length });
     list.forEach((c, i) => rows.push({ tag: tag + (i + 1), group: tag, cx: c.cx, cy: c.cy, x: c.cx - origin[0], y: c.cy - origin[1], desc }));
   });
   return { groups, rows };
+}
+
+/** Angabe aus den Bohrungs-Features für Radius r, nur wenn alle passenden Features gleich lauten (sonst null → nur Ø) */
+function specText(specs, r, n) {
+  const texts = [...new Set(specs.filter((s) => Math.abs(s.r - r) < 0.05).map((s) => holeText(s.hole, n)))];
+  return texts.length === 1 ? texts[0] : null;
+}
+
+/**
+ * Nur Kreise, die im Modell Bohrungen sind (Zylinderfläche innen, Achse in Blickrichtung): holes = Mittelpunkte in
+ * Ansichtskoordinaten [{c: [u, v]}]. Ohne Angaben (holes == null) bleiben alle Kreise.
+ */
+export function holeCircles(circles, holes, tol = 0.05) {
+  if (!holes) return circles || [];
+  return (circles || []).filter((c) => holes.some((h) => Math.hypot(h.c[0] - c.cx, h.c[1] - c.cy) < tol));
 }
 
 /** Zellen der Bohrungstabelle als Text (Kopfzeile + Zeilen) */
@@ -85,9 +99,8 @@ export function noteSuggestion(q, { circles = [], lines = [], specs = [], chamfe
   const c = circles.filter((k) => Math.abs(Math.hypot(q[0] - k.cx, q[1] - k.cy) - k.r) < pick || Math.hypot(q[0] - k.cx, q[1] - k.cy) < Math.min(k.r, pick))
     .sort((x, y) => x.r - y.r)[0];
   if (c) {
-    const spec = specs.find((s) => Math.abs(s.r - c.r) < 0.05);
     const n = circles.filter((k) => Math.abs(k.r - c.r) < 1e-3).length;
-    return { kind: "bohrung", text: spec ? holeText(spec.hole, n) : (n > 1 ? n + "× " : "") + "Ø" + fmt(c.r * 2) };
+    return { kind: "bohrung", text: specText(specs, c.r, n) || (n > 1 ? n + "× " : "") + "Ø" + fmt(c.r * 2) };
   }
   const s = nearestSegment(lines, q, pick);
   if (s && chamfers.length) {
@@ -101,10 +114,12 @@ export function noteSuggestion(q, { circles = [], lines = [], specs = [], chamfe
 
 /** Nächster Änderungsindex nach DIN EN ISO 7200 (A, B, … Z, AA …); current: Index im Schriftfeld, solange die Tabelle leer ist */
 export function nextRevision(list = [], current = "") {
-  const used = list.map((r) => String(r.rev || ""));
+  const used = list.map((r) => String(r.rev || "").trim().toUpperCase());
   if (!list.length && current) used.push(String(current).trim().toUpperCase()); // erste Änderung folgt auf den Index im Schriftfeld
-  for (let i = 0; i < 702; i++) { const l = letterOf(i); if (!used.includes(l)) return l; }
-  return "?";
+  // auf den höchsten vergebenen Buchstaben folgen (nie rückwärts, auch wenn vorne einer fehlt)
+  let top = -1;
+  for (let i = 0; i < 702; i++) if (used.includes(letterOf(i))) top = i;
+  return top + 1 < 702 ? letterOf(top + 1) : "?";
 }
 
 /** Änderungszeile prüfen → {ok, value} | {ok:false, error} */
