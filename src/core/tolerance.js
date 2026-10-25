@@ -44,6 +44,7 @@ export function generalTolerance(cls, nominal, kind = "lin") {
   return row ? row[1][cls] : null;
 }
 
+const MIN_TOL = 0.001; // Auflösung der Anzeige (drei Nachkommastellen)
 const num = (v, d = 3) => {
   const s = (Math.round(v * 10 ** d) / 10 ** d).toFixed(d).replace(/\.?0+$/, "");
   return s.replace(".", ",").replace(/^-/, "−");
@@ -67,7 +68,7 @@ export function validateTolerance(t) {
     case "allg": return { ok: true, value: { art: "allg" } };
     case "sym": {
       const v = Math.abs(n(t.v));
-      if (!(v > 0 && v < 1000)) return { ok: false, error: "± muss größer als 0 sein" };
+      if (!(v >= MIN_TOL && v < 1000)) return { ok: false, error: "± mindestens 0,001 mm" };
       return { ok: true, value: { art: "sym", v } };
     }
     case "abm": {
@@ -75,6 +76,7 @@ export function validateTolerance(t) {
       if (!Number.isFinite(o) || !Number.isFinite(u)) return { ok: false, error: "Oberes und unteres Abmaß als Zahl angeben" };
       if (!(o > u)) return { ok: false, error: "Oberes Abmaß muss größer als das untere sein" };
       if (Math.abs(o) >= 1000 || Math.abs(u) >= 1000) return { ok: false, error: "Abmaß zu groß" };
+      if ([o, u].some((x) => x !== 0 && Math.abs(x) < MIN_TOL)) return { ok: false, error: "Abmaße auf 0,001 mm genau (oder 0)" };
       return { ok: true, value: { art: "abm", o, u } };
     }
     case "pass": {

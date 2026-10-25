@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { generalTolerance, classOf, classText, validateTolerance, toleranceText, CLASSES } from "../src/core/tolerance.js";
 import { settingDef, validateValue, CATEGORIES } from "../src/core/settings.js";
+import { DxfWriter } from "../src/core/dxf.js";
 
 test("ISO 2768-1: Längenmaße je Klasse und Bereichsgrenzen", () => {
   assert.equal(generalTolerance("m", 50), 0.3);
@@ -41,6 +42,9 @@ test("Toleranz am Maß: prüfen und Text", () => {
   assert.deepEqual(validateTolerance({ art: "" }), { ok: true, value: null });
   assert.deepEqual(validateTolerance({ art: "sym", v: "0,1" }), { ok: true, value: { art: "sym", v: 0.1 } });
   assert.equal(validateTolerance({ art: "sym", v: "0" }).ok, false);
+  assert.equal(validateTolerance({ art: "sym", v: "0,0004" }).ok, false, "unter der Anzeigegenauigkeit");
+  assert.equal(validateTolerance({ art: "abm", o: "0,0002", u: "0" }).ok, false);
+  assert.equal(validateTolerance({ art: "abm", o: "0,001", u: "0" }).ok, true);
   assert.deepEqual(validateTolerance({ art: "abm", o: "0,2", u: "−0,1" }).value, { art: "abm", o: 0.2, u: -0.1 });
   assert.equal(validateTolerance({ art: "abm", o: "-0,1", u: "0,2" }).ok, false);
   assert.equal(validateTolerance({ art: "abm", o: "x", u: "0" }).ok, false);
@@ -73,4 +77,10 @@ test("Einstellungen: Klasse und Nachkommastellen, Dokument und Kernel ohne gepla
     assert.equal(c.status, "aktiv", id);
     assert.ok(!c.planned?.length, id);
   }
+});
+
+test("DXF (R12): Minus und Mal als ASCII, ± als %%p", () => {
+  const out = new DxfWriter().layer("MASSE", 7).text(0, 0, 3.5, "5× Ø6,8 100 +0,2/−0,1 ±0,3", "MASSE").toString();
+  assert.match(out, /\n5x %%c6,8 100 \+0,2\/-0,1 %%p0,3\r?\n/);
+  assert.ok(!out.includes("?0,1"));
 });

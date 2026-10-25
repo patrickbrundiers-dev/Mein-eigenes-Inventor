@@ -531,8 +531,10 @@ export class DrawingEditor {
     const xf = this.viewXf(v);
     const g = svgEl("g", { "data-dim": m.id, class: interactive ? "dw-dimgrp" + (this.sel?.type === "dim" && this.sel.id === m.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
     const val = this.dimValue(m);
-    const txt = (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m)
-      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + toleranceText(m.tol, val, classOf(d.title?.toleranz), m.kind === "rad" ? "rad" : "lin") + (m.suffix || "");
+    const tol = toleranceText(m.tol, val, classOf(d.title?.toleranz), m.kind === "rad" ? "rad" : "lin");
+    // Bohrungs- und Teilungsangaben bleiben, wie sie sind (Nennmaße der Bohrung); die Toleranz kommt dahinter
+    const txt = (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m) + tol
+      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + tol + (m.suffix || "");
     const arrowHead = (x, y, ux, uy) => {
       const L = 3, w = 0.9;
       return svgEl("path", { d: `M${r3(x)} ${r3(y)}L${r3(x - ux * L + uy * w)} ${r3(y - uy * L - ux * w)}L${r3(x - ux * L - uy * w)} ${r3(y - uy * L + ux * w)}Z`, fill: "#111a24", stroke: "none" });
