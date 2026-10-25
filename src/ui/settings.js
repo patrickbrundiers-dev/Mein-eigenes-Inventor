@@ -44,7 +44,7 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
       input.classList.toggle("bad", !r.ok);
       dflt.hidden = prefs.get(s.key) === s.default;
     };
-    let input;
+    let input, after = null;
     if (s.type === "bool") {
       input = h("input", { type: "checkbox", checked: !!v });
       input.addEventListener("change", () => commit(input.checked));
@@ -57,6 +57,10 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
       input = h("select", { class: "inp" }, ...(known ? [] : [h("option", { value: v, selected: true }, v + " (fehlt)")]),
         ...list.map((m) => h("option", { value: m.key, selected: m.key === v ? true : undefined }, m.label + (m.source === "user" ? " (eigen)" : ""))));
       input.addEventListener("change", () => commit(input.value));
+    } else if (s.type === "folder") {
+      input = h("input", { class: "inp set-folder", value: v, spellcheck: "false", placeholder: "zuletzt benutzter Ordner" });
+      input.addEventListener("change", () => commit(input.value));
+      if (window.werkcad?.pickFolder) after = h("button", { class: "btn", onclick: async () => { const d = await window.werkcad.pickFolder({ dir: prefs.get(s.key) || undefined }); if (d) { input.value = d; commit(d); } } }, "Wählen…");
     } else if (s.type === "name") {
       input = h("input", { class: "inp", value: v, spellcheck: "false", placeholder: s.allowEmpty ? "leer = keine" : "" });
       input.addEventListener("change", () => commit(input.value));
@@ -70,7 +74,7 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
     const dflt = h("button", { class: "set-default", title: "Auf Standardwert zurücksetzen", hidden: v === s.default, onclick: () => { prefs.reset([s.key]); render(); } }, "Standard");
     return h("div", { class: "set-row", "data-key": s.key },
       h("label", {}, s.label, s.unit && s.type !== "enum" ? h("span", { class: "hint" }, ` (${s.unit})`) : null),
-      h("div", { class: "set-input" }, input, dflt),
+      h("div", { class: "set-input" }, input, after, dflt),
       s.help ? h("div", { class: "hint set-help" }, s.help) : null,
       err);
   };

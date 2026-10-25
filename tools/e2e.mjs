@@ -1804,6 +1804,24 @@ try {
     step("Neu berechnen mit F5, Berechnungsprotokoll", h0 && h1 === h0 && /Nicht aktuell/.test(status) && h2 !== h0 && stale === 0 && rows >= 1 && cell === "Kernprobe", JSON.stringify({ h0, h1, h2, status, stale, rows, cell }));
   }
 
+  // Restpunkte (Werkzeuge Stufe 29): Standardebene für die erste Skizze, Beleuchtung, Standardordner im Center
+  {
+    await evalApp(() => { const app = window.__werkcad; app.prefs.set("skizze.standardebene", "XZ"); app.prefs.set("ansicht.beleuchtung", "kontrast"); app.newPart("Ebenenprobe"); });
+    await idle();
+    await page.keyboard.press("s");
+    await page.waitForTimeout(400);
+    const sk = await evalApp(() => { const app = window.__werkcad; const f = app.activeDoc().features.find((x) => x.type === "sketch"); return { mode: app.mode, plane: f?.plane?.ref, amb: app.viewer.lights.ambient.intensity }; });
+    await evalApp(() => window.__werkcad.finishSketch(true));
+    await page.waitForTimeout(200);
+    await evalApp(() => window.__werkcad.props.settingsDialog({ category: "allgemein" }));
+    await page.waitForTimeout(200);
+    const folderRow = await page.locator('.dialog .set-row[data-key="allgemein.ordner"] input').count();
+    await page.keyboard.press("Escape");
+    await evalApp(() => window.__werkcad.prefs.reset(["skizze.standardebene", "ansicht.beleuchtung"]));
+    const amb0 = await evalApp(() => window.__werkcad.viewer.lights.ambient.intensity);
+    step("Standardebene, Beleuchtung, Standardordner", sk.mode === "sketch" && sk.plane === "XZ" && sk.amb === 0.45 && amb0 === 0.95 && folderRow === 1, JSON.stringify({ sk, amb0, folderRow }));
+  }
+
   // Skizze säubern (MegaCAD-Abgleich M7): lose Ecken, doppelte Linie, leicht schief → eine geschlossene Kontur
   {
     await evalApp(() => window.__werkcad.newPart("Saeubern"));

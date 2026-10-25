@@ -336,6 +336,7 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .set-row > label { font-size: 13px; }
 .set-input { display: flex; gap: 6px; align-items: center; }
 .set-input .inp.num { font-family: var(--din); max-width: 110px; }
+.set-input .inp.set-folder { flex: 1; min-width: 0; }
 .set-color { width: 56px; height: 26px; padding: 1px; }
 .set-default { border: 0; background: none; color: var(--dye); cursor: pointer; font-size: 11px; text-decoration: underline; }
 .set-help { grid-column: 1 / -1; margin: 0; }

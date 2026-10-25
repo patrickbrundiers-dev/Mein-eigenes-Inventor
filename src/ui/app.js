@@ -428,6 +428,9 @@ export class App {
   beginSketchCreation() {
     const part = this.activeDoc();
     if (!part || part.kind !== "part" || this.linkedReadOnly(part)) return;
+    // Einstellung Standardebene: im leeren Bauteil gleich auf der Ebene beginnen
+    const std = this.prefs.get("skizze.standardebene");
+    if (std !== "waehlen" && !(this.results.get(part.id)?.bodies?.length)) return this.createSketch({ ref: std });
     this.pick = { kind: "sketchPlane" };
     const bb = this.viewer.contentBox();
     const size = bb.isEmpty() ? 200 : Math.max(100, bb.getSize(new (bb.min.constructor)()).length() * 0.7);

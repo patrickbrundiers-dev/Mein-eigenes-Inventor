@@ -85,11 +85,11 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 
 | Kategorie | Status | Bemerkung |
 |---|---|---|
-| A Allgemein | teilweise | Autosave-Wartezeit, Lösch-Rückfrage, Dezimalstellen; Sprache/Ordner geplant |
+| A Allgemein | teilweise | Autosave-Wartezeit, Lösch-Rückfrage, Dezimalstellen, Standardordner (Stufe 29); Sprache bewusst nur Deutsch |
 | B Dokument und Modell | teilweise | Stufe 26: Namensregeln mit Platzhaltern, Sachnummer, Werkstoff neuer Bauteile, Inhalt neuer Projekte; Modelltoleranz bewusst nicht (Kernel) |
-| C Skizzen | teilweise | Rasterfang, Rasterweite, Fangradius, Symbole, automatische Bedingungen je Art, Bestimmtheit farbig (Stufe 16) |
-| D 3D-Ansicht | teilweise | Projektion, Darstellungsmodus, Qualität, Maus, Zoom/Drehen, Raster, ViewCube, Farben |
-| E Werkzeuge und Tastatur | teilweise | Kürzel verwalten, Konflikte, Werkzeugsuche, Schnellzugriff, Standardwerte je Werkzeug (Stufe 15), Menüband anordnen (Stufe 25) |
+| C Skizzen | ja | Rasterfang, Rasterweite, Fangradius, Symbole, automatische Bedingungen je Art, Bestimmtheit farbig (Stufe 16), Standardebene (Stufe 29) |
+| D 3D-Ansicht | ja | Projektion, Darstellungsmodus, Qualität, Maus, Zoom/Drehen, Raster, ViewCube, Farben, Beleuchtung (Stufe 29) |
+| E Werkzeuge und Tastatur | ja | Kürzel verwalten, Konflikte, Werkzeugsuche, Schnellzugriff, Standardwerte je Werkzeug (Stufe 15), Menüband anordnen (Stufe 25) |
 | F Kernel | teilweise | Stufe 28: automatisches Neuberechnen abschaltbar (F5), Berechnungsprotokoll; bewusst keine Toleranzen ohne Absicherung |
 | G Materialien | ja | Stufe 24: eigene Werkstoffe (Name, Kürzel, Dichte, Farbe, Werkstoffnummer) anlegen, bearbeiten, duplizieren, löschen; Import/Export als JSON; benutzte eigene Werkstoffe als Kopie in der Projektdatei |
 | H Blech | fehlt | ADR-0002 |
@@ -98,7 +98,7 @@ Umgesetzt in Stufe 1, Details in [../architecture/einstellungen.md](../architect
 | K Dateien und Datensicherheit | ja | atomar, Autosave, Migration; Stufe 27: Anzahl Sicherungen (.bak, .bak2 …), schreibgeschützt öffnen (auch automatisch bei gesperrter Datei), Projekt paketieren |
 | L Updates | vorhanden | jetzt im Center |
 | M Datenschutz | vorhanden | keine Telemetrie; Protokoll lokal |
-| N Darstellung | teilweise | Oberflächengröße, Animation, Farbschema hell/dunkel/wie Windows (Stufe 20) |
+| N Darstellung | ja | Oberflächengröße, Animation, Farbschema hell/dunkel/wie Windows (Stufe 20); Tooltip-Verzögerung gibt Windows vor |
 | Versionierung, Migration, Validierung, Import/Export, Trennung Benutzer/Geheimnisse | vorhanden (neu) | `src/core/settings.js` |
 
 ## Stufen dieses Arbeitspakets
@@ -135,3 +135,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 26 | Dokument-Vorgaben: Namensregeln ({n}, {projekt}, {datum}, {quelle}), Sachnummer, Werkstoff neuer Bauteile, neues Projekt mit Bauteil/Baugruppe/leer | Unit-Test `naming.js`, Oberflächentest |
 | 27 | Dateien: Anzahl Sicherungen, schreibgeschützt öffnen, Projekt paketieren (verknüpfte Bauteile eingebettet) | Unit-Test Sicherungen/Paket, Desktop-Rauchtest, Oberflächentest |
 | 28 | Kernel: automatisches Neuberechnen abschaltbar, F5 »Neu berechnen«, Berechnungsprotokoll (Dauer, Features, Meldungen) | Unit-Test `buildlog.js`, Oberflächentest |
+| 29 | Restpunkte: Standardordner für Projekte, Standardebene der ersten Skizze, Beleuchtung (Standard/kontrastreich/weich) | Unit-Test Beleuchtung/Einstellungen, Oberflächentest |

@@ -45,7 +45,7 @@ export class Files {
     try {
       let loaded, file, locked = false;
       if (this.bridge) {
-        const r = path ? await this.bridge.readProject(path) : await this.bridge.openProject();
+        const r = path ? await this.bridge.readProject(path) : await this.bridge.openProject({ dir: this.app.prefs.get("allgemein.ordner") || undefined });
         if (!r) return;
         file = r.path;
         locked = !!r.readOnly;
@@ -98,7 +98,7 @@ export class Files {
     const defaultName = safeName(app.project.name) + ".wcad";
     try {
       if (this.bridge) {
-        const r = await this.bridge.saveProject({ path: saveAs ? null : app.filePath, text, defaultName, backups: app.prefs.get("dateien.sicherungen") });
+        const r = await this.bridge.saveProject({ path: saveAs ? null : app.filePath, text, defaultName, backups: app.prefs.get("dateien.sicherungen"), dir: app.prefs.get("allgemein.ordner") || undefined });
         if (!r) return false;
         app.filePath = r.path;
         app.readOnly = false;
