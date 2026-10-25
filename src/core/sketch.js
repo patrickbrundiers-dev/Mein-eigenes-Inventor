@@ -1,6 +1,19 @@
 // Skizzen-Datenmodell: Profile (geschlossene Konturen) finden, Punkte für Bohrungen, Hilfen
 
 import { ellipseGeom, ellipseSamples } from "./ellipse.js";
+import { splineBeziers } from "./spline.js";
+
+/** Kontrollpunkte eines Splines als [[x,y]…] (fehlende Punkte → null) */
+export function splineCtrl(e, pts) {
+  const out = [];
+  for (const id of e.pts || []) { const p = pts.get(id); if (!p) return null; out.push([p.x, p.y]); }
+  return out.length >= 2 ? out : null;
+}
+/** Bézier-Abschnitte {t:"bez", c1, c2, to} eines Splines, wahlweise rückwärts */
+function splineSegs(ctrl, reverse) {
+  const B = splineBeziers(reverse ? [...ctrl].reverse() : ctrl);
+  return B.segs.map(([c1, c2, to]) => ({ t: "bez", c1, c2, to }));
+}
 
 export function newSketch(id, name, plane) {
   return { id, type: "sketch", name, plane, offset: "0", points: [], entities: [], constraints: [] };
@@ -33,7 +46,12 @@ function sampleLoop(loop) {
   let cur = loop.start;
   for (const s of loop.segs) {
     if (s.t === "line") pts.push(s.to);
-    else {
+    else if (s.t === "bez") {
+      for (let i = 1; i <= 12; i++) {
+        const t = i / 12, u = 1 - t;
+        pts.push([u * u * u * cur[0] + 3 * u * u * t * s.c1[0] + 3 * u * t * t * s.c2[0] + t * t * t * s.to[0], u * u * u * cur[1] + 3 * u * u * t * s.c1[1] + 3 * u * t * t * s.c2[1] + t * t * t * s.to[1]]);
+      }
+    } else {
       // Bogen über 3 Punkte abtasten
       const c = circleFrom3(cur, s.mid, s.to);
       if (!c) { pts.push(s.to); cur = s.to; continue; }
@@ -84,6 +102,7 @@ function pointInPoly(pt, poly) {
 /**
  * Findet geschlossene Konturen in einer Skizze.
  * Rückgabe: {regions: [{outer, holes:[]}], loops, errors:[], openPoints:[ids]}
+ * Segmente: {t:'line',to} | {t:'arc',to,mid} | {t:'bez',c1,c2,to} (Spline als kubische Bézier-Abschnitte)
  * loop: {kind:'circle', c:[x,y], r} | {kind:'ellipse', c, a, b, rot (Bogenmaß, Richtung der Halbachse a)} | {kind:'path', start:[x,y], segs:[{t:'line',to}|{t:'arc',to,mid}]}
  */
 export function extractProfiles(sketch) {
@@ -112,6 +131,16 @@ export function extractProfiles(sketch) {
       if (!c || !a) continue;
       const g = ellipseGeom(c, a, e.r);
       if (g.A > 1e-9 && g.B > 1e-9) loops.push({ kind: "ellipse", c: [c.x, c.y], a: g.A, b: g.B, rot: g.rot, ents: [e.id] });
+    } else if (e.type === "spline") {
+      const ctrl = splineCtrl(e, pts);
+      if (!ctrl) continue;
+      const a = find(e.p1), b = find(e.p2);
+      if (a === b) { // geschlossener Spline: eigene Kontur
+        loops.push({ kind: "path", start: ctrl[0], segs: splineSegs(ctrl, false), ents: [e.id] });
+        loops[loops.length - 1].segs.at(-1).to = ctrl[0];
+        continue;
+      }
+      edges.push({ e, a, b });
     } else if (e.type === "line" || e.type === "arc") {
       const a = find(e.p1), b = find(e.p2);
       if (a === b) continue;
@@ -165,7 +194,11 @@ export function extractProfiles(sketch) {
       const e = curEdge.e;
       ents.push(e.id);
       if (e.type === "line") segs.push({ t: "line", to: P(next) });
-      else {
+      else if (e.type === "spline") {
+        const ss = splineSegs(splineCtrl(e, pts), curEdge.a !== curNode);
+        ss[ss.length - 1].to = P(next);
+        segs.push(...ss);
+      } else {
         const c = pts.get(e.c), p1 = pts.get(e.p1), p2 = pts.get(e.p2);
         const g = arcGeometry(c, p1, p2);
         segs.push({ t: "arc", to: P(next), mid: [g.mid.x, g.mid.y] });
@@ -235,7 +268,10 @@ export function deleteEntities(sketch, ids) {
   const del = new Set(ids);
   sketch.entities = sketch.entities.filter((e) => !del.has(e.id));
   const usedPts = new Set();
-  for (const e of sketch.entities) for (const k of ["p1", "p2", "c", "p", "a"]) if (e[k]) usedPts.add(e[k]);
+  for (const e of sketch.entities) {
+    for (const k of ["p1", "p2", "c", "p", "a"]) if (e[k]) usedPts.add(e[k]);
+    for (const id of e.pts || []) usedPts.add(id);
+  }
   const delPts = new Set(sketch.points.filter((p) => !usedPts.has(p.id)).map((p) => p.id));
   sketch.points = sketch.points.filter((p) => !delPts.has(p.id));
   sketch.constraints = sketch.constraints.filter((c) => {
@@ -252,6 +288,7 @@ export function sketchBounds(sketch) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const pts = new Map(sketch.points.map((p) => [p.id, p]));
   for (const p of sketch.points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  // Splines liegen in der konvexen Hülle ihrer Kontrollpunkte – die Punkte oben genügen
   for (const e of sketch.entities) if (e.type === "ellipse") { const c = pts.get(e.c), m = Math.max(Math.hypot(pts.get(e.a).x - c.x, pts.get(e.a).y - c.y), e.r); x0 = Math.min(x0, c.x - m); x1 = Math.max(x1, c.x + m); y0 = Math.min(y0, c.y - m); y1 = Math.max(y1, c.y + m); }
   for (const e of sketch.entities) if (e.type === "circle") { const c = pts.get(e.c); x0 = Math.min(x0, c.x - e.r); x1 = Math.max(x1, c.x + e.r); y0 = Math.min(y0, c.y - e.r); y1 = Math.max(y1, c.y + e.r); }
   if (!Number.isFinite(x0)) return null;

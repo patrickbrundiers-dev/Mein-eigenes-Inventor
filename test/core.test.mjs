@@ -747,3 +747,37 @@ test("Ellipse: Halbachsen und Winkel bestimmen die Ellipse, Punkt auf Ellipse, T
   const dxf = sketchToDxf(sk);
   assert.ok(/POLYLINE/.test(dxf) && (dxf.match(/VERTEX/g) || []).length >= 64);
 });
+
+import { splineBeziers, splineSamples, splineNearest } from "../src/core/spline.js";
+test("Spline: Enden auf Kontrollpunkten, tangential an Linie, Punkt auf Spline, Profil, DXF", () => {
+  const B = splineBeziers([[0, 0], [10, 20], [30, 25], [40, 0], [60, -10]]);
+  assert.equal(B.segs.length, 2);
+  assert.deepEqual(B.start, [0, 0]); assert.deepEqual(B.segs[1][2], [60, -10]);
+  // Ende tangential zum Kontrollpolygon
+  const c1 = B.segs[0][0];
+  near(Math.atan2(c1[1], c1[0]), Math.atan2(20, 10));
+  // Skizze: Linie (0,0)→(-30,0), Spline ab (0,0) tangential, Punkt auf Spline
+  const sk = { id: "s", type: "sketch", plane: "XY", points: [{ id: "l", x: -30, y: 0 }, { id: "a", x: 0, y: 0 }, { id: "b", x: 10, y: 15 }, { id: "c", x: 30, y: 25 }, { id: "d", x: 40, y: 0 }, { id: "q", x: 20, y: 30 }],
+    entities: [{ id: "ln", type: "line", p1: "l", p2: "a" }, { id: "sp", type: "spline", pts: ["a", "b", "c", "d"], p1: "a", p2: "d" }], constraints: [] };
+  sk.constraints.push({ id: "f1", type: "fix", p: "l", x: -30, y: 0 }, { id: "f2", type: "fix", p: "a", x: 0, y: 0 }, { id: "t", type: "tangent", e1: "sp", e2: "ln", end: "start" }, { id: "on", type: "pointOnCircle", p: "q", e: "sp" });
+  const r = solveSketch(sk, {});
+  assert.ok(r.ok, JSON.stringify(r));
+  const P = Object.fromEntries(sk.points.map((p) => [p.id, p]));
+  near(P.b.y, 0, 1e-6); // zweiter Kontrollpunkt auf der Linienrichtung
+  near(splineNearest([P.a, P.b, P.c, P.d].map((p) => [p.x, p.y]), P.q.x, P.q.y).d, 0, 1e-6);
+  // geschlossener Spline als eigene Kontur, Fläche ≈ Polygon der Abtastung
+  const ring = { id: "r", type: "sketch", plane: "XY", points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 40, y: -10 }, { id: "c", x: 50, y: 30 }, { id: "d", x: 10, y: 40 }],
+    entities: [{ id: "sp", type: "spline", pts: ["a", "b", "c", "d", "a"], p1: "a", p2: "a" }], constraints: [] };
+  const prof = extractProfiles(ring);
+  assert.equal(prof.regions.length, 1, JSON.stringify(prof.errors));
+  assert.ok(prof.regions[0].outer.segs.every((s) => s.t === "bez"));
+  const S = splineSamples([[0, 0], [40, -10], [50, 30], [10, 40], [0, 0]], 64);
+  let A = 0; for (let i = 0; i + 1 < S.length; i++) A += S[i][0] * S[i + 1][1] - S[i + 1][0] * S[i][1];
+  assert.ok(Math.abs(prof.regions[0].area / Math.abs(A / 2) - 1) < 0.01);
+  // offener Spline mit Linie zur Kontur geschlossen
+  const sk2 = { id: "s2", type: "sketch", plane: "XY", points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 15, y: 30 }, { id: "c", x: 35, y: 30 }, { id: "d", x: 50, y: 0 }],
+    entities: [{ id: "sp", type: "spline", pts: ["a", "b", "c", "d"], p1: "a", p2: "d" }, { id: "ln", type: "line", p1: "a", p2: "d" }], constraints: [] };
+  const pr2 = extractProfiles(sk2);
+  assert.equal(pr2.regions.length, 1);
+  assert.ok(/POLYLINE/.test(sketchToDxf(sk2)));
+});

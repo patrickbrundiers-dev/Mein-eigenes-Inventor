@@ -243,7 +243,7 @@ export function cornerAt(sk, pointId) {
   return sk.entities.filter((e) => e.type === "line" && !e.construction && (e.p1 === pointId || e.p2 === pointId)).length === 2;
 }
 
-const usesPoint = (sk, pid, exceptId) => sk.entities.some((o) => o.id !== exceptId && ["p1", "p2", "c", "p", "a"].some((k) => o[k] === pid));
+const usesPoint = (sk, pid, exceptId) => sk.entities.some((o) => o.id !== exceptId && (["p1", "p2", "c", "p", "a"].some((k) => o[k] === pid) || (o.pts || []).includes(pid)));
 
 /**
  * Verlängert das Ende einer Linie oder eines Bogens (das dem Klick nähere) bis zum nächsten Element.

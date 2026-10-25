@@ -74,6 +74,7 @@ export const COMMANDS = [
   { id: "sketch.circle", label: "Skizze: Kreis", group: "Skizze", scope: "sketch", key: "C" },
   { id: "sketch.arc3", label: "Skizze: Bogen", group: "Skizze", scope: "sketch", key: "A" },
   { id: "sketch.arcc", label: "Skizze: Bogen um Mittelpunkt", group: "Skizze", scope: "sketch" },
+  { id: "sketch.spline", label: "Skizze: Spline", group: "Skizze", scope: "sketch", keywords: "freiform kurve bspline" },
   { id: "sketch.ellipse", label: "Skizze: Ellipse", group: "Skizze", scope: "sketch", keywords: "oval" },
   { id: "sketch.slot", label: "Skizze: Langloch", group: "Skizze", scope: "sketch", keywords: "nut schlitz" },
   { id: "sketch.polygon", label: "Skizze: Polygon", group: "Skizze", scope: "sketch", keywords: "vieleck sechskant" },

@@ -8,6 +8,8 @@ import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
 import { inferLine, inferCircle } from "../core/autoconstraints.js";
 import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities } from "../core/sketchshapes.js";
+import { splineSamples, splineNearest } from "../core/spline.js";
+import { splineCtrl } from "../core/sketch.js";
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 
@@ -20,6 +22,7 @@ export const SKETCH_TOOLS = {
   rectc: "Rechteck aus Mitte: Mittelpunkt, dann Ecke klicken – oder Breite tippen, Tab, Höhe tippen, Enter",
   circle: "Kreis: Mittelpunkt, dann Radius klicken – oder Durchmesser tippen, Enter",
   arc3: "Bogen: Anfang, Ende, dann Punkt auf dem Bogen klicken",
+  spline: "Spline: Kontrollpunkte nacheinander klicken – Enter, Doppelklick oder Esc beendet, Klick auf den ersten Punkt schließt",
   ellipse: "Ellipse: Mittelpunkt, Ende der Hauptachse, dann einen Punkt für die Nebenhalbachse klicken",
   arcc: "Bogen um Mittelpunkt: Mitte, Anfang, Ende (gegen Uhrzeigersinn)",
   point: "Punkt / Bohrungsmitte setzen",
@@ -230,7 +233,10 @@ export class Sketcher {
             if (a - g.a1 > g.sweep) d = Infinity;
           }
         }
-        else if (e.type === "ellipse") {
+        else if (e.type === "spline") {
+          const ctrl = splineCtrl(e, P), [lx, ly] = this.L(sx, sy);
+          if (ctrl) d = splineNearest(ctrl, lx, ly).d * this.M.scale;
+        } else if (e.type === "ellipse") {
           const [lx, ly] = this.L(sx, sy);
           d = ellipseNearest(this.ellG(e, P), lx, ly).d * this.M.scale;
         }
@@ -270,6 +276,7 @@ export class Sketcher {
         const t = ((lx - a.x) * dx + (ly - a.y) * dy) / L2;
         return { x: a.x + t * dx, y: a.y + t * dy, on: e.id, onType: "line", label: "Auf Linie" };
       }
+      if (e.type === "spline") { const q = splineNearest(splineCtrl(e, P), lx, ly); return { x: q.x, y: q.y, on: e.id, onType: "circle", label: "Auf Spline" }; }
       if (e.type === "ellipse") { const q = ellipseNearest(this.ellG(e, P), lx, ly); return { x: q.x, y: q.y, on: e.id, onType: "circle", label: "Auf Ellipse" }; }
       const c = P.get(e.c);
       const r = e.type === "circle" ? e.r : Math.hypot(P.get(e.p1).x - c.x, P.get(e.p1).y - c.y);
@@ -401,6 +408,20 @@ export class Sketcher {
     this.state = null;
     this.addRect(a, t.b, this.tool === "rectc", t.dims);
   }
+  /** Spline aus den geklickten Punkten anlegen; closed = letzter Punkt ist der erste */
+  finishSpline(closed = false) {
+    const pts = this.state?.pts || [];
+    this.state = null;
+    if (pts.length < 2) { this.render(); return; }
+    this.commit("Spline", (sk) => {
+      const cons = [];
+      const ids = pts.map((p) => this.usePoint(sk, p, cons));
+      if (closed) ids.push(ids[0]);
+      sk.entities.push({ id: uid("sp"), type: "spline", pts: ids, p1: ids[0], p2: ids[ids.length - 1], construction: !!this.construction });
+      sk.constraints.push(...cons);
+    });
+    this.render();
+  }
   addEllipse(c, a, rb) {
     this.commit("Ellipse", (sk) => {
       const cons = [];
@@ -458,6 +479,7 @@ export class Sketcher {
     const isLine = (h) => E(h)?.type === "line";
     const isCirc = (h) => ["circle", "arc"].includes(E(h)?.type);
     const isEll = (h) => E(h)?.type === "ellipse";
+    const isSpl = (h) => E(h)?.type === "spline";
     const isPt = (h) => h.kind === "point";
     let c = null;
     const done = () => { this.pendingPick = []; };
@@ -502,6 +524,13 @@ export class Sketcher {
       case "tangent":
         if (picks.length < 2) return;
         if ((isLine(picks[0]) && isEll(picks[1])) || (isEll(picks[0]) && isLine(picks[1]))) c = { type: "tangent", e1: picks[0].id, e2: picks[1].id };
+        else if (isSpl(picks[0]) || isSpl(picks[1])) {
+          const sp = isSpl(picks[0]) ? E(picks[0]) : E(picks[1]), o = sp === E(picks[0]) ? E(picks[1]) : E(picks[0]);
+          if (!o || !["line", "arc", "circle"].includes(o.type)) { done(); return toast("Spline: tangential zu Linie, Bogen oder Kreis am Spline-Ende"); }
+          const P = this.pts(), ends = [o.p1, o.p2, o.c].filter(Boolean).map((id) => P.get(id));
+          const dist = (id) => Math.min(...ends.map((q) => Math.hypot(q.x - P.get(id).x, q.y - P.get(id).y)));
+          c = { type: "tangent", e1: sp.id, e2: o.id, end: dist(sp.pts.at(-1)) < dist(sp.pts[0]) ? "end" : "start" };
+        }
         else if (isEll(picks[0]) || isEll(picks[1])) { done(); return toast("Ellipse: tangential nur zu einer Linie"); }
         else if ((isLine(picks[0]) || isCirc(picks[0])) && isCirc(picks[1]) || (isCirc(picks[0]) && isLine(picks[1]))) {
           c = { type: "tangent", e1: picks[0].id, e2: picks[1].id };
@@ -936,6 +965,14 @@ export class Sketcher {
           this.state = null;
         }
         break;
+      case "spline": {
+        if (!this.state) { this.state = { pts: [sn] }; break; }
+        const first = this.state.pts[0], last = this.state.pts.at(-1);
+        const [fx, fy] = this.S(first.x, first.y), [lx, ly] = this.S(last.x, last.y);
+        if (this.state.pts.length >= 3 && Math.hypot(fx - sx, fy - sy) < this.snapR) { this.finishSpline(true); break; }
+        if (Math.hypot(lx - sx, ly - sy) > 2) this.state.pts.push(sn);
+        break;
+      }
       case "ellipse":
         if (!this.state) this.state = { pts: [sn] };
         else if (this.state.pts.length === 1) { if (Math.hypot(sn.x - this.state.pts[0].x, sn.y - this.state.pts[0].y) * this.M.scale > 2) this.state.pts.push(sn); }
@@ -1079,6 +1116,7 @@ export class Sketcher {
         this.profiles = extractProfiles(sk);
         return;
       } else if (e.type === "arc") targets = [e.c, e.p1, e.p2].map((p) => ({ p, x: O.get(p).x + dx, y: O.get(p).y + dy }));
+      else if (e.type === "spline") targets = [...new Set(e.pts)].map((p) => ({ p, x: O.get(p).x + dx, y: O.get(p).y + dy }));
       else if (e.type === "ellipse") targets = [e.c, e.a].map((p) => ({ p, x: O.get(p).x + dx, y: O.get(p).y + dy }));
       else if (e.type === "point") targets = [{ p: e.p, x: lx, y: ly }];
     }
@@ -1121,6 +1159,7 @@ export class Sketcher {
     if (!this.active) return;
     this.mapping();
     const [sx, sy] = this.eventPos(e);
+    if (this.tool === "spline" && this.state?.pts) { this.finishSpline(false); return; }
     const hit = this.hitTest(sx, sy);
     if (hit?.kind === "dim") this.editDimension(hit.id, sx, sy);
   }
@@ -1138,6 +1177,7 @@ export class Sketcher {
       }
       if (r) { this.render(); return true; }
     }
+    if (this.tool === "spline" && this.state?.pts && (k === "Enter" || k === "Escape")) { this.finishSpline(false); return true; }
     if (k === "Escape") {
       if (this.state) { this.state = null; this.render(); return true; }
       if (this.tool !== "select") { this.setTool("select"); return true; }
@@ -1160,7 +1200,7 @@ export class Sketcher {
     if (pts.includes("O")) pts.splice(pts.indexOf("O"), 1);
     this.commit("Löschen", (sk) => {
       // Punkte: zugehörige Elemente mitlöschen
-      for (const p of pts) for (const e of sk.entities) if ([e.p1, e.p2, e.c, e.p, e.a].includes(p) && !e.origin) ents.push(e.id);
+      for (const p of pts) for (const e of sk.entities) if (([e.p1, e.p2, e.c, e.p, e.a].includes(p) || e.pts?.includes(p)) && !e.origin) ents.push(e.id);
       sk.constraints = sk.constraints.filter((c) => !cons.includes(c.id));
       deleteEntities(sk, ents.filter((id) => id !== "Oe"));
     });
@@ -1236,6 +1276,12 @@ export class Sketcher {
         const c = P.get(e.c);
         const C = S(c.x, c.y), r = e.r * this.M.scale;
         d = `M${C[0] - r},${C[1]}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0`;
+      } else if (e.type === "spline") {
+        const ctrl = splineCtrl(e, P);
+        if (ctrl) {
+          d = "M" + splineSamples(ctrl, 24).map((q) => S(q[0], q[1]).join(",")).join("L");
+          g.append(svgEl("path", { d: "M" + ctrl.map((q) => S(q[0], q[1]).join(",")).join("L"), class: "sk-ctrl" })); // Kontrollpolygon
+        }
       } else if (e.type === "ellipse") {
         d = "M" + ellipseSamples(this.ellG(e, P), 96).map((q) => S(q[0], q[1]).join(",")).join("L") + "Z";
       } else if (e.type === "arc") {
@@ -1527,6 +1573,10 @@ export class Sketcher {
         g.append(svgEl("path", { d: `M${c[0]},${c[1]}L${c[0] + r * k},${c[1] - r * k}`, class: "sk-dyn-line" }));
         this.dynBox(g, 0, c[0] + r * k + 30, c[1] - r * k - 14, "Ø", "", vals.d);
       }
+    } else if (this.tool === "spline" && st.pts) {
+      const ctrl = [...st.pts, cur].map((p) => [p.x, p.y]);
+      path("M" + splineSamples(ctrl, 16).map((q) => S(q[0], q[1]).join(",")).join("L"));
+      g.append(svgEl("path", { d: "M" + ctrl.map((q) => S(q[0], q[1]).join(",")).join("L"), class: "sk-ctrl" }));
     } else if (this.tool === "ellipse" && st.pts) {
       const [c, a] = st.pts;
       if (!a) { const A = S(c.x, c.y), B = S(cur.x, cur.y); path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`); }

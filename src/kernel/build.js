@@ -53,7 +53,7 @@ export function createKernel(R) {
       return R.drawEllipse(Math.max(loop.a, loop.b), Math.min(loop.a, loop.b)).rotate(deg, [0, 0]).translate(loop.c[0], loop.c[1]);
     }
     let pen = R.draw(loop.start);
-    for (const s of loop.segs) pen = s.t === "line" ? pen.lineTo(s.to) : pen.threePointsArcTo(s.to, s.mid);
+    for (const s of loop.segs) pen = s.t === "line" ? pen.lineTo(s.to) : s.t === "bez" ? pen.cubicBezierCurveTo(s.to, s.c1, s.c2) : pen.threePointsArcTo(s.to, s.mid);
     return pen.close();
   }
   function regionToDrawing(region) {

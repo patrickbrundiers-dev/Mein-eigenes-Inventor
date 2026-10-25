@@ -16,6 +16,7 @@ import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { ellipseGeom, ellipsePerimeter } from "../core/ellipse.js";
+import { splineLength, splineDegree } from "../core/spline.js";
 
 const INERTIA = new WeakMap(); // Ergebnis → Trägheitswerte
 import { FEATURE_NAMES } from "./app.js";
@@ -673,25 +674,40 @@ export class Props {
       if (t === "e") {
         const e = sk.entities.find((x) => x.id === id);
         if (e) {
-          const label = { line: "Linie", circle: "Kreis", arc: "Bogen", point: "Punkt", ellipse: "Ellipse" }[e.type];
+          const label = { line: "Linie", circle: "Kreis", arc: "Bogen", point: "Punkt", ellipse: "Ellipse", spline: "Spline" }[e.type];
           const info = [];
           if (e.type === "line") { const a = P.get(e.p1), b = P.get(e.p2); info.push(h("dt", {}, "Länge"), h("dd", {}, fmtNum(Math.hypot(b.x - a.x, b.y - a.y), 3)), h("dt", {}, "Winkel"), h("dd", {}, fmtNum((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI, 2) + "°")); }
           if (e.type === "circle") info.push(h("dt", {}, "Durchmesser"), h("dd", {}, fmtNum(2 * e.r, 3)));
           if (e.type === "arc") { const c = P.get(e.c), a = P.get(e.p1); info.push(h("dt", {}, "Radius"), h("dd", {}, fmtNum(Math.hypot(a.x - c.x, a.y - c.y), 3))); }
-          let ellDims = null;
+          let extra = null;
+          if (e.type === "spline") {
+            const ctrl = e.pts.map((q) => [P.get(q).x, P.get(q).y]), closed = e.p1 === e.p2;
+            info.push(h("dt", {}, "Kontrollpunkte"), h("dd", {}, String(new Set(e.pts).size)), h("dt", {}, "Grad"), h("dd", {}, String(splineDegree(e.pts.length))),
+              h("dt", {}, "Länge"), h("dd", {}, fmtNum(splineLength(ctrl), 2)), h("dt", {}, "Geschlossen"), h("dd", {}, closed ? "ja" : "nein"));
+            // Punkt einfügen: Mitte des längsten Abschnitts im Kontrollpolygon
+            extra = h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.sketcher.commit("Spline-Punkt einfügen", (s) => {
+              const se = s.entities.find((x) => x.id === e.id), Q = new Map(s.points.map((p) => [p.id, p]));
+              let best = 0, bl = -1;
+              for (let i = 0; i + 1 < se.pts.length; i++) { const a = Q.get(se.pts[i]), b = Q.get(se.pts[i + 1]), l = Math.hypot(b.x - a.x, b.y - a.y); if (l > bl) { bl = l; best = i; } }
+              const a = Q.get(se.pts[best]), b = Q.get(se.pts[best + 1]), id = uid("p");
+              s.points.push({ id, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+              se.pts.splice(best + 1, 0, id);
+            }) }, "Punkt einfügen"),
+            h("span", { class: "hint" }, "Kontrollpunkte ziehen formt die Kurve; Punkt wählen → „Aus Spline entfernen“."));
+          }
           if (e.type === "ellipse") {
             const g = ellipseGeom(P.get(e.c), P.get(e.a), e.r), deg = (g.rot * 180) / Math.PI;
             info.push(h("dt", {}, "Halbachse a"), h("dd", {}, fmtNum(g.A, 3)), h("dt", {}, "Halbachse b"), h("dd", {}, fmtNum(g.B, 3)),
               h("dt", {}, "Achswinkel"), h("dd", {}, fmtNum(deg, 2) + "°"), h("dt", {}, "Umfang"), h("dd", {}, fmtNum(ellipsePerimeter(g.A, g.B), 2)));
             const has = (pred) => sk.constraints.some((c) => c.e === e.id && pred(c));
             const btn = (txt, c) => h("button", { class: "btn", onclick: () => app.sketcher.addConstraint({ ...c, e: e.id }) }, txt);
-            ellDims = h("div", { class: "btn-row" },
+            extra = h("div", { class: "btn-row" },
               has((c) => c.type === "semiAxis" && c.axis !== "b") ? null : btn("a bemaßen", { type: "semiAxis", axis: "a", value: String(Math.round(g.A * 1000) / 1000) }),
               has((c) => c.type === "semiAxis" && c.axis === "b") ? null : btn("b bemaßen", { type: "semiAxis", axis: "b", value: String(Math.round(g.B * 1000) / 1000) }),
               has((c) => c.type === "axisAngle") ? null : btn("Winkel bemaßen", { type: "axisAngle", value: String(Math.round(deg * 100) / 100) }));
           }
           out.push(this.section(label, h("dl", { class: "kv" }, ...info),
-            ellDims,
+            extra,
             e.origin ? null : this.check("Konstruktionslinie", e.construction, () => app.sketcher.toggleConstruction()),
             h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => app.sketcher.deleteSelection() }, "Löschen"))));
           const own = new Set([e.p1, e.p2, e.c, e.p].filter(Boolean));
@@ -712,8 +728,17 @@ export class Props {
         const p = P.get(id);
         if (p) {
           const fixed = sk.constraints.find((c) => c.type === "fix" && c.p === id);
+          const spl = sk.entities.find((x) => x.type === "spline" && x.pts.indexOf(id) > 0 && x.pts.indexOf(id) < x.pts.length - 1 && new Set(x.pts).size > 2);
           out.push(this.section("Punkt", h("dl", { class: "kv" }, h("dt", {}, "X"), h("dd", {}, fmtNum(p.x, 3)), h("dt", {}, "Y"), h("dd", {}, fmtNum(p.y, 3))),
-            fixed && id !== "O" ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.sketcher.commit("Fixierung lösen", (s) => { s.constraints = s.constraints.filter((c) => c !== fixed && c.id !== fixed.id); }) }, "Fixierung lösen")) : null));
+            fixed && id !== "O" ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.sketcher.commit("Fixierung lösen", (s) => { s.constraints = s.constraints.filter((c) => c !== fixed && c.id !== fixed.id); }) }, "Fixierung lösen")) : null,
+            spl ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { app.sketcher.commit("Spline-Punkt entfernen", (s) => {
+              const se = s.entities.find((x) => x.id === spl.id);
+              se.pts = se.pts.filter((q) => q !== id);
+              if (!s.entities.some((x) => x.id !== se.id && ["p1", "p2", "c", "p", "a"].some((k) => x[k] === id)) && !s.entities.some((x) => x.pts?.includes(id))) {
+                s.points = s.points.filter((p) => p.id !== id);
+                s.constraints = s.constraints.filter((c) => c.p !== id && c.q !== id);
+              }
+            }); app.sketcher.sel.clear(); app.selectSketchItems([]); } }, "Aus Spline entfernen")) : null));
         }
       } else if (t === "c") {
         const c = sk.constraints.find((x) => x.id === id);

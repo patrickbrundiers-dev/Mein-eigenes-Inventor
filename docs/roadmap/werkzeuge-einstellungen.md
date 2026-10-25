@@ -49,7 +49,7 @@ Entwicklungsplan (P1). Hier: Einstellungen, Arbeitsplatz, Auswahl/Ansicht, Messe
 | Maße direkt beim Zeichnen | vorhanden | Rechteck/Linie/Kreis, `src/core/dyninput.js` |
 | Polylinie (Linienkette) | vorhanden | Linienwerkzeug setzt am Endpunkt fort |
 | Langloch, Polygon | vorhanden | Stufe 6: aus Bögen/Linien mit tangentAt/gleich bzw. Konstruktionskreis + gleiche Seiten; bleibt parametrisch |
-| Ellipse, Spline | teilweise | Stufe 19: Ellipse (Mittelpunkt, Achsenende, Nebenhalbachse; Halbachsen, Achswinkel, Punkt auf Ellipse, Tangente an Linie; Profil, DXF als Polylinie). Ellipsenbogen, Stutzen an Ellipsen und Spline (Stufe 21) folgen |
+| Ellipse, Spline | vorhanden | Stufe 19: Ellipse (Mittelpunkt, Achsenende, Nebenhalbachse; Halbachsen, Achswinkel, Punkt auf Ellipse, Tangente an Linie; Profil, DXF als Polylinie). Stufe 21: Spline (geklemmte B-Spline bis Grad 3 über Kontrollpunkten, tangential an Linie/Bogen am Ende, Punkt auf Spline, Profil exakt als Bézier, DXF als Polylinie). Ellipsenbogen, Stutzen an Ellipse/Spline folgen |
 | Stutzen, Skizzenrundung | vorhanden | `src/core/sketchedit.js` |
 | Spiegeln | vorhanden | Stufe 6: Kopien über »symmetrisch« an Originale gebunden |
 | Versatz | vorhanden | Stufe 7: Kontur anklicken (ganze Kette), Seite klicken, Abstand; Ecken im Schnittpunkt, Bögen konzentrisch; ein sichtbares Maß steuert alle Kopien |
@@ -126,3 +126,4 @@ Jede Stufe = ein kleiner PR von `main`, CI grün → mergen, Release-Notiz an de
 | 18 | Gefüllte Schnittflächen im 3D-Schnitt (Stencil, Einstellung „Schnittflächen füllen“) | Oberflächentest (Pixel) |
 | 19 | Ellipse in der Skizze (Solver, Profil, DXF) | Solver-/Kernel-/Oberflächentest |
 | 20 | Farbschema hell/dunkel, letzte Werkzeugwerte über die Sitzung hinaus merken | Unit-Test Schema, Oberflächentest |
+| 21 | Spline in der Skizze (Kontrollpunkte, tangential, Profil, DXF) | Unit-, Kernel-, Oberflächentest |
