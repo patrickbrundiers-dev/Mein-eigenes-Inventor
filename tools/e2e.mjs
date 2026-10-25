@@ -2287,6 +2287,58 @@ try {
   const pg = await evalApp(() => { const a = window.__werkcad; const f = a.activeDoc().features[0]; const r = a.results.get(a.activeId); return { cuts: f.cuts.map((c) => c.kind + ":" + (c.punkte || c.l)), st: r.status[f.id], pierces: r.bodies[0]?.meta?.pierces, bilder: [...document.querySelectorAll("#props .tube-cut svg.massbild")].map((x) => x.getAttribute("aria-label").split(":")[0]) }; });
   step("Polygon und Schlitz am Rohr", pg.cuts.join() === "polygon:0,0; 40,0; 40,10; 20,16; 0,10,schlitz:40" && pg.st.ok && !pg.st.warning && pg.pierces === 2 && pg.bilder.join() === "Polygon,Maße Schlitz am Ende", JSON.stringify(pg));
 
+  // Bezugsgeometrie: Arbeitsebene über das Menüband, Skizze darauf, Anzeige im 3D-Fenster
+  await evalApp(() => window.__werkcad.newPart("Bezug"));
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Arbeitsebene$/ }).click();
+  await idle();
+  const wp = await evalApp(() => { const a = window.__werkcad; const f = a.activeDoc().features.at(-1); const r = a.results.get(a.activeId); return { type: f.type, st: r.status[f.id], datums: r.datums?.length, shown: a.viewer.datumGroup?.children.length, props: !!document.querySelector("#props h3") && [...document.querySelectorAll("#props h3")].some((x) => x.textContent === "Arbeitsebene") }; });
+  await page.locator("#props button", { hasText: "Skizze auf dieser Ebene" }).click();
+  await idle();
+  const wsk = await evalApp(() => { const a = window.__werkcad; return { mode: a.mode, z: a.sketcher.frame?.origin?.[2], plane: a.activeDoc().features.at(-1).plane }; });
+  await shot("28-arbeitsebene");
+  await evalApp(() => window.__werkcad.finishSketch());
+  await idle();
+  step("Arbeitsebene mit Skizze", wp.type === "arbeitsebene" && wp.st.ok && /Ursprung \(0; 0; 50\)/.test(wp.st.info) && wp.datums === 1 && wp.shown >= 2 && wp.props && wsk.mode === "sketch" && Math.abs(wsk.z - 50) < 1e-9 && wsk.plane.ref === "datum", JSON.stringify({ wp, wsk }));
+
+  // Sweeping, Erhebung, Spirale, Muster entlang Pfad über das Menüband
+  await evalApp(() => {
+    const a = window.__werkcad;
+    a.newPart("Formen");
+    const P = (id, x, y) => ({ id, x, y });
+    const circ = (id, plane, x, y, r, offset = "0") => ({ type: "sketch", id, name: id, plane: { ref: plane }, offset, points: [P(id + "c", x, y)], entities: [{ id: id + "k", type: "circle", c: id + "c", r }], constraints: [] });
+    a.addFeature(circ("prof", "YZ", 0, 0, 5), { select: false });
+    a.addFeature({ type: "sketch", id: "pfad", name: "Pfad", plane: { ref: "XY" }, offset: "0", points: [P("a", 0, 0), P("b", 100, 0), P("m", 100, 30), P("c", 130, 30)], entities: [{ id: "l1", type: "line", p1: "a", p2: "b" }, { id: "ar", type: "arc", c: "m", p1: "b", p2: "c" }], constraints: [] }, { select: false });
+  });
+  await idle();
+  await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  await page.locator("#ribbon button", { hasText: /^Sweeping$/ }).click();
+  await idle();
+  await evalApp(() => {
+    const a = window.__werkcad;
+    const P = (id, x, y) => ({ id, x, y });
+    const sq = (id, off, s) => ({ type: "sketch", id, name: id, plane: { ref: "XY" }, offset: off, points: [P(id + 1, 200 - s, -s), P(id + 2, 200 + s, -s), P(id + 3, 200 + s, s), P(id + 4, 200 - s, s)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: id + "l" + p, type: "line", p1: id + p, p2: id + q })), constraints: [] });
+    a.addFeature(sq("u", "0", 20), { select: false });
+    a.addFeature(sq("o", "40", 8), { select: false });
+  });
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Erhebung$/ }).click();
+  await idle();
+  await evalApp(() => {
+    const a = window.__werkcad;
+    a.addFeature({ type: "sketch", id: "fed", name: "Feder", plane: { ref: "XZ" }, offset: "0", points: [{ id: "fc", x: -100, y: 0 }, { id: "f0", x: -80, y: 0 }, { id: "f1", x: -80, y: 10 }], entities: [{ id: "fk", type: "circle", c: "fc", r: 2 }, { id: "fa", type: "line", p1: "f0", p2: "f1", construction: true }], constraints: [] }, { select: false });
+  });
+  await idle();
+  await page.locator("#ribbon button", { hasText: /^Spirale$/ }).click();
+  await idle();
+  await page.locator("#props .field", { hasText: "Achse" }).locator("select").selectOption("fa");
+  await idle(60000);
+  const fm = await evalApp(() => { const a = window.__werkcad, part = a.activeDoc(), r = a.results.get(part.id); return part.features.filter((f) => ["sweep", "loft", "spirale"].includes(f.type)).map((f) => ({ t: f.type, ok: r.status[f.id]?.ok, info: r.status[f.id]?.info, err: r.status[f.id]?.error })).concat([{ bodies: r.bodies.length }]); });
+  await evalApp(() => window.__werkcad.viewer.fit?.());
+  await shot("29-sweep-loft-spirale");
+  step("Sweeping, Erhebung, Spirale", fm.length === 4 && fm.slice(0, 3).every((x) => x.ok) && /Pfad 147,1 mm/.test(fm[0].info) && /2 Querschnitte/.test(fm[1].info) && /5 Umdrehungen/.test(fm[2].info) && fm[3].bodies >= 1, JSON.stringify(fm));
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

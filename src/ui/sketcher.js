@@ -4,6 +4,7 @@ import { solveSketch, checkNewConstraint, measureConstraint, DIMENSION_TYPES, en
 import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../core/sketch.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, toWorld, v3 } from "../core/geom.js";
+import { resolvePlane } from "../core/datums.js";
 import { parseDxf, dxfToSketch, primsBounds } from "../core/dxfread.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
@@ -106,7 +107,9 @@ export class Sketcher {
     const sk = this.sk;
     if (!sk) return;
     this.ensureOrigin(sk);
-    this.frame = planeFrame(sk.plane, safeEval(sk.offset || "0", this.scope()));
+    let plane = sk.plane;
+    try { plane = resolvePlane(sk.plane, this.app.datumMap(this.part)); } catch (e) { toast(e.message, { kind: "err" }); plane = { ref: "XY" }; }
+    this.frame = planeFrame(plane, safeEval(sk.offset || "0", this.scope()));
     this.active = true;
     this.tool = "select";
     this.state = null;

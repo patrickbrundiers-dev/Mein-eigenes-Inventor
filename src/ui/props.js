@@ -7,6 +7,8 @@ import { SECTION_KINDS, fieldLabel, CATALOG, catalogToDims, profileId, sectionGe
 import { profileMatches, resolveProfile } from "../core/profilesearch.js";
 import { LIB_GROUPS, groupOfMaterial, groupKinds, mainSizes, wallsFor, wallLabel, hasWall, findEntry, pickEntry, defaultEntry, mainOfDims, mainLabel, splitSize } from "../core/profillib.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
+import { PLANE_MODES, AXIS_MODES, POINT_MODES } from "../core/datums.js";
+import { sketchRefs } from "../core/featurerefs.js";
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
@@ -491,7 +493,7 @@ export class Props {
     switch (f.type) {
       case "sketch": {
         out.push(this.section("Skizze",
-          h("dl", { class: "kv" }, h("dt", {}, "Ebene"), h("dd", {}, f.plane.ref === "face" ? "auf Fläche" : BASE_PLANES[f.plane.ref]?.label || f.plane.ref),
+          h("dl", { class: "kv" }, h("dt", {}, "Ebene"), h("dd", {}, f.plane.ref === "face" ? "auf Fläche" : f.plane.ref === "datum" ? part.features.find((g) => g.id === f.plane.id)?.name || "Arbeitsebene fehlt" : BASE_PLANES[f.plane.ref]?.label || f.plane.ref),
             h("dt", {}, "Elemente"), h("dd", {}, String(f.entities.filter((e) => !e.origin).length)),
             h("dt", {}, "Freiheitsgrade"), h("dd", {}, st?.dof === 0 ? "vollständig bestimmt" : String(st?.dof ?? "–")),
             h("dt", {}, "Konturen"), h("dd", {}, String(r?.sketches?.[f.id]?.regions ?? "–"))),
@@ -499,7 +501,7 @@ export class Props {
           h("div", { class: "btn-row" },
             h("button", { class: "btn primary", onclick: () => app.editSketch(f.id) }, "Skizze bearbeiten"),
             h("button", { class: "btn", onclick: () => app.files.exportSketchDxf(f.id) }, "DXF"))));
-        const users = part.features.filter((g) => g.sketch === f.id);
+        const users = part.features.filter((g) => sketchRefs(g).includes(f.id));
         if (!users.length) out.push(this.section("Weiter mit", h("div", { class: "btn-row" },
           ...[["extrude", "Extrusion"], ["revolve", "Drehung"], ["hole", "Bohrung"], ["frame", "Rahmen"]].map(([a, l]) => h("button", { class: "btn", onclick: () => app.ribbon.run(a) }, l)))));
         break;
@@ -829,12 +831,23 @@ export class Props {
       }
       case "pattern": {
         const srcs = part.features.filter((g) => ["extrude", "revolve", "hole", "profile", "frame", "profilzug", "biegerohr", "regelkoerper", "normteil", "kantteil", "import"].includes(g.type) && g.id !== f.id);
-        const axisSeg = (label, key, def) => this.seg(label, [["X", "X"], ["Y", "Y"], ["Z", "Z"], ["-X", "−X"], ["-Y", "−Y"], ["-Z", "−Z"]], f[key] || def, (v) => this.set(f, key, v, label));
-        out.push(this.section(f.kind === "circular" ? "Kreismuster" : "Rechteckmuster",
+        const dAxes = this.datumsBefore(part, f, "arbeitsachse");
+        const axisSeg = (label, key, def) => [this.seg(label, [["X", "X"], ["Y", "Y"], ["Z", "Z"], ["-X", "−X"], ["-Y", "−Y"], ["-Z", "−Z"]], f[key] || def, (v) => this.set(f, key, v, label)),
+          dAxes.length ? this.select(label + " (Arbeitsachse)", [["", "–"], ...dAxes.map((g) => ["datum:" + g.id, g.name])], String(f[key] || "").startsWith("datum:") ? f[key] : "", (v) => this.set(f, key, v || def, label)) : null];
+        const pathSks = part.features.filter((g) => g.type === "sketch");
+        out.push(this.section(f.kind === "circular" ? "Kreismuster" : f.kind === "path" ? "Muster entlang Pfad" : "Rechteckmuster",
           this.select("Feature", srcs.map((s) => [s.id, s.name]), f.feature, (v) => this.set(f, "feature", v, "Feature")),
-          f.kind === "circular" ? [
+          f.kind === "path" ? [
+            this.select("Pfad", [["", "– Skizze –"], ...pathSks.map((x) => [x.id, x.name])], f.path || "", (v) => this.set(f, "path", v, "Pfad")),
+            E("Anzahl", "count", { unit: "Stk" }),
+            this.seg("Verteilung", [["gleich", "Über ganze Länge"], ["abstand", "Mit Abstand"]], f.spacingMode === "abstand" ? "abstand" : "gleich", (v) => this.set(f, (x) => { x.spacingMode = v; x.spacing = x.spacing || "50"; }, "Verteilung")),
+            f.spacingMode === "abstand" ? E("Abstand (entlang Pfad)", "spacing", { allowNeg: false, allowZero: false }) : null,
+            this.check("Mit dem Pfad drehen", f.align !== false, (v) => this.set(f, "align", v, "Ausrichtung")),
+            this.check("Richtung umkehren", f.reverse, (v) => this.set(f, "reverse", v || undefined, "Richtung")),
+            h("p", { class: "hint" }, "Das erste Exemplar ist das Original; der Pfad beginnt am freien Ende des zuerst gezeichneten Elements (sonst »Richtung umkehren«)."),
+          ] : f.kind === "circular" ? [
             axisSeg("Achse", "axis", "Z"),
-            this.vec3("Mittelpunkt", f.center, (v) => this.set(f, "center", v, "Mittelpunkt")),
+            String(f.axis || "").startsWith("datum:") ? null : this.vec3("Mittelpunkt", f.center, (v) => this.set(f, "center", v, "Mittelpunkt")),
             E("Anzahl", "count", { unit: "Stk" }),
             E("Gesamtwinkel", "angle", { unit: "°" }),
           ] : [
@@ -849,8 +862,52 @@ export class Props {
       case "mirror":
         out.push(this.section("Spiegeln",
           this.seg("Ebene", [["YZ", "YZ"], ["XZ", "XZ"], ["XY", "XY"]], f.plane || "YZ", (v) => this.set(f, "plane", v, "Ebene")),
-          E("Abstand der Ebene", "offset"),
+          this.datumsBefore(part, f, "arbeitsebene").length ? this.select("Arbeitsebene", [["", "–"], ...this.datumsBefore(part, f, "arbeitsebene").map((g) => ["datum:" + g.id, g.name])], String(f.plane || "").startsWith("datum:") ? f.plane : "", (v) => this.set(f, "plane", v || "YZ", "Ebene")) : null,
+          String(f.plane || "").startsWith("datum:") ? null : E("Abstand der Ebene", "offset"),
           this.check("Als getrennten Körper", f.separate, (v) => this.set(f, "separate", v, "Getrennt"))));
+        break;
+      case "sweep": {
+        const sks = part.features.filter((g) => g.type === "sketch");
+        out.push(this.section("Sweeping",
+          this.select("Profil", [["", "– wählen –"], ...sks.map((x) => [x.id, x.name])], f.sketch || "", (v) => this.set(f, "sketch", v, "Profil")),
+          this.select("Pfad", [["", "– wählen –"], ...sks.filter((x) => x.id !== f.sketch).map((x) => [x.id, x.name])], f.path || "", (v) => this.set(f, "path", v, "Pfad")),
+          this.seg("Ausrichtung", [["mit", "Profil folgt dem Pfad"], ["fest", "Profil bleibt parallel"]], f.orient === "fest" ? "fest" : "mit", (v) => this.set(f, "orient", v === "fest" ? "fest" : undefined, "Ausrichtung")),
+          h("p", { class: "hint" }, "Profil: geschlossene Kontur am Anfang des Pfads, möglichst senkrecht dazu. Pfad: zusammenhängende Linien und Bögen einer anderen Skizze."),
+          this.opSeg(f)));
+        break;
+      }
+      case "loft": {
+        const sks = part.features.filter((g) => g.type === "sketch");
+        const ids = f.sketches || [];
+        const move = (i, d) => this.set(f, (x) => { const a = [...ids]; [a[i], a[i + d]] = [a[i + d], a[i]]; x.sketches = a; }, "Reihenfolge");
+        out.push(this.section("Erhebung",
+          h("ol", { class: "loft-list" }, ...ids.map((id, i) => h("li", {}, sks.find((x) => x.id === id)?.name || "fehlt",
+            h("button", { class: "btn", title: "nach oben", disabled: i === 0 ? true : undefined, onclick: () => move(i, -1) }, "↑"),
+            h("button", { class: "btn", title: "nach unten", disabled: i === ids.length - 1 ? true : undefined, onclick: () => move(i, 1) }, "↓"),
+            h("button", { class: "btn", title: "entfernen", onclick: () => this.set(f, (x) => { x.sketches = ids.filter((_, k) => k !== i); }, "Querschnitt entfernen") }, "×")))),
+          sks.some((x) => !ids.includes(x.id)) ? this.select("Querschnitt hinzufügen", [["", "– Skizze –"], ...sks.filter((x) => !ids.includes(x.id)).map((x) => [x.id, x.name])], "", (v) => v && this.set(f, (x) => { x.sketches = [...ids, v]; }, "Querschnitt")) : null,
+          this.check("Gerade Übergänge (Regelfläche)", f.ruled, (v) => this.set(f, "ruled", v, "Übergänge")),
+          h("p", { class: "hint" }, "Querschnitte in der Reihenfolge des Übergangs; je Skizze zählt die äußere Kontur. Ebenen z. B. mit Abstand oder als Arbeitsebene versetzen."),
+          this.opSeg(f)));
+        break;
+      }
+      case "spirale": {
+        const sk = part.features.find((x) => x.id === f.sketch);
+        const lines = sk ? sk.entities.filter((e) => e.type === "line") : [];
+        const byHeight = f.mode === "hoehe";
+        out.push(this.section("Spirale",
+          this.sketchList(part, f.sketch, (v) => this.set(f, "sketch", v, "Skizze")),
+          this.select("Achse", [["x", "Skizzen-X-Achse"], ["y", "Skizzen-Y-Achse"], ...lines.map((l, i) => [l.id, `Linie ${i + 1}${l.construction ? " (Konstruktion)" : ""}`])], f.axis || "y", (v) => this.set(f, "axis", v, "Achse")),
+          this.seg("Vorgabe", [["umdrehungen", "Steigung + Umdrehungen"], ["hoehe", "Steigung + Höhe"]], byHeight ? "hoehe" : "umdrehungen", (v) => this.set(f, (x) => { x.mode = v; if (v === "hoehe") x.height = x.height || "50"; else x.turns = x.turns || "5"; }, "Vorgabe")),
+          E("Steigung", "pitch", { allowNeg: false, allowZero: false }),
+          byHeight ? E("Höhe", "height", { allowNeg: false, allowZero: false }) : E("Umdrehungen", "turns", { unit: "", allowNeg: false, allowZero: false }),
+          this.check("Linksgängig", f.lefthand, (v) => this.set(f, "lefthand", v || undefined, "Drehsinn")),
+          h("p", { class: "hint" }, "Profil (z. B. Kreis für eine Feder) neben der Achse in derselben Skizze; die Steigung muss größer als die Profilhöhe sein, sonst überschneiden sich die Windungen."),
+          this.opSeg(f)));
+        break;
+      }
+      case "arbeitsebene": case "arbeitsachse": case "arbeitspunkt":
+        out.push(...this.datumProps(part, f, E));
         break;
       case "import":
         out.push(this.section("Import",
@@ -862,6 +919,53 @@ export class Props {
     out.push(h("div", { class: "btn-row" },
       h("button", { class: "btn", onclick: () => this.set(f, "suppressed", !f.suppressed, "Unterdrücken") }, f.suppressed ? "Aktivieren" : "Unterdrücken"),
       h("button", { class: "btn danger", onclick: () => app.deleteFeature(f.id) }, icon("trash"), " Löschen")));
+    return out;
+  }
+  /** Frühere, aktive Arbeitselemente einer Art (nur sie dürfen Bezug sein) */
+  datumsBefore(part, f, type) {
+    const i = part.features.findIndex((x) => x.id === f.id);
+    return part.features.slice(0, i < 0 ? undefined : i).filter((x) => x.type === type && !x.suppressed);
+  }
+  /** Eigenschaften von Arbeitsebene, -achse, -punkt */
+  datumProps(part, f, E) {
+    const app = this.app;
+    const planes = [["XY", "XY-Ebene"], ["XZ", "XZ-Ebene"], ["YZ", "YZ-Ebene"], ...this.datumsBefore(part, f, "arbeitsebene").map((g) => [g.id, g.name])];
+    const axes = [["X", "X-Achse"], ["Y", "Y-Achse"], ["Z", "Z-Achse"], ...this.datumsBefore(part, f, "arbeitsachse").map((g) => [g.id, g.name])];
+    const pts = this.datumsBefore(part, f, "arbeitspunkt");
+    const sel = (label, key, opts, def) => this.select(label, opts, f[key] || def, (v) => this.set(f, key, v, label));
+    // Punkt: Ursprung, früherer Arbeitspunkt oder freie Koordinaten
+    const point = (label, key) => {
+      const v = f[key];
+      const mode = typeof v === "string" ? v : "frei";
+      const free = typeof v === "object" && v ? v : { x: "0", y: "0", z: "0" };
+      return [this.select(label, [["O", "Ursprung"], ...pts.map((g) => [g.id, g.name]), ["frei", "Koordinaten"]], mode, (m) => this.set(f, (x) => { x[key] = m === "frei" ? { ...free } : m; }, label)),
+        mode === "frei" ? this.vec3(label + " XYZ", [free.x, free.y, free.z], (a) => this.set(f, (x) => { x[key] = { x: a[0], y: a[1], z: a[2] }; }, label)) : null];
+    };
+    const modes = { arbeitsebene: PLANE_MODES, arbeitsachse: AXIS_MODES, arbeitspunkt: POINT_MODES }[f.type];
+    const def = { arbeitsebene: "versatz", arbeitsachse: "punkte", arbeitspunkt: "koordinaten" }[f.type];
+    const mode = f.mode || def;
+    const body = [this.select("Art", modes.map((m) => [m.value, m.label]), mode, (v) => this.set(f, "mode", v, "Art"))];
+    if (f.type === "arbeitsebene") {
+      if (mode === "versatz") body.push(sel("Bezugsebene", "base", planes, "XY"), E("Abstand", "distance"));
+      else if (mode === "winkel") body.push(sel("Bezugsebene", "base", planes, "XY"), sel("Drehachse", "axis", [["u", "x-Richtung der Ebene"], ["v", "y-Richtung der Ebene"], ...axes.slice(3)], "u"), E("Winkel", "angle", { unit: "°" }));
+      else if (mode === "punkte") body.push(...point("Punkt 1", "p1"), ...point("Punkt 2", "p2"), ...point("Punkt 3", "p3"));
+      else if (mode === "normal") body.push(sel("Achse", "axis", axes, "Z"), ...point("Durch Punkt", "point"));
+      else if (mode === "flaeche") {
+        const picking = app.pick?.kind === "datumFace" && app.pick.feature === f.id;
+        body.push(h("div", {}, f.origin ? "Fläche gewählt" : "Noch keine Fläche gewählt"), E("Abstand", "distance"),
+          h("div", { class: "btn-row" }, h("button", { class: "btn" + (picking ? " primary" : ""), onclick: () => { if (picking) app.cancelPick(); else { app.pick = { kind: "datumFace", feature: f.id }; app.setHint("Ebene Fläche anklicken – Esc bricht ab"); this.render(); } } }, picking ? "Auswahl beenden" : "Fläche wählen")));
+      }
+    } else if (f.type === "arbeitsachse") {
+      if (mode === "punkte") body.push(...point("Punkt 1", "p1"), ...point("Punkt 2", "p2"));
+      else if (mode === "schnitt") body.push(sel("Ebene 1", "plane1", planes, "XY"), sel("Ebene 2", "plane2", planes, "XZ"));
+      else body.push(this.seg("Richtung", [["X", "X"], ["Y", "Y"], ["Z", "Z"]], f.dir || "Z", (v) => this.set(f, "dir", v, "Richtung")), ...point("Durch Punkt", "point"));
+    } else {
+      if (mode === "koordinaten") body.push(this.vec3("Koordinaten", [f.x ?? "0", f.y ?? "0", f.z ?? "0"], (a) => this.set(f, (x) => { x.x = a[0]; x.y = a[1]; x.z = a[2]; }, "Koordinaten")));
+      else body.push(sel("Achse", "axis", axes, "Z"), sel("Ebene", "plane", planes, "XY"));
+    }
+    body.push(this.check("Im 3D-Fenster zeigen", !f.hidden, (v) => this.set(f, "hidden", !v || undefined, "Sichtbarkeit")));
+    const out = [this.section({ arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt" }[f.type], ...body)];
+    if (f.type === "arbeitsebene") out.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.createSketch({ ref: "datum", id: f.id }) }, "Skizze auf dieser Ebene")));
     return out;
   }
   sectionEditor(f, kinds = Object.keys(SECTION_KINDS)) {

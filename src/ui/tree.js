@@ -1,8 +1,9 @@
 // Modellbrowser: Projekt-Dokumente und Feature-Liste des aktiven Bauteils
 import { h, icon, contextMenu, promptDialog } from "./dom.js";
 import { FEATURE_NAMES } from "./app.js";
+import { sketchRefs } from "../core/featurerefs.js";
 
-const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import" };
+const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil" };
 
 export class Tree {
   constructor(app) {
@@ -92,7 +93,7 @@ export class Tree {
       if (st && !st.ok) cls.push("err");
       else if (st?.warning) cls.push("warn");
       if (f.suppressed) cls.push("suppressed");
-      const consumedBy = part.features.filter((g) => g.sketch === f.id);
+      const consumedBy = part.features.filter((g) => sketchRefs(g).includes(f.id));
       const meta = f.type === "sketch" && st?.dof > 0 ? `${st.dof} FG` : "";
       ul.append(h("li", {}, this.node({
         label: f.name || FEATURE_NAMES[f.type], ic: (f.type === "generator" && f.gen) || FICON[f.type], cls: cls.join(" "), meta,

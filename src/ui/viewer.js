@@ -613,17 +613,45 @@ export class Viewer {
     this.render();
   }
 
+  /** Arbeitselemente: Ebenen als Rahmen, Achsen strichpunktiert, Punkte als Kreuz (orange, gewählt kräftiger) */
+  showDatums(list) {
+    if (!this.datumGroup) { this.datumGroup = new THREE.Group(); this.scene.add(this.datumGroup); }
+    disposeTree(this.datumGroup);
+    this.datumGroup.clear();
+    for (const d of list) {
+      const color = d.active ? 0xef7d1a : 0xd98a1c;
+      const s = d.size / 2;
+      if (d.kind === "plane") {
+        const pts = [[-s, -s * 0.7], [s, -s * 0.7], [s, s * 0.7], [-s, s * 0.7]].map(([u, v]) => new THREE.Vector3(...toWorld(d.frame, u, v)));
+        const geo = new THREE.BufferGeometry().setFromPoints([pts[0], pts[1], pts[2], pts[0], pts[2], pts[3]]);
+        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: d.active ? 0.18 : 0.08, side: THREE.DoubleSide, depthWrite: false }));
+        this.datumGroup.add(m);
+        this.datumGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]), new THREE.LineBasicMaterial({ color })));
+      } else if (d.kind === "axis") {
+        const a = d.p.map((c, i) => c - d.d[i] * s), b = d.p.map((c, i) => c + d.d[i] * s);
+        const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]), new THREE.LineDashedMaterial({ color, dashSize: 8, gapSize: 3 }));
+        l.computeLineDistances();
+        this.datumGroup.add(l);
+      } else {
+        const r = 5 / Math.max(0.01, this.pixelsPerUnit()), p = d.p;
+        const segs = [[r, 0, 0], [0, r, 0], [0, 0, r]].flatMap((o) => [new THREE.Vector3(p[0] - o[0], p[1] - o[1], p[2] - o[2]), new THREE.Vector3(p[0] + o[0], p[1] + o[1], p[2] + o[2])]);
+        this.datumGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(segs), new THREE.LineBasicMaterial({ color, depthTest: false })));
+      }
+    }
+    this.render();
+  }
+
   /** Ebene als halbtransparentes Rechteck anzeigen (Hilfe bei Ebenenwahl) */
   showPlanes(list) {
     if (this.planeGroup) { disposeTree(this.planeGroup); this.scene.remove(this.planeGroup); }
     this.planeGroup = new THREE.Group();
-    for (const { frame, size, color, label } of list) {
+    for (const { frame, size, color, label, key } of list) {
       const s = size / 2;
       const pts = [[-s, -s], [s, -s], [s, s], [-s, s]].map(([u, v]) => new THREE.Vector3(...toWorld(frame, u, v)));
       const geo = new THREE.BufferGeometry().setFromPoints([pts[0], pts[1], pts[2], pts[0], pts[2], pts[3]]);
       geo.computeVertexNormals();
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }));
-      m.userData.planeLabel = label;
+      m.userData.planeLabel = key || label;
       this.planeGroup.add(m);
       const lg = new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]);
       this.planeGroup.add(new THREE.Line(lg, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.6 })));

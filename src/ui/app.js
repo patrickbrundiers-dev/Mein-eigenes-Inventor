@@ -23,6 +23,8 @@ import { flattenAssembly } from "../core/subasm.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
+import { resolveDatums, resolvePlane } from "../core/datums.js";
+import { sketchRefs, dependents } from "../core/featurerefs.js";
 import { faceRef, axisRef, solveAssembly } from "../core/asmsolve.js";
 import { partContent, baseName } from "../core/links.js";
 import { finishColor } from "../core/oberflaeche.js";
@@ -477,7 +479,7 @@ export class App {
   }
   showSketches3D() {
     const part = this.activeDoc();
-    if (!part || part.kind !== "part") return this.viewer.showSketches([]);
+    if (!part || part.kind !== "part") { this.viewer.showDatums([]); return this.viewer.showSketches([]); }
     const res = this.results.get(part.id);
     const scope = resolveParams(part.params).values;
     const list = [];
@@ -485,13 +487,39 @@ export class App {
       if (f.type !== "sketch") continue;
       if (this.mode === "sketch" && f.id === this.sketcher.sketchId) continue;
       const selected = this.sel?.type === "feature" && this.sel.id === f.id;
-      const consumed = part.features.some((g) => g.sketch === f.id);
+      const consumed = part.features.some((g) => sketchRefs(g).includes(f.id));
       if (!(selected || this.visibleSketches.has(f.id) || (!consumed && this.mode !== "sketch"))) continue;
       let off = 0;
       try { off = evaluate(f.offset || "0", scope); } catch { /* */ }
-      list.push({ sketch: f, frame: res?.sketches?.[f.id]?.frame || planeFrame(f.plane, off), active: selected });
+      let frame = res?.sketches?.[f.id]?.frame;
+      if (!frame) try { frame = planeFrame(resolvePlane(f.plane, this.datumMap(part)), off); } catch { continue; }
+      list.push({ sketch: f, frame, active: selected });
     }
     this.viewer.showSketches(list);
+    this.viewer.showDatums(this.mode === "part" || this.mode === "sketch" ? this.datumList(part) : []);
+  }
+  /** Arbeitsebene auf eine ebene Modellfläche legen */
+  datumFacePick(id, hit) {
+    const f = this.activeDoc()?.features.find((x) => x.id === id);
+    if (!f) return;
+    if (hit?.kind !== "face" || hit.info?.type !== "PLANE") return toast("Bitte eine ebene Fläche anklicken");
+    const r = (v) => v.map((c) => Math.round(c * 1e6) / 1e6);
+    const pl = planeFromFace(hit.info.point || hit.point, hit.info.normal || hit.normal);
+    this.pick = null;
+    this.edit("Fläche wählen", () => { f.origin = r(pl.origin); f.normal = r(pl.normal); f.xDir = r(pl.xDir); });
+  }
+  /** Lagen der Arbeitselemente (ohne Kernel, aus den Feature-Daten) */
+  datumMap(part) {
+    const scope = resolveParams(part?.params || []).values;
+    return resolveDatums(part?.features || [], (x) => evaluate(x, scope)).map;
+  }
+  /** Sichtbare Arbeitselemente für die 3D-Anzeige */
+  datumList(part) {
+    if (!part || part.kind !== "part") return [];
+    const map = this.datumMap(part);
+    const bb = this.viewer.contentBox();
+    const size = bb.isEmpty() ? 120 : Math.max(60, bb.getSize(new (bb.min.constructor)()).length() * 0.5);
+    return part.features.filter((f) => map.has(f.id) && !f.hidden).map((f) => ({ id: f.id, name: f.name, size, active: this.sel?.type === "feature" && this.sel.id === f.id, ...map.get(f.id) }));
   }
 
   // ---------- Skizzen ----------
@@ -509,6 +537,8 @@ export class App {
       { frame: planeFrame({ ref: "XY" }, 0), size, color: 0x2457b8, label: "XY" },
       { frame: planeFrame({ ref: "XZ" }, 0), size, color: 0x2e9d4a, label: "XZ" },
       { frame: planeFrame({ ref: "YZ" }, 0), size, color: 0xd23b2a, label: "YZ" },
+      ...[...this.datumMap(part)].filter(([id, g]) => g.kind === "plane" && !part.features.find((f) => f.id === id)?.hidden)
+        .map(([id, g]) => ({ frame: g.frame, size: size * 0.8, color: 0xd98a1c, label: part.features.find((f) => f.id === id)?.name, key: "datum:" + id })),
     ]);
     this.setHint("Ebene (XY, XZ, YZ) oder ebene Fläche des Modells anklicken – Esc bricht ab");
     this.props.render();
@@ -561,7 +591,7 @@ export class App {
     }
     if (!silent) {
       const sk = part.features.find((f) => f.id === id);
-      const used = part.features.some((f) => f.sketch === id);
+      const used = part.features.some((f) => sketchRefs(f).includes(id));
       if (sk && !used && (sk.entities.length > 1)) toast("Skizze fertig. Jetzt z. B. Extrusion, Drehung, Bohrung oder Rahmen wählen.", { timeout: 3500 });
     }
   }
@@ -587,7 +617,7 @@ export class App {
   lastSketchId(predicate) {
     const part = this.activeDoc();
     const sks = part.features.filter((f) => f.type === "sketch" && (!predicate || predicate(f)));
-    const unused = sks.filter((s) => !part.features.some((f) => f.sketch === s.id));
+    const unused = sks.filter((s) => !part.features.some((f) => sketchRefs(f).includes(s.id)));
     const selected = this.sel?.type === "feature" && sks.find((s) => s.id === this.sel.id);
     return (selected || unused[unused.length - 1] || sks[sks.length - 1])?.id || null;
   }
@@ -626,11 +656,7 @@ export class App {
     const f = this.feature(id);
     if (!f) return;
     // abhängige Features, auch über mehrere Stufen (Profil → Platte → Rippe)
-    const gone = new Set([id]);
-    for (let grew = true; grew; ) {
-      grew = false;
-      for (const g of part.features) if (!gone.has(g.id) && [g.sketch, g.feature, g.target, g.plate].some((x) => x && gone.has(x))) { gone.add(g.id); grew = true; }
-    }
+    const gone = dependents(part.features, id);
     const deps = part.features.filter((g) => g.id !== id && gone.has(g.id));
     this.edit(`${f.name} löschen`, () => {
       part.features = part.features.filter((g) => g.id !== id && !deps.includes(g));
@@ -710,7 +736,7 @@ export class App {
       const hit = this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true });
       if (hit && hit.info?.type === "PLANE") return this.viewer.highlight([hit]);
       this.viewer.clearHover();
-      this.setHint(pl ? `${pl}-Ebene` : "Ebene (XY, XZ, YZ) oder ebene Fläche des Modells anklicken – Esc bricht ab");
+      this.setHint(pl ? (pl.startsWith("datum:") ? (this.activeDoc()?.features.find((f) => f.id === pl.slice(6))?.name || "Arbeitsebene") : `${pl}-Ebene`) : "Ebene (XY, XZ, YZ) oder ebene Fläche des Modells anklicken – Esc bricht ab");
       return;
     }
     const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
@@ -727,6 +753,7 @@ export class App {
         return this.createSketch(planeFromFace(hit.info.point || hit.point, n));
       }
       const pl = this.viewer.pickPlane(e.clientX, e.clientY);
+      if (pl?.startsWith("datum:")) return this.createSketch({ ref: "datum", id: pl.slice(6) });
       if (pl) return this.createSketch({ ref: pl });
       return;
     }
@@ -734,6 +761,7 @@ export class App {
     if (p?.kind === "measure") return this.measurePick(hit);
     if (p?.kind === "edges") return this.toggleFeatureEdge(p.feature, hit);
     if (p?.kind === "faces") return this.toggleFeatureFace(p.feature, hit);
+    if (p?.kind === "datumFace") return this.datumFacePick(p.feature, hit);
     if (p?.kind === "align") return this.alignPick(hit);
     if (this.mode === "assembly") {
       const cid = hit?.key?.startsWith("comp:") ? hit.key.slice(5) : null;
@@ -1216,6 +1244,7 @@ export const CONSTRAINT_NAMES = { gegen: "Fläche an Fläche", buendig: "Bündig
 export const FEATURE_NAMES = {
   sketch: "Skizze", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
+  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale",
 };
 
 /** Welche Bedingungen nicht erfüllbar sind, in Klartext (rot markiert in der Skizze) */
