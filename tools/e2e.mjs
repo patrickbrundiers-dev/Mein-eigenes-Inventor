@@ -3593,6 +3593,7 @@ try {
       const a = window.__werkcad, asm = a.activeDoc(), [c1, c2] = asm.components;
       const fs = a.planarFaces(c1.part);
       a.beginAlign("gegen");
+      a.align.gap = "0"; // Versatz bleibt wie in Inventor vom letzten Mal stehen
       a.alignPick({ kind: "face", key: "comp:" + c2.id, info: fs.find((f) => f.normal[2] < -0.99) });
       a.alignPick({ kind: "face", key: "comp:" + c1.id, info: fs.find((f) => f.normal[2] > 0.99) });
       a.sel = { type: "component", id: c2.id }; a.refreshSelectionHits(); a.tree.render(); a.props.render();
@@ -3673,7 +3674,7 @@ try {
     const am = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), k = asm.constraints.at(-1); return { fp: k?.fp || null, a: k?.a.comp, n: asm.components.filter((c) => !c.pat).length }; });
     // Unterbaugruppe aus Platte 2 und dem neuen Rohr bilden, dann wieder auflösen
     const newR = await evalApp(() => window.__werkcad.activeDoc().components.filter((c) => !c.pat).at(-1).name);
-    await rbClick("Unterbaugruppe");
+    await rbClick("Unterbaugruppe bilden");
     await page.locator(".dialog label.check", { hasText: "Platte:2" }).locator("input").check();
     await page.locator(".dialog label.check", { hasText: newR }).locator("input").check();
     await page.locator(".dialog .btn.primary", { hasText: "Bilden" }).click();
