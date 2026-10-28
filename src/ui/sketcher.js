@@ -1,15 +1,15 @@
 // 2D-Skizzierer über der 3D-Ansicht (SVG-Overlay, eigene Trefferprüfung im Bildschirmraum)
 import { svgEl, h, toast, fmtNum, choiceDialog, modal } from "./dom.js";
-import { solveSketch, checkNewConstraint, measureConstraint, DIMENSION_TYPES, entityFree } from "../core/solver.js";
+import { solveSketch, checkNewConstraint, measureConstraint, explainDependency, DIMENSION_TYPES, entityFree } from "../core/solver.js";
 import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../core/sketch.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, toWorld, v3 } from "../core/geom.js";
 import { resolvePlane } from "../core/datums.js";
 import { parseDxf, dxfToSketch, primsBounds } from "../core/dxfread.js";
 import { uid } from "../core/examples.js";
-import { trimEntity, filletCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
+import { trimEntity, filletCorner, chamferCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
 import { inferLine, inferCircle } from "../core/autoconstraints.js";
-import { buildSlot, buildPolygon, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
+import { buildSlot, buildPolygon, buildTangentArc, tangentArcCenter, constraintLabel, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
 import { splineSamples, splineNearest } from "../core/spline.js";
 import { specialSnap, alignSnap } from "../core/sketchsnap.js";
 import { autoDimension } from "../core/autodim.js";
@@ -30,13 +30,13 @@ export const SKETCH_TOOLS = {
   circle: "Kreis: Mittelpunkt, dann Radius klicken – oder Durchmesser tippen, Enter",
   arc3: "Bogen: Anfang, Ende, dann Punkt auf dem Bogen klicken",
   spline: "Spline: Kontrollpunkte nacheinander klicken – Enter, Doppelklick oder Esc beendet, Klick auf den ersten Punkt schließt",
-  ellipse: "Ellipse: Mittelpunkt, Ende der Hauptachse, dann einen Punkt für die Nebenhalbachse klicken",
-  arcc: "Bogen um Mittelpunkt: Mitte, Anfang, Ende (gegen Uhrzeigersinn)",
+  ellipse: "Ellipse: Mittelpunkt, Ende der Hauptachse (Halbachse Tab Winkel tippbar), dann Nebenhalbachse klicken oder tippen, Enter",
+  arcc: "Bogen um Mittelpunkt: Mitte, Anfang (Radius Tab Winkel tippbar), Ende gegen Uhrzeigersinn (Öffnungswinkel tippbar), Enter",
   point: "Punkt / Bohrungsmitte setzen",
-  slot: "Langloch: erster Mittelpunkt, zweiter Mittelpunkt, dann Breite klicken",
+  slot: "Langloch: erster Mittelpunkt, zweiter Mittelpunkt (Abstand Tab Winkel tippbar), dann Breite klicken oder tippen, Enter",
   text: "Text: Anfangspunkt auf der Grundlinie klicken, dann Text und Schrifthöhe eingeben. Platzhalter: {teilenummer}, {name}, {werkstoff}, {datum}",
   image: "Bild: linke untere Ecke klicken, dann Bild (PNG/JPG) wählen und Breite in mm eingeben. Das Bild ist nur Vorlage zum Nachzeichnen",
-  polygon: "Polygon: Mittelpunkt, dann eine Ecke klicken – danach Anzahl der Ecken eingeben",
+  polygon: "Polygon: Mittelpunkt klicken, Eckenzahl tippen, Tab, Umkreisradius tippen, Enter – oder eine Ecke klicken",
   offset: "Versatz: Kontur anklicken (oder vorher Elemente wählen), dann die Seite klicken und den Abstand eingeben",
   pattern: "Rechteckmuster: vorher Elemente wählen, dann ins Bild klicken und Anzahl/Abstände in X und Y eingeben",
   cpattern: "Kreismuster: vorher Elemente wählen, dann den Mittelpunkt klicken und Anzahl/Winkel eingeben",
@@ -51,6 +51,9 @@ export const SKETCH_TOOLS = {
   extend: "Verlängern: Linie oder Bogen nahe dem Ende anklicken, das bis zum nächsten Element verlängert wird",
   split: "Teilen: Linie oder Bogen an der Stelle anklicken, an der geteilt wird (nahe einem Schnittpunkt wird dort geteilt)",
   sfillet: "Rundung: Ecke anklicken, an der zwei Linien enden, dann Radius eingeben",
+  schamfer: "Fase: Ecke anklicken, an der zwei Linien enden, dann Abstand eingeben (zwei Abstände mit Semikolon, z. B. 5;10)",
+  circle3: "Kreis durch 3 Punkte: drei Punkte auf dem Umfang klicken – getroffene Punkte werden an den Kreis gebunden",
+  arct: "Tangentialer Bogen: Ende einer Linie klicken, dann den Endpunkt des Bogens – der Bogen schließt tangential an",
   horizontal: "Horizontal: Linie oder zwei Punkte wählen",
   vertical: "Vertikal: Linie oder zwei Punkte wählen",
   coincident: "Koinzident: Punkt und Punkt/Linie/Kreis wählen",
@@ -185,7 +188,7 @@ export class Sketcher {
   solve(extra = []) {
     const sk = this.sk;
     if (!sk) return null;
-    const r = solveSketch(sk, this.scope(), { extra, free: this.prefs?.["skizze.bestimmtheit"] !== false });
+    const r = solveSketch(sk, this.scope(), { extra, free: this.prefs?.["skizze.bestimmtheit"] !== false || this.showDof, directions: !!this.showDof });
     this.lastSolve = r;
     this.profiles = extractProfiles(sk, { vars: this.textVars() });
     this.app.updateSketchStatus(r, this.profiles);
@@ -337,6 +340,11 @@ export class Sketcher {
       }
       if (opts.length != null) cons.push({ id: uid("m"), type: "length", e: id, value: String(opts.length), labelOffset: 18 / this.M.scale });
       sk.constraints.push(...cons);
+      // getippter Winkel (nicht 0/90/180/270°, die werden waagrecht/senkrecht) bleibt als Maß zur x-Achse stehen
+      if (opts.angle != null) {
+        const c = { id: uid("m"), type: "lineAngle", e: id, value: String(opts.angle), labelOffset: 34 / this.M.scale };
+        try { if (checkNewConstraint(sk, c, this.scope()) === "ok") sk.constraints.push(c); } catch { /* weglassen */ }
+      }
       // automatische Bedingungen nur, wenn sie die Skizze nicht überbestimmen
       for (const a of hv ? [] : opts.auto || []) {
         const c = { id: uid("k"), ...a, e1: a.e1 ?? id, e2: a.e2 ?? id, ...(a.type === "tangentAt" ? { p: p1 } : {}) };
@@ -383,7 +391,8 @@ export class Sketcher {
     const r = this.dynResult(lineLive(st.start, cur));
     if (!r) return null;
     const b = lineEnd(st.start, r.values.len, r.values.ang);
-    return { b, opts: { length: r.exprs.len, noInfer: r.exprs.ang != null && !axisAngle(r.values.ang) } };
+    const typedAng = r.exprs.ang != null && !axisAngle(r.values.ang);
+    return { b, opts: { length: r.exprs.len, angle: typedAng ? r.exprs.ang : null, noInfer: typedAng } };
   }
   finishLine(cur) {
     const t = this.lineTarget(cur);
@@ -416,7 +425,97 @@ export class Sketcher {
   finishDyn(cur) {
     if (this.tool === "line") this.finishLine(cur);
     else if (this.tool === "circle") this.finishCircle(cur);
+    else if (this.tool === "slot" || this.tool === "ellipse" || this.tool === "arcc") this.stepPolar(cur);
+    else if (this.tool === "polygon") this.finishPolygon(cur);
     else this.finishRect(cur);
+  }
+  /** Punkt in Länge/Winkel von origin: getippt (Maßeingabe) oder Maus; null bei ungültigem Wert */
+  polarTarget(origin, cur) {
+    if (!dynTyped(this.state.dyn)) return { b: cur, exprs: {}, values: lineLive(origin, cur) };
+    const r = this.dynResult(lineLive(origin, cur));
+    if (!r) return null;
+    return { b: lineEnd(origin, r.values.len, r.values.ang), exprs: r.exprs, values: r.values };
+  }
+  /** Polygon-Eckenzahl ohne Eingabe: zuletzt benutzt bzw. Voreinstellung */
+  polygonN() { return Math.max(3, Math.min(64, Math.round(Number(this.lastValue("polygon") || this.prefs?.["werkzeuge.std.polygon"]) || 6))); }
+  /** Live-Werte der dritten Stufe (Langloch-Breite, Nebenhalbachse, Bogenwinkel) */
+  thirdLive(cur) {
+    const [a, b] = this.state.pts;
+    if (this.tool === "slot") return { w: 2 * slotRadius(a, b, cur) };
+    if (this.tool === "ellipse") return { b: Math.abs(ellipseLocal(ellipseGeom(a, b, 1), cur.x, cur.y).v) };
+    const t1 = Math.atan2(b.y - a.y, b.x - a.x), t = Math.atan2(cur.y - a.y, cur.x - a.x);
+    let sw = ((t - t1) * 180) / Math.PI;
+    while (sw <= 0) sw += 360;
+    return { sw };
+  }
+  /** Langloch, Ellipse, Bogen um Mitte: 2. Klick (Länge/Winkel tippbar), 3. Klick (Breite, Nebenhalbachse, Bogenwinkel tippbar) */
+  stepPolar(cur) {
+    const st = this.state, t = this.tool;
+    if (st.pts.length === 1) {
+      const p = this.polarTarget(st.pts[0], cur);
+      if (!p) return;
+      if (Math.hypot(p.b.x - st.pts[0].x, p.b.y - st.pts[0].y) * this.M.scale <= 2) return;
+      st.pts.push(p.b);
+      st.first = p.exprs;
+      st.firstAng = p.values.ang;
+      st.dyn = createDynInput([t === "arcc" ? { key: "sw", signed: true } : t === "slot" ? "w" : "b"]);
+      return;
+    }
+    const live = this.thirdLive(cur);
+    const r = dynTyped(st.dyn) ? this.dynResult(live) : { values: live, exprs: {} };
+    if (!r) return;
+    const [a, b] = st.pts, first = st.first || {}, axisAng = first.ang != null && axisAngle(st.firstAng);
+    const angDim = first.ang != null && !axisAng ? first.ang : null;
+    const hv = axisAng ? (Math.abs(Math.sin((st.firstAng * Math.PI) / 180)) < 1e-9 ? "horizontal" : "vertical") : null;
+    this.state = null;
+    const up = (s, p, cons) => this.usePoint(s, p, cons);
+    if (t === "slot") {
+      const rad = r.values.w / 2;
+      if (rad * this.M.scale < 1 && !r.exprs.w) return;
+      this.commitShape("Langloch", (sk) => {
+        const s = buildSlot(sk, a, b, rad, { uid, usePoint: up, construction: !!this.construction });
+        const dims = [];
+        if (first.len != null) dims.push({ id: uid("m"), type: "length", e: s.axis, value: String(first.len), labelOffset: 0 });
+        if (angDim != null) dims.push({ id: uid("m"), type: "lineAngle", e: s.axis, value: String(angDim), labelOffset: 34 / this.M.scale });
+        if (hv) dims.push({ id: uid("k"), type: hv, e: s.axis });
+        if (r.exprs.w != null) dims.push({ id: uid("m"), type: "diameter", e: s.arcs[0], value: String(r.exprs.w), labelAngle: Math.PI * 0.75 });
+        this.pushChecked(sk, dims);
+      });
+    } else if (t === "ellipse") {
+      if (r.values.b * this.M.scale < 1 && !r.exprs.b) return;
+      const dims = [];
+      if (first.len != null) dims.push({ type: "semiAxis", axis: "a", value: String(first.len) });
+      if (first.ang != null) dims.push({ type: "axisAngle", value: String(first.ang) });
+      if (r.exprs.b != null) dims.push({ type: "semiAxis", axis: "b", value: String(r.exprs.b) });
+      this.addEllipse(a, b, r.values.b, dims);
+    } else {
+      const R = Math.hypot(b.x - a.x, b.y - a.y), t1 = Math.atan2(b.y - a.y, b.x - a.x) + (r.values.sw * Math.PI) / 180;
+      const end = r.exprs.sw != null ? { x: a.x + R * Math.cos(t1), y: a.y + R * Math.sin(t1) } : cur;
+      this.addArc(a, b, end, first.len != null ? first.len : null);
+    }
+  }
+  finishPolygon(cur) {
+    const st = this.state, c = st.start;
+    const live = { n: this.polygonN(), r: Math.hypot(cur.x - c.x, cur.y - c.y) };
+    const res = dynTyped(st.dyn) ? this.dynResult(live) : { values: live, exprs: {} };
+    if (!res) return;
+    const n = Math.round(res.values.n);
+    if (!(n >= 3 && n <= 64)) { toast("Polygon: 3 bis 64 Ecken", { kind: "err" }); return; }
+    if (res.values.r * this.M.scale < 2 && res.exprs.r == null) return;
+    const a0 = Math.atan2(cur.y - c.y, cur.x - c.x);
+    const v = res.exprs.r != null ? { x: c.x + res.values.r * Math.cos(a0), y: c.y + res.values.r * Math.sin(a0) } : cur;
+    this.state = null;
+    if (res.exprs.n != null) this.rememberValue("polygon", String(n));
+    this.commitShape("Polygon", (sk) => {
+      const p = buildPolygon(sk, c, v, n, { uid, usePoint: (s, q, cons) => this.usePoint(s, q, cons), construction: !!this.construction });
+      if (res.exprs.r != null) this.pushChecked(sk, [{ id: uid("m"), type: "radius", e: p.circle, value: String(res.exprs.r), labelAngle: a0 + Math.PI / n }]);
+    });
+  }
+  /** Maße/Bedingungen einzeln anhängen, nur wenn sie nicht überbestimmen */
+  pushChecked(sk, list) {
+    for (const c of list) {
+      try { if (checkNewConstraint(sk, c, this.scope()) === "ok") sk.constraints.push(c); } catch { /* weglassen */ }
+    }
   }
   finishRect(cur) {
     const t = this.rectTarget(cur);
@@ -561,12 +660,14 @@ export class Sketcher {
     });
     this.render();
   }
-  addEllipse(c, a, rb) {
+  addEllipse(c, a, rb, dims = []) {
     this.commit("Ellipse", (sk) => {
       const cons = [];
       const cid = this.usePoint(sk, c, cons), aid = this.usePoint(sk, a, cons);
-      sk.entities.push({ id: uid("el"), type: "ellipse", c: cid, a: aid, r: Math.max(rb, 1e-3), construction: !!this.construction });
+      const id = uid("el");
+      sk.entities.push({ id, type: "ellipse", c: cid, a: aid, r: Math.max(rb, 1e-3), construction: !!this.construction });
       sk.constraints.push(...cons);
+      this.pushChecked(sk, dims.map((d) => ({ id: uid("m"), ...d, e: id })));
     });
   }
   addCircle(c, r, diameter = null, auto = null) {
@@ -583,7 +684,23 @@ export class Sketcher {
       }
     });
   }
-  addArc(center, start, end) {
+  /** Kreis durch 3 Fangpunkte; vorhandene Punkte liegen danach auf dem Kreis */
+  addCircle3(pts) {
+    const c = circleFrom3(...pts.map((p) => [p.x, p.y]));
+    if (!c || c.r * this.M.scale < 1) { toast("Die drei Punkte liegen auf einer Geraden – kein Kreis möglich"); this.render(); return; }
+    this.commit("Kreis", (sk) => {
+      const cid = uid("p"), id = uid("k");
+      sk.points.push({ id: cid, x: c.x, y: c.y });
+      sk.entities.push({ id, type: "circle", c: cid, r: c.r, construction: !!this.construction });
+      const cons = [];
+      for (const p of pts) {
+        if (p.pointId) cons.push({ id: uid("k"), type: "pointOnCircle", p: p.pointId, e: id });
+        else if (p.on) { const q = this.usePoint(sk, p, []); cons.push({ id: uid("k"), type: p.onType === "line" ? "pointOnLine" : "pointOnCircle", p: q, e: p.on }, { id: uid("k"), type: "pointOnCircle", p: q, e: id }); sk.entities.push({ id: uid("pt"), type: "point", p: q, construction: true }); }
+      }
+      this.pushChecked(sk, cons);
+    });
+  }
+  addArc(center, start, end, radius = null) {
     this.commit("Bogen", (sk) => {
       const cons = [];
       const cid = center.pointId || (() => { const id = uid("p"); sk.points.push({ id, x: center.x, y: center.y }); return id; })();
@@ -593,8 +710,10 @@ export class Sketcher {
       const ang = Math.atan2(end.y - center.y, end.x - center.x);
       const e2 = end.pointId ? end : { ...end, x: center.x + r * Math.cos(ang), y: center.y + r * Math.sin(ang) };
       const p2 = this.usePoint(sk, e2, cons);
-      sk.entities.push({ id: uid("b"), type: "arc", c: cid, p1, p2, construction: !!this.construction });
+      const id = uid("b");
+      sk.entities.push({ id, type: "arc", c: cid, p1, p2, construction: !!this.construction });
       sk.constraints.push(...cons);
+      if (radius != null) this.pushChecked(sk, [{ id: uid("m"), type: "radius", e: id, value: String(radius), labelAngle: Math.atan2(start.y - center.y, start.x - center.x) }]);
     });
   }
   addPoint(sn) {
@@ -786,10 +905,26 @@ export class Sketcher {
   addConstraint(c) {
     c.id = c.id || uid("k");
     const res = checkNewConstraint(this.sk, c, this.scope());
-    if (res === "redundant") { toast("Bedingung ist bereits erfüllt (überzählig)"); return false; }
-    if (res === "conflict") { toast("Bedingung widerspricht vorhandenen Bedingungen", { kind: "err" }); return false; }
+    if (res === "redundant" || res === "conflict") {
+      const why = this.blame(c);
+      toast((res === "redundant" ? "Bedingung ist schon erfüllt (überzählig)" : "Bedingung widerspricht vorhandenen Bedingungen") + (why ? ` – festgelegt durch: ${why}` : ""), { kind: res === "conflict" ? "err" : "" });
+      return false;
+    }
     this.commit("Abhängigkeit", (sk) => sk.constraints.push(c));
     return true;
+  }
+
+  /** Bedingungen, die eine neue Bedingung überzählig machen: für ein paar Sekunden rot markieren, Klartext zurück */
+  blame(c) {
+    let ids = [];
+    try { ids = explainDependency(this.sk, c, this.scope()).filter((id) => id !== "Of"); } catch { /* ohne Erklärung */ }
+    if (!ids.length) return "";
+    this.flash = new Set(ids);
+    clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => { this.flash = null; if (this.active) this.render(); }, 4000);
+    this.render();
+    const names = [...new Set(ids.map((id) => this.sk.constraints.find((k) => k.id === id)).filter(Boolean).map(constraintLabel))];
+    return names.slice(0, 4).join(", ") + (names.length > 4 ? ` (+${names.length - 4})` : "");
   }
 
   /** Bemaßung aus gewählten Elementen ableiten */
@@ -857,7 +992,8 @@ export class Sketcher {
     const measured = measureConstraint(this.sk, { ...c, value: "0" });
     const res = checkNewConstraint(this.sk, { ...c, value: String(measured) }, this.scope());
     if (res !== "ok") {
-      const ch = await choiceDialog("Maß würde überbestimmen", "Dieses Maß ist durch andere Bedingungen schon festgelegt. Als getriebenes Maß (nur Anzeige, in Klammern) hinzufügen?", [{ label: "Abbrechen", value: null }, { label: "Getriebenes Maß", value: "driven", primary: true }]);
+      const why = this.blame({ ...c, value: String(measured) });
+      const ch = await choiceDialog("Maß würde überbestimmen", "Dieses Maß ist durch andere Bedingungen schon festgelegt" + (why ? ` (rot markiert: ${why})` : "") + ". Als getriebenes Maß (nur Anzeige, in Klammern) hinzufügen?", [{ label: "Abbrechen", value: null }, { label: "Getriebenes Maß", value: "driven", primary: true }]);
       if (ch !== "driven") return;
       c.driven = true;
       c.value = String(round4(measured));
@@ -869,7 +1005,7 @@ export class Sketcher {
       this.commit("Bemaßung", (sk) => sk.constraints.push(c));
     });
   }
-  askValue(sx, sy, initial, onOk) {
+  askValue(sx, sy, initial, onOk, { allowList = false } = {}) {
     this.cancelInput();
     const scope = this.scope();
     const inp = h("input", { value: String(initial).replace(".", ","), spellcheck: "false" });
@@ -877,8 +1013,10 @@ export class Sketcher {
     const ok = () => {
       const v = inp.value.trim();
       try {
-        const num = evaluate(v, scope);
-        if (!(num > 0) && !v.includes("-")) throw new Error("Wert muss > 0 sein");
+        for (const part of allowList ? v.split(";") : [v]) {
+          const num = evaluate(part.trim(), scope);
+          if (!(num > 0) && !part.includes("-")) throw new Error("Wert muss > 0 sein");
+        }
         this.cancelInput();
         onOk(v);
       } catch (err) {
@@ -1111,7 +1249,7 @@ export class Sketcher {
       this.render();
       return;
     }
-    if (t === "sfillet") {
+    if (t === "sfillet" || t === "schamfer") {
       let best = null, bd = 14;
       for (const p of this.sk.points) {
         if (!cornerAt(this.sk, p.id)) continue;
@@ -1120,6 +1258,20 @@ export class Sketcher {
         if (d < bd) { bd = d; best = p.id; }
       }
       if (!best) return toast("Ecke anklicken, an der genau zwei Linien enden");
+      if (t === "schamfer") {
+        this.askValue(sx, sy, this.lastValue("fase") || "5", (val) => {
+          const parts = String(val).split(";").map((x) => x.trim()).filter(Boolean);
+          let d;
+          try { d = parts.map((x) => evaluate(x, this.scope())); } catch (err) { return toast(err.message, { kind: "err" }); }
+          const opts = { d2: d[1] ?? d[0], expr1: parts[0], expr2: parts[1] };
+          const res = chamferCorner(JSON.parse(JSON.stringify(this.sk)), best, d[0], uid, opts);
+          if (!res.ok) return toast(res.message, { kind: "err" });
+          this.rememberValue("fase", val);
+          this.commit("Skizzenfase", (sk) => chamferCorner(sk, best, d[0], uid, opts));
+          if (res.dropped?.length) toast("Entfernt, weil nicht mehr gültig: " + [...new Set(res.dropped)].map((x) => ({ midpoint: "Mittelpunkt", equal: "Gleich" })[x] || x).join(", "));
+        }, { allowList: true });
+        return;
+      }
       this.askValue(sx, sy, this.lastValue("rundung") || String(this.prefs?.["werkzeuge.std.rundung"] ?? 5), (val) => {
         const r = evaluate(val, this.scope());
         const test = JSON.parse(JSON.stringify(this.sk));
@@ -1244,24 +1396,30 @@ export class Sketcher {
         if (Math.hypot(lx - sx, ly - sy) > 2) this.state.pts.push(sn);
         break;
       }
-      case "ellipse":
-        if (!this.state) this.state = { pts: [sn] };
-        else if (this.state.pts.length === 1) { if (Math.hypot(sn.x - this.state.pts[0].x, sn.y - this.state.pts[0].y) * this.M.scale > 2) this.state.pts.push(sn); }
-        else {
-          const [c, a] = this.state.pts;
-          const rb = Math.abs(ellipseLocal(ellipseGeom(c, a, 1), sn.x, sn.y).v);
-          this.state = null;
-          if (rb * this.M.scale >= 1) this.addEllipse(c, a, rb);
-        }
-        break;
-      case "arcc":
-        if (!this.state) this.state = { pts: [sn] };
-        else if (this.state.pts.length === 1) this.state.pts.push(sn);
-        else { const [c, a] = this.state.pts; this.addArc(c, a, sn); this.state = null; }
+      case "ellipse": case "arcc":
+        if (!this.state) this.state = { pts: [sn], dyn: createDynInput(["len", { key: "ang", signed: true }]) };
+        else this.stepPolar(sn);
         break;
       case "point":
         this.addPoint(sn);
         break;
+      case "circle3":
+        if (!this.state) this.state = { pts: [sn] };
+        else if (this.state.pts.length < 2) this.state.pts.push(sn);
+        else { const pts = [...this.state.pts, sn]; this.state = null; this.addCircle3(pts); }
+        break;
+      case "arct": {
+        if (!this.state) {
+          const line = sn.pointId && this.sk.entities.find((e) => e.type === "line" && !e.origin && (e.p1 === sn.pointId || e.p2 === sn.pointId));
+          if (!line) { toast("Ende einer Linie anklicken – dort schließt der Bogen tangential an"); break; }
+          this.state = { start: sn, line: line.id };
+          break;
+        }
+        const { start, line } = this.state;
+        this.state = null;
+        this.commitShape("Tangentialer Bogen", (sk) => buildTangentArc(sk, start.pointId, line, sn, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));
+        break;
+      }
       case "text":
         this.addText(sn);
         break;
@@ -1269,28 +1427,12 @@ export class Sketcher {
         this.addImage(sn);
         break;
       case "slot":
-        if (!this.state) this.state = { pts: [sn] };
-        else if (this.state.pts.length === 1) { if (Math.hypot(sn.x - this.state.pts[0].x, sn.y - this.state.pts[0].y) * this.M.scale > 2) this.state.pts.push(sn); }
-        else {
-          const [a, b] = this.state.pts;
-          const r = slotRadius(a, b, sn);
-          this.state = null;
-          if (r * this.M.scale < 1) break;
-          this.commitShape("Langloch", (sk) => buildSlot(sk, a, b, r, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));
-        }
+        if (!this.state) this.state = { pts: [sn], dyn: createDynInput(["len", { key: "ang", signed: true }]) };
+        else this.stepPolar(sn);
         break;
       case "polygon":
-        if (!this.state) this.state = { start: sn };
-        else {
-          const c = this.state.start;
-          this.state = null;
-          if (Math.hypot(sn.x - c.x, sn.y - c.y) * this.M.scale < 2) break;
-          this.askValue(sx, sy, this.lastValue("polygon") || String(this.prefs?.["werkzeuge.std.polygon"] ?? 6), (val) => {
-            const n = Math.round(evaluate(val, this.scope()));
-            this.rememberValue("polygon", String(n));
-            this.commitShape("Polygon", (sk) => buildPolygon(sk, c, sn, n, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));
-          });
-        }
+        if (!this.state) this.state = { start: sn, dyn: createDynInput(["n", "r"]) };
+        else this.finishPolygon(sn);
         break;
     }
     this.render();
@@ -1355,7 +1497,7 @@ export class Sketcher {
       this.viewer.highlight(hit ? [hit] : []);
     }
     this.hover = this.hitTest(sx, sy, { dims: this.tool === "select" });
-    if (!["select", "dimension", "project", "trim", "extend", "split", "sfillet", "pattern"].includes(this.tool) && !GLYPH[this.tool]) this.snapInfo = this.snap(sx, sy);
+    if (!["select", "dimension", "project", "trim", "extend", "split", "sfillet", "schamfer", "pattern"].includes(this.tool) && !GLYPH[this.tool]) this.snapInfo = this.snap(sx, sy);
     else this.snapInfo = null;
     this.render();
   }
@@ -1368,6 +1510,7 @@ export class Sketcher {
       if (!c) return;
       if (c.type === "radius" || c.type === "diameter") { const e = this.entity(c.e); const cc = P.get(e.c); c.labelAngle = Math.atan2(ly - cc.y, lx - cc.x); return; }
       if (c.type === "semiAxis" || c.type === "axisAngle") return;
+      if (c.type === "lineAngle") { const e = this.entity(c.e), a = e && P.get(e.p1); if (a) c.labelOffset = Math.max(8 / this.M.scale, Math.hypot(lx - a.x, ly - a.y)); return; }
       if (c.type === "angle") { c.labelOffset = Math.max(5 / this.M.scale, Math.hypot(lx - d.start[0], ly - d.start[1]) + (c._base ?? (c._base = c.labelOffset || 20))); return; }
       const [a, b] = this.dimPoints(c, P);
       if (!a || !b) return;
@@ -1465,6 +1608,8 @@ export class Sketcher {
     if (this.tool === "spline" && this.state?.pts && (k === "Enter" || k === "Escape")) { this.finishSpline(false); return true; }
     if (k === "Escape") {
       if (this.state) { this.state = null; this.render(); return true; }
+      // wie Inventor: erst die Auswahl aufheben, erst bei leerer Auswahl die Skizze beenden
+      if (this.tool === "select" && this.sel.size) { this.sel.clear(); this.app.selectSketchItems([]); this.render(); return true; }
       if (this.tool !== "select") { this.setTool("select"); return true; }
       this.app.finishSketch();
       return true;
@@ -1618,6 +1763,23 @@ export class Sketcher {
         g.append(svgEl("path", { d: `M${x - 7},${y}h14M${x},${y - 7}v14`, class: "sk-line" }));
       } else g.append(svgEl("circle", { cx: x, cy: y, r: 2.8, class: cls.join(" ") }));
     }
+    // Freiheitsgrade: Doppelpfeile an Punkten, die sich noch bewegen lassen
+    if (this.showDof && free?.dirs) {
+      let dd = "";
+      for (const [pid, dirs] of free.dirs) {
+        const p = P.get(pid);
+        if (!p || pid === "O") continue;
+        const [x, y] = S(p.x, p.y);
+        for (const [ux, uy] of dirs) {
+          const [qx, qy] = S(p.x + ux, p.y + uy), L = Math.hypot(qx - x, qy - y) || 1, dx = (qx - x) / L, dy = (qy - y) / L;
+          for (const s of [1, -1]) {
+            const ex = x + s * dx * 18, ey = y + s * dy * 18;
+            dd += `M${x + s * dx * 5},${y + s * dy * 5}L${ex},${ey}l${-s * (dx * 5 - dy * 3)},${-s * (dy * 5 + dx * 3)}M${ex},${ey}l${-s * (dx * 5 + dy * 3)},${-s * (dy * 5 - dx * 3)}`;
+          }
+        }
+      }
+      if (dd) g.append(svgEl("path", { d: dd, class: "sk-dof" }));
+    }
     // Bemaßungen und Abhängigkeiten
     this.dimBoxes = [];
     this.glyphBoxes = [];
@@ -1652,15 +1814,15 @@ export class Sketcher {
     try { v = c.driven ? measureConstraint(this.sk, c) : evaluate(c.value, scope); } catch { /* */ }
     const num = fmtNum(v, 2);
     const isExpr = !c.driven && !/^\s*-?[\d.,]+\s*$/.test(String(c.value));
-    let t = c.type === "diameter" ? "Ø" + num : c.type === "radius" ? "R" + num : c.type === "angle" || c.type === "axisAngle" ? num + "°" : c.type === "semiAxis" ? `${c.axis === "b" ? "b" : "a"} ${num}` : num;
+    let t = c.type === "diameter" ? "Ø" + num : c.type === "radius" ? "R" + num : c.type === "angle" || c.type === "axisAngle" || c.type === "lineAngle" ? num + "°" : c.type === "semiAxis" ? `${c.axis === "b" ? "b" : "a"} ${num}` : num;
     if (isExpr) t = `fx: ${t}`;
     if (c.driven) t = `(${t})`;
     return t;
   }
-  renderDim(g, c, P) {
-    const sel = this.sel.has("c:" + c.id);
-    const bad = this.lastSolve?.failed?.includes(c.id);
-    const cls = "sk-dim" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (bad ? " err" : "");
+  renderDim(g, c, P, preview = false) {
+    const sel = preview || this.sel.has("c:" + c.id);
+    const bad = this.lastSolve?.failed?.includes(c.id) || this.flash?.has(c.id);
+    const cls = "sk-dim" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (bad ? " err" : "") + (preview ? " preview" : "");
     const grp = svgEl("g");
     const text = this.dimText(c);
     let tx, ty, rot = 0;
@@ -1763,11 +1925,22 @@ export class Sketcher {
       const start = c.type === "diameter" ? this.S(cc.x - r * Math.cos(ang), cc.y - r * Math.sin(ang)) : sc;
       grp.append(svgEl("path", { class: cls, d: `M${start[0]},${start[1]}L${sx[0]},${sx[1]}` + arrow(so[0], so[1], so[0] - sc[0], so[1] - sc[1]) }));
       tx = sx[0] + (sx[0] >= sc[0] ? 4 : -4); ty = sx[1];
-      grp.append(textEl(text, tx, ty, 0, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), sx[0] >= sc[0] ? "start" : "end"));
+      grp.append(textEl(text, tx, ty, 0, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : "") + (preview ? " preview" : ""), sx[0] >= sc[0] ? "start" : "end"));
       g.append(grp);
       const bb = estimateBox(text, tx, ty, sx[0] >= sc[0] ? "start" : "end");
       this.dimBoxes.push({ id: c.id, ...bb });
       return;
+    } else if (c.type === "lineAngle") {
+      // Bogen am Linienanfang von der x-Richtung bis zur Linie, kurze waagrechte Bezugslinie
+      const e = this.entity(c.e);
+      if (!e) return;
+      const a = P.get(e.p1), b = P.get(e.p2);
+      const r = c.labelOffset || 34 / this.M.scale, t = Math.atan2(b.y - a.y, b.x - a.x), sweep = t < 0 ? t + 2 * Math.PI : t;
+      const n = 32, pts = [];
+      for (let i = 0; i <= n; i++) { const q = (sweep * i) / n; pts.push(this.S(a.x + r * Math.cos(q), a.y + r * Math.sin(q))); }
+      const sa = this.S(a.x, a.y), ref = this.S(a.x + r * 1.15, a.y), end = pts[n], prev = pts[n - 1];
+      grp.append(svgEl("path", { class: cls, d: `M${sa[0]},${sa[1]}L${ref[0]},${ref[1]}M` + pts.map((p) => p.join(",")).join("L") + arrow(end[0], end[1], end[0] - prev[0], end[1] - prev[1]) }));
+      [tx, ty] = this.S(a.x + (r + 12 / this.M.scale) * Math.cos(sweep / 2), a.y + (r + 12 / this.M.scale) * Math.sin(sweep / 2));
     } else if (c.type === "angle") {
       const e1 = this.entity(c.e1), e2 = this.entity(c.e2);
       if (!e1 || !e2) return;
@@ -1788,7 +1961,7 @@ export class Sketcher {
     if (tx === undefined) return;
     const anchorUp = 4;
     const nx = Math.sin((rot * Math.PI) / 180) * anchorUp, ny = -Math.cos((rot * Math.PI) / 180) * anchorUp;
-    grp.append(textEl(text, tx + nx, ty + ny, rot, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), "middle"));
+    grp.append(textEl(text, tx + nx, ty + ny, rot, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : "") + (preview ? " preview" : ""), "middle"));
     g.append(grp);
     this.dimBoxes.push({ id: c.id, ...estimateBox(text, tx + nx, ty + ny - 4, "middle") });
   }
@@ -1822,7 +1995,7 @@ export class Sketcher {
       const gx = x + ux * 14 + n * 16, gy = y + uy * 14;
       const w = label.length > 1 ? 20 : 13;
       const sel = this.sel.has("c:" + c.id);
-      const grp = svgEl("g", { class: "sk-glyph" + (sel ? " sel" : "") + (c.disabled ? " off" : "") + (this.lastSolve?.failed?.includes(c.id) ? " err" : "") });
+      const grp = svgEl("g", { class: "sk-glyph" + (sel ? " sel" : "") + (c.disabled ? " off" : "") + (this.lastSolve?.failed?.includes(c.id) || this.flash?.has(c.id) ? " err" : "") });
       grp.append(svgEl("rect", { x: gx - w / 2, y: gy - 7, width: w, height: 13, rx: 2 }));
       const t = svgEl("text", { x: gx, y: gy + 3.5, "text-anchor": "middle" });
       t.textContent = label;
@@ -1884,16 +2057,55 @@ export class Sketcher {
       const ctrl = [...st.pts, cur].map((p) => [p.x, p.y]);
       path("M" + splineSamples(ctrl, 16).map((q) => S(q[0], q[1]).join(",")).join("L"));
       g.append(svgEl("path", { d: "M" + ctrl.map((q) => S(q[0], q[1]).join(",")).join("L"), class: "sk-ctrl" }));
+    } else if (["ellipse", "arcc", "slot"].includes(this.tool) && st.pts?.length === 1 && st.dyn) {
+      // erste Strecke (Halbachse, Radius, Mittenabstand): Länge und Winkel tippbar wie bei der Linie
+      const a = st.pts[0], live = lineLive(a, cur), typed = dynTyped(st.dyn);
+      const vals = typed ? dynValues(st.dyn, live, this.scope()).values : live;
+      const b = typed ? lineEnd(a, vals.len, vals.ang) : cur;
+      const A = S(a.x, a.y), B = S(b.x, b.y);
+      path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`);
+      if (this.tool === "arcc") g.append(svgEl("circle", { cx: A[0], cy: A[1], r: vals.len * this.M.scale, class: "sk-preview", opacity: 0.35 }));
+      this.renderDynLine(g, A, B, vals, a);
     } else if (this.tool === "ellipse" && st.pts) {
       const [c, a] = st.pts;
-      if (!a) { const A = S(c.x, c.y), B = S(cur.x, cur.y); path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`); }
-      else {
-        const g0 = ellipseGeom(c, a, 1), rb = Math.abs(ellipseLocal(g0, cur.x, cur.y).v);
-        path("M" + ellipseSamples(ellipseGeom(c, a, rb), 96).map((q) => S(q[0], q[1]).join(",")).join("L") + "Z");
-        const A = S(c.x, c.y), B = S(a.x, a.y);
-        g.append(svgEl("path", { d: `M${2 * A[0] - B[0]},${2 * A[1] - B[1]}L${B[0]},${B[1]}`, class: "sk-dyn-line" }));
+      const live = this.thirdLive(cur), rb = st.dyn ? dynValues(st.dyn, live, this.scope()).values.b : live.b;
+      path("M" + ellipseSamples(ellipseGeom(c, a, rb), 96).map((q) => S(q[0], q[1]).join(",")).join("L") + "Z");
+      const A = S(c.x, c.y), B = S(a.x, a.y);
+      g.append(svgEl("path", { d: `M${2 * A[0] - B[0]},${2 * A[1] - B[1]}L${B[0]},${B[1]}`, class: "sk-dyn-line" }));
+      if (st.dyn) {
+        const q = ellipsePoint(ellipseGeom(c, a, rb), Math.PI / 2), Q = S(q.x, q.y);
+        g.append(svgEl("path", { d: `M${A[0]},${A[1]}L${Q[0]},${Q[1]}`, class: "sk-dyn-line" }));
+        this.dynBox(g, 0, (A[0] + Q[0]) / 2 + 26, (A[1] + Q[1]) / 2, "b ", "", rb);
       }
-    } else if ((this.tool === "arc3" || this.tool === "arcc") && st.pts) {
+    } else if (this.tool === "arcc" && st.pts) {
+      const [c, a] = st.pts, live = this.thirdLive(cur), sw = st.dyn ? dynValues(st.dyn, live, this.scope()).values.sw : live.sw;
+      const R = Math.hypot(a.x - c.x, a.y - c.y), t1 = Math.atan2(a.y - c.y, a.x - c.x), n = 48, pts = [];
+      for (let i = 0; i <= n; i++) { const t = t1 + ((sw * Math.PI) / 180) * (i / n); pts.push(S(c.x + R * Math.cos(t), c.y + R * Math.sin(t))); }
+      path("M" + pts.map((q) => q.join(",")).join("L"));
+      const C = S(c.x, c.y), tm = t1 + ((sw * Math.PI) / 360), M = S(c.x + R * 0.6 * Math.cos(tm), c.y + R * 0.6 * Math.sin(tm));
+      g.append(svgEl("path", { d: `M${pts[0][0]},${pts[0][1]}L${C[0]},${C[1]}L${pts[n][0]},${pts[n][1]}`, class: "sk-dyn-line" }));
+      if (st.dyn) this.dynBox(g, 0, M[0], M[1], "", "°", sw);
+    } else if (this.tool === "circle3" && st.pts) {
+      const pts = [...st.pts, cur];
+      if (pts.length === 3) {
+        const c = circleFrom3(...pts.map((p) => [p.x, p.y]));
+        if (c) { const C = S(c.x, c.y); g.append(svgEl("circle", { cx: C[0], cy: C[1], r: c.r * this.M.scale, class: "sk-preview" })); }
+      } else path("M" + pts.map((p) => S(p.x, p.y).join(",")).join("L"));
+      for (const p of st.pts) { const q = S(p.x, p.y); g.append(svgEl("circle", { cx: q[0], cy: q[1], r: 3, class: "sk-snap" })); }
+    } else if (this.tool === "arct" && st.start) {
+      const P0 = this.pts(), line = this.entity(st.line), s0 = P0.get(st.start.pointId), f = line && P0.get(line.p1 === st.start.pointId ? line.p2 : line.p1);
+      if (s0 && f) {
+        const L = Math.hypot(s0.x - f.x, s0.y - f.y) || 1, a = tangentArcCenter(s0, { x: (s0.x - f.x) / L, y: (s0.y - f.y) / L }, cur);
+        if (a) {
+          const t0 = Math.atan2(s0.y - a.c.y, s0.x - a.c.x), t1 = Math.atan2(cur.y - a.c.y, cur.x - a.c.x);
+          let sw = t1 - t0;
+          if (a.ccw) { while (sw <= 0) sw += 2 * Math.PI; } else { while (sw >= 0) sw -= 2 * Math.PI; }
+          const pts = [];
+          for (let i = 0; i <= 48; i++) { const q = t0 + (sw * i) / 48; pts.push(S(a.c.x + a.r * Math.cos(q), a.c.y + a.r * Math.sin(q))); }
+          path("M" + pts.map((q) => q.join(",")).join("L"));
+        }
+      }
+    } else if (this.tool === "arc3" && st.pts) {
       const pts = [...st.pts, cur];
       if (this.tool === "arc3" && pts.length === 3) {
         const circ = circleFrom3([pts[0].x, pts[0].y], [pts[2].x, pts[2].y], [pts[1].x, pts[1].y]);
@@ -1907,22 +2119,49 @@ export class Sketcher {
       const [a, b] = st.pts;
       if (!b) { const A = S(a.x, a.y), B = S(cur.x, cur.y); path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`); }
       else {
-        const r = slotRadius(a, b, cur);
+        const live = this.thirdLive(cur), r = (st.dyn ? dynValues(st.dyn, live, this.scope()).values.w : live.w) / 2;
         const L = Math.hypot(b.x - a.x, b.y - a.y) || 1, nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L;
         // Umriss als Punktfolge: Halbkreis um b (von +n über +Achse nach −n), dann um a zurück
         const base = Math.atan2(ny, nx), pts = [];
         for (let i = 0; i <= 16; i++) { const t = base - (Math.PI * i) / 16; pts.push(S(b.x + r * Math.cos(t), b.y + r * Math.sin(t))); }
         for (let i = 0; i <= 16; i++) { const t = base + Math.PI - (Math.PI * i) / 16; pts.push(S(a.x + r * Math.cos(t), a.y + r * Math.sin(t))); }
         path("M" + pts.map((q) => q.join(",")).join("L") + "Z");
+        if (st.dyn) {
+          const P1 = S(b.x + r * nx, b.y + r * ny), P2 = S(b.x - r * nx, b.y - r * ny);
+          g.append(svgEl("path", { d: `M${P1[0]},${P1[1]}L${P2[0]},${P2[1]}`, class: "sk-dyn-line" }));
+          this.dynBox(g, 0, (P1[0] + P2[0]) / 2 + 30, (P1[1] + P2[1]) / 2 - 14, "", "", 2 * r);
+        }
       }
     } else if (this.tool === "polygon" && st.start) {
-      const c = st.start, n = Math.max(3, Math.min(64, Number(this.lastValue("polygon") || this.prefs?.["werkzeuge.std.polygon"]) || 6));
-      const r = Math.hypot(cur.x - c.x, cur.y - c.y), a0 = Math.atan2(cur.y - c.y, cur.x - c.x);
+      const c = st.start, live = { n: this.polygonN(), r: Math.hypot(cur.x - c.x, cur.y - c.y) };
+      const vals = st.dyn ? dynValues(st.dyn, live, this.scope()).values : live;
+      const n = Math.max(3, Math.min(64, Math.round(vals.n) || 3)), r = vals.r, a0 = Math.atan2(cur.y - c.y, cur.x - c.x);
       const pts = Array.from({ length: n }, (_, i) => S(c.x + r * Math.cos(a0 + (2 * Math.PI * i) / n), c.y + r * Math.sin(a0 + (2 * Math.PI * i) / n)));
       path("M" + pts.map((q) => q.join(",")).join("L") + "Z");
+      if (st.dyn) {
+        const C = S(c.x, c.y);
+        g.append(svgEl("path", { d: `M${C[0]},${C[1]}L${pts[0][0]},${pts[0][1]}`, class: "sk-dyn-line" }));
+        this.dynBox(g, 0, C[0], C[1] + 26, "", " Ecken", vals.n);
+        this.dynBox(g, 1, (C[0] + pts[0][0]) / 2, (C[1] + pts[0][1]) / 2 - 14, "R ", "", r);
+      }
     } else if (this.tool === "dimension" && st.picks) {
-      const t = svgEl("text", { x: m.sx + 12, y: m.sy + 18, class: "sk-infer" });
-      t.textContent = st.place ? (st.locked ? "Lage klicken" : "Lage klicken oder zweites Element wählen") : "zweites Element wählen";
+      // Vorschau wie Inventor: das Maß hängt an der Maus und zeigt, ob waagrecht, senkrecht oder ausgerichtet bemaßt wird
+      let shown = false;
+      if (st.place) {
+        const c = this.dimensionFrom(st.picks, { x: m.lx, y: m.ly });
+        if (c) {
+          try {
+            c.id = "_vorschau";
+            c.value = String(round4(measureConstraint(this.sk, { ...c, value: "0" })));
+            const nb = this.dimBoxes.length;
+            this.renderDim(g, c, P, true);
+            this.dimBoxes.length = nb;
+            shown = true;
+          } catch { /* keine Vorschau möglich */ }
+        }
+      }
+      const t = svgEl("text", { x: m.sx + 12, y: m.sy + (shown ? 34 : 18), class: "sk-infer" });
+      t.textContent = st.place ? (shown ? (st.locked ? "Klick setzt das Maß" : "Klick setzt das Maß – oder zweites Element wählen") : st.locked ? "Lage klicken" : "Lage klicken oder zweites Element wählen") : "zweites Element wählen";
       g.append(t);
     }
   }
@@ -1956,7 +2195,7 @@ export class Sketcher {
     });
   }
   /** Maßfelder an der Vorschau-Linie: Länge neben der Linienmitte, Winkel am Startpunkt */
-  renderDynLine(g, A, B, vals) {
+  renderDynLine(g, A, B, vals, origin = this.state.start) {
     const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1;
     // Normale zeigt auf dem Bildschirm nach oben bzw. rechts
     let nx = dy / L, ny = -dx / L;
@@ -1966,7 +2205,7 @@ export class Sketcher {
     g.append(svgEl("path", { d: `M${A[0]},${A[1]}L${A1[0]},${A1[1]}M${B[0]},${B[1]}L${B1[0]},${B1[1]}M${A1[0]},${A1[1]}L${B1[0]},${B1[1]}`, class: "sk-dyn-line" }));
     this.dynBox(g, 0, (A1[0] + B1[0]) / 2, (A1[1] + B1[1]) / 2, "", "", vals.len);
     // Winkel: Bogen von der Skizzen-x-Achse bis zur Linie, Feld auf der Winkelhalbierenden
-    const a = this.state.start, R = 34 / this.M.scale, ang = (vals.ang * Math.PI) / 180;
+    const a = origin, R = 34 / this.M.scale, ang = (vals.ang * Math.PI) / 180;
     const arc = [];
     for (let k = 0; k <= 24; k++) { const t = (ang * k) / 24; arc.push(this.S(a.x + R * Math.cos(t), a.y + R * Math.sin(t))); }
     const X = this.S(a.x + R * 1.3, a.y);

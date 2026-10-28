@@ -17,7 +17,7 @@ export const CLEAN_DEFAULTS = { tol: 0.01, angle: 0.5 };
 const ENT_PT_KEYS = ["p1", "p2", "c", "p", "a"];
 const CON_PT_KEYS = ["p", "q", "c"];
 const CON_ENT_KEYS = ["e", "e1", "e2"];
-const ANGLE_CONS = ["horizontal", "vertical", "angle", "parallel", "perpendicular", "collinear"];
+const ANGLE_CONS = ["horizontal", "vertical", "angle", "lineAngle", "parallel", "perpendicular", "collinear"];
 
 /**
  * Säubert sk. opts: { tol (mm), angle (°), kinds: {merge, zero, dupes, overlap, straighten}, uid }.
