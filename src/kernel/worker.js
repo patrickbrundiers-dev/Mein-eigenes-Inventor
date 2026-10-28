@@ -8,6 +8,7 @@ import { svgPathSegments } from "../core/svgpath.js";
 import { segmentsToDxf } from "../core/dxf.js";
 import { writeIges } from "../core/iges.js";
 import { igesFaces } from "./igesocc.js";
+import { memberHoles, plateNc, plateInfo } from "./dstvocc.js";
 import { placementMatrix, matInvertRigid, matApply, matApplyDir } from "../core/geom.js";
 
 let K = null;
@@ -154,6 +155,62 @@ const handlers = {
     const texts = [];
     for (const o of out) texts.push({ index: o.index, name: o.name, text: await o.blob.text() });
     return texts;
+  },
+
+  /**
+   * DSTV-NC (ST1): je Körper Stabdaten (Bohrungen je Fläche) bzw. Plattenkontur; Text schreibt src/core/dstv.js.
+   * Rückgabe [{ index, name, kind: "member"|"plate"|"skip", reason?, … }]
+   */
+  async dstvData({ part }) {
+    const res = await getBuilt(part);
+    return res.bodies.map((b, index) => {
+      const name = b.name || part.name;
+      const m = b.meta || {};
+      try {
+        if (b.kind === "member") {
+          if (m.bends?.length || m.knicks) return { index, name, kind: "skip", reason: "gebogen – Abwicklung über die Biegeliste" };
+          if (!m.axis || !m.sec) return { index, name, kind: "skip", reason: "ohne Stabachse" };
+          const flat = m.sec.kind === "flach";
+          const { holes, skipped } = memberHoles(K, b.shape, m.axis, { flat });
+          return { index, name, kind: "member", sec: m.sec, section: m.section, area: m.area, length: m.length, perimeter: m.axis.perimeter, miterStart: m.miterStart, miterEnd: m.miterEnd, miterParts: m.miterParts, coped: !!m.coped || !!m.contours?.length, holes, skipped, width: m.axis.width, height: m.axis.height };
+        }
+        if (m.norm || m.weld || m.assist) return { index, name, kind: "skip", reason: "Normteil/Naht" };
+        if (m.sheet?.bends?.length) return { index, name, kind: "skip", reason: "Kantteil – Abwicklung als DXF" };
+        const pl = plateNc(R, b.shape);
+        if (!pl) return { index, name, kind: "skip", reason: "keine ebene Platte" };
+        return { index, name, kind: "plate", ...pl };
+      } catch (e) {
+        return { index, name, kind: "skip", reason: errorText(e, R) };
+      }
+    });
+  },
+
+  /**
+   * IFC (ST2): je Körper Dreiecksnetz in Weltlage und die Angaben für Klasse und Eigenschaften; den Text schreibt src/core/ifc.js.
+   */
+  async ifcData({ items, tolerance = 0.2 }) {
+    const out = [];
+    for (const it of items) {
+      const res = await getBuilt(it.part);
+      const M = placementMatrix(it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
+      res.bodies.forEach((b, index) => {
+        const m = b.meta || {};
+        const shape = K.placed(b.shape, it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
+        const mesh = shape.mesh({ tolerance, angularTolerance: 0.3 });
+        let plate = !!(m.plate || m.rib || m.endcap || (m.sheet && !m.sheet.bends?.length));
+        if (!plate && b.kind !== "member" && !m.norm && !m.weld) { try { plate = !!plateInfo(R, b.shape); } catch { plate = false; } }
+        let volume = 0;
+        try { volume = R.measureVolume(b.shape); } catch { /* ohne Volumen */ }
+        out.push({
+          item: it.name || it.part.name, part: it.part.name, number: it.part.number || "", index, name: b.name || it.part.name, kind: b.kind,
+          axis: b.kind === "member" && m.axis ? matApplyDir(M, m.axis.z) : null, plate, norm: m.norm?.designation || null, weld: !!m.weld,
+          profile: m.section || "", length: m.length || 0, thickness: m.plate?.t || m.sheet?.t || 0, volume,
+          material: it.part.material || "", color: it.color || partColor(it.part),
+          vertices: Array.from(mesh.vertices), triangles: Array.from(mesh.triangles),
+        });
+      });
+    }
+    return out;
   },
 
   async project({ items, views }) {

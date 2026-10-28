@@ -184,24 +184,26 @@ export function trimEntity(sk, entityId, click, uid) {
  * Rundet die Ecke zwischen zwei Linien, die sich im Punkt `pointId` treffen, mit Radius r.
  * Erzeugt Bogen + Tangential-Bedingungen + Radiusmaß. Rückgabe {ok, message?, arcId?}
  */
-export function filletCorner(sk, pointId, r, uid, radiusExpr) {
+/** Ecke aus zwei Linien, die im Punkt enden: Linien, Eckpunkt, Einheitsrichtungen zu den fernen Enden, Öffnungswinkel */
+function cornerGeom(sk, pointId, what) {
   const P = pts(sk);
   const lines = sk.entities.filter((e) => e.type === "line" && !e.construction && (e.p1 === pointId || e.p2 === pointId));
-  if (lines.length !== 2) return { ok: false, message: "An der Ecke müssen genau zwei Linien enden" };
-  if (!(r > 0)) return { ok: false, message: "Radius muss > 0 sein" };
+  if (lines.length !== 2) return { message: "An der Ecke müssen genau zwei Linien enden" };
   const C0 = P.get(pointId);
   const far = lines.map((l) => P.get(l.p1 === pointId ? l.p2 : l.p1));
   const u = far.map((f) => { const dx = f.x - C0.x, dy = f.y - C0.y, L = Math.hypot(dx, dy) || 1; return { x: dx / L, y: dy / L, L }; });
-  const cosT = u[0].x * u[1].x + u[0].y * u[1].y;
-  const theta = Math.acos(Math.max(-1, Math.min(1, cosT)));
-  if (theta < 1e-3 || Math.PI - theta < 1e-3) return { ok: false, message: "Linien sind parallel – keine Ecke zum Runden" };
-  const d = r / Math.tan(theta / 2);
-  if (d >= u[0].L - 1e-9 || d >= u[1].L - 1e-9) return { ok: false, message: "Radius zu groß für diese Ecke" };
-  const T = u.map((v) => ({ x: C0.x + v.x * d, y: C0.y + v.y * d }));
-  const bis = { x: u[0].x + u[1].x, y: u[0].y + u[1].y };
-  const bl = Math.hypot(bis.x, bis.y) || 1;
-  const h = r / Math.sin(theta / 2);
-  const C = { x: C0.x + (bis.x / bl) * h, y: C0.y + (bis.y / bl) * h };
+  const theta = Math.acos(Math.max(-1, Math.min(1, u[0].x * u[1].x + u[0].y * u[1].y)));
+  if (theta < 1e-3 || Math.PI - theta < 1e-3) return { message: `Linien sind parallel – keine Ecke zum ${what}` };
+  return { lines, C0, u, theta };
+}
+
+/**
+ * Ecke aufschneiden: neue Endpunkte im Abstand d[i] vom Eckpunkt auf beiden Linien. Der alte Eckpunkt bleibt als
+ * virtueller Konstruktionspunkt auf beiden Linien, Längenmaße werden zu Abständen bis zu ihm; »gleich«/»Mittelpunkt« entfallen.
+ */
+function openCorner(sk, pointId, g, d, uid) {
+  const { lines, C0, u } = g;
+  const T = u.map((v, i) => ({ x: C0.x + v.x * d[i], y: C0.y + v.y * d[i] }));
   const tid = T.map((t) => { const id = uid("p"); sk.points.push({ id, x: t.x, y: t.y }); return id; });
   const farIds = lines.map((l) => (l.p1 === pointId ? l.p2 : l.p1));
   lines.forEach((l, i) => { if (l.p1 === pointId) l.p1 = tid[i]; else l.p2 = tid[i]; });
@@ -222,6 +224,21 @@ export function filletCorner(sk, pointId, r, uid, radiusExpr) {
   const lineIds = new Set(lines.map((l) => l.id));
   const dropped = sk.constraints.filter((k) => (k.type === "equal" || k.type === "midpoint") && [k.e, k.e1, k.e2].some((x) => lineIds.has(x))).map((k) => k.type);
   sk.constraints = sk.constraints.filter((k) => !((k.type === "equal" || k.type === "midpoint") && [k.e, k.e1, k.e2].some((x) => lineIds.has(x))));
+  return { T, tid, dropped };
+}
+
+export function filletCorner(sk, pointId, r, uid, radiusExpr) {
+  const g = cornerGeom(sk, pointId, "Runden");
+  if (g.message) return { ok: false, message: g.message };
+  if (!(r > 0)) return { ok: false, message: "Radius muss > 0 sein" };
+  const { lines, C0, u, theta } = g;
+  const d = r / Math.tan(theta / 2);
+  if (d >= u[0].L - 1e-9 || d >= u[1].L - 1e-9) return { ok: false, message: "Radius zu groß für diese Ecke" };
+  const bis = { x: u[0].x + u[1].x, y: u[0].y + u[1].y };
+  const bl = Math.hypot(bis.x, bis.y) || 1;
+  const h = r / Math.sin(theta / 2);
+  const C = { x: C0.x + (bis.x / bl) * h, y: C0.y + (bis.y / bl) * h };
+  const { T, tid, dropped } = openCorner(sk, pointId, g, [d, d], uid);
   const cid = uid("p");
   sk.points.push({ id: cid, x: C.x, y: C.y });
   // Bogen gegen den Uhrzeigersinn: Startpunkt so wählen, dass der kurze Weg CCW läuft
@@ -236,6 +253,28 @@ export function filletCorner(sk, pointId, r, uid, radiusExpr) {
     { id: uid("m"), type: "radius", e: aid, value: radiusExpr || String(Math.round(r * 1e4) / 1e4), labelAngle: Math.atan2(-(bis.y / bl), -(bis.x / bl)) },
   );
   return { ok: true, arcId: aid, dropped };
+}
+
+/**
+ * Fase an der Ecke zwischen zwei Linien (Inventor »Fase«, gleiche Abstände oder zwei Abstände d1/d2).
+ * Neue Linie zwischen den Schnittpunkten, Abstandsmaße vom virtuellen Eckpunkt. Rückgabe {ok, message?, lineId?, dropped?}
+ */
+export function chamferCorner(sk, pointId, d1, uid, { d2 = d1, expr1, expr2 } = {}) {
+  const g = cornerGeom(sk, pointId, "Fasen");
+  if (g.message) return { ok: false, message: g.message };
+  if (!(d1 > 0) || !(d2 > 0)) return { ok: false, message: "Fasenabstand muss > 0 sein" };
+  if (d1 >= g.u[0].L - 1e-9 || d2 >= g.u[1].L - 1e-9) return { ok: false, message: "Fase zu groß für diese Ecke" };
+  const { lines } = g;
+  const { tid, dropped } = openCorner(sk, pointId, g, [d1, d2], uid);
+  const lid = uid("l");
+  sk.entities.push({ id: lid, type: "line", p1: tid[0], p2: tid[1], construction: false });
+  const e1 = expr1 || String(Math.round(d1 * 1e4) / 1e4);
+  const m1 = { id: uid("m"), type: "distance", p: pointId, q: tid[0], value: e1, labelOffset: 0 };
+  const m2 = expr2 == null && d2 === d1
+    ? { id: uid("m"), type: "distance", p: pointId, q: tid[1], value: e1, tie: m1.id, labelOffset: 0, hidden: true } // gleiche Abstände folgen dem ersten Maß
+    : { id: uid("m"), type: "distance", p: pointId, q: tid[1], value: expr2 || String(Math.round(d2 * 1e4) / 1e4), labelOffset: 0 };
+  sk.constraints.push(m1, m2);
+  return { ok: true, lineId: lid, lines: lines.map((l) => l.id), dims: [m1.id, m2.id], dropped };
 }
 
 /** Ecke unter dem Punkt finden: Punkt, an dem genau zwei Linien enden */
