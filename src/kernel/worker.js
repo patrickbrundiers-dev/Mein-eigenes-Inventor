@@ -11,11 +11,12 @@ import { igesFaces } from "./igesocc.js";
 import { memberHoles, plateNc, plateInfo } from "./dstvocc.js";
 import { placementMatrix, matInvertRigid, matApply, matApplyDir } from "../core/geom.js";
 
-let K = null;
+let K = null, OCM = null;
 const ready = (async () => {
   const wasmUrl = new URL("replicad_single.wasm", self.location.href).href;
   const OC = await ocInit({ locateFile: () => wasmUrl });
   R.setOC(OC);
+  OCM = OC;
   K = createKernel(R);
 })();
 
@@ -24,9 +25,19 @@ const built = new Map();
 const meshCache = new Map();
 const projCache = new Map();
 let bendKey = "[[],[]]";
-function remember(map, key, val, max) {
+/**
+ * Eintrag merken (zuletzt benutzt hinten). Je Bauteil höchstens `perPart` Stände (aktueller + Rückgängig-Stände),
+ * insgesamt höchstens `max` – so verdrängt eine große Baugruppe nicht ihre eigenen Teile, und viele Änderungen an
+ * einem Bauteil füllen den Speicher nicht mit alten Ständen.
+ */
+function remember(map, key, val, max, partId = null, perPart = 3) {
   map.delete(key);
+  if (partId !== null) val.partId = partId;
   map.set(key, val);
+  if (partId !== null) {
+    const same = [...map.keys()].filter((k) => map.get(k).partId === partId);
+    for (const k of same.slice(0, Math.max(0, same.length - perPart))) map.delete(k);
+  }
   while (map.size > max) map.delete(map.keys().next().value);
 }
 
@@ -36,8 +47,8 @@ async function getBuilt(part) {
   if (!res) {
     res = await K.buildPart(part);
     res.key = key;
-    remember(built, key, res, 24);
   }
+  remember(built, key, res, 64, part.id);
   return res;
 }
 
@@ -81,14 +92,14 @@ const handlers = {
     const t0 = performance.now();
     const res = await getBuilt(part);
     const mkey = res.key + quality;
-    let bodies = meshCache.get(mkey);
+    let bodies = meshCache.get(mkey)?.bodies;
     if (!bodies) {
       bodies = res.bodies.map((b, i) => {
         let mesh = null, props = null, error = null;
         try { mesh = K.meshBody(b.shape, quality); props = K.bodyProps(b.shape); } catch (e) { error = errorText(e, R); }
         return { index: i, name: b.name, kind: b.kind, fid: b.fid, meta: b.meta ? { ...b.meta } : null, mesh, props, error };
       });
-      remember(meshCache, mkey, bodies, 24);
+      remember(meshCache, mkey, { bodies }, 64, part.id);
     }
     const sketches = {};
     for (const [id, s] of res.sketches) sketches[id] = { dof: s.dof, errors: s.prof.errors, regions: s.prof.regions.length, openPoints: s.prof.openPoints, frame: s.frame };
@@ -303,7 +314,16 @@ const handlers = {
     return { tabs: plan.tabs.map(local(A.inv)), slots: plan.slots.map(local(B.inv)), info: plan.info, tabBody: A.b.fid, slotBody: B.b.fid };
   },
   async ping() { return "ok"; },
+  /** Messgerüst (tools/messen.mjs): WASM-Speicher und Füllstand der Zwischenspeicher */
+  async stats() {
+    return { heapMB: heapMB(), built: built.size, meshes: meshCache.size, projections: projCache.size, prefixParts: K.prefixCache.size, prefixStates: [...K.prefixCache.values()].reduce((n, l) => n + l.length, 0) };
+  },
 };
+
+/** Belegter WASM-Speicher in MB (wächst nur, OpenCascade gibt Speicher aus Booleschen Operationen nicht vollständig zurück) */
+function heapMB() {
+  return Math.round((OCM?.wasmMemory?.buffer?.byteLength ?? OCM?.HEAPU8?.length ?? 0) / 1048576);
+}
 
 function bbox2(polys) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -318,9 +338,9 @@ self.onmessage = async (ev) => {
     const h = handlers[cmd];
     if (!h) throw new Error("Unbekannter Auftrag " + cmd);
     const result = await h(args || {});
-    self.postMessage({ id, ok: true, result });
+    self.postMessage({ id, ok: true, result, heapMB: heapMB() });
   } catch (e) {
     const fatal = e instanceof WebAssembly.RuntimeError;
-    self.postMessage({ id, ok: false, error: errorText(e, R), fatal });
+    self.postMessage({ id, ok: false, error: errorText(e, R), fatal, heapMB: heapMB() });
   }
 };
