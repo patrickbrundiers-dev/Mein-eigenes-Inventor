@@ -23,6 +23,8 @@ export function commandRunners(app) {
     "file.newPart": () => app.newPart(),
     "file.listsXlsx": () => app.files.exportListsXlsx(),
     "file.mappe": () => app.files.exportMappe(),
+    "file.dstv": () => app.files.exportDstv(),
+    "file.ifc": () => app.files.exportIfc(),
     "file.angebot": () => app.files.exportAngebot(),
     "file.png": () => app.files.exportPng(),
     "file.iges": () => app.files.exportIges(),
