@@ -3,6 +3,7 @@ import { Viewer } from "./viewer.js";
 import { problemsDialog, quickCounts, countText } from "./pruefung.js";
 import { invertSelection } from "../core/boxselect.js";
 import { Sketcher } from "./sketcher.js";
+import { MiniBar } from "./minibar.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
 import { Tree } from "./tree.js";
@@ -14,7 +15,7 @@ import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
-import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./dom.js";
+import { h, toast, confirmDialog, promptDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
 import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { moveProblem, copyFeatures } from "../core/ableiten.js";
@@ -86,6 +87,7 @@ export class App {
     this.sketcher = new Sketcher(this);
     this.files = new Files(this);
     this.ribbon = new Ribbon(this);
+    this.minibar = new MiniBar(this);
     this.tree = new Tree(this);
     this.props = new Props(this);
     this.drawing = new DrawingEditor(this);
@@ -949,6 +951,7 @@ export class App {
     this.tree.render();
     this.props.render();
     this.ribbon.render();
+    if (hit) this.minibar.show(e.clientX, e.clientY);
   }
   /** Wählbares im Bauteil nach Auswahlfilter (Flächen/Kanten) */
   selectableOpts() {
@@ -982,25 +985,43 @@ export class App {
     this.setSelection(invertSelection(this.viewer.boxHits(this.selectableOpts()), this.selHits, hitKey));
   }
   viewerContextMenu(e) {
-    const items = [];
-    if (this.mode === "part") {
-      items.push({ label: "Neue Skizze", icon: "sketch", run: () => this.beginSketchCreation() });
-      const faceHit = this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true });
-      if (faceHit?.info?.type === "PLANE") items.push({ label: "Skizze auf dieser Fläche", icon: "plane", run: () => this.createSketch(planeFromFace(faceHit.info.point, faceHit.info.normal)) });
+    const part = this.mode === "part", asm = this.mode === "assembly";
+    const faceHit = part ? this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true }) : null;
+    const bodyHit = part ? faceHit : asm ? this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true }) : null;
+    const what = asm ? "Komponente" : "Körper";
+    const kbd = (id) => this.commands?.label(id) || undefined;
+    const I = {
+      sketch: { label: "Neue Skizze", icon: "sketch", kbd: kbd("part.sketch"), run: () => this.beginSketchCreation() },
+      faceSketch: faceHit?.info?.type === "PLANE" ? { label: "Skizze auf dieser Fläche", icon: "plane", run: () => this.createSketch(planeFromFace(faceHit.info.point, faceHit.info.normal)) } : null,
+      extrude: { label: "Extrusion", icon: "extrude", kbd: kbd("part.extrude"), run: () => this.ribbon.run("extrude") },
+      place: { label: "Bauteil platzieren", icon: "place", run: () => this.props.placeComponentDialog() },
+      constraint: { label: "Abhängigkeit", icon: "align", run: () => this.ribbon.run("constraint") },
+      measure: { label: "Messen", icon: "dimension", kbd: kbd("tools.measure"), run: () => this.beginMeasure() },
+      hide: bodyHit ? { label: `${what} ausblenden`, icon: "eyeoff", run: () => this.hideHit(bodyHit) } : null,
+      isolate: bodyHit ? { label: `${what} isolieren`, icon: "eye", run: () => this.isolateHit(bodyHit) } : null,
+      showAll: this.viewer.hidden.size ? { label: "Alle einblenden", icon: "eye", run: () => this.showAllBodies() } : null,
+      fit: { label: "Alles zeigen", icon: "fit", kbd: "F6", run: () => this.viewer.fit() },
+      fitSel: this.viewer.selectedHits?.length ? { label: "Auswahl zeigen", icon: "fit", run: () => this.zoomToSelection() } : null,
+      normal: this.viewer.selectedHits?.some((x) => x.kind === "face" && x.info?.type === "PLANE") ? { label: "Normal zur Fläche", icon: "plane", run: () => this.viewNormalToFace() } : null,
+      iso: { label: "Iso-Ansicht", icon: "part", run: () => this.viewer.setView("iso") },
+      undo: this.undoStack.length ? { label: "Rückgängig", icon: "undo", kbd: "Strg+Z", run: () => this.undo() } : null,
+      redo: this.redoStack.length ? { label: "Wiederholen", icon: "redo", kbd: "Strg+Y", run: () => this.redo() } : null,
+      search: { label: "Befehl suchen …", icon: "search", kbd: kbd("app.search"), run: () => this.commands.exec("app.search") },
+    };
+    if (this.prefs.get("ansicht.markierungsmenue") === false) {
+      // klassische Liste
+      const items = part ? [I.sketch, I.faceSketch] : asm ? [I.place] : [];
+      items.push("-", I.hide, I.isolate, I.showAll, "-", I.fit, I.fitSel, I.normal, I.iso);
+      if (I.undo) items.push("-", { ...I.undo, label: "Rückgängig: " + this.undoStack[this.undoStack.length - 1].label });
+      return contextMenu(e.clientX, e.clientY, items);
     }
-    if (this.mode === "assembly") {
-      items.push({ label: "Bauteil platzieren", icon: "place", run: () => this.props.placeComponentDialog() });
-    }
-    const bodyHit = (this.mode === "part" || this.mode === "assembly") ? this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true }) : null;
-    const what = this.mode === "assembly" ? "Komponente" : "Körper";
-    if (bodyHit) items.push("-", { label: `${what} ausblenden`, icon: "eyeoff", run: () => this.hideHit(bodyHit) }, { label: `${what} isolieren`, icon: "eye", run: () => this.isolateHit(bodyHit) });
-    if (this.viewer.hidden.size) items.push({ label: "Alle einblenden", icon: "eye", run: () => this.showAllBodies() });
-    items.push("-", { label: "Alles zeigen", icon: "fit", kbd: "F6", run: () => this.viewer.fit() },
-      this.viewer.selectedHits?.length ? { label: "Auswahl zeigen", icon: "fit", run: () => this.zoomToSelection() } : null,
-      this.viewer.selectedHits?.some((x) => x.kind === "face" && x.info?.type === "PLANE") ? { label: "Normal zur Fläche", icon: "plane", run: () => this.viewNormalToFace() } : null,
-      { label: "Iso-Ansicht", run: () => this.viewer.setView("iso") });
-    if (this.undoStack.length) items.push("-", { label: "Rückgängig: " + this.undoStack[this.undoStack.length - 1].label, icon: "undo", kbd: "Strg+Z", run: () => this.undo() });
-    contextMenu(e.clientX, e.clientY, items);
+    // Kreis: N, NO, O, SO, S, SW, W, NW – feste Plätze, damit die Hand sie lernt
+    const ring = part ? [I.faceSketch || I.sketch, I.extrude, I.measure, I.normal || I.iso, I.fit, I.isolate, I.hide, I.undo]
+      : asm ? [I.place, I.constraint, I.measure, I.normal || I.iso, I.fit, I.isolate, I.hide, I.undo]
+      : [null, null, null, I.iso, I.fit, null, null, I.undo];
+    const used = new Set(ring.filter(Boolean));
+    const list = [part && I.faceSketch ? I.sketch : null, I.showAll, I.fitSel, I.normal, I.iso, I.redo, "-", I.search].filter((x) => x && !used.has(x));
+    markingMenu(e.clientX, e.clientY, ring, list);
   }
   toggleFeatureEdge(fid, hit) {
     if (!hit || hit.kind !== "edge" || !hit.info?.mid) return;
@@ -1220,6 +1241,7 @@ export class App {
   }
   setBusy(n, msg) {
     this.busy = n;
+    document.body.classList.toggle("is-busy", !!n); // Fortschrittsbalken unter dem Menüband
     if (msg) toast(msg, { kind: "err" });
     this.updateStatus();
   }

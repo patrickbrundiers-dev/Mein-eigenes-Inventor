@@ -46,6 +46,8 @@ try {
   await page.waitForFunction(() => !!window.__werkcad, null, { timeout: 20000 });
   await shot("01-start");
   step("Startbildschirm", true);
+  // Mini-Werkzeugleiste stört Klickfolgen im 3D-Fenster; eigener Schritt am Ende prüft sie
+  await evalApp(() => window.__werkcad.prefs.set("ansicht.miniLeiste", false));
 
   // Kern bereit?
   const ping = await evalApp(async () => { const t = performance.now(); await window.__werkcad.kernel.ready; return performance.now() - t; });
@@ -1524,7 +1526,7 @@ try {
     await page.keyboard.press("g");
     await idle();
     const f2 = await evalApp(() => { const d = window.__werkcad.activeDoc(); return { n: d.features.length, type: d.features.at(-1).type }; });
-    const tip = await evalApp(() => { window.__werkcad.ribbon.tab = "modell"; window.__werkcad.ribbon.render(); return [...document.querySelectorAll("#ribbon .rb-btn")].find((b) => b.textContent === "Rundung")?.title; });
+    const tip = await evalApp(() => { window.__werkcad.ribbon.tab = "modell"; window.__werkcad.ribbon.render(); const b = [...document.querySelectorAll("#ribbon .rb-btn")].find((b) => b.textContent === "Rundung"); return b && `${b.dataset.tip} (${b.dataset.kbd})`; });
     await evalApp(() => { const a = window.__werkcad; a.prefs.reset(["werkzeuge.kuerzel"]); a.undo(); a.undo(); });
     await idle();
     step("Befehlssuche und Tastaturkürzel", first === "Fase" && f1.n === n0 + 1 && f1.type === "chamfer" && /schon »Extrusion«/.test(conflict) && stored["part.fillet"] === "G" && f2.n === n0 + 2 && f2.type === "fillet" && tip === "Rundung (G)",
@@ -3567,6 +3569,44 @@ try {
     await idle(60000);
     const d46 = await evalApp(({ pl, ri }) => { const a = window.__werkcad; return [a.doc(pl), a.doc(ri)].map((d) => d.features.filter((f) => f.steck).length); }, ids);
     step("Stecksystem in der Baugruppe", /3 Zapfen 20 × 4 mm/.test(s46.info) && s46.z === "steckzapfen" && s46.s === "steckschlitz" && s46.zs === true && /3 Schlitze aus/.test(s46.ss || "") && s46.tree && d46[0] === 0 && d46[1] === 0, JSON.stringify({ s46, d46 }));
+  }
+
+  // Bedienung: Tooltip-Karte im Menüband, Markierungsmenü (Rechtsklick), Mini-Werkzeugleiste an der Auswahl
+  {
+    await evalApp(() => { const a = window.__werkcad; a.openDoc("beispiel_platte"); });
+    await idle();
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+    await page.locator("#ribbon .rb-panel").getByRole("button", { name: "Extrusion", exact: true }).hover();
+    await page.waitForTimeout(800);
+    const tip = await page.locator(".tip-card").textContent().catch(() => "");
+    await page.mouse.move(800, 600);
+    const vb = await page.locator("#viewer canvas").first().boundingBox();
+    const at = await evalApp(([x0, y0, w, hh]) => {
+      const v = window.__werkcad.viewer;
+      for (const fy of [0.5, 0.45, 0.55, 0.4, 0.6]) for (const fx of [0.5, 0.45, 0.55, 0.4, 0.6]) {
+        const hit = v.pick(x0 + w * fx, y0 + hh * fy, { edges: false, faces: true });
+        if (hit?.info?.type === "PLANE") return { x: x0 + w * fx, y: y0 + hh * fy };
+      }
+      return null;
+    }, [vb.x, vb.y, vb.width, vb.height]);
+    await page.mouse.click(at.x, at.y, { button: "right" });
+    await page.waitForTimeout(300);
+    const ring = await page.locator(".marking .mk-item").allTextContents();
+    const list = await page.locator(".marking .mk-list button").count();
+    await shot("47-markierungsmenue");
+    await page.keyboard.press("Escape");
+    const closed = await page.locator(".marking").count() === 0;
+    await evalApp(() => window.__werkcad.prefs.set("ansicht.miniLeiste", true));
+    await page.mouse.click(at.x, at.y);
+    await page.waitForTimeout(300);
+    const mini = await page.locator(".mini-bar button").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));
+    await shot("48-mini-leiste");
+    await page.locator(".mini-bar button[aria-label='Normal zur Fläche']").click();
+    const miniGone = await page.locator(".mini-bar").count() === 0;
+    await evalApp(() => window.__werkcad.prefs.set("ansicht.miniLeiste", false));
+    step("Tooltip, Markierungsmenü, Mini-Leiste", /Skizzenkontur/.test(tip) && /\(?E\)?/.test(tip) && ring.length >= 6 && ring.includes("Skizze auf dieser Fläche") && list > 0 && closed
+      && mini.includes("Skizze auf Fläche") && mini.includes("Wandung") && miniGone, JSON.stringify({ tip, ring, list, closed, mini, miniGone }));
   }
 
 } catch (e) {
