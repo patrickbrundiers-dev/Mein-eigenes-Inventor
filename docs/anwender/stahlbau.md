@@ -41,7 +41,7 @@ neu; »Als CSV speichern« schreibt die Einzelteilliste für Excel.
 ## Eigene Teilebibliothek
 
 Eigene Standardteile (Knotenbleche, Stirnplatten, Halter, Beschläge …) legst du einmal ab und holst sie in jedem Projekt
-wieder: **Verwalten → In Bibliothek ablegen** (im Bauteil) bzw. **Zusammenfügen → Bibliothek → In Bibliothek ablegen**
+wieder: **Verwalten → In Bibliothek ablegen** (im Bauteil) bzw. **Zusammenfügen → Verwalten → In Bibliothek ablegen**
 (gewählte Komponente der Baugruppe). Name, Kategorie und Beschreibung sind frei; Werkstoff und ein Vorschaubild werden
 mitgespeichert. **Aus Bibliothek** zeigt alle Einträge mit Suche und Kategorie; »Einfügen« holt das Bauteil als Kopie
 ins Projekt und setzt es in die Baugruppe. Die Einträge liegen als Dateien im Benutzerordner
