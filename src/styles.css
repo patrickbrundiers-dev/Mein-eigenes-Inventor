@@ -575,3 +575,10 @@ details.measure-more > summary { cursor: pointer; color: var(--ink-soft); margin
 .explode-step .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .explode-pick { max-height: 40vh; overflow: auto; columns: 2; margin-bottom: 8px; }
 .pos-row > .btn.on, .section .btn.on { background: var(--laser-soft); border-color: #f3c08f; }
+
+/* Arbeitselemente: Bezug als Liste und »Wählen« im 3D-Fenster nebeneinander; gewählte Bezüge beim Erzeugen */
+.datum-ref { display: flex; align-items: center; gap: 6px; }
+.datum-ref > .field { flex: 1; min-width: 0; }
+.datum-ref > .btn { margin-bottom: 5px; white-space: nowrap; }
+.datum-picks { margin: 6px 0; padding-left: 20px; }
+.datum-picks li { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 1px 0; }

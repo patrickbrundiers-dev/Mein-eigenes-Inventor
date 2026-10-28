@@ -29,6 +29,7 @@ import { evaluate } from "../core/expr.js";
 import { commandDef, inScope } from "../core/commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
 import { applyRibbonLayout, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
+import { startDatumPick } from "./arbeitselemente.js";
 
 export class Ribbon {
   constructor(app) {
@@ -228,9 +229,9 @@ export class Ribbon {
       aufdicken: () => app.addFeature({ type: "aufdicken", faces: [], thickness: "5", side: "aussen", op: "new" }),
       flaeche: () => app.addFeature({ type: "flaeche", faces: [], distance: "5" }),
       entformung: () => app.addFeature({ type: "entformung", faces: [], angle: "3", plane: "XY", offset: "0" }),
-      datumPlane: () => app.addFeature({ type: "arbeitsebene", mode: "versatz", base: "XY", distance: "50" }),
-      datumAxis: () => app.addFeature({ type: "arbeitsachse", mode: "parallel", dir: "Z", point: { x: "0", y: "0", z: "0" } }),
-      datumPoint: () => app.addFeature({ type: "arbeitspunkt", mode: "koordinaten", x: "0", y: "0", z: "0" }),
+      datumPlane: () => startDatumPick(app, "arbeitsebene"),
+      datumAxis: () => startDatumPick(app, "arbeitsachse"),
+      datumPoint: () => startDatumPick(app, "arbeitspunkt"),
       importStep: () => app.files.importStepIntoPart(),
       params: () => app.props.paramsDialog(),
       // Skizze

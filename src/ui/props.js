@@ -16,7 +16,7 @@ import { SECTION_KINDS, fieldLabel, CATALOG, catalogToDims, profileId, sectionGe
 import { profileMatches, resolveProfile } from "../core/profilesearch.js";
 import { LIB_GROUPS, groupOfMaterial, groupKinds, mainSizes, wallsFor, wallLabel, hasWall, findEntry, pickEntry, defaultEntry, mainOfDims, mainLabel, splitSize } from "../core/profillib.js";
 import { BASE_PLANES, planeFromFace } from "../core/geom.js";
-import { PLANE_MODES, AXIS_MODES, POINT_MODES } from "../core/datums.js";
+import { datumPropsPanel, datumCreatePanel } from "./arbeitselemente.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { COMBINE_OPS, SPLIT_KEEP, THICKEN_SIDES } from "../core/koerper.js";
 import { CONSTRAINT_TYPES } from "../core/asmsolve.js";
@@ -326,6 +326,9 @@ export class Props {
         h("p", { class: "hint" }, "Eine Hauptebene oder eine ebene Fläche im 3D-Fenster anklicken."),
         h("div", { class: "btn-row" }, ...Object.entries(BASE_PLANES).map(([k, p]) => h("button", { class: "btn", onclick: () => app.createSketch({ ref: k }) }, p.label))),
         h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.cancelPick() }, "Abbrechen"))));
+    } else if (app.pick?.kind === "datumCreate") {
+      title = { arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt" }[app.pick.type];
+      body.append(...datumCreatePanel(this));
     } else if (app.pick?.kind === "measure") {
       title = "Messen";
       body.append(...this.measureProps());
@@ -1397,48 +1400,8 @@ export class Props {
     const i = part.features.findIndex((x) => x.id === f.id);
     return part.features.slice(0, i < 0 ? undefined : i).filter((x) => x.type === type && !x.suppressed);
   }
-  /** Eigenschaften von Arbeitsebene, -achse, -punkt */
-  datumProps(part, f, E) {
-    const app = this.app;
-    const planes = [["XY", "XY-Ebene"], ["XZ", "XZ-Ebene"], ["YZ", "YZ-Ebene"], ...this.datumsBefore(part, f, "arbeitsebene").map((g) => [g.id, g.name])];
-    const axes = [["X", "X-Achse"], ["Y", "Y-Achse"], ["Z", "Z-Achse"], ...this.datumsBefore(part, f, "arbeitsachse").map((g) => [g.id, g.name])];
-    const pts = this.datumsBefore(part, f, "arbeitspunkt");
-    const sel = (label, key, opts, def) => this.select(label, opts, f[key] || def, (v) => this.set(f, key, v, label));
-    // Punkt: Ursprung, früherer Arbeitspunkt oder freie Koordinaten
-    const point = (label, key) => {
-      const v = f[key];
-      const mode = typeof v === "string" ? v : "frei";
-      const free = typeof v === "object" && v ? v : { x: "0", y: "0", z: "0" };
-      return [this.select(label, [["O", "Ursprung"], ...pts.map((g) => [g.id, g.name]), ["frei", "Koordinaten"]], mode, (m) => this.set(f, (x) => { x[key] = m === "frei" ? { ...free } : m; }, label)),
-        mode === "frei" ? this.vec3(label + " XYZ", [free.x, free.y, free.z], (a) => this.set(f, (x) => { x[key] = { x: a[0], y: a[1], z: a[2] }; }, label)) : null];
-    };
-    const modes = { arbeitsebene: PLANE_MODES, arbeitsachse: AXIS_MODES, arbeitspunkt: POINT_MODES }[f.type];
-    const def = { arbeitsebene: "versatz", arbeitsachse: "punkte", arbeitspunkt: "koordinaten" }[f.type];
-    const mode = f.mode || def;
-    const body = [this.select("Art", modes.map((m) => [m.value, m.label]), mode, (v) => this.set(f, "mode", v, "Art"))];
-    if (f.type === "arbeitsebene") {
-      if (mode === "versatz") body.push(sel("Bezugsebene", "base", planes, "XY"), E("Abstand", "distance"));
-      else if (mode === "winkel") body.push(sel("Bezugsebene", "base", planes, "XY"), sel("Drehachse", "axis", [["u", "x-Richtung der Ebene"], ["v", "y-Richtung der Ebene"], ...axes.slice(3)], "u"), E("Winkel", "angle", { unit: "°" }));
-      else if (mode === "punkte") body.push(...point("Punkt 1", "p1"), ...point("Punkt 2", "p2"), ...point("Punkt 3", "p3"));
-      else if (mode === "normal") body.push(sel("Achse", "axis", axes, "Z"), ...point("Durch Punkt", "point"));
-      else if (mode === "flaeche") {
-        const picking = app.pick?.kind === "datumFace" && app.pick.feature === f.id;
-        body.push(h("div", {}, f.origin ? "Fläche gewählt" : "Noch keine Fläche gewählt"), E("Abstand", "distance"),
-          h("div", { class: "btn-row" }, h("button", { class: "btn" + (picking ? " primary" : ""), onclick: () => { if (picking) app.cancelPick(); else { app.pick = { kind: "datumFace", feature: f.id }; app.setHint("Ebene Fläche anklicken – Esc bricht ab"); this.render(); } } }, picking ? "Auswahl beenden" : "Fläche wählen")));
-      }
-    } else if (f.type === "arbeitsachse") {
-      if (mode === "punkte") body.push(...point("Punkt 1", "p1"), ...point("Punkt 2", "p2"));
-      else if (mode === "schnitt") body.push(sel("Ebene 1", "plane1", planes, "XY"), sel("Ebene 2", "plane2", planes, "XZ"));
-      else body.push(this.seg("Richtung", [["X", "X"], ["Y", "Y"], ["Z", "Z"]], f.dir || "Z", (v) => this.set(f, "dir", v, "Richtung")), ...point("Durch Punkt", "point"));
-    } else {
-      if (mode === "koordinaten") body.push(this.vec3("Koordinaten", [f.x ?? "0", f.y ?? "0", f.z ?? "0"], (a) => this.set(f, (x) => { x.x = a[0]; x.y = a[1]; x.z = a[2]; }, "Koordinaten")));
-      else body.push(sel("Achse", "axis", axes, "Z"), sel("Ebene", "plane", planes, "XY"));
-    }
-    body.push(this.check("Im 3D-Fenster zeigen", !f.hidden, (v) => this.set(f, "hidden", !v || undefined, "Sichtbarkeit")));
-    const out = [this.section({ arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt" }[f.type], ...body)];
-    if (f.type === "arbeitsebene") out.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.createSketch({ ref: "datum", id: f.id }) }, "Skizze auf dieser Ebene")));
-    return out;
-  }
+  /** Eigenschaften von Arbeitsebene, -achse, -punkt (src/ui/arbeitselemente.js) */
+  datumProps(part, f, E) { return datumPropsPanel(this, part, f, E); }
   sectionEditor(f, kinds = Object.keys(SECTION_KINDS)) {
     const kind = f.section || "vierkant";
     const def = SECTION_KINDS[kind];

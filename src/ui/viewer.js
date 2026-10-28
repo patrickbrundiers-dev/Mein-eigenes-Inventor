@@ -687,34 +687,119 @@ export class Viewer {
     this.render();
   }
 
-  /** Arbeitselemente: Ebenen als Rahmen, Achsen strichpunktiert, Punkte als Kreuz (orange, gewählt kräftiger) */
+  /**
+   * Arbeitselemente: Ebenen als Rahmen, Achsen strichpunktiert, Punkte als Kreuz (orange, gewählt kräftiger).
+   * role: "ref" = Bezug des gewählten Elements (blau), "preview" = Vorschau beim Erzeugen (grün), "origin" = Ursprungselemente zum Anklicken.
+   * kind "handle": Griff (Pfeil) zum Ziehen längs d. Jedes Objekt trägt userData.datumKey zum Anklicken (pickDatum).
+   */
   showDatums(list) {
     if (!this.datumGroup) { this.datumGroup = new THREE.Group(); this.scene.add(this.datumGroup); }
     disposeTree(this.datumGroup);
     this.datumGroup.clear();
+    const ppu = Math.max(0.01, this.pixelsPerUnit());
+    const ROLE = { ref: 0x2f6db5, preview: 0x2e9d4a };
     for (const d of list) {
-      const color = d.active ? 0xef7d1a : 0xd98a1c;
+      const color = d.color ?? ROLE[d.role] ?? (d.active || d.hover ? 0xef7d1a : 0xd98a1c);
+      const key = d.key || (d.id ? "datum:" + d.id : null);
+      const tag = (o) => { o.userData.datumKey = key; o.userData.datumKind = d.kind; this.datumGroup.add(o); return o; };
       const s = d.size / 2;
       if (d.kind === "plane") {
         const pts = [[-s, -s * 0.7], [s, -s * 0.7], [s, s * 0.7], [-s, s * 0.7]].map(([u, v]) => new THREE.Vector3(...toWorld(d.frame, u, v)));
         const geo = new THREE.BufferGeometry().setFromPoints([pts[0], pts[1], pts[2], pts[0], pts[2], pts[3]]);
-        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: d.active ? 0.18 : 0.08, side: THREE.DoubleSide, depthWrite: false }));
-        this.datumGroup.add(m);
-        this.datumGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]), new THREE.LineBasicMaterial({ color })));
+        const strong = d.active || d.hover || d.role === "preview";
+        tag(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: strong ? 0.18 : 0.08, side: THREE.DoubleSide, depthWrite: false })));
+        const ln = tag(new THREE.Line(new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]), d.role === "preview" ? new THREE.LineDashedMaterial({ color, dashSize: 6 / ppu, gapSize: 3 / ppu }) : new THREE.LineBasicMaterial({ color })));
+        if (d.role === "preview") ln.computeLineDistances();
+        // Normale als kurzer Strich vom Ursprung (zeigt die Seite, wie Inventor beim Erzeugen)
+        if (d.active || d.role === "preview") {
+          const o = new THREE.Vector3(...d.frame.origin), n = new THREE.Vector3(...d.frame.normal).multiplyScalar(30 / ppu);
+          tag(new THREE.Line(new THREE.BufferGeometry().setFromPoints([o, o.clone().add(n)]), new THREE.LineBasicMaterial({ color })));
+        }
       } else if (d.kind === "path") {
-        this.datumGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(d.pts.map((p) => new THREE.Vector3(...p))), new THREE.LineBasicMaterial({ color: d.active ? 0xef7d1a : 0x2f6db5 })));
+        tag(new THREE.Line(new THREE.BufferGeometry().setFromPoints(d.pts.map((p) => new THREE.Vector3(...p))), new THREE.LineBasicMaterial({ color: d.active ? 0xef7d1a : 0x2f6db5 })));
+      } else if (d.kind === "curve") {
+        tag(new THREE.Line(new THREE.BufferGeometry().setFromPoints(d.pts.map((p) => new THREE.Vector3(...p))), new THREE.LineBasicMaterial({ color, depthTest: false })));
       } else if (d.kind === "axis") {
         const a = d.p.map((c, i) => c - d.d[i] * s), b = d.p.map((c, i) => c + d.d[i] * s);
-        const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]), new THREE.LineDashedMaterial({ color, dashSize: 8, gapSize: 3 }));
+        const l = tag(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]), new THREE.LineDashedMaterial({ color, dashSize: Math.max(4, 12 / ppu), gapSize: Math.max(1.5, 4 / ppu), depthTest: d.role !== "preview" })));
         l.computeLineDistances();
-        this.datumGroup.add(l);
+      } else if (d.kind === "handle") {
+        // Griff: Pfeil längs d, Spitze als Kegel (bleibt bei jedem Zoom etwa gleich groß)
+        const len = 40 / ppu, o = new THREE.Vector3(...d.p), dir = new THREE.Vector3(...d.d).normalize();
+        tag(new THREE.Line(new THREE.BufferGeometry().setFromPoints([o, o.clone().addScaledVector(dir, len)]), new THREE.LineBasicMaterial({ color: 0xef7d1a, depthTest: false })));
+        const cone = tag(new THREE.Mesh(new THREE.ConeGeometry(5 / ppu, 14 / ppu, 16), new THREE.MeshBasicMaterial({ color: d.hover ? 0xffb35c : 0xef7d1a, depthTest: false })));
+        cone.position.copy(o.clone().addScaledVector(dir, len));
+        cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        cone.renderOrder = 10;
+        cone.userData.handle = true;
+        cone.userData.handleSeg = [o.toArray(), o.clone().addScaledVector(dir, len + 7 / ppu).toArray()];
       } else {
-        const r = 5 / Math.max(0.01, this.pixelsPerUnit()), p = d.p;
+        const r = 5 / ppu, p = d.p;
         const segs = [[r, 0, 0], [0, r, 0], [0, 0, r]].flatMap((o) => [new THREE.Vector3(p[0] - o[0], p[1] - o[1], p[2] - o[2]), new THREE.Vector3(p[0] + o[0], p[1] + o[1], p[2] + o[2])]);
-        this.datumGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(segs), new THREE.LineBasicMaterial({ color, depthTest: false })));
+        tag(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(segs), new THREE.LineBasicMaterial({ color, depthTest: false })));
       }
     }
     this.render();
+  }
+  /**
+   * Arbeitselement unter dem Mauszeiger → { key, kind, handle? } oder null.
+   * Griffe vor Punkten vor Achsen vor Ebenen (dünne Elemente trifft man nur absichtlich).
+   */
+  pickDatum(cx, cy) {
+    if (!this.datumGroup?.children.length) return null;
+    // Griffe nach Bildschirmabstand zum Pfeil (10 px), damit man sie leicht trifft
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    for (const o of this.datumGroup.children) {
+      if (!o.userData.handleSeg) continue;
+      const [a, b] = o.userData.handleSeg.map((p) => this.worldToScreen(p));
+      if (segDist(cx - rect.left, cy - rect.top, a[0], a[1], b[0], b[1]) < 10) return { key: o.userData.datumKey, kind: "handle", handle: true, point: o.position.toArray(), distance: 0 };
+    }
+    const rc = this.raycaster(cx, cy);
+    rc.params.Line.threshold = 6 / Math.max(0.01, this.pixelsPerUnit());
+    const hits = rc.intersectObjects(this.datumGroup.children, false).filter((x) => x.object.userData.datumKey || x.object.userData.handle);
+    if (!hits.length) return null;
+    const rank = (o) => (o.userData.handle ? 0 : o.userData.datumKind === "point" ? 1 : o.userData.datumKind === "axis" || o.userData.datumKind === "curve" ? 2 : 3);
+    hits.sort((a, b) => rank(a.object) - rank(b.object) || a.distance - b.distance);
+    const o = hits[0].object;
+    return { key: o.userData.datumKey, kind: o.userData.datumKind, handle: !!o.userData.handle, point: hits[0].point.toArray(), distance: hits[0].distance };
+  }
+  /** Parameter t des Punkts auf der Geraden p + t·d, der dem Sichtstrahl am nächsten liegt (Griff ziehen) */
+  rayLineParam(cx, cy, p, d) {
+    const ray = this.raycaster(cx, cy).ray;
+    const P = new THREE.Vector3(...p), D = new THREE.Vector3(...d).normalize();
+    const w = P.clone().sub(ray.origin), b = D.dot(ray.direction), den = 1 - b * b;
+    if (den < 1e-9) return null;
+    return (b * w.dot(ray.direction) - w.dot(D)) / den;
+  }
+  /** Punkt aus pts, der dem Sichtstrahl am nächsten liegt */
+  rayClosest(cx, cy, pts) {
+    const ray = this.raycaster(cx, cy).ray;
+    let best = pts[0], bd = Infinity;
+    for (const p of pts) { const d = ray.distanceSqToPoint(new THREE.Vector3(...p)); if (d < bd) { bd = d; best = p; } }
+    return best;
+  }
+  /** Punkte einer angeklickten Kante in Weltkoordinaten */
+  edgeWorldPoints(hit) {
+    const pk = this.pickables.find((x) => x.key === hit.key && x.body === hit.body) || this.pickables.find((x) => x.key === hit.key);
+    const pos = hit.info?.positions;
+    if (!pk || !pos) return null;
+    pk.lines.updateMatrixWorld?.();
+    const out = [];
+    for (let k = 0; k + 2 < pos.length; k += 3) {
+      const v = new THREE.Vector3(pos[k], pos[k + 1], pos[k + 2]).applyMatrix4(pk.lines.matrixWorld).toArray();
+      // Liniensegmente liegen paarweise vor: doppelte Stützpunkte weglassen
+      if (!out.length || Math.hypot(v[0] - out.at(-1)[0], v[1] - out.at(-1)[1], v[2] - out.at(-1)[2]) > 1e-9) out.push(v);
+    }
+    return out;
+  }
+  /** Flächenangaben (Punkt, Normale, Zylinderachse) einer angeklickten Fläche in Weltkoordinaten */
+  faceWorldInfo(hit) {
+    const info = hit.info || {};
+    const M = hit.mesh?.matrixWorld;
+    if (!M) return info;
+    const P = (p) => new THREE.Vector3(...p).applyMatrix4(M).toArray();
+    const D = (d) => new THREE.Vector3(...d).transformDirection(M).toArray();
+    return { ...info, ...(info.point ? { point: P(info.point) } : {}), ...(info.normal ? { normal: D(info.normal) } : {}), ...(info.axisP ? { axisP: P(info.axisP) } : {}), ...(info.axisD ? { axisD: D(info.axisD) } : {}) };
   }
 
   /** Achsraster der Baugruppe: Achslinien strichpunktiert, Achskreise mit Beschriftung (feste Bildschirmgröße) an den Enden */
