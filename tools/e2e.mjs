@@ -2926,6 +2926,10 @@ try {
   await idle();
   await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
   await rbClick("Arbeitsebene");
+  await page.waitForTimeout(200);
+  // Der Knopf startet die Auswahl (Art aus angeklickter Geometrie); im leeren Bauteil die Art selbst wählen
+  const wpPick = await evalApp(() => window.__werkcad.pick?.kind);
+  await page.locator("#props .field", { hasText: "Oder Art selbst wählen" }).locator("select").selectOption("versatz");
   await idle();
   const wp = await evalApp(() => { const a = window.__werkcad; const f = a.activeDoc().features.at(-1); const r = a.results.get(a.activeId); return { type: f.type, st: r.status[f.id], datums: r.datums?.length, shown: a.viewer.datumGroup?.children.length, props: !!document.querySelector("#props h3") && [...document.querySelectorAll("#props h3")].some((x) => x.textContent === "Arbeitsebene") }; });
   await page.locator("#props button", { hasText: "Skizze auf dieser Ebene" }).click();
@@ -2934,7 +2938,79 @@ try {
   await shot("28-arbeitsebene");
   await evalApp(() => window.__werkcad.finishSketch());
   await idle();
-  step("Arbeitsebene mit Skizze", wp.type === "arbeitsebene" && wp.st.ok && /Ursprung \(0; 0; 50\)/.test(wp.st.info) && wp.datums === 1 && wp.shown >= 2 && wp.props && wsk.mode === "sketch" && Math.abs(wsk.z - 50) < 1e-9 && wsk.plane.ref === "datum", JSON.stringify({ wp, wsk }));
+  step("Arbeitsebene mit Skizze", wpPick === "datumCreate" && wp.type === "arbeitsebene" && wp.st.ok && /Ursprung \(0; 0; 50\)/.test(wp.st.info) && wp.datums === 1 && wp.shown >= 2 && wp.props && wsk.mode === "sketch" && Math.abs(wsk.z - 50) < 1e-9 && wsk.plane.ref === "datum", JSON.stringify({ wp, wsk }));
+
+  // Arbeitselemente durch Anklicken (Inventor): Art erkannt, Vorschau, Griff ziehen, Wählen im 3D-Fenster, alle ausblenden
+  {
+    await evalApp(() => {
+      const a = window.__werkcad;
+      const P = (id, x, y) => ({ id, x, y });
+      a.newPart("Arbeitselemente");
+      a.addFeature({ type: "sketch", id: "ae1", name: "ae1", plane: { ref: "XY" }, offset: "0", points: [P("q1", 0, 0), P("q2", 100, 0), P("q3", 100, 60), P("q4", 0, 60)], entities: [[1, 2], [2, 3], [3, 4], [4, 1]].map(([p, q]) => ({ id: "ql" + p, type: "line", p1: "q" + p, p2: "q" + q })), constraints: [] }, { select: false });
+      a.addFeature({ type: "extrude", id: "aex1", sketch: "ae1", distance: "20", op: "new" }, { select: false });
+      a.addFeature({ type: "sketch", id: "ae2", name: "ae2", plane: { ref: "XY" }, offset: "20", points: [P("kc", 50, 30)], entities: [{ id: "kk", type: "circle", c: "kc", r: 15 }], constraints: [] }, { select: false });
+      a.addFeature({ type: "extrude", id: "aex2", sketch: "ae2", distance: "30", op: "join" }, { select: false });
+    });
+    await idle();
+    await evalApp(() => window.__werkcad.viewer.setView("iso"));
+    await idle();
+    const scr = (p) => evalApp((p) => { const v = window.__werkcad.viewer; const [x, y] = v.worldToScreen(p); const r = v.renderer.domElement.getBoundingClientRect(); return [x + r.left, y + r.top]; }, p);
+    const clickAt = async (p) => { const [x, y] = await scr(p); await page.mouse.move(x, y); await page.waitForTimeout(120); await page.mouse.click(x, y); await page.waitForTimeout(250); };
+    const last = () => evalApp(() => { const a = window.__werkcad; const d = a.activeDoc(), f = d.features.at(-1), g = a.datumMap(d).get(f.id); return { n: d.features.length, type: f.type, mode: f.mode, g, ok: a.results.get(a.activeId)?.status?.[f.id]?.ok, pick: a.pick?.kind || null }; });
+    // Ebene: Oberseite anklicken → Versatz (Eingabe übernimmt), Vorschau sichtbar
+    await rbClick("Arbeitsebene");
+    await clickAt([10, 10, 20]);
+    const pv = await evalApp(() => ({ erkannt: document.querySelector("#props dl.kv dd")?.textContent, preview: window.__werkcad.viewer.datumGroup.children.some((o) => o.material?.isLineDashedMaterial && o.material.color.getHex() === 0x2e9d4a) }));
+    await shot("80-arbeitsebene-auswahl");
+    await page.keyboard.press("Enter");
+    await idle();
+    const e1 = await last();
+    // Griff ziehen: Abstand längs der Normalen, ein Rückgängig-Schritt
+    const tip = await evalApp(() => { const a = window.__werkcad, v = a.viewer; const o = v.datumGroup.children.find((x) => x.userData.handle); return o ? o.position.toArray() : null; });
+    let drag = null;
+    if (tip) {
+      const [hx, hy] = await scr(tip);
+      await page.mouse.move(hx, hy); await page.waitForTimeout(150);
+      await page.mouse.down(); await page.mouse.move(hx, hy - 40, { steps: 6 }); await page.mouse.up();
+      await idle();
+      drag = await evalApp(() => { const a = window.__werkcad; return { distance: a.activeDoc().features.at(-1).distance, undo: a.undoStack.at(-1)?.label }; });
+    }
+    await shot("81-arbeitsebene-griff");
+    // Achse: Zylinderfläche anklicken → sofort fertig
+    await rbClick("Arbeitsachse");
+    await clickAt([50 + 15 * Math.SQRT1_2, 30 - 15 * Math.SQRT1_2, 35]);
+    await idle();
+    const a1 = await last();
+    // Punkt: gerade Kante anklicken → Kantenmitte (auch abseits der Mitte wählbar)
+    await rbClick("Arbeitspunkt");
+    await clickAt([70, 0, 20]);
+    await idle();
+    const p1 = await last();
+    // Ebene aus Oberseite und Vorderseite → Mittelebene (Winkelhalbierende)
+    await rbClick("Arbeitsebene");
+    await clickAt([20, 20, 20]);
+    await clickAt([80, 0, 10]);
+    await idle();
+    const m1 = await last();
+    // Esc bricht ab, nichts angelegt
+    await rbClick("Arbeitsebene");
+    await clickAt([20, 20, 20]);
+    await page.keyboard.press("Escape");
+    const esc = await last();
+    // Alle Arbeitselemente aus- und wieder einblenden
+    const shownBefore = await evalApp(() => window.__werkcad.viewer.datumGroup.children.filter((o) => o.userData.datumKey?.startsWith("datum:")).length);
+    await evalApp(() => { const a = window.__werkcad; a.selectFeature(null); a.edit("Arbeitselemente ausblenden", () => { a.activeDoc().hideDatums = true; }); });
+    await idle();
+    const shownHidden = await evalApp(() => window.__werkcad.viewer.datumGroup.children.filter((o) => o.userData.datumKey?.startsWith("datum:")).length);
+    await evalApp(() => window.__werkcad.undo());
+    await idle();
+    const near = (a, b, t = 1e-3) => a && b && a.every((x, i) => Math.abs(x - b[i]) < t);
+    const ok = pv.erkannt === "Versatz zu Ebene" && pv.preview && e1.type === "arbeitsebene" && e1.mode === "versatz" && e1.ok && drag && Number(drag.distance) > 1 && drag.undo === "Abstand ziehen"
+      && a1.mode === "zylinder" && near(a1.g.p.slice(0, 2), [50, 30]) && Math.abs(Math.abs(a1.g.d[2]) - 1) < 1e-6
+      && p1.mode === "modell" && near(p1.g.p, [50, 0, 20]) && m1.mode === "mitte" && m1.ok && near(m1.g.frame.normal.map(Math.abs), [0, Math.SQRT1_2, Math.SQRT1_2])
+      && esc.n === m1.n && esc.pick === null && shownBefore >= 4 && shownHidden === 0;
+    step("Arbeitselemente durch Anklicken", ok, JSON.stringify({ pv, e1: e1.mode, drag, a1: a1.mode, p1: [p1.mode, p1.g?.p], m1: [m1.mode, m1.g?.frame?.normal], esc: [esc.n, m1.n, esc.pick], shownBefore, shownHidden }));
+  }
 
   // Sweeping, Erhebung, Spirale, Muster entlang Pfad über das Menüband
   await evalApp(() => {
