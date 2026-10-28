@@ -61,6 +61,8 @@ jobs:
           xvfb-run -a node tools/electron-smoke.mjs ergebnis/electron 2>&1 | tee ergebnis/electron.txt
       - name: Ergebnisse sichern
         if: always()
+        # parallele Läufe schieben auf denselben Zweig; ein abgelehnter Push darf das Ergebnis nicht rot machen
+        continue-on-error: true
         run: |
           cd ergebnis
           echo "core=${{ steps.core.outcome }} kernel=${{ steps.kernel.outcome }} build=${{ steps.build.outcome }} e2e=${{ steps.e2e.outcome }} electron=${{ steps.electron.outcome }} sha=${GITHUB_SHA}" > status.txt
