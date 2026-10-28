@@ -141,6 +141,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .node.group > .label { color: var(--ink-soft); font-size: 12px; }
 .node.drop-target { border-top: 2px solid var(--dye); }
 .node input.rename { font: inherit; padding: 0 2px; border: 1px solid var(--dye); width: 100%; }
+/* Plakette am Symbol, Auge, erweiterte Namen (Modellbrowser B1) */
+.node .ico-wrap { position: relative; display: inline-flex; flex: none; }
+.node .badge { position: absolute; right: -4px; bottom: -3px; min-width: 9px; height: 9px; border-radius: 5px; font: 700 8px/9px var(--din, sans-serif); color: #fff; text-align: center; box-shadow: 0 0 0 1px var(--steel-0); }
+.node .badge.err { background: var(--err); }
+.node .badge.warn { background: var(--warn); color: #222; }
+.node .badge.dof { background: var(--dye); width: 7px; min-width: 7px; height: 7px; right: -3px; bottom: -2px; }
+.node .detail { color: var(--steel-4); font-size: 11.5px; }
+.node .eye-btn { flex: none; border: 0; background: transparent; padding: 0 2px; margin-left: 2px; line-height: 0; color: var(--steel-4); cursor: pointer; visibility: hidden; }
+.node .eye-btn svg { width: 14px; height: 14px; }
+.node:hover .eye-btn, .node:focus-within .eye-btn, .node .eye-btn.off { visibility: visible; }
+.node .eye-btn:hover { color: var(--ink); }
+.node .eye-btn.off { color: var(--steel-3, #b7c0cb); }
+.tree ul.kids { border-left: 1px dotted var(--steel-2); margin-left: 12px; padding-left: 8px; }
 .tree-sep { height: 1px; background: var(--steel-2); margin: 6px 8px; }
 
 /* Eigenschaften */
