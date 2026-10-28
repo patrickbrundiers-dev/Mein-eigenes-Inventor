@@ -14,6 +14,7 @@ import { flattenAssembly } from "../core/subasm.js";
 import { assemblyForView, viewStateKey } from "../core/darstellungen.js";
 import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
+import { gridViewSvg } from "./achsraster.js";
 import { weldSymbol } from "../core/weld.js";
 import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
@@ -1039,6 +1040,13 @@ export class DrawingEditor {
     const hid = v.hidden !== false ? visibleHidden(p.hidden, v.scale) : [];
     if (hid.length) g.append(svgEl("path", { d: hid.map(pathOf).join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.hid, "stroke-dasharray": "2.5 1.2" }));
     g.append(svgEl("path", { d: p.visible.map(pathOf).join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.vis, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+    // Achsraster der Baugruppe (Grundriss und Ansichten quer zu den Achsen)
+    const srcDoc = d.source && this.app.doc(d.source.id);
+    if (srcDoc?.kind === "assembly" && srcDoc.grids?.length && v.type !== "iso") {
+      const cam = this.viewCam(d, v);
+      const gg = gridViewSvg(svgEl, srcDoc, (p3) => xf.to(...projectPoint(p3, cam.dir, cam.up)), LW.thin);
+      if (gg) g.append(gg);
+    }
     // Mittellinien für Kreise
     if (v.centerlines !== false && v.type !== "iso") {
       const done = [];

@@ -135,8 +135,8 @@ export function groupPieces(pieces, { start = 1 } = {}) {
   for (const p of pieces) {
     const k = pieceSignature(p);
     const g = map.get(k);
-    if (g) { g.qty += p.qty || 1; if (p.name && !g.sources.includes(p.name)) g.sources.push(p.name); }
-    else map.set(k, { ...p, qty: p.qty || 1, sources: p.name ? [p.name] : [] });
+    if (g) { g.qty += p.qty || 1; if (p.name && !g.sources.includes(p.name)) g.sources.push(p.name); if (p.key && !g.keys.includes(p.key)) g.keys.push(p.key); }
+    else map.set(k, { ...p, qty: p.qty || 1, sources: p.name ? [p.name] : [], keys: p.key ? [p.key] : [] });
   }
   const plate = (p) => (p.code === "B" && p.ak?.length ? 1 : 0);
   const list = [...map.values()].sort((a, b) => plate(a) - plate(b) || a.profile.localeCompare(b.profile) || b.length - a.length);
@@ -210,10 +210,10 @@ export function piecesOf(src, mat, { order = "", drawing = "" } = {}) {
   const pieces = [], skipped = [];
   const grade = steelGrade(mat);
   for (const b of src.data || []) {
-    const name = `${src.part.name} – ${b.name}`;
+    const name = `${src.part.name} – ${b.name}`, key = `${src.part.name}|${b.index}`;
     if (b.kind === "skip") { skipped.push({ name, reason: b.reason }); continue; }
     if (b.skipped) skipped.push({ name, reason: `${b.skipped} Bohrung(en) schräg oder nicht rund – nur im STEP` });
-    const base = { name, order, drawing: drawing || src.part.number || src.part.name, material: grade, qty: src.qty || 1, texts: [src.part.name, b.name, src.part.number || "", ""] };
+    const base = { name, key, order, drawing: drawing || src.part.number || src.part.name, material: grade, qty: src.qty || 1, texts: [src.part.name, b.name, src.part.number || "", ""] };
     if (b.kind === "member") {
       const pr = dstvProfile(b.sec.kind, b.sec.dims);
       if (b.coped) skipped.push({ name, reason: "Ausklinkung/Kontur am Stab – Kontur aus dem STEP" });
@@ -237,4 +237,42 @@ export function steelGrade(mat) {
 /** Signatur (SI) mit der vergebenen Position füllen */
 export function withSignature(p) {
   return p.si ? { ...p, si: { ...p.si, text: String(p.pos) } } : p;
+}
+
+/** kurzer, fester Schlüssel einer Stück-Signatur (FNV-1a, 2 × 32 bit) */
+export function signatureKey(p) {
+  const s = pieceSignature(p);
+  let a = 0x811c9dc5, b = 0x01000193;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); a = Math.imul(a ^ c, 0x01000193) >>> 0; b = Math.imul(b ^ c, 0x5bd1e995) >>> 0; }
+  return a.toString(36) + b.toString(36);
+}
+
+/**
+ * Positionsnummern für Einzelteile stabil vergeben (Stahlbau-Lücken ST10): gleiche Stücke behalten ihre Nummer aus
+ * store = { next, map: { Schlüssel: Nummer } }, neue Stücke bekommen die nächste freie Nummer (in der Reihenfolge von
+ * groupPieces), Nummern verschwundener Stücke werden nicht wieder vergeben. Rückgabe { pieces (nach Nummer), store, changed }.
+ */
+export function stablePositions(groups, store = null) {
+  const map = { ...(store?.map || {}) };
+  const used = Object.values(map).map(Number).filter(Number.isFinite);
+  let next = Math.max(Number(store?.next) || 1, used.length ? Math.max(...used) + 1 : 1);
+  let changed = !store;
+  const pieces = groups.map((p) => {
+    const k = signatureKey(p);
+    if (!map[k]) { map[k] = String(next++); changed = true; }
+    return { ...p, pos: map[k] };
+  }).sort((a, b) => Number(a.pos) - Number(b.pos) || String(a.pos).localeCompare(String(b.pos)));
+  return { pieces, store: { next, map }, changed };
+}
+
+/** Gewicht eines Stücks in kg (Stab: kg/m × Länge, Platte: kg/m² × Fläche des Hüllrechtecks) */
+export const pieceMass = (p) => (p.code === "B" ? (p.kgm * p.length * p.H) / 1e6 : (p.kgm * p.length) / 1000);
+
+/** Einzelteilliste als CSV (Semikolon, Excel): Pos, Stück, Profil, Länge, Gewicht je Stück, Bohrungen, Bauteile */
+export function piecesCsv(pieces) {
+  const f = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
+  const q = (s) => `"${String(s).replace(/"/g, '""')}"`;
+  const rows = [["Pos", "Stk", "Profil", "Länge mm", "kg/Stk", "Bohrungen", "Werkstoff", "Bauteile"].join(";"),
+    ...pieces.map((p) => [p.pos, p.qty, q(p.profile), f(p.length), f(pieceMass(p)), (p.holes || []).length, q(p.material), q(p.sources.join(", "))].join(";"))];
+  return "\ufeff" + rows.join("\r\n") + "\r\n";
 }

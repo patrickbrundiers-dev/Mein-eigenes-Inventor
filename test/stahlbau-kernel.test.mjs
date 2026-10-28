@@ -120,3 +120,23 @@ test("Fachwerkträger: Parallel, Pult und Sattel mit N/V/W-Füllung, Füllstäbe
     }
   }
 });
+
+test("Arbeitsbühne: Stützen, Randträger, Gitterrost, Bordblech, Geländer und Aufgang (Treppe, Leiter, Durchgang) ohne Überschneidung", async () => {
+  for (const access of ["treppe", "leiter", "offen"]) {
+    const { res, st } = await buildGen("arbeitsbuehne", { access });
+    console.log("[info]", access, st.info, st.warning || "");
+    assert.equal(count(res, /^Stütze \d+$/), 4, access);
+    assert.equal(count(res, /^Gitterrost \d$/), 4, access);
+    assert.equal(count(res, /^Querträger \d$/), 3, access);
+    assert.ok(count(res, /^Geländer .*Pfosten/) >= 10, access);
+    assert.ok(count(res, /^Bordblech/) >= 4, access);
+    if (access === "treppe") assert.ok(count(res, /^Treppe Stufe \d+$/) >= 10);
+    if (access === "leiter") { assert.ok(count(res, /^Leiter Sprosse/) >= 10); assert.equal(count(res, /^Leiter Halter/), 2); }
+    // Gitterrost auf dem Randträger: Oberkante = Höhe
+    const g = res.bodies.find((b) => b.name === "Gitterrost 1");
+    near(zRange(g.shape)[1], 3000, 0.05, "OK Belag");
+    // innerhalb der Treppe prüft der Treppen-Generator selbst (Halter im Handlauf, Knieleisten durch die Pfosten)
+    const bad = overlaps(res, (b) => !b.meta?.norm).filter((x) => !/^\d+:Treppe .* × \d+:Treppe /.test(x));
+    assert.deepEqual(bad, [], access);
+  }
+});
