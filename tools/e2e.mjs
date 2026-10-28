@@ -3385,7 +3385,7 @@ try {
     await evalApp((srcId) => { const a = window.__werkcad; const asm = a.newAssembly(); a.edit("Bauteil", () => asm.components.push({ id: "cm1", part: srcId, name: "Winkel links:1", pos: [100, 0, 0], rot: [0, 0, 0] })); a.sel = { type: "component", id: "cm1" }; }, q);
     await idle(60000);
     await evalApp(() => window.__werkcad.props.mirrorComponent("cm1"));
-    await page.locator(".dialog button", { hasText: /^an YZ$/ }).click();
+    await page.locator(".dialog button", { hasText: /^Spiegeln$/ }).click(); // Vorgabe: YZ-Ebene, gewählte Komponente angehakt
     await idle(60000);
     const mc = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); const c = asm.components.at(-1), p = a.doc(c.part); return { n: asm.components.length, pos: c.pos, part: p?.name, type: p?.features?.[0]?.type, normal: p?.features?.[0]?.mirrorN }; });
     await shot("42-komponente-gespiegelt");

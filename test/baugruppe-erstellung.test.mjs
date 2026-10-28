@@ -215,3 +215,22 @@ test("Fügepunkte: aus Abhängigkeit ableiten, beim Platzieren automatisch füge
   const again = autoMate(asm, "s3", docOf, [510, 10, 0]);
   assert.equal(again[0]?.a.comp, "p"); // p hat seine Hälfte noch frei (k ohne fp-Kennung)
 });
+
+test("Fügepunkte: neue Komponente ist immer die bewegte Seite (b), auch wenn ihr Fügepunkt Seite a ist", () => {
+  const docs = { pl: { id: "pl", kind: "part", fuegepunkte: [{ id: "f1", name: "M10", type: "einfuegen", side: "a", ref: { axis: true, p: [20, 20, 0], d: [0, 0, 1], r: 5 } }] },
+    sr: { id: "sr", kind: "part", fuegepunkte: [{ id: "f2", name: "M10", type: "einfuegen", side: "b", ref: { axis: true, p: [0, 0, 0], d: [0, 0, 1], r: 5 } }] } };
+  const asm = { components: [{ id: "s", part: "sr", pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "p", part: "pl", pos: [100, 0, 0], rot: [0, 0, 0] }], constraints: [] };
+  const [k] = autoMate(asm, "p", (id) => docs[id], null, () => "k");
+  assert.deepEqual([k.a.comp, k.b.comp, k.fpSide], ["s", "p", "b"]);
+  // belegt-Kennung zählt die Seiten richtig: die Schraube ist mit ihrer Seite b belegt
+  asm.constraints.push(k);
+  asm.components.push({ id: "p2", part: "pl", pos: [200, 0, 0], rot: [0, 0, 0] });
+  assert.equal(autoMate(asm, "p2", (id) => docs[id]).length, 0);
+});
+
+test("Unterbaugruppe auflösen: fixierte Unterbaugruppe bleibt fixiert", () => {
+  const sub = { kind: "assembly", components: [{ id: "x", part: "pl", pos: [0, 0, 0], rot: [0, 0, 0] }], constraints: [] };
+  const top = { components: [{ id: "s", part: "S", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true }], constraints: [] };
+  dissolveSub(top, "s", sub, () => "n");
+  assert.equal(top.components[0].fixed, true);
+});

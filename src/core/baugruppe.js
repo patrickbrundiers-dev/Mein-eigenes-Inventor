@@ -129,6 +129,7 @@ export function dissolveSub(asm, compId, sub, newId) {
     if (c.pat) delete n.pat; // Musterkopien legt das übernommene Muster neu an
     if (c.joint) n.joint = { ...c.joint, p: matApply(MS, c.joint.p).map(r9), d: v3.norm(matApplyDir(MS, c.joint.d)).map(r9) };
     if (sc.hidden) n.hidden = true;
+    if (sc.fixed) n.fixed = true; // fixierte Unterbaugruppe bleibt nach dem Auflösen am Platz
     if (!c.pat) added.push(n);
   }
   const dropped = (asm.constraints || []).filter((k) => refsOf(k).some(([, r]) => r.comp === compId)).length;
@@ -209,7 +210,7 @@ export function autoMate(asm, newCompId, docOf, near = null, newId = () => Math.
   const byId = new Map((asm.components || []).map((c) => [c.id, c]));
   const C = byId.get(newCompId), P = C && docOf(C.part);
   if (!P?.fuegepunkte?.length) return [];
-  const used = new Set((asm.constraints || []).flatMap((k) => (k.fp ? [`${k.a.comp}|${k.fp}|a`, `${k.b.comp}|${k.fp}|b`] : [])));
+  const used = new Set((asm.constraints || []).flatMap((k) => (k.fp ? [`${k.a.comp}|${k.fp}|${k.fpSide || "a"}`, `${k.b.comp}|${k.fp}|${k.fpSide === "b" ? "a" : "b"}`] : [])));
   const out = [];
   const wpos = (c, ref) => matApply(placementMatrix(c.pos, c.rot), ref.p || v3.mul(ref.n || [0, 0, 0], ref.d || 0));
   for (const fp of P.fuegepunkte) {
@@ -227,8 +228,9 @@ export function autoMate(asm, newCompId, docOf, near = null, newId = () => Math.
     if (!best) continue;
     used.add(`${best.c.id}|${fp.name}|${other}`);
     const mine = { ...fp.ref, comp: newCompId }, theirs = { ...best.g.ref, comp: best.c.id };
-    out.push({ id: newId(), type: fp.type, a: fp.side === "a" ? mine : theirs, b: fp.side === "a" ? theirs : mine, gap: fp.gap || "0",
-      ...(fp.angle ? { angle: fp.angle } : {}), ...(fp.solution ? { solution: fp.solution } : {}), fp: fp.name, name: `${fp.name} (Fügepunkt)` });
+    // bewegt wird beim Lösen die b-Seite: die neue Komponente, nicht das schon eingebaute Gegenstück
+    out.push({ id: newId(), type: fp.type, a: theirs, b: mine, gap: fp.gap || "0",
+      ...(fp.angle ? { angle: fp.angle } : {}), ...(fp.solution ? { solution: fp.solution } : {}), fp: fp.name, fpSide: other, name: `${fp.name} (Fügepunkt)` });
   }
   return out;
 }

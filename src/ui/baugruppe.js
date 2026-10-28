@@ -11,7 +11,7 @@ import { newPart } from "../core/examples.js";
 import { newAssembly } from "../core/examples.js";
 import { solveAssembly, endFaceFor, worldToLocal } from "../core/asmsolve.js";
 import { flattenAssembly, canInsert } from "../core/subasm.js";
-import { placementMatrix, rotationAbout, v3 } from "../core/geom.js";
+import { placementMatrix, rotationAbout, matApply, matApplyDir, v3 } from "../core/geom.js";
 import { classifyHit, buildConstraint, placeState } from "./abhaengigkeit.js";
 
 const asmOf = (app) => (app.mode === "assembly" && app.activeDoc()?.kind === "assembly" ? app.activeDoc() : null);
@@ -78,7 +78,7 @@ export function beginPlacing(app, docId, { at = null } = {}) {
   } else if (at) {
     addComponent(app, asm, d, placeAt(at, center), { near: at });
   }
-  app.pick = { kind: "place", doc: docId, center };
+  app.pick = { kind: "place", doc: docId, center, ghostOk: items.some((it) => it.bodies?.length) };
   app.viewer.setPlaceGhost(items);
   app.setHint(`»${d.name}« platzieren: Klick setzt eine Kopie (auf Flächen einrastend) – Esc oder Rechtsklick beendet`);
   app.ribbon?.render?.();
@@ -115,8 +115,21 @@ function cursorPoint(app, e, opts = {}) {
   return v.raycaster(e.clientX, e.clientY).ray.intersectPlane(plane, out) ? out.toArray() : null;
 }
 export function placeHover(app, e) {
+  // neu angelegte Bauteile (Normteil, Bibliothek) sind beim Start oft noch nicht gerechnet: Vorschau nachholen
+  if (!app.pick.ghostOk) refreshGhost(app);
   const p = cursorPoint(app, e);
   if (p) app.viewer.movePlaceGhost(placementMatrix(placeAt(p, app.pick.center).pos, [0, 0, 0]));
+}
+function refreshGhost(app) {
+  const d = app.doc(app.pick.doc);
+  if (!d) return;
+  const occ = d.kind === "assembly" ? flattenAssembly(d, (id) => app.doc(id)) : [{ part: d, matrix: null }];
+  const items = occ.map((o) => ({ bodies: app.results.get(o.part.id)?.bodies, color: app.partColor(o.part), inner: o.matrix }));
+  if (!items.some((it) => it.bodies?.length)) return;
+  const boxes = occ.flatMap((o) => (app.results.get(o.part.id)?.bodies || []).map((b) => b.props?.bbox).filter(Boolean));
+  if (boxes.length) app.pick.center = [0, 1, 2].map((i) => (Math.min(...boxes.map((b) => b[0][i])) + Math.max(...boxes.map((b) => b[1][i]))) / 2);
+  app.pick.ghostOk = true;
+  app.viewer.setPlaceGhost(items);
 }
 export function placeClick(app, e) {
   const asm = asmOf(app), d = app.doc(app.pick.doc), p = cursorPoint(app, e);
@@ -470,3 +483,60 @@ export function fuegepunkteSection(props, asm, c) {
       : h("p", { class: "hint" }, "Fügepunkte merken, wie ein Teil sitzt (z. B. Schraube in Bohrung, Pfosten auf Fußplatte). Beim nächsten Platzieren fügt PBCAD es dann von selbst an das nächstliegende passende Gegenstück."),
     h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => learnFuegepunkte(app, c.id) }, "Aus Abhängigkeiten merken")));
 }
+
+// ---------- Skelett / Komponenten aus Körpern (BG12, wie Inventor »Komponenten erstellen«) ----------
+/** Jeder Körper des Bauteils der Komponente wird ein eigenes, abgeleitetes Bauteil an derselben Stelle; das Skelett wird ausgeblendet */
+export function componentsFromBodies(app, compId) {
+  const asm = asmOf(app), c = compOf(asm, compId), src = c && app.doc(c.part);
+  if (src?.kind !== "part") return toast("Nur Bauteile haben Körper");
+  const bodies = (app.results.get(src.id)?.bodies || []).filter((b) => b.kind !== "sketch");
+  if (bodies.length < 2) return toast("Das Bauteil hat nur einen Körper – im Skelett mehrere Körper modellieren (Extrusion »Neuer Körper«)");
+  const made = [];
+  app.edit("Komponenten aus Körpern", () => {
+    bodies.forEach((b, i) => {
+      // vorhandenes abgeleitetes Bauteil für diesen Körper wiederverwenden
+      let doc = app.parts().find((d) => d.features?.[0]?.type === "abgeleitet" && d.features[0].source === src.id && Number(d.features[0].body) === i);
+      if (!doc) {
+        doc = app.withPartDefaults(newPart(b.name && !/^Körper/.test(b.name) ? b.name : `${src.name} ${i + 1}`));
+        doc.material = src.material;
+        doc.features = [{ id: uid("f"), type: "abgeleitet", name: "Aus Skelett", source: src.id, body: i, scale: "1" }];
+        app.project.docs.push(doc);
+      }
+      const comp = { id: uid("c"), part: doc.id, name: `${doc.name}:${asm.components.filter((x) => x.part === doc.id).length + 1}`, pos: [...c.pos], rot: [...c.rot] };
+      // fest am Skelett: Starr-Abhängigkeit hält die Teile in ihrer Lage
+      asm.components.push(comp);
+      asm.constraints = [...(asm.constraints || []), { id: uid("ab"), type: "starr", a: { comp: c.id, frame: true }, b: { comp: comp.id, frame: true }, rel: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], gap: "0", name: `Starr: ${comp.name} → Skelett` }];
+      made.push(comp);
+    });
+    c.hidden = true;
+    c.skelett = true;
+  });
+  app.tree.render(); app.props.render();
+  toast(`${made.length} Bauteile aus »${src.name}« erstellt – Änderungen am Skelett übertragen sich. Skelett ausgeblendet (zählt nicht in der Stückliste).`, { kind: "ok", timeout: 7000 });
+}
+
+// ---------- Gelenk in einem Schritt (BG14, wie Fusion) ----------
+/** Achse im 3D-Fenster wählen (Zylinderfläche, gerade Kante oder ebene Fläche = Normale am Klickpunkt), dann Gelenk anlegen */
+export function jointPick(app, kind = "dreh") {
+  const asm = asmOf(app);
+  if (!asm) return;
+  app.pick = { kind: "custom", onPick: (hit) => {
+    const sel = hit && classifyHit(app, hit);
+    if (!sel) return toast("Bitte eine Zylinderfläche, Kante oder ebene Fläche der Komponente wählen, die sich bewegen soll");
+    const c = compOf(asm, sel.cid);
+    if (c?.fixed) return toast(`${c.name} ist fixiert – die bewegliche Komponente wählen`);
+    const M = placementMatrix(c.pos, c.rot);
+    let axis = null;
+    if (sel.kind === "axis") axis = { p: matApplyW(M, sel.info.axisP), d: dirW(M, sel.info.axisD) };
+    else if (sel.kind === "edge" || sel.kind === "circle") axis = { p: matApplyW(M, sel.p), d: dirW(M, sel.d) };
+    else if (sel.kind === "plane") axis = { p: hit.point, d: dirW(M, sel.info.normal) };
+    if (!axis) return toast("Daraus lässt sich keine Achse bilden");
+    app.cancelPick();
+    app.sel = { type: "component", id: c.id };
+    app.refreshSelectionHits();
+    app.props.jointDialog(c, kind, axis);
+  } };
+  app.setHint(`${kind === "schiebe" ? "Schiebegelenk" : kind === "zylinder" ? "Zylindergelenk" : "Drehgelenk"}: an der beweglichen Komponente die Achse anklicken (Bohrung, Bolzen, Kante oder Fläche) – Esc bricht ab`);
+}
+const matApplyW = (M, p) => matApply(M, p);
+const dirW = (M, d) => v3.norm(matApplyDir(M, d));

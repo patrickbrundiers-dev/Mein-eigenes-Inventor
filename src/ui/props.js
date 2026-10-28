@@ -52,7 +52,7 @@ import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
-import { placeDialog, mirrorDialog, fuegepunkteSection } from "./baugruppe.js";
+import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
 import { linkedPart, asmParamValues } from "../core/baugruppenparameter.js";
 import { pushParamsDialog, invalidateLinked, explosionDialog, positionsSection, explosionSection, asmParamsSection } from "./darstellungen.js";
@@ -616,9 +616,12 @@ export class Props {
             p.features.push({ id: uid("f"), name: designation, ...f, pos: ["0", "0", "0"], axis: "Z" });
             app.project.docs.push(p);
           }
+          // BG10/BG1: einzeln am Mauszeiger absetzen (fügt sich über Fügepunkte an), mehrere wie bisher in einer Reihe
+          if (n === 1 && asm.components.length) return;
           const have = asm.components.filter((c) => c.part === p.id).length;
           for (let i = 0; i < n; i++) asm.components.push({ id: uid("c"), part: p.id, name: `${designation}:${have + i + 1}`, pos: [i * 40, 0, 0], rot: [0, 0, 0] });
         });
+        if (n === 1 && asm.components.length) return beginPlacing(app, p.id);
         toast(`${n} × ${designation} eingefügt`, { kind: "ok" });
       } }],
     });
@@ -1910,13 +1913,14 @@ export class Props {
         h("button", { class: "btn danger", onclick: () => app.edit(jointLabel(j) + " entfernen", () => { delete c.joint; }) }, "Gelenk entfernen")));
   }
   /** Schiebegelenk anlegen: Richtung (±X, ±Y, ±Z), Weg von … bis in mm; 0 = heutige Lage */
-  slideDialog(c) {
+  slideDialog(c, preset = null) {
     const app = this.app;
     const box = app.viewer.componentBox(c.id);
-    const st = { dir: "-x", min: 0, max: box ? Math.round(box[1][0] - box[0][0]) : 1000 };
-    const dirs = { "+x": [1, 0, 0], "-x": [-1, 0, 0], "+y": [0, 1, 0], "-y": [0, -1, 0], "+z": [0, 0, 1], "-z": [0, 0, -1] };
+    const st = { dir: preset ? "gew" : "-x", min: 0, max: box ? Math.round(box[1][0] - box[0][0]) : 1000 };
+    const dirs = { ...(preset ? { gew: preset.d, "gew-": preset.d.map((x) => -x) } : {}), "+x": [1, 0, 0], "-x": [-1, 0, 0], "+y": [0, 1, 0], "-y": [0, -1, 0], "+z": [0, 0, 1], "-z": [0, 0, -1] };
+    const dirLabel = (k) => (k === "gew" ? "gewählt" : k === "gew-" ? "gewählt umgekehrt" : k.toUpperCase());
     const seg = h("div", { class: "seg" });
-    const draw = () => seg.replaceChildren(...Object.keys(dirs).map((k) => h("button", { class: st.dir === k ? "on" : "", onclick: () => { st.dir = k; draw(); } }, k.toUpperCase())));
+    const draw = () => seg.replaceChildren(...Object.keys(dirs).map((k) => h("button", { class: st.dir === k ? "on" : "", onclick: () => { st.dir = k; draw(); } }, dirLabel(k))));
     draw();
     const num = (key) => { const i = h("input", { class: "inp", type: "number", step: "10", value: st[key] }); i.addEventListener("change", () => { st[key] = Number(i.value); }); return i; };
     modal({ title: "Schiebegelenk anlegen", width: "480px", body: h("div", {},
@@ -1929,23 +1933,25 @@ export class Props {
       app.edit("Schiebegelenk", () => { c.joint = defaultJoint([0, 0, 0], dirs[st.dir], { min: st.min, max: st.max, kind: "schiebe" }); });
       app.sel = { type: "component", id: c.id };
       this.render();
+      if (preset) setTimeout(() => this.animateJoints([c.id], { duration: 2000 }), 300);
     } }] });
   }
   /** Drehgelenk anlegen: Achse an einer Kante der Komponente, an einer Konzentrisch-Abhängigkeit oder frei */
-  jointDialog(comp, kind = "dreh") {
+  jointDialog(comp, kind = "dreh", preset = null) {
     const app = this.app, asm = app.activeDoc();
     if (asm?.kind !== "assembly") return;
     const c = comp || (app.sel?.type === "component" ? asm.components.find((x) => x.id === app.sel.id) : null);
     if (!c) return toast("Erst die Komponente wählen, die sich drehen soll (z. B. den Torflügel)");
     if (c.joint) return toast(`${c.name} hat schon ein ${jointLabel(c.joint)}`);
     if (c.fixed) return toast("Fixierte Komponenten bewegen sich nicht – Fixierung lösen");
-    if (kind === "schiebe") return this.slideDialog(c);
+    if (kind === "schiebe") return this.slideDialog(c, preset);
     const box = app.viewer.componentBox(c.id);
     if (!box) return toast("Komponente ist leer oder ausgeblendet");
     // Achse aus Konzentrisch-Abhängigkeit (Bolzen, Scharnier) in Baugruppen-Koordinaten
     const conc = (asm.constraints || []).find((k) => !k.suppressed && k.type === "konzentrisch" && (k.a.comp === c.id || k.b.comp === c.id));
-    let concAxis = null;
-    if (conc) { const ref = conc.a.comp === c.id ? conc.b : conc.a, other = asm.components.find((x) => x.id === ref.comp); if (other) { const M = placementMatrix(other.pos, other.rot); concAxis = { p: matApply(M, ref.p), d: matApplyDir(M, ref.d) }; } }
+    // BG14: im 3D-Fenster gewählte Achse
+    let concAxis = preset ? { p: preset.p, d: preset.d } : null;
+    if (!preset && conc) { const ref = conc.a.comp === c.id ? conc.b : conc.a, other = asm.components.find((x) => x.id === ref.comp); if (other) { const M = placementMatrix(other.pos, other.rot); concAxis = { p: matApply(M, ref.p), d: matApplyDir(M, ref.d) }; } }
     const st = { at: concAxis ? "bolzen" : "links", dir: "z", min: 0, max: 90, smin: 0, smax: 100 };
     const point = () => {
       if (st.at === "bolzen") return concAxis.p;
@@ -1961,7 +1967,7 @@ export class Props {
     const fill = () => point().forEach((x, k) => { pIn[k].value = String(Math.round(x * 100) / 100); });
     const seg = (opts, key) => { const w = h("div", { class: "seg" }); const draw = () => { w.replaceChildren(...opts.map(([v, l]) => h("button", { class: st[key] === v ? "on" : "", onclick: () => { st[key] = v; draw(); fill(); } }, l))); }; draw(); return w; };
     const num = (key) => { const i = h("input", { class: "inp", type: "number", step: "1", value: st[key] }); i.addEventListener("change", () => { st[key] = Number(i.value); }); return i; };
-    const atOpts = [...(concAxis ? [["bolzen", "Bolzenachse"]] : []), ["links", "links"], ["rechts", "rechts"], ["vorne", "vorne"], ["hinten", "hinten"], ["mitte", "Mitte"]];
+    const atOpts = [...(concAxis ? [["bolzen", preset ? "gewählte Achse" : "Bolzenachse"]] : []), ["links", "links"], ["rechts", "rechts"], ["vorne", "vorne"], ["hinten", "hinten"], ["mitte", "Mitte"]];
     fill();
     const body = h("div", {},
       h("p", {}, `Komponente »${c.name}« dreht sich um eine Achse. Winkel 0° ist die heutige Lage.`),
@@ -1982,6 +1988,8 @@ export class Props {
       app.edit(label, () => { c.joint = defaultJoint(p, dirVec(), { min: st.min, max: st.max, kind, smin: st.smin, smax: st.smax }); });
       app.sel = { type: "component", id: c.id };
       this.render();
+      // wie Fusion: Bewegung gleich einmal vorführen
+      if (preset) setTimeout(() => this.animateJoints([c.id], { duration: 2000 }), 300);
     } }] });
   }
   /** Gelenke hin und zurück bewegen (nur Anzeige); ids = Komponenten mit Gelenk, sonst alle */

@@ -203,7 +203,10 @@ export class App {
       if (into) into.components.push({ id: uid("c"), part: asm.id, name: asm.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: !into.components.length });
     }, { rebuild: false });
     this.openDoc(asm.id);
-    toast(`Baugruppe »${asm.name}« mit ${new Set(asm.components.map((c) => c.part)).size} Einzelteilen angelegt${into ? `, in »${into.name}« eingebaut` : ""}`, { kind: "ok" });
+    // BG13: in einer Baugruppe mit Teilen gleich andocken – zurück, Komponente gewählt, Alt-Ziehen an die Zielfläche
+    const comp = into && into.components.length > 1 ? into.components.at(-1) : null;
+    toast(`Baugruppe »${asm.name}« mit ${new Set(asm.components.map((c) => c.part)).size} Einzelteilen angelegt${into ? `, in »${into.name}« eingebaut` : ""}`, { kind: "ok", timeout: comp ? 9000 : 4000,
+      action: comp ? { label: "Andocken", run: () => { this.openDoc(into.id); this.sel = { type: "component", id: comp.id }; this.refreshSelectionHits(); this.tree.render(); this.props.render(); this.setHint(`»${comp.name}« andocken: mit Alt an einer Fläche greifen und auf die Zielfläche ziehen (Leertaste wechselt die Lösung) – oder »Abhängigkeit«`); } } : null });
     return asm;
   }
   /**

@@ -4,7 +4,7 @@ import { FEATURE_NAMES } from "./app.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { activeCount } from "../core/bauteilende.js";
 import { componentDof, dofLabel } from "../core/asmdof.js";
-import { formSubDialog, dissolveSubComp, moveCompIntoSub, learnFuegepunkte } from "./baugruppe.js";
+import { formSubDialog, dissolveSubComp, moveCompIntoSub, learnFuegepunkte, componentsFromBodies } from "./baugruppe.js";
 
 const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", blechkasten: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
 
@@ -189,7 +189,7 @@ export class Tree {
       const li = h("li");
       ul.append(li);
       li.append(this.node({
-        label: c.name || p?.name || "?", ic: sub ? "assembly" : "part", cls: (sel ? "sel" : "") + (c.hidden ? " suppressed" : "") + (!p ? " err" : "") + (myCons.some((x) => app.asmErrors?.[x.id]) ? " err" : ""), meta: [sub ? "Unterbaugruppe" : "", dofLabel(componentDof(asm, c.id))].filter(Boolean).join(" · "),
+        label: c.name || p?.name || "?", ic: sub ? "assembly" : "part", cls: (sel ? "sel" : "") + (c.hidden ? " suppressed" : "") + (!p ? " err" : "") + (myCons.some((x) => app.asmErrors?.[x.id]) ? " err" : ""), meta: [sub ? "Unterbaugruppe" : "", c.skelett ? "Skelett" : "", c.skelett ? "" : dofLabel(componentDof(asm, c.id))].filter(Boolean).join(" · "),
         twist: myCons.length ? (consOpen ? "▾" : "▸") : "", onTwist: () => this.toggle(consKey),
         onClick: () => { app.sel = { type: "component", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
         onDbl: () => p && app.openDoc(p.id),
@@ -204,6 +204,7 @@ export class Tree {
           "-",
           { label: "Unterbaugruppe bilden …", icon: "assembly", run: () => formSubDialog(app, c.id) },
           ...(myCons.length && !sub ? [{ label: "Fügepunkte aus Abhängigkeiten merken", icon: "insert", run: () => learnFuegepunkte(app, c.id) }] : []),
+          ...(!sub && (app.results.get(c.part)?.bodies || []).filter((b) => b.kind !== "sketch").length > 1 ? [{ label: "Komponenten aus Körpern erstellen (Skelett)", icon: "part", run: () => componentsFromBodies(app, c.id) }] : []),
           ...(sub ? [{ label: "Unterbaugruppe auflösen", icon: "assembly", run: () => dissolveSubComp(app, c.id) }] : []),
           "-",
           { label: "Entfernen", icon: "trash", run: () => app.props.deleteComponent(c.id) },
