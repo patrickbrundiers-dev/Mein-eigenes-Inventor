@@ -47,6 +47,7 @@ export class KernelClient {
       this.restart("Geometrie-Kern abgestürzt: " + (e.message || "unbekannt"));
     };
     this.ready = this.call("ping");
+    this.ready.catch(() => {}); // Neustart vor der ersten Antwort: kein unbehandelter Fehler
     for (const [cmd, args] of this.setup) this.call(cmd, args).catch(() => {});
   }
   /** Speicher über der Grenze: neu starten, sobald nichts mehr läuft (kurz warten, Folgeaufträge kommen oft gleich) */
@@ -62,13 +63,24 @@ export class KernelClient {
       this.spawn();
     }, 1500);
   }
-  restart(msg) {
-    window.werkcad?.log?.("error", "geometrie-kern", msg);
+  restart(msg, { crash = true } = {}) {
+    // Absturzschleife (SY5): dreimal in einer Minute → Hinweis, was der Anwender tun kann
+    if (crash) {
+      const now = Date.now();
+      this.crashes = [...(this.crashes || []).filter((t) => now - t < 60000), now];
+      if (this.crashes.length >= 3) msg += " – stürzt wiederholt ab: letzte Änderung mit Strg+Z zurücknehmen oder das Feature unterdrücken";
+    }
+    window.werkcad?.log?.(crash ? "error" : "info", "geometrie-kern", msg);
     for (const [, p] of this.pending) p.reject(new Error(msg));
     this.pending.clear();
     this.busy = 0;
     this.onState(0, msg);
     this.spawn();
+  }
+  /** Laufende Berechnung abbrechen (SY5): OpenCascade lässt sich nicht unterbrechen, also Kern neu starten */
+  abort() {
+    if (!this.busy) return;
+    this.restart("Berechnung abgebrochen", { crash: false });
   }
   /** Abgeleitete Bauteile bekommen ihre Quelle mit (der Kern kennt nur das einzelne Bauteil), mit der Baugruppe verknüpfte Parameter ihren Wert (FU4) */
   withSources(args) {

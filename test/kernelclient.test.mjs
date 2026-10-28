@@ -56,3 +56,26 @@ test("großes Modell: Grenze wächst mit dem Bedarf nach dem ersten Bau", async 
   assert.equal(workers.length, 1, "700 MB < 2 × 400 MB");
   assert.equal(k.recycleLimit, 800);
 });
+
+test("Abbrechen startet den Kern neu und lehnt offene Aufträge ab, ohne als Absturz zu zählen", async () => {
+  workers.length = 0;
+  const states = [];
+  const k = new KernelClient((busy, msg) => states.push(msg));
+  await k.ready;
+  workers[0].postMessage = function (msg) { this.sent.push(msg.cmd); }; // hängt
+  const p = k.call("build", { part: { id: "x" } });
+  k.abort();
+  await assert.rejects(p, /abgebrochen/);
+  assert.equal(workers.length, 2);
+  assert.equal(k.busy >= 0, true);
+  assert.equal((k.crashes || []).length, 0);
+  assert.ok(states.includes("Berechnung abgebrochen"));
+});
+
+test("dreimal abgestürzt in einer Minute: Hinweis zur Abhilfe", () => {
+  workers.length = 0;
+  const msgs = [];
+  const k = new KernelClient((busy, msg) => msg && msgs.push(msg));
+  for (let i = 0; i < 3; i++) k.restart("Geometrie-Kern abgestürzt");
+  assert.ok(/wiederholt/.test(msgs[2]) && !/wiederholt/.test(msgs[1]));
+});

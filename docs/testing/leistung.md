@@ -34,3 +34,15 @@ Kern ab. Mit jedem Neuaufbau eines Generators wächst er daher stetig.
 
 Der erste Bau nach einem Neustart dauert etwa 1 s länger (Kern laden, Modell ohne Zwischenspeicher). Neu gestartet wird
 nur, wenn 1,5 s lang nichts läuft; große Modelle bekommen als Grenze mindestens das Doppelte ihres Bedarfs.
+
+## Start (SY3)
+
+Die 3D-Ansicht zeichnet nur, wenn sie sichtbar ist. Beim Start liegt die Startseite darüber; das erste Bild (mit dem
+Übersetzen aller Shader) entfällt dort und kommt erst beim Öffnen eines Modells.
+
+| | vorher | nachher |
+|---|---|---|
+| Oberfläche bereit (DOMContentLoaded, 3 Läufe) | 0,7–1,7 s | 0,4–0,65 s |
+| Geometrie-Kern bereit | 1,3–1,8 s | 0,85–1,1 s |
+
+Auf einem Windows-PC mit Grafikkarte sind die Zeiten anders (hier SwiftShader ohne GPU), die Reihenfolge bleibt.

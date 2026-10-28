@@ -48,6 +48,7 @@ import { refreshAllGestelle, gestellPick, skeletonSegs } from "./gestell.js";
 import { insertFeature, beforeDelete, setEnd } from "../core/bauteilende.js";
 import { colorMap } from "../core/komponentenfarben.js";
 import { templateOf, isCustomTemplate } from "../core/zeichnungsvorlage.js";
+import { snapshot, restoreSnapshot, trimStack } from "../core/undo.js";
 
 const linkedMessage = (part, docOf = () => null) => (part.variant && !part.link
   ? `»${part.name}« ist eine Variante von »${docOf(part.variant.of)?.name || "?"}« – dort in der Variantentabelle ändern`
@@ -357,8 +358,9 @@ export class App {
 
   // ---------- Änderungen / Rückgängig ----------
   checkpoint(label) {
-    this.undoStack.push({ label, json: JSON.stringify(this.project), activeId: this.activeId, sketchId: this.mode === "sketch" ? this.sketcher.sketchId : null });
-    if (this.undoStack.length > 100) this.undoStack.shift();
+    const prev = this.undoStack[this.undoStack.length - 1]?.snap;
+    this.undoStack.push({ label, snap: snapshot(this.project, prev), activeId: this.activeId, sketchId: this.mode === "sketch" ? this.sketcher.sketchId : null });
+    trimStack(this.undoStack);
     this.redoStack = [];
   }
   changed({ rebuild = true } = {}) {
@@ -395,7 +397,7 @@ export class App {
     } catch (e) {
       const st = this.undoStack.pop();
       this.redoStack = redo;
-      this.project = JSON.parse(st.json);
+      this.project = restoreSnapshot(st.snap);
       this.activeId = this.doc(st.activeId) ? st.activeId : this.activeId;
       if (this.sel?.type === "feature" && !this.activeDoc()?.features?.some((f) => f.id === this.sel.id)) this.sel = null;
       window.werkcad?.log?.("error", "aenderung", `${label}: ${e?.stack || e}`);
@@ -421,8 +423,9 @@ export class App {
   restore(from, to) {
     const st = from.pop();
     if (!st) return;
-    to.push({ label: st.label, json: JSON.stringify(this.project), activeId: this.activeId, sketchId: this.mode === "sketch" ? this.sketcher.sketchId : null });
-    this.project = JSON.parse(st.json);
+    to.push({ label: st.label, snap: snapshot(this.project, st.snap), activeId: this.activeId, sketchId: this.mode === "sketch" ? this.sketcher.sketchId : null });
+    trimStack(to);
+    this.project = restoreSnapshot(st.snap);
     if (!this.doc(this.activeId)) this.activeId = st.activeId;
     if (this.mode === "sketch") {
       if (!this.activeDoc()?.features.some((f) => f.id === this.sketcher.sketchId)) this.finishSketch(true);
@@ -1218,7 +1221,19 @@ export class App {
   }
   setBusy(n, msg) {
     this.busy = n;
-    if (msg) toast(msg, { kind: "err" });
+    if (msg) toast(msg, { kind: msg === "Berechnung abgebrochen" ? "" : "err", timeout: /wiederholt/.test(msg) ? 12000 : 4000 });
+    // Lange Berechnung (SY5): nach 8 s Abbrechen anbieten
+    if (n && !this.slowTimer) {
+      this.slowTimer = setTimeout(() => {
+        if (!this.busy) return;
+        this.slowToast = toast("Die Berechnung dauert länger …", { timeout: 0, action: { label: "Abbrechen", run: () => this.kernel.abort() } });
+      }, 8000);
+    } else if (!n) {
+      clearTimeout(this.slowTimer);
+      this.slowTimer = null;
+      this.slowToast?.remove();
+      this.slowToast = null;
+    }
     this.updateStatus();
   }
   updateStatus() {
