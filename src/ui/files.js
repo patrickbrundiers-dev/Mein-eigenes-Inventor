@@ -26,7 +26,7 @@ import { materialOf } from "../core/materials.js";
 import { finishLabel } from "../core/oberflaeche.js";
 import { listSheets } from "../core/lists.js";
 import { fmtNum } from "./dom.js";
-import { piecesOf, groupPieces, withSignature, dstvText, dstvFileName } from "../core/dstv.js";
+import { piecesOf, groupPieces, withSignature, dstvText, dstvFileName, stablePositions, piecesCsv, pieceMass } from "../core/dstv.js";
 import { writeIfc, ifcElements, ifcCounts } from "../core/ifc.js";
 
 const PROJECT_FILTERS = [{ name: "PBCAD-Projekt", extensions: ["wcad"] }];
@@ -351,7 +351,10 @@ export class Files {
     const app = this.app, d = app.activeDoc();
     await this.withBusy("IFC-Export", async () => {
       const data = await app.kernel.call("ifcData", { items });
-      const text = writeIfc({ project: app.project.name || d.name, storey: d.name, elements: ifcElements(data) }, { app: "PBCAD", version: window.werkcad?.version || "" });
+      // Einzelteil-Positionen wie im DSTV-NC als Kennzeichen (Tag) der Stäbe und Platten
+      const tags = new Map();
+      if (data.some((b) => b.kind === "member" || b.plate)) for (const p of (await this.dstvFiles(d)).pieces) for (const k of p.keys || []) tags.set(k, p.pos);
+      const text = writeIfc({ project: app.project.name || d.name, storey: d.name, elements: ifcElements(data, { tags }) }, { app: "PBCAD", version: window.werkcad?.version || "" });
       const r = await this.saveText(text, safeName(d.number || d.name) + ".ifc", "application/x-step", [{ name: "IFC", extensions: ["ifc"] }]);
       const c = ifcCounts(text), names = { IFCBEAM: "Träger", IFCCOLUMN: "Stützen", IFCMEMBER: "Stäbe", IFCPLATE: "Platten", IFCMECHANICALFASTENER: "Normteile", IFCBUILDINGELEMENTPROXY: "sonstige" };
       if (r) toast("IFC: " + Object.entries(c).map(([k, n]) => `${n} ${names[k]}`).join(", "), { kind: "ok", timeout: 5000 });
@@ -421,7 +424,10 @@ export class Files {
       all.push(...r.pieces);
       skipped.push(...r.skipped);
     }
-    const pieces = groupPieces(all).map(withSignature);
+    // Positionsnummern der Einzelteile stabil im Dokument (gleiche Stücke behalten ihre Nummer, ST10)
+    const st = stablePositions(groupPieces(all), d.einzelteilPos);
+    if (st.changed) app.edit("Positionsnummern Einzelteile", () => { d.einzelteilPos = st.store; }, { rebuild: false });
+    const pieces = st.pieces.map(withSignature);
     const files = pieces.map((p) => ({ name: dstvFileName(p), data: dstvText(p) }));
     const fmt = (x) => fmtNum(x, 1);
     const log = [`DSTV-NC ${d.name} – ${new Date().toLocaleString("de-DE")}`, "", "Pos\tStk\tProfil\tLänge mm\tBohrungen\tDatei\tBauteile",
@@ -441,6 +447,23 @@ export class Files {
         if (s) toast(`${r.files.length} NC-Dateien gespeichert in ${s.dir}` + (r.skipped.length ? ` – ${r.skipped.length} Hinweis(e) im Protokoll` : ""), { kind: "ok", timeout: 6000 });
       } else await this.saveBinary(zipFiles(files.map((f) => [f.name, f.data])), safeName(d.number || d.name) + "_DSTV.zip", [{ name: "ZIP-Archiv", extensions: ["zip"] }]);
     });
+  }
+  /** Einzelteile (ST10): Gleichteile mit festen Positionsnummern wie im DSTV-NC und IFC, als Tabelle und CSV */
+  async piecesDialog() {
+    const app = this.app, d = app.activeDoc();
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Einzelteile gibt es für Bauteile und Baugruppen");
+    let r;
+    await this.withBusy("Einzelteile", async () => { r = await this.dstvFiles(d); });
+    if (!r) return;
+    if (!r.pieces.length) return toast("Keine Stäbe oder ebenen Platten im Modell");
+    const fmt = (x) => fmtNum(x, 1);
+    const table = h("table", { class: "tbl" },
+      h("thead", {}, h("tr", {}, ...["Pos", "Stk", "Profil", "Länge", "kg/Stk", "Bohr.", "Bauteile"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, ...r.pieces.map((p) => h("tr", {}, h("td", {}, p.pos), h("td", {}, String(p.qty)), h("td", {}, p.profile), h("td", {}, fmt(p.length)), h("td", {}, fmt(pieceMass(p))), h("td", {}, String((p.holes || []).length)), h("td", { style: { fontSize: "11px" } }, p.sources.join(", "))))));
+    const renumber = () => { app.edit("Positionsnummern neu", () => { delete d.einzelteilPos; }, { rebuild: false }); this.piecesDialog(); };
+    modal({ title: `Einzelteile – ${d.name}`, width: "900px",
+      body: h("div", {}, h("p", { class: "hint" }, `${r.pieces.length} Positionen, ${r.pieces.reduce((s, p) => s + p.qty, 0)} Stück. Gleiche Stäbe und Platten (Profil, Länge, Schnitte, Bohrungen) haben eine Nummer; sie bleibt beim Ändern des Modells erhalten und steht so auch im DSTV-NC, in der Signatur und im IFC.`), h("div", { style: { maxHeight: "60vh", overflow: "auto" } }, table)),
+      buttons: [{ label: "Neu nummerieren", run: renumber }, { label: "Schließen" }, { label: "Als CSV speichern", primary: true, run: () => this.saveText(piecesCsv(r.pieces), safeName(d.number || d.name) + "_Einzelteile.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]) }] });
   }
   async exportCutList() {
     const app = this.app;

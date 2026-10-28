@@ -10,6 +10,8 @@ const BAR_FILLS = ["staketen", "quer"];
 
 import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
+import { platePlan } from "./anschluss.js";
+import { capPlate } from "./handlaufhalter.js";
 export const ZAUN = {
   label: "Zaun",
   schema: [
@@ -68,7 +70,10 @@ export const ZAUN = {
       };
       rail(fh / 2, `Feld ${f} Unterriegel`, p.frame, [0, 0, 1]);
       rail(H - fh / 2, `Feld ${f} Oberriegel`, p.frame, [0, 0, -1]);
-      const lo = (x) => zb(x) + fh, hi = (x) => zb(x) + H - fh;
+      // Ober-/Unterkante der Füllung an den Riegeln; schräge Riegel (Gefälle) sind senkrecht gemessen um fh/2 · √(1 + s²) dick
+      const sl = p.terrain === "gefaelle" ? rise / L : 0, kk = Math.hypot(1, sl);
+      const lo = (x) => zb(x) + fh / 2 + (fh / 2) * kk, hi = (x) => zb(x) + H - fh / 2 - (fh / 2) * kk;
+      const nLo = [sl / kk, 0, -1 / kk], nHi = [-sl / kk, 0, 1 / kk];
       if (p.fill === "staketen") {
         const bw = p.bar.geom.height, clear = x1 - x0;
         const m = Math.max(0, Math.ceil((clear - p.gapMax) / (bw + p.gapMax) - 1e-9));
@@ -76,7 +81,8 @@ export const ZAUN = {
         gapSeen = Math.max(gapSeen, g);
         for (let j = 0; j < m; j++) {
           const x = x0 + g * (j + 1) + bw * j + bw / 2;
-          members.push({ section: p.bar, a: P(x, lo(x)), b: P(x, hi(x)), name: `Feld ${f} Stab ${j + 1}`, up: [1, 0, 0] });
+          const e = sl ? (bw / 2) * Math.abs(sl) + 1 : 0; // Stab parallel zu den Riegeln geschnitten
+          members.push({ section: p.bar, a: P(x, lo(x) - e), b: P(x, hi(x) + e), name: `Feld ${f} Stab ${j + 1}`, up: [1, 0, 0], ...(sl ? { cuts: { start: [{ p: P(x, lo(x)), n: nLo }], end: [{ p: P(x, hi(x)), n: nHi }] } } : {}) });
         }
         bars += m;
       } else if (p.fill === "quer") {
@@ -95,9 +101,14 @@ export const ZAUN = {
     xs.forEach((x, i) => {
       const g = ground(x), top = tops[i] + p.postTop;
       if (p.base === "fussplatte") {
-        plates.push({ center: [x, 0, g], xDir: [1, 0, 0], normal: [0, 0, 1], W: p.baseSize, H: p.baseSize, t: p.baseT, name: `Fußplatte ${i + 1}` });
+        // Fußplatte mit 4 Bohrungen Ø 14 für Dübel bzw. Anker (M12), Randabstand wie beim Geländer
+        const pl = platePlan({ width: p.post.geom.width, height: p.post.geom.height }, { thickness: p.baseT, width: p.baseSize, height: p.baseSize, holes: 4, holeDia: 14, edge: Math.min(25, p.baseSize / 4) });
+        plates.push({ center: [x, 0, g], xDir: [1, 0, 0], normal: [0, 0, 1], W: pl.W, H: pl.H, t: pl.t, holes: pl.holes, d: pl.d, name: `Fußplatte ${i + 1}` });
+        issues.push(...pl.issues.map((x) => ({ ...x, key: "baseSize" })).filter((x, k, a) => i === 0 && a.findIndex((y) => y.message === x.message) === k));
         members.push({ section: p.post, a: P(x, g + p.baseT), b: P(x, top), name: `Pfosten ${i + 1}`, up });
       } else members.push({ section: p.post, a: P(x, g - p.embed), b: P(x, top), name: `Pfosten ${i + 1}`, up });
+      const cap = capPlate(p.post, P(x, top), up, `Pfostenkappe ${i + 1}`); // hohle Pfosten oben zu (kein Wasser im Rohr)
+      if (cap) plates.push(cap);
     });
     if (p.terrain === "stufen" && airMax - gap > 150 + 1e-6) issues.push({ key: "rise", level: "Warnung", message: `Bodenluft unter den Stufen bis ${Math.round(airMax)} mm – mehr Felder oder Gefälle wählen` });
     const fl = Math.round(L / n - pw);
@@ -105,7 +116,7 @@ export const ZAUN = {
     return { chains: [], members, plates, info, issues, geo: { n, rise } };
   },
 
-  parts: { fieldMax: /^Pfosten/, postTop: /^Pfosten/, length: /^Pfosten/, height: /riegel|Stab/ },
+  parts: { fieldMax: /^Pfosten \d+$/, postTop: /^Pfosten/, length: /^Pfosten \d+$/, height: /riegel|Stab/ },
   views: ["front", "top"],
   /** Maßlinien der Skizze (Ansicht: x, z; Grundriss: x, y) */
   dims(p, plan, view) {

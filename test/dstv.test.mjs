@@ -89,3 +89,25 @@ test("DSTV: Stücke aus Kernel-Daten – übersprungene Körper mit Grund, Auskl
   assert.equal(r.skipped.length, 3);
   assert.ok(r.skipped.some((s) => /gebogen/.test(s.reason)) && r.skipped.some((s) => /Ausklinkung/.test(s.reason)) && r.skipped.some((s) => /schräg/.test(s.reason)));
 });
+
+test("Einzelteil-Positionen bleiben stabil: neue Stücke hinten anhängen, verschwundene Nummern nicht neu vergeben", async () => {
+  const { stablePositions, groupPieces, signatureKey, piecesCsv } = await import("../src/core/dstv.js");
+  const st = (profile, length, holes = []) => ({ code: "M", profile, material: "S235JR", length, holes, cuts: {}, qty: 1, kgm: 5, name: profile + " " + length, key: profile + "|" + length });
+  const a = st("QRO40x3", 1000), b = st("QRO40x3", 800), c = st("HEA200", 3000);
+  const r1 = stablePositions(groupPieces([a, b, a, c]));
+  const pos1 = Object.fromEntries(r1.pieces.map((p) => [p.profile + p.length, p.pos]));
+  assert.equal(r1.pieces.find((p) => p.length === 1000).qty, 2, "Gleichteile zusammengefasst");
+  assert.deepEqual(r1.pieces.find((p) => p.length === 1000).keys, ["QRO40x3|1000"]);
+  // Modell ändert sich: 800er fällt weg, neuer 600er kommt dazu, Reihenfolge anders
+  const d = st("QRO40x3", 600);
+  const r2 = stablePositions(groupPieces([d, c, a]), r1.store);
+  const pos2 = Object.fromEntries(r2.pieces.map((p) => [p.profile + p.length, p.pos]));
+  assert.equal(pos2["QRO40x31000"], pos1["QRO40x31000"]);
+  assert.equal(pos2["HEA2003000"], pos1["HEA2003000"]);
+  assert.equal(pos2["QRO40x3600"], "4", "neue Nummer nach der höchsten bisherigen");
+  assert.ok(r2.changed);
+  assert.equal(stablePositions(groupPieces([d, c, a]), r2.store).changed, false, "nichts Neues: Speicher bleibt");
+  // Bohrung macht ein anderes Stück
+  assert.notEqual(signatureKey(a), signatureKey(st("QRO40x3", 1000, [{ face: "o", x: 50, y: 20, d: 13 }])));
+  assert.match(piecesCsv(r2.pieces), /^﻿Pos;Stk;Profil/);
+});

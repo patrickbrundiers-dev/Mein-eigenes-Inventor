@@ -17,7 +17,7 @@ export function featureRefs(f) {
   if (f.type === "sketch" && f.plane?.ref === "datum" && f.plane.id) out.add(f.plane.id);
   for (const k of ["plane", "axis", "dir", "dir2"]) { const d = datumId(f[k]); if (d) out.add(d); }
   if (["arbeitsebene", "arbeitsachse", "arbeitspunkt"].includes(f.type)) {
-    for (const k of ["base", "axis", "plane", "plane1", "plane2", "p1", "p2", "p3", "point"]) {
+    for (const k of ["base", "axis", "axis2", "dir", "plane", "plane1", "plane2", "plane3", "p1", "p2", "p3", "point"]) {
       const v = f[k];
       if (typeof v === "string" && v && !["XY", "XZ", "YZ", "X", "Y", "Z", "O", "u", "v"].includes(v)) out.add(v);
     }
