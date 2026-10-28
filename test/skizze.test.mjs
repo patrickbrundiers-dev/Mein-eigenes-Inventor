@@ -103,3 +103,65 @@ test("S2: Drehen entfernt den Winkel zur x-Achse, Voll bemaßen setzt ihn bei ei
   transformEntities(sk, ["l"], { kind: "rotate", cx: 0, cy: 0, angle: 30 }, { uid });
   assert.ok(!sk.constraints.some((c) => c.type === "lineAngle"));
 });
+
+import { chamferCorner, filletCorner } from "../src/core/sketchedit.js";
+import { extractProfiles } from "../src/core/sketch.js";
+import { buildTangentArc, tangentArcCenter } from "../src/core/sketchshapes.js";
+/** Rechteck 0..40 × 0..20 mit Ecke fix und Breite/Höhe bemaßt */
+function rect40() {
+  const sk = base();
+  const r = buildRect(sk, { x: 0, y: 0 }, { x: 40, y: 20 }, { uid, usePoint, dims: { w: "40", h: "20" } });
+  sk.constraints.push({ id: uid("k"), type: "coincident", p: "O", q: r.points[0] });
+  return { sk, r };
+}
+test("S5: Skizzenfase mit gleichen und mit zwei Abständen, Maß änderbar, Kontur geschlossen", () => {
+  let { sk, r } = rect40();
+  const corner = r.points[2]; // (40, 20)
+  const res = chamferCorner(sk, corner, 5, uid, { expr1: "5" });
+  assert.ok(res.ok, res.message);
+  let s = solveSketch(sk, {}, { free: true });
+  assert.ok(s.ok);
+  assert.equal(s.dof, 0, "Fase mit Maß bleibt voll bestimmt");
+  assert.equal(extractProfiles(sk).regions.length, 1);
+  const L = sk.entities.find((e) => e.id === res.lineId), P = new Map(sk.points.map((p) => [p.id, p]));
+  assert.ok(Math.abs(Math.hypot(P.get(L.p1).x - P.get(L.p2).x, P.get(L.p1).y - P.get(L.p2).y) - 5 * Math.SQRT2) < 1e-6);
+  // Maß ändern: beide Seiten folgen (zweiter Abstand hängt am ersten)
+  sk.constraints.find((c) => c.id === res.dims[0]).value = "8";
+  assert.ok(solveSketch(sk, {}).ok);
+  const P2 = new Map(sk.points.map((p) => [p.id, p]));
+  assert.ok(Math.abs(Math.hypot(P2.get(L.p1).x - P2.get(L.p2).x, P2.get(L.p1).y - P2.get(L.p2).y) - 8 * Math.SQRT2) < 1e-6);
+  // zwei Abstände
+  ({ sk, r } = rect40());
+  const r2 = chamferCorner(sk, r.points[2], 4, uid, { d2: 10, expr1: "4", expr2: "10" });
+  assert.ok(r2.ok);
+  assert.ok(solveSketch(sk, {}).ok);
+  assert.ok(r2.dims.every((id) => !sk.constraints.find((c) => c.id === id).hidden));
+  // zu groß / parallel
+  ({ sk, r } = rect40());
+  assert.equal(chamferCorner(sk, r.points[2], 25, uid).ok, false);
+  // Rundung arbeitet nach dem Umbau wie bisher
+  ({ sk, r } = rect40());
+  assert.ok(filletCorner(sk, r.points[2], 5, uid, "5").ok);
+  const sf = solveSketch(sk, {});
+  assert.ok(sf.ok && sf.dof === 0);
+});
+
+test("S5: Tangentialer Bogen schließt an die Linie an", () => {
+  const c = tangentArcCenter({ x: 10, y: 0 }, { x: 1, y: 0 }, { x: 20, y: 10 });
+  assert.ok(Math.abs(c.c.x - 10) < 1e-9 && Math.abs(c.c.y - 10) < 1e-9 && Math.abs(c.r - 10) < 1e-9 && c.ccw);
+  assert.equal(tangentArcCenter({ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 30, y: 0 }), null);
+  const sk = base();
+  sk.points.push({ id: "a", x: 0, y: 0 }, { id: "b", x: 10, y: 0 });
+  sk.entities.push({ id: "l", type: "line", p1: "a", p2: "b" });
+  const res = buildTangentArc(sk, "b", "l", { x: 20, y: -10 }, { uid, usePoint });
+  const arc = sk.entities.find((e) => e.id === res.arc);
+  assert.equal(arc.p2, "b", "nach rechts unten: Bogen im Uhrzeigersinn → p2 ist der Anschlusspunkt");
+  assert.ok(solveSketch(sk, {}).ok);
+  // Linienende hochziehen: Bogen bleibt tangential (Radius ⟂ Linie im Anschlusspunkt)
+  sk.constraints.push({ id: "fa", type: "fix", p: "a", x: 0, y: 0 }, { id: "fb", type: "fix", p: "b", x: 10, y: 3 });
+  assert.ok(solveSketch(sk, {}).ok);
+  const P = new Map(sk.points.map((p) => [p.id, p])), C = P.get(arc.c), B = P.get("b"), A = P.get("a");
+  const dot = (B.x - C.x) * (B.x - A.x) + (B.y - C.y) * (B.y - A.y);
+  assert.ok(Math.abs(dot) < 1e-6);
+  assert.throws(() => buildTangentArc(sk, "b", "l", { x: 30, y: 9 }, { uid, usePoint }));
+});

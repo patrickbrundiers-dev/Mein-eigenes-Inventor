@@ -65,6 +65,42 @@ export function buildPolygon(sk, c, v, n, { uid, usePoint, construction = false 
 }
 
 /**
+ * Mittelpunkt eines Bogens, der in S mit der Richtung t (Einheitsvektor) anfängt und durch E geht (Inventor »Tangentialer Bogen«).
+ * → { c, r, ccw } oder null, wenn E auf der Tangente liegt (kein Bogen möglich).
+ */
+export function tangentArcCenter(S, t, E) {
+  const n = { x: -t.y, y: t.x }; // linke Normale
+  const dx = E.x - S.x, dy = E.y - S.y, dn = dx * n.x + dy * n.y;
+  if (Math.abs(dn) < 1e-9 * Math.max(1, Math.hypot(dx, dy))) return null;
+  const k = (dx * dx + dy * dy) / (2 * dn);
+  return { c: { x: S.x + n.x * k, y: S.y + n.y * k }, r: Math.abs(k), ccw: k > 0 };
+}
+
+/**
+ * Tangentialer Bogen am Ende pointId der Linie lineId bis zum Fangpunkt end. Der Bogen beginnt im gemeinsamen Punkt und
+ * ist dort über »tangentAt« an die Linie gebunden. Bogen laufen gegen den Uhrzeigersinn von p1 nach p2.
+ */
+export function buildTangentArc(sk, pointId, lineId, end, { uid, usePoint, construction = false }) {
+  const P = new Map(sk.points.map((p) => [p.id, p]));
+  const line = sk.entities.find((e) => e.id === lineId && e.type === "line");
+  if (!line || (line.p1 !== pointId && line.p2 !== pointId)) throw new Error("Tangentialer Bogen: am Ende einer Linie anfangen");
+  const S = P.get(pointId), F = P.get(line.p1 === pointId ? line.p2 : line.p1);
+  const L = Math.hypot(S.x - F.x, S.y - F.y);
+  if (!(L > 1e-9)) throw new Error("Linie hat keine Länge");
+  const g = tangentArcCenter(S, { x: (S.x - F.x) / L, y: (S.y - F.y) / L }, end);
+  if (!g || g.r < 1e-6) throw new Error("Endpunkt liegt auf der Verlängerung der Linie – kein Bogen möglich");
+  const cons = [];
+  const eid = usePoint(sk, end, cons);
+  const cid = uid("p");
+  sk.points.push({ id: cid, x: g.c.x, y: g.c.y });
+  const id = uid("b");
+  sk.entities.push({ id, type: "arc", c: cid, p1: g.ccw ? pointId : eid, p2: g.ccw ? eid : pointId, construction });
+  cons.push({ id: uid("k"), type: "tangentAt", e1: id, e2: lineId, p: pointId });
+  sk.constraints.push(...cons);
+  return { arc: id, center: cid, end: eid };
+}
+
+/**
  * Elemente an einer Linie spiegeln. Kopien sind über »symmetrisch« (Punkte) und »gleich« (Kreisradius)
  * an die Originale gebunden, folgen also deren Änderungen. Punkte auf der Spiegellinie werden mitbenutzt.
  */

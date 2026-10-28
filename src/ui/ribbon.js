@@ -395,6 +395,7 @@ export class Ribbon {
             T("rectc", "Rechteck Mitte", "rectc"), T("arcc", "Bogen Mitte", "arcc"), T("spline", "Spline", "spline"),
             T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"),
             T("sfillet", "Rundung", "fillet"), T("point", "Punkt", "point"),
+            C("schamfer", "Fase", "chamfer"), C("circle3", "Kreis durch 3 Punkte", "circle3"), C("arct", "Tangentialer Bogen", "arct"),
           ] },
           { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() }), T("image", "Bild", "import")] },
           { label: "Ändern", small: true, buttons: [
