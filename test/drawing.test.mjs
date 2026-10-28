@@ -587,3 +587,95 @@ test("Fasen: 45°-Kanten mit Länge a·√2 bekommen einen Hinweis „2 × 45°�
   // schon vorhanden: kein zweiter Hinweis
   assert.equal(planAutoDims([{ id: "vorne", axes: ["X", "Z"], bbox, lines, arcs: [] }], { chamfers: [2], chamfersDone: new Set([2000]) }).filter((m) => m.kind === "fase").length, 0);
 });
+
+// ---------- Zeichnungsprüfung (Inventor-Abgleich): Mittellinien, Schnittschraffur, Feldeinteilung, projizierte Ansicht, Anordnung ----------
+import { axisLines, hatchStyle, HATCH_STYLES, sheetZones, projectedCamera, camType, layoutBaseViews } from "../src/core/zeichnung.js";
+
+const CAMS_T = {
+  front: { dir: [0, 1, 0], up: [0, 0, 1] }, top: { dir: [0, 0, -1], up: [0, 1, 0] }, left: { dir: [1, 0, 0], up: [0, 0, 1] },
+  right: { dir: [-1, 0, 0], up: [0, 0, 1] }, bottom: { dir: [0, 0, 1], up: [0, -1, 0] }, iso: { dir: [-1, 1, -1], up: [0, 0, 1] },
+};
+
+test("Achsen ragen 2 mm auf dem Blatt über die Kontur", () => {
+  const [l] = axisLines([[[0, 0], [100, 0]]], 0.5);
+  assert.deepEqual(l, [[-4, 0], [104, 0]]);
+  assert.equal(axisLines([[[1, 1], [1, 1]]], 1).length, 0);
+  assert.deepEqual(axisLines([[[0, 0], [0, 10]]], 1, 0)[0], [[0, 0], [0, 10]]);
+});
+
+test("Schnittschraffur wechselt je Teil Richtung, dann Abstand", () => {
+  assert.deepEqual(hatchStyle(0), { angle: 45, gap: 2.5 });
+  assert.equal(hatchStyle(1).angle, 135);
+  assert.equal(hatchStyle(2).gap, 4);
+  assert.deepEqual(hatchStyle(HATCH_STYLES.length), hatchStyle(0));
+  for (let i = 0; i + 1 < 12; i++) assert.notDeepEqual(hatchStyle(i), hatchStyle(i + 1), "Nachbarn verschieden");
+});
+
+test("Feldeinteilung A3 quer: 8 Spalten, 6 Zeilen, Grenzen auf den Mittenmarken", () => {
+  const z = sheetZones(420, 297);
+  assert.equal(z.cols.length, 8);
+  assert.equal(z.rows.length, 6);
+  assert.equal(z.cols[0].label, "1");
+  assert.equal(z.rows[0].label, "A");
+  assert.ok(z.cols.some((c) => c.a === 210), "Grenze in der Blattmitte");
+  assert.ok(z.rows.some((r) => Math.abs(r.a - 148.5) < 1e-9));
+  assert.equal(z.cols[0].a, 20);
+  assert.equal(z.cols.at(-1).b, 410);
+  for (const c of z.cols) assert.ok(c.b - c.a >= 10 && c.b - c.a <= 60, `Feldbreite ${c.b - c.a}`);
+  const a4 = sheetZones(210, 297);
+  assert.equal(a4.cols.length, 4);
+  assert.equal(a4.rows.length, 6);
+  assert.ok(!sheetZones(1189, 841).rows.some((r) => r.label === "I" || r.label === "O"), "kein I und O");
+});
+
+test("Projizierte Ansicht nach Projektionsmethode 1", () => {
+  const f = CAMS_T.front;
+  const r = projectedCamera(f, 120, 3);
+  assert.equal(camType(CAMS_T, r), "left", "rechts daneben = Seitenansicht von links");
+  assert.equal(r.align, "y");
+  assert.equal(camType(CAMS_T, projectedCamera(f, -80, 0)), "right");
+  const t = projectedCamera(f, 2, 90);
+  assert.equal(camType(CAMS_T, t), "top", "darunter = Draufsicht");
+  assert.equal(t.align, "x");
+  assert.equal(camType(CAMS_T, projectedCamera(f, 0, -90)), "bottom");
+  const iso = projectedCamera(f, 100, -100);
+  assert.equal(camType(CAMS_T, iso), "iso", "rechts oben = Isometrie wie Grundansicht");
+  assert.equal(iso.align, "free");
+  // aus der Draufsicht weiter projiziert: rechts daneben schaut wieder waagerecht
+  const fromTop = projectedCamera(CAMS_T.top, 100, 0);
+  assert.deepEqual(fromTop.dir.map((x) => Math.round(x) + 0), [1, 0, 0]);
+  assert.equal(projectedCamera(f, 0, 0), null);
+});
+
+test("Grundansichten: größerer Maßstab, Isometrie in die freie Ecke mit Normmaßstab", () => {
+  const SC = [10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01];
+  // Bauteil 400 × 150 × 100: früher 1:5, weil die Isometrie in der Breite mitgerechnet wurde
+  const lay = layoutBaseViews({ front: { w: 400, h: 150 }, top: { w: 400, h: 100 }, left: { w: 100, h: 150 }, iso: { w: 480, h: 300 } }, { W: 420, H: 297 }, SC);
+  assert.equal(lay.scale, 0.5);
+  assert.equal(lay.isoScale, 0.2);
+  // Isometrie liegt unter dem Ansichtsblock und links vom Schriftfeld
+  const blockBottom = 20 + 22 + (150 + 100) * 0.5 + 22;
+  assert.ok(lay.iso.y - (300 * 0.2) / 2 >= blockBottom - 1e-9);
+  assert.ok(lay.iso.x + (480 * 0.2) / 2 <= 420 - 10 - 180 - 10 + 1e-9, "nicht im Schriftfeld");
+  // Platte 300 × 200 × 10 auf A3 bleibt 1:2
+  const plate = layoutBaseViews({ front: { w: 300, h: 10 }, top: { w: 300, h: 200 }, left: null, iso: { w: 355, h: 215 } }, { W: 420, H: 297 }, SC);
+  assert.equal(plate.scale, 0.5);
+  assert.equal(layoutBaseViews({ front: { w: 1e6, h: 1e6 }, iso: { w: 1, h: 1 } }, { W: 420, H: 297 }, SC), null);
+});
+
+test("Detailausschnitt schneidet auch die Achsen zu", () => {
+  const p = { visible: [], hidden: [], arcs: [], hiddenArcs: [], axes: [[[-50, 0], [50, 0]], [[100, 100], [120, 100]]] };
+  const c = clipProjection(p, [0, 0], 10);
+  assert.equal(c.axes.length, 1);
+  assert.ok(Math.abs(c.axes[0][0][0] + 10) < 1e-9 && Math.abs(c.axes[0].at(-1)[0] - 10) < 1e-9);
+});
+
+test("Eigener Maßstab: 1:25, 3:1, Faktor, Unsinn abgelehnt", async () => {
+  const { parseScale } = await import("../src/core/zeichnung.js");
+  assert.equal(parseScale("1:25"), 0.04);
+  assert.equal(parseScale(" 1 : 2,5 "), 0.4);
+  assert.equal(parseScale("3:1"), 3);
+  assert.equal(parseScale("M 1:3"), 1 / 3);
+  assert.equal(parseScale("0,04"), 0.04);
+  for (const bad of ["", "abc", "1:0", "0", "-1:2", "1:100000", "1000:1"]) assert.equal(parseScale(bad), null, bad);
+});

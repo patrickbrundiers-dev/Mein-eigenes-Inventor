@@ -153,6 +153,7 @@ export const BEFEHLSHILFE = {
   dv_add: "Weitere Ansicht (auch isometrisch) aus dem Modell auf das Blatt setzen.",
   dv_sec: "Schnittansicht entlang einer Linie durch eine vorhandene Ansicht.",
   dv_hsec: "Schnitt quer durch ein Hohlprofil, zeigt Wandstärke und Querschnitt.",
+  dv_proj: "Weitere Ansicht aus einer vorhandenen ableiten: daneben klicken (rechts, links, oben, unten) oder schräg für eine Isometrie; bleibt zur Ausgangsansicht ausgerichtet.",
   dv_det: "Ausschnitt einer Ansicht vergrößert darstellen.",
   dv_aux: "Ansicht senkrecht auf eine schräge Kante (Hilfsansicht).",
   dv_flat: "Abwicklung eines Blech- oder Knickteils als Ansicht.",

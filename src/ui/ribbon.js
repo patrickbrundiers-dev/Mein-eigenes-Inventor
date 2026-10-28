@@ -483,6 +483,7 @@ export class Ribbon {
           { label: "Ansicht", buttons: [
             B("dv_base", "Grundansichten", "view", { run: () => dr.autoViews() }),
             B("dv_add", "Ansicht hinzufügen", "plus", { run: () => dr.addViewDialog() }),
+            B("dv_proj", "Projiziert", "view", { on: dr.tool === "proj", run: () => (dr.tool === "proj" ? dr.setTool(null) : dr.startProjected()) }),
             B("dv_sec", "Schnitt", "cut", { run: () => dr.addSectionDialog() }),
             B("dv_hsec", "Schnitt Hohlprofil", "cut", { run: () => dr.hollowSection() }),
             B("dv_det", "Detail", "detail", { on: dr.tool === "detail", run: () => (dr.tool === "detail" ? dr.setTool(null) : dr.startDetail()) }),
