@@ -280,8 +280,11 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
           break;
         }
         const a = P(c.p), b = P(c.q);
-        if (c.dir === "h") add(c.id, (x) => Math.abs(x[b] - x[a]) - v);
-        else if (c.dir === "v") add(c.id, (x) => Math.abs(x[b + 1] - x[a + 1]) - v);
+        // waagrecht/senkrecht: Vorzeichen der aktuellen Lage festhalten – der Betrag hätte bei gleicher Höhe keine
+        // Steigung (Löser käme nicht los) und könnte die Punkte durcheinander springen lassen
+        const side = (k) => (vars.x[b + k] - vars.x[a + k] < 0 ? -1 : 1);
+        if (c.dir === "h") { const s = side(0); add(c.id, (x) => s * (x[b] - x[a]) - v); }
+        else if (c.dir === "v") { const s = side(1); add(c.id, (x) => s * (x[b + 1] - x[a + 1]) - v); }
         else add(c.id, (x) => Math.hypot(x[b] - x[a], x[b + 1] - x[a + 1]) - v);
         break;
       }
@@ -358,6 +361,74 @@ function jacobian(res, x) {
     for (let i = 0; i < m; i++) J[i][j] = (fp[i] - fm[i]) / (2 * h);
   }
   return { J, f0 };
+}
+
+/** Je Spalte der Jacobi-Matrix die Zeilen mit Eintrag ≠ 0 (jede Bedingung berührt nur wenige Variablen) */
+function sparseCols(J, n) {
+  const cols = Array.from({ length: n }, () => []);
+  for (let i = 0; i < J.length; i++) { const r = J[i]; for (let j = 0; j < n; j++) if (r[j] !== 0) cols[j].push(i); }
+  return cols;
+}
+
+/** A = J·Jᵀ über die dünn besetzten Spalten statt dicht (m²·n) */
+function gramSparse(J, cols, m) {
+  const A = Array.from({ length: m }, () => new Float64Array(m));
+  cols.forEach((c, j) => {
+    for (let a = 0; a < c.length; a++) {
+      const i = c[a], vi = J[i][j];
+      for (let b = a; b < c.length; b++) {
+        const k = c[b], v = vi * J[k][j];
+        A[i][k] += v;
+        if (k !== i) A[k][i] += v;
+      }
+    }
+  });
+  return A;
+}
+
+/**
+ * Rang und freie Variablen in einem Durchgang: reduzierte Stufenform von J. Eine Variable ist bestimmt, wenn ihre
+ * Spalte eine Pivotspalte ist und ihre Pivotzeile in keiner freien Spalte einen Eintrag hat (sonst bewegt sie sich
+ * mit einer freien Variable mit). Ersetzt matrixRank + freeVariables für das Lösen (gleiches Ergebnis, viel schneller).
+ */
+export function rankAndFree(J, n, tol = 1e-7) {
+  const m = J.length;
+  const M = J.map((r) => Float64Array.from(r));
+  for (const r of M) {
+    let s = 0;
+    for (const v of r) s = Math.max(s, Math.abs(v));
+    if (s > 0) for (let j = 0; j < n; j++) r[j] /= s;
+  }
+  const pivRow = new Int32Array(n).fill(-1);
+  const rowUsed = new Uint8Array(m);
+  let rank = 0;
+  for (let col = 0; col < n && rank < m; col++) {
+    let piv = -1, best = tol;
+    for (let i = 0; i < m; i++) if (!rowUsed[i] && Math.abs(M[i][col]) > best) { best = Math.abs(M[i][col]); piv = i; }
+    if (piv < 0) continue;
+    rowUsed[piv] = 1;
+    pivRow[col] = piv;
+    rank++;
+    const R = M[piv], pv = R[col];
+    for (let j = col; j < n; j++) R[j] /= pv;
+    for (let i = 0; i < m; i++) {
+      if (i === piv) continue;
+      const f = M[i][col];
+      if (f === 0) continue;
+      const Mi = M[i];
+      for (let j = col; j < n; j++) if (R[j] !== 0) Mi[j] -= f * R[j];
+      Mi[col] = 0;
+    }
+  }
+  const free = new Uint8Array(n);
+  const freeCols = [];
+  for (let j = 0; j < n; j++) if (pivRow[j] < 0) { free[j] = 1; freeCols.push(j); }
+  for (let j = 0; j < n; j++) {
+    if (free[j]) continue;
+    const R = M[pivRow[j]];
+    for (const f of freeCols) if (Math.abs(R[f]) > 1e-6) { free[j] = 1; break; }
+  }
+  return { rank, free };
 }
 
 /** löst A y = b (A symmetrisch positiv definit) per Cholesky; fällt auf Gauss zurück */
@@ -494,17 +565,8 @@ export function solveSketch(sketch, scope = {}, opts = {}) {
   const maxIt = opts.maxIterations || 80;
   for (; it < maxIt && fn > 1e-10; it++) {
     const { J } = jacobian(res, x);
-    // A = J J^T
-    const A = Array.from({ length: m }, () => new Float64Array(m));
-    for (let i = 0; i < m; i++) {
-      for (let k = i; k < m; k++) {
-        let s = 0;
-        const Ji = J[i], Jk = J[k];
-        for (let j = 0; j < x.length; j++) s += Ji[j] * Jk[j];
-        A[i][k] = s;
-        A[k][i] = s;
-      }
-    }
+    const cols = sparseCols(J, x.length);
+    const A = gramSparse(J, cols, m);
     let improved = false;
     for (let tries = 0; tries < 12; tries++) {
       const Al = A.map((r, i) => { const c = Float64Array.from(r); c[i] += lambda * (1 + r[i]); return c; });
@@ -512,7 +574,7 @@ export function solveSketch(sketch, scope = {}, opts = {}) {
       const xn = Float64Array.from(x);
       for (let j = 0; j < x.length; j++) {
         let s = 0;
-        for (let i = 0; i < m; i++) s += J[i][j] * y[i];
+        for (const i of cols[j]) s += J[i][j] * y[i];
         xn[j] -= s;
       }
       const fnew = res.map((r) => r.f(xn));
@@ -538,8 +600,9 @@ export function solveSketch(sketch, scope = {}, opts = {}) {
   if (opts.computeDof !== false) {
     const real = res.filter((r) => !String(r.cid).startsWith("drag"));
     const { J } = jacobian(real, x);
-    dof = x.length - matrixRank(J);
-    if (opts.free) free = freeOf(vars, freeVariables(J, x.length));
+    const an = rankAndFree(J, x.length);
+    dof = x.length - an.rank;
+    if (opts.free) free = freeOf(vars, an.free);
   }
   return { ok, residual: fn, iterations: it, dof, failed, free };
 }
