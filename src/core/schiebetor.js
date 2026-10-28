@@ -10,6 +10,8 @@ const isLeaf = (name) => name.startsWith("Flügel");
 
 import { orientRot, rotExtent } from "./orient.js";
 import { fieldError } from "./generror.js";
+import { sectionGeometry } from "./sections.js";
+import { capPlate } from "./handlaufhalter.js";
 export const SCHIEBETOR = {
   label: "Schiebetor",
   schema: [
@@ -39,7 +41,8 @@ export const SCHIEBETOR = {
     const beamRot = orientRot(p.beam, [1, 0, 0], [0, -1, 0], { open: [0, 0, -1], legs: [0, 1, -1], stem: [0, 0, 1] });
     const fw = p.frame.geom.width, bh = rotExtent(p.beam, beamRot).wide;
     if (!(W > 1000)) throw fieldError("Durchfahrt mindestens 1000 mm", "width");
-    if (!(T >= 2 * p.rollerL + 2 * fw)) throw fieldError(`Gegengewicht zu kurz für zwei Rollenböcke (mindestens ${Math.ceil(2 * p.rollerL + 2 * fw)} mm)`, "tail");
+    const rb0 = Math.max(fw, p.posts ? p.post.geom.width + 20 : 0);
+    if (!(T >= 2 * p.rollerL + fw + rb0)) throw fieldError(`Gegengewicht zu kurz für zwei Rollenböcke (mindestens ${Math.ceil(2 * p.rollerL + fw + rb0)} mm)`, "tail");
     if (!(H > bh + 4 * fw)) throw fieldError("Höhe zu klein", "height");
     if (T < W * 0.35) issues.push({ key: "tail", level: "Warnung", message: `Gegengewicht ${Math.round(T)} mm kürzer als 35 % der Öffnung – Flügel kippt leicht` });
     const members = [], chains = [], plates = [];
@@ -54,9 +57,20 @@ export const SCHIEBETOR = {
     const topAt = (x) => (x >= 0 ? zt : zEnd + ((zt - zEnd) * (x - (xs + fw / 2))) / (-(xs + fw / 2)));
     chains.push({ section: p.frame, points: [P(xs + fw / 2, zb), P(W - fw / 2, zb), P(W - fw / 2, zt), P(0, zt), P(xs + fw / 2, zEnd), P(xs + fw / 2, zb)], name: "Flügel Rahmen", up, closed: true });
     // Senkrechte an der Durchfahrt; im Gegengewicht Strebe (abgeschrägt) bzw. Diagonale (rechteckig)
-    members.push({ section: p.frame, a: P(0, zb + fw / 2), b: P(0, zt - fw / 2), name: "Flügel Pfosten", up });
-    if (p.tailForm === "schraeg") members.push({ section: p.frame, a: P(xs / 2, zb + fw / 2), b: P(xs / 2, topAt(xs / 2) - fw / 2), name: "Flügel Strebe", up });
-    else members.push({ section: p.frame, a: P(xs + fw * 1.5, zb + fw / 2), b: P(-fw, zt - fw / 2), name: "Flügel Diagonale", up });
+    // Unterseiten der Riegel als Schnittebenen: waagrechter Oberriegel und schräger Riegel über dem Gegengewicht
+    const xT = xs + fw / 2, sl = (zt - zEnd) / -xT, kS = Math.hypot(1, sl), nS = [-sl / kS, 0, 1 / kS];
+    const underTop = { p: P(0, zt - fw / 2), n: [0, 0, 1] }, underSlope = { p: P(0, zt - (fw / 2) * kS), n: nS };
+    const onTop = (x) => (x >= 0 || p.tailForm !== "schraeg" ? [underTop] : [underSlope]);
+    const lowCut = { p: P(0, zb + fw / 2), n: [0, 0, -1] };
+    // Senkrechte an der Durchfahrt: oben an beiden Riegelunterseiten (Ecke des Rahmens über ihr)
+    members.push({ section: p.frame, a: P(0, zb + fw / 2), b: P(0, zt), name: "Flügel Pfosten", up, cuts: { start: [], end: p.tailForm === "schraeg" ? [underTop, underSlope] : [underTop] } });
+    if (p.tailForm === "schraeg") members.push({ section: p.frame, a: P(xs / 2, zb + fw / 2), b: P(xs / 2, topAt(xs / 2) + fw), name: "Flügel Strebe", up, cuts: { start: [], end: onTop(xs / 2) } });
+    else {
+      // Diagonale vom Fuß der hinteren Senkrechten zum Kopf der Senkrechten an der Durchfahrt, an Riegeln und Senkrechten angepasst
+      const a = [xs + fw * 1.5, 0, zb + fw / 2], b = [-fw, 0, zt - fw / 2], u = [b[0] - a[0], 0, b[2] - a[2]], lu = Math.hypot(...u);
+      const ex = (q, k) => q.map((v, i) => v + (u[i] / lu) * k * 2 * fw);
+      members.push({ section: p.frame, a: ex(a, -1), b: ex(b, 1), name: "Flügel Diagonale", up, cuts: { start: [lowCut, { p: P(xs + fw, 0), n: [-1, 0, 0] }], end: [underTop, { p: P(-fw / 2, 0), n: [1, 0, 0] }] } });
+    }
     // Füllung in der Durchfahrt
     let nBars = 0, gapSeen = 0;
     const xl = fw / 2, xr = W - fw, lo = zb + fw / 2, hi = zt - fw / 2;
@@ -78,14 +92,25 @@ export const SCHIEBETOR = {
       }
     }
     // Rollenböcke unter dem Gegengewicht (Oberkante = Unterkante Laufprofil)
-    const depth = p.beam.geom.height + 80, m = fw + p.rollerL / 2;
+    // Rollenbock 1 hinter dem Führungspfosten (sonst steht er im Pfosten)
+    const depth = p.beam.geom.height + 80, m = Math.max(fw, p.posts ? p.post.geom.width + 20 : 0) + p.rollerL / 2;
     [-m, xs + m].forEach((x, i) => plates.push({ center: [x, 0, -p.rollerDepth], xDir: [1, 0, 0], normal: [0, 0, 1], W: p.rollerL, H: depth, t: z0 + p.rollerDepth, name: `Rollenbock ${i + 1}` }));
     if (p.posts) {
       const pw = p.post.geom.width, pd = p.post.geom.height;
       const side = Math.max(p.frame.geom.height, p.beam.geom.height) / 2 + 20 + pd / 2;
       const ztop = z0 + H + p.postTop;
+      // Fangpfosten mit Spalt vor dem geschlossenen Flügel, Fangtasche (zwei Bleche beidseits des Flügels, 5 mm Luft)
+      const gF = 20, xF = W + gF + pw / 2, fd = p.frame.geom.height, tT = 8, tl = gF + 60;
       members.push({ section: p.post, a: [-pw / 2, -side, -p.embed], b: [-pw / 2, -side, ztop], name: "Führungspfosten", up });
-      members.push({ section: p.post, a: P(W + pw / 2, -p.embed), b: P(W + pw / 2, ztop), name: "Fangpfosten", up });
+      members.push({ section: p.post, a: P(xF, -p.embed), b: P(xF, ztop), name: "Fangpfosten", up });
+      for (const sg of [-1, 1]) plates.push({ center: [W + gF - tl / 2, sg * (fd / 2 + 5), z0 + H / 2], xDir: [1, 0, 0], normal: [0, sg, 0], W: tl, H: Math.min(400, H - bh), t: tT, name: `Fangtasche ${sg < 0 ? "vorne" : "hinten"}` });
+      // Führungsrollen oben am Führungspfosten: Kopfplatte über den Flügel, je eine Rolle beidseits des Oberriegels
+      const face = side - pd / 2, r = Math.max(8, Math.min(15, (face - fd / 2) / 2 - 1)), yHi = fd / 2 + 2 * r + 15;
+      plates.push({ center: [-pw / 2, (-side - pd / 2 + yHi) / 2, ztop], xDir: [1, 0, 0], normal: [0, 0, 1], W: pw, H: yHi + side + pd / 2, t: 10, name: "Führungsrollenbock" });
+      const roll = { kind: "rund", dims: { D: 2 * r }, geom: sectionGeometry("rund", { D: 2 * r }) };
+      for (const sg of [-1, 1]) members.push({ section: roll, a: [-pw / 2, sg * (fd / 2 + r), z0 + H - fw], b: [-pw / 2, sg * (fd / 2 + r), ztop], name: `Führungsrolle ${sg < 0 ? "vorne" : "hinten"}`, up: [1, 0, 0] });
+      const cap = capPlate(p.post, P(xF, ztop), up, "Pfostenkappe Fangpfosten");
+      if (cap) plates.push(cap);
     }
     if (gapSeen > 120 + 1e-6) issues.push({ key: "gapMax", level: "Warnung", message: `Öffnung ${Math.round(gapSeen)} mm größer als 120 mm` });
     const pick = (list) => (p.teil === "fluegel" ? list.filter((x) => isLeaf(x.name)) : p.teil === "fest" ? list.filter((x) => !isLeaf(x.name)) : list);

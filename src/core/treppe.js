@@ -11,6 +11,7 @@
 
 import { fieldError } from "./generror.js";
 import { sectionGeometry } from "./sections.js";
+import { NORM_THREADS } from "./normteile.js";
 import { railAlong } from "./treppengelaender.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
 import { orientRot, rotExtent } from "./orient.js";
@@ -44,6 +45,7 @@ export const TREPPE = {
     { key: "gap", label: "Abstand der Läufe (Treppenauge)", type: "num", default: "100", group: "Podest", when: (p) => p.form === "U" },
     { key: "podestRahmen", label: "Podestrahmen", type: "section", default: { kind: "rechteck", size: "100x50x4" }, group: "Podest", when: podest },
     { key: "stuetzen", label: "Podeststützen", type: "select", options: [["aussen", "2 außen"], ["alle", "4 (alle Ecken)"], ["keine", "keine (an der Wand)"]], default: "aussen", group: "Podest", when: podest },
+    { key: "anschluss", label: "Anschlüsse", type: "select", options: [["platten", "Fußwinkel bzw. Bodenplatten, Kopfplatten an der Decke, Stufenkonsolen auf Holmen"], ["keine", "ohne (bisher)"]], default: "platten", missing: "keine", group: "Tragwerk" },
     { key: "stuetze", label: "Stützenprofil", type: "section", default: { kind: "vierkant", size: "80x4" }, group: "Podest", when: (p) => podest(p) && p.stuetzen !== "keine" },
     { key: "tread", label: "Stufen", type: "select", options: [["gitterrost", "Gitterrost"], ["blech", "Blech"], ["holz", "Holz"]], default: "gitterrost", group: "Stufen" },
     { key: "treadT", label: "Stufendicke", type: "num", default: "30", group: "Stufen" },
@@ -88,7 +90,10 @@ export const TREPPE = {
     if (a < 230 - 1e-6) issues.push({ key: "going", level: "Warnung", message: `Auftritt ${fmt(a)} mm unter 230 mm` });
     if (a < 260 - 1e-6 && u < 30 - 1e-6) issues.push({ key: "nosing", level: "Hinweis", message: "Auftritt unter 260 mm: Unterschneidung ≥ 30 mm vorsehen" });
     const tanA = s / a, alpha = Math.atan(tanA), cosA = Math.cos(alpha), sinA = Math.sin(alpha);
-    const members = [], plates = [], chains = [], drills = [];
+    const AN = p.anschluss === "platten";
+    const FT = AN ? 15 : 0, KT = AN && !(p.support === "flach" || p.support === "upn") ? 8 : 0; // Fuß-/Kopfplatten an Boden und Decke, Konsolbleche unter aufgesattelten Stufen
+    const isTop = (nR, z0) => Math.abs(z0 + nR * s - H) < 1e-6;
+    const members = [], plates = [], chains = [], drills = [], norms = [];
     // Tragwerk: Querschnitt, Ausdehnung senkrecht zur Achse in der Laufebene (depth), Dicke quer (thick), Drehung je
     // Seite: hohe Seite senkrecht zum Lauf; offene Seite (U, UPN) nach außen, Steg an den Stufen; Winkel mit dem
     // Schenkel innen unter den Stufen; Mittelholm nur hochkant
@@ -99,6 +104,7 @@ export const TREPPE = {
     const sideOut = [[0, -1, 0], [0, 1, 0]]; // erste Wange/Holm bei kleinem y (rechts beim Hinaufgehen), zweite bei großem y
     const rots = p.support === "holm1" ? [orientRot(sec, axis, upL, { tall: upL, stem: [sinA, 0, -cosA] })] : sideOut.map(rotFor);
     const { high: depth, wide: thick } = rotExtent(sec, rots[0]);
+    const wt = side ? thick : 0; // Wangen stehen außen neben der lichten Laufbreite
     // Achse: seitlich = durch die Stufenmitten; aufgesattelt = Oberkante an den hinteren Stufenunterkanten
     let c; // z = tanA · x + c (Lauf mit Antritt bei x = 0, z = 0)
     if (side) {
@@ -107,7 +113,7 @@ export const TREPPE = {
       // passen die Stufen in die Wange?
       const corner = Math.max(...[[-u, s - tt], [-u, s], [a, s - tt], [a, s]].map(([x, z]) => Math.abs((z - (tanA * x + c)) * cosA)));
       if (corner > depth / 2 + 1e-6) throw fieldError(`Wange zu niedrig für die Stufen: mindestens ${Math.ceil(2 * corner)} mm`, p.support === "flach" ? "wangeH" : "upn");
-    } else c = -tt - depth / 2 / cosA;
+    } else c = -tt - KT - depth / 2 / cosA; // aufgesattelt: Konsolblech (KT) zwischen Holm und Stufe
     if (p.support === "holm2" && !(B - 2 * p.holmInset > thick)) throw fieldError("Holme zu weit innen", "holmInset");
     const ys = side ? [-thick / 2, B + thick / 2] : p.support === "holm2" ? [p.holmInset, B - p.holmInset] : [B / 2];
     const sideNames = side ? ["Wange rechts", "Wange links"] : ys.length > 1 ? ["Holm rechts", "Holm links"] : ["Mittelholm"];
@@ -126,8 +132,33 @@ export const TREPPE = {
       const zAt = (x) => z0 + tanA * x + c;
       const ext = depth * 2;
       const x0 = fromFloor ? (0 - c) / tanA - ext : -ext, x1 = xTop + ext;
-      const cuts = { start: [fromFloor ? { p: T.p([0, 0, z0]), n: [0, 0, -1] } : { p: T.p([0, 0, z0]), n: T.d([-1, 0, 0]) }], end: [{ p: T.p([xTop, 0, z0]), n: T.d([1, 0, 0]) }] };
+      // Anschluss an Boden und Decke: Holm auf einer Bodenplatte, Wange mit Fußwinkel innen (außen sitzen die
+      // Befestigungsbleche der Geländerpfosten), Kopfplatte vor der Deckenstirn; Dübel/Anker M12 in Ø 14
+      const toTop = isTop(nR, z0), zF = fromFloor && !side ? FT : 0, xE = toTop ? xTop - FT : xTop;
+      const cuts = { start: [fromFloor ? { p: T.p([0, 0, z0 + zF]), n: [0, 0, -1] } : { p: T.p([0, 0, z0]), n: T.d([-1, 0, 0]) }], end: [{ p: T.p([xE, 0, z0]), n: T.d([1, 0, 0]) }] };
       ys.forEach((y, i) => members.push({ section: sec, a: T.p([x0, y, zAt(x0)]), b: T.p([x1, y, zAt(x1)]), name: sideNames[i] + label, up: T.d(upL), rot: rots[i], cuts }));
+      // Kopfplatte bei Wangen nach außen (innen stößt die oberste Stufe an die Deckenstirn)
+      const pw = thick + 100, yIn = (i) => (side ? (i === 0 ? -1 : 1) * 50 : 0), hole = (w, h) => [[-w / 2 + 25, -h / 2 + 25], [w / 2 - 25, -h / 2 + 25], [w / 2 - 25, h / 2 - 25], [-w / 2 + 25, h / 2 - 25]];
+      if (AN && fromFloor && !side) {
+        // Fußlänge: Schnitt des Holms mit z = zF, Platte 30 mm länger je Seite
+        const xa = (zF - c - depth / 2 / cosA) / tanA, xb = (zF - c + depth / 2 / cosA) / tanA, L = xb - xa + 60;
+        ys.forEach((y, i) => plates.push({ center: T.p([(xa + xb) / 2, y, z0]), xDir: T.d([1, 0, 0]), normal: [0, 0, 1], W: L, H: pw, t: FT, holes: hole(L, pw), d: 14, name: `${sideNames[i]}${label} Bodenplatte` }));
+      } else if (AN && fromFloor) {
+        // Fußwinkel 120 lang aus 10-mm-Blech, innen an die Wange geschweißt (außen liegt das Blech des ersten
+        // Geländerpfostens): Bodenschenkel 100 mit 2 × Ø 14 für Dübel/Anker M12
+        const xb = (0 - c + depth / 2 / cosA) / tanA, xm = xb - 70, ft = 10;
+        ys.forEach((y, i) => {
+          const sg = i === 0 ? 1 : -1, yf = y + sg * thick / 2, nm = `${sideNames[i]}${label} Fußwinkel`;
+          plates.push({ center: T.p([xm, yf + sg * 50, z0]), xDir: T.d([1, 0, 0]), normal: [0, 0, 1], W: 120, H: 100, t: ft, holes: [[-35, sg * 15], [35, sg * 15]], d: 14, name: nm });
+          plates.push({ center: T.p([xm, yf, z0 + ft + 40]), xDir: T.d([1, 0, 0]), normal: T.d([0, sg, 0]), W: 120, H: 80, t: ft, name: nm + " Steg" });
+        });
+      }
+      if (AN && toTop) {
+        // Kopfplatte senkrecht vor der Deckenstirn (x = xTop), Höhe = senkrechte Profilhöhe + 2 · 30
+        // Holm: Oberkante bündig mit dem Holm (darüber liegt die oberste Stufe), Wange: 30 mm über und unter dem Profil
+        const Hk = depth / cosA + (side ? 60 : 30), zc = zAt(xE) - (side ? 0 : 15);
+        ys.forEach((y, i) => plates.push({ center: T.p([xE, y + yIn(i), zc]), xDir: T.d([0, 1, 0]), normal: T.d([1, 0, 0]), W: pw, H: Hk, t: FT, holes: hole(pw, Hk), d: 14, name: `${sideNames[i]}${label} Kopfplatte` }));
+      }
       for (let i = 1; i < nR; i++) {
         const xa = (i - 1) * a - u, xb = i * a, k = stepNo0 + i;
         plates.push({ center: T.p([(xa + xb) / 2, B / 2, z0 + i * s - tt]), xDir: T.d([0, 1, 0]), normal: [0, 0, 1], W: B - 2 * fix.t, H: xb - xa, t: tt, name: `Stufe ${k}`, tread: p.tread });
@@ -138,8 +169,31 @@ export const TREPPE = {
           holes: [[-fix.e / 2, sy * fix.dz]], slots: [[fix.e / 2, sy * fix.dz, fix.slot]], d: fix.d, name: `Stufe ${k} Seitenblech ${nm}` }));
         ys.forEach((y, j) => {
           const out = j === 0 ? -1 : 1;
-          for (const x of [cx - fix.e / 2, cx + fix.e / 2]) drills.push({ target: sideNames[j] + label, p: T.p([x, y - out * (thick / 2 + 1), zh]), dir: T.d([0, out, 0]), d: fix.d, len: thick + 2 });
+          for (const x of [cx - fix.e / 2, cx + fix.e / 2]) {
+            drills.push({ target: sideNames[j] + label, p: T.p([x, y - out * (thick / 2 + 1), zh]), dir: T.d([0, out, 0]), d: fix.d, len: thick + 2 });
+          }
         });
+      }
+      // aufgesattelte Stufen: je Holm ein Konsolblech (KT) unter der Stufe mit Stegblech bis auf den Holm, 2 × M12
+      if (AN && !side) for (let i = 1; i < nR; i++) {
+        const xa = (i - 1) * a - u, xb = i * a, k = stepNo0 + i, zTop = z0 + i * s, zK = zTop - tt - KT;
+        const kx0 = Math.max(xa, xb - 220), kx1 = xb, kw = thick + 60;
+        const step = plates.find((x) => x.name === `Stufe ${k}`);
+        ys.forEach((y, j) => {
+          const nm = `${sideNames[j]}${label} Konsole ${k}`, holes = [[-kw / 2 + 15, 0], [kw / 2 - 15, 0]];
+          plates.push({ center: T.p([(kx0 + kx1) / 2, y, zK]), xDir: T.d([0, 1, 0]), normal: [0, 0, 1], W: kw, H: kx1 - kx0, t: KT, holes, d: 14, name: nm });
+          // Stegblech (Dreieck) in der Holmachse zwischen Holmoberkante und Konsolblech
+          // Stegblech erst über der Bodenplatte (am Antritt liegt der Holm dort fast am Boden)
+          const zH = (x) => z0 + tanA * x + c + depth / 2 / cosA, xs0 = fromFloor ? Math.min(kx1, Math.max(kx0, (FT + 1 - c - depth / 2 / cosA) / tanA + 30)) : kx0;
+          if (zK - zH(xs0) > 1) plates.push({ center: T.p([0, y - 5, 0]), xDir: T.d([1, 0, 0]), normal: T.d([0, 1, 0]), W: kx1 - kx0, H: zK - zH(xs0), t: 10,
+            poly: [[xs0, -zK], [kx1, -zK], [xs0, -zH(xs0)]], name: `${nm} Steg` }); // Plattenebene: x = Lauf, y = −z
+          for (const [hx] of holes) {
+            const yh = y + hx;
+            norms.push({ bolt: true, size: "M12", clamp: KT + tt, pos: T.p([(kx0 + kx1) / 2, yh, zK]), dir: [0, 0, 1], galv: true });
+            if (step) (step.holes = step.holes || []).push([yh - B / 2, -((kx0 + kx1) / 2 - (xa + xb) / 2), 14]);
+          }
+        });
+        if (step) step.d = 14;
       }
       return xTop;
     };
@@ -160,14 +214,21 @@ export const TREPPE = {
       const left = p.turn !== "rechts";
       x1 = flight(n1, 0, rotZ(0, [0, 0, 0]), " Lauf 1", true, 0);
       const g = p.gap || 0;
-      D = p.form === "U" ? (p.podestD > 0 ? p.podestD : B) : B;
-      if (p.form === "U" && D < B - 1e-6) issues.push({ key: "podestD", level: "Warnung", message: `Podesttiefe ${fmt(D)} mm kleiner als die Laufbreite` });
+      const D0 = p.form === "U" ? (p.podestD > 0 ? p.podestD : B) : B;
+      if (p.form === "U" && D0 < B - 1e-6) issues.push({ key: "podestD", level: "Warnung", message: `Podesttiefe ${fmt(D0)} mm kleiner als die Laufbreite` });
       // Podestfläche [x1, x1 + D] × [yLo, yHi] und Lage des zweiten Laufs
+      D = D0;
       let yLo = 0, yHi = B, T2;
       if (p.form === "L") T2 = left ? rotZ(90, [x1 + B, B, 0]) : rotZ(-90, [x1, 0, 0]);
       else if (left) { yHi = 2 * B + g; T2 = rotZ(180, [x1, 2 * B + g, 0]); }
       else { yLo = -(B + g); T2 = rotZ(180, [x1, -g, 0]); }
+      if (p.form === "U" && side && g < 2 * wt + 1) issues.push({ key: "gap", level: "Warnung", message: `Treppenauge ${Math.round(g)} mm: die inneren Wangen beider Läufe überschneiden sich (mindestens ${Math.ceil(2 * wt + 1)} mm)` });
       const x2 = flight(n2, zP, T2, " Lauf 2", false, n1);
+      if (p.form === "L" && side) {
+        // innere Ecke: die Wange von Lauf 1 läuft in die von Lauf 2 – dort ausgeklinkt (stumpf angeschweißt)
+        const nm = left ? "Wange links" : "Wange rechts", w1 = members.find((m) => m.name === nm + " Lauf 1"), w2 = members.find((m) => m.name === nm + " Lauf 2");
+        if (w1 && w2) w1.copes = [...(w1.copes || []), { section: w2.section, a: w2.a, b: w2.b, up: w2.up, rot: w2.rot, cuts: w2.cuts }];
+      }
       // Podestbelag, Rahmen darunter (bündig mit dem Belagrand), Stützen
       const PW = D, PH = yHi - yLo, cx = x1 + D / 2, cy = (yLo + yHi) / 2;
       geo.yLo = yLo; geo.yHi = yHi; geo.n1 = n1; geo.x2 = x2;
@@ -183,12 +244,22 @@ export const TREPPE = {
         if (!(zTop > 100)) throw fieldError("Podest zu niedrig für Stützen", "height");
         const corners = [[x1 + D - sw, yLo + sw], [x1 + D - sw, yHi - sw]];
         if (p.stuetzen === "alle") corners.push([x1 + sw, yLo + sw], [x1 + sw, yHi - sw]);
-        corners.forEach(([x, y], i) => members.push({ section: st, a: [x, y, 0], b: [x, y, zTop], name: `Podeststütze ${i + 1}`, up: [1, 0, 0] }));
+        // Stützen auf Fußplatten (4 × Ø 14 für Dübel/Anker M12), oben unter den Podestrahmen geschweißt
+        const bs = 2 * sw + 100, ft = AN ? FT : 0;
+        corners.forEach(([x, y], i) => {
+          members.push({ section: st, a: [x, y, FT], b: [x, y, zTop], name: `Podeststütze ${i + 1}`, up: [1, 0, 0] });
+          if (AN) plates.push({ center: [x, y, 0], xDir: [1, 0, 0], normal: [0, 0, 1], W: bs, H: bs, t: FT, holes: [[-bs / 2 + 25, -bs / 2 + 25], [bs / 2 - 25, -bs / 2 + 25], [bs / 2 - 25, bs / 2 - 25], [-bs / 2 + 25, bs / 2 - 25]], d: 14, name: `Podeststütze ${i + 1} Bodenplatte` });
+        });
       }
       info = `${n} Steigungen à ${fmt(s)} mm (${n1} + ${n2}), Auftritt ${fmt(a)} mm, 2s + a = ${Math.round(step)} mm, Neigung ${fmt((alpha * 180) / Math.PI)}°, Podest auf ${Math.round(zP)} mm (${fmt(PW)} × ${fmt(PH)} mm), Läufe ${Math.round(x1)} / ${Math.round(x2)} mm`;
     }
     if (fix.on) info += `, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø ${fix.d}, Lochabstand ${fix.e} mm)`;
     if (gel(p)) {
+      // Wange aus U/UPN ist außen offen: seitlich gibt es keine Anschlussfläche, die Pfosten kommen oben auf die Wange
+      if (side && (sec.kind === "upn" || sec.kind === "u") && gelMount(p) === "seitlich") {
+        p = { ...p, gelMount: "oben" };
+        issues.push({ key: "gelMount", level: "Hinweis", message: "Wange aus U-Profil ist außen offen – Pfosten oben auf der Wange mit Fußplatte befestigt" });
+      }
       // Pfostenachse: neben der Wange (bisher), oben mittig auf der Wange bzw. bei Holmen auf der Stufe
       const mk = gelMount(p);
       const off = !mk ? (side ? thick : 0) + p.gelPost.geom.width / 2 : mk === "seitlich" ? (side ? thick : 0) + sideOffset(mountConfig(p, gk, "seitlich"), p.gelPost) : side ? thick / 2 : -(Math.max(p.gelPost.geom.width, p.gelOW) / 2 + 10);
@@ -201,7 +272,9 @@ export const TREPPE = {
       info += `, Geländer: ${r.info}`;
     }
     Object.assign(geo, { x1: podest(p) ? x1 : (n - 1) * a, D, zP });
-    return { chains, members, plates, drills, info, issues, geo };
+    if (AN && !side) info += `, Stufen auf Konsolblechen verschraubt (M12)`;
+    if (AN) info += side ? `, Fußwinkel am Boden, Kopfplatten ${FT} mm an der Decke` : `, Boden-/Kopfplatten ${FT} mm mit 4 × Ø 14 an Boden und Decke`;
+    return { chains, members, plates, drills, norms, info, issues, geo };
   },
 
   parts: { support: /Wange|Holm/, stuetze: /Stütze/, podestRahmen: /Podest/, podestD: /Podest/, gel: /^Geländer/, gelPodest: /^Geländer/ },
@@ -309,7 +382,15 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
       const ov = overrideFor(cfg.per, name), kindP = ov || kind;
       if (ov === "aus") return null;
       let face = null, r = null;
-      if (kindP === "seitlich") {
+      // Pfosten über der Podestfläche (z. B. am Treppenauge): oben auf dem Podest, seitlich gibt es dort kein Bauteil
+      const podestPl = supports.plates.find((x) => x.name === "Podest");
+      const overPodest = podestPl && Math.abs(base[2] - (podestPl.center[2] + podestPl.t)) < 1 && Math.abs(base[0] - podestPl.center[0]) < podestPl.W / 2 - o.post.geom.width && Math.abs(base[1] - podestPl.center[1]) < podestPl.H / 2 - o.post.geom.width;
+      if (kindP === "seitlich" && overPodest) {
+        const t = onTop();
+        if (!t) return fail("kein Podest unter dem Pfosten");
+        ({ face, r } = t);
+        r.fallback = "oben";
+      } else if (kindP === "seitlich") {
         let why = null;
         try { face = findSideFace(onBeam ? [...beams, ...segs] : segs, base, along, 600, 100 + cfg.gap); } catch (e) { why = e.message; }
         if (face) r = sideMount(cfgSide, { name, post: o.post, top, base, along, face, plateName: `${name} Befestigungsblech` });

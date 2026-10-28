@@ -83,7 +83,9 @@ export const SPINDEL = {
       const N = Math.max(4, Math.ceil((hi - lo) / 4));
       const poly = [];
       for (let k = 0; k <= N; k++) { const q = at(R, lo + ((hi - lo) * k) / N, 0); poly.push([q[0], q[1]]); }
-      for (let k = 2; k >= 0; k--) { const q = at(r0, lo + ((hi - lo) * k) / 2, 0); poly.push([q[0], q[1]]); } // innen an der Spindel
+      // innen an der Spindel: Sehnen tangential an das Rohr (Ecken auf r0 / cos), sonst schneidet die Stufe ins Rohr
+      const Ni = Math.max(2, Math.ceil((hi - lo) / 6)), ri = r0 / Math.cos(((hi - lo) / Ni / 2) * DEG);
+      for (let k = Ni; k >= 0; k--) { const q = at(ri, lo + ((hi - lo) * k) / Ni, 0); poly.push([q[0], q[1]]); }
       const z = i * s;
       plates.push({ center: [0, 0, z - tt], xDir: [1, 0, 0], normal: [0, 0, 1], poly, W: 2 * R, H: 2 * R, t: tt, name: `Stufe ${i}`, tread: p.tread });
       const mid = (a0 + a1) / 2;

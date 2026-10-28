@@ -873,7 +873,7 @@ try {
   const gl1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, glass: r.bodies.filter((b) => b.meta?.glass).length, members: r.bodies.filter((b) => b.kind === "member").length, info: Object.values(r.status)[0]?.info }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20f-gelaender");
-  step("Geländer-Generator", gl0.ok && gl0.n > 30 && /Pfosten/.test(gl0.info) && gl1.glass === 5 && gl1.members === 6 + 2 + 4 + 6 && /6 Pfosten/.test(gl1.info) && /6 Handlaufhalter \(Bohrung Ø 12,1\)/.test(gl1.info), JSON.stringify({ gl0, gl1 }));
+  step("Geländer-Generator", gl0.ok && gl0.n > 30 && /Pfosten/.test(gl0.info) && gl1.glass === 5 && gl1.members === 6 + 2 + 4 + 6 + 4 * 5 /* je Glas 4 Halter */ && /6 Pfosten/.test(gl1.info) && /6 Handlaufhalter \(Bohrung Ø 12,1\)/.test(gl1.info), JSON.stringify({ gl0, gl1 }));
 
   // Tor-Generator (MegaCAD-Abgleich M12): Doppeltor mit Stichbogen, dann Rundbogen
   await evalApp(() => window.__werkcad.newPart("Tor"));
@@ -943,8 +943,8 @@ try {
   await shot("20h-treppe");
   await page.locator("#props .field", { hasText: "Tragwerk" }).locator(".tile", { hasText: "Zwei Holme" }).click();
   await idle(120000);
-  const tr1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { holme: r.bodies.filter((b) => /^Holm/.test(b.name)).length, ok: Object.values(r.status).every((s) => s.ok) }; });
-  step("Treppen-Generator", tr0.ok && tr0.n === 17 + 30 && tr0.gel > 20 && /16 Steigungen/.test(tr0.info) && /DIN 24531/.test(tr0.info) && /Knieleisten durch die Pfosten/.test(tr0.info) && tr1.ok && tr1.holme === 2, JSON.stringify({ tr0, tr1 }));
+  const tr1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { holme: r.bodies.filter((b) => /^Holm \S+$/.test(b.name)).length, ok: Object.values(r.status).every((s) => s.ok) }; });
+  step("Treppen-Generator", tr0.ok && tr0.n === 17 + 30 + 6 /* Fußwinkel, Kopfplatten */ && tr0.gel > 20 && /16 Steigungen/.test(tr0.info) && /DIN 24531/.test(tr0.info) && /Knieleisten durch die Pfosten/.test(tr0.info) && tr1.ok && tr1.holme === 2, JSON.stringify({ tr0, tr1 }));
 
   // Listen als Excel (MegaCAD-Abgleich M18): Arbeitsmappe der Treppe abfangen und prüfen
   const xl = await evalApp(async () => {
@@ -954,7 +954,7 @@ try {
     try { await a.files.exportListsXlsx(); } finally { a.files.saveBinary = orig; }
     return got && { n: got.n, name: got.name, pk: got.head.join(), sheets: [...got.text.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1]) };
   });
-  step("Listen als Excel", !!xl && xl.pk === "80,75" && /_Listen\.xlsx$/.test(xl.name) && xl.sheets.join() === "Zuschnitt,Summen je Profil", JSON.stringify(xl));
+  step("Listen als Excel", !!xl && xl.pk === "80,75" && /_Listen\.xlsx$/.test(xl.name) && /^(Stückliste,)?Zuschnitt,Summen je Profil$/.test(xl.sheets.join()), JSON.stringify(xl));
 
   // Treppe L-Form mit Podest und Spindeltreppe (MegaCAD-Abgleich M14)
   await page.locator("#props .field", { hasText: "Form" }).first().locator(".tile", { hasText: "L-Form" }).click();
@@ -968,7 +968,7 @@ try {
   });
   await shot("20i-treppe-skizze");
   step("Treppe: Skizze mit Maßen und Bildkacheln", gsk.dims >= 4 && gsk.hi.join() === "1000" && gsk.rails > 10 && gsk.tiles >= 8 && gsk.podestRail, JSON.stringify(gsk));
-  const trL = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { podest: r.bodies.filter((b) => /^Podest/.test(b.name)).length, holme: r.bodies.filter((b) => /^Holm/.test(b.name)).length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
+  const trL = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { podest: r.bodies.filter((b) => /^Podest/.test(b.name)).length, holme: r.bodies.filter((b) => /^Holm \S+ Lauf \d$/.test(b.name)).length, info: Object.values(r.status)[0]?.info, ok: Object.values(r.status).every((s) => s.ok) }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20i-treppe-l");
   await evalApp(() => window.__werkcad.newPart("Spindeltreppe"));
@@ -1043,7 +1043,7 @@ try {
     await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
     await shot(file);
   }
-  step("Stahlbau-Generatoren", Object.values(stb).every((x) => x.ok && x.norm > 0) && stb.Rahmenecke.norm === 24 && stb.Windverband.norm === 2, JSON.stringify(stb));
+  step("Stahlbau-Generatoren", Object.values(stb).every((x) => x.ok && x.norm > 0) && stb.Rahmenecke.norm === 24 && stb.Windverband.norm === 2 + 4 * 4 /* Spannschlösser + Laschenschrauben mit 2 Scheiben und Mutter */, JSON.stringify(stb));
   // Gestell wie in Inventor: Skelett-Bauteil → Gestell einfügen (Menüband) → je Stab ein Bauteil, Gehrung per Klick, Gestell-Info
   await evalApp(() => {
     const a = window.__werkcad, src = a.doc("beispiel_rahmen"), p = a.newPart("Gestell-Skelett");
