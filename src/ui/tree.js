@@ -4,6 +4,7 @@ import { FEATURE_NAMES } from "./app.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { activeCount } from "../core/bauteilende.js";
 import { componentDof, dofLabel } from "../core/asmdof.js";
+import { formSubDialog, dissolveSubComp, moveCompIntoSub, learnFuegepunkte } from "./baugruppe.js";
 
 const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", blechkasten: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
 
@@ -201,9 +202,22 @@ export class Tree {
           { label: "Ersetzen…", icon: "update", run: () => app.props.replaceComponentDialog(c.id) },
           { label: "Spiegeln …", icon: "mirror", run: () => app.props.mirrorComponent(c.id) },
           "-",
+          { label: "Unterbaugruppe bilden …", icon: "assembly", run: () => formSubDialog(app, c.id) },
+          ...(myCons.length && !sub ? [{ label: "Fügepunkte aus Abhängigkeiten merken", icon: "insert", run: () => learnFuegepunkte(app, c.id) }] : []),
+          ...(sub ? [{ label: "Unterbaugruppe auflösen", icon: "assembly", run: () => dissolveSubComp(app, c.id) }] : []),
+          "-",
           { label: "Entfernen", icon: "trash", run: () => app.props.deleteComponent(c.id) },
         ]),
       }));
+      // BG7: Komponente per Ziehen in eine Unterbaugruppe umhängen
+      const cn = li.firstChild;
+      cn.draggable = true;
+      cn.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/x-pbcad-comp", c.id); e.dataTransfer.effectAllowed = "move"; });
+      if (sub) {
+        cn.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("text/x-pbcad-comp")) { e.preventDefault(); cn.classList.add("drop"); } });
+        cn.addEventListener("dragleave", () => cn.classList.remove("drop"));
+        cn.addEventListener("drop", (e) => { cn.classList.remove("drop"); const id = e.dataTransfer.getData("text/x-pbcad-comp"); if (id) { e.preventDefault(); moveCompIntoSub(app, id, c.id); } });
+      }
       if (sub) li.append(this.subComponentList(p, 1));
       if (myCons.length && consOpen) li.append(h("ul", {}, ...myCons.map((x) => h("li", {}, this.constraintNode(asm, x)))));
     }

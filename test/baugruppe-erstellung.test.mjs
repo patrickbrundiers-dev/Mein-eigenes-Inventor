@@ -90,3 +90,128 @@ test("Platzieren und Ziehen: Lage aus Punkt und Bewegung", () => {
   const D = deltaBetween(c, r), back = applyDelta(c, D);
   near(back.pos[1], 10, 1e-6);
 });
+
+import { moveIntoSub, dissolveSub, transformRef } from "../src/core/baugruppe.js";
+import { solveAssembly } from "../src/core/asmsolve.js";
+import { placementMatrix, matApply, matMul } from "../src/core/geom.js";
+
+const plateF = [{ type: "PLANE", normal: [0, 0, 1], point: [0, 0, 10] }, { type: "PLANE", normal: [0, 0, -1], point: [0, 0, 0] }];
+const world = (asm, id, p) => { const c = asm.components.find((x) => x.id === id); return matApply(placementMatrix(c.pos, c.rot), p); };
+
+test("Unterbaugruppe bilden: Lage bleibt, innere Abhängigkeit wandert mit, äußere hängt an der Unterbaugruppe", () => {
+  const top = faceRef("p1", plateF[0]), bot2 = faceRef("p2", plateF[1]), bot3 = faceRef("p3", plateF[1]), top2 = faceRef("p2", plateF[0]);
+  const asm = { id: "A", kind: "assembly", components: [
+    { id: "p1", part: "pl", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true },
+    { id: "p2", part: "pl", pos: [50, 0, 10], rot: [0, 0, 30] },
+    { id: "p3", part: "pl", pos: [80, 20, 20], rot: [0, 0, 0] },
+  ], constraints: [{ id: "k1", type: "gegen", gap: "0", a: top, b: bot2 }, { id: "k2", type: "gegen", gap: "0", a: top2, b: bot3 }] };
+  const sub = { id: "S", kind: "assembly", components: [] };
+  const sc = { id: "s", part: "S", pos: [10, 0, 0], rot: [0, 0, 90] };
+  asm.components.push(sc);
+  const before = [world(asm, "p2", [1, 2, 3]), world(asm, "p3", [4, 5, 6])];
+  const r = moveIntoSub(asm, ["p2", "p3"], sub, sc);
+  assert.equal(r.error, null);
+  assert.equal(r.moved, 2); assert.equal(r.constraints, 1); assert.equal(r.relinked, 1);
+  assert.deepEqual(asm.components.map((c) => c.id), ["p1", "s"]);
+  // Weltlage der Teile unverändert
+  const Ms = placementMatrix(sc.pos, sc.rot);
+  const w2 = matApply(matMul(Ms, placementMatrix(sub.components[0].pos, sub.components[0].rot)), [1, 2, 3]);
+  for (let i = 0; i < 3; i++) near(w2[i], before[0][i], 1e-6);
+  // äußere Abhängigkeit: Bezug jetzt an der Unterbaugruppe, Ebene z = 10 im System der Unterbaugruppe (Weltlage gleich)
+  const k1 = asm.constraints[0];
+  assert.equal(k1.b.comp, "s");
+  // Lösen ändert nichts (alles war erfüllt)
+  const facesOf = (pid) => (pid === "pl" ? plateF : sub.components.flatMap((c) => plateF.map((f) => ({ ...f, normal: matApply(placementMatrix([0, 0, 0], c.rot), f.normal), point: matApply(placementMatrix(c.pos, c.rot), f.point) }))));
+  const res = solveAssembly(asm, facesOf);
+  assert.deepEqual(res.errors, {});
+  near(sc.pos[2], 0, 1e-6);
+});
+
+test("Unterbaugruppe bilden: Grenzen und Auflösen", () => {
+  const asm = { components: [{ id: "a", pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "b", pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "s", part: "S", pos: [0, 0, 0], rot: [0, 0, 0] }], motions: [{ id: "m", a: "a", b: "b" }], constraints: [] };
+  assert.match(moveIntoSub(asm, ["a"], { components: [] }, asm.components[2]).error, /Bewegung/);
+  // Auflösen: Teile kommen an die Weltlage, IDs neu, innere Abhängigkeit mit neuen IDs
+  const sub = { kind: "assembly", components: [{ id: "x", part: "pl", pos: [10, 0, 0], rot: [0, 0, 0] }, { id: "y", part: "pl", pos: [0, 0, 10], rot: [0, 0, 0] }],
+    constraints: [{ id: "k", type: "gegen", a: { comp: "x", n: [0, 0, 1], d: 10 }, b: { comp: "y", n: [0, 0, -1], d: 0 } }] };
+  const top = { components: [{ id: "s", part: "S", pos: [100, 0, 0], rot: [0, 0, 90] }, { id: "o", part: "pl", pos: [0, 0, 0], rot: [0, 0, 0] }],
+    constraints: [{ id: "ext", type: "gegen", a: { comp: "o", n: [0, 0, 1], d: 10 }, b: { comp: "s", n: [0, 0, -1], d: 0 } }] };
+  let n = 0;
+  const r = dissolveSub(top, "s", sub, () => "n" + ++n);
+  assert.equal(r.error, null); assert.equal(r.added, 2); assert.equal(r.dropped, 1);
+  assert.deepEqual(top.components.map((c) => c.id), ["n1", "n2", "o"]);
+  near(top.components[0].pos[0], 100, 1e-9); near(top.components[0].pos[1], 10, 1e-9);
+  assert.deepEqual([top.constraints[0].a.comp, top.constraints[0].b.comp], ["n1", "n2"]);
+  // Koordinatensystem-Bezug lässt sich nicht übertragen
+  assert.equal(transformRef({ comp: "a", frame: true }, placementMatrix(), "s"), null);
+});
+
+import { holeAxes, holeFromConstraints, applyPatterns } from "../src/core/asmmuster.js";
+
+test("Muster am Lochbild: Kopien in alle gleich großen Bohrungen, folgt der Platte", () => {
+  // Platte mit vier Bohrungen Ø10 (eine als zwei Halbzylinder) und einer Ø20
+  const faces = [
+    { type: "CYLINDER", axisP: [20, 20, 3], axisD: [0, 0, 1], radius: 5 }, { type: "CYLINDER", axisP: [20, 20, 7], axisD: [0, 0, -1], radius: 5 },
+    { type: "CYLINDER", axisP: [180, 20, 0], axisD: [0, 0, 1], radius: 5 }, { type: "CYLINDER", axisP: [20, 120, 0], axisD: [0, 0, 1], radius: 5 },
+    { type: "CYLINDER", axisP: [180, 120, 0], axisD: [0, 0, 1], radius: 5 }, { type: "CYLINDER", axisP: [100, 70, 0], axisD: [0, 0, 1], radius: 10 },
+  ];
+  const hole = axisRef("pl", faces[2]);
+  const ax = holeAxes(hole, faces);
+  assert.equal(ax.length, 4);
+  assert.deepEqual(ax[0], [180, 20, 0]); // Bezugsbohrung zuerst
+  const asm = { components: [{ id: "pl", part: "platte", pos: [1000, 0, 0], rot: [0, 0, 90], fixed: true }, { id: "s", part: "schraube", pos: [980, 180, 10], rot: [0, 0, 0] }],
+    constraints: [{ id: "k", type: "einfuegen", a: { ...hole, plane: { n: [0, 0, 1], d: 10 } }, b: { comp: "s", axis: true, p: [0, 0, 0], d: [0, 0, 1], r: 5, plane: { n: [0, 0, -1], d: 0 } } }] };
+  const h0 = holeFromConstraints(asm, "s");
+  assert.equal(h0.comp, "pl");
+  asm.patterns = [{ id: "pm", kind: "lochbild", comps: ["s"], hole: h0 }];
+  const r = applyPatterns(asm, Number, (pid) => (pid === "platte" ? faces : []));
+  assert.deepEqual(r.errors, {});
+  const copies = asm.components.filter((c) => c.pat === "pm");
+  assert.equal(copies.length, 3);
+  // Platte um 90° gedreht: Bohrung (20|20) liegt in der Welt bei (980|20); Kopie um denselben Versatz wie die Bohrungen
+  const want = new Set(["980,20", "880,180", "880,20"]);
+  for (const c of copies) assert.ok(want.has(c.pos.slice(0, 2).map((x) => Math.round(x)).join(",")), c.pos.join());
+  for (const c of copies) near(c.pos[2], 10, 1e-9);
+  // ohne weitere Bohrungen: Fehlermeldung
+  assert.match(applyPatterns(asm, Number, () => [faces[2]]).errors.pm, /keine weiteren/);
+});
+
+import { mirrorReusePlacement, planeFromFace } from "../src/core/baugruppe.js";
+
+test("Spiegeln: Wiederverwenden legt das symmetrische Teil an die Spiegelstelle", () => {
+  // Quader 0…100 in X (Mitte 50), steht bei x = 200; Spiegelebene x = 0 → belegt danach −300 … −200
+  const r = mirrorReusePlacement([200, 0, 0], [0, 0, 0], [1, 0, 0], 0, [50, 0, 0]);
+  assert.deepEqual(r.pos, [-300, 0, 0]);
+  // gedreht um Z 90°: lokale X zeigt nach Welt-Y, Ebene y = 10
+  const q = mirrorReusePlacement([0, 50, 0], [0, 0, 90], [0, 1, 0], 10, [50, 0, 0]);
+  near(q.pos[1], -130, 1e-9); // Teil belegte y 50…150, gespiegelt an 10 → −130 … −30
+  assert.deepEqual(planeFromFace([0, 0, 25], [0, 0, 2]), { n: [0, 0, 1], c: 25 });
+});
+
+import { inferFuegepunkte, addFuegepunkte, autoMate } from "../src/core/baugruppe.js";
+
+test("Fügepunkte: aus Abhängigkeit ableiten, beim Platzieren automatisch fügen (nächste Bohrung)", () => {
+  const docs = { pl: { id: "pl", kind: "part", name: "Platte" }, sr: { id: "sr", kind: "part", name: "Schraube" } };
+  const docOf = (id) => docs[id];
+  const hole = { comp: "p", axis: true, p: [20, 20, 0], d: [0, 0, 1], r: 5, plane: { n: [0, 0, 1], d: 10 } };
+  const pin = { comp: "s", axis: true, p: [0, 0, 0], d: [0, 0, 1], r: 5, plane: { n: [0, 0, -1], d: 0 } };
+  const asm = { components: [{ id: "p", part: "pl", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true }, { id: "s", part: "sr", pos: [20, 20, 10], rot: [0, 0, 0] }],
+    constraints: [{ id: "k", type: "einfuegen", name: "Einfügen: Schraube:1 → Platte:1", a: hole, b: pin, solution: "entgegengesetzt", gap: "0" }] };
+  let n = 0;
+  const fps = inferFuegepunkte(asm, "s", docOf, () => "f" + ++n);
+  assert.equal(fps.length, 2);
+  assert.equal(fps[0].fp.name, fps[1].fp.name);
+  for (const { partId, fp } of fps) assert.equal(addFuegepunkte(docs[partId], [fp]), 1);
+  assert.equal(addFuegepunkte(docs.pl, [fps[0].fp]), 0); // nicht doppelt
+  // zweite Platte weit weg, neue Schraube nahe bei Platte 2 platziert → fügt an Platte 2
+  asm.components.push({ id: "p2", part: "pl", pos: [500, 0, 0], rot: [0, 0, 0] }, { id: "s2", part: "sr", pos: [480, 0, 50], rot: [0, 0, 0] });
+  const cons = autoMate(asm, "s2", docOf, [510, 10, 0], () => "k2");
+  assert.equal(cons.length, 1);
+  assert.equal(cons[0].type, "einfuegen");
+  assert.equal(cons[0].a.comp, "p2"); assert.equal(cons[0].b.comp, "s2");
+  assert.equal(cons[0].solution, "entgegengesetzt");
+  // belegt: dieselbe Hälfte an p2 nicht zweimal
+  asm.constraints.push(cons[0]);
+  asm.components.push({ id: "s3", part: "sr", pos: [0, 0, 0], rot: [0, 0, 0] });
+  const again = autoMate(asm, "s3", docOf, [510, 10, 0]);
+  assert.equal(again[0]?.a.comp, "p"); // p hat seine Hälfte noch frei (k ohne fp-Kennung)
+});

@@ -909,7 +909,7 @@ export class App {
     }
     const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
     if (!hit) return this.viewer.clearHover();
-    if (this.mode === "assembly" && this.pick?.kind !== "align" && this.pick?.kind !== "measure") this.viewer.highlight([{ kind: "group", key: hit.key }]);
+    if (this.mode === "assembly" && this.pick?.kind !== "align" && this.pick?.kind !== "measure" && this.pick?.kind !== "custom") this.viewer.highlight([{ kind: "group", key: hit.key }]);
     else this.viewer.highlight([hit]);
   }
   viewerClick(e) {
@@ -932,6 +932,7 @@ export class App {
     if (p?.kind === "datumFace") return this.datumFacePick(p.feature, hit);
     if (p?.kind === "align") return this.alignPick(hit);
     if (p?.kind === "place") return placeClick(this, e);
+    if (p?.kind === "custom") return p.onPick(hit, e);
     if (p?.kind === "gestell") return this.gestellPick(hit);
     if (this.mode === "assembly") {
       const cid = hit?.key?.startsWith("comp:") ? hit.key.slice(5) : null;
@@ -1073,7 +1074,7 @@ export class App {
   solveAssemblyConstraints(asm) {
     const res = asm.constraints?.length ? solveAssembly(asm, (pid) => this.assemblyFaces(pid), (g) => safeNum(g)) : { changed: false, errors: {} };
     // Komponentenmuster nach den Abhängigkeiten: Kopien folgen der gelösten Lage der Quelle
-    const pat = asm.patterns?.length || asm.components.some((c) => c.pat) ? applyPatterns(asm, (g) => safeNum(g)) : { changed: false, errors: {} };
+    const pat = asm.patterns?.length || asm.components.some((c) => c.pat) ? applyPatterns(asm, (g) => safeNum(g), (pid) => this.assemblyFaces(pid)) : { changed: false, errors: {} };
     this.asmErrors = { ...res.errors, ...pat.errors };
     if (res.changed || pat.changed) { this.dirty = true; this.updateTitle(); }
   }

@@ -19,7 +19,7 @@ import { PLANE_MODES, AXIS_MODES, POINT_MODES } from "../core/datums.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { COMBINE_OPS, SPLIT_KEEP, THICKEN_SIDES } from "../core/koerper.js";
 import { CONSTRAINT_TYPES } from "../core/asmsolve.js";
-import { defaultAsmPattern } from "../core/asmmuster.js";
+import { holeFromConstraints, defaultAsmPattern } from "../core/asmmuster.js";
 import { CAP_MODES, equalParts } from "../core/rahmen.js";
 import { LASCHE_EDGES, HEM_KINDS, PUNCH_FORMS, CORNER_THROUGH, SHEET_FEATURES } from "../core/blechplus.js";
 import { ROLL_AXES } from "../core/konturwalzen.js";
@@ -52,7 +52,7 @@ import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
-import { placeDialog } from "./baugruppe.js";
+import { placeDialog, mirrorDialog, fuegepunkteSection } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
 import { linkedPart, asmParamValues } from "../core/baugruppenparameter.js";
 import { pushParamsDialog, invalidateLinked, explosionDialog, positionsSection, explosionSection, asmParamsSection } from "./darstellungen.js";
@@ -1852,6 +1852,7 @@ export class Props {
         h("button", { class: "btn", onclick: () => this.replaceComponentDialog(c.id) }, "Ersetzen…"),
         h("button", { class: "btn danger", onclick: () => this.deleteComponent(c.id) }, "Entfernen")),
       this.jointSection(asm, c),
+      fuegepunkteSection(this, asm, c),
     ];
   }
   /** Dreh- oder Schiebegelenk der Komponente (M23, E8): Wert live verstellen, Bereich, Bewegen, Kollision im Bereich */
@@ -2204,9 +2205,11 @@ export class Props {
     const c = app.sel?.type === "component" ? asm.components.find((x) => x.id === app.sel.id && !x.pat) : null;
     if (!c) return toast("Erst die Komponente wählen, die vervielfältigt werden soll");
     const box = app.viewer.componentBox(c.id);
-    const p = defaultAsmPattern(uid("pm"), [c.id]);
+    // BG9: sitzt die Quelle in einer Bohrung, gleich als Lochbild-Muster (wie Inventor »Feature-Muster«)
+    const hole = holeFromConstraints(asm, c.id);
+    const p = hole ? defaultAsmPattern(uid("pm"), [c.id], "lochbild", hole) : defaultAsmPattern(uid("pm"), [c.id]);
     p.name = `Muster ${(asm.patterns || []).length + 1}`;
-    if (box) p.spacing = String(Math.round((box[1][0] - box[0][0]) * 1.5) || 100);
+    if (box && !hole) p.spacing = String(Math.round((box[1][0] - box[0][0]) * 1.5) || 100);
     app.edit("Komponentenmuster", () => { asm.patterns = [...(asm.patterns || []), p]; });
     app.sel = { type: "asmpattern", id: p.id };
     this.render();
@@ -2228,8 +2231,12 @@ export class Props {
           box.addEventListener("change", () => set("Komponenten", () => { p.comps = box.checked ? [...new Set([...p.comps, c.id])] : p.comps.filter((x) => x !== c.id); }));
           return h("label", { class: "check" }, box, " ", c.name);
         })), true),
-        this.seg("Art", [["linear", "Rechteckig"], ["circular", "Kreisförmig"]], p.kind, (v) => set("Art", () => { Object.assign(p, defaultAsmPattern(p.id, p.comps, v), { name: p.name }); })),
-        p.kind === "circular" ? [
+        this.seg("Art", [["linear", "Rechteckig"], ["circular", "Kreisförmig"], ["lochbild", "Lochbild"]], p.kind, (v) => {
+          const hole = v === "lochbild" ? p.comps.map((id) => holeFromConstraints(asm, id)).find(Boolean) : null;
+          if (v === "lochbild" && !hole) return toast("Lochbild: die Quelle zuerst mit »Einfügen« oder »Konzentrisch« in eine Bohrung setzen – dann folgen Kopien in alle gleich großen Bohrungen", { timeout: 7000 });
+          set("Art", () => { for (const k of Object.keys(p)) if (!["id", "comps", "name", "suppressed"].includes(k)) delete p[k]; Object.assign(p, defaultAsmPattern(p.id, p.comps, v, hole), { name: p.name }); });
+        }),
+        p.kind === "lochbild" ? h("p", { class: "hint" }, `Kopien in alle Bohrungen Ø ${fmtNum(2 * (p.hole?.r || 0), 2)} mm von »${asm.components.find((c) => c.id === p.hole?.comp)?.name || "?"}« – folgt Änderungen am Lochbild.`) : p.kind === "circular" ? [
           this.seg("Achse", dirs.slice(0, 3), p.axis || "Z", (v) => set("Achse", () => { p.axis = v; })),
           this.vec3("Mittelpunkt", p.center, (v) => set("Mittelpunkt", () => { p.center = v; })),
           E("Anzahl", "count", { unit: "Stk" }), E("Gesamtwinkel", "angle", { unit: "°" }),
@@ -2306,34 +2313,8 @@ export class Props {
   variantDialog() { return variantDialog(this.app); }
   rulesDialog() { return rulesDialog(this.app); }
   macroDialog() { return macroDialog(this.app); }
-  /** Komponente an einer Ebene der Baugruppe spiegeln: gespiegeltes Bauteil (abgeleitet) an der gespiegelten Lage */
-  mirrorComponent(id) {
-    const app = this.app, asm = app.activeDoc();
-    const c = asm?.components?.find((x) => x.id === (id || (app.sel?.type === "component" ? app.sel.id : null)));
-    if (!c || c.pat) return toast("Erst die Komponente wählen, die gespiegelt werden soll");
-    const p = app.doc(c.part);
-    if (p?.kind !== "part") return toast("Nur Bauteile lassen sich spiegeln (Unterbaugruppen nicht)");
-    const run = (key) => {
-      const m = mirrorPlacement(c.pos || [0, 0, 0], c.rot || [0, 0, 0], MIRROR_PLANES[key], 0);
-      const same = (a, b) => a.every((x, i) => Math.abs(Number(x) - b[i]) < 1e-9);
-      let doc = app.parts().find((d) => d.features?.[0]?.type === "abgeleitet" && d.features[0].source === p.id && d.features[0].mirror === "frei" && same(d.features[0].mirrorN || [], m.normal));
-      const fresh = !doc;
-      if (fresh) {
-        doc = app.withPartDefaults(newPart(`${p.name} gespiegelt`));
-        doc.material = p.material;
-        doc.features = [{ id: uid("f"), type: "abgeleitet", name: "Abgeleitet 1", source: p.id, mirror: "frei", mirrorN: m.normal.map(String), scale: "1" }];
-      }
-      const comp = { id: uid("c"), part: doc.id, name: `${doc.name}:${asm.components.filter((x) => x.part === doc.id).length + 1}`, pos: m.pos, rot: m.rot };
-      app.edit("Komponente spiegeln", () => { if (fresh) app.project.docs.push(doc); asm.components.push(comp); });
-      app.sel = { type: "component", id: comp.id };
-      toast(fresh ? `»${doc.name}« als gespiegeltes Bauteil angelegt und eingefügt` : `Gespiegeltes Bauteil »${doc.name}« wiederverwendet`, { kind: "ok" });
-    };
-    modal({
-      title: `»${c.name}« spiegeln`,
-      body: h("p", {}, "Ebene der Baugruppe wählen. Es entsteht ein gespiegeltes Bauteil (abgeleitet, folgt Änderungen am Original) an der gespiegelten Lage."),
-      buttons: [{ label: "an YZ", run: () => run("YZ") }, { label: "an XZ", run: () => run("XZ") }, { label: "an XY", run: () => run("XY") }, { label: "Abbrechen" }],
-    });
-  }
+  /** Komponenten spiegeln (BG11, src/ui/baugruppe.js): mehrere, beliebige Ebene, auf Wunsch wiederverwenden */
+  mirrorComponent(id) { return mirrorDialog(this.app, id); }
   duplicateComponent(id) {
     const asm = this.app.activeDoc();
     const c = asm.components.find((x) => x.id === id);

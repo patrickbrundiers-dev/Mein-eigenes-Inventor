@@ -5,7 +5,10 @@ import * as THREE from "three";
 import { h, toast, modal } from "./dom.js";
 import { uid } from "../core/examples.js";
 import { componentDof, projectFree, dofLabel } from "../core/asmdof.js";
-import { quickMate, placeAt, applyDelta, deltaBetween } from "../core/baugruppe.js";
+import { quickMate, placeAt, applyDelta, deltaBetween, moveIntoSub, dissolveSub, mirrorReusePlacement, planeFromFace, inferFuegepunkte, addFuegepunkte, autoMate } from "../core/baugruppe.js";
+import { mirrorPlacement, MIRROR_PLANES } from "../core/ableiten.js";
+import { newPart } from "../core/examples.js";
+import { newAssembly } from "../core/examples.js";
 import { solveAssembly, endFaceFor, worldToLocal } from "../core/asmsolve.js";
 import { flattenAssembly, canInsert } from "../core/subasm.js";
 import { placementMatrix, rotationAbout, v3 } from "../core/geom.js";
@@ -73,16 +76,28 @@ export function beginPlacing(app, docId, { at = null } = {}) {
     addComponent(app, asm, d, { pos: [0, 0, 0], rot: [0, 0, 0] }, { fixed: true });
     toast(`»${d.name}« am Ursprung fixiert – weitere Kopien am Mauszeiger absetzen, Esc beendet`, { kind: "ok" });
   } else if (at) {
-    addComponent(app, asm, d, placeAt(at, center));
+    addComponent(app, asm, d, placeAt(at, center), { near: at });
   }
   app.pick = { kind: "place", doc: docId, center };
   app.viewer.setPlaceGhost(items);
   app.setHint(`»${d.name}« platzieren: Klick setzt eine Kopie (auf Flächen einrastend) – Esc oder Rechtsklick beendet`);
   app.ribbon?.render?.();
 }
-function addComponent(app, asm, d, place, { fixed = false } = {}) {
+function addComponent(app, asm, d, place, { fixed = false, near = null } = {}) {
   const comp = { id: uid("c"), part: d.id, name: `${d.name}:${asm.components.filter((c) => c.part === d.id).length + 1}`, pos: place.pos, rot: place.rot, ...(fixed ? { fixed: true } : {}) };
-  app.edit("Platzieren", () => { asm.components.push(comp); });
+  let mated = [];
+  app.edit("Platzieren", () => {
+    asm.components.push(comp);
+    // BG8: passende Fügepunkte fügen die neue Komponente gleich an (nächstliegendes Gegenstück)
+    if (!fixed && app.prefs?.get("baugruppe.fuegepunkte") !== false) {
+      mated = autoMate(asm, comp.id, (id) => app.doc(id), near, () => uid("ab"));
+      if (mated.length) {
+        asm.constraints = [...(asm.constraints || []), ...mated];
+        solveAssembly(asm, (pid) => app.assemblyFaces(pid), (g) => app.asmEval(g));
+      }
+    }
+  });
+  if (mated.length) toast(`Über Fügepunkt gefügt: ${mated.map((k) => k.fp).join(", ")}`, { kind: "ok" });
   app.sel = { type: "component", id: comp.id };
   app.refreshSelectionHits();
   app.tree.render();
@@ -106,7 +121,7 @@ export function placeHover(app, e) {
 export function placeClick(app, e) {
   const asm = asmOf(app), d = app.doc(app.pick.doc), p = cursorPoint(app, e);
   if (!asm || !d || !p) return;
-  addComponent(app, asm, d, placeAt(p, app.pick.center));
+  addComponent(app, asm, d, placeAt(p, app.pick.center), { near: p });
 }
 export function endPlacing(app) { app.viewer.setPlaceGhost(null); }
 
@@ -277,4 +292,181 @@ function commitQuick(app, s) {
   app.tree.render();
   app.props.render();
   toast(`${s.con.name} angelegt`, { kind: s.conflict ? "err" : "ok" });
+}
+
+// ---------- Unterbaugruppe bilden / auflösen (BG7) ----------
+const clone = (x) => JSON.parse(JSON.stringify(x));
+/** Wie oft steckt das Dokument docId als Komponente im Projekt? */
+const usesOf = (app, docId) => app.project.docs.filter((d) => d.kind === "assembly").reduce((n, d) => n + (d.components || []).filter((c) => c.part === docId && !c.pat).length, 0);
+function report(r, what) {
+  const extra = [r.constraints ? `${r.constraints} Abhängigkeit(en) mitgenommen` : "", r.relinked ? `${r.relinked} nach außen umgehängt` : "", r.dropped ? `${r.dropped} entfernt (Starr/Koordinatensystem bitte neu setzen)` : ""].filter(Boolean).join(", ");
+  toast(`${what}${extra ? " – " + extra : ""}`, { kind: r.dropped ? "" : "ok", timeout: 6000 });
+}
+/** Auswahl der Komponenten und Name, dann neue Unterbaugruppe an derselben Stelle */
+export function formSubDialog(app, preselect = null) {
+  const asm = asmOf(app);
+  if (!asm) return;
+  const cand = asm.components.filter((c) => !c.pat);
+  if (cand.length < 1) return toast("Die Baugruppe hat noch keine Komponenten");
+  const pre = new Set([preselect || (app.sel?.type === "component" ? app.sel.id : null)].filter(Boolean));
+  const name = h("input", { class: "inp", value: app.docName ? app.docName("assembly") : "Unterbaugruppe" });
+  const boxes = cand.map((c) => [c, h("input", { type: "checkbox", checked: pre.has(c.id) ? true : undefined })]);
+  const err = h("div", { class: "hint" });
+  modal({
+    title: "Unterbaugruppe bilden", width: "440px",
+    body: h("div", {}, h("div", { class: "field wide" }, h("label", {}, "Name"), name),
+      h("div", { class: "checks place-list" }, ...boxes.map(([c, b]) => h("label", { class: "check" }, b, " ", c.name))),
+      h("p", { class: "hint" }, "Die gewählten Komponenten wandern in eine neue Baugruppe an derselben Stelle. Abhängigkeiten untereinander gehen mit, Abhängigkeiten nach außen hängen danach an der Unterbaugruppe."), err),
+    buttons: [{ label: "Abbrechen" }, { label: "Bilden", primary: true, run: () => {
+      const ids = boxes.filter(([, b]) => b.checked).map(([c]) => c.id);
+      if (!ids.length) { err.textContent = "Mindestens eine Komponente wählen"; return false; }
+      const sub = newAssembly(name.value.trim() || "Unterbaugruppe");
+      const sc = { id: uid("c"), part: sub.id, name: `${sub.name}:1`, pos: [0, 0, 0], rot: [0, 0, 0] };
+      const test = moveIntoSub(clone({ ...asm, components: [...asm.components, sc] }), ids, clone(sub), sc);
+      if (test.error) { err.textContent = test.error; return false; }
+      let r;
+      app.edit("Unterbaugruppe bilden", () => {
+        app.project.docs.push(sub);
+        const fixed = asm.components.some((c) => ids.includes(c.id) && c.fixed);
+        if (fixed) sc.fixed = true;
+        asm.components.splice(asm.components.findIndex((c) => ids.includes(c.id)), 0, sc);
+        r = moveIntoSub(asm, ids, sub, sc);
+      });
+      app.sel = { type: "component", id: sc.id };
+      app.refreshSelectionHits(); app.tree.render(); app.props.render();
+      report(r, `Unterbaugruppe »${sub.name}« mit ${r.moved} Komponente(n) gebildet`);
+      return true;
+    } }],
+  });
+}
+/** Unterbaugruppe auflösen: Komponenten eine Ebene höher */
+export function dissolveSubComp(app, compId) {
+  const asm = asmOf(app), c = compOf(asm, compId), sub = c && app.doc(c.part);
+  if (sub?.kind !== "assembly") return toast("Nur Unterbaugruppen lassen sich auflösen");
+  let r;
+  const alone = usesOf(app, sub.id) === 1;
+  app.edit("Unterbaugruppe auflösen", () => {
+    r = dissolveSub(asm, compId, clone(sub), () => uid("c"));
+    // die Baugruppe bleibt im Projekt, wenn sie noch woanders steckt oder eine Zeichnung sie zeigt
+    if (!r.error && alone && !app.project.docs.some((d) => d.kind === "drawing" && JSON.stringify(d).includes(sub.id))) app.project.docs = app.project.docs.filter((d) => d.id !== sub.id);
+  });
+  if (r.error) return toast(r.error, { kind: "err" });
+  app.sel = null;
+  app.refreshSelectionHits(); app.tree.render(); app.props.render();
+  toast(`»${sub.name}« aufgelöst: ${r.added} Komponente(n) eine Ebene höher${r.dropped ? ` – ${r.dropped} Abhängigkeit(en) an der Unterbaugruppe entfernt, bitte neu fügen` : ""}`, { kind: r.dropped ? "" : "ok", timeout: 6000 });
+}
+/** Komponente im Baum auf eine Unterbaugruppe ziehen (Umhängen) */
+export function moveCompIntoSub(app, compId, subCompId) {
+  const asm = asmOf(app), sc = compOf(asm, subCompId), sub = sc && app.doc(sc.part);
+  if (!asm || sub?.kind !== "assembly" || compId === subCompId) return;
+  if (usesOf(app, sub.id) > 1) return toast(`»${sub.name}« steckt mehrfach im Projekt – Umhängen würde alle Vorkommen ändern. Erst eine eigene Unterbaugruppe bilden.`);
+  const test = moveIntoSub(clone(asm), [compId], clone(sub), sc);
+  if (test.error) return toast(test.error, { kind: "err" });
+  let r;
+  app.edit("In Unterbaugruppe verschieben", () => { r = moveIntoSub(asm, [compId], sub, sc); });
+  app.tree.render(); app.props.render();
+  report(r, `In »${sub.name}« verschoben`);
+}
+
+// ---------- Spiegeln erweitert (BG11) ----------
+/** Mehrere Komponenten an einer Hauptebene (mit Abstand) oder an einer gewählten Fläche spiegeln */
+export function mirrorDialog(app, preselect = null) {
+  const asm = asmOf(app);
+  if (!asm) return;
+  const cand = asm.components.filter((c) => !c.pat && app.doc(c.part)?.kind === "part");
+  if (!cand.length) return toast("Keine Bauteile zum Spiegeln");
+  const pre = preselect || (app.sel?.type === "component" ? app.sel.id : null);
+  const rows = cand.map((c) => {
+    const box = h("input", { type: "checkbox", checked: c.id === pre ? true : undefined });
+    const how = h("select", { class: "inp", style: { width: "auto" } }, h("option", { value: "spiegeln" }, "gespiegeltes Bauteil"), h("option", { value: "wieder" }, "wiederverwenden (symmetrisch)"));
+    return { c, box, how };
+  });
+  const plane = h("select", { class: "inp" }, ...Object.keys(MIRROR_PLANES).map((k) => h("option", { value: k }, `${k}-Ebene der Baugruppe`)), h("option", { value: "flaeche" }, "Fläche im 3D-Fenster wählen …"));
+  const off = h("input", { class: "inp", value: "0" });
+  const err = h("div", { class: "hint" });
+  const run = (pl) => {
+    const chosen = rows.filter((r) => r.box.checked);
+    let made = 0, reused = 0;
+    const sel = [];
+    app.edit("Komponenten spiegeln", () => {
+      for (const { c, how } of chosen) {
+        const p = app.doc(c.part);
+        if (how.value === "wieder") {
+          const bb = (app.results.get(p.id)?.bodies || []).map((b) => b.props?.bbox).filter(Boolean);
+          const ctr = bb.length ? [0, 1, 2].map((i) => (Math.min(...bb.map((b) => b[0][i])) + Math.max(...bb.map((b) => b[1][i]))) / 2) : [0, 0, 0];
+          const m = mirrorReusePlacement(c.pos, c.rot, pl.n, pl.c, ctr);
+          const comp = { id: uid("c"), part: p.id, name: `${p.name}:${asm.components.filter((x) => x.part === p.id).length + 1}`, pos: m.pos, rot: m.rot };
+          asm.components.push(comp); sel.push(comp.id); reused++;
+          continue;
+        }
+        const m = mirrorPlacement(c.pos || [0, 0, 0], c.rot || [0, 0, 0], pl.n, pl.c);
+        const same = (a, b) => a.every((x, i) => Math.abs(Number(x) - b[i]) < 1e-9);
+        let doc = app.parts().find((d) => d.features?.[0]?.type === "abgeleitet" && d.features[0].source === p.id && d.features[0].mirror === "frei" && same(d.features[0].mirrorN || [], m.normal));
+        if (!doc) {
+          doc = app.withPartDefaults(newPart(`${p.name} gespiegelt`));
+          doc.material = p.material;
+          doc.features = [{ id: uid("f"), type: "abgeleitet", name: "Abgeleitet 1", source: p.id, mirror: "frei", mirrorN: m.normal.map(String), scale: "1" }];
+          app.project.docs.push(doc);
+          made++;
+        }
+        const comp = { id: uid("c"), part: doc.id, name: `${doc.name}:${asm.components.filter((x) => x.part === doc.id).length + 1}`, pos: m.pos, rot: m.rot };
+        asm.components.push(comp); sel.push(comp.id);
+      }
+    });
+    if (sel.length) app.sel = { type: "component", id: sel[0] };
+    app.refreshSelectionHits(); app.tree.render(); app.props.render();
+    toast(`${chosen.length} Komponente(n) gespiegelt${made ? `, ${made} gespiegelte(s) Bauteil(e) neu` : ""}${reused ? `, ${reused} wiederverwendet` : ""}`, { kind: "ok" });
+  };
+  modal({
+    title: "Komponenten spiegeln", width: "560px",
+    body: h("div", {},
+      h("div", { class: "place-list" }, ...rows.map((r) => h("label", { class: "check", style: { display: "flex", gap: "6px", alignItems: "center" } }, r.box, h("span", { class: "grow" }, r.c.name), r.how))),
+      h("div", { class: "field wide" }, h("label", {}, "Spiegelebene"), plane),
+      h("div", { class: "field" }, h("label", {}, "Abstand vom Ursprung (mm)"), off),
+      h("p", { class: "hint" }, "Gespiegeltes Bauteil: abgeleitet, folgt Änderungen am Original. Wiederverwenden: dasselbe Bauteil an der Spiegelstelle – nur für Teile, die in sich symmetrisch sind (Rohre, Platten, Normteile)."), err),
+    buttons: [{ label: "Abbrechen" }, { label: "Spiegeln", primary: true, run: () => {
+      if (!rows.some((r) => r.box.checked)) { err.textContent = "Mindestens eine Komponente wählen"; return false; }
+      if (plane.value !== "flaeche") {
+        const c = Number(String(off.value).replace(",", "."));
+        if (!Number.isFinite(c)) { err.textContent = "Abstand als Zahl"; return false; }
+        run({ n: MIRROR_PLANES[plane.value], c });
+        return true;
+      }
+      app.pick = { kind: "custom", onPick: (hit) => {
+        if (hit?.kind !== "face" || hit.info?.type !== "PLANE") return toast("Bitte eine ebene Fläche wählen");
+        app.cancelPick();
+        run(planeFromFace(hit.point, hit.normal || hit.info.normal));
+      } };
+      app.setHint("Spiegelebene: ebene Fläche einer Komponente anklicken – Esc bricht ab");
+      return true;
+    } }],
+  });
+}
+
+// ---------- Fügepunkte (BG8) ----------
+/** Fügepunkte aus den Abhängigkeiten der Komponente in beide Bauteile übernehmen */
+export function learnFuegepunkte(app, compId) {
+  const asm = asmOf(app);
+  if (!asm) return;
+  const list = inferFuegepunkte(asm, compId, (id) => app.doc(id), () => uid("fp"));
+  if (!list.length) return toast("Die Komponente hat keine Abhängigkeit zu einem anderen Bauteil – erst fügen, dann merken");
+  let n = 0;
+  app.edit("Fügepunkte merken", () => {
+    for (const { partId, fp } of list) n += addFuegepunkte(app.doc(partId), [fp]);
+    // die vorhandenen Abhängigkeiten belegen ihre Fügepunkte
+    for (const k of asm.constraints || []) if ((k.a?.comp === compId || k.b?.comp === compId) && !k.fp) { const hit = list.find(({ fp }) => fp.type === k.type && JSON.stringify(fp.ref) === JSON.stringify((({ comp, ...r }) => r)(fp.side === "a" ? k.a : k.b))); if (hit) k.fp = hit.fp.name; }
+  });
+  app.props.render();
+  toast(n ? `${n} Fügepunkt(e) gemerkt – beim nächsten Platzieren fügen sich die Teile von selbst` : "Diese Fügepunkte gibt es schon", { kind: "ok", timeout: 6000 });
+}
+/** Abschnitt in den Komponenten-Eigenschaften: Fügepunkte des Bauteils */
+export function fuegepunkteSection(props, asm, c) {
+  const app = props.app, p = app.doc(c.part);
+  if (p?.kind !== "part") return null;
+  const fps = p.fuegepunkte || [];
+  return props.section("Fügepunkte",
+    fps.length ? h("ul", { class: "fp-list" }, ...fps.map((fp) => h("li", {}, h("span", { class: "grow" }, fp.name), h("span", { class: "hint" }, fp.side === "a" ? " (Ziel)" : " (bewegt)"),
+      h("button", { class: "icon-btn", title: "Fügepunkt löschen", onclick: () => app.edit("Fügepunkt löschen", () => { p.fuegepunkte = p.fuegepunkte.filter((x) => x.id !== fp.id); if (!p.fuegepunkte.length) delete p.fuegepunkte; }) }, "×"))))
+      : h("p", { class: "hint" }, "Fügepunkte merken, wie ein Teil sitzt (z. B. Schraube in Bohrung, Pfosten auf Fußplatte). Beim nächsten Platzieren fügt PBCAD es dann von selbst an das nächstliegende passende Gegenstück."),
+    h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => learnFuegepunkte(app, c.id) }, "Aus Abhängigkeiten merken")));
 }
