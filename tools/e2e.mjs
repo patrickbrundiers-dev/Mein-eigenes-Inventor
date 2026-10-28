@@ -2470,6 +2470,8 @@ try {
       while (a.busy) await new Promise((r) => setTimeout(r, 100));
       const r1 = a.results.get(d.id);
       const rolled = Object.values(r1.status).filter((s) => s.rolledBack).length;
+      d.features.forEach((f) => a.tree.expanded.add("kids:" + f.id)); // eingerückte Skizzen mitzählen
+      a.tree.render();
       const greyed = document.querySelectorAll("#browser .node.suppressed").length;
       const marker = !!document.querySelector("#browser .node.part-end.rolled");
       const sk = a.createSketch({ ref: "XY" });

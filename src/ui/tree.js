@@ -6,6 +6,7 @@ import { sketchRefs } from "../core/featurerefs.js";
 import { activeCount } from "../core/bauteilende.js";
 import { componentDof, dofLabel } from "../core/asmdof.js";
 import { formSubDialog, dissolveSubComp, moveCompIntoSub, learnFuegepunkte, componentsFromBodies } from "./baugruppe.js";
+import { treeEntries, endPosition, featureDetail } from "../core/baum.js";
 
 const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", blechkasten: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
 
@@ -14,12 +15,32 @@ export class Tree {
     this.app = app;
     this.el = document.getElementById("browser");
     this.collapsed = new Set();
+    this.expanded = new Set(); // aufgeklappte Features mit eingerückten Skizzen
+  }
+  /** Baum-Optionen aus den Einstellungen */
+  options() {
+    const p = this.app.prefs;
+    return { nest: p.get("baum.skizzenEinordnen") !== false, details: !!p.get("baum.erweiterteNamen") };
+  }
+  /** Auge für Skizzen und Arbeitselemente: genutzte Skizzen zeigen, freie Skizzen und Arbeitselemente aus-/einblenden */
+  featureEye(part, f, consumedBy) {
+    const app = this.app;
+    // Ausblenden wirkt sofort, auch wenn die Zeile gewählt ist (Gewähltes zeigt das 3D sonst immer)
+    const unselect = () => { if (app.sel?.type === "feature" && app.sel.id === f.id) app.sel = null; };
+    if (f.type === "sketch") {
+      if (consumedBy.length) {
+        const on = app.visibleSketches.has(f.id);
+        return { on, title: on ? "Skizze wieder ausblenden" : "Skizze im 3D zeigen", run: () => { if (on) { app.visibleSketches.delete(f.id); unselect(); } else app.visibleSketches.add(f.id); app.showSketches3D(); this.render(); app.props.render(); } };
+      }
+    } else if (!["arbeitsebene", "arbeitsachse", "arbeitspunkt", "skizze3d"].includes(f.type)) return null;
+    return { on: !f.hidden, run: () => { if (!f.hidden) unselect(); app.edit("Sichtbarkeit", () => { if (f.hidden) delete f.hidden; else f.hidden = true; }, { rebuild: false }); app.showSketches3D(); this.render(); app.props.render(); } };
   }
   render() {
     const app = this.app;
     const prj = app.project;
     const head = h("div", { class: "pane-head" }, h("span", { class: "grow", title: prj.name }, prj.name),
-      h("button", { class: "icon-btn", title: "Neues Bauteil", onclick: () => app.newPart() }, icon("plus")));
+      h("button", { class: "icon-btn", title: "Neues Bauteil", onclick: () => app.newPart() }, icon("plus")),
+      h("button", { class: "icon-btn", title: "Baum-Optionen", onclick: (e) => this.optionsMenu(e) }, icon("list")));
     head.addEventListener("dblclick", () => this.renameProject());
     const root = h("ul", { class: "tree" });
     const groups = [["part", "Bauteile", "part"], ["assembly", "Baugruppen", "assembly"], ["drawing", "Zeichnungen", "drawing"]];
@@ -38,7 +59,7 @@ export class Tree {
           const err = r && Object.values(r.status).some((s) => !s.ok);
           const dli = h("li");
           dli.append(this.node({
-            label: d.name + (d.link ? " ↗" : ""), ic, cls: (active ? "active-doc sel" : "") + (err ? " err" : ""), meta: d.number || "",
+            label: d.name + (d.link ? " ↗" : ""), ic, rid: d.id, badge: err ? "err" : null, cls: (active ? "active-doc sel" : "") + (err ? " err" : ""), meta: d.number || "",
             title: d.link ? `${d.name} – verknüpft mit ${d.link.path}` : undefined,
             onClick: () => app.openDoc(d.id),
             onDbl: () => this.rename(d),
@@ -64,12 +85,18 @@ export class Tree {
     if (!prj.docs.length) root.append(h("li", { class: "hint", style: { padding: "8px 12px" } }, "Noch keine Dokumente. Über »Datei« ein Bauteil anlegen."));
     this.el.replaceChildren(head, root);
   }
-  node({ label, ic, cls = "", twist = "", onTwist, onClick, onDbl, onMenu, meta, title }) {
+  node({ label, ic, cls = "", twist = "", onTwist, onClick, onDbl, onMenu, meta, title, rid, badge, eye, detail }) {
+    // Plakette am Symbol (Inventor/SolidWorks): Fehler, Warnung, unterbestimmte Skizze
+    const ico = ic ? h("span", { class: "ico-wrap" }, icon(ic, "ico"), badge ? h("span", { class: "badge " + badge }, badge === "err" ? "!" : badge === "warn" ? "!" : "") : null) : null;
     const n = h("div", { class: "node " + cls, title: title || label, tabindex: onClick ? 0 : undefined },
       h("span", { class: "twist", onclick: (e) => { e.stopPropagation(); onTwist && onTwist(); } }, twist),
-      ic ? icon(ic, "ico") : null,
-      h("span", { class: "label" }, label),
-      meta ? h("span", { class: "meta" }, meta) : null);
+      ico,
+      h("span", { class: "label" }, label, detail ? h("span", { class: "detail" }, " · " + detail) : null),
+      meta ? h("span", { class: "meta" }, meta) : null,
+      // Auge rechts (Fusion/Onshape): zeigt sich beim Überfahren, bleibt stehen, wenn ausgeblendet
+      eye ? h("button", { class: "eye-btn" + (eye.on ? "" : " off"), title: eye.title || (eye.on ? "Ausblenden" : "Einblenden"), tabindex: -1,
+        onclick: (e) => { e.stopPropagation(); eye.run(); }, ondblclick: (e) => e.stopPropagation() }, icon(eye.on ? "eye" : "eyeoff")) : null);
+    if (rid) n.dataset.rid = rid;
     if (onClick) n.addEventListener("click", onClick);
     if (onDbl) n.addEventListener("dblclick", (e) => { e.stopPropagation(); onDbl(); });
     if (onMenu) n.addEventListener("contextmenu", (e) => { e.preventDefault(); onMenu(e); });
@@ -116,8 +143,10 @@ export class Tree {
       li.addEventListener("drop", (e) => { li.classList.remove("drop"); if (e.dataTransfer.getData("text/x-pbcad-end")) { e.preventDefault(); app.setPartEnd(id); } });
       return li;
     };
-    if (endAt === 0 && part.features.length) ul.append(endNode());
-    for (const [i, f] of part.features.entries()) {
+    const opts = this.options();
+    const entries = treeEntries(part, { nest: opts.nest, endAt });
+    const endPos = endPosition(entries, endAt);
+    const featureNode = (f, i, extra = {}) => {
       const st = r?.status?.[f.id];
       const cls = [];
       if (app.sel?.type === "feature" && app.sel.id === f.id) cls.push("sel");
@@ -126,23 +155,41 @@ export class Tree {
       if (f.suppressed || i >= endAt || r?.ruleOff?.includes(f.id)) cls.push("suppressed");
       const consumedBy = part.features.filter((g) => sketchRefs(g).includes(f.id));
       const meta = f.type === "sketch" && st?.dof > 0 ? `${st.dof} FG` : "";
+      const badge = st && !st.ok ? "err" : st?.warning ? "warn" : f.type === "sketch" && st?.dof > 0 ? "dof" : null;
       const nd = this.node({
-        label: f.name || FEATURE_NAMES[f.type], ic: (f.type === "generator" && f.gen) || FICON[f.type], cls: cls.join(" "), meta,
-        title: i >= endAt ? "Hinter dem Bauteilende – wird nicht gerechnet" : st?.error ? "Fehler: " + st.error : st?.warning ? "Hinweis: " + st.warning : f.name,
+        label: f.name || FEATURE_NAMES[f.type], ic: (f.type === "generator" && f.gen) || FICON[f.type], cls: cls.join(" "), meta, badge, rid: f.id,
+        detail: opts.details ? featureDetail(f, part) : "",
+        title: i >= endAt ? "Hinter dem Bauteilende – wird nicht gerechnet" : st?.error ? "Fehler: " + st.error : st?.warning ? "Hinweis: " + st.warning : badge === "dof" ? `Skizze nicht voll bestimmt: ${st.dof} Freiheitsgrade` : f.name,
         onClick: () => app.selectFeature(f.id),
         onDbl: () => (f.type === "sketch" ? app.editSketch(f.id) : app.selectFeature(f.id)),
         onMenu: (e) => this.featureMenu(e, part, f, consumedBy),
+        eye: this.featureEye(part, f, consumedBy),
+        ...extra,
       });
       // Ziehen im Baum: Feature an eine andere Stelle (Bezüge werden geprüft)
       nd.draggable = true;
-      nd.dataset.fid = f.id;
       nd.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/x-pbcad-feature", f.id); e.dataTransfer.effectAllowed = "move"; });
       nd.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("text/x-pbcad-feature")) { e.preventDefault(); nd.classList.add("drop"); } });
       nd.addEventListener("dragleave", () => nd.classList.remove("drop"));
       nd.addEventListener("drop", (e) => { nd.classList.remove("drop"); const id = e.dataTransfer.getData("text/x-pbcad-feature"); if (!id) return; e.preventDefault(); e.stopPropagation(); if (id !== f.id) app.moveFeatureTo(id, part.features.findIndex((g) => g.id === f.id)); });
-      ul.append(dropTarget(h("li", {}, nd), f.id));
-      if (i === endAt - 1 && endAt > 0) ul.append(endNode());
-    }
+      return dropTarget(h("li", {}, nd), f.id);
+    };
+    entries.forEach((en, k) => {
+      if (k === endPos) ul.append(endNode());
+      if (!en.children.length) return ul.append(featureNode(en.f, en.i));
+      // genutzte Skizzen eingerückt unter dem Feature; aufgeklappt, wenn eine davon gewählt ist
+      const key = "kids:" + en.f.id;
+      const childSel = en.children.some((c) => app.sel?.type === "feature" && app.sel.id === c.f.id);
+      const open = this.expanded.has(key) || childSel;
+      const li = featureNode(en.f, en.i, { twist: open ? "▾" : "▸", onTwist: () => { if (open) { this.expanded.delete(key); if (childSel) app.selectFeature(en.f.id); } else this.expanded.add(key); this.render(); } });
+      if (open) {
+        const cu = h("ul", { class: "kids" });
+        for (const c of en.children) cu.append(featureNode(c.f, c.i));
+        li.append(cu);
+      }
+      ul.append(li);
+    });
+    if (endPos === entries.length && part.features.length) ul.append(endNode());
     if (!part.features.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Mit »Skizze erstellen« oder »Rohr / Profil« beginnen."));
     return ul;
   }
@@ -190,7 +237,10 @@ export class Tree {
       const li = h("li");
       ul.append(li);
       li.append(this.node({
-        label: c.name || p?.name || "?", ic: sub ? "assembly" : "part", cls: (sel ? "sel" : "") + (c.hidden ? " suppressed" : "") + (!p ? " err" : "") + (myCons.some((x) => app.asmErrors?.[x.id]) ? " err" : ""), meta: [sub ? "Unterbaugruppe" : "", c.skelett ? "Skelett" : "", c.skelett ? "" : dofLabel(componentDof(asm, c.id))].filter(Boolean).join(" · "),
+        label: c.name || p?.name || "?", ic: sub ? "assembly" : "part", rid: c.id, badge: !p || myCons.some((x) => app.asmErrors?.[x.id]) ? "err" : null,
+        cls: (sel ? "sel" : "") + (c.hidden ? " suppressed" : "") + (!p ? " err" : "") + (myCons.some((x) => app.asmErrors?.[x.id]) ? " err" : ""),
+        eye: { on: !c.hidden, run: () => app.edit("Sichtbarkeit", () => { c.hidden = !c.hidden; }) },
+        meta: [sub ? "Unterbaugruppe" : "", c.skelett ? "Skelett" : "", c.skelett ? "" : dofLabel(componentDof(asm, c.id))].filter(Boolean).join(" · "),
         twist: myCons.length ? (consOpen ? "▾" : "▸") : "", onTwist: () => this.toggle(consKey),
         onClick: () => { app.sel = { type: "component", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
         onDbl: () => p && app.openDoc(p.id),
@@ -198,6 +248,7 @@ export class Tree {
           { label: "Bauteil bearbeiten", icon: "edit", run: () => p && app.openDoc(p.id) },
           ...(p?.kind === "part" ? [{ label: "Im Kontext bearbeiten", icon: "edit", run: () => app.editInContext(asm.id, c.id) }] : []),
           { label: c.hidden ? "Einblenden" : "Ausblenden", icon: c.hidden ? "eye" : "eyeoff", run: () => app.edit("Sichtbarkeit", () => { c.hidden = !c.hidden; }) },
+          { label: "Umbenennen", icon: "edit", kbd: "F2", run: () => this.rename(c, true) },
           { label: c.fixed ? "Fixierung lösen" : "Fixieren", icon: "fix", run: () => app.edit("Fixieren", () => { c.fixed = !c.fixed; }) },
           { label: "Duplizieren", icon: "copy", run: () => app.props.duplicateComponent(c.id) },
           { label: "Ersetzen…", icon: "update", run: () => app.props.replaceComponentDialog(c.id) },
@@ -344,7 +395,7 @@ export class Tree {
       }
     }
     items.push("-",
-      { label: "Umbenennen", icon: "edit", run: () => this.rename(f, true) },
+      { label: "Umbenennen", icon: "edit", kbd: "F2", run: () => this.rename(f, true) },
       { label: f.suppressed ? "Unterdrückung aufheben" : "Unterdrücken", icon: f.suppressed ? "eye" : "eyeoff", run: () => app.edit("Unterdrücken", () => { f.suppressed = !f.suppressed; }) },
       { label: "Nach oben", icon: "up", run: () => app.moveFeature(f.id, -1) },
       { label: "Nach unten", icon: "down", run: () => app.moveFeature(f.id, 1) },
@@ -361,7 +412,7 @@ export class Tree {
     const app = this.app;
     contextMenu(e.clientX, e.clientY, [
       { label: "Öffnen", icon: "open", run: () => app.openDoc(d.id) },
-      { label: "Umbenennen", icon: "edit", run: () => this.rename(d) },
+      { label: "Umbenennen", icon: "edit", kbd: "F2", run: () => this.rename(d) },
       { label: "Duplizieren", icon: "copy", run: () => app.duplicateDoc(d.id) },
       d.kind !== "drawing" ? { label: "Zeichnung ableiten", icon: "drawing", run: () => app.newDrawing({ kind: d.kind, id: d.id }) } : null,
       d.kind === "assembly" ? { label: "Einzelteilzeichnungen", icon: "drawing", run: () => app.partDrawings(d.id) } : null,
@@ -376,10 +427,45 @@ export class Tree {
       { label: "Löschen", icon: "trash", run: () => app.deleteDoc(d.id) },
     ]);
   }
-  async rename(obj, isFeature = false) {
+  /** Umbenennen direkt in der Zeile (F2, Kontextmenü, Doppelklick auf Dokumente); ohne sichtbare Zeile per Dialog */
+  rename(obj, isFeature = false) {
+    const lbl = obj.id && this.el.querySelector(`.node[data-rid="${CSS.escape(obj.id)}"] > .label`);
+    const commit = (name) => {
+      if (!name || name === obj.name) return this.render();
+      this.app.edit("Umbenennen", () => { obj.name = name; if (!isFeature && obj.kind === "drawing" && obj.title && !obj.title.benennung) obj.title.benennung = name; }, { rebuild: false });
+    };
+    if (!lbl) return this.renameDialog(obj, commit);
+    lbl.closest(".node").scrollIntoView({ block: "nearest" });
+    const inp = h("input", { class: "rename", value: obj.name || lbl.textContent, "aria-label": "Neuer Name" });
+    let done = false;
+    const finish = (ok) => { if (done) return; done = true; if (ok) commit(inp.value.trim()); else this.render(); };
+    inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") finish(true); else if (e.key === "Escape") finish(false); });
+    inp.addEventListener("blur", () => finish(true));
+    for (const ev of ["click", "dblclick", "mousedown"]) inp.addEventListener(ev, (e) => e.stopPropagation());
+    lbl.replaceChildren(inp);
+    inp.focus();
+    inp.select();
+  }
+  async renameDialog(obj, commit) {
     const name = await promptDialog("Umbenennen", "Neuer Name", obj.name || "", { validate: (v) => (v ? null : "Name darf nicht leer sein") });
-    if (!name) return;
-    this.app.edit("Umbenennen", () => { obj.name = name; if (!isFeature && obj.kind === "drawing" && obj.title && !obj.title.benennung) obj.title.benennung = name; }, { rebuild: false });
+    if (name) commit(name);
+  }
+  /** F2: gewähltes Feature bzw. gewählte Komponente umbenennen */
+  renameSelection() {
+    const app = this.app, sel = app.sel, d = app.activeDoc();
+    if (!sel || !d) return false;
+    const obj = sel.type === "feature" ? d.features?.find((f) => f.id === sel.id) : sel.type === "component" ? d.components?.find((c) => c.id === sel.id) : null;
+    if (!obj) return false;
+    this.rename(obj, true);
+    return true;
+  }
+  optionsMenu(e) {
+    const app = this.app, o = this.options();
+    const r = e.currentTarget.getBoundingClientRect();
+    contextMenu(r.left, r.bottom + 2, [
+      { label: "Genutzte Skizzen unter dem Feature", icon: o.nest ? "finish" : null, run: () => app.prefs.set("baum.skizzenEinordnen", !o.nest) },
+      { label: "Erweiterte Namen (Maße)", icon: o.details ? "finish" : null, run: () => app.prefs.set("baum.erweiterteNamen", !o.details) },
+    ]);
   }
   async renameProject() {
     const name = await promptDialog("Projekt umbenennen", "Projektname", this.app.project.name);
