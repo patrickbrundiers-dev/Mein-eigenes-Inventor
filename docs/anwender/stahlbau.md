@@ -37,3 +37,12 @@ zusammen. Die Nummern werden im Dokument gespeichert: ändert sich das Modell, b
 bekommen die nächste freie, und Nummern weggefallener Stücke werden nicht wieder vergeben. Dieselben Nummern stehen im
 DSTV-NC (Kopf und Signatur), in der Fertigungsmappe und im IFC als Kennzeichen (Tag). »Neu nummerieren« vergibt alle Nummern
 neu; »Als CSV speichern« schreibt die Einzelteilliste für Excel.
+
+## Eigene Teilebibliothek
+
+Eigene Standardteile (Knotenbleche, Stirnplatten, Halter, Beschläge …) legst du einmal ab und holst sie in jedem Projekt
+wieder: **Verwalten → In Bibliothek ablegen** (im Bauteil) bzw. **Zusammenfügen → Bibliothek → In Bibliothek ablegen**
+(gewählte Komponente der Baugruppe). Name, Kategorie und Beschreibung sind frei; Werkstoff und ein Vorschaubild werden
+mitgespeichert. **Aus Bibliothek** zeigt alle Einträge mit Suche und Kategorie; »Einfügen« holt das Bauteil als Kopie
+ins Projekt und setzt es in die Baugruppe. Die Einträge liegen als Dateien im Benutzerordner
+(`%APPDATA%\WerkCAD\teilebibliothek`, »Ordner öffnen« im Dialog) und lassen sich so sichern oder an Kollegen weitergeben.

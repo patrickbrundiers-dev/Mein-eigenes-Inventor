@@ -6,6 +6,7 @@ import { defaultStecksystem } from "../core/stecksystem.js";
 import { h, icon, toast, closeMenu, contextMenu } from "./dom.js";
 import { problemsDialog } from "./pruefung.js";
 import { newGrid } from "./achsraster.js";
+import { saveToLibrary, libraryDialog } from "./teilebibliothek.js";
 import { catalogToDims } from "../core/sections.js";
 import { defaultKnickrahmen } from "../core/knickrahmen.js";
 import { defaultProfilzug } from "../core/profilzug.js";
@@ -380,6 +381,7 @@ export class Ribbon {
         ] },
         { id: "verwalten", label: "Verwalten", groups: [
           { label: "Parameter", buttons: [B("params", "Parameter", "params"), B("variants", "Variantentabelle", "table")] },
+          { label: "Bibliothek", buttons: [B("libSave", "In Bibliothek ablegen", "save", { run: () => saveToLibrary(app) }), B("libBrowse", "Teilebibliothek", "open", { run: () => libraryDialog(app) })] },
           { label: "Einfügen", buttons: [B("importStep", "STEP einfügen", "import"), B("abgeleitet", "Abgeleitetes Bauteil", "derive")] },
           { label: "Automatisierung", buttons: [B("rules", "Regeln", "rules"), B("macros", "Makros", "macro")] },
           { label: "iFeature", buttons: [B("ifeatExtract", "iFeature erstellen", "ifeature"), B("ifeatInsert", "iFeature einfügen", "ifeature")] },
@@ -438,6 +440,7 @@ export class Ribbon {
           { label: "Position", small: true, buttons: [B("cmove", "Verschieben", "move", { run: () => app.props.moveComponentDialog("move") }), B("crotate", "Drehen", "rotate", { run: () => app.props.moveComponentDialog("rotate") }), B("ccopy", "Kopieren", "copy", { run: () => app.props.copySelectedComponent() })] },
           { label: "Beziehungen", big: 2, buttons: [B("constraint", "Abhängigkeit", "align", { on: app.pick?.kind === "align" && !!app.align?.type }), B("joint", "Drehgelenk", "hinge", { run: () => app.props.jointDialog() }), B("align", "Fläche an Fläche", "align", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "align", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" }), B("alignInsert", "Einfügen", "insert", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "einfuegen" }), B("alignAngle", "Winkel", "angle", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "winkel" }), B("alignTangent", "Tangential", "tangent", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "tangential" }), B("jointCyl", "Zylindergelenk", "hinge", { iconOnly: true, run: () => app.props.jointDialog(null, "zylinder") })] },
           { label: "Verwalten", big: 1, buttons: [B("bom", "Stückliste", "bom"), B("weldment", "Schweißbaugruppe", "weldasm", { run: () => app.props.makeWeldment() }), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() }), B("asmParams", "Parameter", "params", { run: () => app.props.paramsDialog() }), B("showComps", "Alle einblenden", "eye", { disabled: !asm?.components?.some((c) => c.hidden), run: () => app.props.showAllComponents() })] },
+          { label: "Bibliothek", small: true, buttons: [B("libInsert", "Aus Bibliothek", "open", { run: () => libraryDialog(app) }), B("libSaveAsm", "In Bibliothek ablegen", "save", { run: () => saveToLibrary(app) })] },
           { label: "Bewegung", small: true, buttons: [B("animate", "Bewegen", "motion", { run: () => app.props.animateJoints() }), B("explode", "Explosion", "explode", { on: app.viewer.explode > 0 || !!app.explodeSteps, run: () => app.props.explodeDialog() }), B("positions", "Positionen", "save", { run: () => app.commands.exec("asm.positionSave") }), B("contactSolver", "Kontaktlöser", "contact", { on: !!app.activeDoc()?.contactSolver, run: () => app.props.toggleContactSolver() }), B("contactSet", "Kontaktsatz", "contact", { run: () => app.props.toggleContactSet() }), B("motionVideo", "Video", "video", { run: () => app.props.recordMotion() })] },
           { label: "Zeichnung", small: true, buttons: [B("newDrawing", "Zeichnung ableiten", "drawing"), B("partDrawings", "Einzelteilzeichnungen", "drawing", { run: () => app.partDrawings(app.activeId) })] },
         ] },

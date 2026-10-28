@@ -95,6 +95,8 @@ export const COMMANDS = [
   { id: "file.angebot", label: "Angebotsblatt (PDF)", group: "Export", scope: "3d", keywords: "angebot kunde preis pdf bild" },
   { id: "file.ifc", label: "IFC exportieren (BIM, Stahlbau)", group: "Export", scope: "3d", keywords: "ifc bim ifc4 export stahlbau planer architekt tekla revit" },
   { id: "file.einzelteile", label: "Einzelteile mit Positionsnummern (Stäbe und Platten, Gleichteile)", group: "Export", scope: "3d", keywords: "einzelteile positionsnummer pos gleichteile positionierung stückliste stahlbau einzelteilliste" },
+  { id: "lib.save", label: "In Teilebibliothek ablegen (projektübergreifend)", group: "Verwalten", scope: "3d", keywords: "bibliothek teilebibliothek ablegen speichern standardteil favorit vorlage content center" },
+  { id: "lib.browse", label: "Teilebibliothek: eigene Standardteile suchen und einfügen", group: "Verwalten", scope: "3d", keywords: "bibliothek teilebibliothek einfügen standardteil favorit content center katalog" },
   { id: "file.dstv", label: "DSTV-NC für Säge-, Bohr- und Brennanlagen (Stahlbau)", group: "Export", scope: "3d", keywords: "dstv nc nc1 stahlbau säge bohranlage brennschneiden cnc bohrung träger platte" },
   { id: "file.mappe", label: "Fertigungsmappe (PDF + Dateien als ZIP)", group: "Export", scope: "3d", keywords: "werkstatt mappe pdf zip zeichnungen laser paket" },
   { id: "part.naht", label: "Schweißnaht", group: "3D-Modell", scope: "part", keywords: "schweissen kehlnaht v-naht hv-naht iso 2553 a-maß nahtliste" },
