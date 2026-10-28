@@ -8,6 +8,7 @@ const log = require("./log.cjs");
 const { rotateBackups, backupCount } = require("./backups.cjs");
 const recent = require("./recent.cjs");
 const versionen = require("./versionen.cjs");
+const teilebibliothek = require("./teilebibliothek.cjs");
 
 // Benutzerdaten bleiben nach der Umbenennung WerkCAD → PBCAD im bisherigen Ordner %APPDATA%\WerkCAD
 // (Einstellungen, Token, automatische Sicherung, Fehlerprotokoll). Muss vor allem anderen gesetzt werden.
@@ -194,6 +195,12 @@ ipcMain.handle("recent:remove", (_e, p) => {
   return true;
 });
 ipcMain.handle("recent:reveal", (_e, p) => { if (inRecent(p)) shell.showItemInFolder(p); return inRecent(p); });
+// Eigene Teilebibliothek: Einträge als JSON im Benutzerordner
+const libraryDir = () => path.join(app.getPath("userData"), "teilebibliothek");
+ipcMain.handle("library:list", () => { try { return teilebibliothek.list(libraryDir()); } catch (e) { log.write("warn", "bibliothek", e.message); return []; } });
+ipcMain.handle("library:write", (_e, entry) => teilebibliothek.write(libraryDir(), entry));
+ipcMain.handle("library:delete", (_e, id) => teilebibliothek.remove(libraryDir(), id));
+ipcMain.handle("library:openFolder", () => { fs.mkdirSync(libraryDir(), { recursive: true }); return shell.openPath(libraryDir()); });
 ipcMain.handle("preview:write", (_e, { path: p, url } = {}) => {
   try { return recent.writePreview(previewDir(), p, url); } catch (e) { log.write("warn", "vorschau", e.message); return false; }
 });

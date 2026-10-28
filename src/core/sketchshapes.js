@@ -65,6 +65,42 @@ export function buildPolygon(sk, c, v, n, { uid, usePoint, construction = false 
 }
 
 /**
+ * Mittelpunkt eines Bogens, der in S mit der Richtung t (Einheitsvektor) anfängt und durch E geht (Inventor »Tangentialer Bogen«).
+ * → { c, r, ccw } oder null, wenn E auf der Tangente liegt (kein Bogen möglich).
+ */
+export function tangentArcCenter(S, t, E) {
+  const n = { x: -t.y, y: t.x }; // linke Normale
+  const dx = E.x - S.x, dy = E.y - S.y, dn = dx * n.x + dy * n.y;
+  if (Math.abs(dn) < 1e-9 * Math.max(1, Math.hypot(dx, dy))) return null;
+  const k = (dx * dx + dy * dy) / (2 * dn);
+  return { c: { x: S.x + n.x * k, y: S.y + n.y * k }, r: Math.abs(k), ccw: k > 0 };
+}
+
+/**
+ * Tangentialer Bogen am Ende pointId der Linie lineId bis zum Fangpunkt end. Der Bogen beginnt im gemeinsamen Punkt und
+ * ist dort über »tangentAt« an die Linie gebunden. Bogen laufen gegen den Uhrzeigersinn von p1 nach p2.
+ */
+export function buildTangentArc(sk, pointId, lineId, end, { uid, usePoint, construction = false }) {
+  const P = new Map(sk.points.map((p) => [p.id, p]));
+  const line = sk.entities.find((e) => e.id === lineId && e.type === "line");
+  if (!line || (line.p1 !== pointId && line.p2 !== pointId)) throw new Error("Tangentialer Bogen: am Ende einer Linie anfangen");
+  const S = P.get(pointId), F = P.get(line.p1 === pointId ? line.p2 : line.p1);
+  const L = Math.hypot(S.x - F.x, S.y - F.y);
+  if (!(L > 1e-9)) throw new Error("Linie hat keine Länge");
+  const g = tangentArcCenter(S, { x: (S.x - F.x) / L, y: (S.y - F.y) / L }, end);
+  if (!g || g.r < 1e-6) throw new Error("Endpunkt liegt auf der Verlängerung der Linie – kein Bogen möglich");
+  const cons = [];
+  const eid = usePoint(sk, end, cons);
+  const cid = uid("p");
+  sk.points.push({ id: cid, x: g.c.x, y: g.c.y });
+  const id = uid("b");
+  sk.entities.push({ id, type: "arc", c: cid, p1: g.ccw ? pointId : eid, p2: g.ccw ? eid : pointId, construction });
+  cons.push({ id: uid("k"), type: "tangentAt", e1: id, e2: lineId, p: pointId });
+  sk.constraints.push(...cons);
+  return { arc: id, center: cid, end: eid };
+}
+
+/**
  * Elemente an einer Linie spiegeln. Kopien sind über »symmetrisch« (Punkte) und »gleich« (Kreisradius)
  * an die Originale gebunden, folgen also deren Änderungen. Punkte auf der Spiegellinie werden mitbenutzt.
  */
@@ -400,12 +436,12 @@ function segSeg(a, b, c, d) {
 const NAMES = {
   horizontal: "Horizontal", vertical: "Vertikal", coincident: "Koinzident", fix: "Fixiert", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis",
   midpoint: "Mittelpunkt", parallel: "Parallel", perpendicular: "Senkrecht", collinear: "Kollinear", equal: "Gleich", concentric: "Konzentrisch",
-  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", offset: "Versatz", pattern: "Muster", semiAxis: "Halbachse", axisAngle: "Achswinkel", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
+  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", offset: "Versatz", pattern: "Muster", semiAxis: "Halbachse", axisAngle: "Achswinkel", lineAngle: "Winkel zur x-Achse", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
 };
 /** Klartext einer Bedingung, z. B. »Abstand 120« oder »Parallel« */
 export function constraintLabel(c) {
   const n = NAMES[c.type] || c.type;
-  if (c.value !== undefined && c.value !== null && c.value !== "") return `${n} ${c.value}${c.type === "angle" ? "°" : ""}`;
+  if (c.value !== undefined && c.value !== null && c.value !== "") return `${n} ${c.value}${["angle", "axisAngle", "lineAngle"].includes(c.type) ? "°" : ""}`;
   return n;
 }
 
@@ -473,7 +509,7 @@ export function transformEntities(sk, entityIds, op, { uid }) {
   const inSel = (c) => [c.p, c.q].filter(Boolean).every((x) => moved.has(x)) && [c.e, c.e1, c.e2].filter(Boolean).every((x) => ids.has(x));
   sk.constraints = sk.constraints.filter((c) => {
     if (c.type === "fix" && moved.has(c.p)) { const p = P.get(c.p); c.x = p.x; c.y = p.y; }
-    if (op.kind === "rotate" && (c.type === "horizontal" || c.type === "vertical" || c.type === "axisAngle") && inSel(c)) return false;
+    if (op.kind === "rotate" && (c.type === "horizontal" || c.type === "vertical" || c.type === "axisAngle" || c.type === "lineAngle") && inSel(c)) return false;
     if (op.kind === "rotate" && c.type === "distance" && c.dir && inSel(c)) delete c.dir;
     if (k !== 1 && ["distance", "length", "diameter", "radius", "semiAxis", "offset"].includes(c.type) && inSel(c) && /^\s*\d+([.,]\d+)?\s*$/.test(String(c.value))) {
       c.value = String(Math.round(Number(String(c.value).replace(",", ".")) * k * 1e6) / 1e6);

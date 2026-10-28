@@ -15,6 +15,7 @@ import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
 import { h, toast, confirmDialog, promptDialog, contextMenu, fmtNum } from "./dom.js";
+import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { moveProblem, copyFeatures } from "../core/ableiten.js";
 import { syncVariants } from "../core/varianten.js";
@@ -577,7 +578,8 @@ export class App {
   }
   showSketches3D() {
     const part = this.activeDoc();
-    if (!part || part.kind !== "part") { this.viewer.showDatums([]); return this.viewer.showSketches(part?.gestell ? this.skeletonSketches(part) : []); }
+    if (!part || part.kind !== "part") { this.viewer.showDatums([]); this.viewer.showGrids(part?.kind === "assembly" ? gridDisplay(this, part) : []); return this.viewer.showSketches(part?.gestell ? this.skeletonSketches(part) : []); }
+    this.viewer.showGrids([]);
     const res = this.results.get(part.id);
     const scope = resolveParams(part.params).values;
     const list = [];

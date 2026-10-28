@@ -783,6 +783,30 @@ export class Viewer {
     this.render();
   }
 
+  /** Achsraster der Baugruppe: Achslinien strichpunktiert, Achskreise mit Beschriftung (feste Bildschirmgröße) an den Enden */
+  showGrids(list) {
+    if (!this.gridGroup) { this.gridGroup = new THREE.Group(); this.scene.add(this.gridGroup); }
+    this.gridGroup.traverse((o) => o.material?.map?.dispose?.());
+    disposeTree(this.gridGroup);
+    this.gridGroup.clear();
+    for (const g of list) {
+      const color = g.active ? 0xef7d1a : 0x5a6b7d;
+      for (const ax of g.axes) {
+        const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...ax.a), new THREE.Vector3(...ax.b)]), new THREE.LineDashedMaterial({ color, dashSize: 60, gapSize: 15 }));
+        l.computeLineDistances();
+        this.gridGroup.add(l);
+        for (const p of [ax.a, ax.b]) {
+          const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: bubbleTexture(ax.label, g.active), sizeAttenuation: false, depthTest: false, transparent: true }));
+          sp.position.set(...p);
+          sp.scale.set(0.045, 0.045, 1);
+          sp.renderOrder = 6;
+          this.gridGroup.add(sp);
+        }
+      }
+    }
+    this.render();
+  }
+
   /** Ebene als halbtransparentes Rechteck anzeigen (Hilfe bei Ebenenwahl) */
   showPlanes(list) {
     if (this.planeGroup) { disposeTree(this.planeGroup); this.scene.remove(this.planeGroup); }
@@ -1523,6 +1547,24 @@ function disposeTree(obj) {
     if (o.geometry && !o.userData?.sharedGeo) o.geometry.dispose?.();
     if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose?.());
   });
+}
+/** Achskreis mit Beschriftung als Textur */
+function bubbleTexture(text, active) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d");
+  g.fillStyle = "#ffffff";
+  g.strokeStyle = active ? "#ef7d1a" : "#5a6b7d";
+  g.lineWidth = 8;
+  g.beginPath(); g.arc(64, 64, 58, 0, Math.PI * 2); g.fill(); g.stroke();
+  g.fillStyle = "#1c2733";
+  g.font = `600 ${text.length > 2 ? 44 : 60}px Bahnschrift, 'Segoe UI', Arial, sans-serif`;
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(text, 64, 68);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 function labelTexture(text) {
   const c = document.createElement("canvas");
