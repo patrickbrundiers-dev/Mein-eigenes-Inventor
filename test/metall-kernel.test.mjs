@@ -24,6 +24,9 @@ function part(features, params = []) {
   return { id: "p" + Math.random(), kind: "part", name: "Test", params, features };
 }
 
+// Befestigungsblech wie vor der Ausrichtung an den Stufen (160 × 160, 4 Bohrungen, Pfosten gleichmäßig verteilt)
+const KLASSISCH = { gelSW: "160", gelSH: "160", gelSHoles: "4", gelSDown: "0", gelRhythm: false };
+
 test("Regelkörper: Volumen aller Arten gegen die Formel, Lage und Achse (MegaCAD-Abgleich M5)", async () => {
   const { REGEL_KINDS, REGEL_DEFAULTS, regelVolume } = await import("../src/core/regelkoerper.js");
   for (const kind of Object.keys(REGEL_KINDS)) {
@@ -152,7 +155,9 @@ test("Geländer Stufe 2: Kreuz mit Ring und Rahmen mit Staketen bauen (MegaCAD-A
   assert.equal(diag.length, 4, "4 Stücke von den Pfosten bis an den Ring");
   for (const d of diag) assert.ok(Math.abs(bb(d)[0][0] - 21.2) < 0.01 || Math.abs(bb(d)[1][0] - 1178.8) < 0.01, "Diagonale an Pfostenfläche");
   const ring = rk.bodies.filter((b) => /^Ring 1/.test(b.name));
-  assert.equal(ring.length, 24, "Ring aus 24 gegehrten Stücken");
+  assert.equal(ring.length, 1, "Ring als ein gewalztes Teil");
+  assert.equal(ring[0].meta.rolled.angle, 360);
+  near(ring[0].meta.rolled.radius, 150, 0.01, "Walzradius = Ringradius");
   const k2 = { id: "r", ...defaultGenerator("gelaender") };
   Object.assign(k2.params, { runs: "1200", fill: "rahmen" });
   const rr = await K.buildPart(part([k2]));
@@ -168,9 +173,10 @@ test("Tor-Generator: Doppeltor mit Stichbogen, Rahmen gegehrt, Stäbe bis unter 
   const res = await K.buildPart(part([f]));
   okAll(res);
   const by = (re) => res.bodies.filter((b) => re.test(b.name));
-  const frameL = by(/^Flügel links Rahmen/);
-  assert.equal(frameL.length, 3 + 4, "unten, rechts, 4 Bogenstücke, links");
-  assert.ok(frameL.every((b) => Math.abs(b.meta.miterStart) > 0 && Math.abs(b.meta.miterEnd) > 0), "alle Ecken gegehrt");
+  const frameL = by(/^Flügel links (Unterriegel|Senkrechte|Bogen)/);
+  assert.equal(frameL.length, 4, "Unterriegel, zwei Senkrechte, ein gewalzter Bogen");
+  assert.ok(frameL.filter((b) => !/Bogen/.test(b.name)).every((b) => Math.abs(b.meta.miterStart) > 0), "Ecken unten gegehrt");
+  assert.ok(by(/^Flügel links Bogen$/)[0].meta.rolled.radius > 1000, "Bogen gewalzt");
   assert.equal(by(/^Torpfosten/).length, 2);
   const bb = (b) => b.shape.boundingBox.bounds;
   // Scheitel in der Mitte = 50 + 1200 + 250 (Spalt in der Mitte → knapp darunter)
@@ -296,7 +302,8 @@ test("Spindeltreppe: Stufen als Ringausschnitt, Träger, Geländer, Prüfung Dur
   const bb = (b) => b.shape.boundingBox.bounds;
   // 2800 / 190 → 15 Steigungen à 186,7; 14 Stufen, 14 Träger, 4 Stäbe je Stufe, Handlauf
   assert.equal(by(/^Stufe \d+$/).length, 14); assert.equal(by(/^Stufenträger/).length, 14); assert.equal(by(/^Geländerstab [\d.]+$/).length, 14 * 4, "4 Stäbe je Stufe: lichter Abstand ≤ 120 mm (Geländernorm Wohngebäude)");
-  assert.ok(by(/^Handlauf/).length >= 13);
+  const hl = by(/^Handlauf/);
+  assert.ok(hl.length >= 1 && hl.length <= 2 && hl.every((b) => b.meta.rolled?.rise > 0), "Handlauf als gebogene Wendel, Stoß nur über 6000 mm");
   const sp = by(/^Spindel/)[0];
   near(bb(sp)[1][2], 2800 + 900, 0.01, "Spindel bis Handlaufhöhe über der Decke");
   const s1 = by(/^Stufe 1$/)[0];
@@ -574,7 +581,7 @@ test("Pfostenbefestigung oben: Fußplatte auf der U200-Wange, Gegenbohrungen im 
 test("Pfostenbefestigung seitlich: Befestigungsblech an der Flachstahl-Wange, Gegenbohrungen, Pfosten liegt am Blech an", async () => {
   const { defaultGenerator } = await import("../src/core/generator.js");
   const t = { id: "t", ...defaultGenerator("treppe") };
-  Object.assign(t.params, { gel: "rechts", gelFill: "keine" });
+  Object.assign(t.params, { gel: "rechts", gelFill: "keine", ...KLASSISCH });
   const res = await K.buildPart(part([t]));
   okAll(res);
   const blech = res.bodies.filter((b) => / Befestigungsblech$/.test(b.name));
@@ -591,7 +598,7 @@ test("Pfostenbefestigung seitlich: Befestigungsblech an der Flachstahl-Wange, Ge
 test("Pfostenbefestigung mit Abstandsausgleich: Flacheisen mit Stecknasen bündig im Blech, Schlitz im Pfosten, keine Durchdringung", async () => {
   const { defaultGenerator } = await import("../src/core/generator.js");
   const t = { id: "t", ...defaultGenerator("treppe") };
-  Object.assign(t.params, { gel: "rechts", gelFill: "keine", gelMSpacer: true, gelMGap: "60" });
+  Object.assign(t.params, { gel: "rechts", gelFill: "keine", gelMSpacer: true, gelMGap: "60", ...KLASSISCH });
   const res = await K.buildPart(part([t]));
   okAll(res);
   const get = (n) => res.bodies.find((b) => b.name === `Geländer rechts Pfosten 2${n}`);
@@ -619,7 +626,7 @@ test("Pfostenbefestigung Balkon oben und L-Podestecke: Gegenbohrungen in Belag u
   near(R.measureVolume(post.shape.clone().intersect(fp.shape.clone())), 0, 1, "Pfosten steht auf der Fußplatte");
   // L-Treppe: Eckpfosten am Podest mit verlängertem Blech und Futterblech, keine Durchdringung mit dem Rahmen
   const t = { id: "t", ...defaultGenerator("treppe") };
-  Object.assign(t.params, { form: "L", gel: "rechts", gelFill: "keine" });
+  Object.assign(t.params, { form: "L", gel: "rechts", gelFill: "keine", ...KLASSISCH });
   const rt = await K.buildPart(part([t]));
   okAll(rt);
   const get = (n) => rt.bodies.find((x) => x.name === `Geländer rechts Pfosten 4${n}`);

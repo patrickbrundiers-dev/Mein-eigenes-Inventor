@@ -9,6 +9,7 @@
 //      Stift + Bohrung (handlaufhalter.js); mit through gehen Knieleisten bzw. Untergurt durch die Pfosten (Durchbruch
 //      mit Aufmaß allow), die Staketen (Profil stab) durch Bohrungen in der oberen Wand des Untergurts; Stück bis beltMax, Stoß im Pfosten.
 //      keys: Feldschlüssel für Fehlermeldungen { bar, belt, stab, beltMax }.
+//      stations(seg { A, L, d, slope }): Zwischenstellen der Pfosten entlang des Abschnitts (ohne die Enden) oder null.
 //      mount({ name, top, base (Punkt der Lauflinie), along }): Pfostenbefestigung (pfostenbefestigung.js) – liefert Pfostenfuß a, Schnitt, Platte,
 //      Bohrungen, Meldungen; ohne mount steht der Pfosten wie bisher postDown unter der Lauflinie.
 
@@ -39,13 +40,15 @@ export function railAlong(path, o, label) {
   const posts = [];
   for (const [i, sg] of segs.entries()) {
     const n = Math.max(1, Math.ceil((sg.L * Math.hypot(1, sg.slope)) / o.postMax - 1e-9));
+    // o.stations: feste Zwischenstellen (z. B. im Stufenrhythmus), sonst gleichmäßig geteilt
+    const st = o.stations?.(sg), tk = st ? [0, ...st, sg.L] : Array.from({ length: n + 1 }, (_, k) => (sg.L * k) / n), last = tk.length - 1;
     sg.ts = []; sg.ps = []; // Stelle entlang des Abschnitts und Index des Pfostens dort
-    for (let k = 0; k <= n; k++) {
-      const t = (sg.L * k) / n;
+    for (let k = 0; k <= last; k++) {
+      const t = tk[k];
       const q = [sg.A[0] + sg.d[0] * t, sg.A[1] + sg.d[1] * t, sg.A[2] + sg.slope * t];
       const prev = posts[posts.length - 1];
       if (k === 0 && i > 0) { sg.ts.push(t); sg.ps.push(posts.length - 1); continue; } // Knick: Pfosten steht schon (Ende des vorigen Abschnitts)
-      if (prev && Math.hypot(q[0] - prev.q[0], q[1] - prev.q[1]) < postW + 1) { if (k === n) prev.q = q; continue; }
+      if (prev && Math.hypot(q[0] - prev.q[0], q[1] - prev.q[1]) < postW + 1) { if (k === last) prev.q = q; continue; }
       posts.push({ q, d: sg.d, slope: sg.slope });
       sg.ts.push(t); sg.ps.push(posts.length - 1);
     }
@@ -65,7 +68,7 @@ export function railAlong(path, o, label) {
       if (!mid && (!own || (where.length < 2 && i !== 0 && i !== posts.length - 1))) return;
       if (where.some(({ sg }) => Math.abs(sg.d[0] * p.d[0] + sg.d[1] * p.d[1]) < 0.999)) return; // Ecke: bleibt stehen
       const top = [p.q[0], p.q[1], p.q[2] + o.H - railH - drop];
-      const dt = o.mountFit({ name: `${label} Pfosten ${i + 1}`, top, base: p.q, along: [p.d[0], p.d[1], 0] });
+      const dt = o.mountFit({ name: `${label} Pfosten ${i + 1}`, top, base: p.q, along: [p.d[0], p.d[1], 0], inward: mid ? 0 : own.k === 0 ? 1 : -1, slope: p.slope });
       if (!dt) return;
       if (mid) {
         if (!(Math.abs(dt) < Math.min(mid.sg.ts[mid.k] - mid.sg.ts[mid.k - 1], mid.sg.ts[mid.k + 1] - mid.sg.ts[mid.k]) / 3)) return;
@@ -210,7 +213,9 @@ function through(segs, o, label, { top, half, railAxis, postName }) {
             const foot = at(sb, h - reach), cutFoot = sg.slope ? { cuts: { start: [{ p: foot, n: nUp.map((x) => -x) }], end: [] } } : {};
             const low = sg.slope ? at(sb, h - reach - (stab.geom.height / 2) * Math.abs(sg.slope) - 1) : foot;
             members.push({ section: stab, a: low, b: at(sb, railAxis), name: `${label} Stab ${fno}.${q + 1}`, up: [sg.d[0], sg.d[1], 0], ...cutFoot,
-              copes: [copeAt(o.rail, at(sb, railAxis), dir)] });
+              copes: [copeAt(o.rail, at(sb, railAxis), dir),
+                // nah am Knick: auch das anschließende Handlaufstück (gegehrt) aussparen
+                ...(next && sg.L - sb < 100 ? [copeAt(o.rail, at(sg.L, railAxis), next, 100)] : []), ...(prev && sb < 100 ? [copeAt(o.rail, at(0, railAxis), prev, 100)] : [])] });
             drills.push({ target: name, p: at(sb, h + rv + ext), dir: [0, 0, -1], len: wd + 2 * ext + 1, ...sh });
           }
           bars += m;

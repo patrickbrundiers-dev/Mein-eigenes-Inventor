@@ -3,6 +3,7 @@
 // Eingabefeld hebt sein Maß hervor. Reine Rechnung; das Eigenschaftenfeld zeichnet daraus SVG.
 //
 // Ansichten: top = Grundriss (x, y), front = Ansicht von vorne (x, z), side = Ansicht von der Seite (y, z).
+import { pathPoint } from "./biegeteil.js";
 
 const PROJ = { top: (q) => [q[0], q[1]], front: (q) => [q[0], q[2]], side: (q) => [q[1], q[2]] };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -48,6 +49,11 @@ export function sketchView(plan, view = "top") {
     const pts = c.points.map(P);
     pts.forEach(grow);
     lines.push({ pts, kind: kindOf(c.name), w: width(c.section) });
+  }
+  for (const t of plan.tubes || []) {
+    const pts = Array.from({ length: 49 }, (_, k) => P(pathPoint(t.path, k / 48)));
+    pts.forEach(grow);
+    lines.push({ pts, kind: kindOf(t.name), w: width(t.section) });
   }
   if (!Number.isFinite(box[0])) box.splice(0, 4, 0, 0, 100, 100);
   return { lines, fills, box };

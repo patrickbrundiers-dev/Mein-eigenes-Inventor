@@ -41,7 +41,7 @@ export const TOR = {
     if (!(H > 4 * fw)) throw fieldError("Höhe zu klein", "height");
     const leafW = (W - g * (n + 1)) / n;
     // Oberkante als Funktion von x über die ganze Öffnung (Rand = Höhe)
-    let top = () => z0 + H, peak = z0 + H;
+    let top = () => z0 + H, peak = z0 + H, arc = null;
     if (p.form === "rund" || p.form === "stich" || p.form === "unten") {
       const span = W, rise = p.form === "rund" ? W / 2 : p.rise;
       if (!(rise > 0)) throw fieldError("Stich muss > 0 sein", "rise");
@@ -50,9 +50,10 @@ export const TOR = {
       const cx = span / 2, cz = z0 + H + sg * rise - sg * R;
       top = (x) => cz + sg * Math.sqrt(Math.max(0, R * R - (x - cx) ** 2));
       peak = z0 + H + sg * rise;
+      arc = { cx, cz, R, sg };
       if (p.form === "unten" && rise > H - 3 * fw - (p.mid ? p.midZ : 0)) throw fieldError("Bogen nach unten zu tief für die Flügelhöhe", "rise");
     }
-    const members = [], chains = [], plates = [];
+    const members = [], chains = [], plates = [], tubes = [];
     const up = [0, -1, 0]; // Profilhöhe zeigt quer zur Torebene
     const P = (x, z) => [x, 0, z];
     let nBars = 0, gapSeen = 0;
@@ -69,7 +70,24 @@ export const TOR = {
         const k = Math.max(2, Math.round(p.segs / n));
         for (let j = 1; j <= k; j++) { const x = xr - ((xr - xl) * j) / k; pts.push(P(x, top(x) - fw / 2)); }
       }
-      chains.push({ section: p.frame, points: [...pts, pts[0]], name: `Flügel${name} Rahmen`, up, closed: true });
+      // Bogen: Oberriegel gebogen (ein Teil, Achse radial fw/2 unter der Kante), Senkrechte darunter angepasst;
+      // die Enden des Bogens bündig mit den Außenseiten der Senkrechten
+      let arcCope = null;
+      if (arc && p.form !== "gerade") {
+        const Ra = arc.R - arc.sg * fw / 2, zA = (x) => arc.cz + arc.sg * Math.sqrt(Math.max(0, Ra * Ra - (x - arc.cx) ** 2));
+        const ang = (x) => (Math.atan2(zA(x) - arc.cz, x - arc.cx) * 180) / Math.PI;
+        const aR = ang(xr), aL = ang(xl), dir = Math.sign(aL - aR) || 1, ext = ((fw / 2 + 5) / Ra) * (180 / Math.PI) * 1.5;
+        const path = { c: [arc.cx, 0, arc.cz], r: Ra, a0: aR - dir * ext, sweep: aL - aR + 2 * dir * ext, rise: 0, axis: [0, -1, 0], x0: [1, 0, 0] };
+        tubes.push({ section: p.frame, path, name: `Flügel${name} Bogen`, cuts: [{ p: P(xr + fw / 2, 0), n: [1, 0, 0] }, { p: P(xl - fw / 2, 0), n: [-1, 0, 0] }] });
+        arcCope = { section: p.frame, path };
+        const out = (x) => { const a = (ang(x) * Math.PI) / 180, o = [arc.sg * Math.cos(a), 0, arc.sg * Math.sin(a)]; return { p: [x + o[0] * fw / 2, 0, zA(x) + o[2] * fw / 2], n: o }; };
+        const h = Math.SQRT1_2;
+        members.push({ section: p.frame, a: P(xl, zb), b: P(xr, zb), name: `Flügel${name} Unterriegel`, up, cuts: { start: [{ p: P(xl, zb), n: [-h, 0, h] }], end: [{ p: P(xr, zb), n: [h, 0, h] }] } });
+        // Senkrechte bis über den Bogen, an seiner Außenseite tangential abgeschnitten, am Bogen ausgeklinkt
+        for (const [x, nm, sgn] of [[xl, "links", -1], [xr, "rechts", 1]]) {
+          members.push({ section: p.frame, a: P(x, zb), b: P(x, zA(x) + fw), name: `Flügel${name} Senkrechte ${nm}`, up, cuts: { start: [{ p: P(x, zb), n: [-sgn * h, 0, -h] }], end: [out(x)] }, copes: [arcCope] });
+        }
+      } else chains.push({ section: p.frame, points: [...pts, pts[0]], name: `Flügel${name} Rahmen`, up, closed: true });
       // Querriegel
       const zm = z0 + p.midZ;
       if (p.mid) members.push({ section: p.frame, a: P(xl + fw / 2, zm), b: P(xr - fw / 2, zm), name: `Flügel${name} Querriegel`, up });
@@ -80,6 +98,17 @@ export const TOR = {
       gapSeen = Math.max(gapSeen, gp);
       for (let k = 0; k < nb; k++) {
         const x = xl + fw / 2 + gp * (k + 1) + bw * k + bw / 2;
+        if (arcCope) {
+          // unter dem gebogenen Oberriegel: bis an seine Achse, dort ausgeklinkt
+          const Ra = arcCope.path.r, zAx = arc.cz + arc.sg * Math.sqrt(Math.max(0, Ra * Ra - (x - arc.cx) ** 2));
+          const parts = p.mid ? [[z0 + fw, zm - fw / 2], [zm + fw / 2, zAx]] : [[z0 + fw, zAx]];
+          parts.forEach(([lo, hi], j) => {
+            if (!(hi - lo > 1)) return;
+            const last = j === parts.length - 1;
+            members.push({ section: p.bar, a: P(x, lo), b: P(x, hi), name: `Flügel${name} Stab ${k + 1}${parts.length > 1 ? (j ? "o" : "u") : ""}`, up: [1, 0, 0], ...(last ? { copes: [arcCope] } : {}) });
+          });
+          continue;
+        }
         // oben an der Unterseite des Oberriegels (beim Bogen das gerade Stück über dem Stab), Schnitt parallel dazu
         // Bogen: alle geraden Stücke über der Stabbreite schneiden (an einem Knick liegt der Stab unter zweien)
         const tp = pts.slice(2), lim = [x - bw / 2, x + bw / 2];
@@ -125,7 +154,7 @@ export const TOR = {
     else if (p.posts) stop(W - g - stopW / 2, W, z0 + 2 * fw, top(W) - 2 * fw, "Anschlagleiste");
     if (gapSeen > 120 + 1e-6) issues.push({ key: "gapMax", level: "Warnung", message: `Öffnung ${Math.round(gapSeen)} mm größer als 120 mm` });
     const info = `${n === 1 ? "Einzeltor" : "Doppeltor"}, Flügel ${Math.round(leafW)} mm breit, ${nBars} Stäbe` + (p.form !== "gerade" ? `, Scheitel ${Math.round(peak)} mm` : "") + (g >= 8 ? `, ${2 * n} Torbänder Ø ${Math.round(bandD)} × ${2 * bandL}` : "");
-    return { chains, members, plates, info, issues };
+    return { chains, members, plates, tubes, info, issues };
   },
 
   views: ["front"],
