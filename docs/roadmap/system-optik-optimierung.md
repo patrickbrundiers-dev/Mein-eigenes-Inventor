@@ -68,4 +68,10 @@ Baut auf U1 aus PR #149 auf (Schatten, Radien `--radius-l`, Übergänge, Meldung
   - SY4: Modellbrowser + Eigenschaften neu zeichnen dauert ~1 ms – kein Handlungsbedarf; Baugruppen-Verdrängung im Kern mit SY1 behoben.
   - SY5: nach 8 s Rechnen »Abbrechen« (Kern-Neustart), Hinweis bei 3 Abstürzen in 1 min, kein unbehandelter Fehler beim Neustart.
   - SY6: eine Testliste (`tools/tests.mjs`, findet alle `test/*.test.mjs`); dadurch laufen `gestell.test.mjs` und `gestell-kernel.test.mjs` jetzt auch in der CI (fehlten). `release.yml` bleibt beim Release-Thread.
-- OP1–OP5 nach dem Merge von #149 (gleiche Stellen in `styles.css`).
+- OP1–OP5 (auf main mit #149) in derselben PR:
+  - OP1: Schriftstufen `--fs-2xs` … `--fs-xl` statt 9 Einzelgrößen (11,5 → 12, 12,5 → 13 px).
+  - OP2: `--text-faint` für Hinweistext (hell 5,1 : 1, dunkel 6,6 : 1 statt 3,3 : 1), Anreißblau dunkel 4,7 : 1; Ansichtsleiste und HUD im 3D-Fenster folgen dem dunklen Schema; Rahmenfarben im Menüband aus den Schemafarben.
+  - OP3: 20 neue Symbole (6 Ansichtsrichtungen + Iso, Orthogonal/Perspektive, Ansicht speichern, Messen, Zuschnittliste, Grund-/Projizierte/Hilfsansicht, Auswahl, Umkehren, Fensteranordnung, Bündig, Zylindergelenk).
+  - OP4: Menüband staucht Knöpfe nicht mehr (lange Wörter ragten in den Nachbarknopf), zu breit → rollt.
+  - OP5: `tools/optik-bilder.mjs`, Vorher/Nachher in `/mnt/project-files/optik/`.
+  - Abstands-Raster (57 Innenabstände) bewusst nicht pauschal ersetzt: viel Bewegung ohne sichtbaren Gewinn.
