@@ -23,13 +23,15 @@ export class Tree {
   /** Auge für Skizzen und Arbeitselemente: genutzte Skizzen zeigen, freie Skizzen und Arbeitselemente aus-/einblenden */
   featureEye(part, f, consumedBy) {
     const app = this.app;
+    // Ausblenden wirkt sofort, auch wenn die Zeile gewählt ist (Gewähltes zeigt das 3D sonst immer)
+    const unselect = () => { if (app.sel?.type === "feature" && app.sel.id === f.id) app.sel = null; };
     if (f.type === "sketch") {
       if (consumedBy.length) {
         const on = app.visibleSketches.has(f.id);
-        return { on, title: on ? "Skizze wieder ausblenden" : "Skizze im 3D zeigen", run: () => { if (on) app.visibleSketches.delete(f.id); else app.visibleSketches.add(f.id); app.showSketches3D(); this.render(); } };
+        return { on, title: on ? "Skizze wieder ausblenden" : "Skizze im 3D zeigen", run: () => { if (on) { app.visibleSketches.delete(f.id); unselect(); } else app.visibleSketches.add(f.id); app.showSketches3D(); this.render(); app.props.render(); } };
       }
     } else if (!["arbeitsebene", "arbeitsachse", "arbeitspunkt", "skizze3d"].includes(f.type)) return null;
-    return { on: !f.hidden, run: () => { app.edit("Sichtbarkeit", () => { if (f.hidden) delete f.hidden; else f.hidden = true; }, { rebuild: false }); app.showSketches3D(); this.render(); } };
+    return { on: !f.hidden, run: () => { if (!f.hidden) unselect(); app.edit("Sichtbarkeit", () => { if (f.hidden) delete f.hidden; else f.hidden = true; }, { rebuild: false }); app.showSketches3D(); this.render(); app.props.render(); } };
   }
   render() {
     const app = this.app;
