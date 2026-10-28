@@ -24,6 +24,9 @@ function part(features, params = []) {
   return { id: "p" + Math.random(), kind: "part", name: "Test", params, features };
 }
 
+// Befestigungsblech wie vor der Ausrichtung an den Stufen (160 × 160, 4 Bohrungen, Pfosten gleichmäßig verteilt)
+const KLASSISCH = { gelSW: "160", gelSH: "160", gelSHoles: "4", gelSDown: "0", gelRhythm: false };
+
 test("Regelkörper: Volumen aller Arten gegen die Formel, Lage und Achse (MegaCAD-Abgleich M5)", async () => {
   const { REGEL_KINDS, REGEL_DEFAULTS, regelVolume } = await import("../src/core/regelkoerper.js");
   for (const kind of Object.keys(REGEL_KINDS)) {
@@ -149,15 +152,18 @@ test("Geländer Stufe 2: Kreuz mit Ring und Rahmen mit Staketen bauen (MegaCAD-A
   const rk = await K.buildPart(part([k]));
   okAll(rk);
   const diag = rk.bodies.filter((b) => /^Diagonale/.test(b.name));
-  assert.equal(diag.length, 2);
-  for (const d of diag) { near(bb(d)[0][0], 21.2, 0.01, "Diagonale an Pfostenfläche"); near(bb(d)[1][0], 1178.8, 0.01, "Diagonale an Pfostenfläche"); }
+  assert.equal(diag.length, 4, "4 Stücke von den Pfosten bis an den Ring");
+  for (const d of diag) assert.ok(Math.abs(bb(d)[0][0] - 21.2) < 0.01 || Math.abs(bb(d)[1][0] - 1178.8) < 0.01, "Diagonale an Pfostenfläche");
   const ring = rk.bodies.filter((b) => /^Ring 1/.test(b.name));
-  assert.equal(ring.length, 24, "Ring aus 24 gegehrten Stücken");
+  assert.equal(ring.length, 1, "Ring als ein gewalztes Teil");
+  assert.equal(ring[0].meta.rolled.angle, 360);
+  near(ring[0].meta.rolled.radius, 150, 0.01, "Walzradius = Ringradius");
   const k2 = { id: "r", ...defaultGenerator("gelaender") };
   Object.assign(k2.params, { runs: "1200", fill: "rahmen" });
   const rr = await K.buildPart(part([k2]));
   okAll(rr);
-  assert.equal(rr.bodies.filter((b) => /^Füllungsrahmen/.test(b.name)).length, 4, "Rahmen aus 4 gegehrten Stäben");
+  assert.equal(rr.bodies.filter((b) => /^Füllungsrahmen/.test(b.name) && !/Abstandhalter/.test(b.name)).length, 4, "Rahmen aus 4 gegehrten Stäben");
+  assert.equal(rr.bodies.filter((b) => /Abstandhalter/.test(b.name)).length, 8, "Rahmen über Abstandhalter an Pfosten und Gurten");
   assert.ok(rr.bodies.filter((b) => /^Stab /.test(b.name)).length >= 8);
 });
 
@@ -167,9 +173,10 @@ test("Tor-Generator: Doppeltor mit Stichbogen, Rahmen gegehrt, Stäbe bis unter 
   const res = await K.buildPart(part([f]));
   okAll(res);
   const by = (re) => res.bodies.filter((b) => re.test(b.name));
-  const frameL = by(/^Flügel links Rahmen/);
-  assert.equal(frameL.length, 3 + 4, "unten, rechts, 4 Bogenstücke, links");
-  assert.ok(frameL.every((b) => Math.abs(b.meta.miterStart) > 0 && Math.abs(b.meta.miterEnd) > 0), "alle Ecken gegehrt");
+  const frameL = by(/^Flügel links (Unterriegel|Senkrechte|Bogen)/);
+  assert.equal(frameL.length, 4, "Unterriegel, zwei Senkrechte, ein gewalzter Bogen");
+  assert.ok(frameL.filter((b) => !/Bogen/.test(b.name)).every((b) => Math.abs(b.meta.miterStart) > 0), "Ecken unten gegehrt");
+  assert.ok(by(/^Flügel links Bogen$/)[0].meta.rolled.radius > 1000, "Bogen gewalzt");
   assert.equal(by(/^Torpfosten/).length, 2);
   const bb = (b) => b.shape.boundingBox.bounds;
   // Scheitel in der Mitte = 50 + 1200 + 250 (Spalt in der Mitte → knapp darunter)
@@ -189,11 +196,13 @@ test("Treppen-Generator: Wangen unten waagrecht/oben senkrecht geschnitten, Stuf
   okAll(res);
   const by = (re) => res.bodies.filter((b) => re.test(b.name));
   assert.equal(by(/^Stufe \d+$/).length, 15, "2800 / 175 → 16 Steigungen, 15 Stufen");
-  const w = by(/^Wange/);
+  const w = by(/^Wange (rechts|links)$/);
   assert.equal(w.length, 2);
+  assert.equal(by(/Fußwinkel$/).length, 2, "Fußwinkel am Boden");
+  assert.equal(by(/Kopfplatte$/).length, 2, "Kopfplatten an der Decke");
   const bb = (b) => b.shape.boundingBox.bounds;
   near(bb(w[0])[0][2], 0, 0.01, "Wange unten auf dem Boden");
-  near(bb(w[0])[1][0], 15 * 280, 0.01, "Wange oben an der Deckenstirn (x = 15 · 280)");
+  near(bb(w[0])[1][0], 15 * 280 - 15, 0.01, "Wange oben vor der 15-mm-Kopfplatte an der Deckenstirn (x = 15 · 280)");
   assert.ok(w[0].meta.miterStart > 50 && w[0].meta.miterEnd > 20, "Schnitte schräg zur Achse");
   // oberste Stufe: Oberkante = 15 · 175
   const top = Math.max(...by(/^Stufe \d+$/).map((b) => bb(b)[1][2]));
@@ -205,7 +214,7 @@ test("Treppen-Generator: Wangen unten waagrecht/oben senkrecht geschnitten, Stuf
   f2.params.support = "holm2";
   const r2 = await K.buildPart(part([f2]));
   okAll(r2);
-  const holme = r2.bodies.filter((b) => /^Holm/.test(b.name));
+  const holme = r2.bodies.filter((b) => /^Holm \S+$/.test(b.name));
   assert.equal(holme.length, 2);
   // Holm liegt unter den Stufen: höchster Punkt des Holms ≤ Unterkante der obersten Stufe + Steigung
   assert.ok(Math.max(...holme.map((b) => b.shape.boundingBox.bounds[1][2])) <= 15 * 175 - 30 + 1e-3);
@@ -253,8 +262,8 @@ test("Treppe L- und U-Form mit Podest, Rahmen und Stützen (MegaCAD-Abgleich M14
   okAll(rL);
   const by = (r, re) => r.bodies.filter((b) => re.test(b.name));
   assert.equal(by(rL, /^Stufe \d+$/).length, 14, "7 + 7 Stufen");
-  assert.equal(by(rL, /^Wange/).length, 4);
-  assert.equal(by(rL, /^Podeststütze/).length, 2);
+  assert.equal(by(rL, /^Wange \S+ Lauf \d$/).length, 4);
+  assert.equal(by(rL, /^Podeststütze \d+$/).length, 2);
   assert.ok(by(rL, /^Podestrahmen/).length >= 4, "Rahmen aus vier gegehrten Stäben");
   const pod = by(rL, /^Podest$/)[0];
   near(bb(pod)[1][2], 8 * 175, 0.01, "Podest-OK"); near(bb(pod)[0][0], 7 * 280, 0.01, "Podestkante = Ende Lauf 1"); near(bb(pod)[1][1], 1000, 0.01);
@@ -264,13 +273,14 @@ test("Treppe L- und U-Form mit Podest, Rahmen und Stützen (MegaCAD-Abgleich M14
   near(bb(s15)[1][1], 1000 + 7 * 280, 0.01, "letzte Stufe endet an der Deckenstirn");
   assert.match(rL.status.l.info, /\(8 \+ 8\).*Podest auf 1400 mm/);
   // Stützen stehen auf dem Boden und tragen den Rahmen
-  for (const s of by(rL, /^Podeststütze/)) { near(bb(s)[0][2], 0, 0.01); near(bb(s)[1][2], 1400 - 30 - 100, 0.01); }
+  for (const s of by(rL, /^Podeststütze \d+$/)) { near(bb(s)[0][2], 15, 0.01, "auf 15-mm-Bodenplatte"); near(bb(s)[1][2], 1400 - 30 - 100, 0.01); }
   // U rechts mit Treppenauge 200, zwei Holme
   const fU = { id: "u", ...defaultGenerator("treppe") };
   Object.assign(fU.params, { form: "U", turn: "rechts", gap: "200", support: "holm2", stuetzen: "alle", n1: "6" });
   const rU = await K.buildPart(part([fU]));
   okAll(rU);
-  assert.equal(by(rU, /^Holm/).length, 4); assert.equal(by(rU, /^Podeststütze/).length, 4);
+  assert.equal(by(rU, /^Holm \S+ Lauf \d$/).length, 4); assert.equal(by(rU, /^Podeststütze \d+$/).length, 4);
+  assert.ok(by(rU, /Konsole \d+$/).length > 0 && by(rU, /Konsole \d+ Steg$/).length > 0, "Stufen auf Konsolblechen");
   const pU = by(rU, /^Podest$/)[0];
   near(bb(pU)[0][1], -1200, 0.01, "Podest reicht über beide Läufe"); near(bb(pU)[1][2], 6 * 175, 0.01);
   const last = by(rU, /^Stufe 15$/)[0];
@@ -292,7 +302,8 @@ test("Spindeltreppe: Stufen als Ringausschnitt, Träger, Geländer, Prüfung Dur
   const bb = (b) => b.shape.boundingBox.bounds;
   // 2800 / 190 → 15 Steigungen à 186,7; 14 Stufen, 14 Träger, 4 Stäbe je Stufe, Handlauf
   assert.equal(by(/^Stufe \d+$/).length, 14); assert.equal(by(/^Stufenträger/).length, 14); assert.equal(by(/^Geländerstab [\d.]+$/).length, 14 * 4, "4 Stäbe je Stufe: lichter Abstand ≤ 120 mm (Geländernorm Wohngebäude)");
-  assert.ok(by(/^Handlauf/).length >= 13);
+  const hl = by(/^Handlauf/);
+  assert.ok(hl.length >= 1 && hl.length <= 2 && hl.every((b) => b.meta.rolled?.rise > 0), "Handlauf als gebogene Wendel, Stoß nur über 6000 mm");
   const sp = by(/^Spindel/)[0];
   near(bb(sp)[1][2], 2800 + 900, 0.01, "Spindel bis Handlaufhöhe über der Decke");
   const s1 = by(/^Stufe 1$/)[0];
@@ -368,9 +379,12 @@ test("Stahlbau-Generatoren: Windverband, Pfette mit Stoß, Rahmenecke mit Normte
   const norms = (r) => collectNorm([{ bodies: r.bodies.map((b) => ({ ...b, props: { volume: R.measureVolume(b.shape) } })) }]).map((x) => [x.name, x.qty]);
   // Windverband X mit 2 Spannschlössern, 4 Knotenbleche, 4 Stabstücke
   const wv = await build("windverband");
-  assert.deepEqual(norms(wv), [["Spannschloss DIN 1480 - M16 - verzinkt", 2]]);
+  const nw = norms(wv);
+  assert.ok(nw.some(([nm, q]) => nm === "Spannschloss DIN 1480 - M16 - verzinkt" && q === 2), JSON.stringify(nw));
+  assert.equal(nw.filter(([nm]) => /^Sechskantschraube/.test(nm)).reduce((a, x) => a + x[1], 0), 4, "je Stabende eine Schraube durch Lasche und Knotenblech");
   assert.equal(wv.bodies.filter((b) => /^Knotenblech/.test(b.name)).length, 4);
-  assert.equal(wv.bodies.filter((b) => /^Diagonale/.test(b.name)).length, 4);
+  assert.equal(wv.bodies.filter((b) => /^Diagonale/.test(b.name) && !/Lasche/.test(b.name)).length, 4);
+  assert.equal(wv.bodies.filter((b) => /Lasche/.test(b.name)).length, 4);
   assert.match(wv.status.g.info, /2 Diagonale\(n\) Rundstahl Ø 16/);
   // Pfette 2 × 5000, Stoß ab 6000 → ein Stoß über dem Mittelbinder, 4 Pfettenschuhe
   const pf = await build("pfette");
@@ -459,7 +473,7 @@ test("Treppe mit Geländer: beidseitig, ums Podest, Knieleisten/Staketen, Höhe 
   assert.equal(sb.length, 2 * 15);
   assert.ok(sb.every((b) => b.meta.plate.holes === 1 && b.meta.plate.slots === 1));
   // dazu die Gegenbohrungen Ø 13,5 der Pfostenbefestigung (Vorgabe seitlich), Anzahl laut Meldung
-  const wg = by(r, /^Wange/), gb = Number(r.status.g.info.match(/(\d+) Gegenbohrungen/)[1]);
+  const wg = by(r, /^Wange (rechts|links)$/), gb = Number(r.status.g.info.match(/(\d+) Gegenbohrungen/)[1]);
   assert.ok(wg.every((b) => b.meta.drillD === 14));
   assert.equal(wg.reduce((s, b) => s + b.meta.drills, 0), 2 * 2 * 15 + gb, JSON.stringify(wg.map((b) => b.meta.drills)));
   // zwischen den Pfosten (wie bisher): schräger Schnitt am Pfosten = Neigung des Laufs (atan 175/280 ≈ 32°)
@@ -509,7 +523,7 @@ test("Zaun: eben, Gefälle mit schrägen Riegeln, gestuft, Blech mit Fußplatten
     Object.assign(f.params, patch);
     const r = await K.buildPart(part([f]));
     okAll(r);
-    assert.equal(r.bodies.filter((b) => /^Pfosten/.test(b.name)).length, 5, JSON.stringify(patch));
+    assert.equal(r.bodies.filter((b) => /^Pfosten \d+$/.test(b.name)).length, 5, JSON.stringify(patch));
     if (patch.terrain === "gefaelle" && patch.fill === "quer") {
       const u = r.bodies.find((b) => b.name === "Feld 4 Unterriegel");
       near(bb(u)[1][2], 0.06 * 9970 + 80 + 40, 1, "Unterriegel folgt dem Gelände (OK am Pfosten 5)");
@@ -567,7 +581,7 @@ test("Pfostenbefestigung oben: Fußplatte auf der U200-Wange, Gegenbohrungen im 
 test("Pfostenbefestigung seitlich: Befestigungsblech an der Flachstahl-Wange, Gegenbohrungen, Pfosten liegt am Blech an", async () => {
   const { defaultGenerator } = await import("../src/core/generator.js");
   const t = { id: "t", ...defaultGenerator("treppe") };
-  Object.assign(t.params, { gel: "rechts", gelFill: "keine" });
+  Object.assign(t.params, { gel: "rechts", gelFill: "keine", ...KLASSISCH });
   const res = await K.buildPart(part([t]));
   okAll(res);
   const blech = res.bodies.filter((b) => / Befestigungsblech$/.test(b.name));
@@ -584,7 +598,7 @@ test("Pfostenbefestigung seitlich: Befestigungsblech an der Flachstahl-Wange, Ge
 test("Pfostenbefestigung mit Abstandsausgleich: Flacheisen mit Stecknasen bündig im Blech, Schlitz im Pfosten, keine Durchdringung", async () => {
   const { defaultGenerator } = await import("../src/core/generator.js");
   const t = { id: "t", ...defaultGenerator("treppe") };
-  Object.assign(t.params, { gel: "rechts", gelFill: "keine", gelMSpacer: true, gelMGap: "60" });
+  Object.assign(t.params, { gel: "rechts", gelFill: "keine", gelMSpacer: true, gelMGap: "60", ...KLASSISCH });
   const res = await K.buildPart(part([t]));
   okAll(res);
   const get = (n) => res.bodies.find((b) => b.name === `Geländer rechts Pfosten 2${n}`);
@@ -612,7 +626,7 @@ test("Pfostenbefestigung Balkon oben und L-Podestecke: Gegenbohrungen in Belag u
   near(R.measureVolume(post.shape.clone().intersect(fp.shape.clone())), 0, 1, "Pfosten steht auf der Fußplatte");
   // L-Treppe: Eckpfosten am Podest mit verlängertem Blech und Futterblech, keine Durchdringung mit dem Rahmen
   const t = { id: "t", ...defaultGenerator("treppe") };
-  Object.assign(t.params, { form: "L", gel: "rechts", gelFill: "keine" });
+  Object.assign(t.params, { form: "L", gel: "rechts", gelFill: "keine", ...KLASSISCH });
   const rt = await K.buildPart(part([t]));
   okAll(rt);
   const get = (n) => rt.bodies.find((x) => x.name === `Geländer rechts Pfosten 4${n}`);

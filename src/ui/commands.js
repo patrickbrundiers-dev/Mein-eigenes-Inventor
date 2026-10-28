@@ -6,8 +6,11 @@ import { t } from "../core/i18n.js";
 import { recordable } from "../core/makros.js";
 import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
 import { problemsDialog } from "./pruefung.js";
+import { saveToLibrary, libraryDialog } from "./teilebibliothek.js";
 import { saveVersion, versionsDialog } from "./versionen.js";
 import { savePosition } from "./darstellungen.js";
+import { showHelp } from "./hilfe.js";
+import { startTour } from "./tour.js";
 
 /** id → Funktion. Ribbon-Aktionen werden wiederverwendet, damit Knopf und Kürzel dasselbe tun. */
 export function commandRunners(app) {
@@ -23,6 +26,11 @@ export function commandRunners(app) {
     "file.newPart": () => app.newPart(),
     "file.listsXlsx": () => app.files.exportListsXlsx(),
     "file.mappe": () => app.files.exportMappe(),
+    "file.dstv": () => app.files.exportDstv(),
+    "lib.save": () => saveToLibrary(app),
+    "lib.browse": () => libraryDialog(app),
+    "file.einzelteile": () => app.files.piecesDialog(),
+    "file.ifc": () => app.files.exportIfc(),
     "file.angebot": () => app.files.exportAngebot(),
     "file.png": () => app.files.exportPng(),
     "file.iges": () => app.files.exportIges(),
@@ -34,6 +42,8 @@ export function commandRunners(app) {
     "file.importStep": () => app.files.importStepAsPart(),
     "app.settings": () => app.props.settingsDialog(),
     "app.search": () => commandPalette(app),
+    "app.help": () => showHelp(app),
+    "app.tour": () => startTour(app),
     "app.macros": () => app.props.macroDialog(),
     "app.macroRecord": () => app.commands.toggleRecording(),
     "edit.undo": () => app.undo(),
@@ -82,6 +92,7 @@ export function commandRunners(app) {
     "asm.alignAngle": r("alignAngle"),
     "asm.alignTangent": r("alignTangent"),
     "asm.pattern": r("asmPattern"),
+    "asm.achsraster": r("achsraster"),
     "asm.mirror": () => app.props.mirrorComponent(),
     "asm.bom": r("bom"),
     "asm.cutlist": () => app.props.cutListDialog(),

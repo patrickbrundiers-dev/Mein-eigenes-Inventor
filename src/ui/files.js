@@ -26,6 +26,8 @@ import { materialOf } from "../core/materials.js";
 import { finishLabel } from "../core/oberflaeche.js";
 import { listSheets } from "../core/lists.js";
 import { fmtNum } from "./dom.js";
+import { piecesOf, groupPieces, withSignature, dstvText, dstvFileName, stablePositions, piecesCsv, pieceMass } from "../core/dstv.js";
+import { writeIfc, ifcElements, ifcCounts } from "../core/ifc.js";
 
 const PROJECT_FILTERS = [{ name: "PBCAD-Projekt", extensions: ["wcad"] }];
 const AUTOSAVE_KEY = "werkcad.autosave";
@@ -342,6 +344,22 @@ export class Files {
       toast(`IGES gespeichert: ${r.faces} Flächen` + (r.approx ? `, davon ${r.approx} als Näherung (Raster)` : ""), { kind: "ok" });
     });
   }
+  /** IFC4 für BIM (ST2): Stäbe als Träger/Stütze/Stab, Platten, Normteile; Geometrie als Dreiecksnetz, Eigenschaften im Satz PBCAD_Bauteil */
+  async exportIfc() {
+    const items = this.exportItems();
+    if (!items?.length) return toast("Nichts zu exportieren");
+    const app = this.app, d = app.activeDoc();
+    await this.withBusy("IFC-Export", async () => {
+      const data = await app.kernel.call("ifcData", { items });
+      // Einzelteil-Positionen wie im DSTV-NC als Kennzeichen (Tag) der Stäbe und Platten
+      const tags = new Map();
+      if (data.some((b) => b.kind === "member" || b.plate)) for (const p of (await this.dstvFiles(d)).pieces) for (const k of p.keys || []) tags.set(k, p.pos);
+      const text = writeIfc({ project: app.project.name || d.name, storey: d.name, elements: ifcElements(data, { tags }) }, { app: "PBCAD", version: window.werkcad?.version || "" });
+      const r = await this.saveText(text, safeName(d.number || d.name) + ".ifc", "application/x-step", [{ name: "IFC", extensions: ["ifc"] }]);
+      const c = ifcCounts(text), names = { IFCBEAM: "Träger", IFCCOLUMN: "Stützen", IFCMEMBER: "Stäbe", IFCPLATE: "Platten", IFCMECHANICALFASTENER: "Normteile", IFCBUILDINGELEMENTPROXY: "sonstige" };
+      if (r) toast("IFC: " + Object.entries(c).map(([k, n]) => `${n} ${names[k]}`).join(", "), { kind: "ok", timeout: 5000 });
+    });
+  }
   async exportStl() {
     const items = this.exportItems();
     if (!items?.length) return toast("Nichts zu exportieren");
@@ -392,6 +410,60 @@ export class Files {
         if (csvText) downloadBlob(new Blob([csvText], { type: "text/csv" }), name.replace(/\.step$/, "_Zuschnitt.csv"));
       }
     });
+  }
+  /**
+   * DSTV-NC (NC1) für Säge-/Bohranlagen und Brennschneiden (ST1): je Position eine Datei, Gleichteile zusammengefasst,
+   * dazu ein Protokoll mit Positionen und allem, was nicht übertragen wurde (gebogen, Ausklinkung, schräge Bohrung).
+   */
+  async dstvFiles(d = this.app.activeDoc()) {
+    const app = this.app;
+    const all = [], skipped = [];
+    for (const src of collectCutSources(app, d)) {
+      const data = await app.kernel.call("dstvData", { part: src.part });
+      const r = piecesOf({ part: src.part, qty: src.qty, data }, materialOf(src.part.material), { drawing: d.number || d.name });
+      all.push(...r.pieces);
+      skipped.push(...r.skipped);
+    }
+    // Positionsnummern der Einzelteile stabil im Dokument (gleiche Stücke behalten ihre Nummer, ST10)
+    const st = stablePositions(groupPieces(all), d.einzelteilPos);
+    if (st.changed) app.edit("Positionsnummern Einzelteile", () => { d.einzelteilPos = st.store; }, { rebuild: false });
+    const pieces = st.pieces.map(withSignature);
+    const files = pieces.map((p) => ({ name: dstvFileName(p), data: dstvText(p) }));
+    const fmt = (x) => fmtNum(x, 1);
+    const log = [`DSTV-NC ${d.name} – ${new Date().toLocaleString("de-DE")}`, "", "Pos\tStk\tProfil\tLänge mm\tBohrungen\tDatei\tBauteile",
+      ...pieces.map((p, i) => [p.pos, p.qty, p.profile, fmt(p.length), (p.holes || []).length, files[i].name, p.sources.join(", ")].join("\t")),
+      "", skipped.length ? "Nicht oder nur teilweise übertragen:" : "Alles übertragen.", ...[...new Set(skipped.map((s) => `- ${s.name}: ${s.reason}`))]];
+    return { pieces, files, skipped, log: "\ufeff" + log.join("\r\n") + "\r\n" };
+  }
+  async exportDstv() {
+    const d = this.app.activeDoc();
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("DSTV-NC gibt es für Bauteile und Baugruppen");
+    await this.withBusy("DSTV-NC", async () => {
+      const r = await this.dstvFiles(d);
+      if (!r.files.length) return toast("Keine Stäbe oder ebenen Platten für DSTV-NC" + (r.skipped.length ? ` (${r.skipped[0].reason})` : ""), { kind: "err", timeout: 6000 });
+      const files = [...r.files, { name: `${safeName(d.number || d.name).replace(/\s+/g, "_")}_DSTV_Protokoll.txt`, data: r.log }];
+      if (this.bridge) {
+        const s = await this.bridge.saveFiles({ files });
+        if (s) toast(`${r.files.length} NC-Dateien gespeichert in ${s.dir}` + (r.skipped.length ? ` – ${r.skipped.length} Hinweis(e) im Protokoll` : ""), { kind: "ok", timeout: 6000 });
+      } else await this.saveBinary(zipFiles(files.map((f) => [f.name, f.data])), safeName(d.number || d.name) + "_DSTV.zip", [{ name: "ZIP-Archiv", extensions: ["zip"] }]);
+    });
+  }
+  /** Einzelteile (ST10): Gleichteile mit festen Positionsnummern wie im DSTV-NC und IFC, als Tabelle und CSV */
+  async piecesDialog() {
+    const app = this.app, d = app.activeDoc();
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Einzelteile gibt es für Bauteile und Baugruppen");
+    let r;
+    await this.withBusy("Einzelteile", async () => { r = await this.dstvFiles(d); });
+    if (!r) return;
+    if (!r.pieces.length) return toast("Keine Stäbe oder ebenen Platten im Modell");
+    const fmt = (x) => fmtNum(x, 1);
+    const table = h("table", { class: "tbl" },
+      h("thead", {}, h("tr", {}, ...["Pos", "Stk", "Profil", "Länge", "kg/Stk", "Bohr.", "Bauteile"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, ...r.pieces.map((p) => h("tr", {}, h("td", {}, p.pos), h("td", {}, String(p.qty)), h("td", {}, p.profile), h("td", {}, fmt(p.length)), h("td", {}, fmt(pieceMass(p))), h("td", {}, String((p.holes || []).length)), h("td", { style: { fontSize: "11px" } }, p.sources.join(", "))))));
+    const renumber = () => { app.edit("Positionsnummern neu", () => { delete d.einzelteilPos; }, { rebuild: false }); this.piecesDialog(); };
+    modal({ title: `Einzelteile – ${d.name}`, width: "900px",
+      body: h("div", {}, h("p", { class: "hint" }, `${r.pieces.length} Positionen, ${r.pieces.reduce((s, p) => s + p.qty, 0)} Stück. Gleiche Stäbe und Platten (Profil, Länge, Schnitte, Bohrungen) haben eine Nummer; sie bleibt beim Ändern des Modells erhalten und steht so auch im DSTV-NC, in der Signatur und im IFC.`), h("div", { style: { maxHeight: "60vh", overflow: "auto" } }, table)),
+      buttons: [{ label: "Neu nummerieren", run: renumber }, { label: "Schließen" }, { label: "Als CSV speichern", primary: true, run: () => this.saveText(piecesCsv(r.pieces), safeName(d.number || d.name) + "_Einzelteile.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]) }] });
   }
   async exportCutList() {
     const app = this.app;
@@ -553,6 +625,8 @@ export class Files {
       files.push([base + ".step", await app.kernel.call("exportStep", { items: this.exportItems(d) })]);
       if (d.kind === "assembly") for (const r of bom.filter((x) => x.part)) files.push([unique("Positionen", `${String(r.pos).padStart(2, "0")}_${r.number || r.name}`, ".step"), await app.kernel.call("exportStep", { items: [{ part: r.part, name: r.part.name }] })]);
       for (const p of parts) for (const x of await app.kernel.call("bodySteps", { part: p, onlyMembers: true })) files.push([unique("Laser", x.name, ".step"), x.text]);
+      const nc = await this.dstvFiles(d);
+      if (nc.files.length) { for (const f of nc.files) files.push(["NC/" + f.name, f.data]); files.push(["NC/DSTV_Protokoll.txt", nc.log]); }
       await this.saveBinary(zipFiles(files), base + "_Fertigungsmappe.zip", [{ name: "ZIP-Archiv", extensions: ["zip"] }]);
       toast(`Fertigungsmappe: ${sheets.length} Zeichnung${sheets.length === 1 ? "" : "en"}${made.length ? ` (${made.length} neu)` : ""}, ${files.length} Dateien`, { kind: "ok", timeout: 6000 });
     });

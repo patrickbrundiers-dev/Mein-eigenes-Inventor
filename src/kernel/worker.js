@@ -8,7 +8,8 @@ import { svgPathSegments } from "../core/svgpath.js";
 import { segmentsToDxf } from "../core/dxf.js";
 import { writeIges } from "../core/iges.js";
 import { igesFaces } from "./igesocc.js";
-import { placementMatrix, matInvertRigid, matApply, matApplyDir } from "../core/geom.js";
+import { memberHoles, plateNc, plateInfo } from "./dstvocc.js";
+import { v3, placementMatrix, matInvertRigid, matApply, matApplyDir } from "../core/geom.js";
 
 let K = null;
 const ready = (async () => {
@@ -156,25 +157,104 @@ const handlers = {
     return texts;
   },
 
+  /**
+   * DSTV-NC (ST1): je Körper Stabdaten (Bohrungen je Fläche) bzw. Plattenkontur; Text schreibt src/core/dstv.js.
+   * Rückgabe [{ index, name, kind: "member"|"plate"|"skip", reason?, … }]
+   */
+  async dstvData({ part }) {
+    const res = await getBuilt(part);
+    return res.bodies.map((b, index) => {
+      const name = b.name || part.name;
+      const m = b.meta || {};
+      try {
+        if (b.kind === "member") {
+          if (m.bends?.length || m.knicks) return { index, name, kind: "skip", reason: "gebogen – Abwicklung über die Biegeliste" };
+          if (!m.axis || !m.sec) return { index, name, kind: "skip", reason: "ohne Stabachse" };
+          const flat = m.sec.kind === "flach";
+          const { holes, skipped } = memberHoles(K, b.shape, m.axis, { flat });
+          return { index, name, kind: "member", sec: m.sec, section: m.section, area: m.area, length: m.length, perimeter: m.axis.perimeter, miterStart: m.miterStart, miterEnd: m.miterEnd, miterParts: m.miterParts, coped: !!m.coped || !!m.contours?.length, holes, skipped, width: m.axis.width, height: m.axis.height };
+        }
+        if (m.norm || m.weld || m.assist) return { index, name, kind: "skip", reason: "Normteil/Naht" };
+        if (m.sheet?.bends?.length) return { index, name, kind: "skip", reason: "Kantteil – Abwicklung als DXF" };
+        const pl = plateNc(R, b.shape);
+        if (!pl) return { index, name, kind: "skip", reason: "keine ebene Platte" };
+        return { index, name, kind: "plate", ...pl };
+      } catch (e) {
+        return { index, name, kind: "skip", reason: errorText(e, R) };
+      }
+    });
+  },
+
+  /**
+   * IFC (ST2): je Körper Dreiecksnetz in Weltlage und die Angaben für Klasse und Eigenschaften; den Text schreibt src/core/ifc.js.
+   */
+  async ifcData({ items, tolerance = 0.2 }) {
+    const out = [];
+    for (const it of items) {
+      const res = await getBuilt(it.part);
+      const M = placementMatrix(it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
+      res.bodies.forEach((b, index) => {
+        const m = b.meta || {};
+        const shape = K.placed(b.shape, it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
+        const mesh = shape.mesh({ tolerance, angularTolerance: 0.3 });
+        let plate = !!(m.plate || m.rib || m.endcap || (m.sheet && !m.sheet.bends?.length));
+        if (!plate && b.kind !== "member" && !m.norm && !m.weld) { try { plate = !!plateInfo(R, b.shape); } catch { plate = false; } }
+        let volume = 0;
+        try { volume = R.measureVolume(b.shape); } catch { /* ohne Volumen */ }
+        out.push({
+          item: it.name || it.part.name, part: it.part.name, number: it.part.number || "", index, name: b.name || it.part.name, kind: b.kind,
+          axis: b.kind === "member" && m.axis ? matApplyDir(M, m.axis.z) : null, plate, norm: m.norm?.designation || null, weld: !!m.weld,
+          profile: m.section || "", length: m.length || 0, thickness: m.plate?.t || m.sheet?.t || 0, volume,
+          material: it.part.material || "", color: it.color || partColor(it.part),
+          vertices: Array.from(mesh.vertices), triangles: Array.from(mesh.triangles),
+        });
+      });
+    }
+    return out;
+  },
+
   async project({ items, views }) {
     const key0 = hashString(JSON.stringify(items));
     const result = {};
-    let shape = null;
+    let shape = null, shapes = null;
     for (const v of views) {
-      const key = key0 + hashString(JSON.stringify([v.dir, v.up, v.hidden, v.cut || null]));
+      const key = key0 + hashString(JSON.stringify([v.dir, v.up, v.hidden, v.cut || null, 2]));
       let r = projCache.get(key);
       if (!r) {
         if (!shape) {
-          const shapes = await placedShapes(items);
+          shapes = await placedShapes(items);
           if (!shapes.length) throw new Error("Keine Geometrie für die Ansicht");
-          shape = shapes.length === 1 ? shapes[0].shape : R.makeCompound(shapes.map((x) => x.shape));
+          // makeCompound gibt die Einzelkörper frei: Kopien, die Schnitte brauchen die Teile einzeln
+          shape = shapes.length === 1 ? shapes[0].shape : R.makeCompound(shapes.map((x) => x.shape.clone()));
         }
         try {
           if (v.cut) {
-            const cutShape = K.cutAtPlane(shape, v.cut.n, v.cut.c);
+            // Schnitt nach DIN ISO 128-50: jedes Teil eigene Schnittfläche (eigene Schraffur), Normteile (Schrauben,
+            // Muttern, Scheiben, Stifte) werden nicht geschnitten; liegen sie ganz vor der Schnittebene, entfallen sie
+            const n = v3.norm(v.cut.n), parts = [], groups = [];
+            for (const s of shapes) {
+              if (s.body?.meta?.norm) {
+                const bb = s.shape.boundingBox.bounds;
+                const lo = Math.min(...[0, 1].flatMap((i) => [0, 1].flatMap((j) => [0, 1].map((k) => n[0] * bb[i][0] + n[1] * bb[j][1] + n[2] * bb[k][2]))));
+                if (lo < v.cut.c - 1e-6) parts.push(s.shape.clone());
+                continue;
+              }
+              let cs;
+              try { cs = K.cutAtPlane(s.shape, n, v.cut.c); } catch { continue; }
+              parts.push(cs);
+              const loops = K.sectionLoops(cs, n, v.cut.c, v);
+              if (loops.length) groups.push(loops);
+            }
+            if (!parts.length) throw new Error("Schnittebene liegt außerhalb");
+            const cutShape = parts.length === 1 ? parts[0] : R.makeCompound(parts); // gibt die Kopien/Schnittteile frei
             r = K.projectView(cutShape, v);
-            r.sectionLoops = K.sectionLoops(cutShape, v.cut.n, v.cut.c, v);
-          } else r = K.projectView(shape, v);
+            r.sectionLoops = groups.flat();
+            r.sectionGroups = groups;
+            r.axes = K.cylinderAxes(cutShape, v);
+          } else {
+            r = K.projectView(shape, v);
+            r.axes = K.cylinderAxes(shape, v);
+          }
           r.bbox = bbox2(r.visible.concat(r.hidden));
         } catch (e) {
           r = { error: errorText(e, R), visible: [], hidden: [], arcs: [], hiddenArcs: [], bbox: null };

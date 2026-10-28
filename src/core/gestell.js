@@ -293,6 +293,26 @@ export function gestellPlan(input) {
       apply(corner, A, B, autoGap, "(automatisch)");
       continue;
     }
+    // drei Stäbe: Raumecke (zwei in einer Ebene gegehrt, der dritte quer dazu an ihnen gestutzt, z. B. Tischbein) oder
+    // zwei auf einer Linie (Stoß) und ein dritter an ihnen gestutzt; sonst von Hand
+    if (list.length === 3 && free.length === 3 && !list.some((x, i) => list.some((y, j) => j > i && isManual(x.o, y.o)))) {
+      const dirs = list.map((x) => into(x.o, x.end));
+      let done = false;
+      for (let k = 0; k < 3 && !done; k++) {
+        const [i, j] = [0, 1, 2].filter((m) => m !== k), [x, y, w] = [list[i], list[j], list[k]];
+        const nrm = v3.cross(dirs[i], dirs[j]);
+        if (Math.abs(v3.dot(dirs[i], dirs[j])) > 0.9999) {
+          // x und y auf einer Linie: w stutzen
+          if (tee === "keine" || Math.abs(v3.dot(dirs[k], dirs[i])) > 0.9999) continue;
+          done = apply(tee === "nuten" || tee === "stecken" ? tee : "stutzen", x.o, w.o, autoGap, "(automatisch)");
+        } else if (v3.len(nrm) > 1e-6 && Math.abs(v3.dot(v3.norm(nrm), dirs[k])) > 0.9) {
+          if (corner === "keine") continue;
+          const [A, B] = x.o.m.no < y.o.m.no ? [x.o, y.o] : [y.o, x.o];
+          done = apply(corner, A, B, autoGap, "(automatisch)") && apply("stutzen", A, w.o, autoGap, "(automatisch)");
+        }
+      }
+      if (done) continue;
+    }
     if (list.length > 2 && free.length > 1) warn(`Knoten mit ${list.length} Stäben (${list.map((x) => x.o.label).join(", ")}): Verbindung von Hand setzen`);
   }
 

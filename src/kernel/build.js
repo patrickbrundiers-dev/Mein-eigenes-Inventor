@@ -27,6 +27,7 @@ import { planSheet, contourLegs, punchOutline, SHEET_FEATURES } from "../core/bl
 import { path3d } from "../core/ableiten.js";
 import { applyRules } from "../core/regeln.js";
 import { bendRule, ruleSummary } from "../core/bendtable.js";
+import { pathAxes, pathPoint, pathLength as tubeLength, pathDistance, bendRadius, splitPath } from "../core/biegeteil.js";
 import { effectiveSheet } from "../core/blechregeln.js";
 import { planBlechkasten, boxFromBody, boxSideFrame } from "../core/blechkasten.js";
 import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, boltSizeForHole, boltSet } from "../core/normteile.js";
@@ -1165,9 +1166,11 @@ export function createKernel(R) {
               if (!(L > 1e-6)) continue;
               const fr = memberFrame(m.a, v3.sub(m.b, m.a), m.rot || 0, m.up);
               const cuts = m.cuts || { start: [], end: [] };
-              let { solid } = memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts, cut);
+              // plain: ebener Sägeschnitt ohne Laser-Endbearbeitung (Fachwerk-Füllstäbe an Gurtflächen)
+              let { solid } = m.plain ? makeMember({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts) : memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts, cut);
               // Hüllkörper anderer Stäbe abziehen (Gestell: Nuten, Stutzen an Rundrohr)
               for (const c of m.copes || []) {
+                if (c.path) { solid = solid.cut(sweepAlong(c.path, c.section.geom || sectionGeometry(c.section.kind, c.section.dims), true)); continue; }
                 const cl = v3.dist(c.a, c.b);
                 if (cl > 1e-6) solid = solid.cut(makeMember({ kind: c.section.kind, dims: c.section.dims }, cl, memberFrame(c.a, v3.sub(c.b, c.a), c.rot || 0, c.up), c.cuts || { start: [], end: [] }, { envelope: true }).solid);
               }
@@ -1177,6 +1180,25 @@ export function createKernel(R) {
               const ds = drillsOf(m.name, m.a, m.b, Math.hypot(m.section.geom.width, m.section.geom.height));
               add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), miterParts: { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) }, ...(m.copes?.length ? { coped: true } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }), m.name);
             }
+            // gebogene/gewalzte Profile (Wendel-Handlauf, Ring, Bogen): ein Körper entlang der Mittellinie
+            for (const tb of plan.tubes || []) {
+              const g = tb.section.geom || sectionGeometry(tb.section.kind, tb.section.dims);
+              const ds = (plan.drills || []).filter((d) => d.target === (tb.target || tb.name) && pathDistance(tb.path, d.p) <= Math.max(g.width, g.height) / 2 + 5);
+              // Booleans an der langen Freiformfläche sind sehr langsam: mit vielen Bohrungen (Handlaufhalter an der Wendel) in
+              // kurzen Abschnitten (≤ 30°) ziehen und bohren, als ein Körper (Verbund) zusammengesetzt
+              const n = ds.length > 2 ? Math.max(1, Math.ceil(Math.abs(tb.path.sweep) / 30)) : 1, rad = Math.max(g.width, g.height) / 2 + 5;
+              const pieces = (n > 1 ? splitPath(tb.path, tubeLength(tb.path) / n + 1e-6) : [tb.path]).map((pa, k) => {
+                let sh = sweepAlong(pa, g);
+                for (const c of tb.cuts || []) sh = sh.cut(halfSpace(c.p, c.n, BIG));
+                for (const c of tb.copes || []) if (c.path) sh = sh.cut(sweepAlong(c.path, c.section.geom || sectionGeometry(c.section.kind, c.section.dims), true));
+                // Bohrung dem Abschnitt zuordnen, in dem ihr Punkt liegt (am Stoß beiden)
+                return drill(sh, n > 1 ? ds.filter((d) => pathDistance(pa, d.p) <= rad) : ds);
+              });
+              const solid = pieces.length > 1 ? R.makeCompound(pieces) : pieces[0];
+              const meta = { section: sectionName(tb.section.kind, tb.section.dims), profileId: profileId(tb.section.kind, tb.section.dims), area: g.area, length: tubeLength(tb.path), miterStart: 0, miterEnd: 0, generator: f.gen, sec: { kind: tb.section.kind, dims: tb.section.dims },
+                rolled: { radius: bendRadius(tb.path), angle: Math.abs(tb.path.sweep), rise: tb.path.rise || 0 }, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) };
+              add(solid, meta, tb.name);
+            }
             for (const pl of plan.plates) {
               let d;
               if (pl.poly) { d = R.draw(pl.poly[0]); for (const q of pl.poly.slice(1)) d = d.lineTo(q); d = d.close(); }
@@ -1184,8 +1206,10 @@ export function createKernel(R) {
               for (const [x, y, hd] of pl.holes || []) d = d.cut(R.drawCircle((hd || pl.d) / 2).translate(x, y)); // [x, y, Ø?] – eigener Ø je Loch (Gegenbohrung)
               for (const [x, y, len] of pl.slots || []) d = d.cut(R.drawRoundedRectangle(len, pl.d, pl.d / 2 - 0.01).translate(x, y)); // Langloch entlang xDir
               for (const [x, y, w, hh] of pl.rects || []) d = d.cut(R.drawRectangle(w, hh).translate(x, y)); // Rechteckausschnitt (Steckschlitz)
-              const solid = d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t);
-              const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length, ...(pl.slots?.length ? { slots: pl.slots.length } : {}), d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
+              // Bohrungen quer zur Plattenebene (z. B. im Schenkel eines Pfettenschuhs): drills mit dem Plattennamen
+              const pds = (plan.drills || []).filter((x) => x.target === pl.name);
+              const solid = drill(d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t), pds);
+              const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length + pds.length, ...(pl.slots?.length ? { slots: pl.slots.length } : {}), d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
               const dens = pl.glass ? FILL_DENSITY.glas : FILL_DENSITY[pl.tread];
               if (dens) meta.density = dens;
               state.bodies.push({ shape: solid, kind: "solid", name: pl.name, fid: f.id, meta });
@@ -2188,6 +2212,34 @@ export function createKernel(R) {
     return shape.translate(pos);
   }
 
+  // ---------- Biegeteil im Generator: Querschnitt entlang einer Wendel bzw. eines Kreisbogens (src/core/biegeteil.js) ----------
+  function pathWire(path0) {
+    // steigend aufbauen (fallende Wendel vom anderen Ende her)
+    let path = path0;
+    if ((path.rise || 0) < 0) path = { ...path, a0: path.a0 + path.sweep, sweep: -path.sweep, rise: -path.rise, c: v3.add(path.c, v3.mul(pathAxes(path).n, path.rise)) };
+    const P = (t) => pathPoint(path, t);
+    if (Math.abs(path.rise || 0) < 1e-6) {
+      if (Math.abs(path.sweep) >= 360 - 1e-6) return R.assembleWire([R.makeThreePointArc(P(0), P(0.25), P(0.5)), R.makeThreePointArc(P(0.5), P(0.75), P(1))]);
+      return R.assembleWire([R.makeThreePointArc(P(0), P(0.5), P(1))]);
+    }
+    const ax = pathAxes(path);
+    if (Math.abs(ax.n[2] - 1) > 1e-9 || Math.abs(ax.x[0] - 1) > 1e-9) throw new Error("Wendel nur um die senkrechte Achse");
+    const h = R.makeHelix((path.rise * 360) / Math.abs(path.sweep), path.rise, path.r, [0, 0, 0], [0, 0, 1], path.sweep < 0);
+    return h.rotate(path.a0, [0, 0, 0], [0, 0, 1]).translate(path.c);
+  }
+  /** Querschnitt g entlang der Bahn gezogen; envelope = nur Außenkontur (Ausklinken anderer Teile) */
+  function sweepAlong(path, g, envelope = false) {
+    const spine = pathWire(path);
+    const o = spine.startPoint.toTuple(), z = v3.norm(spine.tangentAt(0).toTuple());
+    let x = v3.sub(o, v3.add(path.c, v3.mul(pathAxes(path).n, v3.dot(v3.sub(o, path.c), pathAxes(path).n))));
+    x = v3.norm(v3.sub(x, v3.mul(z, v3.dot(x, z))));
+    const pl = new R.Plane(o, x, z);
+    const sweep = (loop) => R.genericSweep(loopToDrawing(loop).sketchOnPlane(pl).wire, spine, { frenet: true });
+    let solid = sweep(g.outer);
+    if (!envelope) for (const hole of g.holes) solid = solid.cut(sweep(hole));
+    return solid;
+  }
+
   // ---------- Biegerohr: Kreis(ring) entlang der Mittellinie aus Geraden und Bögen ----------
   function sweepTube(pieces, geom) {
     const edges = pieces.map((p) => (p.t === "line" ? R.makeLine(p.a, p.b) : R.makeThreePointArc(p.a, p.m, p.b)));
@@ -2782,6 +2834,63 @@ export function createKernel(R) {
     return { visible: vis.polylines, hidden: hid.polylines, arcs: vis.arcs, hiddenArcs: hid.arcs };
   }
 
+  /**
+   * Achsen von Zylinderflächen, die in der Ansicht von der Seite zu sehen sind (Bohrungen, Rohre, Bolzen), als Strecken in
+   * Ansichtskoordinaten – für automatische Mittellinien wie in Inventor. Gleichachsige Teilflächen werden zusammengefasst;
+   * nur, was zusammen mindestens einen Halbkreis bildet (keine Rundungen an Kanten).
+   */
+  function cylinderAxes(shape, view) {
+    const d = v3.norm(view.dir), up = v3.norm(view.up);
+    const right = v3.norm(v3.cross(d, up));
+    const Y = v3.cross(v3.mul(d, -1), right);
+    const groups = [];
+    for (const fc of shape.faces) {
+      if (fc.geomType !== "CYLINDRE" && fc.geomType !== "CYLINDER") continue;
+      try {
+        const ax = cylinderAxis(fc);
+        const D = v3.norm(ax.axisD);
+        if (Math.abs(v3.dot(D, d)) > 1e-3) continue; // nicht von der Seite gesehen
+        const b = fc.UVBounds;
+        const sweep = Math.min(2 * Math.PI, Math.abs(b.uMax - b.uMin));
+        const P0 = v3.add(ax.axisP, v3.mul(ax.axisD, b.vMin)), P1 = v3.add(ax.axisP, v3.mul(ax.axisD, b.vMax));
+        const t0 = Math.min(v3.dot(P0, D), v3.dot(P1, D)), t1 = Math.max(v3.dot(P0, D), v3.dot(P1, D));
+        // Fußpunkt der Achse senkrecht zu D (eindeutig für gleichachsige Flächen)
+        const foot = v3.sub(ax.axisP, v3.mul(D, v3.dot(ax.axisP, D)));
+        // in Richtung der Gruppe gemessen; nur überlappende Teilflächen zählen zusammen (keine gestapelten Rundungen)
+        const along = (x) => (v3.dot(x.D, D) < 0 ? [-t1, -t0] : [t0, t1]);
+        let g = groups.find((x) => {
+          if (Math.abs(Math.abs(v3.dot(x.D, D)) - 1) > 1e-6 || v3.len(v3.sub(x.foot, foot)) > 1e-3 || Math.abs(x.r - ax.radius) > 1e-3) return false;
+          const [a, b] = along(x);
+          return a < x.t1 - 1e-3 && b > x.t0 + 1e-3;
+        });
+        const [a0, a1] = g ? along(g) : [t0, t1];
+        if (!g) groups.push(g = { D, foot, r: ax.radius, t0: a0, t1: a1, sweep: 0 });
+        g.t0 = Math.min(g.t0, a0); g.t1 = Math.max(g.t1, a1); g.sweep += sweep;
+      } catch { /* ignore */ }
+    }
+    const P2 = (p) => [v3.dot(p, right), v3.dot(p, Y)];
+    const out = [];
+    for (const g of groups) {
+      if (g.sweep < Math.PI * 0.95 || g.t1 - g.t0 < 1e-6) continue;
+      const a = P2(v3.add(g.foot, v3.mul(g.D, g.t0))), b = P2(v3.add(g.foot, v3.mul(g.D, g.t1)));
+      // gleiche Linie in der Ansicht (z. B. Bohrungen hintereinander) nur einmal, überlappende verbinden
+      const dup = out.find((o) => {
+        const ux = o[1][0] - o[0][0], uy = o[1][1] - o[0][1], L = Math.hypot(ux, uy);
+        if (L < 1e-9) return false;
+        const off = (q) => Math.abs((q[0] - o[0][0]) * uy - (q[1] - o[0][1]) * ux) / L;
+        if (off(a) > 0.01 || off(b) > 0.01) return false;
+        const t = (q) => ((q[0] - o[0][0]) * ux + (q[1] - o[0][1]) * uy) / L;
+        const ta = t(a), tb = t(b), lo = Math.min(ta, tb), hi = Math.max(ta, tb);
+        if (hi < -0.5 || lo > L + 0.5) return false;
+        const n0 = Math.min(0, lo), n1 = Math.max(L, hi), O = o[0];
+        o[0] = [O[0] + (ux / L) * n0, O[1] + (uy / L) * n0];
+        o[1] = [O[0] + (ux / L) * n1, O[1] + (uy / L) * n1];
+        return true;
+      });
+      if (!dup) out.push([a, b]);
+    }
+    return out;
+  }
   /** Kamera aus Blickrichtung + Oben-Richtung */
   function camera(view) {
     const d = v3.norm(view.dir);
@@ -2901,7 +3010,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

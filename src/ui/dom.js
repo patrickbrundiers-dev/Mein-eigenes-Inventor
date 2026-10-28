@@ -44,6 +44,13 @@ const P = {
   treppe: '<path d="M3 21h4v-4h4v-4h4V9h4V5h2"/><path d="M3 17L19 3" stroke-width="1.2"/>',
   rahmenecke: '<path d="M5 21V5h4v16"/><path d="M9 7l12-3v4L9 11"/><path d="M9 4v9"/>',
   pfette: '<path d="M2 9h20v4H2z"/><path d="M6 13v6M18 13v6"/><path d="M4 19h4M16 19h4"/>',
+  stuetzenfuss: '<path d="M9 3v12M15 3v12"/><path d="M4 15h16v3H4z"/><path d="M7 18v4M17 18v4"/>',
+  traegerstoss: '<path d="M2 7h9v10H2M22 7h-9v10h9"/><path d="M8 5h8v2H8zM8 17h8v2H8z"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/>',
+  traegeranschluss: '<path d="M3 3v18M7 3v18M3 4h4M3 20h4"/><path d="M10 8h11M10 16h11M14 8v8"/><path d="M7 9h5v6H7"/>',
+  steigleiter: '<path d="M7 2v20M13 2v20M7 6h6M7 10h6M7 14h6M7 18h6"/><path d="M13 9c5 0 7 2 7 5s-2 5-7 5"/>',
+  fachwerk: '<path d="M2 18h20M2 8h20M2 8v10M22 8v10M7 8v10M12 8v10M17 8v10"/><path d="M2 8l5 10M7 8l5 10M17 18l5-10M12 18l5-10"/>',
+  achsraster: '<path d="M7 5v17M17 5v17M2 12h20M2 19h20" stroke-dasharray="4 1.5 1 1.5"/><circle cx="7" cy="3.5" r="2"/><circle cx="17" cy="3.5" r="2"/>',
+  arbeitsbuehne: '<path d="M2 9h20M2 12h20M4 12v10M20 12v10M2 9V3M22 9V3M2 3h20M12 9V3"/><path d="M6 22l4-10"/>',
   windverband: '<path d="M3 3h18v18H3z"/><path d="M3 3l18 18M21 3L3 21"/><path d="M6 16l2 2" stroke-width="3"/>',
   balkon: '<path d="M3 3v18"/><path d="M3 13h18v2H3"/><path d="M20 15v6M7 13V7h14v6"/><path d="M11 7v6M15 7v6"/>',
   spindel: '<circle cx="12" cy="12" r="1.6"/><path d="M12 12L20 9M12 12l5 7M12 12l-4 8M12 12L4 14M12 12l-3-8"/><circle cx="12" cy="12" r="9" stroke-width="1"/>',
@@ -197,12 +204,17 @@ export function icon(name, cls = "") {
 }
 
 // ---------- Hinweise ----------
+const TOAST_ICON = { ok: "finish", err: "warn", warn: "warn" };
 export function toast(text, { kind = "", timeout = 4000, action = null } = {}) {
   const root = document.getElementById("toasts");
-  const el = h("div", { class: "toast " + kind }, h("span", {}, text));
+  // Ausblenden mit kurzer Animation; das Element ist danach sofort aus dem DOM
+  const hide = () => { if (!el.isConnected || el.classList.contains("out")) return; el.classList.add("out"); setTimeout(() => el.remove(), 160); };
+  const el = h("div", { class: "toast " + kind, role: kind === "err" ? "alert" : null },
+    icon(TOAST_ICON[kind] || "info", "toast-ic"), h("span", { class: "toast-text" }, text));
   if (action) el.append(h("button", { onclick: () => { action.run(); el.remove(); } }, action.label));
+  el.append(h("button", { class: "toast-x", title: "Schließen", "aria-label": "Meldung schließen", onclick: () => el.remove() }, icon("cancel")));
   root.append(el);
-  if (timeout) setTimeout(() => el.remove(), timeout);
+  if (timeout) setTimeout(hide, timeout);
   return el;
 }
 
@@ -294,9 +306,73 @@ export function contextMenu(x, y, items) {
   setTimeout(() => document.addEventListener("mousedown", onDocDown, true), 0);
   return m;
 }
+
+// Markierungsmenü (wie Inventor): bis zu 8 Befehle im Kreis um den Mauszeiger, Reihenfolge N, NO, O, SO, S, SW, W, NW
+// (null lässt eine Richtung frei); seltene Befehle als Liste darunter. Die Richtung, in die die Maus vom Mittelpunkt
+// wegzeigt, ist vorgewählt – ein Klick irgendwo in diesem Sektor führt den Befehl aus.
+const RING_DIRS = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
+export function markingMenu(x, y, ring, list = []) {
+  closeMenu();
+  const R = 96;
+  const m = h("div", { class: "marking", role: "menu", "aria-label": "Markierungsmenü" });
+  const run = (it) => { closeMenu(); it.run(); };
+  const slots = ring.slice(0, 8).map((it, i) => {
+    if (!it) return null;
+    const a = (i * Math.PI) / 4;
+    const b = h("button", { class: "mk-item mk-" + RING_DIRS[i], role: "menuitem", disabled: it.disabled, title: it.kbd ? `${it.label} (${it.kbd})` : null,
+      style: { left: Math.sin(a) * R + "px", top: -Math.cos(a) * R + "px" }, onclick: (e) => { e.stopPropagation(); run(it); } },
+      it.icon ? icon(it.icon) : null, h("span", {}, it.label));
+    m.append(b);
+    return { it, b };
+  });
+  m.prepend(h("div", { class: "mk-center", "aria-hidden": "true" }), h("div", { class: "mk-ring", "aria-hidden": "true" }));
+  const rest = list.filter(Boolean);
+  let sub = null;
+  if (rest.some((x) => x !== "-")) {
+    sub = h("div", { class: "menu mk-list", role: "menu" });
+    for (const it of rest) {
+      if (it === "-") { if (sub.lastChild && sub.lastChild.tagName !== "HR") sub.append(h("hr")); continue; }
+      sub.append(h("button", { role: "menuitem", disabled: it.disabled, onclick: () => run(it) },
+        it.icon ? icon(it.icon) : null, h("span", {}, it.label), it.kbd ? h("span", { class: "kbd" }, it.kbd) : null));
+    }
+    if (sub.lastChild?.tagName === "HR") sub.lastChild.remove();
+    m.append(sub);
+  }
+  document.body.append(m);
+  // Mittelpunkt so legen, dass Kreis und Liste ins Fenster passen
+  const listH = sub ? sub.getBoundingClientRect().height : 0;
+  const cx = Math.max(R + 90, Math.min(x, innerWidth - R - 90));
+  const cy = Math.max(R + 24, Math.min(y, innerHeight - R - 30 - listH));
+  m.style.left = cx + "px";
+  m.style.top = cy + "px";
+  if (sub) Object.assign(sub.style, { left: "-100px", top: R + 26 + "px" });
+  let hot = null;
+  const setHot = (s) => { if (hot === s) return; hot?.b.classList.remove("hot"); hot = s; hot?.b.classList.add("hot"); };
+  const sector = (e) => {
+    const dx = e.clientX - cx, dy = e.clientY - cy;
+    if (Math.hypot(dx, dy) < 26) return null;
+    const i = Math.round(((Math.atan2(dx, -dy) + 2 * Math.PI) % (2 * Math.PI)) / (Math.PI / 4)) % 8;
+    return slots[i] && !slots[i].it.disabled ? slots[i] : null;
+  };
+  const onMove = (e) => setHot(sub?.contains(e.target) ? null : sector(e));
+  const onDown = (e) => {
+    if (sub?.contains(e.target) || e.target.closest?.(".mk-item")) return;
+    e.preventDefault(); e.stopPropagation();
+    const s = e.button === 0 ? sector(e) : null;
+    closeMenu();
+    if (s) s.it.run();
+  };
+  const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); closeMenu(); } };
+  document.addEventListener("pointermove", onMove, true);
+  m.cleanup = () => { document.removeEventListener("pointermove", onMove, true); document.removeEventListener("pointerdown", onDown, true); document.removeEventListener("keydown", onKey, true); };
+  openMenu = m;
+  // pointerdown im Erfassen: der Klick, der das Menü schließt, wählt nichts im 3D-Fenster
+  setTimeout(() => { if (openMenu === m) { document.addEventListener("pointerdown", onDown, true); document.addEventListener("keydown", onKey, true); } }, 0);
+  return m;
+}
 function onDocDown(e) { if (openMenu && !openMenu.contains(e.target)) closeMenu(); }
 export function closeMenu() {
-  if (openMenu) { openMenu.remove(); openMenu = null; document.removeEventListener("mousedown", onDocDown, true); }
+  if (openMenu) { openMenu.cleanup?.(); openMenu.remove(); openMenu = null; document.removeEventListener("mousedown", onDocDown, true); }
 }
 
 export function fmtNum(v, d = 2) {
