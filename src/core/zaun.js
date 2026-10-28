@@ -116,7 +116,7 @@ export const ZAUN = {
     return { chains: [], members, plates, info, issues, geo: { n, rise } };
   },
 
-  parts: { fieldMax: /^Pfosten/, postTop: /^Pfosten/, length: /^Pfosten/, height: /riegel|Stab/ },
+  parts: { fieldMax: /^Pfosten \d+$/, postTop: /^Pfosten/, length: /^Pfosten \d+$/, height: /riegel|Stab/ },
   views: ["front", "top"],
   /** Maßlinien der Skizze (Ansicht: x, z; Grundriss: x, y) */
   dims(p, plan, view) {
