@@ -63,7 +63,7 @@ Baut auf U1 aus PR #149 auf (Schatten, Radien `--radius-l`, Übergänge, Meldung
 
 - 28.10.2026: Analyse und Plan fertig. Patrick: „So umsetzen“. PRs werden vorbereitet, gemergt wird erst nach dem gesammelten Release.
 - SY0, SY1, SY2, SY3, SY5, SY6 in einer PR (claude/project-thread-1cf1aj), Messwerte in `docs/testing/leistung.md`.
-  - SY2: Rückgängig teilt unveränderte Dokumente zwischen den Ständen, Budget 200 Mio. Zeichen. Netze per Transfer und einmaliges Serialisieren zurückgestellt: gemessen < 1 % der Bauzeit.
+  - SY2: Rückgängig teilt unveränderte Dokumente zwischen den Ständen, Budget 200 Mio. Zeichen. Netze per Transfer und einmaliges Serialisieren zurückgestellt: erwarteter Nutzen klein (Kopien sind Speicherkopien von wenigen MB), nicht einzeln gemessen.
   - SY3: 3D-Ansicht zeichnet erst, wenn sichtbar. WASM-Zwischenspeicher zurückgestellt: im Container ohne Electron nicht messbar.
   - SY4: Modellbrowser + Eigenschaften neu zeichnen dauert ~1 ms – kein Handlungsbedarf; Baugruppen-Verdrängung im Kern mit SY1 behoben.
   - SY5: nach 8 s Rechnen »Abbrechen« (Kern-Neustart), Hinweis bei 3 Abstürzen in 1 min, kein unbehandelter Fehler beim Neustart.
