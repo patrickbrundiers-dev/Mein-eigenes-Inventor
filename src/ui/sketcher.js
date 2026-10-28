@@ -30,13 +30,13 @@ export const SKETCH_TOOLS = {
   circle: "Kreis: Mittelpunkt, dann Radius klicken – oder Durchmesser tippen, Enter",
   arc3: "Bogen: Anfang, Ende, dann Punkt auf dem Bogen klicken",
   spline: "Spline: Kontrollpunkte nacheinander klicken – Enter, Doppelklick oder Esc beendet, Klick auf den ersten Punkt schließt",
-  ellipse: "Ellipse: Mittelpunkt, Ende der Hauptachse, dann einen Punkt für die Nebenhalbachse klicken",
-  arcc: "Bogen um Mittelpunkt: Mitte, Anfang, Ende (gegen Uhrzeigersinn)",
+  ellipse: "Ellipse: Mittelpunkt, Ende der Hauptachse (Halbachse Tab Winkel tippbar), dann Nebenhalbachse klicken oder tippen, Enter",
+  arcc: "Bogen um Mittelpunkt: Mitte, Anfang (Radius Tab Winkel tippbar), Ende gegen Uhrzeigersinn (Öffnungswinkel tippbar), Enter",
   point: "Punkt / Bohrungsmitte setzen",
-  slot: "Langloch: erster Mittelpunkt, zweiter Mittelpunkt, dann Breite klicken",
+  slot: "Langloch: erster Mittelpunkt, zweiter Mittelpunkt (Abstand Tab Winkel tippbar), dann Breite klicken oder tippen, Enter",
   text: "Text: Anfangspunkt auf der Grundlinie klicken, dann Text und Schrifthöhe eingeben. Platzhalter: {teilenummer}, {name}, {werkstoff}, {datum}",
   image: "Bild: linke untere Ecke klicken, dann Bild (PNG/JPG) wählen und Breite in mm eingeben. Das Bild ist nur Vorlage zum Nachzeichnen",
-  polygon: "Polygon: Mittelpunkt, dann eine Ecke klicken – danach Anzahl der Ecken eingeben",
+  polygon: "Polygon: Mittelpunkt klicken, Eckenzahl tippen, Tab, Umkreisradius tippen, Enter – oder eine Ecke klicken",
   offset: "Versatz: Kontur anklicken (oder vorher Elemente wählen), dann die Seite klicken und den Abstand eingeben",
   pattern: "Rechteckmuster: vorher Elemente wählen, dann ins Bild klicken und Anzahl/Abstände in X und Y eingeben",
   cpattern: "Kreismuster: vorher Elemente wählen, dann den Mittelpunkt klicken und Anzahl/Winkel eingeben",
@@ -422,7 +422,97 @@ export class Sketcher {
   finishDyn(cur) {
     if (this.tool === "line") this.finishLine(cur);
     else if (this.tool === "circle") this.finishCircle(cur);
+    else if (this.tool === "slot" || this.tool === "ellipse" || this.tool === "arcc") this.stepPolar(cur);
+    else if (this.tool === "polygon") this.finishPolygon(cur);
     else this.finishRect(cur);
+  }
+  /** Punkt in Länge/Winkel von origin: getippt (Maßeingabe) oder Maus; null bei ungültigem Wert */
+  polarTarget(origin, cur) {
+    if (!dynTyped(this.state.dyn)) return { b: cur, exprs: {}, values: lineLive(origin, cur) };
+    const r = this.dynResult(lineLive(origin, cur));
+    if (!r) return null;
+    return { b: lineEnd(origin, r.values.len, r.values.ang), exprs: r.exprs, values: r.values };
+  }
+  /** Polygon-Eckenzahl ohne Eingabe: zuletzt benutzt bzw. Voreinstellung */
+  polygonN() { return Math.max(3, Math.min(64, Math.round(Number(this.lastValue("polygon") || this.prefs?.["werkzeuge.std.polygon"]) || 6))); }
+  /** Live-Werte der dritten Stufe (Langloch-Breite, Nebenhalbachse, Bogenwinkel) */
+  thirdLive(cur) {
+    const [a, b] = this.state.pts;
+    if (this.tool === "slot") return { w: 2 * slotRadius(a, b, cur) };
+    if (this.tool === "ellipse") return { b: Math.abs(ellipseLocal(ellipseGeom(a, b, 1), cur.x, cur.y).v) };
+    const t1 = Math.atan2(b.y - a.y, b.x - a.x), t = Math.atan2(cur.y - a.y, cur.x - a.x);
+    let sw = ((t - t1) * 180) / Math.PI;
+    while (sw <= 0) sw += 360;
+    return { sw };
+  }
+  /** Langloch, Ellipse, Bogen um Mitte: 2. Klick (Länge/Winkel tippbar), 3. Klick (Breite, Nebenhalbachse, Bogenwinkel tippbar) */
+  stepPolar(cur) {
+    const st = this.state, t = this.tool;
+    if (st.pts.length === 1) {
+      const p = this.polarTarget(st.pts[0], cur);
+      if (!p) return;
+      if (Math.hypot(p.b.x - st.pts[0].x, p.b.y - st.pts[0].y) * this.M.scale <= 2) return;
+      st.pts.push(p.b);
+      st.first = p.exprs;
+      st.firstAng = p.values.ang;
+      st.dyn = createDynInput([t === "arcc" ? { key: "sw", signed: true } : t === "slot" ? "w" : "b"]);
+      return;
+    }
+    const live = this.thirdLive(cur);
+    const r = dynTyped(st.dyn) ? this.dynResult(live) : { values: live, exprs: {} };
+    if (!r) return;
+    const [a, b] = st.pts, first = st.first || {}, axisAng = first.ang != null && axisAngle(st.firstAng);
+    const angDim = first.ang != null && !axisAng ? first.ang : null;
+    const hv = axisAng ? (Math.abs(Math.sin((st.firstAng * Math.PI) / 180)) < 1e-9 ? "horizontal" : "vertical") : null;
+    this.state = null;
+    const up = (s, p, cons) => this.usePoint(s, p, cons);
+    if (t === "slot") {
+      const rad = r.values.w / 2;
+      if (rad * this.M.scale < 1 && !r.exprs.w) return;
+      this.commitShape("Langloch", (sk) => {
+        const s = buildSlot(sk, a, b, rad, { uid, usePoint: up, construction: !!this.construction });
+        const dims = [];
+        if (first.len != null) dims.push({ id: uid("m"), type: "length", e: s.axis, value: String(first.len), labelOffset: 0 });
+        if (angDim != null) dims.push({ id: uid("m"), type: "lineAngle", e: s.axis, value: String(angDim), labelOffset: 34 / this.M.scale });
+        if (hv) dims.push({ id: uid("k"), type: hv, e: s.axis });
+        if (r.exprs.w != null) dims.push({ id: uid("m"), type: "diameter", e: s.arcs[0], value: String(r.exprs.w), labelAngle: Math.PI * 0.75 });
+        this.pushChecked(sk, dims);
+      });
+    } else if (t === "ellipse") {
+      if (r.values.b * this.M.scale < 1 && !r.exprs.b) return;
+      const dims = [];
+      if (first.len != null) dims.push({ type: "semiAxis", axis: "a", value: String(first.len) });
+      if (first.ang != null) dims.push({ type: "axisAngle", value: String(first.ang) });
+      if (r.exprs.b != null) dims.push({ type: "semiAxis", axis: "b", value: String(r.exprs.b) });
+      this.addEllipse(a, b, r.values.b, dims);
+    } else {
+      const R = Math.hypot(b.x - a.x, b.y - a.y), t1 = Math.atan2(b.y - a.y, b.x - a.x) + (r.values.sw * Math.PI) / 180;
+      const end = r.exprs.sw != null ? { x: a.x + R * Math.cos(t1), y: a.y + R * Math.sin(t1) } : cur;
+      this.addArc(a, b, end, first.len != null ? first.len : null);
+    }
+  }
+  finishPolygon(cur) {
+    const st = this.state, c = st.start;
+    const live = { n: this.polygonN(), r: Math.hypot(cur.x - c.x, cur.y - c.y) };
+    const res = dynTyped(st.dyn) ? this.dynResult(live) : { values: live, exprs: {} };
+    if (!res) return;
+    const n = Math.round(res.values.n);
+    if (!(n >= 3 && n <= 64)) { toast("Polygon: 3 bis 64 Ecken", { kind: "err" }); return; }
+    if (res.values.r * this.M.scale < 2 && res.exprs.r == null) return;
+    const a0 = Math.atan2(cur.y - c.y, cur.x - c.x);
+    const v = res.exprs.r != null ? { x: c.x + res.values.r * Math.cos(a0), y: c.y + res.values.r * Math.sin(a0) } : cur;
+    this.state = null;
+    if (res.exprs.n != null) this.rememberValue("polygon", String(n));
+    this.commitShape("Polygon", (sk) => {
+      const p = buildPolygon(sk, c, v, n, { uid, usePoint: (s, q, cons) => this.usePoint(s, q, cons), construction: !!this.construction });
+      if (res.exprs.r != null) this.pushChecked(sk, [{ id: uid("m"), type: "radius", e: p.circle, value: String(res.exprs.r), labelAngle: a0 + Math.PI / n }]);
+    });
+  }
+  /** Maße/Bedingungen einzeln anhängen, nur wenn sie nicht überbestimmen */
+  pushChecked(sk, list) {
+    for (const c of list) {
+      try { if (checkNewConstraint(sk, c, this.scope()) === "ok") sk.constraints.push(c); } catch { /* weglassen */ }
+    }
   }
   finishRect(cur) {
     const t = this.rectTarget(cur);
@@ -567,12 +657,14 @@ export class Sketcher {
     });
     this.render();
   }
-  addEllipse(c, a, rb) {
+  addEllipse(c, a, rb, dims = []) {
     this.commit("Ellipse", (sk) => {
       const cons = [];
       const cid = this.usePoint(sk, c, cons), aid = this.usePoint(sk, a, cons);
-      sk.entities.push({ id: uid("el"), type: "ellipse", c: cid, a: aid, r: Math.max(rb, 1e-3), construction: !!this.construction });
+      const id = uid("el");
+      sk.entities.push({ id, type: "ellipse", c: cid, a: aid, r: Math.max(rb, 1e-3), construction: !!this.construction });
       sk.constraints.push(...cons);
+      this.pushChecked(sk, dims.map((d) => ({ id: uid("m"), ...d, e: id })));
     });
   }
   addCircle(c, r, diameter = null, auto = null) {
@@ -589,7 +681,7 @@ export class Sketcher {
       }
     });
   }
-  addArc(center, start, end) {
+  addArc(center, start, end, radius = null) {
     this.commit("Bogen", (sk) => {
       const cons = [];
       const cid = center.pointId || (() => { const id = uid("p"); sk.points.push({ id, x: center.x, y: center.y }); return id; })();
@@ -599,8 +691,10 @@ export class Sketcher {
       const ang = Math.atan2(end.y - center.y, end.x - center.x);
       const e2 = end.pointId ? end : { ...end, x: center.x + r * Math.cos(ang), y: center.y + r * Math.sin(ang) };
       const p2 = this.usePoint(sk, e2, cons);
-      sk.entities.push({ id: uid("b"), type: "arc", c: cid, p1, p2, construction: !!this.construction });
+      const id = uid("b");
+      sk.entities.push({ id, type: "arc", c: cid, p1, p2, construction: !!this.construction });
       sk.constraints.push(...cons);
+      if (radius != null) this.pushChecked(sk, [{ id: uid("m"), type: "radius", e: id, value: String(radius), labelAngle: Math.atan2(start.y - center.y, start.x - center.x) }]);
     });
   }
   addPoint(sn) {
@@ -1250,20 +1344,9 @@ export class Sketcher {
         if (Math.hypot(lx - sx, ly - sy) > 2) this.state.pts.push(sn);
         break;
       }
-      case "ellipse":
-        if (!this.state) this.state = { pts: [sn] };
-        else if (this.state.pts.length === 1) { if (Math.hypot(sn.x - this.state.pts[0].x, sn.y - this.state.pts[0].y) * this.M.scale > 2) this.state.pts.push(sn); }
-        else {
-          const [c, a] = this.state.pts;
-          const rb = Math.abs(ellipseLocal(ellipseGeom(c, a, 1), sn.x, sn.y).v);
-          this.state = null;
-          if (rb * this.M.scale >= 1) this.addEllipse(c, a, rb);
-        }
-        break;
-      case "arcc":
-        if (!this.state) this.state = { pts: [sn] };
-        else if (this.state.pts.length === 1) this.state.pts.push(sn);
-        else { const [c, a] = this.state.pts; this.addArc(c, a, sn); this.state = null; }
+      case "ellipse": case "arcc":
+        if (!this.state) this.state = { pts: [sn], dyn: createDynInput(["len", { key: "ang", signed: true }]) };
+        else this.stepPolar(sn);
         break;
       case "point":
         this.addPoint(sn);
@@ -1275,28 +1358,12 @@ export class Sketcher {
         this.addImage(sn);
         break;
       case "slot":
-        if (!this.state) this.state = { pts: [sn] };
-        else if (this.state.pts.length === 1) { if (Math.hypot(sn.x - this.state.pts[0].x, sn.y - this.state.pts[0].y) * this.M.scale > 2) this.state.pts.push(sn); }
-        else {
-          const [a, b] = this.state.pts;
-          const r = slotRadius(a, b, sn);
-          this.state = null;
-          if (r * this.M.scale < 1) break;
-          this.commitShape("Langloch", (sk) => buildSlot(sk, a, b, r, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));
-        }
+        if (!this.state) this.state = { pts: [sn], dyn: createDynInput(["len", { key: "ang", signed: true }]) };
+        else this.stepPolar(sn);
         break;
       case "polygon":
-        if (!this.state) this.state = { start: sn };
-        else {
-          const c = this.state.start;
-          this.state = null;
-          if (Math.hypot(sn.x - c.x, sn.y - c.y) * this.M.scale < 2) break;
-          this.askValue(sx, sy, this.lastValue("polygon") || String(this.prefs?.["werkzeuge.std.polygon"] ?? 6), (val) => {
-            const n = Math.round(evaluate(val, this.scope()));
-            this.rememberValue("polygon", String(n));
-            this.commitShape("Polygon", (sk) => buildPolygon(sk, c, sn, n, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));
-          });
-        }
+        if (!this.state) this.state = { start: sn, dyn: createDynInput(["n", "r"]) };
+        else this.finishPolygon(sn);
         break;
     }
     this.render();
@@ -1904,16 +1971,35 @@ export class Sketcher {
       const ctrl = [...st.pts, cur].map((p) => [p.x, p.y]);
       path("M" + splineSamples(ctrl, 16).map((q) => S(q[0], q[1]).join(",")).join("L"));
       g.append(svgEl("path", { d: "M" + ctrl.map((q) => S(q[0], q[1]).join(",")).join("L"), class: "sk-ctrl" }));
+    } else if (["ellipse", "arcc", "slot"].includes(this.tool) && st.pts?.length === 1 && st.dyn) {
+      // erste Strecke (Halbachse, Radius, Mittenabstand): Länge und Winkel tippbar wie bei der Linie
+      const a = st.pts[0], live = lineLive(a, cur), typed = dynTyped(st.dyn);
+      const vals = typed ? dynValues(st.dyn, live, this.scope()).values : live;
+      const b = typed ? lineEnd(a, vals.len, vals.ang) : cur;
+      const A = S(a.x, a.y), B = S(b.x, b.y);
+      path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`);
+      if (this.tool === "arcc") g.append(svgEl("circle", { cx: A[0], cy: A[1], r: vals.len * this.M.scale, class: "sk-preview", opacity: 0.35 }));
+      this.renderDynLine(g, A, B, vals, a);
     } else if (this.tool === "ellipse" && st.pts) {
       const [c, a] = st.pts;
-      if (!a) { const A = S(c.x, c.y), B = S(cur.x, cur.y); path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`); }
-      else {
-        const g0 = ellipseGeom(c, a, 1), rb = Math.abs(ellipseLocal(g0, cur.x, cur.y).v);
-        path("M" + ellipseSamples(ellipseGeom(c, a, rb), 96).map((q) => S(q[0], q[1]).join(",")).join("L") + "Z");
-        const A = S(c.x, c.y), B = S(a.x, a.y);
-        g.append(svgEl("path", { d: `M${2 * A[0] - B[0]},${2 * A[1] - B[1]}L${B[0]},${B[1]}`, class: "sk-dyn-line" }));
+      const live = this.thirdLive(cur), rb = st.dyn ? dynValues(st.dyn, live, this.scope()).values.b : live.b;
+      path("M" + ellipseSamples(ellipseGeom(c, a, rb), 96).map((q) => S(q[0], q[1]).join(",")).join("L") + "Z");
+      const A = S(c.x, c.y), B = S(a.x, a.y);
+      g.append(svgEl("path", { d: `M${2 * A[0] - B[0]},${2 * A[1] - B[1]}L${B[0]},${B[1]}`, class: "sk-dyn-line" }));
+      if (st.dyn) {
+        const q = ellipsePoint(ellipseGeom(c, a, rb), Math.PI / 2), Q = S(q.x, q.y);
+        g.append(svgEl("path", { d: `M${A[0]},${A[1]}L${Q[0]},${Q[1]}`, class: "sk-dyn-line" }));
+        this.dynBox(g, 0, (A[0] + Q[0]) / 2 + 26, (A[1] + Q[1]) / 2, "b ", "", rb);
       }
-    } else if ((this.tool === "arc3" || this.tool === "arcc") && st.pts) {
+    } else if (this.tool === "arcc" && st.pts) {
+      const [c, a] = st.pts, live = this.thirdLive(cur), sw = st.dyn ? dynValues(st.dyn, live, this.scope()).values.sw : live.sw;
+      const R = Math.hypot(a.x - c.x, a.y - c.y), t1 = Math.atan2(a.y - c.y, a.x - c.x), n = 48, pts = [];
+      for (let i = 0; i <= n; i++) { const t = t1 + ((sw * Math.PI) / 180) * (i / n); pts.push(S(c.x + R * Math.cos(t), c.y + R * Math.sin(t))); }
+      path("M" + pts.map((q) => q.join(",")).join("L"));
+      const C = S(c.x, c.y), tm = t1 + ((sw * Math.PI) / 360), M = S(c.x + R * 0.6 * Math.cos(tm), c.y + R * 0.6 * Math.sin(tm));
+      g.append(svgEl("path", { d: `M${pts[0][0]},${pts[0][1]}L${C[0]},${C[1]}L${pts[n][0]},${pts[n][1]}`, class: "sk-dyn-line" }));
+      if (st.dyn) this.dynBox(g, 0, M[0], M[1], "", "°", sw);
+    } else if (this.tool === "arc3" && st.pts) {
       const pts = [...st.pts, cur];
       if (this.tool === "arc3" && pts.length === 3) {
         const circ = circleFrom3([pts[0].x, pts[0].y], [pts[2].x, pts[2].y], [pts[1].x, pts[1].y]);
@@ -1927,19 +2013,31 @@ export class Sketcher {
       const [a, b] = st.pts;
       if (!b) { const A = S(a.x, a.y), B = S(cur.x, cur.y); path(`M${A[0]},${A[1]}L${B[0]},${B[1]}`); }
       else {
-        const r = slotRadius(a, b, cur);
+        const live = this.thirdLive(cur), r = (st.dyn ? dynValues(st.dyn, live, this.scope()).values.w : live.w) / 2;
         const L = Math.hypot(b.x - a.x, b.y - a.y) || 1, nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L;
         // Umriss als Punktfolge: Halbkreis um b (von +n über +Achse nach −n), dann um a zurück
         const base = Math.atan2(ny, nx), pts = [];
         for (let i = 0; i <= 16; i++) { const t = base - (Math.PI * i) / 16; pts.push(S(b.x + r * Math.cos(t), b.y + r * Math.sin(t))); }
         for (let i = 0; i <= 16; i++) { const t = base + Math.PI - (Math.PI * i) / 16; pts.push(S(a.x + r * Math.cos(t), a.y + r * Math.sin(t))); }
         path("M" + pts.map((q) => q.join(",")).join("L") + "Z");
+        if (st.dyn) {
+          const P1 = S(b.x + r * nx, b.y + r * ny), P2 = S(b.x - r * nx, b.y - r * ny);
+          g.append(svgEl("path", { d: `M${P1[0]},${P1[1]}L${P2[0]},${P2[1]}`, class: "sk-dyn-line" }));
+          this.dynBox(g, 0, (P1[0] + P2[0]) / 2 + 30, (P1[1] + P2[1]) / 2 - 14, "", "", 2 * r);
+        }
       }
     } else if (this.tool === "polygon" && st.start) {
-      const c = st.start, n = Math.max(3, Math.min(64, Number(this.lastValue("polygon") || this.prefs?.["werkzeuge.std.polygon"]) || 6));
-      const r = Math.hypot(cur.x - c.x, cur.y - c.y), a0 = Math.atan2(cur.y - c.y, cur.x - c.x);
+      const c = st.start, live = { n: this.polygonN(), r: Math.hypot(cur.x - c.x, cur.y - c.y) };
+      const vals = st.dyn ? dynValues(st.dyn, live, this.scope()).values : live;
+      const n = Math.max(3, Math.min(64, Math.round(vals.n) || 3)), r = vals.r, a0 = Math.atan2(cur.y - c.y, cur.x - c.x);
       const pts = Array.from({ length: n }, (_, i) => S(c.x + r * Math.cos(a0 + (2 * Math.PI * i) / n), c.y + r * Math.sin(a0 + (2 * Math.PI * i) / n)));
       path("M" + pts.map((q) => q.join(",")).join("L") + "Z");
+      if (st.dyn) {
+        const C = S(c.x, c.y);
+        g.append(svgEl("path", { d: `M${C[0]},${C[1]}L${pts[0][0]},${pts[0][1]}`, class: "sk-dyn-line" }));
+        this.dynBox(g, 0, C[0], C[1] + 26, "", " Ecken", vals.n);
+        this.dynBox(g, 1, (C[0] + pts[0][0]) / 2, (C[1] + pts[0][1]) / 2 - 14, "R ", "", r);
+      }
     } else if (this.tool === "dimension" && st.picks) {
       // Vorschau wie Inventor: das Maß hängt an der Maus und zeigt, ob waagrecht, senkrecht oder ausgerichtet bemaßt wird
       let shown = false;
@@ -1991,7 +2089,7 @@ export class Sketcher {
     });
   }
   /** Maßfelder an der Vorschau-Linie: Länge neben der Linienmitte, Winkel am Startpunkt */
-  renderDynLine(g, A, B, vals) {
+  renderDynLine(g, A, B, vals, origin = this.state.start) {
     const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1;
     // Normale zeigt auf dem Bildschirm nach oben bzw. rechts
     let nx = dy / L, ny = -dx / L;
@@ -2001,7 +2099,7 @@ export class Sketcher {
     g.append(svgEl("path", { d: `M${A[0]},${A[1]}L${A1[0]},${A1[1]}M${B[0]},${B[1]}L${B1[0]},${B1[1]}M${A1[0]},${A1[1]}L${B1[0]},${B1[1]}`, class: "sk-dyn-line" }));
     this.dynBox(g, 0, (A1[0] + B1[0]) / 2, (A1[1] + B1[1]) / 2, "", "", vals.len);
     // Winkel: Bogen von der Skizzen-x-Achse bis zur Linie, Feld auf der Winkelhalbierenden
-    const a = this.state.start, R = 34 / this.M.scale, ang = (vals.ang * Math.PI) / 180;
+    const a = origin, R = 34 / this.M.scale, ang = (vals.ang * Math.PI) / 180;
     const arc = [];
     for (let k = 0; k <= 24; k++) { const t = (ang * k) / 24; arc.push(this.S(a.x + R * Math.cos(t), a.y + R * Math.sin(t))); }
     const X = this.S(a.x + R * 1.3, a.y);
