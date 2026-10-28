@@ -84,6 +84,7 @@ export function commandRunners(app) {
     "asm.alignAngle": r("alignAngle"),
     "asm.alignTangent": r("alignTangent"),
     "asm.pattern": r("asmPattern"),
+    "asm.achsraster": r("achsraster"),
     "asm.mirror": () => app.props.mirrorComponent(),
     "asm.bom": r("bom"),
     "asm.cutlist": () => app.props.cutListDialog(),

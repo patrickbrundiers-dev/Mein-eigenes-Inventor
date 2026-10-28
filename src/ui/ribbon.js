@@ -5,6 +5,7 @@ import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog 
 import { defaultStecksystem } from "../core/stecksystem.js";
 import { h, icon, toast, closeMenu, contextMenu } from "./dom.js";
 import { problemsDialog } from "./pruefung.js";
+import { newGrid } from "./achsraster.js";
 import { catalogToDims } from "../core/sections.js";
 import { defaultKnickrahmen } from "../core/knickrahmen.js";
 import { defaultProfilzug } from "../core/profilzug.js";
@@ -237,6 +238,7 @@ export class Ribbon {
       place: () => app.props.placeComponentDialog(),
       asmPattern: () => app.props.newAsmPattern(),
       steckAsm: () => app.props.newSteckverbindung(),
+      achsraster: () => newGrid(app),
       normteilAsm: () => app.props.normteilDialog(),
       align: () => app.beginAlign("gegen"),
       alignFlush: () => app.beginAlign("buendig"),
@@ -444,7 +446,7 @@ export class Ribbon {
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun")] },
-          { label: "Stahlbau", small: true, buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne")] },
+          { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne")] },
           { label: "Gestell", big: 1, buttons: (() => {
             const g = !!app.activeDoc()?.gestell, on = (t) => app.pick?.kind === "gestell" && app.pick.tool === t;
             return [

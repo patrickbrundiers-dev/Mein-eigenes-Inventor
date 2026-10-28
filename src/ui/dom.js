@@ -49,6 +49,7 @@ const P = {
   traegeranschluss: '<path d="M3 3v18M7 3v18M3 4h4M3 20h4"/><path d="M10 8h11M10 16h11M14 8v8"/><path d="M7 9h5v6H7"/>',
   steigleiter: '<path d="M7 2v20M13 2v20M7 6h6M7 10h6M7 14h6M7 18h6"/><path d="M13 9c5 0 7 2 7 5s-2 5-7 5"/>',
   fachwerk: '<path d="M2 18h20M2 8h20M2 8v10M22 8v10M7 8v10M12 8v10M17 8v10"/><path d="M2 8l5 10M7 8l5 10M17 18l5-10M12 18l5-10"/>',
+  achsraster: '<path d="M7 5v17M17 5v17M2 12h20M2 19h20" stroke-dasharray="4 1.5 1 1.5"/><circle cx="7" cy="3.5" r="2"/><circle cx="17" cy="3.5" r="2"/>',
   arbeitsbuehne: '<path d="M2 9h20M2 12h20M4 12v10M20 12v10M2 9V3M22 9V3M2 3h20M12 9V3"/><path d="M6 22l4-10"/>',
   windverband: '<path d="M3 3h18v18H3z"/><path d="M3 3l18 18M21 3L3 21"/><path d="M6 16l2 2" stroke-width="3"/>',
   balkon: '<path d="M3 3v18"/><path d="M3 13h18v2H3"/><path d="M20 15v6M7 13V7h14v6"/><path d="M11 7v6M15 7v6"/>',
