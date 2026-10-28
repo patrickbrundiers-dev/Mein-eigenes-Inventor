@@ -758,7 +758,7 @@ export class Viewer {
     rc.params.Line.threshold = 6 / Math.max(0.01, this.pixelsPerUnit());
     const hits = rc.intersectObjects(this.datumGroup.children, false).filter((x) => x.object.userData.datumKey || x.object.userData.handle);
     if (!hits.length) return null;
-    const rank = (o) => (o.userData.handle ? 0 : o.userData.datumKind === "point" ? 1 : o.userData.datumKind === "axis" || o.userData.datumKind === "curve" ? 2 : 3);
+    const rank = (o) => (o.userData.handle ? 0 : o.userData.datumKind === "point" ? 1 : o.userData.datumKind === "axis" || o.userData.datumKind === "curve" || o.userData.datumKind === "path" ? 2 : 3);
     hits.sort((a, b) => rank(a.object) - rank(b.object) || a.distance - b.distance);
     const o = hits[0].object;
     return { key: o.userData.datumKey, kind: o.userData.datumKind, handle: !!o.userData.handle, point: hits[0].point.toArray(), distance: hits[0].distance };

@@ -112,12 +112,15 @@ export function classifyPick(app, e) {
     if (ORIGIN[key]) return { kind: ORIGIN[key].kind, ref: key, label: ORIGIN[key].label };
     if (key.startsWith("datum:")) {
       const f = part?.features.find((x) => x.id === key.slice(6));
+      // 3D-Pfad (3D-Skizze) als Kurve: Stützpunkte aus dem Ergebnis
+      const path = f && (app.results.get(part.id)?.paths3d || []).find((x) => x.id === f.id);
+      if (path?.pts?.length >= 2) return { kind: "curve", ref: { pts: path.pts.map(r6) }, at: dh?.point, label: f.name, pts: path.pts.map(r6) };
       if (!f || !KIND_OF_TYPE[f.type]) return null;
       return { kind: KIND_OF_TYPE[f.type], ref: f.id, label: f.name };
     }
     return null;
   };
-  if (dh && !dh.handle && (dh.kind === "point" || dh.kind === "axis")) { const r = fromKey(dh.key); if (r) return r; }
+  if (dh && !dh.handle && (dh.kind === "point" || dh.kind === "axis" || dh.kind === "path")) { const r = fromKey(dh.key); if (r) return r; }
   const hit = v.pick(e.clientX, e.clientY, { edges: true, faces: true, vertices: true });
   if (hit?.kind === "vertex") return { kind: "point", ref: { p: r6(hit.point) }, label: "Ecke" };
   if (hit?.kind === "edge") {

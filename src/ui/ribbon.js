@@ -29,6 +29,10 @@ import { evaluate } from "../core/expr.js";
 import { commandDef, inScope } from "../core/commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
 import { applyRibbonLayout, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
+import { befehlHilfe } from "../core/befehlshilfe.js";
+import { SKETCH_TOOLS } from "./sketcher.js";
+import { bindTooltips } from "./tooltip.js";
+import { KeyTips } from "./keytips.js";
 import { startDatumPick } from "./arbeitselemente.js";
 
 export class Ribbon {
@@ -37,6 +41,8 @@ export class Ribbon {
     this.el = document.getElementById("ribbon");
     this.tab = null;
     this.actions = this.defineActions();
+    this.tips = bindTooltips(this.el);
+    this.keytips = new KeyTips(this);
   }
 
   defineActions() {
@@ -575,7 +581,8 @@ export class Ribbon {
     if (mode === "sketch") this.tab = this.tab === "ansicht" ? "ansicht" : "skizze";
     const tabBar = h("div", { class: "rb-tabs" },
       h("button", { class: "rb-file", onclick: (e) => this.fileMenu(e) }, "Datei"),
-      ...tabs.map((t) => h("button", { class: "rb-tab" + (t.id === this.tab ? " active" : "") + (t.context ? " context" : ""), onclick: () => { this.tab = t.id; this.render(); } }, t_(t.label))),
+      h("div", { class: "rb-tablist", role: "tablist", "aria-label": "Menüband", onkeydown: (e) => this.tabKey(e, tabs) },
+        ...tabs.map((t) => h("button", { class: "rb-tab" + (t.id === this.tab ? " active" : "") + (t.context ? " context" : ""), role: "tab", "aria-selected": String(t.id === this.tab), tabindex: t.id === this.tab ? "0" : "-1", "data-tab": t.id, onclick: () => { this.tab = t.id; this.render(); } }, t_(t.label)))),
       h("div", { class: "rb-spacer" }),
       h("button", { class: "rb-search", title: `Befehl suchen (${this.kbd("app.search") || "Strg+K"})`, onclick: () => app.commands.exec("app.search") }, icon("search"), h("span", {}, "Befehl suchen"), this.kbd("app.search") ? h("span", { class: "kbd" }, this.kbd("app.search")) : null),
       h("button", { class: "icon-btn", title: "Rückgängig (Strg+Z)", disabled: !app.undoStack.length, onclick: () => app.undo() }, icon("undo")),
@@ -584,18 +591,18 @@ export class Ribbon {
       this.docLabel = h("div", { class: "rb-doc" }));
     this.renderDocLabel();
     const tab = tabs.find((t) => t.id === this.tab);
-    const panel = h("div", { class: "rb-panel" });
+    const panel = h("div", { class: "rb-panel", role: "tabpanel", "aria-label": t_(tabs.find((t) => t.id === this.tab)?.label || "") });
     if (tab) {
       const L = applyRibbonLayout(tab.id, tab.groups, this.app.prefs.get("werkzeuge.menueband") || {});
       for (const g of L.groups) {
         const btns = h("div", { class: "rb-buttons" });
         // groß: alle (Standard), keine (small) oder die ersten g.big; der Rest klein in Spalten zu je 3
         const nBig = g.small ? 0 : g.big ?? g.buttons.length;
-        for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, title: this.tip(b) }, icon(b.icon), h("span", {}, t_(b.label))));
+        for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, ...this.tipAttrs(b) }, icon(b.icon), h("span", {}, ...breakable(t_(b.label)))));
         const rest = g.buttons.slice(nBig);
         for (let i = 0; i < rest.length; i += 3) {
           btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + 3).map((b) =>
-            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), title: this.tip(b), "aria-label": t_(b.label), onclick: b.run, disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : t_(b.label)))));
+            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), ...this.tipAttrs(b), "aria-label": t_(b.label), onclick: b.run, disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : t_(b.label)))));
         }
         panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns, h("div", { class: "rb-group-label" }, t_(g.label))));
       }
@@ -603,7 +610,19 @@ export class Ribbon {
     } else if (mode === "start") {
       panel.append(h("div", { class: "hint", style: { alignSelf: "center", padding: "0 8px" } }, "Neues Projekt anlegen oder vorhandenes öffnen."));
     }
+    this.tips.hide();
+    this.app.minibar?.hide();
     this.el.replaceChildren(tabBar, panel);
+  }
+  /** Pfeiltasten wechseln den Reiter (Tablisten-Muster), Pos1/Ende springen an den Rand */
+  tabKey(e, tabs) {
+    const i = tabs.findIndex((t) => t.id === this.tab);
+    const n = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+    if (n === undefined || !tabs.length) return;
+    e.preventDefault();
+    this.tab = tabs[(n + tabs.length) % tabs.length].id;
+    this.render();
+    this.el.querySelector(`.rb-tab[data-tab="${this.tab}"]`)?.focus();
   }
   /** Rechtsklick auf eine Gruppe: verschieben, ausblenden, anpassen */
   groupMenu(e, tab, label) {
@@ -651,10 +670,18 @@ export class Ribbon {
   kbd(id) { return this.app.commands?.label(id) || ""; }
   /** Tooltip mit Tastaturkürzel, falls der Knopf einem Befehl entspricht */
   tip(b) {
-    const special = { rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", replaceComp: "asm.replace", positions: "asm.positionSave", asmParams: "asm.params", compColors: "view.compColors", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", sdof: "sketch.dof", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
-    const id = special[b.id] || (b.id.startsWith("t_") ? "sketch." + b.id.slice(2) : b.id.startsWith("v_") ? "view." + b.id.slice(2) : b.id.startsWith("dm_") ? "view.mode." + b.id.slice(3) : "part." + b.id);
-    const k = this.kbd(id);
+    const k = this.kbd(this.tipId(b));
     return k ? `${b.label} (${k})` : b.label;
+  }
+  tipId(b) {
+    const special = { rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", replaceComp: "asm.replace", positions: "asm.positionSave", asmParams: "asm.params", compColors: "view.compColors", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", sdof: "sketch.dof", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
+    return special[b.id] || (b.id.startsWith("t_") ? "sketch." + b.id.slice(2) : b.id.startsWith("v_") ? "view." + b.id.slice(2) : b.id.startsWith("dm_") ? "view.mode." + b.id.slice(3) : "part." + b.id);
+  }
+  /** Daten für die Tooltip-Karte (src/ui/tooltip.js); die Beschreibung auch für Bildschirmleser */
+  tipAttrs(b) {
+    const k = this.kbd(this.tipId(b));
+    const desc = befehlHilfe(b.id, SKETCH_TOOLS);
+    return { "data-tip": t_(b.label).replace(/\u00ad/g, ""), "data-kbd": k || null, "data-desc": desc || null, "aria-description": desc || null };
   }
   renderDocLabel() {
     if (!this.docLabel) return;
@@ -693,4 +720,10 @@ export class Ribbon {
     document.body.append(m);
     setTimeout(() => document.addEventListener("mousedown", out, true), 0);
   }
+}
+
+/** Beschriftung großer Knöpfe darf nach »/« umbrechen (»Kürzen/Verlängern«); <wbr> ändert den Namen des Knopfs nicht */
+function breakable(label) {
+  const parts = String(label).split(/(?<=\/)/);
+  return parts.flatMap((p, i) => (i ? [h("wbr"), p] : [p]));
 }
