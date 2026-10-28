@@ -33,6 +33,6 @@ export function clipProjection(p, c, r) {
   const inArcs = (list) => (list || []).filter((a) => Math.hypot(a.cx - c[0], a.cy - c[1]) + a.r <= r + 1e-9);
   return {
     visible: clip(p.visible), hidden: clip(p.hidden), arcs: inArcs(p.arcs), hiddenArcs: inArcs(p.hiddenArcs),
-    sectionLoops: [], bbox: { x0: c[0] - r, y0: c[1] - r, x1: c[0] + r, y1: c[1] + r },
+    axes: clip(p.axes), sectionLoops: [], bbox: { x0: c[0] - r, y0: c[1] - r, x1: c[0] + r, y1: c[1] + r },
   };
 }
