@@ -337,6 +337,11 @@ export class Sketcher {
       }
       if (opts.length != null) cons.push({ id: uid("m"), type: "length", e: id, value: String(opts.length), labelOffset: 18 / this.M.scale });
       sk.constraints.push(...cons);
+      // getippter Winkel (nicht 0/90/180/270°, die werden waagrecht/senkrecht) bleibt als Maß zur x-Achse stehen
+      if (opts.angle != null) {
+        const c = { id: uid("m"), type: "lineAngle", e: id, value: String(opts.angle), labelOffset: 34 / this.M.scale };
+        try { if (checkNewConstraint(sk, c, this.scope()) === "ok") sk.constraints.push(c); } catch { /* weglassen */ }
+      }
       // automatische Bedingungen nur, wenn sie die Skizze nicht überbestimmen
       for (const a of hv ? [] : opts.auto || []) {
         const c = { id: uid("k"), ...a, e1: a.e1 ?? id, e2: a.e2 ?? id, ...(a.type === "tangentAt" ? { p: p1 } : {}) };
@@ -383,7 +388,8 @@ export class Sketcher {
     const r = this.dynResult(lineLive(st.start, cur));
     if (!r) return null;
     const b = lineEnd(st.start, r.values.len, r.values.ang);
-    return { b, opts: { length: r.exprs.len, noInfer: r.exprs.ang != null && !axisAngle(r.values.ang) } };
+    const typedAng = r.exprs.ang != null && !axisAngle(r.values.ang);
+    return { b, opts: { length: r.exprs.len, angle: typedAng ? r.exprs.ang : null, noInfer: typedAng } };
   }
   finishLine(cur) {
     const t = this.lineTarget(cur);
@@ -1368,6 +1374,7 @@ export class Sketcher {
       if (!c) return;
       if (c.type === "radius" || c.type === "diameter") { const e = this.entity(c.e); const cc = P.get(e.c); c.labelAngle = Math.atan2(ly - cc.y, lx - cc.x); return; }
       if (c.type === "semiAxis" || c.type === "axisAngle") return;
+      if (c.type === "lineAngle") { const e = this.entity(c.e), a = e && P.get(e.p1); if (a) c.labelOffset = Math.max(8 / this.M.scale, Math.hypot(lx - a.x, ly - a.y)); return; }
       if (c.type === "angle") { c.labelOffset = Math.max(5 / this.M.scale, Math.hypot(lx - d.start[0], ly - d.start[1]) + (c._base ?? (c._base = c.labelOffset || 20))); return; }
       const [a, b] = this.dimPoints(c, P);
       if (!a || !b) return;
@@ -1465,6 +1472,8 @@ export class Sketcher {
     if (this.tool === "spline" && this.state?.pts && (k === "Enter" || k === "Escape")) { this.finishSpline(false); return true; }
     if (k === "Escape") {
       if (this.state) { this.state = null; this.render(); return true; }
+      // wie Inventor: erst die Auswahl aufheben, erst bei leerer Auswahl die Skizze beenden
+      if (this.tool === "select" && this.sel.size) { this.sel.clear(); this.app.selectSketchItems([]); this.render(); return true; }
       if (this.tool !== "select") { this.setTool("select"); return true; }
       this.app.finishSketch();
       return true;
@@ -1652,15 +1661,15 @@ export class Sketcher {
     try { v = c.driven ? measureConstraint(this.sk, c) : evaluate(c.value, scope); } catch { /* */ }
     const num = fmtNum(v, 2);
     const isExpr = !c.driven && !/^\s*-?[\d.,]+\s*$/.test(String(c.value));
-    let t = c.type === "diameter" ? "Ø" + num : c.type === "radius" ? "R" + num : c.type === "angle" || c.type === "axisAngle" ? num + "°" : c.type === "semiAxis" ? `${c.axis === "b" ? "b" : "a"} ${num}` : num;
+    let t = c.type === "diameter" ? "Ø" + num : c.type === "radius" ? "R" + num : c.type === "angle" || c.type === "axisAngle" || c.type === "lineAngle" ? num + "°" : c.type === "semiAxis" ? `${c.axis === "b" ? "b" : "a"} ${num}` : num;
     if (isExpr) t = `fx: ${t}`;
     if (c.driven) t = `(${t})`;
     return t;
   }
-  renderDim(g, c, P) {
-    const sel = this.sel.has("c:" + c.id);
+  renderDim(g, c, P, preview = false) {
+    const sel = preview || this.sel.has("c:" + c.id);
     const bad = this.lastSolve?.failed?.includes(c.id);
-    const cls = "sk-dim" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (bad ? " err" : "");
+    const cls = "sk-dim" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (bad ? " err" : "") + (preview ? " preview" : "");
     const grp = svgEl("g");
     const text = this.dimText(c);
     let tx, ty, rot = 0;
@@ -1763,11 +1772,22 @@ export class Sketcher {
       const start = c.type === "diameter" ? this.S(cc.x - r * Math.cos(ang), cc.y - r * Math.sin(ang)) : sc;
       grp.append(svgEl("path", { class: cls, d: `M${start[0]},${start[1]}L${sx[0]},${sx[1]}` + arrow(so[0], so[1], so[0] - sc[0], so[1] - sc[1]) }));
       tx = sx[0] + (sx[0] >= sc[0] ? 4 : -4); ty = sx[1];
-      grp.append(textEl(text, tx, ty, 0, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), sx[0] >= sc[0] ? "start" : "end"));
+      grp.append(textEl(text, tx, ty, 0, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : "") + (preview ? " preview" : ""), sx[0] >= sc[0] ? "start" : "end"));
       g.append(grp);
       const bb = estimateBox(text, tx, ty, sx[0] >= sc[0] ? "start" : "end");
       this.dimBoxes.push({ id: c.id, ...bb });
       return;
+    } else if (c.type === "lineAngle") {
+      // Bogen am Linienanfang von der x-Richtung bis zur Linie, kurze waagrechte Bezugslinie
+      const e = this.entity(c.e);
+      if (!e) return;
+      const a = P.get(e.p1), b = P.get(e.p2);
+      const r = c.labelOffset || 34 / this.M.scale, t = Math.atan2(b.y - a.y, b.x - a.x), sweep = t < 0 ? t + 2 * Math.PI : t;
+      const n = 32, pts = [];
+      for (let i = 0; i <= n; i++) { const q = (sweep * i) / n; pts.push(this.S(a.x + r * Math.cos(q), a.y + r * Math.sin(q))); }
+      const sa = this.S(a.x, a.y), ref = this.S(a.x + r * 1.15, a.y), end = pts[n], prev = pts[n - 1];
+      grp.append(svgEl("path", { class: cls, d: `M${sa[0]},${sa[1]}L${ref[0]},${ref[1]}M` + pts.map((p) => p.join(",")).join("L") + arrow(end[0], end[1], end[0] - prev[0], end[1] - prev[1]) }));
+      [tx, ty] = this.S(a.x + (r + 12 / this.M.scale) * Math.cos(sweep / 2), a.y + (r + 12 / this.M.scale) * Math.sin(sweep / 2));
     } else if (c.type === "angle") {
       const e1 = this.entity(c.e1), e2 = this.entity(c.e2);
       if (!e1 || !e2) return;
@@ -1788,7 +1808,7 @@ export class Sketcher {
     if (tx === undefined) return;
     const anchorUp = 4;
     const nx = Math.sin((rot * Math.PI) / 180) * anchorUp, ny = -Math.cos((rot * Math.PI) / 180) * anchorUp;
-    grp.append(textEl(text, tx + nx, ty + ny, rot, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : ""), "middle"));
+    grp.append(textEl(text, tx + nx, ty + ny, rot, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : "") + (preview ? " preview" : ""), "middle"));
     g.append(grp);
     this.dimBoxes.push({ id: c.id, ...estimateBox(text, tx + nx, ty + ny - 4, "middle") });
   }
@@ -1921,8 +1941,23 @@ export class Sketcher {
       const pts = Array.from({ length: n }, (_, i) => S(c.x + r * Math.cos(a0 + (2 * Math.PI * i) / n), c.y + r * Math.sin(a0 + (2 * Math.PI * i) / n)));
       path("M" + pts.map((q) => q.join(",")).join("L") + "Z");
     } else if (this.tool === "dimension" && st.picks) {
-      const t = svgEl("text", { x: m.sx + 12, y: m.sy + 18, class: "sk-infer" });
-      t.textContent = st.place ? (st.locked ? "Lage klicken" : "Lage klicken oder zweites Element wählen") : "zweites Element wählen";
+      // Vorschau wie Inventor: das Maß hängt an der Maus und zeigt, ob waagrecht, senkrecht oder ausgerichtet bemaßt wird
+      let shown = false;
+      if (st.place) {
+        const c = this.dimensionFrom(st.picks, { x: m.lx, y: m.ly });
+        if (c) {
+          try {
+            c.id = "_vorschau";
+            c.value = String(round4(measureConstraint(this.sk, { ...c, value: "0" })));
+            const nb = this.dimBoxes.length;
+            this.renderDim(g, c, P, true);
+            this.dimBoxes.length = nb;
+            shown = true;
+          } catch { /* keine Vorschau möglich */ }
+        }
+      }
+      const t = svgEl("text", { x: m.sx + 12, y: m.sy + (shown ? 34 : 18), class: "sk-infer" });
+      t.textContent = st.place ? (shown ? (st.locked ? "Klick setzt das Maß" : "Klick setzt das Maß – oder zweites Element wählen") : st.locked ? "Lage klicken" : "Lage klicken oder zweites Element wählen") : "zweites Element wählen";
       g.append(t);
     }
   }

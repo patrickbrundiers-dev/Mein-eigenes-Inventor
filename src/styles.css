@@ -446,6 +446,8 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .tube-cut .seg button { padding-left: 5px; padding-right: 5px; }
 .sk-dim.err { stroke: var(--err); }
 .sk-dim-text.err { fill: var(--err); }
+.sk-dim.preview { stroke: var(--laser); stroke-dasharray: 4 2; }
+.sk-dim-text.sel.preview, .sk-dim-text.preview { fill: var(--laser); pointer-events: none; }
 .sk-dim.off, .sk-dim-text.off { opacity: 0.45; stroke-dasharray: 3 2; }
 .sk-glyph.off { opacity: 0.4; }
 .sk-box { fill: rgba(45, 98, 196, 0.08); stroke: #2d62c4; stroke-width: 1; pointer-events: none; }
