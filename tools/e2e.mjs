@@ -1189,10 +1189,14 @@ try {
     a.prefs.set("ansicht.darstellung", "kanten");
     const orig = a.files.saveBinary; let got = null;
     a.files.saveBinary = async (buf, name) => { got = { name, head: Array.from(buf.slice(0, 4)), n: buf.length }; };
-    try { await a.files.exportPng({ photo: true }); } finally { a.files.saveBinary = orig; }
+    // Rendern fragt Hintergrund und Bildgröße: Vorgaben übernehmen
+    let dlg = false;
+    const ok = setInterval(() => { const b = [...document.querySelectorAll(".backdrop .btn.primary")].find((x) => x.textContent === "Rendern"); if (b) { dlg = true; clearInterval(ok); b.click(); } }, 50);
+    try { await a.files.exportPng({ photo: true }); } finally { clearInterval(ok); a.files.saveBinary = orig; }
+    st.dlg = dlg;
     return { ...st, png: got, after: { mode: v.displayMode, env: !!v.scene.environment, stage: v.stage.children.length, lines: pk?.lines.visible, metal: pk?.mesh.material.metalness } };
   });
-  step("Fotorealistische Darstellung", ft.env && ft.tone && ft.shadow && ft.ground && !ft.grid && ft.lines === false && ft.metal > 0.5 && ft.cast && /_Render\.png$/.test(ft.png?.name || "") && ft.png.head.join() === "137,80,78,71" && ft.after.mode === "kanten" && !ft.after.env && ft.after.stage === 0 && ft.after.lines && ft.after.metal < 0.2, JSON.stringify(ft));
+  step("Fotorealistische Darstellung", ft.dlg && ft.env && ft.tone && ft.shadow && ft.ground && !ft.grid && ft.lines === false && ft.metal > 0.5 && ft.cast && /_Render\.png$/.test(ft.png?.name || "") && ft.png.head.join() === "137,80,78,71" && ft.after.mode === "kanten" && !ft.after.env && ft.after.stage === 0 && ft.after.lines && ft.after.metal < 0.2, JSON.stringify(ft));
   // Oberfläche und RAL-Farbe je Bauteil (E7): Auswahl im Eigenschaftenfeld, Farbe im Viewer, Text in der Stückliste
   {
     await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); });
