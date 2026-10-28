@@ -794,7 +794,8 @@ test("Generator als Baugruppe: Einzelteile in eigener Lage, Platzierung führt z
         const m = plan.members[b.index], l = lp.members[0];
         assert.ok(near(matApply(M, l.a), m.a) && near(matApply(M, l.b), m.b), `${g} ${b.name}: Platzierung`);
         assert.ok(Math.abs(l.b[1]) < 1e-9 && Math.abs(l.b[2]) < 1e-9 && l.b[0] > 0, `${g} ${b.name}: liegt auf X`);
-        for (const d of lp.drills) assert.ok(near(matApply(M, d.p), plan.drills.find((x) => x.target === m.name && near(x.dir, x.dir) && Math.abs(Math.hypot(...x.p) - Math.hypot(...matApply(M, d.p))) < 1e-6)?.p || [NaN]), `${g} ${b.name}: Bohrung`);
+        // jede Bohrung liegt nach der Platzierung wieder auf einer Bohrung des Stabs (symmetrische Bohrbilder: irgendeine)
+        for (const d of lp.drills) assert.ok(plan.drills.some((x) => x.target === m.name && near(matApply(M, d.p), x.p)), `${g} ${b.name}: Bohrung`);
       } else if (b.kind === "chain") {
         const c = lp.chains[0], s = c.onlySeg, w = plan.chains[b.index].points;
         assert.ok(near(matApply(M, c.points[s]), w[b.seg]) && near(matApply(M, c.points[s + 1]), w[b.seg + 1]), `${g} ${b.name}: Stück am Platz`);

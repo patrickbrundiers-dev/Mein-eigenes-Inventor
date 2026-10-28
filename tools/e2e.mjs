@@ -1640,10 +1640,9 @@ try {
     await page.mouse.click(mx - 60, my - 30);
     await evalApp(() => window.__werkcad.sketcher.setTool("polygon"));
     await page.mouse.click(mx + 150, my);
+    await page.keyboard.type("6"); // Eckenzahl in der Maßeingabe, dann Ecke klicken
     await page.mouse.move(mx + 230, my, { steps: 3 });
     await page.mouse.click(mx + 230, my);
-    await page.locator(".dim-input input").fill("6");
-    await page.keyboard.press("Enter");
     await page.waitForTimeout(300);
     await shot("25-langloch-polygon");
     const sk1 = await evalApp(() => { const s = window.__werkcad.sketcher; const r = s.solve(); return { arcs: s.sk.entities.filter((e) => e.type === "arc").length, lines: s.sk.entities.filter((e) => e.type === "line" && !e.construction).length, regions: s.profiles.regions.length, ok: r.ok, dof: r.dof }; });
@@ -2013,8 +2012,7 @@ try {
     await evalApp(() => window.__werkcad.sketcher.setTool("polygon"));
     const cv = await page.locator("#viewer canvas").boundingBox();
     await page.mouse.click(cv.x + cv.width / 2, cv.y + cv.height / 2);
-    await page.mouse.click(cv.x + cv.width / 2 + 80, cv.y + cv.height / 2);
-    const polyDefault = await page.locator(".dim-input input").inputValue();
+    const polyDefault = await evalApp(() => String(window.__werkcad.sketcher.polygonN())); // Vorgabe der Eckenzahl in der Maßeingabe
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");

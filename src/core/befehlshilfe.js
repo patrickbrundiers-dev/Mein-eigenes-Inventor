@@ -89,6 +89,7 @@ export const BEFEHLSHILFE = {
   constr: "Gewählte Elemente zu Konstruktionslinien machen (oder zurück). Sie bilden keine Kontur.",
   glyphs: "Symbole der Abhängigkeiten (horizontal, parallel …) ein- oder ausblenden.",
   gridsnap: "Punkte beim Zeichnen am Raster fangen.",
+  sdof: "Zeigen, welche Skizzenelemente noch frei beweglich sind (Freiheitsgrade).",
   finishSketch: "Skizze abschließen und zurück ins 3D-Modell.",
 
   // ---------- Baugruppe ----------
@@ -235,6 +236,21 @@ export const BEFEHLSHILFE = {
   x_angebot: "Angebotsblatt mit Bild, Hauptmaßen, Werkstoff und Gewicht als PDF.",
   x_pdf: "Zeichnung als PDF speichern.",
   x_svg: "Zeichnung als SVG-Grafik speichern.",
+  // Stahlbau und Teilebibliothek
+  x_ifc: "IFC4-Datei für BIM mit Stützen, Trägern, Platten und Schrauben speichern.",
+  x_dstv: "NC-Dateien (DSTV) für Säge-, Bohr- und Brennanlagen im Stahlbau speichern.",
+  x_einzelteile: "Einzelteile mit festen Positionsnummern als Liste und CSV ausgeben.",
+  stuetzenfuss: "Fußplatte mit Ankern und Steifen unter eine Stütze setzen.",
+  traegerstoss: "Zwei Träger mit Flansch- und Steglaschen verschrauben.",
+  traegeranschluss: "Nebenträger gelenkig an Hauptträger oder Stütze anschließen.",
+  steigleiter: "Steigleiter mit Rückenschutz nach ISO 14122-4 erzeugen.",
+  fachwerk: "Fachwerkträger aus Hohlprofilen mit N-, V- oder W-Füllung erzeugen.",
+  arbeitsbuehne: "Bühne mit Stützen, Gitterrost, Geländer und Aufgang erzeugen.",
+  achsraster: "Achsraster A, B, C und 1, 2, 3 in der Baugruppe anlegen.",
+  libSave: "Bauteil in der eigenen Teilebibliothek ablegen.",
+  libSaveAsm: "Baugruppe in der eigenen Teilebibliothek ablegen.",
+  libBrowse: "Eigene Standardteile in der Teilebibliothek suchen.",
+  libInsert: "Eigenes Standardteil aus der Teilebibliothek einfügen.",
 };
 
 /** Kurzbeschreibung zu einer Knopf-ID; für Skizzenwerkzeuge (t_…) die Hilfe des Werkzeugs (bis zum ersten Doppelpunkt-Satz). */

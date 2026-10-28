@@ -8,6 +8,7 @@ import { TAB_MODES } from "../core/stecksystem.js";
 import { axisDistance, measureSums, measureFormat, SECOND_UNITS } from "../core/messen.js";
 import { placeProps, constraintEditor, motionEditor } from "./abhaengigkeit.js";
 import { steckProps, newSteckverbindung, dropSteckForComponent } from "./steckverbindung.js";
+import { gridProps, gridSnapRow } from "./achsraster.js";
 import { settingsCenter } from "./settings.js";
 import { h, icon, toast, modal, fmtNum, confirmDialog, promptDialog } from "./dom.js";
 import { evaluate, resolveParams, isValidName } from "../core/expr.js";
@@ -348,6 +349,10 @@ export class Props {
       else if (app.sel?.type === "steck") {
         const s = (d.steckverbindungen || []).find((x) => x.id === app.sel.id);
         if (s) { title = s.name || "Stecksystem"; body.append(...steckProps(this, d, s)); }
+      }
+      else if (app.sel?.type === "grid") {
+        const g = (d.grids || []).find((x) => x.id === app.sel.id);
+        if (g) { title = g.name || "Achsraster"; body.append(...gridProps(this, d, g)); }
       }
       else if (app.sel?.type === "constraint") {
         const c = (d.constraints || []).find((x) => x.id === app.sel.id);
@@ -1780,7 +1785,7 @@ export class Props {
       } else if (t === "c") {
         const c = sk.constraints.find((x) => x.id === id);
         if (c) {
-          const names = { distance: "Abstand", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel", horizontal: "Horizontal", vertical: "Vertikal", parallel: "Parallel", perpendicular: "Senkrecht", equal: "Gleich", tangent: "Tangential", tangentAt: "Tangential", fix: "Fixiert", coincident: "Koinzident", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis", midpoint: "Mittelpunkt", concentric: "Konzentrisch", collinear: "Kollinear", symmetric: "Symmetrisch", offset: "Versatz", pattern: "Muster", semiAxis: "Halbachse", axisAngle: "Achswinkel" };
+          const names = { distance: "Abstand", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel", horizontal: "Horizontal", vertical: "Vertikal", parallel: "Parallel", perpendicular: "Senkrecht", equal: "Gleich", tangent: "Tangential", tangentAt: "Tangential", fix: "Fixiert", coincident: "Koinzident", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis", midpoint: "Mittelpunkt", concentric: "Konzentrisch", collinear: "Kollinear", symmetric: "Symmetrisch", offset: "Versatz", pattern: "Muster", semiAxis: "Halbachse", axisAngle: "Achswinkel", lineAngle: "Winkel zur x-Achse" };
           out.push(this.section(names[c.type] || c.type,
             c.value !== undefined && !c.driven ? this.expr("Wert", c.value, (v) => app.sketcher.commit("Maß ändern", (s) => { s.constraints.find((k) => k.id === id).value = v; }), { unit: c.type === "angle" ? "°" : "mm" }) : null,
             c.driven ? h("p", { class: "hint" }, "Getriebenes Maß (nur Anzeige). Doppelklick auf das Maß macht es steuernd.") : null,
@@ -1839,6 +1844,7 @@ export class Props {
         this.check("Im Kontaktsatz (hält an, wo es anstößt)", !!c.contact, (v) => upd("Kontaktsatz", () => { if (v) c.contact = true; else delete c.contact; }))),
       this.section("Lage",
         this.vec3("Position", c.pos, (v) => upd("Position", () => { c.pos = v; }), { numeric: true }),
+        c.fixed ? null : gridSnapRow(this, asm, c),
         this.vec3("Drehung X/Y/Z °", c.rot, (v) => upd("Drehung", () => { c.rot = v; }), { numeric: true }),
         h("div", { class: "btn-row" },
           ...[["X", 0], ["Y", 1], ["Z", 2]].map(([l, i]) => h("button", { class: "btn", title: `90° um ${l}`, disabled: c.fixed, onclick: () => upd("Drehen", () => { c.rot = c.rot.map((x, k) => (k === i ? (x + 90) % 360 : x)); }) }, `↻ ${l}`))),

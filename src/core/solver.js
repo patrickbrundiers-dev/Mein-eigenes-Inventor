@@ -325,6 +325,14 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
         });
         break;
       }
+      case "lineAngle": { // Richtung der Linie p1→p2 zur Skizzen-x-Achse in Grad (gegen Uhrzeigersinn), aus der Maßeingabe
+        const v = val(c) * DEG, [a, b] = lineIdx(E(c.e));
+        add(c.id, (x) => {
+          const dx = x[b] - x[a], dy = x[b + 1] - x[a + 1], d = Math.atan2(dy, dx) - v;
+          return Math.atan2(Math.sin(d), Math.cos(d)) * Math.hypot(dx, dy);
+        });
+        break;
+      }
       case "semiAxis": { // Halbachse einer Ellipse: axis "a" (c→a) oder "b" (Nebenhalbachse)
         const v = val(c), g = ellFn(E(c.e));
         add(c.id, (x) => (c.axis === "b" ? g(x).B : g(x).A) - v);
@@ -428,7 +436,55 @@ export function rankAndFree(J, n, tol = 1e-7) {
     const R = M[pivRow[j]];
     for (const f of freeCols) if (Math.abs(R[f]) > 1e-6) { free[j] = 1; break; }
   }
-  return { rank, free };
+  // Nullraum (Bewegungen ohne Verletzung): Komponente von Variable j im Basisvektor der freien Spalte f
+  const motion = (j, f) => (j === f ? 1 : pivRow[j] >= 0 ? -M[pivRow[j]][f] : 0);
+  return { rank, free, freeCols, motion };
+}
+
+/**
+ * Richtungen, in die sich freie Punkte noch bewegen lassen (Inventor »Freiheitsgrade anzeigen«):
+ * Projektion des Nullraums auf (x, y) des Punkts → ein oder zwei Einheitsrichtungen.
+ */
+function pointDirections(vars, an) {
+  const dirs = new Map();
+  for (const [k, i] of vars.idx) {
+    if (!k.startsWith("p:") || !(an.free[i] || an.free[i + 1])) continue;
+    let sxx = 0, sxy = 0, syy = 0;
+    for (const f of an.freeCols) { const a = an.motion(i, f), b = an.motion(i + 1, f); sxx += a * a; sxy += a * b; syy += b * b; }
+    const tr = sxx + syy;
+    if (!(tr > 1e-12)) continue;
+    const det = sxx * syy - sxy * sxy, disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
+    const l1 = tr / 2 + disc, l2 = tr / 2 - disc;
+    if (l2 > 1e-6 * l1) { dirs.set(k.slice(2), [[1, 0], [0, 1]]); continue; }
+    // Eigenvektor zum großen Eigenwert
+    let vx = sxy, vy = l1 - sxx;
+    if (Math.hypot(vx, vy) < 1e-12) { vx = l1 - syy; vy = sxy; }
+    const L = Math.hypot(vx, vy) || 1;
+    dirs.set(k.slice(2), [[vx / L, vy / L]]);
+  }
+  return dirs;
+}
+
+/**
+ * Welche vorhandenen Bedingungen legen das schon fest, was die neue Bedingung bestimmen will?
+ * Eine Bedingung gehört dazu, wenn die neue ohne sie einen Freiheitsgrad wegnehmen würde. → Bedingungs-IDs
+ */
+export function explainDependency(sketch, constraint, scope = {}) {
+  let after;
+  try { after = buildResiduals(sketch, scope, [constraint]); } catch { return []; }
+  const x = Float64Array.from(after.vars.x);
+  const { J } = jacobian(after.res, x);
+  const cids = after.res.map((r) => r.cid);
+  const ids = [...new Set(cids)].filter((id) => id !== constraint.id && !String(id).startsWith("arc:"));
+  if (ids.length > 400) return [];
+  const isNew = cids.map((c) => c === constraint.id);
+  const out = [];
+  for (const id of ids) {
+    const without = J.filter((_, i) => cids[i] !== id && !isNew[i]);
+    const withNew = J.filter((_, i) => cids[i] !== id);
+    if (matrixRank(withNew) > matrixRank(without)) out.push(id);
+  }
+  return out;
 }
 
 /** löst A y = b (A symmetrisch positiv definit) per Cholesky; fällt auf Gauss zurück */
@@ -603,6 +659,7 @@ export function solveSketch(sketch, scope = {}, opts = {}) {
     const an = rankAndFree(J, x.length);
     dof = x.length - an.rank;
     if (opts.free) free = freeOf(vars, an.free);
+    if (opts.free && opts.directions) free.dirs = pointDirections(vars, an);
   }
   return { ok, residual: fn, iterations: it, dof, failed, free };
 }
@@ -654,6 +711,7 @@ export function measureConstraint(sketch, c) {
     }
     case "semiAxis": { const e = ents.get(c.e); return c.axis === "b" ? Math.abs(e.r) : Math.hypot(P(e.a).x - P(e.c).x, P(e.a).y - P(e.c).y); }
     case "axisAngle": { const e = ents.get(c.e); return (Math.atan2(P(e.a).y - P(e.c).y, P(e.a).x - P(e.c).x) * 180) / Math.PI; }
+    case "lineAngle": { const e = ents.get(c.e), d = (Math.atan2(P(e.p2).y - P(e.p1).y, P(e.p2).x - P(e.p1).x) * 180) / Math.PI; return d < -1e-9 ? d + 360 : Math.max(0, d); }
     case "radius": return rad(ents.get(c.e));
     case "diameter": return 2 * rad(ents.get(c.e));
     case "angle": {
@@ -666,4 +724,4 @@ export function measureConstraint(sketch, c) {
   return NaN;
 }
 
-export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset", "semiAxis", "axisAngle"]);
+export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset", "semiAxis", "axisAngle", "lineAngle"]);
