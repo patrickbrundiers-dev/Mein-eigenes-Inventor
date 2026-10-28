@@ -35,6 +35,7 @@ import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCop
 import { resolveParams, evaluate } from "../core/expr.js";
 import { axisDistance, measureFormat, MAX_MEASURE_ITEMS } from "../core/messen.js";
 import { resolveDatums, resolvePlane } from "../core/datums.js";
+import { datumDisplay, datumPickClick, datumHover, datumSelectClick, datumHandleDown, finishDatumPick, toggleAllDatums, datumPicking } from "./arbeitselemente.js";
 import { sketchRefs, dependents } from "../core/featurerefs.js";
 import { applyPatterns } from "../core/asmmuster.js";
 import { worldToLocal, solveAssembly, CONSTRAINT_TYPES } from "../core/asmsolve.js";
@@ -681,16 +682,8 @@ export class App {
     const scope = resolveParams(part?.params || []).values;
     return resolveDatums(part?.features || [], (x) => evaluate(x, scope)).map;
   }
-  /** Sichtbare Arbeitselemente für die 3D-Anzeige */
-  datumList(part) {
-    if (!part || part.kind !== "part") return [];
-    const map = this.datumMap(part);
-    const bb = this.viewer.contentBox();
-    const size = bb.isEmpty() ? 120 : Math.max(60, bb.getSize(new (bb.min.constructor)()).length() * 0.5);
-    const active = (id) => this.sel?.type === "feature" && this.sel.id === id;
-    const paths = (this.results.get(part.id)?.paths3d || []).filter((p) => part.features.some((f) => f.id === p.id && !f.hidden)).map((p) => ({ id: p.id, kind: "path", pts: p.pts, size, active: active(p.id) }));
-    return [...part.features.filter((f) => map.has(f.id) && !f.hidden).map((f) => ({ id: f.id, name: f.name, size, active: active(f.id), ...map.get(f.id) })), ...paths];
-  }
+  /** Sichtbare Arbeitselemente für die 3D-Anzeige (mit Bezügen, Griff und Vorschau, src/ui/arbeitselemente.js) */
+  datumList(part) { return datumDisplay(this, part); }
 
   // ---------- Skizzen ----------
   /** Skizzenerstellung: Ebene wählen lassen */
@@ -901,6 +894,8 @@ export class App {
   bindViewerEvents() {
     const cv = this.viewer.renderer.domElement;
     let down = null;
+    // Griff eines Arbeitselements ziehen (vor der Kamerasteuerung, die sonst dreht)
+    cv.addEventListener("pointerdown", (e) => { if (datumHandleDown(this, e)) down = null; }, { capture: true });
     cv.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, b: e.button, t: performance.now() }; cv.focus(); });
     cv.addEventListener("contextmenu", (e) => e.preventDefault());
     // Fensterauswahl im Bauteil: linke Maustaste ziehen (nach rechts ganz innen, nach links berührend)
@@ -954,6 +949,7 @@ export class App {
     return { edges: true, faces: true };
   }
   viewerHover(e) {
+    if (datumHover(this, e)) return;
     if (this.pick?.kind === "sketchPlane") {
       const pl = this.viewer.pickPlane(e.clientX, e.clientY);
       const hit = this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true });
@@ -980,6 +976,8 @@ export class App {
       if (pl) return this.createSketch({ ref: pl });
       return;
     }
+    if (datumPicking(this)) return datumPickClick(this, e);
+    if (datumSelectClick(this, e)) return;
     const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
     if (p?.kind === "measure") return this.measurePick(hit, e);
     if (p?.kind === "edges") return this.toggleFeatureEdge(p.feature, hit);
@@ -1065,11 +1063,12 @@ export class App {
       undo: this.undoStack.length ? { label: "Rückgängig", icon: "undo", kbd: "Strg+Z", run: () => this.undo() } : null,
       redo: this.redoStack.length ? { label: "Wiederholen", icon: "redo", kbd: "Strg+Y", run: () => this.redo() } : null,
       search: { label: "Befehl suchen …", icon: "search", kbd: kbd("app.search"), run: () => this.commands.exec("app.search") },
+      datums: part && this.activeDoc()?.features.some((f) => ["arbeitsebene", "arbeitsachse", "arbeitspunkt"].includes(f.type)) ? { label: this.activeDoc().hideDatums ? "Arbeitselemente einblenden" : "Arbeitselemente ausblenden", icon: this.activeDoc().hideDatums ? "eye" : "eyeoff", run: () => toggleAllDatums(this) } : null,
     };
     if (this.prefs.get("ansicht.markierungsmenue") === false) {
       // klassische Liste
       const items = part ? [I.sketch, I.faceSketch] : asm ? [I.place] : [];
-      items.push("-", I.hide, I.isolate, I.showAll, "-", I.fit, I.fitSel, I.normal, I.iso);
+      items.push("-", I.hide, I.isolate, I.showAll, I.datums, "-", I.fit, I.fitSel, I.normal, I.iso);
       if (I.undo) items.push("-", { ...I.undo, label: "Rückgängig: " + this.undoStack[this.undoStack.length - 1].label });
       return contextMenu(e.clientX, e.clientY, items);
     }
@@ -1078,7 +1077,7 @@ export class App {
       : asm ? [I.place, I.constraint, I.measure, I.normal || I.iso, I.fit, I.isolate, I.hide, I.undo]
       : [null, null, null, I.iso, I.fit, null, null, I.undo];
     const used = new Set(ring.filter(Boolean));
-    const list = [part && I.faceSketch ? I.sketch : null, I.showAll, I.fitSel, I.normal, I.iso, I.redo, "-", I.search].filter((x) => x && !used.has(x));
+    const list = [part && I.faceSketch ? I.sketch : null, I.showAll, I.datums, I.fitSel, I.normal, I.iso, I.redo, "-", I.search].filter((x) => x && !used.has(x));
     markingMenu(e.clientX, e.clientY, ring, list);
   }
   toggleFeatureEdge(fid, hit) {
@@ -1226,11 +1225,13 @@ export class App {
     this.viewer.showMeasure(null);
   }
   cancelPick() {
+    const datumMode = datumPicking(this);
     if (this.pick?.kind === "measure") { this.endMeasure(); this.ribbon.render(); }
     if (this.pick?.feature) { this._editingFeature = null; this.rebuild(); }
     this.pick = null;
     this.align = this.align ? { ...placeState(this.align), picks: [], first: null, edit: null } : null;
     this.viewer.clearPlanes();
+    if (datumMode) this.showSketches3D();
     this.setHint("");
     this.refreshSelectionHits();
     this.props.render();
@@ -1469,6 +1470,7 @@ export class App {
       if (typing) { this.commands.handle(e, { typing: true }); return; }
       if (this.mode === "sketch" && this.sketcher.key(e)) { e.preventDefault(); return; }
       if (this.mode === "drawing" && this.drawing.key(e)) { e.preventDefault(); return; }
+      if (e.key === "Enter" && this.pick?.kind === "datumCreate") { finishDatumPick(this); return; }
       if (e.key === "Escape") {
         if (this.pick) { this.cancelPick(); return; }
         if (this.sel) { this.sel = null; this.selHits = []; this.refreshSelectionHits(); this.tree.render(); this.props.render(); }

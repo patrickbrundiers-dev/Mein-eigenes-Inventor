@@ -9,6 +9,7 @@
 const DEG = Math.PI / 180;
 
 import { orientRot, rotExtent } from "./orient.js";
+import { splitPath, bendIssues, bendRadius, pathLength } from "./biegeteil.js";
 import { fieldError } from "./generror.js";
 import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
 import { holderSchema, holderDrop, holderParts } from "./handlaufhalter.js";
@@ -83,7 +84,9 @@ export const SPINDEL = {
       const N = Math.max(4, Math.ceil((hi - lo) / 4));
       const poly = [];
       for (let k = 0; k <= N; k++) { const q = at(R, lo + ((hi - lo) * k) / N, 0); poly.push([q[0], q[1]]); }
-      for (let k = 2; k >= 0; k--) { const q = at(r0, lo + ((hi - lo) * k) / 2, 0); poly.push([q[0], q[1]]); } // innen an der Spindel
+      // innen an der Spindel: Sehnen tangential an das Rohr (Ecken auf r0 / cos), sonst schneidet die Stufe ins Rohr
+      const Ni = Math.max(2, Math.ceil((hi - lo) / 6)), ri = r0 / Math.cos(((hi - lo) / Ni / 2) * DEG);
+      for (let k = Ni; k >= 0; k--) { const q = at(ri, lo + ((hi - lo) * k) / Ni, 0); poly.push([q[0], q[1]]); }
       const z = i * s;
       plates.push({ center: [0, 0, z - tt], xDir: [1, 0, 0], normal: [0, 0, 1], poly, W: 2 * R, H: 2 * R, t: tt, name: `Stufe ${i}`, tread: p.tread });
       const mid = (a0 + a1) / 2;
@@ -101,23 +104,34 @@ export const SPINDEL = {
           if (mcfg && ov !== "aus") {
             // Fußplatte auf der Stufe (Platte entlang der Tangente), Bohrungen in die Stufe
             const step = plates.find((x) => x.name === `Stufe ${i}`), face = plateFace(step);
-            const r = topMount(mcfg, { name: nm, post: p.post, top: q, along: [tg[0], tg[1], 0], face, plateName: `${nm} Fußplatte` });
+            const mount = (cfg) => topMount(cfg, { name: nm, post: p.post, top: q, along: [tg[0], tg[1], 0], face, plateName: `${nm} Fußplatte` });
+            // Mutter unter der Stufe darf nicht am Stufenträger sitzen: sonst Platte länger und so versetzt, dass die Bohrung über den Träger hinweg springt
+            const nearArm = (r) => (r.holes || []).some((h) => Math.abs(h[0] * Math.sin(mid * DEG) - h[1] * Math.cos(mid * DEG)) < Math.min(p.arm.geom.width, p.arm.geom.height) / 2 + 12);
+            let r = mount(mcfg);
+            if (nearArm(r)) for (const dx of [20, -20, 30, -30, 40, -40]) { const r2 = mount({ ...mcfg, dx: mcfg.dx + dx, L: mcfg.L + 2 * Math.abs(dx) }); if (!nearArm(r2) && r2.ok) { r = r2; break; } }
             members.push({ section: p.post, a: r.a, b: q, name: nm, up: [tg[0], tg[1], 0] }); // Lage wie bei der Prüfung der Fußplatte
             plates.push(r.plate); applyTargetHoles(plates, face, r.targetHoles); issues.push(...r.issues); mounted.push(r);
           } else members.push({ section: p.post, a: at(R - postOff, aj, z), b: q, name: nm, up: [1, 0, 0] });
-          railPts.push(at(R - postOff, aj, zt + p.rail.geom.width / 2));
+          railPts.push([aj, zt + p.rail.geom.width / 2]);
           if (!holder) continue;
           const hp = holderParts({ q, along: tg, axisZ: zt + p.rail.geom.width / 2, post: p.post, railH: p.rail.geom.height, d: p.holderD, slope: s / (theta * DEG * (R - postOff)), name: nm, target: "Handlauf" });
           members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
         }
       }
     }
-    if (holder && railPts.length >= 2) {
-      // Handlauf 50 mm über den ersten und letzten Stab hinaus, damit die Bohrung ganz im Rohr liegt
-      const ext = (i, j) => { const d = railPts[i].map((x, k) => x - railPts[j][k]), l = Math.hypot(...d) || 1; railPts[i] = railPts[i].map((x, k) => x + (d[k] / l) * 50); };
-      ext(0, 1); ext(railPts.length - 1, railPts.length - 2);
+    const tubes = [];
+    let railInfo = "";
+    if (p.railing && railPts.length >= 2) {
+      // Handlauf als gewendeltes Rohr (Schraubenlinie über die Stabköpfe), mit Halter 50 mm über den ersten und letzten
+      // Stab hinaus, damit die Bohrung ganz im Rohr liegt; länger als eine Stange → gleich lange Stücke mit Stoß
+      const rr = R - postOff, [aS, zS] = railPts[0], [aE, zE] = railPts[railPts.length - 1];
+      const dz = (zE - zS) / ((aE - aS) * DEG || 1), ext = holder ? (50 / Math.hypot(rr, dz)) / DEG : 0, se = Math.sign(aE - aS) || 1;
+      const path = { c: [0, 0, zS - dz * ext * se * DEG], r: rr, a0: aS - se * ext, sweep: aE - aS + 2 * se * ext, rise: zE - zS + 2 * dz * se * ext * DEG };
+      const pieces = splitPath(path);
+      pieces.forEach((pa, k) => tubes.push({ section: p.rail, path: pa, name: pieces.length > 1 ? `Handlauf ${k + 1}` : "Handlauf", target: "Handlauf" }));
+      issues.push(...bendIssues(path, p.rail, "Handlauf", "rail"));
+      railInfo = `, Handlauf gewendelt (Biegeradius ${Math.round(bendRadius(path))} mm, gestreckt ${Math.round(pathLength(path))} mm${pieces.length > 1 ? `, ${pieces.length} Stücke mit Stoß` : ""})`;
     }
-    if (p.railing && railPts.length >= 2) chains.push({ section: p.rail, points: railPts, name: "Handlauf", up: [0, 0, 1] });
     if (p.railing) {
       // Geländernorm: ein Stab je Stufe – lichter Abstand der Stäbe waagrecht gemessen
       issues.push(...railingIssues({ use: p.use, fall: H, height: p.railH, fill: "staketen", gap: clearOf(perStep), bottom: 0, rail: p.rail }, { height: "railH", gap: "post", rail: "rail", use: "use" }));
@@ -125,7 +139,7 @@ export const SPINDEL = {
     if (mounted.length) issues.push(...mountCollisions(mounted, { members, plates }, "stabMount"));
     const total = (n - 1) * theta;
     const info = `${n} Steigungen à ${fmt(s)} mm, ${fmt(theta)}° je Stufe (Gehlinie ${fmt(ag)} mm, 2s + a = ${Math.round(step)} mm), Gesamtdrehung ${fmt(total)}°, Durchgangshöhe ${Math.round(head)} mm, Laufbreite ${Math.round(R - r0)} mm` + (p.railing ? `, ${perStep} Geländerstäbe je Stufe` + (holder ? `, Handlaufhalter mit Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")}` : "") : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, "Fußplatten")}` : "");
-    return { chains, members, plates, drills, info, issues };
+    return { chains, members, plates, drills, tubes, info: info + railInfo, issues };
   },
 };
 
