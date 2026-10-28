@@ -587,7 +587,7 @@ export class App {
       if (this.mode === "sketch" && f.id === this.sketcher.sketchId) continue;
       const selected = this.sel?.type === "feature" && this.sel.id === f.id;
       const consumed = part.features.some((g) => sketchRefs(g).includes(f.id));
-      if (!(selected || this.visibleSketches.has(f.id) || (!consumed && this.mode !== "sketch"))) continue;
+      if (!(selected || this.visibleSketches.has(f.id) || (!consumed && !f.hidden && this.mode !== "sketch"))) continue;
       let off = 0;
       try { off = evaluate(f.offset || "0", scope); } catch { /* */ }
       let frame = res?.sketches?.[f.id]?.frame;
@@ -1185,6 +1185,7 @@ export class App {
     const p = this.prefs;
     if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
     if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
+    if (keys?.some((k) => k.startsWith("baum."))) this.tree.render();
     if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
     this.viewer.applyPrefs(p.values);
     this.sketcher.applyPrefs(p.values);
@@ -1417,6 +1418,7 @@ export class App {
         if (this.sel) { this.sel = null; this.selHits = []; this.refreshSelectionHits(); this.tree.render(); this.props.render(); }
         return;
       }
+      if (e.key === "F2" && this.tree.renameSelection()) { e.preventDefault(); return; }
       if (e.key === "Delete") {
         if (this.sel?.type === "feature") this.deleteFeature(this.sel.id);
         else if (this.sel?.type === "component") this.props.deleteComponent(this.sel.id);
