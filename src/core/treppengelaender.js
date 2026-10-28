@@ -9,15 +9,19 @@
 //      Stift + Bohrung (handlaufhalter.js); mit through gehen Knieleisten bzw. Untergurt durch die Pfosten (Durchbruch
 //      mit Aufmaß allow), die Staketen (Profil stab) durch Bohrungen in der oberen Wand des Untergurts; Stück bis beltMax, Stoß im Pfosten.
 //      keys: Feldschlüssel für Fehlermeldungen { bar, belt, stab, beltMax }.
+//      stations(seg { A, L, d, slope }): Zwischenstellen der Pfosten entlang des Abschnitts (ohne die Enden) oder null.
 //      mount({ name, top, base (Punkt der Lauflinie), along }): Pfostenbefestigung (pfostenbefestigung.js) – liefert Pfostenfuß a, Schnitt, Platte,
 //      Bohrungen, Meldungen; ohne mount steht der Pfosten wie bisher postDown unter der Lauflinie.
 
-import { holderDrop, holderParts, entryWall } from "./handlaufhalter.js";
+import { holderDrop, holderParts, innerReach, entryDepth } from "./handlaufhalter.js";
 import { fieldError } from "./generror.js";
 
 const ROUND = new Set(["rohr", "rund"]);
 /** Bohrung für ein Profil (rund: Ø, sonst Rechteck quer zur Richtung, w entlang xDir) mit Aufmaß */
 const holeFor = (sec, allow, xDir) => (ROUND.has(sec.kind) ? { d: sec.geom.width + allow } : { w: sec.geom.width + allow, h: sec.geom.height + allow, xDir });
+
+/** Hüllkörper eines geraden Rohrstücks um den Punkt q entlang dir (± len) zum Ausklinken (Stab an Handlauf/Gurt angepasst) */
+const copeAt = (section, q, dir, len = 40) => ({ section, a: q.map((x, k) => x - dir[k] * len), b: q.map((x, k) => x + dir[k] * len), up: [0, 0, 1] });
 
 /** Bauplan-Teile eines Geländerzugs; label steht vor allen Namen (z. B. »Geländer links«) */
 export function railAlong(path, o, label) {
@@ -36,13 +40,15 @@ export function railAlong(path, o, label) {
   const posts = [];
   for (const [i, sg] of segs.entries()) {
     const n = Math.max(1, Math.ceil((sg.L * Math.hypot(1, sg.slope)) / o.postMax - 1e-9));
+    // o.stations: feste Zwischenstellen (z. B. im Stufenrhythmus), sonst gleichmäßig geteilt
+    const st = o.stations?.(sg), tk = st ? [0, ...st, sg.L] : Array.from({ length: n + 1 }, (_, k) => (sg.L * k) / n), last = tk.length - 1;
     sg.ts = []; sg.ps = []; // Stelle entlang des Abschnitts und Index des Pfostens dort
-    for (let k = 0; k <= n; k++) {
-      const t = (sg.L * k) / n;
+    for (let k = 0; k <= last; k++) {
+      const t = tk[k];
       const q = [sg.A[0] + sg.d[0] * t, sg.A[1] + sg.d[1] * t, sg.A[2] + sg.slope * t];
       const prev = posts[posts.length - 1];
       if (k === 0 && i > 0) { sg.ts.push(t); sg.ps.push(posts.length - 1); continue; } // Knick: Pfosten steht schon (Ende des vorigen Abschnitts)
-      if (prev && Math.hypot(q[0] - prev.q[0], q[1] - prev.q[1]) < postW + 1) { if (k === n) prev.q = q; continue; }
+      if (prev && Math.hypot(q[0] - prev.q[0], q[1] - prev.q[1]) < postW + 1) { if (k === last) prev.q = q; continue; }
       posts.push({ q, d: sg.d, slope: sg.slope });
       sg.ts.push(t); sg.ps.push(posts.length - 1);
     }
@@ -62,7 +68,7 @@ export function railAlong(path, o, label) {
       if (!mid && (!own || (where.length < 2 && i !== 0 && i !== posts.length - 1))) return;
       if (where.some(({ sg }) => Math.abs(sg.d[0] * p.d[0] + sg.d[1] * p.d[1]) < 0.999)) return; // Ecke: bleibt stehen
       const top = [p.q[0], p.q[1], p.q[2] + o.H - railH - drop];
-      const dt = o.mountFit({ name: `${label} Pfosten ${i + 1}`, top, base: p.q, along: [p.d[0], p.d[1], 0] });
+      const dt = o.mountFit({ name: `${label} Pfosten ${i + 1}`, top, base: p.q, along: [p.d[0], p.d[1], 0], inward: mid ? 0 : own.k === 0 ? 1 : -1, slope: p.slope });
       if (!dt) return;
       if (mid) {
         if (!(Math.abs(dt) < Math.min(mid.sg.ts[mid.k] - mid.sg.ts[mid.k - 1], mid.sg.ts[mid.k + 1] - mid.sg.ts[mid.k]) / 3)) return;
@@ -99,13 +105,14 @@ export function railAlong(path, o, label) {
   let fields = 0, bars = 0, gapMax = 0;
   const top = o.H - railH;
   if (o.through && (o.fill === "quer" || o.fill === "staketen")) {
-    const r = through(segs, o, label, { top, half, postName: (i) => `${label} Pfosten ${i + 1}` });
+    const r = through(segs, o, label, { top, half, railAxis: o.H - railH / 2, postName: (i) => `${label} Pfosten ${i + 1}` });
     members.push(...r.members); drills.push(...r.drills);
     return { members, chains, plates, drills, posts: posts.length, fields: r.fields, bars: r.bars, gapMax: r.gapMax, pieces: r.pieces, mounted };
   }
   for (const sg of segs) {
     const at = (s, h) => [sg.A[0] + sg.d[0] * s, sg.A[1] + sg.d[1] * s, sg.A[2] + sg.slope * s + h];
     const out = [sg.d[0], sg.d[1], 0], back = [-sg.d[0], -sg.d[1], 0];
+    const k3 = Math.hypot(1, sg.slope), dir = [sg.d[0] / k3, sg.d[1] / k3, sg.slope / k3];
     for (let k = 0; k + 1 < sg.ts.length; k++) {
       const s0 = sg.ts[k] + half, s1 = sg.ts[k + 1] - half;
       if (s1 - s0 < 20) continue;
@@ -131,7 +138,9 @@ export function railAlong(path, o, label) {
         gapMax = Math.max(gapMax, gap, o.bottomZ - beltH / 2);
         for (let j = 0; j < m; j++) {
           const s = s0 + gap * (j + 1) + bw * j + bw / 2;
-          members.push({ section: o.bar, a: at(s, lo), b: at(s, top), name: `${label} Stab ${n}.${j + 1}`, up: out });
+          // Stab von der Gurtachse bis zur Handlaufachse, an Gurt und Handlauf ausgeklinkt (Sattel, voll anliegend)
+          members.push({ section: o.bar, a: at(s, o.bottomZ), b: at(s, o.H - railH / 2), name: `${label} Stab ${n}.${j + 1}`, up: out,
+            copes: [copeAt(o.belt, at(s, o.bottomZ), dir), copeAt(o.rail, at(s, o.H - railH / 2), dir)] });
         }
         bars += m;
       }
@@ -145,7 +154,7 @@ export function railAlong(path, o, label) {
  * (Stoß in der Pfostenmitte), Durchbrüche in den Pfosten (durchgehend dazwischen, einseitig an den Stückenden);
  * Staketen durch senkrechte Bohrungen im Untergurt. Bohrungen mit Aufmaß o.allow.
  */
-function through(segs, o, label, { top, half, postName }) {
+function through(segs, o, label, { top, half, railAxis, postName }) {
   const members = [], drills = [], keys = o.keys || {}, allow = o.allow || 0;
   const rail = o.fill === "quer" ? o.bar : o.belt; // was durch die Pfosten geht
   const pw = Math.min(o.post.geom.width, o.post.geom.height);
@@ -153,8 +162,14 @@ function through(segs, o, label, { top, half, postName }) {
   const stab = o.stab || o.bar;
   if (o.fill === "staketen" && !(Math.max(stab.geom.width, stab.geom.height) + allow < Math.min(rail.geom.width, rail.geom.height) - 2)) throw fieldError("Stab passt nicht durch den Untergurt – kleineren Stab oder größeren Gurt wählen", keys.stab);
   let fields = 0, bars = 0, gapMax = 0, pieces = 0, fno = 0;
-  for (const sg of segs) {
+  const dirOf = (sg) => { const k = Math.hypot(1, sg.slope); return [sg.d[0] / k, sg.d[1] / k, sg.slope / k]; };
+  const unit = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
+  for (const [si, sg] of segs.entries()) {
     const k3 = Math.hypot(1, sg.slope), dir = [sg.d[0] / k3, sg.d[1] / k3, sg.slope / k3], xDir = [-sg.d[1], sg.d[0], 0];
+    // Gehrung am Knick der Lauflinie (Lauf → Podest/Auslauf): Stücke enden auf der Winkelhalbierenden
+    const prev = si > 0 ? dirOf(segs[si - 1]) : null, next = si + 1 < segs.length ? dirOf(segs[si + 1]) : null;
+    const miterStart = prev && Math.hypot(...prev.map((x, k) => x - dir[k])) > 1e-6 ? unit(prev.map((x, k) => -(x + dir[k]))) : null;
+    const miterEnd = next && Math.hypot(...next.map((x, k) => x - dir[k])) > 1e-6 ? unit(next.map((x, k) => x + dir[k])) : null;
     const at = (s, h) => [sg.A[0] + sg.d[0] * s, sg.A[1] + sg.d[1] * s, sg.A[2] + sg.slope * s + h];
     const ts = sg.ts;
     fields += ts.length - 1;
@@ -168,17 +183,24 @@ function through(segs, o, label, { top, half, postName }) {
       pieces++;
       hs.forEach((h, j) => {
         const name = o.fill === "quer" ? `${label} Knieleiste ${pieces}.${j + 1}` : `${label} Untergurt ${pieces}`;
-        members.push({ section: rail, a: at(ts[from], h), b: at(ts[to], h), name, ...(ROUND.has(rail.kind) ? {} : { up: [0, 0, 1] }) });
+        const a = at(ts[from], h), b = at(ts[to], h);
+        const cuts = { start: from === 0 && miterStart ? [{ p: a, n: miterStart }] : [], end: to === ts.length - 1 && miterEnd ? [{ p: b, n: miterEnd }] : [] };
+        members.push({ section: rail, a, b, name, ...(ROUND.has(rail.kind) ? {} : { up: [0, 0, 1] }), ...(cuts.start.length || cuts.end.length ? { cuts } : {}) });
         const hole = holeFor(rail, allow, xDir);
+        // schräger Durchbruch: um den Versatz der Bohrungskante (r · Neigung) länger, damit er die Pfostenwand ganz trennt
+        const ex = ((hole.d ?? Math.max(hole.w, hole.h)) / 2) * Math.abs(sg.slope) + 1;
         for (let k = from; k <= to; k++) {
           const target = postName(sg.ps[k]);
-          if (k > from && k < to) drills.push({ target, p: at(ts[k] - half - 1, h), dir, len: (2 * half + 2) * k3, ...hole });
-          else drills.push({ target, p: at(ts[k], h), dir: k === from ? dir : dir.map((x) => -x), len: (half + 1) * k3, ...hole });
+          if (k > from && k < to) drills.push({ target, p: at(ts[k] - half - 1 - ex, h), dir, len: (2 * half + 2 + 2 * ex) * k3, ...hole });
+          else drills.push({ target, p: at(ts[k], h), dir: k === from ? dir : dir.map((x) => -x), len: (half + 1 + ex) * k3, ...hole });
         }
         if (o.fill !== "staketen") return;
         // Staketen je Feld dieses Stücks, durch den Gurt bis an seine Unterseite
         // Stab nur durch die obere Gurtwand, Ende innen auf der unteren Wand (Vollprofil: Sackloch bis zur Mitte)
-        const rv = (rail.geom.height / 2) * k3, wv = entryWall(rail, rail.geom.height) * k3, sw = stab.geom.height;
+        const rv = (rail.geom.height / 2) * k3, sw = stab.geom.height;
+        // Stabende innen an der Gegenwand (Rohr: Krümmung berücksichtigt), Schnitt parallel zur Gurtachse
+        const reach = innerReach(rail, rail.geom.height, stab.geom.width) * k3, nUp = [-dir[0] * sg.slope, -dir[1] * sg.slope, 1 / k3];
+        const sh = holeFor(stab, allow, [sg.d[0], sg.d[1], 0]), ext = ((sh.d ?? sh.h) / 2) * Math.abs(sg.slope) + 1, wd = entryDepth(rail, rail.geom.height, sh.d ?? sh.w) * k3;
         for (let k = from; k < to; k++) {
           const s0 = ts[k] + half, s1 = ts[k + 1] - half, clear = s1 - s0;
           fno++;
@@ -188,8 +210,13 @@ function through(segs, o, label, { top, half, postName }) {
           gapMax = Math.max(gapMax, gap, o.bottomZ - rv);
           for (let q = 0; q < m; q++) {
             const sb = s0 + gap * (q + 1) + sw * q + sw / 2;
-            members.push({ section: stab, a: at(sb, h - rv + wv), b: at(sb, top), name: `${label} Stab ${fno}.${q + 1}`, up: [sg.d[0], sg.d[1], 0] });
-            drills.push({ target: name, p: at(sb, h + rv + 1), dir: [0, 0, -1], len: wv + 2, ...holeFor(stab, allow, [sg.d[0], sg.d[1], 0]) });
+            const foot = at(sb, h - reach), cutFoot = sg.slope ? { cuts: { start: [{ p: foot, n: nUp.map((x) => -x) }], end: [] } } : {};
+            const low = sg.slope ? at(sb, h - reach - (stab.geom.height / 2) * Math.abs(sg.slope) - 1) : foot;
+            members.push({ section: stab, a: low, b: at(sb, railAxis), name: `${label} Stab ${fno}.${q + 1}`, up: [sg.d[0], sg.d[1], 0], ...cutFoot,
+              copes: [copeAt(o.rail, at(sb, railAxis), dir),
+                // nah am Knick: auch das anschließende Handlaufstück (gegehrt) aussparen
+                ...(next && sg.L - sb < 100 ? [copeAt(o.rail, at(sg.L, railAxis), next, 100)] : []), ...(prev && sb < 100 ? [copeAt(o.rail, at(0, railAxis), prev, 100)] : [])] });
+            drills.push({ target: name, p: at(sb, h + rv + ext), dir: [0, 0, -1], len: wd + 2 * ext + 1, ...sh });
           }
           bars += m;
         }

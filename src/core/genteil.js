@@ -20,7 +20,7 @@ function memberAxes(a, b, up) {
 
 /**
  * Alle Körper des Bauplans mit eindeutigem Schlüssel und eigener Lage { o, x, y, z }:
- * { key, kind: "member" | "chain" | "plate", index, seg?, name }
+ * { key, kind: "member" | "chain" | "tube" | "plate", index, seg?, name }
  */
 export function planBodies(plan) {
   const out = [], seen = new Map();
@@ -38,6 +38,11 @@ export function planBodies(plan) {
     if (Math.hypot(...sub(m.b, m.a)) < 1e-6) return;
     out.push({ key: uniq("m:" + m.name), kind: "member", index, name: m.name, frame: memberAxes(m.a, m.b, m.up) });
   });
+  // Biegeteile (Wendel, Ring): eigene Lage mit Ursprung im Mittelpunkt, Z = Drehachse, X = Winkel 0
+  (plan.tubes || []).forEach((tb, index) => {
+    const z = norm(tb.path.axis || [0, 0, 1]), x0 = tb.path.x0 || [1, 0, 0], x = norm(sub(x0, z.map((v) => v * dot(x0, z))));
+    out.push({ key: uniq("t:" + tb.name), kind: "tube", index, name: tb.name, frame: { o: tb.path.c, x, y: cross(z, x), z } });
+  });
   (plan.plates || []).forEach((pl, index) => {
     const x = norm(pl.xDir), z = norm(pl.normal);
     out.push({ key: uniq("p:" + pl.name), kind: "plate", index, name: pl.name, frame: { o: pl.center, x, y: cross(z, x), z } });
@@ -53,11 +58,12 @@ export function localPlan(plan, body) {
   const D = (v) => [dot(v, x), dot(v, y), dot(v, z)], P = (v) => D(sub(v, o));
   const cutsL = (c) => c && { start: (c.start || []).map((q) => ({ p: P(q.p), n: D(q.n) })), end: (c.end || []).map((q) => ({ p: P(q.p), n: D(q.n) })) };
   const drillsFor = (target) => (plan.drills || []).filter((d) => d.target === target).map((d) => ({ ...d, p: P(d.p), dir: D(d.dir), ...(d.xDir ? { xDir: D(d.xDir) } : {}) }));
-  const out = { members: [], chains: [], plates: [], drills: [], issues: [], info: "" };
+  const pathL = (pa) => ({ ...pa, c: P(pa.c), axis: D(pa.axis || [0, 0, 1]), x0: D(pa.x0 || [1, 0, 0]) });
+  const out = { members: [], chains: [], tubes: [], plates: [], drills: [], issues: [], info: "" };
   if (body.kind === "member") {
     const m = plan.members[body.index];
     // copes: Hüllkörper anderer Stäbe, die abgezogen werden (Gestell: Nuten, Stutzen an Rundrohr)
-    const copes = m.copes && { copes: m.copes.map((c) => ({ ...c, a: P(c.a), b: P(c.b), up: D(c.up || [0, 0, 1]), cuts: cutsL(c.cuts || { start: [], end: [] }) })) };
+    const copes = m.copes && { copes: m.copes.map((c) => (c.path ? { ...c, path: pathL(c.path) } : { ...c, a: P(c.a), b: P(c.b), up: D(c.up || [0, 0, 1]), cuts: cutsL(c.cuts || { start: [], end: [] }) })) };
     // tabs: angesetzte Quader (Gestell: Stecknasen)
     const tabs = m.tabs && { tabs: m.tabs.map((t) => ({ ...t, p: P(t.p), xDir: D(t.xDir), dir: D(t.dir) })) };
     out.members.push({ ...m, a: P(m.a), b: P(m.b), up: D(body.frame.up), ...(m.cuts ? { cuts: cutsL(m.cuts) } : {}), ...copes, ...tabs });
@@ -68,11 +74,16 @@ export function localPlan(plan, body) {
     const i0 = Math.max(0, body.seg - 1), i1 = Math.min(ch.points.length - 1, body.seg + 2);
     out.chains.push({ ...ch, points: ch.points.slice(i0, i1 + 1).map(P), up: D(ch.up || [0, 0, 1]), onlySeg: body.seg - i0, segName: body.name });
     out.drills = drillsFor(ch.name);
+  } else if (body.kind === "tube") {
+    const tb = plan.tubes[body.index];
+    out.tubes.push({ ...tb, path: pathL(tb.path), ...(tb.cuts ? { cuts: tb.cuts.map((c) => ({ p: P(c.p), n: D(c.n) })) } : {}), ...(tb.copes ? { copes: tb.copes.map((c) => ({ ...c, path: pathL(c.path) })) } : {}) });
+    out.drills = drillsFor(tb.target || tb.name);
   } else if (body.kind === "norms") {
     out.norms = plan.norms;
   } else {
     const pl = plan.plates[body.index];
     out.plates.push({ ...pl, center: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] });
+    out.drills = drillsFor(pl.name);
   }
   return out;
 }
@@ -91,7 +102,7 @@ export function eulerOf({ x, y, z }) {
 /** Kennung gleicher Teile: Geometrie in eigener Lage, Namen zählen nicht */
 export function bodySignature(lp) {
   const r = (v) => (typeof v === "number" ? Math.round(v * 100) / 100 + 0 : Array.isArray(v) ? v.map(r) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().filter((k) => !["name", "target", "segName", "geom", "gid"].includes(k)).map((k) => [k, r(v[k])])) : v);
-  return JSON.stringify(r({ m: lp.members, c: lp.chains, p: lp.plates, d: lp.drills, n: lp.norms || [] }));
+  return JSON.stringify(r({ m: lp.members, c: lp.chains, t: lp.tubes || [], p: lp.plates, d: lp.drills, n: lp.norms || [] }));
 }
 
 /** Teilename ohne laufende Nummer: »Geländer rechts Pfosten 3 Handlaufhalter« → »Geländer rechts Pfosten Handlaufhalter« */
