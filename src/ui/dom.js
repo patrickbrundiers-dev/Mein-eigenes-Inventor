@@ -101,6 +101,7 @@ const P = {
   ellipse: '<ellipse cx="12" cy="12" rx="9" ry="5.5" transform="rotate(-20 12 12)"/><path d="M12 12l8.4-3" stroke-dasharray="2 1.5"/>',
   arc: '<path d="M4 18a9 9 0 0 1 16 0"/><circle cx="4" cy="18" r="1.4"/><circle cx="20" cy="18" r="1.4"/><circle cx="12" cy="7" r="1.4"/>',
   arcc: '<path d="M18 12a6 6 0 0 0-6-6"/><circle cx="12" cy="12" r="1.4"/><path d="M12 12L18 12M12 12V6" stroke-dasharray="2 1.5"/>',
+  dof: '<circle cx="12" cy="12" r="2"/><path d="M12 9V3M12 15v6M9 12H3M15 12h6M12 3l-2 2M12 3l2 2M12 21l-2-2M12 21l2-2M3 12l2-2M3 12l2 2M21 12l-2-2M21 12l-2 2"/>',
   circle3: '<circle cx="12" cy="12" r="8"/><circle cx="4" cy="12" r="1.6"/><circle cx="17.7" cy="6.3" r="1.6"/><circle cx="17.7" cy="17.7" r="1.6"/>',
   arct: '<path d="M3 18h9a6 6 0 0 0 6-6V5"/><circle cx="12" cy="18" r="1.4"/>',
   point: '<circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',

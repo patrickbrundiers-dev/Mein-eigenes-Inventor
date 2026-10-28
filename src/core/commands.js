@@ -200,6 +200,7 @@ export const COMMANDS = [
   { id: "asm.animate", label: "Gelenke bewegen (Animation)", group: "Baugruppe", scope: "assembly", keywords: "kinematik animation bewegen öffnen tor" },
   { id: "part.ifeatExtract", label: "iFeature erstellen (Bibliothek)", group: "3D-Modell", scope: "part", keywords: "ifeature bibliothek vorlage formelement speichern wiederverwenden" },
   { id: "part.ifeatInsert", label: "iFeature einfügen", group: "3D-Modell", scope: "part", keywords: "ifeature bibliothek vorlage formelement einsetzen" },
+  { id: "sketch.dof", label: "Skizze: Freiheitsgrade anzeigen", group: "Skizze", scope: "sketch", keywords: "unterbestimmt frei bewegen pfeile bestimmtheit" },
   { id: "sketch.regionProps", label: "Bereichseigenschaften (Fläche, Schwerpunkt, Trägheitsmomente)", group: "Skizze", scope: "sketch", keywords: "bereich fläche schwerpunkt trägheitsmoment flächenmoment widerstandsmoment querschnitt" },
   { id: "part.draftAnalysis", label: "Entformungsanalyse", group: "3D-Modell", scope: "part", keywords: "entformung formschräge guss spritzguss analyse hinterschnitt" },
   { id: "part.welle", label: "Welle (Konstruktions-Assistent)", group: "3D-Modell", scope: "part", keywords: "welle achse absatz konstruktionsassistent" },

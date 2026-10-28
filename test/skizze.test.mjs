@@ -165,3 +165,27 @@ test("S5: Tangentialer Bogen schließt an die Linie an", () => {
   assert.ok(Math.abs(dot) < 1e-6);
   assert.throws(() => buildTangentArc(sk, "b", "l", { x: 30, y: 9 }, { uid, usePoint }));
 });
+
+import { explainDependency } from "../src/core/solver.js";
+test("S6: Widerspruch nennt die beteiligten Bedingungen, Freiheitsgrade als Richtungen", () => {
+  const { sk, r } = rect40();
+  // Länge der Unterkante ist schon über das Breitenmaß festgelegt (Oberkante 40, Rechteck)
+  const bottom = sk.entities.find((e) => e.id === r.lines[0]);
+  const ids = explainDependency(sk, { id: "neu", type: "length", e: bottom.id, value: "50" });
+  const types = ids.map((id) => sk.constraints.find((c) => c.id === id).type);
+  assert.ok(types.includes("distance"), JSON.stringify(types));
+  assert.ok(!types.includes("coincident") || types.length > 1);
+  // freie Linie: Anfang fix → Ende kann zwei Richtungen; mit Länge nur noch eine (tangential zum Kreis um den Anfang)
+  const s2 = base();
+  s2.points.push({ id: "a", x: 0, y: 0 }, { id: "b", x: 10, y: 0 });
+  s2.entities.push({ id: "l", type: "line", p1: "a", p2: "b" });
+  s2.constraints.push({ id: "c", type: "coincident", p: "O", q: "a" });
+  let res = solveSketch(s2, {}, { free: true, directions: true });
+  assert.equal(res.free.dirs.get("b").length, 2);
+  assert.ok(!res.free.dirs.has("a"));
+  s2.constraints.push({ id: "len", type: "length", e: "l", value: "10" });
+  res = solveSketch(s2, {}, { free: true, directions: true });
+  const d = res.free.dirs.get("b");
+  assert.equal(d.length, 1);
+  assert.ok(Math.abs(d[0][0]) < 1e-6 && Math.abs(Math.abs(d[0][1]) - 1) < 1e-6, JSON.stringify(d));
+});

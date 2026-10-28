@@ -1,6 +1,6 @@
 // 2D-Skizzierer über der 3D-Ansicht (SVG-Overlay, eigene Trefferprüfung im Bildschirmraum)
 import { svgEl, h, toast, fmtNum, choiceDialog, modal } from "./dom.js";
-import { solveSketch, checkNewConstraint, measureConstraint, DIMENSION_TYPES, entityFree } from "../core/solver.js";
+import { solveSketch, checkNewConstraint, measureConstraint, explainDependency, DIMENSION_TYPES, entityFree } from "../core/solver.js";
 import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../core/sketch.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, toWorld, v3 } from "../core/geom.js";
@@ -9,7 +9,7 @@ import { parseDxf, dxfToSketch, primsBounds } from "../core/dxfread.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, chamferCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
 import { inferLine, inferCircle } from "../core/autoconstraints.js";
-import { buildSlot, buildPolygon, buildTangentArc, tangentArcCenter, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
+import { buildSlot, buildPolygon, buildTangentArc, tangentArcCenter, constraintLabel, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
 import { splineSamples, splineNearest } from "../core/spline.js";
 import { specialSnap, alignSnap } from "../core/sketchsnap.js";
 import { autoDimension } from "../core/autodim.js";
@@ -188,7 +188,7 @@ export class Sketcher {
   solve(extra = []) {
     const sk = this.sk;
     if (!sk) return null;
-    const r = solveSketch(sk, this.scope(), { extra, free: this.prefs?.["skizze.bestimmtheit"] !== false });
+    const r = solveSketch(sk, this.scope(), { extra, free: this.prefs?.["skizze.bestimmtheit"] !== false || this.showDof, directions: !!this.showDof });
     this.lastSolve = r;
     this.profiles = extractProfiles(sk, { vars: this.textVars() });
     this.app.updateSketchStatus(r, this.profiles);
@@ -905,10 +905,26 @@ export class Sketcher {
   addConstraint(c) {
     c.id = c.id || uid("k");
     const res = checkNewConstraint(this.sk, c, this.scope());
-    if (res === "redundant") { toast("Bedingung ist bereits erfüllt (überzählig)"); return false; }
-    if (res === "conflict") { toast("Bedingung widerspricht vorhandenen Bedingungen", { kind: "err" }); return false; }
+    if (res === "redundant" || res === "conflict") {
+      const why = this.blame(c);
+      toast((res === "redundant" ? "Bedingung ist schon erfüllt (überzählig)" : "Bedingung widerspricht vorhandenen Bedingungen") + (why ? ` – festgelegt durch: ${why}` : ""), { kind: res === "conflict" ? "err" : "" });
+      return false;
+    }
     this.commit("Abhängigkeit", (sk) => sk.constraints.push(c));
     return true;
+  }
+
+  /** Bedingungen, die eine neue Bedingung überzählig machen: für ein paar Sekunden rot markieren, Klartext zurück */
+  blame(c) {
+    let ids = [];
+    try { ids = explainDependency(this.sk, c, this.scope()).filter((id) => id !== "Of"); } catch { /* ohne Erklärung */ }
+    if (!ids.length) return "";
+    this.flash = new Set(ids);
+    clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => { this.flash = null; if (this.active) this.render(); }, 4000);
+    this.render();
+    const names = [...new Set(ids.map((id) => this.sk.constraints.find((k) => k.id === id)).filter(Boolean).map(constraintLabel))];
+    return names.slice(0, 4).join(", ") + (names.length > 4 ? ` (+${names.length - 4})` : "");
   }
 
   /** Bemaßung aus gewählten Elementen ableiten */
@@ -976,7 +992,8 @@ export class Sketcher {
     const measured = measureConstraint(this.sk, { ...c, value: "0" });
     const res = checkNewConstraint(this.sk, { ...c, value: String(measured) }, this.scope());
     if (res !== "ok") {
-      const ch = await choiceDialog("Maß würde überbestimmen", "Dieses Maß ist durch andere Bedingungen schon festgelegt. Als getriebenes Maß (nur Anzeige, in Klammern) hinzufügen?", [{ label: "Abbrechen", value: null }, { label: "Getriebenes Maß", value: "driven", primary: true }]);
+      const why = this.blame({ ...c, value: String(measured) });
+      const ch = await choiceDialog("Maß würde überbestimmen", "Dieses Maß ist durch andere Bedingungen schon festgelegt" + (why ? ` (rot markiert: ${why})` : "") + ". Als getriebenes Maß (nur Anzeige, in Klammern) hinzufügen?", [{ label: "Abbrechen", value: null }, { label: "Getriebenes Maß", value: "driven", primary: true }]);
       if (ch !== "driven") return;
       c.driven = true;
       c.value = String(round4(measured));
@@ -1746,6 +1763,23 @@ export class Sketcher {
         g.append(svgEl("path", { d: `M${x - 7},${y}h14M${x},${y - 7}v14`, class: "sk-line" }));
       } else g.append(svgEl("circle", { cx: x, cy: y, r: 2.8, class: cls.join(" ") }));
     }
+    // Freiheitsgrade: Doppelpfeile an Punkten, die sich noch bewegen lassen
+    if (this.showDof && free?.dirs) {
+      let dd = "";
+      for (const [pid, dirs] of free.dirs) {
+        const p = P.get(pid);
+        if (!p || pid === "O") continue;
+        const [x, y] = S(p.x, p.y);
+        for (const [ux, uy] of dirs) {
+          const [qx, qy] = S(p.x + ux, p.y + uy), L = Math.hypot(qx - x, qy - y) || 1, dx = (qx - x) / L, dy = (qy - y) / L;
+          for (const s of [1, -1]) {
+            const ex = x + s * dx * 18, ey = y + s * dy * 18;
+            dd += `M${x + s * dx * 5},${y + s * dy * 5}L${ex},${ey}l${-s * (dx * 5 - dy * 3)},${-s * (dy * 5 + dx * 3)}M${ex},${ey}l${-s * (dx * 5 + dy * 3)},${-s * (dy * 5 - dx * 3)}`;
+          }
+        }
+      }
+      if (dd) g.append(svgEl("path", { d: dd, class: "sk-dof" }));
+    }
     // Bemaßungen und Abhängigkeiten
     this.dimBoxes = [];
     this.glyphBoxes = [];
@@ -1787,7 +1821,7 @@ export class Sketcher {
   }
   renderDim(g, c, P, preview = false) {
     const sel = preview || this.sel.has("c:" + c.id);
-    const bad = this.lastSolve?.failed?.includes(c.id);
+    const bad = this.lastSolve?.failed?.includes(c.id) || this.flash?.has(c.id);
     const cls = "sk-dim" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (bad ? " err" : "") + (preview ? " preview" : "");
     const grp = svgEl("g");
     const text = this.dimText(c);
@@ -1961,7 +1995,7 @@ export class Sketcher {
       const gx = x + ux * 14 + n * 16, gy = y + uy * 14;
       const w = label.length > 1 ? 20 : 13;
       const sel = this.sel.has("c:" + c.id);
-      const grp = svgEl("g", { class: "sk-glyph" + (sel ? " sel" : "") + (c.disabled ? " off" : "") + (this.lastSolve?.failed?.includes(c.id) ? " err" : "") });
+      const grp = svgEl("g", { class: "sk-glyph" + (sel ? " sel" : "") + (c.disabled ? " off" : "") + (this.lastSolve?.failed?.includes(c.id) || this.flash?.has(c.id) ? " err" : "") });
       grp.append(svgEl("rect", { x: gx - w / 2, y: gy - 7, width: w, height: 13, rx: 2 }));
       const t = svgEl("text", { x: gx, y: gy + 3.5, "text-anchor": "middle" });
       t.textContent = label;

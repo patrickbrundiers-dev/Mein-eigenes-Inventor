@@ -91,6 +91,7 @@ export function commandRunners(app) {
     "part.ifeatExtract": () => ifeatExtractDialog(app),
     "part.ifeatInsert": () => ifeatInsertDialog(app),
     "sketch.regionProps": () => regionDialog(app),
+    "sketch.dof": () => { const s = app.sketcher; s.showDof = !s.showDof; s.solve(); s.render(); app.ribbon.render(); },
     "part.draftAnalysis": () => draftDialog(app),
     "part.welle": () => app.ribbon.run("welle"),
     "part.zahnrad": () => app.ribbon.run("zahnrad"),
