@@ -3596,7 +3596,7 @@ try {
       a.alignPick({ kind: "face", key: "comp:" + c2.id, info: fs.find((f) => f.normal[2] < -0.99) });
       a.alignPick({ kind: "face", key: "comp:" + c1.id, info: fs.find((f) => f.normal[2] > 0.99) });
       a.sel = { type: "component", id: c2.id }; a.refreshSelectionHits(); a.tree.render(); a.props.render();
-      return { z: c2.pos[2], glyph: !!a.viewer.dofGlyph, meta: [...document.querySelectorAll("#browser .node")].some((n) => /Grundplatte:2.*2 V · 1 D frei/.test(n.textContent)) };
+      return { z: c2.pos[2], top: fs.find((f) => f.normal[2] > 0.99).point[2], bot: fs.find((f) => f.normal[2] < -0.99).point[2], glyph: !!a.viewer.dofGlyph, meta: [...document.querySelectorAll("#browser .node")].some((n) => /Grundplatte:2.*2 V · 1 D frei/.test(n.textContent)) };
     });
     await idle();
     await shot("bg-freiheitsgrade");
@@ -3627,8 +3627,8 @@ try {
     await page.keyboard.up("Alt");
     await idle();
     const q = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === "bg3"); return { z: c.pos[2], n: asm.constraints.length, last: asm.constraints.at(-1)?.type, err: Object.keys(a.asmErrors || {}).length }; });
-    step("Baugruppe: Platzieren mit Vorschau, Freiheitsgrade, Ziehen, Alt-Ziehen", ghost && pl.n === 2 && pl.fixed && !pl.pick && !pl.ghost && dof.z === 10 && dof.glyph && dof.meta
-      && after[2] === 10 && Math.hypot(after[0] - before[0], after[1] - before[1]) > 1 && q.n === 2 && q.last === "gegen" && Math.abs(q.z - 20) < 1e-6 && q.err === 0, JSON.stringify({ ghost, pl, dof, before, after, q }));
+    step("Baugruppe: Platzieren mit Vorschau, Freiheitsgrade, Ziehen, Alt-Ziehen", ghost && pl.n === 2 && pl.fixed && !pl.pick && !pl.ghost && Math.abs(dof.z - (dof.top - dof.bot)) < 1e-6 && dof.glyph && dof.meta
+      && Math.abs(after[2] - dof.z) < 1e-6 && Math.hypot(after[0] - before[0], after[1] - before[1]) > 1 && q.n === 2 && q.last === "gegen" && Math.abs(q.z - 2 * dof.top) < 1e-6 && q.err === 0, JSON.stringify({ ghost, pl, dof, before, after, q }));
   }
 
   // ---- Baugruppenerstellung BG7–BG11: Lochbild-Muster, Fügepunkte, Unterbaugruppe, Spiegeln ----
