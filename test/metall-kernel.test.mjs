@@ -624,3 +624,22 @@ test("Pfostenbefestigung Balkon oben und L-Podestecke: Gegenbohrungen in Belag u
   near(R.measureVolume(get("").shape.clone().intersect(get(" Befestigungsblech").shape.clone())), 0, 1);
   assert.ok(fr.reduce((s, x) => s + (x.meta.drills || 0), 0) >= 4, "Gegenbohrungen im Podestrahmen");
 });
+
+test("Normteil-Bibliothek: alle Familien, größte Länge, und eigenes Normteil aus dem Feature", async () => {
+  const { NORM_FAMILIES, lengthsFor, normRecipe, recipeVolume } = await import("../src/core/normlib.js");
+  const { defaultNormteil } = await import("../src/core/normteile.js");
+  for (const f of Object.values(NORM_FAMILIES)) {
+    const size = f.sizeList.at(-1), L = f.length ? lengthsFor(f, size).at(-1) : 0;
+    const res = await K.buildPart(part([{ id: "n", ...defaultNormteil(f.id), size, length: String(L || 40) }]));
+    okAll(res);
+    assert.equal(res.bodies.length, 1, f.id);
+    near(R.measureVolume(res.bodies[0].shape), recipeVolume(normRecipe(f, size, L)), recipeVolume(normRecipe(f, size, L)) * 0.03, f.id + " Volumen wie Rezept");
+    assert.equal(res.bodies[0].meta.norm.norm, f.norm);
+  }
+  const custom = { id: "werk-bolzen", label: "Werkbolzen", norm: "WN 4711", noun: "Bolzen", template: "bolzen", sizes: { 10: { d: 10, dk: 16, k: 3 } }, lengths: [40], grades: ["S355"] };
+  const res = await K.buildPart(part([{ id: "n", ...defaultNormteil("custom:werk-bolzen", custom) }]));
+  okAll(res);
+  assert.equal(res.bodies[0].name, "Bolzen WN 4711 - 10 x 40 - S355");
+  const bb = res.bodies[0].shape.boundingBox.bounds;
+  near(bb[0][2], -3, 0.01); near(bb[1][2], 40, 0.01); near(bb[1][0], 8, 0.01);
+});

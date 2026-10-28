@@ -11,6 +11,7 @@ import { defaultProfilzug } from "../core/profilzug.js";
 import { defaultBiegerohr } from "../core/biegerohr.js";
 import { defaultRegelkoerper } from "../core/regelkoerper.js";
 import { defaultNormteil } from "../core/normteile.js";
+import { normLibraryDialog } from "./normlib.js";
 import { defaultSchraubverbindung } from "../core/schraubverbindung.js";
 import { defaultKantteil } from "../core/blech.js";
 import { defaultBlechkasten } from "../core/blechkasten.js";
@@ -75,7 +76,7 @@ export class Ribbon {
       knickrahmen: () => app.addFeature(defaultKnickrahmen(catalogToDims("rechteck", "60x40x3"))),
       profilzug: () => app.addFeature(defaultProfilzug(catalogToDims("vierkant", "40x3"))),
       regelkoerper: () => app.addFeature(defaultRegelkoerper("zylinder")),
-      normteil: () => app.addFeature(defaultNormteil("schraube4017")),
+      normteil: () => normLibraryDialog(app, { mode: "part", onApply: (v) => app.addFeature({ ...defaultNormteil(v.kind, v.custom), ...v }) }),
       welle: () => app.addFeature(defaultWelle()),
       zahnrad: () => app.addFeature(defaultZahnrad()),
       lager: () => app.addFeature(defaultLager()),

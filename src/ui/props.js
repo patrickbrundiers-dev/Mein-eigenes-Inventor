@@ -46,7 +46,9 @@ import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gent
 import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { newPart, newAssembly } from "../core/examples.js";
-import { NORM_KINDS, NORM_SIZES, BOLT_LENGTHS, defaultNormteil, normDesignation, collectNorm } from "../core/normteile.js";
+import { NORM_KINDS, NORM_SIZES, normDesignation, collectNorm } from "../core/normteile.js";
+import { familyOf, lengthsFor } from "../core/normlib.js";
+import { normLibraryDialog } from "./normlib.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
@@ -579,48 +581,10 @@ export class Props {
         h("thead", {}, h("tr", {}, h("th", {}, "Bezeichnung"), h("th", {}, "Anz."), h("th", {}, "kg/Stk"))),
         h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, r.name), h("td", { class: "num" }, String(r.qty)), h("td", { class: "num" }, fmtNum(r.mass, 3)))))));
   }
-  /** Baugruppe: Normteil wählen, als eigenes Bauteil anlegen (gleiche Bezeichnung → vorhandenes Bauteil) und platzieren */
+  /** Baugruppe: Normteil-Bibliothek (wie Inventor Inhaltscenter); gleiche Bezeichnung → vorhandenes Bauteil */
   normteilDialog() {
-    const app = this.app;
-    const asm = app.activeDoc();
-    if (asm?.kind !== "assembly") return;
-    const f = defaultNormteil("schraube4017");
-    const sel = (opts, val, on) => h("select", { class: "inp", onchange: (e) => on(e.target.value) }, ...opts.map(([v, l]) => h("option", { value: v, selected: v === val }, l)));
-    const body = h("div");
-    const qty = h("input", { class: "inp", type: "number", min: 1, value: 1 });
-    const draw = () => {
-      const def = NORM_KINDS[f.kind];
-      const len = h("input", { class: "inp", type: "number", min: 1, value: f.length, oninput: (e) => { f.length = e.target.value; name.textContent = normDesignation(f); } });
-      const name = h("b", {}, normDesignation(f));
-      body.replaceChildren(
-        this.field("Art", sel(Object.entries(NORM_KINDS).map(([k, d]) => [k, `${d.label} (${d.norm})`]), f.kind, (v) => { const d = defaultNormteil(v); f.kind = v; f.grade = d.grade; f.length = d.length; draw(); })),
-        this.field("Gewinde", sel(NORM_SIZES.map((s) => [s, s]), f.size, (v) => { f.size = v; draw(); })),
-        def.length ? this.field(f.kind === "gewindestange" ? "Länge mm" : "Nennlänge mm", len) : null,
-        this.field("Festigkeit", sel(def.grades.map((g) => [g, g]), f.grade, (v) => { f.grade = v; draw(); })),
-        this.field("Anzahl", qty),
-        h("p", {}, name));
-    };
-    draw();
-    modal({
-      title: "Normteil einfügen",
-      body,
-      buttons: [{ label: "Abbrechen" }, { label: "Einfügen", primary: true, run: () => {
-        const designation = normDesignation(f);
-        const n = Math.max(1, Math.min(100, Number(qty.value) || 1));
-        let p = app.parts().find((x) => x.normDesignation === designation);
-        app.edit("Normteil einfügen", () => {
-          if (!p) {
-            p = newPart(designation);
-            p.normDesignation = designation;
-            p.features.push({ id: uid("f"), name: designation, ...f, pos: ["0", "0", "0"], axis: "Z" });
-            app.project.docs.push(p);
-          }
-          const have = asm.components.filter((c) => c.part === p.id).length;
-          for (let i = 0; i < n; i++) asm.components.push({ id: uid("c"), part: p.id, name: `${designation}:${have + i + 1}`, pos: [i * 40, 0, 0], rot: [0, 0, 0] });
-        });
-        toast(`${n} × ${designation} eingefügt`, { kind: "ok" });
-      } }],
-    });
+    if (this.app.activeDoc()?.kind !== "assembly") return;
+    normLibraryDialog(this.app, { mode: "assembly" });
   }
   featureProps(part, f) {
     const app = this.app;
@@ -974,17 +938,20 @@ export class Props {
         break;
       }
       case "normteil": {
-        const kind = f.kind || "schraube4017", def = NORM_KINDS[kind];
+        const kind = f.kind || "schraube4017", def = familyOf(kind, f.custom) || NORM_KINDS.schraube4017;
+        const lens = lengthsFor(def, f.size);
+        const apply = (v) => this.set(f, (x) => { Object.assign(x, v); if (!v.custom) delete x.custom; }, "Normteil");
         out.push(this.section("Normteil",
-          this.select("Art", Object.entries(NORM_KINDS).map(([k, d]) => [k, `${d.label} (${d.norm})`]), kind, (v) => this.set(f, (x) => { const d = defaultNormteil(v); x.kind = v; x.grade = d.grade; if (NORM_KINDS[v].length && !NORM_KINDS[kind].length) x.length = d.length; if (v === "gewindestange" && kind !== v) x.length = "1000"; }, "Art")),
-          this.select("Gewinde", NORM_SIZES.map((s) => [s, s]), f.size || "M12", (v) => this.set(f, "size", v, "Gewinde")),
-          def.length ? E(kind === "gewindestange" ? "Länge" : "Nennlänge (unter Kopf)", "length", { allowNeg: false, allowZero: false }) : null,
-          def.length && kind !== "gewindestange" ? h("p", { class: "hint" }, "Vorzugslängen: " + BOLT_LENGTHS.filter((l) => l <= 200).join(", ")) : null,
+          h("div", { class: "btn-row" }, h("button", { class: "btn primary", onclick: () => normLibraryDialog(app, { mode: "feature", initial: f, onApply: apply }) }, "Aus Bibliothek wählen …")),
+          h("dl", { class: "kv" }, h("dt", {}, "Art"), h("dd", {}, `${def.label} (${def.norm})`)),
+          this.select("Größe", def.sizeList.map((s) => [s, (def.sizePrefix || "") + s]), def.sizes[f.size] ? f.size : def.sizeList[0], (v) => this.set(f, "size", v, "Größe")),
+          def.length ? E(def.freeLength ? "Länge" : "Nennlänge", "length", { allowNeg: false, allowZero: false }) : null,
+          def.length && lens.length && !def.freeLength ? h("p", { class: "hint" }, "Vorzugslängen: " + lens.join(", ")) : null,
           this.select("Festigkeit / Werkstoff", def.grades.map((g) => [g, g]), f.grade || def.grades[0], (v) => this.set(f, "grade", v, "Festigkeit")),
-          kind !== "spannschloss" ? this.check("feuerverzinkt (tZn)", !!f.galv, (v) => this.set(f, "galv", v, "Verzinkt")) : null,
+          def.noGalv ? null : this.check("feuerverzinkt (tZn)", !!f.galv, (v) => this.set(f, "galv", v, "Verzinkt")),
           h("dl", { class: "kv" }, h("dt", {}, "Bezeichnung"), h("dd", {}, st?.info || normDesignation({ ...f, kind })))));
         out.push(this.section("Lage",
-          this.vec3(kind.startsWith("schraube") ? "Basispunkt (Kopfunterseite)" : kind === "spannschloss" ? "Mittelpunkt" : "Basispunkt (Auflagefläche)", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
+          this.vec3(def.seat === "center" ? "Mittelpunkt" : def.seat === "flush" ? "Basispunkt (Kopfoberseite)" : def.seat === "in" && def.template !== "stift" && def.template !== "duebel" ? "Basispunkt (Kopfunterseite)" : "Basispunkt (Auflagefläche)", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
           this.seg("Achse", [["Z", "Z"], ["Y", "Y"], ["X", "X"], ["-Z", "−Z"], ["-Y", "−Y"], ["-X", "−X"], ["custom", "frei"]], f.axis || "Z", (v) => this.set(f, "axis", v, "Achse")),
           f.axis === "custom" ? this.vec3("Richtungsvektor", f.dir || ["0", "0", "1"], (v) => this.set(f, "dir", v, "Richtung")) : null,
           h("p", { class: "hint" }, "Normteile bleiben eigene Körper und stehen mit Normbezeichnung in der Stückliste. Mehrere gleiche: Feature »Muster«.")));
