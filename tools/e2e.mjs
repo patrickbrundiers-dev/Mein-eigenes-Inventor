@@ -3571,6 +3571,66 @@ try {
     step("Stecksystem in der Baugruppe", /3 Zapfen 20 × 4 mm/.test(s46.info) && s46.z === "steckzapfen" && s46.s === "steckschlitz" && s46.zs === true && /3 Schlitze aus/.test(s46.ss || "") && s46.tree && d46[0] === 0 && d46[1] === 0, JSON.stringify({ s46, d46 }));
   }
 
+  // ---- Baugruppenerstellung BG1–BG6: Platzieren mit Vorschau, Freiheitsgrade, Ziehen, Alt-Ziehen ----
+  {
+    await evalApp(() => { window.__werkcad.newAssembly(); });
+    await idle();
+    await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+    await rbClick("Platzieren");
+    await page.locator(".place-item", { hasText: "Grundplatte" }).first().click();
+    await idle();
+    const cvb = await page.locator("#viewport canvas, canvas").first().boundingBox();
+    const at = [cvb.x + cvb.width * 0.75, cvb.y + cvb.height * 0.3];
+    await page.mouse.move(at[0], at[1]);
+    await page.waitForTimeout(200);
+    const ghost = await evalApp(() => !!window.__werkcad.viewer.placeGhost);
+    await page.mouse.click(at[0], at[1]);
+    await idle();
+    await page.mouse.click(at[0], at[1], { button: "right" });
+    const pl = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { n: asm.components.length, fixed: !!asm.components[0].fixed, pick: a.pick?.kind || null, ghost: !!a.viewer.placeGhost }; });
+    // Fläche an Fläche → 2 Verschiebungen und 1 Drehung frei, Pfeile an der Auswahl
+    const dof = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc(), [c1, c2] = asm.components;
+      const fs = a.planarFaces(c1.part);
+      a.beginAlign("gegen");
+      a.alignPick({ kind: "face", key: "comp:" + c2.id, info: fs.find((f) => f.normal[2] < -0.99) });
+      a.alignPick({ kind: "face", key: "comp:" + c1.id, info: fs.find((f) => f.normal[2] > 0.99) });
+      a.sel = { type: "component", id: c2.id }; a.refreshSelectionHits(); a.tree.render(); a.props.render();
+      return { z: c2.pos[2], glyph: !!a.viewer.dofGlyph, meta: [...document.querySelectorAll("#browser .node")].some((n) => /Grundplatte:2.*2 V · 1 D frei/.test(n.textContent)) };
+    });
+    await idle();
+    await shot("bg-freiheitsgrade");
+    // Ziehen mit der Maus: bleibt auf der Fläche
+    const scr = (cid) => evalApp((id) => { const a = window.__werkcad, b = a.viewer.componentBox(id), c = b[0].map((x, i) => (x + b[1][i]) / 2); c[2] = b[1][2]; return a.viewer.worldToScreen(c); }, cid);
+    const ids = await evalApp(() => window.__werkcad.activeDoc().components.map((c) => c.id));
+    const R = await page.locator("canvas").first().boundingBox();
+    let s0 = await scr(ids[1]);
+    const before = await evalApp((id) => window.__werkcad.activeDoc().components.find((c) => c.id === id).pos, ids[1]);
+    await page.mouse.move(R.x + s0[0], R.y + s0[1]); await page.mouse.down();
+    for (let i = 1; i <= 8; i++) await page.mouse.move(R.x + s0[0] + i * 10, R.y + s0[1] + i * 6);
+    await page.mouse.up();
+    await idle();
+    const after = await evalApp((id) => window.__werkcad.activeDoc().components.find((c) => c.id === id).pos, ids[1]);
+    // Alt-Ziehen: dritte Platte mit ihrer Oberseite auf Platte 1 fügen
+    await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); a.edit("Dritte", () => asm.components.push({ id: "bg3", part: asm.components[0].part, name: "Grundplatte:3", pos: [-300, -250, 0], rot: [0, 0, 0] })); });
+    await idle();
+    await evalApp(() => window.__werkcad.viewer.fit());
+    await page.waitForTimeout(600);
+    s0 = await scr("bg3");
+    const s1 = await scr(ids[0]);
+    await page.keyboard.down("Alt");
+    await page.mouse.move(R.x + s0[0], R.y + s0[1]); await page.mouse.down();
+    for (let i = 1; i <= 12; i++) await page.mouse.move(R.x + s0[0] + ((s1[0] - s0[0]) * i) / 12, R.y + s0[1] + ((s1[1] - s0[1]) * i) / 12 + 20);
+    await page.waitForTimeout(300);
+    await shot("bg-alt-ziehen");
+    await page.mouse.up();
+    await page.keyboard.up("Alt");
+    await idle();
+    const q = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === "bg3"); return { z: c.pos[2], n: asm.constraints.length, last: asm.constraints.at(-1)?.type, err: Object.keys(a.asmErrors || {}).length }; });
+    step("Baugruppe: Platzieren mit Vorschau, Freiheitsgrade, Ziehen, Alt-Ziehen", ghost && pl.n === 2 && pl.fixed && !pl.pick && !pl.ghost && dof.z === 10 && dof.glyph && dof.meta
+      && after[2] === 10 && Math.hypot(after[0] - before[0], after[1] - before[1]) > 1 && q.n === 2 && q.last === "gegen" && Math.abs(q.z - 20) < 1e-6 && q.err === 0, JSON.stringify({ ghost, pl, dof, before, after, q }));
+  }
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

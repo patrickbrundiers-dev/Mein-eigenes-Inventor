@@ -572,3 +572,9 @@ details.measure-more > summary { cursor: pointer; color: var(--ink-soft); margin
 .explode-step .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .explode-pick { max-height: 40vh; overflow: auto; columns: 2; margin-bottom: 8px; }
 .pos-row > .btn.on, .section .btn.on { background: var(--laser-soft); border-color: #f3c08f; }
+
+/* Platzieren mit Vorschau (BG1) */
+.place-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin: 8px 0; }
+.place-item { display: flex; align-items: baseline; gap: 6px; text-align: left; padding: 6px 8px; border: 1px solid transparent; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.place-item:hover, .place-item:focus-visible { background: var(--dye-soft); border-color: var(--steel-2); outline: none; }
+.place-item b { font-weight: 600; }

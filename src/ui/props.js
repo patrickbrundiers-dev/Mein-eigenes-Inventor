@@ -52,6 +52,7 @@ import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
+import { placeDialog } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
 import { linkedPart, asmParamValues } from "../core/baugruppenparameter.js";
 import { pushParamsDialog, invalidateLinked, explosionDialog, positionsSection, explosionSection, asmParamsSection } from "./darstellungen.js";
@@ -2158,31 +2159,8 @@ export class Props {
     const asm = this.app.activeDoc();
     this.app.edit("Abhängigkeit löschen", () => { asm.constraints = (asm.constraints || []).filter((c) => c.id !== id); this.app.sel = null; });
   }
-  placeComponentDialog() {
-    const app = this.app;
-    const asm = app.activeDoc();
-    if (asm?.kind !== "assembly") return;
-    const parts = [...app.parts(), ...app.project.docs.filter((x) => x.kind === "assembly" && canInsert(asm, x, (id) => app.doc(id)))];
-    if (!parts.length) return toast("Im Projekt gibt es noch kein Bauteil");
-    let chosen = parts[0].id;
-    const qty = h("input", { class: "inp", type: "number", min: 1, value: 1 });
-    const list = h("div", {}, ...parts.map((p) => h("label", { class: "chk" }, h("input", { type: "radio", name: "pp", checked: p.id === chosen, onchange: () => { chosen = p.id; } }), p.name, p.kind === "assembly" ? h("span", { class: "hint" }, " (Unterbaugruppe)") : null, p.number ? h("span", { class: "hint" }, " " + p.number) : null)));
-    modal({
-      title: "Bauteil oder Unterbaugruppe platzieren",
-      body: h("div", {}, list, this.field("Anzahl", qty)),
-      buttons: [{ label: "Abbrechen" }, { label: "Platzieren", primary: true, run: () => {
-        const n = Math.max(1, Math.min(100, Number(qty.value) || 1));
-        const p = app.doc(chosen);
-        const occ = p.kind === "assembly" ? flattenAssembly(p, (id) => app.doc(id)) : [{ part: p }];
-        const bb = unionBox(occ.flatMap((o) => (app.results.get(o.part.id)?.bodies || []).map((b) => b.props?.bbox).filter(Boolean)));
-        const w = bb ? bb[1][0] - bb[0][0] + 20 : 100;
-        app.edit("Platzieren", () => {
-          const existing = asm.components.length;
-          for (let i = 0; i < n; i++) asm.components.push({ id: uid("c"), part: chosen, name: `${p.name}:${asm.components.filter((c) => c.part === chosen).length + 1}`, pos: [(existing + i) * w * 0 + i * w, 0, 0], rot: [0, 0, 0], fixed: asm.components.length === 0 && i === 0 });
-        });
-      } }],
-    });
-  }
+  /** Platzieren mit Vorschau am Mauszeiger (BG1, src/ui/baugruppe.js) */
+  placeComponentDialog() { return placeDialog(this.app); }
   /** Schiebetor (E8) als Baugruppe: Bauteil Flügel (Schiebegelenk −X, 0 … Durchfahrt) und Bauteil feste Teile */
   slidingGateAssembly(f, planOf, { into } = {}) {
     const app = this.app, src = into ? {} : app.activeDoc();

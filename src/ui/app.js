@@ -48,6 +48,7 @@ import { refreshAllGestelle, gestellPick, skeletonSegs } from "./gestell.js";
 import { insertFeature, beforeDelete, setEnd } from "../core/bauteilende.js";
 import { colorMap } from "../core/komponentenfarben.js";
 import { templateOf, isCustomTemplate } from "../core/zeichnungsvorlage.js";
+import { bindAssemblyDrag, bindDocDrop, updateDofGlyph, placeHover, placeClick, endPlacing, placeDialog } from "./baugruppe.js";
 
 const linkedMessage = (part, docOf = () => null) => (part.variant && !part.link
   ? `»${part.name}« ist eine Variante von »${docOf(part.variant.of)?.name || "?"}« – dort in der Variantentabelle ändern`
@@ -867,6 +868,7 @@ export class App {
       down = null;
       if (moved) return;
       if (b === 2 && this.mode === "sketch") { this.sketcher.state = null; this.sketcher.render(); return; }
+      if (b === 2 && this.pick?.kind === "place") return this.cancelPick();
       if (b === 2) return this.viewerContextMenu(e);
       if (b !== 0 || this.mode === "sketch") return;
       if (this.viewer.handleCubeClick(e.clientX, e.clientY)) return;
@@ -874,11 +876,16 @@ export class App {
     });
     let raf = 0;
     cv.addEventListener("pointermove", (e) => {
-      if (this.mode === "sketch" || down) return;
+      if (this.mode === "sketch" || this.dragState) return;
+      if (this.pick?.kind === "place") return placeHover(this, e);
+      if (down) return;
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => this.viewerHover(e));
     });
     cv.addEventListener("pointerleave", () => this.viewer.clearHover());
+    // Baugruppe (BG1/BG2/BG6/BG10): Komponenten ziehen, Alt-Ziehen fügt, Bauteile aus dem Browser ablegen
+    bindAssemblyDrag(this);
+    bindDocDrop(this);
   }
   pickOptions() {
     const p = this.pick;
@@ -924,6 +931,7 @@ export class App {
     if (p?.kind === "faces") return this.toggleFeatureFace(p.feature, hit);
     if (p?.kind === "datumFace") return this.datumFacePick(p.feature, hit);
     if (p?.kind === "align") return this.alignPick(hit);
+    if (p?.kind === "place") return placeClick(this, e);
     if (p?.kind === "gestell") return this.gestellPick(hit);
     if (this.mode === "assembly") {
       const cid = hit?.key?.startsWith("comp:") ? hit.key.slice(5) : null;
@@ -987,7 +995,7 @@ export class App {
       if (faceHit?.info?.type === "PLANE") items.push({ label: "Skizze auf dieser Fläche", icon: "plane", run: () => this.createSketch(planeFromFace(faceHit.info.point, faceHit.info.normal)) });
     }
     if (this.mode === "assembly") {
-      items.push({ label: "Bauteil platzieren", icon: "place", run: () => this.props.placeComponentDialog() });
+      items.push({ label: "Bauteil platzieren", icon: "place", run: () => placeDialog(this) });
     }
     const bodyHit = (this.mode === "part" || this.mode === "assembly") ? this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true }) : null;
     const what = this.mode === "assembly" ? "Komponente" : "Körper";
@@ -1037,6 +1045,8 @@ export class App {
     else if (this.sel?.type === "body") hits = [];
     if (this.align?.first) hits = hits.concat([this.align.first.hit]);
     this.viewer.setSelectionHits(part ? hits : []);
+    if (this.pick?.kind !== "place" && this.viewer.placeGhost) endPlacing(this);
+    updateDofGlyph(this);
   }
 
   // ---------- Baugruppe: Ausrichten ----------
@@ -1147,6 +1157,7 @@ export class App {
   cancelPick() {
     if (this.pick?.kind === "measure") { this.endMeasure(); this.ribbon.render(); }
     if (this.pick?.feature) { this._editingFeature = null; this.rebuild(); }
+    if (this.pick?.kind === "place") { endPlacing(this); this.ribbon?.render?.(); }
     this.pick = null;
     this.align = this.align ? { ...placeState(this.align), picks: [], first: null, edit: null } : null;
     this.viewer.clearPlanes();
@@ -1164,6 +1175,7 @@ export class App {
     if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
     this.viewer.applyPrefs(p.values);
     this.sketcher.applyPrefs(p.values);
+    if (!keys || keys.includes("baugruppe.freiheitsgrade")) updateDofGlyph(this);
     if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);
     if (keys?.includes("ansicht.qualitaet") && this.quality !== p.get("ansicht.qualitaet")) { this.quality = p.get("ansicht.qualitaet"); this.ribbon.render(); this.rebuild(); }
     if (!keys || keys.includes("werkzeuge.kuerzel")) this.commands.update();
@@ -1422,7 +1434,7 @@ function defaultHint(mode, mouse) {
     case "part": return mouse === "mitte-drehen"
       ? "Mittlere Taste: drehen · rechte Taste: schwenken · Rad: zoomen · Klick: Fläche/Kante wählen"
       : "Mittlere Taste: schwenken · Umschalt+Mitte oder rechte Taste: drehen · Rad: zoomen · Klick: Fläche/Kante wählen";
-    case "assembly": return "Bauteil anklicken zum Auswählen · Rechtsklick: Bauteil platzieren";
+    case "assembly": return this.prefs?.get("baugruppe.ziehen") === false ? "Bauteil anklicken zum Auswählen · Rechtsklick: Bauteil platzieren" : "Klicken: auswählen · Ziehen: verschieben (Umschalt: drehen, Alt: an Fläche fügen) · Bauteil aus dem Browser hineinziehen: platzieren";
     case "sketch": return "Werkzeug wählen · Esc beendet Werkzeug bzw. Skizze";
     case "drawing": return "Ansicht ziehen zum Verschieben · Mausrad: zoomen · mittlere Taste: schwenken";
     default: return "";
