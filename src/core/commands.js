@@ -94,6 +94,7 @@ export const COMMANDS = [
   { id: "file.listsXlsx", label: "Listen als Excel (.xlsx)", group: "Export", scope: "3d", keywords: "excel xlsx zuschnittliste stückliste nahtliste tabelle export" },
   { id: "file.angebot", label: "Angebotsblatt (PDF)", group: "Export", scope: "3d", keywords: "angebot kunde preis pdf bild" },
   { id: "file.ifc", label: "IFC exportieren (BIM, Stahlbau)", group: "Export", scope: "3d", keywords: "ifc bim ifc4 export stahlbau planer architekt tekla revit" },
+  { id: "file.einzelteile", label: "Einzelteile mit Positionsnummern (Stäbe und Platten, Gleichteile)", group: "Export", scope: "3d", keywords: "einzelteile positionsnummer pos gleichteile positionierung stückliste stahlbau einzelteilliste" },
   { id: "file.dstv", label: "DSTV-NC für Säge-, Bohr- und Brennanlagen (Stahlbau)", group: "Export", scope: "3d", keywords: "dstv nc nc1 stahlbau säge bohranlage brennschneiden cnc bohrung träger platte" },
   { id: "file.mappe", label: "Fertigungsmappe (PDF + Dateien als ZIP)", group: "Export", scope: "3d", keywords: "werkstatt mappe pdf zip zeichnungen laser paket" },
   { id: "part.naht", label: "Schweißnaht", group: "3D-Modell", scope: "part", keywords: "schweissen kehlnaht v-naht hv-naht iso 2553 a-maß nahtliste" },

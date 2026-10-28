@@ -24,6 +24,7 @@ export function commandRunners(app) {
     "file.listsXlsx": () => app.files.exportListsXlsx(),
     "file.mappe": () => app.files.exportMappe(),
     "file.dstv": () => app.files.exportDstv(),
+    "file.einzelteile": () => app.files.piecesDialog(),
     "file.ifc": () => app.files.exportIfc(),
     "file.angebot": () => app.files.exportAngebot(),
     "file.png": () => app.files.exportPng(),

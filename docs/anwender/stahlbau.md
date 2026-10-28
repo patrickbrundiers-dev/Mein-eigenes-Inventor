@@ -28,3 +28,12 @@ AA). Das Raster steht im Baum, zeigt sich im 3D-Fenster strichpunktiert mit Achs
 der Baugruppe: im Grundriss alle Achsen, in den Ansichten die Achsen quer zur Blickrichtung bis zur eingestellten Höhe.
 In den Eigenschaften einer Komponente setzt **Auf Achsschnittpunkt** sie auf einen Rasterpunkt (z. B. »B/3«); die Höhe
 bleibt.
+
+## Positionsnummern der Einzelteile
+
+**Export → Werkstatt → Einzelteile** zeigt alle Stäbe und ebenen Platten des Bauteils bzw. der ganzen Baugruppe mit
+Positionsnummer. Gleiche Stücke (Profil, Werkstoff, Länge, Schnittwinkel, Bohrungen, Kontur) fasst PBCAD zu einer Position
+zusammen. Die Nummern werden im Dokument gespeichert: ändert sich das Modell, behalten vorhandene Stücke ihre Nummer, neue
+bekommen die nächste freie, und Nummern weggefallener Stücke werden nicht wieder vergeben. Dieselben Nummern stehen im
+DSTV-NC (Kopf und Signatur), in der Fertigungsmappe und im IFC als Kennzeichen (Tag). »Neu nummerieren« vergibt alle Nummern
+neu; »Als CSV speichern« schreibt die Einzelteilliste für Excel.
