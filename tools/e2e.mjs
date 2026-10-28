@@ -3609,6 +3609,35 @@ try {
       && mini.includes("Skizze auf Fläche") && mini.includes("Wandung") && miniGone, JSON.stringify({ tip, ring, list, closed, mini, miniGone }));
   }
 
+  // Dokument-Reiter unten: offene Dokumente, Wechsel per Klick, Schließen wechselt zum Nachbarn, Startseite
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    const tabs0 = await page.locator("#doctabs .dt-tab .dt-name").allTextContents();
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_rahmen']").click();
+    await idle();
+    const act1 = await evalApp(() => window.__werkcad.activeId);
+    // ungespeichert: Rückfrage, Abbrechen lässt den Reiter offen; gespeichert: ohne Rückfrage
+    await evalApp(() => { window.__werkcad.dirty = true; });
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_rahmen'] .dt-x").click();
+    const asked = await page.locator(".dialog footer .btn", { hasText: "Nur schließen" }).isVisible();
+    await page.locator(".dialog footer .btn", { hasText: "Abbrechen" }).click();
+    const kept = await evalApp(() => window.__werkcad.openIds.includes("beispiel_rahmen"));
+    await evalApp(() => { window.__werkcad.dirty = false; });
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_rahmen'] .dt-x").click();
+    await idle();
+    const after = await evalApp(() => ({ open: window.__werkcad.openIds, active: window.__werkcad.activeId, mode: window.__werkcad.mode }));
+    await page.locator("#doctabs .dt-btn[aria-label='Startseite']").click();
+    const home = await evalApp(() => window.__werkcad.mode);
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_platte']").click();
+    await idle();
+    const back = await evalApp(() => window.__werkcad.mode);
+    step("Dokument-Reiter", asked && kept && tabs0.includes("Rahmen") && tabs0.includes("Grundplatte") && act1 === "beispiel_rahmen" && !after.open.includes("beispiel_rahmen") && after.active !== "beispiel_rahmen" && home === "start" && back === "part",
+      JSON.stringify({ asked, kept, tabs0, act1, after, home, back }));
+  }
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

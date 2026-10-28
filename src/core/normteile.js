@@ -33,15 +33,29 @@ export const NORM_KINDS = {
   scheibe: { label: "Scheibe", norm: "ISO 7089", noun: "Scheibe", length: false, grades: ["200 HV", "300 HV", "A2", "A4"] },
   gewindestange: { label: "Gewindestange", norm: "DIN 976-1", noun: "Gewindestange", length: true, grades: ["4.8", "8.8", "A2-70", "A4-70"] },
   spannschloss: { label: "Spannschloss (offen)", norm: "DIN 1480", noun: "Spannschloss", length: false, grades: ["verzinkt", "blank"] },
+  // Beschläge (E11): Größe nach Rohr bzw. Banddurchmesser statt Gewinde, Maße typischer Handelsware (Nennmaße, keine Norm)
+  anschweissband: { label: "Anschweißband (Torband)", norm: "", noun: "Anschweißband", length: false, grades: ["S235", "A2"], beschlag: true, sizes: {
+    "Ø16 x 80": { D: 16, L: 80 }, "Ø20 x 100": { D: 20, L: 100 }, "Ø25 x 120": { D: 25, L: 120 }, "Ø30 x 140": { D: 30, L: 140 } }, def: "Ø20 x 100" },
+  kugelkappe: { label: "Kugelkappe für Rundrohr", norm: "", noun: "Kugelkappe für Rohr", length: false, grades: ["S235", "A2"], beschlag: true, sizes: {
+    "Ø33,7": { D: 33.7 }, "Ø42,4": { D: 42.4 }, "Ø48,3": { D: 48.3 }, "Ø60,3": { D: 60.3 }, "Ø76,1": { D: 76.1 } }, def: "Ø42,4" },
+  rohrkappe: { label: "Flache Kappe für Rundrohr", norm: "", noun: "Rohrkappe flach", length: false, grades: ["S235", "A2", "Kunststoff"], beschlag: true, sizes: {
+    "Ø33,7": { D: 33.7 }, "Ø42,4": { D: 42.4 }, "Ø48,3": { D: 48.3 }, "Ø60,3": { D: 60.3 }, "Ø76,1": { D: 76.1 } }, def: "Ø42,4" },
+  vierkantkappe: { label: "Kappe für Vierkantrohr", norm: "", noun: "Vierkantkappe", length: false, grades: ["S235", "A2", "Kunststoff"], beschlag: true, sizes: {
+    "30 x 30": { a: 30 }, "40 x 40": { a: 40 }, "50 x 50": { a: 50 }, "60 x 60": { a: 60 }, "80 x 80": { a: 80 }, "100 x 100": { a: 100 } }, def: "40 x 40" },
+  bodenanschlag: { label: "Bodenanschlag für Tore", norm: "", noun: "Bodenanschlag", length: false, grades: ["S235", "A2"], beschlag: true, sizes: {
+    "klein (40 hoch)": { w: 60, d: 50, h: 40, t: 5 }, "groß (60 hoch)": { w: 80, d: 60, h: 60, t: 6 } }, def: "klein (40 hoch)" },
 };
+/** Wählbare Größen je Art: Gewinde für Schrauben usw., eigene Liste für Beschläge */
+export const normSizes = (kind) => (NORM_KINDS[kind]?.sizes ? Object.keys(NORM_KINDS[kind].sizes) : NORM_SIZES);
+export const beschlagDims = (kind, size) => NORM_KINDS[kind]?.sizes?.[size] || null;
 const STAINLESS = /^A[24]/;
 /** Dichte g/cm³: nichtrostend 7,9, sonst Stahl 7,85 */
-export const normDensity = (grade) => (STAINLESS.test(grade || "") ? 7.9 : 7.85);
-export const gradeMaterial = (grade) => (STAINLESS.test(grade || "") ? `nichtrostend ${grade}` : `Stahl ${grade}`);
+export const normDensity = (grade) => (grade === "Kunststoff" ? 0.95 : STAINLESS.test(grade || "") ? 7.9 : 7.85);
+export const gradeMaterial = (grade) => (grade === "Kunststoff" ? "Kunststoff (PE)" : STAINLESS.test(grade || "") ? `nichtrostend ${grade}` : `Stahl ${grade}`);
 
 export function defaultNormteil(kind = "schraube4017") {
   const def = NORM_KINDS[kind];
-  return { type: "normteil", kind, size: "M12", length: kind === "gewindestange" ? "1000" : "40", grade: def.grades[0], galv: false, pos: ["0", "0", "0"], axis: "Z" };
+  return { type: "normteil", kind, size: def.def || "M12", length: kind === "gewindestange" ? "1000" : "40", grade: def.grades[0], galv: false, pos: ["0", "0", "0"], axis: "Z" };
 }
 
 /** Gewindelänge b für ISO 4014 nach Nennlänge */
@@ -51,6 +65,10 @@ export const threadLength4014 = (d, L) => 2 * d + (L <= 125 ? 6 : L <= 200 ? 12 
 export function checkNorm(kind, size, L) {
   const def = NORM_KINDS[kind];
   if (!def) throw new Error("Unbekanntes Normteil: " + kind);
+  if (def.sizes) {
+    if (!def.sizes[size]) throw new Error(`Unbekannte Größe für ${def.label}: ${size}`);
+    return [];
+  }
   const t = NORM_THREADS[size];
   if (!t) throw new Error("Unbekannte Gewindegröße: " + size);
   const warnings = [];
@@ -70,6 +88,7 @@ export function checkNorm(kind, size, L) {
 export function normDesignation({ kind, size, length, grade, galv }) {
   const def = NORM_KINDS[kind];
   if (!def) return "?";
+  if (def.beschlag) return [`${def.noun} ${size}`, grade].filter(Boolean).join(" - ") + (galv && !STAINLESS.test(grade || "") && grade !== "Kunststoff" ? " - tZn" : "");
   const sz = kind === "scheibe" ? String(NORM_THREADS[size]?.d ?? size) : size;
   const parts = [`${def.noun} ${def.norm}`, def.length ? `${sz} x ${length}` : sz];
   if (grade) parts.push(grade);

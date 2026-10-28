@@ -513,6 +513,30 @@ export class Viewer {
   }
 
   /**
+   * Sichtbare Körper als eigene Szene für den glTF-Export (E15): Weltlage, Grundfarbe (ohne Hervorhebung),
+   * Meter statt mm und Y nach oben wie in glTF üblich. nameOf(key, body) liefert den Knotennamen.
+   */
+  exportScene(nameOf = () => "") {
+    const root = new THREE.Group();
+    root.name = "PBCAD";
+    root.rotation.x = -Math.PI / 2;
+    root.scale.setScalar(0.001);
+    for (const p of this.pickables) {
+      const m = p.mesh;
+      if (!m.visible || this.isHidden(p.key, p.body)) continue;
+      m.updateMatrixWorld();
+      const mat = new THREE.MeshStandardMaterial({ color: (m.userData.baseColor || m.material.color).clone(), metalness: m.material.metalness, roughness: m.material.roughness, side: THREE.DoubleSide,
+        transparent: m.material.transparent, opacity: m.material.opacity });
+      const c = new THREE.Mesh(m.geometry, mat);
+      c.matrixAutoUpdate = false;
+      c.matrix.copy(m.matrixWorld);
+      c.name = nameOf(p.key, p.body) || `${p.key} ${p.body + 1}`;
+      root.add(c);
+    }
+    return root;
+  }
+
+  /**
    * Nachbarteile beim Bearbeiten im Kontext (FU21): list = [{id, bodies, color, matrix}] halbdurchsichtig
    * anzeigen; bleiben beim Neuaufbau des Bauteils stehen, zählen nicht zum Einpassen. Leere Liste räumt ab.
    */
@@ -1373,7 +1397,8 @@ export class Viewer {
     scale = Math.min(scale, Math.min(8192, r.capabilities.maxTextureSize || 8192) / Math.max(1, size.x, size.y)); // Zeichenfläche begrenzen
     r.setPixelRatio(scale);
     r.setSize(size.x, size.y, false);
-    if (background != null) r.setClearColor(background, 1);
+    if (background === "transparent") r.setClearColor(0x000000, 0);
+    else if (background != null) r.setClearColor(background, 1);
     this.helpers.visible = false;
     try {
       r.render(this.scene, this.camera);
