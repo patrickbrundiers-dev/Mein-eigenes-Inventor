@@ -1526,7 +1526,7 @@ try {
     await page.keyboard.press("g");
     await idle();
     const f2 = await evalApp(() => { const d = window.__werkcad.activeDoc(); return { n: d.features.length, type: d.features.at(-1).type }; });
-    const tip = await evalApp(() => { window.__werkcad.ribbon.tab = "modell"; window.__werkcad.ribbon.render(); return [...document.querySelectorAll("#ribbon .rb-btn")].find((b) => b.textContent === "Rundung")?.title; });
+    const tip = await evalApp(() => { window.__werkcad.ribbon.tab = "modell"; window.__werkcad.ribbon.render(); const b = [...document.querySelectorAll("#ribbon .rb-btn")].find((b) => b.textContent === "Rundung"); return b && `${b.dataset.tip} (${b.dataset.kbd})`; });
     await evalApp(() => { const a = window.__werkcad; a.prefs.reset(["werkzeuge.kuerzel"]); a.undo(); a.undo(); });
     await idle();
     step("Befehlssuche und Tastaturkürzel", first === "Fase" && f1.n === n0 + 1 && f1.type === "chamfer" && /schon »Extrusion«/.test(conflict) && stored["part.fillet"] === "G" && f2.n === n0 + 2 && f2.type === "fillet" && tip === "Rundung (G)",
