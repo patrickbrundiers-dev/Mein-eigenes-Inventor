@@ -27,6 +27,9 @@ import { evaluate } from "../core/expr.js";
 import { commandDef, inScope } from "../core/commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
 import { applyRibbonLayout, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
+import { befehlHilfe } from "../core/befehlshilfe.js";
+import { SKETCH_TOOLS } from "./sketcher.js";
+import { bindTooltips } from "./tooltip.js";
 
 export class Ribbon {
   constructor(app) {
@@ -34,6 +37,7 @@ export class Ribbon {
     this.el = document.getElementById("ribbon");
     this.tab = null;
     this.actions = this.defineActions();
+    this.tips = bindTooltips(this.el);
   }
 
   defineActions() {
@@ -579,11 +583,11 @@ export class Ribbon {
         const btns = h("div", { class: "rb-buttons" });
         // groß: alle (Standard), keine (small) oder die ersten g.big; der Rest klein in Spalten zu je 3
         const nBig = g.small ? 0 : g.big ?? g.buttons.length;
-        for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, title: this.tip(b) }, icon(b.icon), h("span", {}, t_(b.label))));
+        for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, ...this.tipAttrs(b) }, icon(b.icon), h("span", {}, t_(b.label))));
         const rest = g.buttons.slice(nBig);
         for (let i = 0; i < rest.length; i += 3) {
           btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + 3).map((b) =>
-            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), title: this.tip(b), "aria-label": t_(b.label), onclick: b.run, disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : t_(b.label)))));
+            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), ...this.tipAttrs(b), "aria-label": t_(b.label), onclick: b.run, disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : t_(b.label)))));
         }
         panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns, h("div", { class: "rb-group-label" }, t_(g.label))));
       }
@@ -591,6 +595,7 @@ export class Ribbon {
     } else if (mode === "start") {
       panel.append(h("div", { class: "hint", style: { alignSelf: "center", padding: "0 8px" } }, "Neues Projekt anlegen oder vorhandenes öffnen."));
     }
+    this.tips.hide();
     this.el.replaceChildren(tabBar, panel);
   }
   /** Rechtsklick auf eine Gruppe: verschieben, ausblenden, anpassen */
@@ -639,10 +644,18 @@ export class Ribbon {
   kbd(id) { return this.app.commands?.label(id) || ""; }
   /** Tooltip mit Tastaturkürzel, falls der Knopf einem Befehl entspricht */
   tip(b) {
-    const special = { rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", replaceComp: "asm.replace", positions: "asm.positionSave", asmParams: "asm.params", compColors: "view.compColors", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
-    const id = special[b.id] || (b.id.startsWith("t_") ? "sketch." + b.id.slice(2) : b.id.startsWith("v_") ? "view." + b.id.slice(2) : b.id.startsWith("dm_") ? "view.mode." + b.id.slice(3) : "part." + b.id);
-    const k = this.kbd(id);
+    const k = this.kbd(this.tipId(b));
     return k ? `${b.label} (${k})` : b.label;
+  }
+  tipId(b) {
+    const special = { rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", replaceComp: "asm.replace", positions: "asm.positionSave", asmParams: "asm.params", compColors: "view.compColors", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
+    return special[b.id] || (b.id.startsWith("t_") ? "sketch." + b.id.slice(2) : b.id.startsWith("v_") ? "view." + b.id.slice(2) : b.id.startsWith("dm_") ? "view.mode." + b.id.slice(3) : "part." + b.id);
+  }
+  /** Daten für die Tooltip-Karte (src/ui/tooltip.js); die Beschreibung auch für Bildschirmleser */
+  tipAttrs(b) {
+    const k = this.kbd(this.tipId(b));
+    const desc = befehlHilfe(b.id, SKETCH_TOOLS);
+    return { "data-tip": t_(b.label).replace(/\u00ad/g, ""), "data-kbd": k || null, "data-desc": desc || null, "aria-description": desc || null };
   }
   renderDocLabel() {
     if (!this.docLabel) return;

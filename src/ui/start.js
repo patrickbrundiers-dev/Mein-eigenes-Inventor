@@ -56,7 +56,8 @@ export class StartScreen {
     this.head = h("div", { class: "st-head" });
     this.renderHead = () => {
       const v = app.prefs.get("allgemein.startAnsicht");
-      this.head.replaceChildren(
+      // replaceChildren schreibt null als Text, darum leere Einträge vorher entfernen
+      this.head.replaceChildren(...[
         h("h2", {}, "Zuletzt verwendet"),
         h("div", { class: "st-views", role: "group", "aria-label": "Ansicht" },
           h("button", { class: "icon-btn" + (v === "liste" ? " on" : ""), title: "Liste", "aria-pressed": String(v === "liste"), onclick: () => setPref("allgemein.startAnsicht", "liste") }, icon("list")),
@@ -66,7 +67,7 @@ export class StartScreen {
           oninput: (e) => { this.filter = e.target.value; this.renderRecent(); } }) : null,
         h("label", { class: "st-sort" }, "Sortieren nach",
           h("select", { class: "inp", onchange: (e) => setPref("allgemein.startSortierung", e.target.value) },
-            ...RECENT_SORTS.map((o) => h("option", { value: o.value, selected: o.value === app.prefs.get("allgemein.startSortierung") }, o.label)))));
+            ...RECENT_SORTS.map((o) => h("option", { value: o.value, selected: o.value === app.prefs.get("allgemein.startSortierung") }, o.label))))].filter(Boolean));
     };
     this.renderHead();
     this.renderRecent();

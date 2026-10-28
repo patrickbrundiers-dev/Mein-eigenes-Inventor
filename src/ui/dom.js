@@ -194,12 +194,17 @@ export function icon(name, cls = "") {
 }
 
 // ---------- Hinweise ----------
+const TOAST_ICON = { ok: "finish", err: "warn", warn: "warn" };
 export function toast(text, { kind = "", timeout = 4000, action = null } = {}) {
   const root = document.getElementById("toasts");
-  const el = h("div", { class: "toast " + kind }, h("span", {}, text));
+  // Ausblenden mit kurzer Animation; das Element ist danach sofort aus dem DOM
+  const hide = () => { if (!el.isConnected || el.classList.contains("out")) return; el.classList.add("out"); setTimeout(() => el.remove(), 160); };
+  const el = h("div", { class: "toast " + kind, role: kind === "err" ? "alert" : null },
+    icon(TOAST_ICON[kind] || "info", "toast-ic"), h("span", { class: "toast-text" }, text));
   if (action) el.append(h("button", { onclick: () => { action.run(); el.remove(); } }, action.label));
+  el.append(h("button", { class: "toast-x", title: "Schließen", "aria-label": "Meldung schließen", onclick: () => el.remove() }, icon("cancel")));
   root.append(el);
-  if (timeout) setTimeout(() => el.remove(), timeout);
+  if (timeout) setTimeout(hide, timeout);
   return el;
 }
 
