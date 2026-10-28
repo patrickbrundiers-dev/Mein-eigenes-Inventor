@@ -163,6 +163,7 @@ export class Ribbon {
       pfette: () => this.addGenerator("pfette"),
       windverband: () => this.addGenerator("windverband"),
       fachwerk: () => this.addGenerator("fachwerk"),
+      arbeitsbuehne: () => this.addGenerator("arbeitsbuehne"),
       steigleiter: () => this.addGenerator("steigleiter"),
       stuetzenfuss: () => this.addGenerator("stuetzenfuss"),
       traegerstoss: () => this.addGenerator("traegerstoss"),
@@ -443,7 +444,7 @@ export class Ribbon {
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun")] },
-          { label: "Stahlbau", small: true, buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk")] },
+          { label: "Stahlbau", small: true, buttons: [B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne")] },
           { label: "Gestell", big: 1, buttons: (() => {
             const g = !!app.activeDoc()?.gestell, on = (t) => app.pick?.kind === "gestell" && app.pick.tool === t;
             return [

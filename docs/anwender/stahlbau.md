@@ -11,6 +11,7 @@ nicht** – Profile, Bleche, Schrauben und Anker weist der Tragwerksplaner nach.
 | Trägeranschluss | Fahnenblech, Doppelwinkel oder kurze Stirnplatte; an Hauptträger (oben bündig, Ausklinkung oben und bei Bedarf unten) oder Stützenflansch | Schrauben passen in die Steghöhe, Winkelschenkel, Plattenbreite |
 | Steigleiter | Holme, Sprossen durch die Holme, Wandhalter, Haltegriffe über dem Austritt, Rückenschutz mit Bügeln und Längsstäben | DIN EN ISO 14122-4: Weite 400 … 600, Sprossen 225 … 300, Wandabstand ≥ 200, Rückenschutz ab 3 m (Beginn 2,2 … 3 m, Tiefe 650 … 800, ≥ 5 Längsstäbe ≤ 300 mm, Bügel ≤ 1500 mm), Leiterzug ≤ 10 m |
 | Fachwerkträger | Parallel-, Pult- oder Satteldachträger, Füllung N/V/W, Hohlprofile, Füllstäbe an den Gurtflächen gesägt, Spaltknoten, Auflagerplatten | Füllstäbe nicht breiter als die Gurte, Diagonalen 30 … 60°, Knotenversatz |
+| Arbeitsbühne | Stützen mit Fuß- und Kopfplatte, Randträger mit Gehrung, Querträger an den Feldgrenzen, Gitterrost- oder Riffelblechfelder, Bordblech außen, Geländer rundum (Knieleiste oder Staketen) mit Aufgang als Treppe, Steigleiter oder Durchgang | Geländer nach DIN EN ISO 14122-3 (1100 mm), Treppe nach DIN 18065, Leiter nach ISO 14122-4; Hinweise zu Aussteifung, Spannweite der Querträger, Schranke am Durchstieg |
 
 ## IFC (BIM)
 
