@@ -406,9 +406,13 @@ test("Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCA
   const plan = (patch) => GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, ...OLD_GEL, ...patch }, E));
   const k = plan({ runs: "2400", fill: "kreuz" });
   const diag = k.members.filter((m) => /^Diagonale/.test(m.name));
-  assert.equal(diag.length, 4, "2 Felder × 2 Diagonalen");
-  assert.ok(diag.every((m) => m.cuts.start.length === 1 && m.cuts.end.length === 1), "an den Pfosten abgeschnitten");
-  assert.ok(Math.abs(diag[0].a[0] - 20) < 1e-9 && Math.abs(diag[0].b[0] - 1180) < 1e-9, "von Pfostenfläche zu Pfostenfläche");
+  assert.equal(diag.length, 8, "2 Felder × 4 Stücke (Diagonalen enden am Ring)");
+  assert.ok(diag.every((m) => m.cuts.start.length === 1 && m.copes.some((c) => c.section.kind === "vierkantvoll")), "an den Pfosten abgeschnitten, am Ring ausgeklinkt");
+  assert.deepEqual(diag.filter((m) => /^Diagonale 1\./.test(m.name)).map((m) => m.a[0]).sort((a, b) => a - b), [20, 20, 1180, 1180], "von den Pfostenflächen zum Ring");
+  // ohne Ring: Diagonale 1 durchgehend, Diagonale 2 in zwei Stücken an ihr ausgeklinkt (keine Durchdringung)
+  const nr = plan({ runs: "1200", fill: "kreuz", ring: false }).members.filter((m) => /^Diagonale/.test(m.name));
+  assert.deepEqual(nr.map((m) => m.name), ["Diagonale 1.1", "Diagonale 1.2 oben", "Diagonale 1.2 unten"]);
+  assert.ok(Math.abs(nr[0].a[0] - 20) < 1e-9 && Math.abs(nr[0].b[0] - 1180) < 1e-9 && nr.slice(1).every((m) => m.copes.length >= 1));
   const rings = k.chains.filter((c) => /^Ring/.test(c.name));
   assert.equal(rings.length, 2);
   const r0 = rings[0].points, c0 = [600, 0, (r0[0][2] + r0[12][2]) / 2];
@@ -529,7 +533,10 @@ test("Schiebetor-Plan: Gegengewicht, Rollenböcke unter dem Schwanz, Teile getre
   assert.ok(bars.length > 20 && bars.every((m) => m.a[0] > 0 && m.a[0] < 4000), "Staketen nur in der Durchfahrt");
   const leaf = plan({ teil: "fluegel" }), fixed = plan({ teil: "fest" });
   assert.ok(leaf.members.every((m) => m.name.startsWith("Flügel")) && leaf.plates.length === 0);
-  assert.deepEqual(fixed.members.map((m) => m.name).sort(), ["Fangpfosten", "Führungspfosten"]);
+  assert.deepEqual(fixed.members.map((m) => m.name).sort(), ["Fangpfosten", "Führungspfosten", "Führungsrolle hinten", "Führungsrolle vorne"]);
+  assert.ok(["Fangtasche vorne", "Fangtasche hinten", "Führungsrollenbock"].every((n) => fixed.plates.some((x) => x.name === n)), "Fangtasche und Führungsrollen am festen Teil");
+  const fang = fixed.members.find((m) => m.name === "Fangpfosten");
+  assert.ok(fang.a[0] - fixed.members.find((m) => m.name === "Fangpfosten").section.geom.width / 2 - 4000 >= 20 - 1e-9, "Spalt zwischen Flügel und Fangpfosten");
   assert.equal(leaf.members.length + fixed.members.length, all.members.length);
   assert.throws(() => plan({ tail: "300" }), /Gegengewicht zu kurz/);
   assert.ok(plan({ tail: "1000" }).issues.some((i) => /35 %/.test(i.message)));
@@ -693,13 +700,16 @@ test("Gurte durch die Pfosten: ein Stück bis 5800 mm, Stoß im Pfosten, Durchbr
   assert.equal(pd.filter((d) => d.target === "Pfosten 1").length, 2, "Ober- und Untergurt");
   assert.ok(pd.filter((d) => d.target === "Pfosten 2").every((d) => Math.abs(d.len - (42.4 + 2)) < 1e-9), "durchgehend");
   assert.ok(pd.filter((d) => d.target === "Pfosten 1").every((d) => Math.abs(d.len - (21.2 + 1)) < 1e-9 && d.dir[0] === 1), "einseitig nach innen");
-  // Stäbe: nur durch die innere Gurtwand, Ende innen an der gegenüberliegenden Wand (Rohr 26,9 × 2,3); je Stab eine Bohrung Ø 13 in jedem Gurt
+  // Stäbe: nur durch die innere Gurtwand, Ende innen an der gegenüberliegenden Wand (Rohr 26,9 × 2,3) – so weit, dass der
+  // runde Stab Ø 12 die gekrümmte Innenwand nicht berührt; je Stab eine Bohrung Ø 13 in jedem Gurt, tief genug für den Bohrungsrand
+  const { innerReach, entryDepth } = await import("../src/core/handlaufhalter.js");
   const bars = a.members.filter((m) => /^Stab /.test(m.name));
-  const zTop = 1000 - 42.4 - 100, zBot = 100;
-  assert.ok(bars.every((m) => Math.abs(m.a[2] - (zBot - 26.9 / 2 + 2.3)) < 1e-9 && Math.abs(m.b[2] - (zTop + 26.9 / 2 - 2.3)) < 1e-9));
+  const zTop = 1000 - 42.4 - 100, zBot = 100, belt = { kind: "rohr", dims: { t: 2.3 } }, reach = innerReach(belt, 26.9, 12);
+  assert.ok(reach > 9 && reach < 26.9 / 2 - 2.3);
+  assert.ok(bars.every((m) => Math.abs(m.a[2] - (zBot - reach)) < 1e-9 && Math.abs(m.b[2] - (zTop + reach)) < 1e-9));
   const sd = a.drills.filter((d) => /gurt/.test(d.target));
   assert.equal(sd.length, 2 * bars.length);
-  assert.ok(sd.every((d) => d.d === 13 && Math.abs(d.len - (2.3 + 2)) < 1e-9), "nur eine Wand");
+  assert.ok(sd.every((d) => d.d === 13 && Math.abs(d.len - (entryDepth(belt, 26.9, 13) + 2)) < 1e-9 && d.len < 26.9 / 2), "nur eine Wand");
   assert.ok(sd.filter((d) => /^Obergurt/.test(d.target)).every((d) => d.dir[2] === 1 && d.p[2] < zTop) && sd.filter((d) => /^Untergurt/.test(d.target)).every((d) => d.dir[2] === -1 && d.p[2] > zBot), "von der Füllungsseite");
   // 9000 mm: Stoß in einem Pfosten (Stücke ≤ 5800), dort durchgehender Durchbruch für beide Stücke
   const b = plan({ runs: "9000" });
@@ -760,7 +770,7 @@ test("Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, 
   const belts = st.members.filter((m) => /Untergurt/.test(m.name)), stabs = st.members.filter((m) => / Stab \d+\.\d+$/.test(m.name));
   assert.ok(belts.length === 4 && stabs.length > 10, `${belts.length} ${stabs.length}`);
   assert.equal(st.drills.filter((d) => /Untergurt/.test(d.target)).length, stabs.length);
-  assert.ok(st.drills.filter((d) => /Untergurt/.test(d.target)).every((d) => d.d === 13 && d.dir[2] === -1 && d.len < 2.3 * 1.25 + 2), "nur durch die obere Gurtwand");
+  assert.ok(st.drills.filter((d) => /Untergurt/.test(d.target)).every((d) => d.d === 13 && d.dir[2] === -1 && d.len < 26.9 / 2 / Math.cos(Math.atan(t.geo?.tanA ?? 0.7)) + 2), "nur durch die obere Gurtwand");
   assert.ok(new Set(stabs.map((m) => m.name)).size === stabs.length, "Stabnamen eindeutig");
   assert.throws(() => plan({ gelFill: "staketen", gelStab: { kind: "rohr", size: "26.9x2.3" } }), (e) => e.key === "gelStab");
   assert.throws(() => plan({ gelBar: { kind: "rohr", size: "42.4x2.6" } }), (e) => e.key === "gelBar");
@@ -794,7 +804,7 @@ test("Generator als Baugruppe: Einzelteile in eigener Lage, Platzierung führt z
         const m = plan.members[b.index], l = lp.members[0];
         assert.ok(near(matApply(M, l.a), m.a) && near(matApply(M, l.b), m.b), `${g} ${b.name}: Platzierung`);
         assert.ok(Math.abs(l.b[1]) < 1e-9 && Math.abs(l.b[2]) < 1e-9 && l.b[0] > 0, `${g} ${b.name}: liegt auf X`);
-        for (const d of lp.drills) assert.ok(near(matApply(M, d.p), plan.drills.find((x) => x.target === m.name && near(x.dir, x.dir) && Math.abs(Math.hypot(...x.p) - Math.hypot(...matApply(M, d.p))) < 1e-6)?.p || [NaN]), `${g} ${b.name}: Bohrung`);
+        for (const d of lp.drills) assert.ok(plan.drills.some((x) => x.target === m.name && near(x.p, matApply(M, d.p))), `${g} ${b.name}: Bohrung`);
       } else if (b.kind === "chain") {
         const c = lp.chains[0], s = c.onlySeg, w = plan.chains[b.index].points;
         assert.ok(near(matApply(M, c.points[s]), w[b.seg]) && near(matApply(M, c.points[s + 1]), w[b.seg + 1]), `${g} ${b.name}: Stück am Platz`);

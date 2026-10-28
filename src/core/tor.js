@@ -7,6 +7,9 @@
 // gegehrten Stücken angenähert (Anzahl einstellbar); die Zuschnittliste zeigt diese Stücke.
 
 import { fieldError } from "./generror.js";
+import { sectionGeometry } from "./sections.js";
+import { capPlate } from "./handlaufhalter.js";
+const rund = (D) => ({ kind: "rund", dims: { D }, geom: sectionGeometry("rund", { D }) });
 export const TOR = {
   label: "Tor",
   schema: [
@@ -77,9 +80,23 @@ export const TOR = {
       gapSeen = Math.max(gapSeen, gp);
       for (let k = 0; k < nb; k++) {
         const x = xl + fw / 2 + gp * (k + 1) + bw * k + bw / 2;
-        const zt = top(x) - fw;
+        // oben an der Unterseite des Oberriegels (beim Bogen das gerade Stück über dem Stab), Schnitt parallel dazu
+        // Bogen: alle geraden Stücke über der Stabbreite schneiden (an einem Knick liegt der Stab unter zweien)
+        const tp = pts.slice(2), lim = [x - bw / 2, x + bw / 2];
+        const segs = tp.slice(0, -1).map((qa, j) => [qa, tp[j + 1]]).filter(([qa, qb]) => Math.min(qa[0], qb[0]) <= lim[1] && Math.max(qa[0], qb[0]) >= lim[0]);
+        if (!segs.length) segs.push([tp[0], tp[tp.length - 1]]);
+        const planes = segs.map(([qa, qb]) => {
+          const dx = qb[0] - qa[0], dz = qb[2] - qa[2], L = Math.hypot(dx, dz) || 1;
+          const nUp = dx > 0 ? [-dz / L, 0, dx / L] : [dz / L, 0, -dx / L], zAx = Math.abs(dx) > 1e-9 ? qa[2] + (dz * (x - qa[0])) / dx : qa[2];
+          return { nUp, zt: zAx - fw / 2 / Math.abs(nUp[2]), top: zAx - fw / 2 / Math.abs(nUp[2]) + (bw / 2) * Math.abs(nUp[0] / nUp[2]) };
+        });
+        const zt = Math.min(...planes.map((q) => q.zt)), slopeCut = planes.length > 1 || Math.abs(planes[0].nUp[0]) > 1e-9;
         const parts = p.mid ? [[z0 + fw, zm - fw / 2], [zm + fw / 2, zt]] : [[z0 + fw, zt]];
-        parts.forEach(([lo, hi], j) => { if (hi - lo > 1) members.push({ section: p.bar, a: P(x, lo), b: P(x, hi), name: `Flügel${name} Stab ${k + 1}${parts.length > 1 ? (j ? "o" : "u") : ""}`, up: [1, 0, 0] }); });
+        parts.forEach(([lo, hi], j) => {
+          if (!(hi - lo > 1)) return;
+          const last = j === parts.length - 1 && slopeCut, b = last ? P(x, Math.max(...planes.map((q) => q.top)) + 1) : P(x, hi);
+          members.push({ section: p.bar, a: P(x, lo), b, name: `Flügel${name} Stab ${k + 1}${parts.length > 1 ? (j ? "o" : "u") : ""}`, up: [1, 0, 0], ...(last ? { cuts: { start: [], end: planes.map((q) => ({ p: P(x, q.zt), n: q.nUp })) } } : {}) });
+        });
       }
       nBars += nb;
     }
@@ -88,9 +105,26 @@ export const TOR = {
       const zt = Math.max(top(0), top(W)) + p.postTop;
       members.push({ section: p.post, a: P(-pw / 2, -p.embed), b: P(-pw / 2, zt), name: "Torpfosten links", up });
       members.push({ section: p.post, a: P(W + pw / 2, -p.embed), b: P(W + pw / 2, zt), name: "Torpfosten rechts", up });
+      for (const [x, nm] of [[-pw / 2, "links"], [W + pw / 2, "rechts"]]) { const c = capPlate(p.post, P(x, zt), up, `Pfostenkappe ${nm}`); if (c) plates.push(c); }
     }
+    // Torbänder (Einschweißbänder) im Spalt an der Bandseite: Ø = Spalt, je Flügel zwei, unten am Pfosten, oben am Flügel
+    // angeschweißt; Anschlagleiste hinten (Doppeltor: Mitte am linken Flügel, Einzeltor: am rechten Pfosten)
+    const bandD = Math.min(30, Math.max(8, g)), bandL = 60;
+    if (g >= 8) {
+      const sides = n === 1 ? [[g / 2, 0, " links"]] : [[g / 2, 0, " links"], [W - g / 2, W, " rechts"]];
+      for (const [x, xe, nm] of sides) {
+        for (const [z, pos] of [[z0 + 100, "unten"], [top(xe) - 100 - 2 * bandL, "oben"]]) {
+          members.push({ section: rund(bandD), a: P(x, z), b: P(x, z + bandL), name: `Torband${nm} ${pos} Pfostenteil`, up: [1, 0, 0] });
+          members.push({ section: rund(bandD), a: P(x, z + bandL), b: P(x, z + 2 * bandL), name: `Torband${nm} ${pos} Flügelteil`, up: [1, 0, 0] });
+        }
+      }
+    } else issues.push({ key: "gap", level: "Hinweis", message: `Spalt ${Math.round(g)} mm zu klein für Einschweißbänder (mindestens 8 mm) – Bänder werden nicht erzeugt` });
+    const stopT = 6, stopW = 40, yb = fh / 2;
+    const stop = (x0, x1, zLo, zHi, name) => plates.push({ center: [(x0 + x1) / 2, yb, (zLo + zHi) / 2], xDir: [1, 0, 0], normal: [0, 1, 0], W: x1 - x0, H: zHi - zLo, t: stopT, name });
+    if (n === 2) { const xm = W / 2; stop(xm - g / 2 - stopW / 2, xm + g / 2 + stopW / 2, z0 + 2 * fw, top(xm) - 2 * fw, "Flügel links Anschlagleiste"); }
+    else if (p.posts) stop(W - g - stopW / 2, W, z0 + 2 * fw, top(W) - 2 * fw, "Anschlagleiste");
     if (gapSeen > 120 + 1e-6) issues.push({ key: "gapMax", level: "Warnung", message: `Öffnung ${Math.round(gapSeen)} mm größer als 120 mm` });
-    const info = `${n === 1 ? "Einzeltor" : "Doppeltor"}, Flügel ${Math.round(leafW)} mm breit, ${nBars} Stäbe` + (p.form !== "gerade" ? `, Scheitel ${Math.round(peak)} mm` : "");
+    const info = `${n === 1 ? "Einzeltor" : "Doppeltor"}, Flügel ${Math.round(leafW)} mm breit, ${nBars} Stäbe` + (p.form !== "gerade" ? `, Scheitel ${Math.round(peak)} mm` : "") + (g >= 8 ? `, ${2 * n} Torbänder Ø ${Math.round(bandD)} × ${2 * bandL}` : "");
     return { chains, members, plates, info, issues };
   },
 

@@ -10,9 +10,10 @@
 import { fieldError } from "./generror.js";
 import { platePlan } from "./anschluss.js";
 import { splitList } from "./expr.js";
-import { holderSchema, holderDrop, holderParts, entryWall } from "./handlaufhalter.js";
+import { holderSchema, holderDrop, holderParts, innerReach, entryDepth } from "./handlaufhalter.js";
 import { orientRot, rotExtent } from "./orient.js";
-import { normSchema, railingIssues } from "./gelaendernorm.js";
+import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
+import { sectionGeometry } from "./sections.js";
 import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, findPlateFace, faceCoords, holesBelow, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
 const mountKind = (p) => (p.base === "oben" || p.base === "seitlich" ? p.base : null);
@@ -45,6 +46,7 @@ export const GELAENDER = {
     { key: "beltMode", label: "Gurte", type: "select", options: [["durch", "durch die Pfosten gesteckt, Stäbe durch die Gurte"], ["zwischen", "zwischen den Pfosten"]], default: "durch", missing: "zwischen", group: "Handlauf und Gurte", when: (p) => p.top || p.bottom },
     { key: "beltMax", label: "Gurt am Stück bis (sonst Stoß im Pfosten)", type: "num", default: "5800", group: "Handlauf und Gurte", when: (p) => (p.top || p.bottom) && p.beltMode !== "zwischen" },
     { key: "allow", label: "Aufmaß der Bohrungen (auf Ø bzw. Maß)", type: "num", default: "1", group: "Handlauf und Gurte", when: (p) => (p.top || p.bottom) && p.beltMode !== "zwischen" },
+    { key: "toe", label: "Fußleiste (100 mm)", type: "select", options: [["auto", "nach Geländernorm (Industrie)"], ["ja", "ja"], ["nein", "nein"]], default: "auto", missing: "nein", group: "Handlauf und Gurte" },
     { key: "fill", label: "Füllung", type: "select", options: [["staketen", "Staketen"], ["quer", "Querstäbe"], ["blech", "Blech"], ["glas", "Glas"], ["kreuz", "Kreuz"], ["rahmen", "Rahmen mit Staketen"], ["keine", "keine"]], default: "staketen", tiles: "front", group: "Füllung" },
     { key: "bar", label: "Stab", type: "section", default: { kind: "rund", size: "12" }, group: "Füllung", when: (p) => ["staketen", "quer", "kreuz", "rahmen"].includes(p.fill) },
     { key: "gapMax", label: "Öffnung max.", type: "num", default: "110", group: "Füllung", when: (p) => ["staketen", "quer", "rahmen"].includes(p.fill) },
@@ -82,14 +84,14 @@ export const GELAENDER = {
       const n = Math.max(1, Math.ceil(L / p.postMax - 1e-9));
       for (let k = i === 0 ? 0 : 1; k <= n; k++) posts.push({ at: [a[0] + d[0] * (L * k) / n, a[1] + d[1] * (L * k) / n], d });
       stations.push(Array.from({ length: n + 1 }, (_, k) => ({ s: (L * k) / n, post: posts.length - 1 - n + k })));
-      for (let k = 0; k < n; k++) fields.push({ a: [a[0] + d[0] * (L * k) / n, a[1] + d[1] * (L * k) / n], d, len: L / n, run: i });
+      for (let k = 0; k < n; k++) fields.push({ a: [a[0] + d[0] * (L * k) / n, a[1] + d[1] * (L * k) / n], d, len: L / n, run: i, pa: posts.length - 1 - n + k });
     });
     const railH = rail.geom.height, railW = rail.geom.width;
     const zBase = p.base === "fussplatte" ? p.baseT : p.base === "oben" ? p.oT : 0;
     const kind = mountKind(p);
     const holder = p.holder !== "keine";
     const zPostTop = H - railH - holderDrop(holder, post, p.holderGap);
-    const members = [], plates = [], chains = [], drills = [];
+    const members = [], plates = [], chains = [], drills = [], norms = [];
     const P3 = (xy, z) => [xy[0], xy[1], z];
     const up = [0, 0, 1];
     // Pfostenbefestigung oben (pfostenbefestigung.js): Fußplatte auf dem Boden oder auf einem Randprofil, dessen
@@ -167,8 +169,15 @@ export const GELAENDER = {
     // Gurte und Füllung je Feld zwischen den Pfostenflächen
     const half = post.geom.height / 2; // Pfostentiefe entlang der Lauflinie (v zeigt entlang d)
     const belt = p.belt, beltH = belt?.geom.height || 0;
-    const zTop = H - railH - p.topGap, zBot = p.bottomZ;
-    const fillLo = p.bottom ? zBot + beltH / 2 : zBase;
+    const zTop = H - railH - p.topGap;
+    let zBot = p.bottomZ;
+    // Fußleiste (EN ISO 14122-3: ≥ 100 mm, Luft zum Boden ≤ 10 mm) zwischen den Pfosten; der Untergurt geht darüber
+    const toeOn = p.toe === "ja" || (p.toe === "auto" && normRules(p.use, p.fall).toe > 0), toeH = 100, toeZ = Math.max(10, zBase);
+    if (toeOn && p.bottom && zBot - beltH / 2 < toeZ + toeH + 10) {
+      zBot = Math.ceil((toeZ + toeH + 10 + beltH / 2) / 5) * 5;
+      issues.push({ key: "bottomZ", level: "Hinweis", message: `Untergurt über die Fußleiste gelegt (${zBot} mm über Boden)` });
+    }
+    const fillLo = p.bottom ? zBot + beltH / 2 : toeOn ? toeZ + toeH : zBase;
     const fillHi = p.top ? zTop - beltH / 2 : zPostTop;
     if (p.top && p.bottom && zTop - zBot < 2 * beltH + 50) throw fieldError("Ober- und Untergurt liegen zu dicht – Höhen prüfen", "topGap");
     if (p.fill !== "keine" && !(fillHi - fillLo > 20)) throw fieldError("Kein Platz für die Füllung", "fill");
@@ -184,13 +193,22 @@ export const GELAENDER = {
       if (p.fill === "staketen" && !(Math.min(p.bar.geom.width, p.bar.geom.height) + allow < Math.min(e.high, e.wide) - 2)) throw fieldError("Stab passt nicht durch den Gurt – kleineren Stab oder größeren Gurt wählen", "bar");
     }
     // Stäbe nur durch die innere Gurtwand, Ende innen an der gegenüberliegenden Wand (Vollprofil: Sackloch bis zur Mitte)
-    const beltHalf = beltExt([1, 0], [0, 0, 1]).high / 2, wall = through ? entryWall(belt, 2 * beltHalf) : 0;
-    const barLo = through && p.bottom ? zBot - beltHalf + wall : fillLo, barHi = through && p.top ? zTop + beltHalf - wall : fillHi;
+    const beltHalf = beltExt([1, 0], [0, 0, 1]).high / 2, reach = through && p.bar ? innerReach(belt, 2 * beltHalf, p.bar.geom.width) : 0;
+    const barLo = through && p.bottom ? zBot - reach : fillLo, barHi = through && p.top ? zTop + reach : fillHi;
     const barHoles = []; // [{ x, y, field }] Stellen der Stäbe für die Gurtbohrungen
     let nBars = 0, gapMaxSeen = 0;
+    const flat = (B, t) => ({ kind: "flach", dims: { B, t }, geom: sectionGeometry("flach", { B, t }) });
+    const rund = (D) => ({ kind: "rund", dims: { D }, geom: sectionGeometry("rund", { D }) });
+    const toeSec = flat(toeH, 5);
     fields.forEach((fd, i) => {
       const s0 = half, s1 = fd.len - half, clear = s1 - s0;
       const at = (s) => [fd.a[0] + fd.d[0] * s, fd.a[1] + fd.d[1] * s];
+      const nrm = [-fd.d[1], fd.d[0], 0];
+      // Hüllkörper zum Ausklinken: Pfosten links/rechts des Feldes, Gurte im Feld (Teile liegen voll an, ohne Durchdringung)
+      const postCope = (j) => { const m = members.find((x) => x.name === `Pfosten ${fd.pa + j + 1}`); return m && { section: m.section, a: m.a, b: m.b, up: m.up, rot: m.rot }; };
+      const posts2 = [postCope(0), postCope(1)];
+      const beltCope = (top) => (top ? p.top : p.bottom) ? { section: belt, a: P3(at(s0 - 60), top ? zTop : zBot), b: P3(at(s1 + 60), top ? zTop : zBot), up: [0, 0, 1], rot: beltRot(fd.d, top ? [0, 0, -1] : [0, 0, 1]) } : null;
+      if (toeOn) members.push({ section: toeSec, a: P3(at(0), toeZ + toeH / 2), b: P3(at(fd.len), toeZ + toeH / 2), name: `Fußleiste ${i + 1}`, up: nrm, copes: posts2.filter(Boolean) });
       // Gurte zwischen den Pfosten: U/UPN offen zur Füllung (Obergurt nach unten, Untergurt nach oben), Flachstahl liegend
       if (!through && p.top) members.push({ section: belt, a: P3(at(s0), zTop), b: P3(at(s1), zTop), name: `Obergurt ${i + 1}`, rot: beltRot(fd.d, [0, 0, -1]) });
       if (!through && p.bottom) members.push({ section: belt, a: P3(at(s0), zBot), b: P3(at(s1), zBot), name: `Untergurt ${i + 1}`, rot: beltRot(fd.d, [0, 0, 1]) });
@@ -217,18 +235,36 @@ export const GELAENDER = {
         nBars += n;
       } else if (p.fill === "kreuz") {
         // Diagonalen von Ecke zu Ecke des Feldes, an den Pfosten senkrecht abgeschnitten; Ring in der Mitte (gegehrter Zug)
+        // Kreuzung: ohne Ring läuft Diagonale 1 durch, Diagonale 2 ist in zwei Stücke geteilt und an Diagonale 1
+        // ausgeklinkt; mit Ring enden alle vier Stücke am Ring (an seine Außenseite angepasst). Keine Durchdringung.
         const along = [fd.d[0], fd.d[1], 0], n = [-fd.d[1], fd.d[0], 0];
         const A = P3(at(s0), fillLo), B = P3(at(s1), fillHi), C = P3(at(s0), fillHi), D = P3(at(s1), fillLo);
+        const M = P3(at((s0 + s1) / 2), (fillLo + fillHi) / 2);
         const cut = (q, sg) => ({ p: q, n: along.map((x) => x * sg) });
-        members.push({ section: p.bar, a: A, b: B, name: `Diagonale ${i + 1}.1`, up: along, cuts: { start: [cut(A, -1)], end: [cut(B, 1)] } });
-        members.push({ section: p.bar, a: C, b: D, name: `Diagonale ${i + 1}.2`, up: along, cuts: { start: [cut(C, -1)], end: [cut(D, 1)] } });
-        nBars += 2;
+        const ext = (a, b, e) => { const u = norm3(sub3(b, a)); return [sub3(a, mul3(u, e)), add3(b, mul3(u, e))]; };
+        let ring = null;
         if (p.ring) {
           const r = p.ringD / 2, bw = Math.max(p.bar.geom.width, p.bar.geom.height);
           if (!(r > bw && 2 * r + bw < Math.min(clear, fillHi - fillLo))) throw fieldError(`Ring ⌀ ${p.ringD} passt nicht ins Feld ${Math.round(clear)} × ${Math.round(fillHi - fillLo)} mm`, "ringD");
           const c = at((s0 + s1) / 2), zc = (fillLo + fillHi) / 2, N = 24;
-          const ring = Array.from({ length: N + 1 }, (_, k) => { const t = (2 * Math.PI * k) / N; return [c[0] + fd.d[0] * r * Math.cos(t), c[1] + fd.d[1] * r * Math.cos(t), zc + r * Math.sin(t)]; });
+          ring = Array.from({ length: N + 1 }, (_, k) => { const t = (2 * Math.PI * k) / N; return [c[0] + fd.d[0] * r * Math.cos(t), c[1] + fd.d[1] * r * Math.cos(t), zc + r * Math.sin(t)]; });
           chains.push({ section: p.bar, points: ring, name: `Ring ${i + 1}`, up: n });
+          const copes = ring.slice(1).map((b, k) => { const [a1, b1] = ext(ring[k], b, p.bar.geom.width / 2); return { section: p.bar, a: a1, b: b1, up: n }; });
+          // vier Stücke von der Ecke bis zur Ringmitte, am Ring ausgeklinkt
+          for (const [q, j, pos] of [[A, 1, "unten"], [B, 1, "oben"], [C, 2, "oben"], [D, 2, "unten"]]) {
+            const sg = q === A || q === C ? -1 : 1, e = add3(M, mul3(norm3(sub3(q, M)), r));
+            const near = copes.filter((c) => Math.hypot(...sub3(mul3(add3(c.a, c.b), 0.5), e)) < 0.6 * r + bw);
+            const bc = beltCope(pos === "oben");
+            members.push({ section: p.bar, a: q, b: e, name: `Diagonale ${i + 1}.${j} ${pos}`, up: along, cuts: { start: [cut(q, sg)], end: [] }, copes: bc ? [...near, bc] : near });
+          }
+          nBars += 4;
+        } else {
+          const bt = [beltCope(true)].filter(Boolean), bb = [beltCope(false)].filter(Boolean);
+          members.push({ section: p.bar, a: A, b: B, name: `Diagonale ${i + 1}.1`, up: along, cuts: { start: [cut(A, -1)], end: [cut(B, 1)] }, copes: [...bt, ...bb] });
+          const copes = [{ section: p.bar, a: A, b: B, up: along, cuts: { start: [cut(A, -1)], end: [cut(B, 1)] } }];
+          members.push({ section: p.bar, a: C, b: M, name: `Diagonale ${i + 1}.2 oben`, up: along, cuts: { start: [cut(C, -1)], end: [] }, copes: [...copes, ...bt] });
+          members.push({ section: p.bar, a: D, b: M, name: `Diagonale ${i + 1}.2 unten`, up: along, cuts: { start: [cut(D, 1)], end: [] }, copes: [...copes, ...bb] });
+          nBars += 3;
         }
         // Öffnung = größter Inkreis der vier Dreiecke zwischen Diagonalen und Rand (Ring nicht angerechnet)
         const w = clear / 2, h = (fillHi - fillLo) / 2, L = Math.hypot(w, h);
@@ -250,12 +286,38 @@ export const GELAENDER = {
           members.push({ section: p.bar, a: P3(at(s), zl), b: P3(at(s), zh), name: `Stab ${i + 1}.${k + 1}`, up: [fd.d[0], fd.d[1], 0] });
         }
         nBars += m;
+        // Abstandhalter Rundstahl Ø 12 (geschweißt): je zwei zu den Pfosten und zu den Gurten, an Pfosten/Gurt angepasst
+        const sp = rund(12), zs = [fz0 + (fz1 - fz0) * 0.2, fz1 - (fz1 - fz0) * 0.2], ss = [s0 + clear * 0.25, s1 - clear * 0.25];
+        let k = 0;
+        for (const [j, sp0, sg] of [[0, s0, 1], [1, s1, -1]]) for (const z of zs)
+          if (posts2[j]) members.push({ section: sp, a: P3(at(sp0 - sg * half), z), b: P3(at(sp0 + sg * g), z), name: `Füllungsrahmen ${i + 1} Abstandhalter ${++k}`, up: nrm, copes: [posts2[j]] });
+        for (const [top, zb, zf] of [[false, zBot, fillLo + g], [true, zTop, fillHi - g]]) {
+          const bc = beltCope(top);
+          if (bc) for (const s of ss) members.push({ section: sp, a: P3(at(s), zb), b: P3(at(s), zf), name: `Füllungsrahmen ${i + 1} Abstandhalter ${++k}`, up: [fd.d[0], fd.d[1], 0], copes: [bc] });
+        }
       } else if (p.fill === "blech" || p.fill === "glas") {
         const W = clear - 2 * p.panelGap, Hp = fillHi - fillLo - 2 * p.panelGap;
         if (!(W > 0 && Hp > 0)) throw fieldError("Füllung: Abstand zu groß für das Feld", "panelGap");
         const n = [-fd.d[1], fd.d[0], 0];
         const c = at((s0 + s1) / 2);
-        plates.push({ center: [c[0] - (n[0] * p.panelT) / 2, c[1] - (n[1] * p.panelT) / 2, (fillLo + fillHi) / 2], xDir: [fd.d[0], fd.d[1], 0], normal: n, W, H: Hp, t: p.panelT, name: `${p.fill === "glas" ? "Glas" : "Blech"} ${i + 1}`, glass: p.fill === "glas", vertical: true });
+        const zc = (fillLo + fillHi) / 2, nm = `${p.fill === "glas" ? "Glas" : "Blech"} ${i + 1}`, t = p.panelT;
+        // Halter: Lasche FL 40 × 6 an den Pfosten geschweißt (angepasst), hinter der Füllung; M8 durch Lasche und Füllung
+        // (Bohrung Ø 9 in beiden); Glas mit Punkthalter-Bohrung, Edelstahlschraube
+        const lasche = flat(40, 6), holes = [], hz = Hp > 260 ? [zc - Hp / 2 + 60, zc + Hp / 2 - 60] : [zc];
+        let k = 0;
+        for (const [j, sp0, sg] of [[0, s0, 1], [1, s1, -1]]) {
+          if (!posts2[j]) continue;
+          const sh = sp0 + sg * (p.panelGap + 20);
+          for (const z of hz) {
+            const off = (s, dn) => { const q = P3(at(s), z); return [q[0] + n[0] * dn, q[1] + n[1] * dn, q[2]]; };
+            const ln = `${nm} Halter ${++k}`;
+            members.push({ section: lasche, a: off(sp0 - sg * half, t / 2 + 3), b: off(sp0 + sg * (p.panelGap + 40), t / 2 + 3), name: ln, up: n, copes: [posts2[j]] });
+            drills.push({ target: ln, p: off(sh, t / 2 + 7), dir: n.map((x) => -x), len: 8, d: 9 });
+            holes.push([sh - (s0 + s1) / 2, -(z - zc), 9]);
+            norms.push({ bolt: true, size: "M8", clamp: t + 6, pos: off(sh, -t / 2), dir: n, grade: p.fill === "glas" ? "A2-70" : "8.8" });
+          }
+        }
+        plates.push({ center: [c[0] - (n[0] * t) / 2, c[1] - (n[1] * t) / 2, zc], xDir: [fd.d[0], fd.d[1], 0], normal: n, W, H: Hp, t, name: nm, glass: p.fill === "glas", vertical: true, ...(holes.length ? { holes, d: 9 } : {}) });
         gapMaxSeen = Math.max(gapMaxSeen, p.panelGap);
       }
     });
@@ -296,7 +358,7 @@ export const GELAENDER = {
               const sb = (b.q[0] - a[0]) * d[0] + (b.q[1] - a[1]) * d[1];
               if (sb < st[f0].s || sb > st[f1].s) continue;
               const bh = p.bar.kind === "rohr" || p.bar.kind === "rund" ? { d: p.bar.geom.width + allow } : { w: p.bar.geom.width + allow, h: p.bar.geom.height + allow, xDir };
-              drills.push({ target: name, p: P3(b.q, zc + open[2] * (e.high / 2 + 1)), dir: [0, 0, -open[2]], len: entryWall(belt, e.high) + 2, ...bh });
+              drills.push({ target: name, p: P3(b.q, zc + open[2] * (e.high / 2 + 1)), dir: [0, 0, -open[2]], len: entryDepth(belt, e.high, bh.d ?? bh.w) + 2, ...bh });
             }
           }
         }
@@ -306,10 +368,11 @@ export const GELAENDER = {
     // Geländernorm: Höhe, Öffnungen, Abstand zum Boden nach Nutzung (gelaendernorm.js)
     const bottomEdge = p.bottom ? zBot - beltExt([1, 0], [0, 0, 1]).high / 2 : ["blech", "glas", "rahmen"].includes(p.fill) ? fillLo + p.panelGap : 0;
     const gapKey = ["staketen", "quer", "rahmen"].includes(p.fill) ? "gapMax" : ["blech", "glas"].includes(p.fill) ? "panelGap" : p.fill === "kreuz" ? (p.ring ? "ringD" : "fill") : "fill";
-    issues.push(...railingIssues({ use: p.use, fall: p.fall, height: H, fill: p.fill, gap: gapMaxSeen, bottom: bottomEdge, open: fillHi - fillLo, rail }, { height: "height", fill: "fill", gap: gapKey, bottom: p.bottom ? "bottomZ" : "fill", rail: "rail", use: "use" }));
+    issues.push(...railingIssues({ use: p.use, fall: p.fall, height: H, fill: p.fill, toe: toeOn, gap: gapMaxSeen, bottom: bottomEdge, open: fillHi - fillLo, rail }, { height: "height", fill: "fill", gap: gapKey, bottom: p.bottom ? "bottomZ" : "fill", rail: "rail", use: "use" }));
     const total = runs.reduce((a, b) => a + b, 0);
-    const info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, kind === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "");
-    return { chains, members, plates, drills, info, issues, sections: SEC };
+    let info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, kind === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "");
+    if (toeOn) info += `, Fußleiste ${toeH} × 5 mm`;
+    return { chains, members, plates, drills, norms, info, issues, sections: SEC };
   },
 
   views: ["front", "top"],
@@ -344,4 +407,8 @@ function offsetLine(pts, off) {
     return [q[0] + m[0] * k, q[1] + m[1] * k];
   });
 }
+const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const mul3 = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const norm3 = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return mul3(a, 1 / l); };
 const norm2 = (a) => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; };

@@ -243,9 +243,11 @@ test("Seitliche Befestigung ohne Abstandsausgleich: Blech plan an der Wange, Pfo
   // zu schmales Blech: Pfosten verdeckt die Bohrungen
   const narrow = treppe({ gelSW: "80", gelE: "15" });
   assert.match(narrow.issues.map((x) => x.message).join(), /vom Pfosten verdeckt/);
-  // UPN offen nach außen: kein Absturz, Pfosten ohne Befestigung mit Fehlermeldung
+  // UPN offen nach außen: Pfosten automatisch oben auf der Wange mit Fußplatte, Hinweis statt Pfosten ohne Befestigung
   const upn = treppe({ support: "upn", upn: { kind: "upn", size: "200" } });
-  assert.match(upn.issues.map((x) => x.message).join(), /offene Seite des U-Profils .* »oben mit Fußplatte« .* ohne Befestigung/);
+  assert.match(upn.issues.map((x) => x.message).join(), /Wange aus U-Profil ist außen offen – Pfosten oben auf der Wange mit Fußplatte/);
+  assert.equal(upn.issues.filter((x) => x.level === "Fehler").length, 0, upn.issues.map((x) => x.message).join("\n"));
+  assert.ok(upn.plates.some((x) => x.name === "Geländer rechts Pfosten 1 Fußplatte"));
 });
 
 test("Geländer seitlich: an der Deckenstirn bzw. am Randprofil, Randabstand zur Deckenkante", () => {

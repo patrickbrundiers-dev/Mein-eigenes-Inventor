@@ -61,7 +61,7 @@ export const BALKON = {
     const { high: fh, wide: fw } = rotExtent(fr, frRot);
     const tw = p.wallPlate || 0;
     if (!(Hb > fh + tt + 200)) throw fieldError("Höhe zu klein für den Rahmen", "height");
-    const members = [], plates = [], chains = [], drills = [];
+    const members = [], plates = [], chains = [], drills = [], norms = [];
     const zf = Hb - tt - fh / 2; // Achse Rahmen
     const y0 = tw; // Rahmen beginnt vor der Wandplatte
     const x0 = fw / 2, x1 = W - fw / 2, ya = y0 + fw / 2, yb = T - fw / 2;
@@ -107,7 +107,9 @@ export const BALKON = {
     if (p.railing) {
       // seitlich: Lauflinie außen vor dem Rahmen (Blech + Pfostenhälfte); sonst »vom Rand« über dem Rahmen
       const mk = railMount(p), post = sec({ kind: "vierkant", size: "40x3" });
-      const i = mk === "seitlich" ? -sideOffset(mountConfig(p, rk, "seitlich"), post) : p.inset, yStart = y0 + 20;
+      // seitlich: erster/letzter Pfosten so weit von der Wand, dass das Befestigungsblech nicht in die Wandplatte ragt
+      const sCfg = mk === "seitlich" ? mountConfig(p, rk, "seitlich") : null;
+      const i = sCfg ? -sideOffset(sCfg, post) : p.inset, yStart = y0 + (sCfg ? Math.max(20, sCfg.sW / 2 + 20) : 20);
       const side = T - i - yStart, front = W - 2 * i;
       if (!(side > 100 && front > 100)) throw fieldError("Geländer passt nicht – Abstand vom Rand prüfen", "inset");
       const gp = gelaenderParams({ runs: [side, front, side], angle: -90, height: p.railH, fill: p.fill, use: p.use, fall: Hb, holder: p.railHolder ? "stift" : "keine", overhang: p.railHolder ? 50 : 0,
@@ -134,7 +136,10 @@ export const BALKON = {
       // Geländer-Lage: Ursprung, +X entlang des ersten Laufs → hier +Y ab (i, yStart, Hb)
       const P = (v) => [o[0] - v[1], o[1] + v[0], o[2] + v[2]], D = (v) => [-v[1], v[0], v[2]];
       for (const c of g.chains) chains.push({ ...c, points: c.points.map(P), up: c.up ? D(c.up) : [0, 0, 1], name: "Geländer " + c.name });
-      for (const m of g.members) members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: "Geländer " + m.name, cuts: m.cuts && { start: m.cuts.start.map((c) => ({ p: P(c.p), n: D(c.n) })), end: m.cuts.end.map((c) => ({ p: P(c.p), n: D(c.n) })) } });
+      const cutsP = (cs) => cs && { start: cs.start.map((c) => ({ p: P(c.p), n: D(c.n) })), end: cs.end.map((c) => ({ p: P(c.p), n: D(c.n) })) };
+      for (const m of g.members) members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: "Geländer " + m.name, cuts: cutsP(m.cuts),
+        ...(m.copes ? { copes: m.copes.map((c) => ({ ...c, a: P(c.a), b: P(c.b), up: D(c.up || [0, 0, 1]), cuts: cutsP(c.cuts) })) } : {}) });
+      for (const n of g.norms || []) norms.push({ ...n, pos: P(n.pos), dir: D(n.dir) });
       for (const pl of g.plates) plates.push({ ...pl, center: P(pl.center), xDir: D(pl.xDir), normal: D(pl.normal), name: "Geländer " + pl.name });
       const own = (t) => t === "Rahmen" || /^Querträger \d+$/.test(t); // Gegenbohrungen im Tragwerk behalten ihr Ziel
       for (const d of g.drills || []) drills.push({ ...d, p: P(d.p), dir: D(d.dir), ...(d.xDir ? { xDir: D(d.xDir) } : {}), target: own(d.target) ? d.target : "Geländer " + d.target });
@@ -142,7 +147,7 @@ export const BALKON = {
       railInfo = `, Geländer: ${g.info}`;
     }
     const info = `Balkon ${Math.round(W)} × ${Math.round(T)} mm auf ${Math.round(Hb)} mm, ${nJ} Querträger` + (p.support !== "keine" ? `, ${members.filter((m) => /^Stütze/.test(m.name)).length} Stützen` : ", ohne Stützen") + railInfo;
-    return { chains, members, plates, drills, info, issues };
+    return { chains, members, plates, drills, norms, info, issues };
   },
 
   parts: { support: /Stütze/, railing: /^Geländer/, inset: /^Geländer/, fill: /^Geländer .*(Stab|Staket|Querstab|Kreuz|Ring|Blech|Glas)/ },

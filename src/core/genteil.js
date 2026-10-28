@@ -73,6 +73,7 @@ export function localPlan(plan, body) {
   } else {
     const pl = plan.plates[body.index];
     out.plates.push({ ...pl, center: [0, 0, 0], xDir: [1, 0, 0], normal: [0, 0, 1] });
+    out.drills = drillsFor(pl.name);
   }
   return out;
 }
