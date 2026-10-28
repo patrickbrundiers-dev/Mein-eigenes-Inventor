@@ -1,5 +1,6 @@
 // Modellbrowser: Projekt-Dokumente und Feature-Liste des aktiven Bauteils
 import { h, icon, contextMenu, promptDialog } from "./dom.js";
+import { deleteGrid } from "./achsraster.js";
 import { FEATURE_NAMES } from "./app.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { activeCount } from "../core/bauteilende.js";
@@ -257,6 +258,17 @@ export class Tree {
         label: st.name || "Stecksystem", ic: "tabslot", cls: (sel ? "sel" : "") + (st.error ? " err" : ""),
         title: st.error ? "Fehler: " + st.error : st.info || st.name,
         onClick: () => { app.sel = { type: "steck", id: st.id }; this.render(); app.props.render(); },
+      })));
+    }
+    for (const g of asm.grids || []) {
+      const sel = app.sel?.type === "grid" && app.sel.id === g.id;
+      ul.append(h("li", {}, this.node({
+        label: g.name || "Achsraster", ic: "achsraster", cls: (sel ? "sel" : "") + (g.hidden ? " suppressed" : ""), meta: "Achsraster",
+        onClick: () => { app.sel = { type: "grid", id: g.id }; this.render(); app.props.render(); app.showSketches3D(); },
+        onMenu: (e) => contextMenu(e.clientX, e.clientY, [
+          { label: g.hidden ? "Einblenden" : "Ausblenden", icon: g.hidden ? "eye" : "eyeoff", run: () => { app.edit("Achsraster", () => { g.hidden = !g.hidden; }, { rebuild: false }); app.showSketches3D(); } },
+          { label: "Löschen", icon: "trash", run: () => deleteGrid(app, asm, g.id) },
+        ]),
       })));
     }
     const mots = asm.motions || [];
