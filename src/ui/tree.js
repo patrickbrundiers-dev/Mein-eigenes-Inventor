@@ -346,7 +346,8 @@ export class Tree {
 
 export function scaleLabel(s) {
   if (!s) return "1:1";
-  if (s >= 1) return `${round(s)}:1`;
-  return `1:${round(1 / s)}`;
+  // deutsche Schreibweise: 1:2,5
+  if (s >= 1) return `${round(s)}:1`.replace(".", ",");
+  return `1:${round(1 / s)}`.replace(".", ",");
 }
 const round = (x) => Math.round(x * 100) / 100;

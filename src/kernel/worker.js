@@ -9,7 +9,7 @@ import { segmentsToDxf } from "../core/dxf.js";
 import { writeIges } from "../core/iges.js";
 import { igesFaces } from "./igesocc.js";
 import { memberHoles, plateNc, plateInfo } from "./dstvocc.js";
-import { placementMatrix, matInvertRigid, matApply, matApplyDir } from "../core/geom.js";
+import { v3, placementMatrix, matInvertRigid, matApply, matApplyDir } from "../core/geom.js";
 
 let K = null;
 const ready = (async () => {
@@ -216,22 +216,45 @@ const handlers = {
   async project({ items, views }) {
     const key0 = hashString(JSON.stringify(items));
     const result = {};
-    let shape = null;
+    let shape = null, shapes = null;
     for (const v of views) {
-      const key = key0 + hashString(JSON.stringify([v.dir, v.up, v.hidden, v.cut || null]));
+      const key = key0 + hashString(JSON.stringify([v.dir, v.up, v.hidden, v.cut || null, 2]));
       let r = projCache.get(key);
       if (!r) {
         if (!shape) {
-          const shapes = await placedShapes(items);
+          shapes = await placedShapes(items);
           if (!shapes.length) throw new Error("Keine Geometrie für die Ansicht");
-          shape = shapes.length === 1 ? shapes[0].shape : R.makeCompound(shapes.map((x) => x.shape));
+          // makeCompound gibt die Einzelkörper frei: Kopien, die Schnitte brauchen die Teile einzeln
+          shape = shapes.length === 1 ? shapes[0].shape : R.makeCompound(shapes.map((x) => x.shape.clone()));
         }
         try {
           if (v.cut) {
-            const cutShape = K.cutAtPlane(shape, v.cut.n, v.cut.c);
+            // Schnitt nach DIN ISO 128-50: jedes Teil eigene Schnittfläche (eigene Schraffur), Normteile (Schrauben,
+            // Muttern, Scheiben, Stifte) werden nicht geschnitten; liegen sie ganz vor der Schnittebene, entfallen sie
+            const n = v3.norm(v.cut.n), parts = [], groups = [];
+            for (const s of shapes) {
+              if (s.body?.meta?.norm) {
+                const bb = s.shape.boundingBox.bounds;
+                const lo = Math.min(...[0, 1].flatMap((i) => [0, 1].flatMap((j) => [0, 1].map((k) => n[0] * bb[i][0] + n[1] * bb[j][1] + n[2] * bb[k][2]))));
+                if (lo < v.cut.c - 1e-6) parts.push(s.shape.clone());
+                continue;
+              }
+              let cs;
+              try { cs = K.cutAtPlane(s.shape, n, v.cut.c); } catch { continue; }
+              parts.push(cs);
+              const loops = K.sectionLoops(cs, n, v.cut.c, v);
+              if (loops.length) groups.push(loops);
+            }
+            if (!parts.length) throw new Error("Schnittebene liegt außerhalb");
+            const cutShape = parts.length === 1 ? parts[0] : R.makeCompound(parts); // gibt die Kopien/Schnittteile frei
             r = K.projectView(cutShape, v);
-            r.sectionLoops = K.sectionLoops(cutShape, v.cut.n, v.cut.c, v);
-          } else r = K.projectView(shape, v);
+            r.sectionLoops = groups.flat();
+            r.sectionGroups = groups;
+            r.axes = K.cylinderAxes(cutShape, v);
+          } else {
+            r = K.projectView(shape, v);
+            r.axes = K.cylinderAxes(shape, v);
+          }
           r.bbox = bbox2(r.visible.concat(r.hidden));
         } catch (e) {
           r = { error: errorText(e, R), visible: [], hidden: [], arcs: [], hiddenArcs: [], bbox: null };

@@ -2782,6 +2782,63 @@ export function createKernel(R) {
     return { visible: vis.polylines, hidden: hid.polylines, arcs: vis.arcs, hiddenArcs: hid.arcs };
   }
 
+  /**
+   * Achsen von Zylinderflächen, die in der Ansicht von der Seite zu sehen sind (Bohrungen, Rohre, Bolzen), als Strecken in
+   * Ansichtskoordinaten – für automatische Mittellinien wie in Inventor. Gleichachsige Teilflächen werden zusammengefasst;
+   * nur, was zusammen mindestens einen Halbkreis bildet (keine Rundungen an Kanten).
+   */
+  function cylinderAxes(shape, view) {
+    const d = v3.norm(view.dir), up = v3.norm(view.up);
+    const right = v3.norm(v3.cross(d, up));
+    const Y = v3.cross(v3.mul(d, -1), right);
+    const groups = [];
+    for (const fc of shape.faces) {
+      if (fc.geomType !== "CYLINDRE" && fc.geomType !== "CYLINDER") continue;
+      try {
+        const ax = cylinderAxis(fc);
+        const D = v3.norm(ax.axisD);
+        if (Math.abs(v3.dot(D, d)) > 1e-3) continue; // nicht von der Seite gesehen
+        const b = fc.UVBounds;
+        const sweep = Math.min(2 * Math.PI, Math.abs(b.uMax - b.uMin));
+        const P0 = v3.add(ax.axisP, v3.mul(ax.axisD, b.vMin)), P1 = v3.add(ax.axisP, v3.mul(ax.axisD, b.vMax));
+        const t0 = Math.min(v3.dot(P0, D), v3.dot(P1, D)), t1 = Math.max(v3.dot(P0, D), v3.dot(P1, D));
+        // Fußpunkt der Achse senkrecht zu D (eindeutig für gleichachsige Flächen)
+        const foot = v3.sub(ax.axisP, v3.mul(D, v3.dot(ax.axisP, D)));
+        // in Richtung der Gruppe gemessen; nur überlappende Teilflächen zählen zusammen (keine gestapelten Rundungen)
+        const along = (x) => (v3.dot(x.D, D) < 0 ? [-t1, -t0] : [t0, t1]);
+        let g = groups.find((x) => {
+          if (Math.abs(Math.abs(v3.dot(x.D, D)) - 1) > 1e-6 || v3.len(v3.sub(x.foot, foot)) > 1e-3 || Math.abs(x.r - ax.radius) > 1e-3) return false;
+          const [a, b] = along(x);
+          return a < x.t1 - 1e-3 && b > x.t0 + 1e-3;
+        });
+        const [a0, a1] = g ? along(g) : [t0, t1];
+        if (!g) groups.push(g = { D, foot, r: ax.radius, t0: a0, t1: a1, sweep: 0 });
+        g.t0 = Math.min(g.t0, a0); g.t1 = Math.max(g.t1, a1); g.sweep += sweep;
+      } catch { /* ignore */ }
+    }
+    const P2 = (p) => [v3.dot(p, right), v3.dot(p, Y)];
+    const out = [];
+    for (const g of groups) {
+      if (g.sweep < Math.PI * 0.95 || g.t1 - g.t0 < 1e-6) continue;
+      const a = P2(v3.add(g.foot, v3.mul(g.D, g.t0))), b = P2(v3.add(g.foot, v3.mul(g.D, g.t1)));
+      // gleiche Linie in der Ansicht (z. B. Bohrungen hintereinander) nur einmal, überlappende verbinden
+      const dup = out.find((o) => {
+        const ux = o[1][0] - o[0][0], uy = o[1][1] - o[0][1], L = Math.hypot(ux, uy);
+        if (L < 1e-9) return false;
+        const off = (q) => Math.abs((q[0] - o[0][0]) * uy - (q[1] - o[0][1]) * ux) / L;
+        if (off(a) > 0.01 || off(b) > 0.01) return false;
+        const t = (q) => ((q[0] - o[0][0]) * ux + (q[1] - o[0][1]) * uy) / L;
+        const ta = t(a), tb = t(b), lo = Math.min(ta, tb), hi = Math.max(ta, tb);
+        if (hi < -0.5 || lo > L + 0.5) return false;
+        const n0 = Math.min(0, lo), n1 = Math.max(L, hi), O = o[0];
+        o[0] = [O[0] + (ux / L) * n0, O[1] + (uy / L) * n0];
+        o[1] = [O[0] + (ux / L) * n1, O[1] + (uy / L) * n1];
+        return true;
+      });
+      if (!dup) out.push([a, b]);
+    }
+    return out;
+  }
   /** Kamera aus Blickrichtung + Oben-Richtung */
   function camera(view) {
     const d = v3.norm(view.dir);
@@ -2901,7 +2958,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, placed, compound, projectView, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

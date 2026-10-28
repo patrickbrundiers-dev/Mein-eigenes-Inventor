@@ -497,6 +497,33 @@ try {
   await evalApp(() => window.__werkcad.drawing.fitSheet());
   await shot("15f-bruch-ausbruch");
 
+  // Zeichnungsprüfung (Inventor-Abgleich): Achsen an Bohrungen, Feldeinteilung, projizierte Ansicht mit eigenem Maßstab
+  {
+    const pz = await evalApp(async () => {
+      const a = window.__werkcad, dr = a.drawing, d = dr.doc;
+      const axes = d.views.reduce((n, v) => n + (dr.axesOn(d, v) ? dr.proj.get(v.id)?.axes?.length || 0 : 0), 0);
+      const base = d.views.find((v) => !v.parent && v.type !== "iso" && !v.breaks?.length) || d.views.find((v) => !v.parent && v.type !== "iso");
+      dr.sel = { type: "view", id: base.id };
+      dr.startProjected();
+      const n0 = d.views.length;
+      dr.projClick(base.x - 1, base.y + 400);
+      dr.setTool(null);
+      const nv = d.views.at(-1);
+      return { axes, added: d.views.length - n0, align: nv.align, parent: nv.parent === base.id, id: nv.id, zones: dr.exportSvgString().includes('data-zones="1"') };
+    });
+    await idle(120000);
+    await page.waitForTimeout(800);
+    Object.assign(pz, await evalApp((id) => {
+      const a = window.__werkcad, dr = a.drawing, d = dr.doc, v = d.views.find((x) => x.id === id);
+      a.edit("Maßstab", () => { v.scale = 1 / 3; }, { rebuild: false });
+      const svg = dr.exportSvgString();
+      const ok = !!dr.proj.get(id)?.visible?.length;
+      a.edit("weg", () => { d.views = d.views.filter((x) => x.id !== id); }, { rebuild: false });
+      return { proj: ok, label: svg.includes("(1:3)") };
+    }, pz.id));
+    step("Zeichnung: Achsen, Feldeinteilung, Projiziert, eigener Maßstab", pz.axes > 0 && pz.added === 1 && pz.align === "x" && pz.parent && pz.zones && pz.proj && pz.label, JSON.stringify(pz));
+  }
+
   // Exporte über den Kern
   const step3d = await evalApp(async () => { const a = window.__werkcad; const t = await a.kernel.call("exportStep", { items: [{ part: a.doc("beispiel_rahmen") }] }); return t.length; });
   step("STEP-Export", step3d > 1000, String(step3d));

@@ -25,7 +25,7 @@ import { sheetFlatView } from "../core/blechplus.js";
 import { bendRule } from "../core/bendtable.js";
 import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
 import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange } from "../core/bruch.js";
-import { holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision } from "../core/zeichnung.js";
+import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, parseScale } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
 export const CAMS = {
@@ -175,7 +175,6 @@ export class DrawingEditor {
     const bb = (t) => res["auto_" + t]?.bbox || { x0: 0, y0: 0, x1: 100, y1: 100 };
     const W = (b) => b.x1 - b.x0, H = (b) => b.y1 - b.y0;
     const [sw, sh] = this.sheetSize(d);
-    const availW = sw - 30 - 20, availH = sh - 20 - 50;
     // nur die nötigen Ansichten: was eine Ansicht nicht zusätzlich zeigt, entfällt (z. B. Seitenansicht einer Platte)
     const src = d.source && this.app.doc(d.source.id);
     const profile = src?.kind === "part" ? profileSpec(src.features, (x) => evaluate(String(x), resolveParams(src.params || []).values)) : null;
@@ -184,23 +183,23 @@ export class DrawingEditor {
     const none = { x0: 0, y0: 0, x1: 0, y1: 0 };
     const fw = bb("front"), tp = keep.has("top") ? bb("top") : none, lf = keep.has("left") ? bb("left") : none, iso = bb("iso");
     const gap = 22;
-    let scale = SCALES[SCALES.length - 1];
-    for (const s of SCALES) {
-      const needW = (W(fw) + W(lf)) * s + gap * (keep.has("left") ? 3 : 2) + W(iso) * s * 0.6;
-      const needH = (H(fw) + H(tp)) * s + gap * (keep.has("top") ? 3 : 2);
-      if (needW <= availW && needH <= availH) { scale = s; break; }
-    }
-    const x0 = 20 + 10, y0 = 10 + 10;
-    const fx = x0 + gap + (W(fw) * scale) / 2;
-    const fy = y0 + gap + (H(fw) * scale) / 2;
+    const box = (b) => ({ w: W(b), h: H(b) });
+    // Schriftfeld, bei Baugruppen mit Platz für die Stückliste darüber
+    let tbH = 46 + (this.template().extra.length ? 9 : 0);
+    if (src?.kind === "assembly") { try { tbH += 6 * (this.bomRowsOf(d).length + 1); } catch { /* ohne Stückliste */ } }
+    const lay = layoutBaseViews({ front: box(fw), top: keep.has("top") ? box(tp) : null, left: keep.has("left") ? box(lf) : null, iso: box(iso) }, { W: sw, H: sh }, SCALES, { tb: { w: 180, h: tbH }, gap });
+    const scale = lay?.scale || SCALES[SCALES.length - 1];
+    const fx = lay ? lay.front.x : 20 + 10 + gap + (W(fw) * scale) / 2;
+    const fy = lay ? lay.front.y : 10 + 10 + gap + (H(fw) * scale) / 2;
     const fid = uid("v");
     const nv = [
       { id: fid, type: "front", x: fx, y: fy, scale, hidden: true },
       { id: uid("v"), type: "top", x: fx, y: fy + (H(fw) * scale) / 2 + gap + (H(tp) * scale) / 2, scale, hidden: true, parent: fid },
       { id: uid("v"), type: "left", x: fx + (W(fw) * scale) / 2 + gap + (W(lf) * scale) / 2, y: fy, scale, hidden: true, parent: fid },
     ].filter((v) => keep.has(v.type));
-    const isoScale = scale * 0.6;
-    nv.push({ id: uid("v"), type: "iso", x: sw - 10 - 15 - (W(iso) * isoScale) / 2, y: y0 + 15 + (H(iso) * isoScale) / 2, scale: isoScale, hidden: false });
+    const isoScale = lay?.isoScale || scale * 0.6;
+    const ic = lay?.iso || { x: sw - 10 - 15 - (W(iso) * isoScale) / 2, y: 10 + 10 + 15 + (H(iso) * isoScale) / 2 };
+    nv.push({ id: uid("v"), type: "iso", x: ic.x, y: ic.y, scale: isoScale, hidden: false });
     for (const v of nv) {
       const r = res["auto_" + v.type];
       if (r) this.proj.set(v.id, r);
@@ -239,10 +238,16 @@ export class DrawingEditor {
     sel.addEventListener("change", () => { type = sel.value; });
     const sc = h("select", { class: "inp" }, ...SCALES.map((s) => h("option", { value: s, selected: Math.abs(s - scale) < 1e-9 ? true : undefined }, scaleLabel(s))));
     sc.addEventListener("change", () => { scale = Number(sc.value); });
+    const own = h("input", { class: "inp", placeholder: "z. B. 1:25" });
     modal({
       title: "Ansicht hinzufügen",
-      body: h("div", {}, h("div", { class: "field" }, h("label", {}, "Ansicht"), sel), h("div", { class: "field" }, h("label", {}, "Maßstab"), sc), h("p", { class: "hint" }, "Die Ansicht wird in die Blattmitte gesetzt und kann danach verschoben werden.")),
+      body: h("div", {}, h("div", { class: "field" }, h("label", {}, "Ansicht"), sel), h("div", { class: "field" }, h("label", {}, "Maßstab"), sc), h("div", { class: "field" }, h("label", {}, "oder eigener"), own), h("p", { class: "hint" }, "Die Ansicht wird in die Blattmitte gesetzt und kann danach verschoben werden.")),
       buttons: [{ label: "Abbrechen" }, { label: "Hinzufügen", primary: true, run: () => {
+        if (own.value.trim()) {
+          const k = parseScale(own.value);
+          if (!k) { toast("Eigener Maßstab: bitte als 1:25 oder 3:1 eingeben", { kind: "err" }); return false; }
+          scale = k;
+        }
         const [sw, sh] = this.sheetSize(d);
         const v = { id: uid("v"), type, x: sw / 2, y: sh / 2 - 20, scale, hidden: type !== "iso" };
         this.app.edit("Ansicht hinzufügen", () => d.views.push(v), { rebuild: true });
@@ -277,6 +282,46 @@ export class DrawingEditor {
     return { dir: v3.mul(n, -1), up: v.axis === "v" ? pc.up : pc.dir, cut: { n, c: Number(v.pos) || 0 } };
   }
   sectionChildren(d, v) { return d.views.filter((x) => x.type === "section" && x.parent === v.id); }
+  // ---------- Projizierte Ansicht (Inventor »Projiziert«) ----------
+  startProjected() {
+    const d = this.doc;
+    const parent = this.sel?.type === "view" ? d.views.find((x) => x.id === this.sel.id) : null;
+    this.setTool("proj");
+    this.pendingProj = { parent: parent && this.projectable(parent) ? parent.id : null };
+    this.app.setHint(this.pendingProj.parent ? "Projiziert: Lage der neuen Ansicht klicken (rechts/links, oben/unten oder schräg für Isometrie); Esc beendet" : "Projiziert: zuerst die Ausgangsansicht anklicken");
+  }
+  projectable(v) { return !["detail", "flat"].includes(v.type) && !!this.proj.get(v.id); }
+  /** Lage und Kamera der projizierten Ansicht für einen Klick (sx, sy) */
+  projPlan(sx, sy) {
+    const d = this.doc;
+    const parent = d.views.find((x) => x.id === this.pendingProj?.parent);
+    if (!parent) return null;
+    const pc = this.viewCam(d, parent);
+    const cam = projectedCamera({ dir: pc.dir, up: pc.up }, sx - parent.x, sy - parent.y);
+    if (!cam) return null;
+    const x = cam.align === "x" ? parent.x : sx, y = cam.align === "y" ? parent.y : sy;
+    return { parent, cam, x, y };
+  }
+  projClick(sx, sy) {
+    const d = this.doc;
+    if (!this.pendingProj?.parent) {
+      const rects = this.sheetRects(d);
+      const v = d.views.find((x) => { const r = rects[x.id]?.rect; return r && this.projectable(x) && sx >= r[0] - 3 && sx <= r[2] + 3 && sy >= r[1] - 3 && sy <= r[3] + 3; });
+      if (!v) return toast("Ausgangsansicht anklicken");
+      this.pendingProj = { parent: v.id };
+      this.sel = { type: "view", id: v.id };
+      this.app.setHint("Projiziert: Lage der neuen Ansicht klicken (rechts/links, oben/unten oder schräg für Isometrie); Esc beendet");
+      return this.render();
+    }
+    const pl = this.projPlan(sx, sy);
+    if (!pl) return;
+    const { parent, cam, x, y } = pl;
+    const type = camType(CAMS, cam);
+    const v = { id: uid("v"), type: type || "proj", x: r3(x), y: r3(y), scale: parent.scale, hidden: cam.align !== "free", parent: parent.id, align: cam.align };
+    if (!type) { v.dir = cam.dir.map(r6); v.up = cam.up.map(r6); }
+    this.app.edit("Projizierte Ansicht", () => d.views.push(v), { rebuild: true });
+    this.projGhost = null;
+  }
   // ---------- Detailansicht ----------
   /** Detail-Projektionen aus der Elternansicht zuschneiden (kein eigener Kernel-Aufruf) */
   deriveDetails(d = this.doc) {
@@ -949,7 +994,7 @@ export class DrawingEditor {
     if (!bm) return p;
     // Bögen, die in einen Bruchbereich reichen, entfallen – ihr beschnittener Linienzug bleibt
     const keep = (a) => { const x = bm.axis === "v" ? a.cy : a.cx; return !bm.overlaps(x - a.r, x + a.r); };
-    return { ...p, visible: clipBreaks(p.visible, bm), hidden: clipBreaks(p.hidden, bm), arcs: (p.arcs || []).filter(keep), hiddenArcs: (p.hiddenArcs || []).filter(keep), sectionLoops: clipLoopsBreaks(p.sectionLoops, bm) };
+    return { ...p, visible: clipBreaks(p.visible, bm), hidden: clipBreaks(p.hidden, bm), arcs: (p.arcs || []).filter(keep), hiddenArcs: (p.hiddenArcs || []).filter(keep), sectionLoops: clipLoopsBreaks(p.sectionLoops, bm), sectionGroups: p.sectionGroups?.map((l) => clipLoopsBreaks(l, bm)), axes: clipBreaks(p.axes, bm) };
   }
   clientToSheet(cx, cy) {
     const r = this.stage.getBoundingClientRect();
@@ -986,9 +1031,13 @@ export class DrawingEditor {
     const [W, H] = this.sheetSize(d);
     const svg = svgEl("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: `0 0 ${W} ${H}`, width: W + "mm", height: H + "mm", "font-family": "Bahnschrift, 'DIN Alternate', Arial, sans-serif" });
     const defs = svgEl("defs");
-    const pat = svgEl("pattern", { id: "werkcad-schraffur", patternUnits: "userSpaceOnUse", width: 2.5, height: 2.5, patternTransform: "rotate(45)" });
-    pat.append(svgEl("line", { x1: 0, y1: 0, x2: 0, y2: 2.5, stroke: "#111a24", "stroke-width": 0.18 }));
-    defs.append(pat);
+    // Schraffuren je Teil (DIN ISO 128-50); SVG dreht im Uhrzeigersinn, die Winkel zählen gegen den Uhrzeigersinn
+    for (let i = 0; i < HATCH_STYLES.length; i++) {
+      const { angle, gap } = HATCH_STYLES[i];
+      const pat = svgEl("pattern", { id: i ? `werkcad-schraffur-${i}` : "werkcad-schraffur", patternUnits: "userSpaceOnUse", width: gap, height: gap, patternTransform: `rotate(${90 - angle})` });
+      pat.append(svgEl("line", { x1: 0, y1: 0, x2: 0, y2: gap, stroke: "#111a24", "stroke-width": 0.18 }));
+      defs.append(pat);
+    }
     svg.append(defs);
     svg.append(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "#fff" }));
     const frame = svgEl("g", { fill: "none", stroke: "#111a24" });
@@ -996,6 +1045,7 @@ export class DrawingEditor {
     // Zentrier-/Faltmarken
     for (const [x1, y1, x2, y2] of [[W / 2, 0, W / 2, 10], [W / 2, H - 10, W / 2, H], [0, H / 2, 20, H / 2], [W - 10, H / 2, W, H / 2]]) frame.append(svgEl("line", { x1, y1, x2, y2, "stroke-width": LW.frame }));
     svg.append(frame);
+    svg.append(this.zonesSvg(W, H));
     svg.append(this.titleBlock(d, W, H));
     for (const v of d.views) svg.append(this.renderView(d, v, interactive));
     const cm = this.renderCenterMarks(d);
@@ -1010,7 +1060,7 @@ export class DrawingEditor {
       if (g) { g.setAttribute("opacity", "0.55"); svg.append(g); }
     }
     const rows = this.bomRowsOf(d);
-    const posOf = new Map(rows.map((r) => [r.part.id, r.pos]));
+    const posOf = this.posOfRows(rows);
     for (const b of d.balloons || []) { const g = this.renderBalloon(d, b, posOf, interactive); if (g) svg.append(g); }
     if (d.bomTable?.show && rows.length) svg.append(this.bomTableSvg(rows, W, H));
     for (const m of d.welds || []) { const g = this.renderWeld(d, m, interactive); if (g) svg.append(g); }
@@ -1019,6 +1069,10 @@ export class DrawingEditor {
       const t = svgEl("text", { x: n.x, y: n.y, "font-size": n.size || 3.5, fill: "#111a24", class: interactive ? "dw-dimgrp" + (this.sel?.id === n.id ? " sel" : "") : undefined, "data-note": n.id });
       t.textContent = n.text;
       svg.append(t);
+    }
+    if (interactive && this.tool === "proj" && this.projGhost) {
+      const q = this.projGhost;
+      svg.append(svgEl("rect", { x: r3(q.x - q.w / 2), y: r3(q.y - q.h / 2), width: r3(q.w), height: r3(q.h), fill: "none", stroke: "#ef7d1a", "stroke-width": 0.35, "stroke-dasharray": "2 1.5" }));
     }
     if (interactive && this.snapMark) svg.append(svgEl("circle", { cx: this.snapMark[0], cy: this.snapMark[1], r: 1.2, class: "dw-snap" }));
     if (interactive && this.pendingDim?.p1s) {
@@ -1036,7 +1090,12 @@ export class DrawingEditor {
       return g;
     }
     const pathOf = (pl) => "M" + pl.map((q) => xf.to(q[0], q[1]).map(r3).join(" ")).join("L");
-    if (p.sectionLoops?.length) g.append(svgEl("path", { d: p.sectionLoops.map((l) => pathOf(l) + "Z").join(""), fill: "url(#werkcad-schraffur)", "fill-rule": "evenodd", stroke: "none" }));
+    // Schnittflächen: je geschnittenes Teil eine eigene Schraffur (ältere Projektionen ohne Gruppen: eine)
+    const secGroups = p.sectionGroups?.length ? p.sectionGroups : p.sectionLoops?.length ? [p.sectionLoops] : [];
+    secGroups.forEach((loops, i) => {
+      const k = HATCH_STYLES.indexOf(hatchStyle(i));
+      g.append(svgEl("path", { d: loops.map((l) => pathOf(l) + "Z").join(""), fill: `url(#${k ? `werkcad-schraffur-${k}` : "werkcad-schraffur"})`, "fill-rule": "evenodd", stroke: "none" }));
+    });
     const hid = v.hidden !== false ? visibleHidden(p.hidden, v.scale) : [];
     if (hid.length) g.append(svgEl("path", { d: hid.map(pathOf).join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.hid, "stroke-dasharray": "2.5 1.2" }));
     g.append(svgEl("path", { d: p.visible.map(pathOf).join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.vis, "stroke-linecap": "round", "stroke-linejoin": "round" }));
@@ -1061,6 +1120,11 @@ export class DrawingEditor {
       }
       if (cl.length) g.append(svgEl("path", { d: cl.join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.thin, "stroke-dasharray": "6 1 1 1" }));
     }
+    // Achsen von Bohrungen, Rohren und Bolzen in der Seitenansicht (automatische Mittellinien)
+    if (this.axesOn(d, v)) {
+      const ax = axisLines(p.axes, v.scale, v.type === "detail" ? 0 : 2);
+      if (ax.length) g.append(svgEl("path", { d: ax.map(pathOf).join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.thin, "stroke-dasharray": "6 1 1 1" }));
+    }
     // Gewinde in Draufsicht (DIN ISO 6410): Kernloch breit, Nenndurchmesser als dünner Dreiviertelkreis, offen oben rechts
     if (v.type !== "iso") {
       const th = this.threadArcs(d, p);
@@ -1069,7 +1133,8 @@ export class DrawingEditor {
     const bb = xf.bb;
     const [x0, y0] = xf.to(bb.x0, bb.y1), [x1, y1] = xf.to(bb.x1, bb.y0);
     if (v.type === "detail") g.append(svgEl("circle", { cx: r3(v.x), cy: r3(v.y), r: r3(v.r * v.scale), fill: "none", stroke: "#111a24", "stroke-width": LW.thin }));
-    const lbl = v.type === "section" ? `${v.letter}–${v.letter}` : v.type === "aux" ? v.letter + (v.parent && d.views.find((x) => x.id === v.parent)?.scale !== v.scale ? ` (${scaleLabel(v.scale).replace(/^M\s*/, "")})` : "") : v.type === "detail" ? `${v.letter} (${scaleLabel(v.scale).replace(/^M\s*/, "")})` : v.label;
+    const note = this.scaleNote(d, v);
+    const lbl = v.type === "section" ? `${v.letter}–${v.letter}${note ? " " + note : ""}` : v.type === "aux" ? v.letter + (v.parent && d.views.find((x) => x.id === v.parent)?.scale !== v.scale ? ` (${scaleLabel(v.scale).replace(/^M\s*/, "")})` : "") : v.type === "detail" ? `${v.letter} (${scaleLabel(v.scale).replace(/^M\s*/, "")})` : [v.label, note].filter(Boolean).join(" ");
     const big = v.type === "section" || v.type === "aux";
     if (lbl) { const t = svgEl("text", { x: (x0 + x1) / 2, y: big ? y0 - 4 : y1 + 6, "text-anchor": "middle", "font-size": big ? 5 : 3.5, fill: "#111a24" }); t.textContent = lbl; g.append(t); }
     // Schnittverläufe der abgeleiteten Schnittansichten
@@ -1080,6 +1145,42 @@ export class DrawingEditor {
       g.append(svgEl("rect", { x: x0 - 3, y: y0 - 3, width: x1 - x0 + 6, height: y1 - y0 + 6, class: "dw-view-hit", "data-view": v.id }));
     }
     return g;
+  }
+  /** Feldeinteilung (DIN EN ISO 5457) im 5-mm-Rand außerhalb der Zeichenfläche: Teilstriche, Ziffern oben/unten, Buchstaben links/rechts */
+  zonesSvg(W, H) {
+    const z = sheetZones(W, H);
+    const g = svgEl("g", { "data-zones": "1", fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    const L = 20, T = 10, R = W - 10, B = H - 10, k = z.band;
+    g.append(svgEl("rect", { x: L - k, y: T - k, width: R - L + 2 * k, height: B - T + 2 * k }));
+    const line = (x1, y1, x2, y2) => g.append(svgEl("line", { x1: r3(x1), y1: r3(y1), x2: r3(x2), y2: r3(y2) }));
+    const text = (x, y, s) => { const t = svgEl("text", { x: r3(x), y: r3(y + 1.2), "text-anchor": "middle", "font-size": 3.5, fill: "#111a24", stroke: "none" }); t.textContent = s; g.append(t); };
+    z.cols.forEach((c, i) => {
+      if (i) { line(c.a, T - k, c.a, T); line(c.a, B, c.a, B + k); }
+      text((c.a + c.b) / 2, T - k / 2, c.label); text((c.a + c.b) / 2, B + k / 2, c.label);
+    });
+    z.rows.forEach((r, i) => {
+      if (i) { line(L - k, r.a, L, r.a); line(R, r.a, R + k, r.a); }
+      text(L - k / 2, (r.a + r.b) / 2, r.label); text(R + k / 2, (r.a + r.b) / 2, r.label);
+    });
+    return g;
+  }
+  /** Mittellinien an Zylinderachsen: Standard bei Bauteilen an, bei Baugruppen aus (zu viele Stäbe), je Ansicht umschaltbar */
+  axesOn(d, v) {
+    if (v.type === "iso" || v.type === "flat" || v.centerlines === false) return false;
+    if (v.axes != null) return !!v.axes;
+    const root = this.rootView(d, v);
+    if (root && root !== v && root.axes != null) return !!root.axes;
+    return d.source?.kind !== "assembly";
+  }
+  rootView(d, v) {
+    let x = v;
+    for (let k = 0; x?.parent && k < 20; k++) x = d.views.find((y) => y.id === x.parent) || null;
+    return x;
+  }
+  /** Maßstab an der Ansicht, wenn er vom Hauptmaßstab (Schriftfeld) abweicht (DIN ISO 5455) */
+  scaleNote(d, v) {
+    const main = d.views.find((x) => x.type !== "iso" && !x.parent);
+    return main && main !== v && Math.abs(main.scale - v.scale) > 1e-9 ? `(${scaleLabel(v.scale)})` : "";
   }
   /** Schnittlinie in der Elternansicht: dünn strichpunktiert, dicke Enden, Pfeile in Blickrichtung, Buchstaben */
   sectionLine(v, s, xf) {
@@ -1222,6 +1323,19 @@ export class DrawingEditor {
     // eigene Reihenfolge der Zeichnung (neu nummeriert); unbekannte Zeilen und Normteile dahinter
     const rank = (r) => { const i = r.part ? d.posOrder.indexOf(r.part.id) : -1; return i < 0 ? Infinity : i; };
     return rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map(({ r }, i) => ({ ...r, pos: i + 1 }));
+  }
+  /**
+   * Bauteil-ID → Positionsnummer. Normteil-Zeilen (Schrauben, Muttern …) haben kein eigenes Bauteil in der Zeile:
+   * Bauteile, die nur aus einem Normteil bestehen, bekommen die Nummer der Zeile mit ihrer Normbezeichnung.
+   */
+  posOfRows(rows) {
+    const map = new Map(rows.filter((r) => r.part).map((r) => [r.part.id, r.pos]));
+    const norm = new Map(rows.filter((r) => r.norm).map((r) => [r.name, r.pos]));
+    if (norm.size) for (const p of this.app.parts()) {
+      const bodies = this.app.results.get(p.id)?.bodies || [];
+      if (!map.has(p.id) && bodies.length && bodies.every((b) => b.meta?.norm) && norm.has(bodies[0].meta.norm.designation)) map.set(p.id, norm.get(bodies[0].meta.norm.designation));
+    }
+    return map;
   }
   /** Ein Kreis je Stücklisten-Position in der gewählten Ansicht (sonst Isometrie), rund um die Ansicht verteilt */
   autoBalloons() {
@@ -1463,6 +1577,7 @@ export class DrawingEditor {
     this.pendingChain = null;
     if (t !== "aux") this.pendingAux = null;
     if (t !== "breakout") this.pendingBo = null;
+    if (t !== "proj") { this.pendingProj = null; this.projGhost = null; }
     this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : t === "chain" ? "Kettenmaß: Punkte der Reihe nach anklicken, nach dem zweiten Punkt die Lage der Maßreihe; Esc beendet" : t === "base" ? "Bezugsmaß: Bezugspunkt, dann weitere Punkte anklicken, nach dem zweiten Punkt die Lage; Esc beendet" : t === "arclen" ? "Bogenlänge: Bogen in einer Ansicht anklicken" : t === "center" ? "Mittelpunkt: Kreis oder Bogen anklicken (nochmal klicken entfernt)" : "");
     this.app.ribbon.render();
     this.render();
@@ -1493,6 +1608,7 @@ export class DrawingEditor {
       if (this.tool === "center") return this.centerClick(sx, sy);
       if (this.tool === "text") return this.textClick(sx, sy);
       if (this.tool === "detail") return this.detailClick(sx, sy);
+      if (this.tool === "proj") return this.projClick(sx, sy);
       if (this.tool === "aux") return this.auxClick(sx, sy);
       if (this.tool === "breakout") return this.breakoutClick(sx, sy);
       if (this.tool === "leader") return this.leaderClick(sx, sy);
@@ -1537,10 +1653,12 @@ export class DrawingEditor {
           const O = new Map(drag.orig.map((o) => [o.id, o]));
           const v = drag.v;
           let mdx = dx, mdy = dy;
-          if (v.parent && v.type !== "detail" && v.type !== "aux") { const t = v.type; if (t === "top" || t === "bottom" || (t === "section" && v.axis !== "v")) mdx = 0; else mdy = 0; }
+          if (v.align === "x") mdx = 0;
+          else if (v.align === "y") mdy = 0;
+          else if (v.parent && v.align !== "free" && v.type !== "detail" && v.type !== "aux") { const t = v.type; if (t === "top" || t === "bottom" || (t === "section" && v.axis !== "v")) mdx = 0; else mdy = 0; }
           v.x = O.get(v.id).x + mdx;
           v.y = O.get(v.id).y + mdy;
-          for (const c of d.views) if (c.parent === v.id && c.type !== "detail") {
+          for (const c of d.views) if (c.parent === v.id && c.type !== "detail" && c.align !== "free") {
             const o = O.get(c.id);
             c.x = o.x + mdx;
             c.y = o.y + mdy;
@@ -1573,6 +1691,11 @@ export class DrawingEditor {
         }
         this.render();
         return;
+      }
+      if (this.tool === "proj") {
+        const pl = this.projPlan(sx, sy), r = pl && this.sheetRects(this.doc)[pl.parent.id]?.rect;
+        this.projGhost = r ? { x: pl.x, y: pl.y, w: pl.cam.align === "y" ? (r[2] - r[0]) * 0.6 : r[2] - r[0], h: pl.cam.align === "x" ? (r[3] - r[1]) * 0.6 : r[3] - r[1] } : null;
+        this.render();
       }
       if (this.tool === "chain" || this.tool === "base") {
         const s = this.snapAt(sx, sy);
@@ -2023,6 +2146,28 @@ export class DrawingEditor {
   }
 
   // ---------- Eigenschaften ----------
+  /**
+   * Maßstab einer Ansicht: Normmaßstäbe (ISO 5455) oder »Eigener …« zum Eintippen (1:25, 1:2,5, 3:1).
+   * children: abhängige Ansichten (projiziert, Schnitt) wachsen mit; beim Hauptmaßstab folgt das Schriftfeld.
+   */
+  scaleField(P, d, v, { children = false } = {}) {
+    const app = this.app;
+    const set = (k) => app.edit("Maßstab", () => {
+      const f = k / v.scale, old = v.scale;
+      v.scale = k;
+      if (children) for (const c of d.views) if (c.parent === v.id) c.scale = c.scale * f;
+      const main = d.views.find((x) => x.type !== "iso" && !x.parent);
+      if (main === v && (!d.title.massstab || d.title.massstab === scaleLabel(old))) d.title.massstab = scaleLabel(k);
+    }, { rebuild: false });
+    const known = SCALES.some((s) => Math.abs(s - v.scale) < 1e-9);
+    const opts = [...SCALES.map((s) => [String(s), scaleLabel(s)]), ...(known ? [] : [[String(v.scale), scaleLabel(v.scale)]]), ["eigen", "Eigener …"]];
+    return P.select("Maßstab", opts, String(known ? SCALES.find((s) => Math.abs(s - v.scale) < 1e-9) : v.scale), async (s) => {
+      if (s !== "eigen") return set(Number(s));
+      const txt = await promptDialog("Eigener Maßstab", "Maßstab (z. B. 1:25, 1:2,5 oder 3:1)", scaleLabel(v.scale), { validate: (x) => (parseScale(x) ? null : "Bitte als 1:25 oder 3:1 eingeben (1:10000 bis 100:1)") });
+      if (txt) set(parseScale(txt));
+      else app.props.render();
+    });
+  }
   renderProps(P) {
     const app = this.app;
     const d = this.doc;
@@ -2035,7 +2180,9 @@ export class DrawingEditor {
           P.seg("Schnittlinie", [["h", "Waagerecht"], ["v", "Senkrecht"]], v.axis || "h", (a) => app.edit("Schnitt", () => { v.axis = a; })),
           P.expr("Lage", String(v.pos), (x) => app.edit("Schnitt", () => { v.pos = Number(String(x).replace(",", ".")) || 0; })),
           P.text("Buchstabe", v.letter, (t) => app.edit("Schnitt", () => { v.letter = (t || "A").slice(0, 2).toUpperCase(); }, { rebuild: false })),
-          P.select("Maßstab", SCALES.map((s) => [String(s), scaleLabel(s)]), String(v.scale), (s) => app.edit("Maßstab", () => { v.scale = Number(s); }, { rebuild: false })),
+          this.scaleField(P, d, v),
+          P.check("Achsen an Zylindern", this.axesOn(d, v), (on) => app.edit("Achsen", () => { v.axes = on; }, { rebuild: false })),
+          h("p", { class: "hint" }, "Jedes geschnittene Teil bekommt eine eigene Schraffur; Normteile (Schrauben, Muttern, Scheiben, Stifte) werden nach DIN nicht geschnitten."),
           h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Schnitt löschen"))));
         return out;
       }
@@ -2043,7 +2190,7 @@ export class DrawingEditor {
         const ks = this.kantteileOf(d);
         out.push(P.section("Abwicklung",
           ks.length > 1 ? P.select("Kantteil", ks.map((f) => [f.id, f.name || f.id]), v.feature, (fid) => { app.edit("Abwicklung", () => { v.feature = fid; }, { rebuild: false }); this.deriveFlats(d); this.render(); }) : null,
-          P.select("Maßstab", SCALES.map((s) => [String(s), scaleLabel(s)]), String(v.scale), (s) => app.edit("Maßstab", () => { v.scale = Number(s); }, { rebuild: false })),
+          this.scaleField(P, d, v),
           P.check("Biegetabelle", v.bendTable !== false, (on) => app.edit("Biegetabelle", () => { v.bendTable = on; }, { rebuild: false })),
           P.text("Beschriftung", v.label || "", (t) => app.edit("Beschriftung", () => { v.label = t; }, { rebuild: false })),
           h("p", { class: "hint" }, "Kontur und Biegelinien mit Biegenotiz (Winkel, Richtung, Innenradius) aus dem Kantteil und seiner Biegeregel; Ausschnitte und Bohrungen erscheinen nicht."),
@@ -2053,7 +2200,7 @@ export class DrawingEditor {
       if (v && v.type === "aux") {
         out.push(P.section(`Hilfsansicht ${v.letter}`,
           P.text("Buchstabe", v.letter, (t) => app.edit("Hilfsansicht", () => { v.letter = (t || "X").slice(0, 2).toUpperCase(); }, { rebuild: false })),
-          P.select("Maßstab", SCALES.map((s) => [String(s), scaleLabel(s)]), String(v.scale), (s) => app.edit("Maßstab", () => { v.scale = Number(s); }, { rebuild: false })),
+          this.scaleField(P, d, v),
           P.check("Verdeckte Kanten", v.hidden !== false, (on) => app.edit("Verdeckte Kanten", () => { v.hidden = on; })),
           h("p", { class: "hint" }, "Blickrichtung senkrecht auf die gewählte Kante der Elternansicht (Pfeil mit Buchstabe)."),
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.startDetail() }, "Detail erzeugen"), h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Hilfsansicht löschen"))));
@@ -2062,17 +2209,18 @@ export class DrawingEditor {
       if (v && v.type === "detail") {
         out.push(P.section(`Detail ${v.letter}`,
           P.text("Buchstabe", v.letter, (t) => app.edit("Detail", () => { v.letter = (t || "Z").slice(0, 2).toUpperCase(); }, { rebuild: false })),
-          P.select("Maßstab", SCALES.map((s) => [String(s), scaleLabel(s)]), String(v.scale), (s) => app.edit("Maßstab", () => { v.scale = Number(s); }, { rebuild: false })),
+          this.scaleField(P, d, v),
           P.expr("Radius (mm)", String(v.r), (x) => { const r = Number(String(x).replace(",", ".")); if (r > 0) { app.edit("Detail", () => { v.r = r; }, { rebuild: false }); this.deriveDetails(d); this.render(); } }),
           h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Detail löschen"))));
         return out;
       }
       if (v) {
-        out.push(P.section(CAMS[v.type]?.label || "Ansicht",
-          P.select("Ansicht", Object.entries(CAMS).map(([k, c]) => [k, c.label]), v.type, (t) => app.edit("Ansicht", () => { v.type = t; delete v.parent; })),
-          P.select("Maßstab", SCALES.map((s) => [String(s), scaleLabel(s)]), String(v.scale), (s) => app.edit("Maßstab", () => { const k = Number(s) / v.scale; v.scale = Number(s); for (const c of d.views) if (c.parent === v.id) c.scale = c.scale * k; }, { rebuild: false })),
+        out.push(P.section(CAMS[v.type]?.label || (v.type === "proj" ? "Projizierte Ansicht" : "Ansicht"),
+          P.select("Ansicht", [...Object.entries(CAMS).map(([k, c]) => [k, c.label]), ...(v.type === "proj" ? [["proj", "Projiziert"]] : [])], v.type, (t) => app.edit("Ansicht", () => { v.type = t; delete v.parent; delete v.align; delete v.dir; delete v.up; })),
+          this.scaleField(P, d, v, { children: true }),
           P.check("Verdeckte Kanten", v.hidden !== false, (on) => app.edit("Verdeckte Kanten", () => { v.hidden = on; })),
           P.check("Mittellinien", v.centerlines !== false, (on) => app.edit("Mittellinien", () => { v.centerlines = on; }, { rebuild: false })),
+          v.type !== "iso" ? P.check("Achsen an Zylindern", this.axesOn(d, v), (on) => app.edit("Achsen", () => { v.axes = on; v.centerlines = v.centerlines === false && on ? true : v.centerlines; }, { rebuild: false })) : null,
           P.text("Beschriftung", v.label || "", (t) => app.edit("Beschriftung", () => { v.label = t; }, { rebuild: false })),
           ...this.stateProps(P, d, v),
           ...this.breakProps(P, v),
@@ -2147,10 +2295,12 @@ export class DrawingEditor {
       for (const c of circles) { const [x, y] = xf.to(c.cx, c.cy); w.circle(x, Y(y), c.r * v.scale, "KONTUR"); }
       for (const pl of p.visible) { if (circles.length && isCirclePoly(pl)) continue; w.polyline(pl.map((q) => { const [x, y] = xf.to(q[0], q[1]); return [x, Y(y)]; }), "KONTUR"); }
       if (v.hidden !== false) for (const pl of visibleHidden(p.hidden, v.scale)) w.polyline(pl.map((q) => { const [x, y] = xf.to(q[0], q[1]); return [x, Y(y)]; }), "VERDECKT");
-      if (p.sectionLoops?.length) {
-        const loops = p.sectionLoops.map((l) => l.map((q) => { const [x, y] = xf.to(q[0], q[1]); return [x, Y(y)]; }));
-        for (const [x1, y1, x2, y2] of hatchLines(loops, 2.5, 45)) w.line(x1, y1, x2, y2, "SCHRAFFUR");
-      }
+      (p.sectionGroups?.length ? p.sectionGroups : p.sectionLoops?.length ? [p.sectionLoops] : []).forEach((group, i) => {
+        const loops = group.map((l) => l.map((q) => { const [x, y] = xf.to(q[0], q[1]); return [x, Y(y)]; }));
+        const st = hatchStyle(i);
+        for (const [x1, y1, x2, y2] of hatchLines(loops, st.gap, st.angle)) w.line(x1, y1, x2, y2, "SCHRAFFUR");
+      });
+      if (this.axesOn(d, v)) for (const pl of axisLines(p.axes, v.scale, v.type === "detail" ? 0 : 2)) w.polyline(pl.map((q) => { const [x, y] = xf.to(q[0], q[1]); return [x, Y(y)]; }), "MITTELLINIE");
       for (const s of this.sectionChildren(d, v)) {
         const g = this.sectionLine(v, s, xf);
         for (const el of g.querySelectorAll("line")) {
@@ -2184,7 +2334,11 @@ export class DrawingEditor {
       if (v.type === "section") {
         const bb = xf.bb;
         const [x0, y0] = xf.to(bb.x0, bb.y1), [x1] = xf.to(bb.x1, bb.y0);
-        w.text((x0 + x1) / 2, Y(y0 - 4), 5, `${v.letter}-${v.letter}`, "TEXT", { align: "center" });
+        w.text((x0 + x1) / 2, Y(y0 - 4), 5, `${v.letter}-${v.letter}${this.scaleNote(d, v) ? " " + this.scaleNote(d, v) : ""}`, "TEXT", { align: "center" });
+      }
+      if (!["section", "aux", "detail", "flat"].includes(v.type)) {
+        const t = [v.label, this.scaleNote(d, v)].filter(Boolean).join(" ");
+        if (t) { const bb = xf.bb; const [x0] = xf.to(bb.x0, bb.y1), [x1, y1] = xf.to(bb.x1, bb.y0); w.text((x0 + x1) / 2, Y(y1 + 6), 3.5, t, "TEXT", { align: "center" }); }
       }
       if (v.centerlines !== false && v.type !== "iso") for (const c of circles) {
         const [x, y] = xf.to(c.cx, c.cy);
@@ -2228,6 +2382,10 @@ export class DrawingEditor {
     // Rahmen + Schriftfeld
     const [Wd] = this.sheetSize(d);
     w.polyline([[20, Y(10)], [Wd - 10, Y(10)], [Wd - 10, Y(H - 10)], [20, Y(H - 10)]], "RAHMEN", true);
+    const zg = this.zonesSvg(Wd, H);
+    for (const el of zg.querySelectorAll("line")) w.line(+el.getAttribute("x1"), Y(+el.getAttribute("y1")), +el.getAttribute("x2"), Y(+el.getAttribute("y2")), "RAHMEN");
+    for (const el of zg.querySelectorAll("rect")) { const x = +el.getAttribute("x"), y = +el.getAttribute("y"), ww = +el.getAttribute("width"), hh = +el.getAttribute("height"); w.polyline([[x, Y(y)], [x + ww, Y(y)], [x + ww, Y(y + hh)], [x, Y(y + hh)]], "RAHMEN", true); }
+    for (const el of zg.querySelectorAll("text")) w.text(+el.getAttribute("x"), Y(+el.getAttribute("y")), 3.5, el.textContent, "TEXT", { align: "center" });
     const tb = this.titleBlock(d, Wd, H);
     for (const el of tb.querySelectorAll("line")) w.line(+el.getAttribute("x1"), Y(+el.getAttribute("y1")), +el.getAttribute("x2"), Y(+el.getAttribute("y2")), "RAHMEN");
     for (const el of tb.querySelectorAll("rect")) { const x = +el.getAttribute("x"), y = +el.getAttribute("y"), ww = +el.getAttribute("width"), hh = +el.getAttribute("height"); w.polyline([[x, Y(y)], [x + ww, Y(y)], [x + ww, Y(y + hh)], [x, Y(y + hh)]], "RAHMEN", true); }
@@ -2235,7 +2393,7 @@ export class DrawingEditor {
     for (const n of d.notes || []) w.text(n.x, Y(n.y), n.size || 3.5, n.text, "TEXT");
     // Positionsnummern und Stückliste
     const rows = this.bomRowsOf(d);
-    const posOf = new Map(rows.map((r) => [r.part.id, r.pos]));
+    const posOf = this.posOfRows(rows);
     const groups = (d.balloons || []).map((b) => this.renderBalloon(d, b, posOf, false)).filter(Boolean);
     groups.push(...(d.welds || []).map((m) => this.renderWeld(d, m, false)).filter(Boolean));
     if (d.bomTable?.show && rows.length) groups.push(this.bomTableSvg(rows, Wd, H));
