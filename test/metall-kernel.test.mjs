@@ -657,3 +657,18 @@ test("Normteil-Bibliothek: alle Familien, größte Länge, und eigenes Normteil 
   const bb = res.bodies[0].shape.boundingBox.bounds;
   near(bb[0][2], -3, 0.01); near(bb[1][2], 40, 0.01); near(bb[1][0], 8, 0.01);
 });
+
+test("Beschläge als Normteile: alle Größen bauen einen Körper mit Bezeichnung (E11)", async () => {
+  const { NORM_KINDS, normSizes, defaultNormteil, beschlagDims } = await import("../src/core/normteile.js");
+  for (const kind of Object.keys(NORM_KINDS).filter((k) => NORM_KINDS[k].beschlag)) {
+    for (const size of normSizes(kind)) {
+      const res = await K.buildPart(part([{ id: "n", ...defaultNormteil(kind), size }]));
+      okAll(res);
+      assert.equal(res.bodies.length, 1, kind + " " + size);
+      const b = res.bodies[0], bb = b.shape.boundingBox.bounds, m = beschlagDims(kind, size);
+      assert.ok(b.meta.norm.designation.startsWith(NORM_KINDS[kind].noun + " " + size), b.meta.norm.designation);
+      if (kind === "anschweissband") { near(bb[0][2], 0, 0.01, "Band unten"); near(bb[1][2], m.L, 0.01, "Band oben"); near(bb[1][0] - bb[0][0], m.D, 0.01, "Band Ø"); }
+      if (/kappe$/.test(kind)) { near(bb[0][2], -12, 0.01, "Stopfen im Rohr"); assert.ok(bb[1][2] > 0, "Kappe über dem Rohrende"); }
+    }
+  }
+});

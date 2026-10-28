@@ -98,6 +98,7 @@ const STAINLESS = /^A[1-5]/;
 export function gradeInfo(grade = "") {
   const g = String(grade);
   if (STAINLESS.test(g)) return { label: `nichtrostend ${g}`, density: 7.9 };
+  if (g === "Kunststoff") return { label: "Kunststoff (PE)", density: 0.95 };
   if (/^Al\/St/.test(g)) return { label: "Aluminium / Stahl-Dorn", density: 2.9 };
   if (/^Al/.test(g)) return { label: "Aluminium", density: 2.7 };
   if (/^St\/St/.test(g)) return { label: "Stahl verzinkt", density: 7.85 };
@@ -146,6 +147,7 @@ export const TEMPLATES = {
     build: (t, L) => [rev(dome(t.dk, t.k)), cyl(t.d, L), ...(t.hollow ? [cut(cyl(t.d * t.hollow, L + t.k + 2, -t.k - 1))] : [])] },
   duebel: { label: "Dübel (Hülse)", fields: ["d", "di"], length: true, seat: "in", hole: "drill",
     build: (t, L) => [cyl(t.d, L), bore(t.di, L)] },
+  beschlag: { label: "Beschlag (eigene Form)", fields: [], length: false, seat: "center", hole: "drill", build: () => { throw new Error("Beschlag braucht eine eigene Form"); } },
 };
 
 // ---------- Familien ----------
@@ -296,8 +298,33 @@ F.iso1234 = { cat: "stifte", label: "Splint", norm: "ISO 1234", alias: ["DIN 94"
 const ISO2341 = { 3: [5, 1, 0.8], 4: [6, 1, 1], 5: [8, 1.6, 1.2], 6: [10, 2, 1.6], 8: [14, 3, 2], 10: [18, 4, 3.2], 12: [20, 4, 3.2], 14: [22, 4, 4], 16: [25, 4.5, 4], 20: [30, 5, 5], 24: [36, 6, 6.3], 30: [44, 8, 8] };
 F.iso2341 = { cat: "stifte", label: "Bolzen mit Kopf und Splintloch", norm: "ISO 2341-B", alias: ["DIN 1444"], noun: "Bolzen", template: "bolzen", sizes: Object.fromEntries(Object.entries(ISO2341).map(([k, [dk, kk, d1]]) => [k, { d: num(k), hd: num(k) + 0.5, dk, k: kk, d1, le: Math.max(2 * d1, 1.6 * d1 + 1) }])), lengths: (t) => between(PIN_LENGTHS, 2 * t.d, Math.min(200, 10 * t.d)), grades: ["St", "A2"], tol: "h11", def: { size: "10", length: 40 }, galv: true };
 
+// --- Beschläge (E11): Größe nach Rohr bzw. Banddurchmesser, Maße typischer Handelsware (keine Norm) ---
+// Anschweißband ab Unterkante (zwei Hälften mit 2 mm Fuge), Kappen ab Rohrende (Stopfen in −z ins Rohr),
+// Bodenanschlag ab Boden (Winkel mit Steg in +y, zwei Dübellöcher Ø 9)
+const RD = { "Ø33,7": { D: 33.7 }, "Ø42,4": { D: 42.4 }, "Ø48,3": { D: 48.3 }, "Ø60,3": { D: 60.3 }, "Ø76,1": { D: 76.1 } };
+const beschlag = (f) => ({ cat: "beschlaege", norm: "", template: "beschlag", lengths: null, beschlag: true, ...f });
+const plug = (D) => { const r = D / 2, wall = Math.max(2, D * 0.06); return cyl(2 * (r - wall), 12, -12); };
+F.anschweissband = beschlag({ label: "Anschweißband (Torband)", noun: "Anschweißband", grades: ["S235", "A2"], def: { size: "Ø20 x 100" },
+  sizes: { "Ø16 x 80": { D: 16, L: 80 }, "Ø20 x 100": { D: 20, L: 100 }, "Ø25 x 120": { D: 25, L: 120 }, "Ø30 x 140": { D: 30, L: 140 } },
+  build: (m) => { const half = (m.L - 2) / 2; return [cyl(m.D, half), cyl(m.D * 0.44, 2, half), cyl(m.D, half, half + 2)]; } });
+F.kugelkappe = beschlag({ label: "Kugelkappe für Rundrohr", noun: "Kugelkappe für Rohr", grades: ["S235", "A2"], def: { size: "Ø42,4" }, sizes: RD,
+  build: (m) => {
+    const r = m.D / 2, R = r * 1.05, c = 3 + r * 0.8, t0 = Math.asin((3 - c) / R), n = 14;
+    const pts = [[0, 3]];
+    for (let i = 0; i <= n; i++) { const t = t0 + ((Math.PI / 2 - t0) * i) / n; pts.push([i === n ? 0 : R * Math.cos(t), c + R * Math.sin(t)]); }
+    return [plug(m.D), cyl(m.D, 3), rev(pts.filter((p, i) => i < 2 || p[0] > 1e-9 || i === pts.length - 1))];
+  } });
+F.rohrkappe = beschlag({ label: "Flache Kappe für Rundrohr", noun: "Rohrkappe flach", grades: ["S235", "A2", "Kunststoff"], def: { size: "Ø42,4" }, sizes: RD,
+  build: (m) => [plug(m.D), cyl(m.D + 2, 3)] });
+F.vierkantkappe = beschlag({ label: "Kappe für Vierkantrohr", noun: "Vierkantkappe", grades: ["S235", "A2", "Kunststoff"], def: { size: "40 x 40" },
+  sizes: Object.fromEntries([30, 40, 50, 60, 80, 100].map((a) => [`${a} x ${a}`, { a }])),
+  build: (m) => { const w = Math.max(2, m.a * 0.06); return [box(m.a - 2 * w, m.a - 2 * w, 12, -12), box(m.a + 2, m.a + 2, 3)]; } });
+F.bodenanschlag = beschlag({ label: "Bodenanschlag für Tore", noun: "Bodenanschlag", grades: ["S235", "A2"], def: { size: "klein (40 hoch)" },
+  sizes: { "klein (40 hoch)": { w: 60, d: 50, h: 40, t: 5 }, "groß (60 hoch)": { w: 80, d: 60, h: 60, t: 6 } },
+  build: (m) => [box(m.w, m.d, m.t), box(m.w, m.t, m.h - m.t, m.t, { y: m.d / 2 - m.t / 2 }), ...[-m.w / 4, m.w / 4].map((x) => cut(cyl(9, m.t + 2, -1, { x, y: -m.t, vol: (Math.PI / 4) * 81 * m.t })))] });
+
 /** Kategorien in der Reihenfolge des Dialogs */
-export const NORM_CATEGORIES = [["schrauben", "Schrauben"], ["muttern", "Muttern"], ["scheiben", "Scheiben & Federringe"], ["gewinde", "Gewindestangen & Spannschlösser"], ["anker", "Dübel & Anker"], ["nieten", "Nieten"], ["stifte", "Stifte & Bolzen"]];
+export const NORM_CATEGORIES = [["schrauben", "Schrauben"], ["muttern", "Muttern"], ["scheiben", "Scheiben & Federringe"], ["gewinde", "Gewindestangen & Spannschlösser"], ["anker", "Dübel & Anker"], ["nieten", "Nieten"], ["stifte", "Stifte & Bolzen"], ["beschlaege", "Beschläge"]];
 
 /** Familie fertig machen: Abgeleitetes (length, seat, hole, sizes-Liste) aus der Vorlage */
 function finish(id, f) {
@@ -363,6 +390,7 @@ export function normRecipe(fam, size, L = 0) {
 /** Bezeichnung wie auf der Stückliste */
 export function familyDesignation(fam, { size, length, grade, galv }) {
   const t = sizeDims(fam, size);
+  if (fam.beschlag) return [`${fam.noun} ${size}`, grade].filter(Boolean).join(" - ") + (galv && !isStainless(grade) && grade !== "Kunststoff" ? " - tZn" : "");
   const sz = fam.dSize && t?.d ? String(t.d).replace(".", ",") : `${fam.sizePrefix || ""}${size}`;
   const main = fam.length ? `${sz}${fam.tol ? " " + fam.tol : ""} x ${fmtDe(Number(length) || 0)}` : sz;
   const parts = [`${fam.noun} ${fam.norm}`, main];

@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { NORM_FAMILIES, NORM_CATEGORIES, TEMPLATES, METRIC, lengthsFor, normRecipe, recipeVolume, recipeOutline, familyDesignation, searchFamilies, sizeForHole, garniturAt, validateFamily, customFamily, familyOf, familyMass, gradeInfo, matchingGrade } from "../src/core/normlib.js";
+import * as NK from "../src/core/normteile.js";
 import { normDesignation, checkNorm, defaultNormteil, collectNorm, NORM_KINDS } from "../src/core/normteile.js";
 import { holeFrame, holeParts, holeToWorld, partPlacement, placeAlong, normInsertInfo } from "../src/core/normeinbau.js";
 import { insertRef, solveAssembly } from "../src/core/asmsolve.js";
@@ -16,8 +17,8 @@ test("Bibliothek: alle Kategorien belegt, jede Familie vollständig und baubar",
   for (const [k] of NORM_CATEGORIES) assert.ok(fams.some((f) => f.cat === k), "Kategorie " + k);
   for (const f of fams) {
     assert.ok(TEMPLATES[f.template], f.id + " Vorlage");
-    assert.ok(f.grades.length && f.label && f.norm && f.noun, f.id);
-    assert.ok(f.sizeList.length >= 5, f.id + " Größen");
+    assert.ok(f.grades.length && f.label && (f.norm || f.beschlag) && f.noun, f.id);
+    assert.ok(f.sizeList.length >= (f.beschlag ? 2 : 5), f.id + " Größen");
     for (const s of f.sizeList) {
       for (const k of TEMPLATES[f.template].fields) assert.ok(f.sizes[s][k] > 0, `${f.id} ${s} ${k}`);
       const ls = lengthsFor(f, s);
@@ -190,4 +191,19 @@ test("Eigene Normteile: Prüfung, Familie, Bezeichnung und Feature-Vorgabe", () 
 test("Stückliste: Normteile mit Norm und Werkstoff", () => {
   const rows = collectNorm([{ bodies: [{ meta: { norm: { kind: "iso4762", designation: "Z", grade: "A2-70", material: "nichtrostend A2-70" }, density: 7.9 }, props: { volume: 1000 } }], qty: 4 }]);
   assert.deepEqual(rows.map((r) => [r.name, r.qty, r.norm, r.material]), [["Z", 4, "ISO 4762", "nichtrostend A2-70"]]);
+});
+
+test("Beschläge (E11): Größenlisten, Bezeichnung, Prüfung", () => {
+  const { normSizes, beschlagDims, normDensity } = NK;
+  assert.ok(normSizes("kugelkappe").includes("Ø42,4"));
+  assert.deepEqual(normSizes("mutter"), NORM_FAMILIES.mutter.sizeList);
+  const f = defaultNormteil("anschweissband");
+  assert.equal(f.size, "Ø20 x 100");
+  assert.equal(normDesignation({ ...f, galv: true }), "Anschweißband Ø20 x 100 - S235 - tZn");
+  assert.equal(normDesignation({ ...defaultNormteil("vierkantkappe"), grade: "Kunststoff", galv: true }), "Vierkantkappe 40 x 40 - Kunststoff");
+  assert.deepEqual(checkNorm("kugelkappe", "Ø48,3", 0), []);
+  assert.throws(() => checkNorm("kugelkappe", "M12", 0), /Unbekannte Größe/);
+  assert.equal(normDensity("Kunststoff"), 0.95);
+  assert.deepEqual(beschlagDims("anschweissband", "Ø16 x 80"), { D: 16, L: 80 });
+  assert.equal(beschlagDims("mutter", "M12"), null);
 });

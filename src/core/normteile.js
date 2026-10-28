@@ -27,6 +27,10 @@ export const BOLT_LENGTHS = [8, 10, 12, 16, 20, 25, 30, 35, 40, 45, 50, 55, 60, 
 
 /** Alle Normteil-Arten der Bibliothek (src/core/normlib.js): { label, norm, noun, length, grades, cat, … } */
 export const NORM_KINDS = NORM_FAMILIES;
+/** Wählbare Größen je Art (Gewinde, Ø, Rohrgröße …) */
+export const normSizes = (kind) => NORM_FAMILIES[kind]?.sizeList || NORM_SIZES;
+/** Maße eines Beschlags (E11) */
+export const beschlagDims = (kind, size) => (NORM_FAMILIES[kind]?.beschlag ? NORM_FAMILIES[kind].sizes[size] || null : null);
 /** Dichte g/cm³: nichtrostend 7,9, sonst Stahl 7,85 (Aluminium, Kunststoff nach Werkstoffangabe) */
 export const normDensity = (grade) => gradeInfo(grade).density;
 export const gradeMaterial = (grade) => gradeInfo(grade).label;
@@ -47,7 +51,7 @@ export function checkNorm(kind, size, L, custom) {
   const def = familyOf(kind, custom);
   if (!def) throw new Error("Unbekanntes Normteil: " + kind);
   const t = def.sizes[size];
-  if (!t) throw new Error(`Unbekannte Gewindegröße: ${size} gibt es für ${def.norm} nicht`);
+  if (!t) throw new Error(def.beschlag ? `Unbekannte Größe für ${def.label}: ${size}` : `Unbekannte Gewindegröße: ${size} gibt es für ${def.norm} nicht`);
   const warnings = [];
   if (def.length) {
     if (!(L > 0)) throw new Error("Länge muss > 0 sein");
