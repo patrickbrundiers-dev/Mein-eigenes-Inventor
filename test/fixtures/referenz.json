@@ -1343,7 +1343,7 @@
  },
  "Tor": {
   "errors": [],
-  "count": 73,
+  "count": 67,
   "bodies": [
    {
     "name": "Flügel links Anschlagleiste",
@@ -1356,6 +1356,25 @@
      1527.5,
      26,
      1420
+    ]
+   },
+   {
+    "name": "Flügel links Bogen",
+    "kind": "member",
+    "volume": 633138.069,
+    "box": [
+     15,
+     -20,
+     1212.857,
+     1492.5,
+     20,
+     1499.994
+    ],
+    "profileId": "QR 40x40x3",
+    "length": 1538.41,
+    "miters": [
+     0,
+     0
     ]
    },
    {
@@ -1378,155 +1397,60 @@
     ]
    },
    {
-    "name": "Flügel links Rahmen 1",
+    "name": "Flügel links Senkrechte links",
     "kind": "member",
-    "volume": 604933.065,
-    "box": [
-     15,
-     -20,
-     50,
-     1492.5,
-     20,
-     90
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 1477.5,
-    "miters": [
-     45,
-     45
-    ]
-   },
-   {
-    "name": "Flügel links Rahmen 2",
-    "kind": "member",
-    "volume": 593332.37,
-    "box": [
-     1452.5,
-     -20,
-     50,
-     1492.5,
-     20,
-     1500.916
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 1450.916,
-    "miters": [
-     45,
-     46.29
-    ]
-   },
-   {
-    "name": "Flügel links Rahmen 3",
-    "kind": "member",
-    "volume": 151380.397,
-    "box": [
-     1111.446,
-     -20,
-     1443.846,
-     1492.5,
-     20,
-     1500.916
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 381.441,
-    "miters": [
-     46.29,
-     2.23
-    ]
-   },
-   {
-    "name": "Flügel links Rahmen 4",
-    "kind": "member",
-    "volume": 152382.703,
-    "box": [
-     750.515,
-     -20,
-     1399.646,
-     1114.804,
-     20,
-     1483.735
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 363.674,
-    "miters": [
-     2.23,
-     2.26
-    ]
-   },
-   {
-    "name": "Flügel links Rahmen 5",
-    "kind": "member",
-    "volume": 154363.404,
-    "box": [
-     389.582,
-     -20,
-     1326.47,
-     756.985,
-     20,
-     1439.151
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 368.403,
-    "miters": [
-     2.26,
-     2.3
-    ]
-   },
-   {
-    "name": "Flügel links Rahmen 6",
-    "kind": "member",
-    "volume": 157445.668,
-    "box": [
-     15,
-     -20,
-     1226.814,
-     399.168,
-     20,
-     1365.338
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 389.97,
-    "miters": [
-     2.3,
-     36.93
-    ]
-   },
-   {
-    "name": "Flügel links Rahmen 7",
-    "kind": "member",
-    "volume": 493138.896,
+    "volume": 484826.426,
     "box": [
      15,
      -20,
      50,
      55,
      20,
-     1256.874
+     1268.56
     ],
     "profileId": "QR 40x40x3",
-    "length": 1206.874,
+    "length": 1218.56,
     "miters": [
-     36.93,
-     45
+     45,
+     18.55
+    ]
+   },
+   {
+    "name": "Flügel links Senkrechte rechts",
+    "kind": "member",
+    "volume": 585881.207,
+    "box": [
+     1452.5,
+     -20,
+     50,
+     1492.5,
+     20,
+     1500.038
+    ],
+    "profileId": "QR 40x40x3",
+    "length": 1450.038,
+    "miters": [
+     45,
+     0.34
     ]
    },
    {
     "name": "Flügel links Stab 10o",
     "kind": "member",
-    "volume": 276175.573,
+    "volume": 276924.985,
     "box": [
      1216.917,
      -8,
      370,
      1232.917,
      8,
-     1449.172
+     1452.214
     ],
     "profileId": "VK 16",
-    "length": 1079.172,
+    "length": 1082.214,
     "miters": [
      0,
-     2.58
+     0
     ]
    },
    {
@@ -1551,20 +1475,20 @@
    {
     "name": "Flügel links Stab 11o",
     "kind": "member",
-    "volume": 277535.154,
+    "volume": 278348.512,
     "box": [
      1334.708,
      -8,
      370,
      1350.708,
      8,
-     1454.482
+     1457.569
     ],
     "profileId": "VK 16",
-    "length": 1084.482,
+    "length": 1087.569,
     "miters": [
      0,
-     2.58
+     0
     ]
    },
    {
@@ -1589,20 +1513,20 @@
    {
     "name": "Flügel links Stab 1o",
     "kind": "member",
-    "volume": 227482.79,
+    "volume": 228166.751,
     "box": [
      156.792,
      -8,
      370,
      172.792,
      8,
-     1260.921
+     1263.706
     ],
     "profileId": "VK 16",
-    "length": 890.921,
+    "length": 893.706,
     "miters": [
      0,
-     16.15
+     0
     ]
    },
    {
@@ -1627,20 +1551,20 @@
    {
     "name": "Flügel links Stab 2o",
     "kind": "member",
-    "volume": 236214.322,
+    "volume": 236907.107,
     "box": [
      274.583,
      -8,
      370,
      290.583,
      8,
-     1295.029
+     1297.616
     ],
     "profileId": "VK 16",
-    "length": 925.029,
+    "length": 927.616,
     "miters": [
      0,
-     16.15
+     0
     ]
    },
    {
@@ -1665,20 +1589,20 @@
    {
     "name": "Flügel links Stab 3o",
     "kind": "member",
-    "volume": 244888.172,
+    "volume": 244782.765,
     "box": [
      392.375,
      -8,
      370,
      408.375,
      8,
-     1328.353
+     1328.154
     ],
     "profileId": "VK 16",
-    "length": 958.353,
+    "length": 958.154,
     "miters": [
      0,
-     11.56
+     0
     ]
    },
    {
@@ -1703,20 +1627,20 @@
    {
     "name": "Flügel links Stab 4o",
     "kind": "member",
-    "volume": 251086.413,
+    "volume": 251811.546,
     "box": [
      510.167,
      -8,
      370,
      526.167,
      8,
-     1352.442
+     1355.388
     ],
     "profileId": "VK 16",
-    "length": 982.442,
+    "length": 985.388,
     "miters": [
      0,
-     11.56
+     0
     ]
    },
    {
@@ -1741,20 +1665,20 @@
    {
     "name": "Flügel links Stab 5o",
     "kind": "member",
-    "volume": 257253.261,
+    "volume": 258008.939,
     "box": [
      627.958,
      -8,
      370,
      643.958,
      8,
-     1376.532
+     1379.378
     ],
     "profileId": "VK 16",
-    "length": 1006.532,
+    "length": 1009.378,
     "miters": [
      0,
-     11.56
+     0
     ]
    },
    {
@@ -1779,20 +1703,20 @@
    {
     "name": "Flügel links Stab 6o",
     "kind": "member",
-    "volume": 263405.397,
+    "volume": 263388.294,
     "box": [
      745.75,
      -8,
      370,
      761.75,
      8,
-     1400.235
+     1400.175
     ],
     "profileId": "VK 16",
-    "length": 1030.235,
+    "length": 1030.175,
     "miters": [
      0,
-     7.04
+     0
     ]
    },
    {
@@ -1817,20 +1741,20 @@
    {
     "name": "Flügel links Stab 7o",
     "kind": "member",
-    "volume": 267212.043,
+    "volume": 267960.963,
     "box": [
      863.542,
      -8,
      370,
      879.542,
      8,
-     1414.785
+     1417.825
     ],
     "profileId": "VK 16",
-    "length": 1044.785,
+    "length": 1047.825,
     "miters": [
      0,
-     7.04
+     0
     ]
    },
    {
@@ -1855,20 +1779,20 @@
    {
     "name": "Flügel links Stab 8o",
     "kind": "member",
-    "volume": 270936.92,
+    "volume": 271736.435,
     "box": [
      981.333,
      -8,
      370,
      997.333,
      8,
-     1429.336
+     1432.362
     ],
     "profileId": "VK 16",
-    "length": 1059.336,
+    "length": 1062.362,
     "miters": [
      0,
-     7.04
+     0
     ]
    },
    {
@@ -1893,20 +1817,20 @@
    {
     "name": "Flügel links Stab 9o",
     "kind": "member",
-    "volume": 274661.733,
+    "volume": 274722.43,
     "box": [
      1099.125,
      -8,
      370,
      1115.125,
      8,
-     1443.861
+     1443.818
     ],
     "profileId": "VK 16",
-    "length": 1073.861,
+    "length": 1073.818,
     "miters": [
      0,
-     2.58
+     0
     ]
    },
    {
@@ -1923,6 +1847,44 @@
     ],
     "profileId": "VK 16",
     "length": 240,
+    "miters": [
+     0,
+     0
+    ]
+   },
+   {
+    "name": "Flügel links Unterriegel",
+    "kind": "member",
+    "volume": 604933.065,
+    "box": [
+     15,
+     -20,
+     50,
+     1492.5,
+     20,
+     90
+    ],
+    "profileId": "QR 40x40x3",
+    "length": 1477.5,
+    "miters": [
+     45,
+     45
+    ]
+   },
+   {
+    "name": "Flügel rechts Bogen",
+    "kind": "member",
+    "volume": 633138.018,
+    "box": [
+     1507.5,
+     -20,
+     1212.857,
+     2985,
+     20,
+     1499.994
+    ],
+    "profileId": "QR 40x40x3",
+    "length": 1538.41,
     "miters": [
      0,
      0
@@ -1948,155 +1910,60 @@
     ]
    },
    {
-    "name": "Flügel rechts Rahmen 1",
+    "name": "Flügel rechts Senkrechte links",
     "kind": "member",
-    "volume": 604933.065,
-    "box": [
-     1507.5,
-     -20,
-     50,
-     2985,
-     20,
-     90
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 1477.5,
-    "miters": [
-     45,
-     45
-    ]
-   },
-   {
-    "name": "Flügel rechts Rahmen 2",
-    "kind": "member",
-    "volume": 490306.835,
-    "box": [
-     2945,
-     -20,
-     50,
-     2985,
-     20,
-     1249.877
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 1199.877,
-    "miters": [
-     45,
-     36.43
-    ]
-   },
-   {
-    "name": "Flügel rechts Rahmen 3",
-    "kind": "member",
-    "volume": 158256.739,
-    "box": [
-     2600.664,
-     -20,
-     1220.351,
-     2985,
-     20,
-     1365.303
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 391.802,
-    "miters": [
-     36.43,
-     2.79
-    ]
-   },
-   {
-    "name": "Flügel rechts Rahmen 4",
-    "kind": "member",
-    "volume": 154363.404,
-    "box": [
-     2243.015,
-     -20,
-     1326.505,
-     2610.586,
-     20,
-     1439.151
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 368.576,
-    "miters": [
-     2.79,
-     2.26
-    ]
-   },
-   {
-    "name": "Flügel rechts Rahmen 5",
-    "kind": "member",
-    "volume": 152382.703,
-    "box": [
-     1885.198,
-     -20,
-     1399.646,
-     2249.485,
-     20,
-     1483.736
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 363.676,
-    "miters": [
-     2.26,
-     2.24
-    ]
-   },
-   {
-    "name": "Flügel rechts Rahmen 6",
-    "kind": "member",
-    "volume": 151378.824,
-    "box": [
-     1507.5,
-     -20,
-     1443.846,
-     1888.552,
-     20,
-     1500.836
-    ],
-    "profileId": "QR 40x40x3",
-    "length": 381.435,
-    "miters": [
-     2.24,
-     46.28
-    ]
-   },
-   {
-    "name": "Flügel rechts Rahmen 7",
-    "kind": "member",
-    "volume": 593299.966,
+    "volume": 585881.174,
     "box": [
      1507.5,
      -20,
      50,
      1547.5,
      20,
-     1500.836
+     1500.038
     ],
     "profileId": "QR 40x40x3",
-    "length": 1450.836,
+    "length": 1450.038,
     "miters": [
-     46.28,
-     45
+     45,
+     0.34
+    ]
+   },
+   {
+    "name": "Flügel rechts Senkrechte rechts",
+    "kind": "member",
+    "volume": 484827.748,
+    "box": [
+     2945,
+     -20,
+     50,
+     2985,
+     20,
+     1268.56
+    ],
+    "profileId": "QR 40x40x3",
+    "length": 1218.56,
+    "miters": [
+     45,
+     18.55
     ]
    },
    {
     "name": "Flügel rechts Stab 10o",
     "kind": "member",
-    "volume": 235650.937,
+    "volume": 236907.107,
     "box": [
      2709.417,
      -8,
      370,
      2725.417,
      8,
-     1292.978
+     1297.616
     ],
     "profileId": "VK 16",
-    "length": 922.978,
+    "length": 927.616,
     "miters": [
      0,
-     17.13
+     0
     ]
    },
    {
@@ -2121,20 +1988,20 @@
    {
     "name": "Flügel rechts Stab 11o",
     "kind": "member",
-    "volume": 226354.716,
+    "volume": 228166.751,
     "box": [
      2827.208,
      -8,
      370,
      2843.208,
      8,
-     1256.664
+     1263.706
     ],
     "profileId": "VK 16",
-    "length": 886.664,
+    "length": 893.706,
     "miters": [
      0,
-     17.13
+     0
     ]
    },
    {
@@ -2159,20 +2026,20 @@
    {
     "name": "Flügel rechts Stab 1o",
     "kind": "member",
-    "volume": 277522.826,
+    "volume": 278348.512,
     "box": [
      1649.292,
      -8,
      370,
      1665.292,
      8,
-     1454.433
+     1457.569
     ],
     "profileId": "VK 16",
-    "length": 1084.432,
+    "length": 1087.569,
     "miters": [
      0,
-     2.57
+     0
     ]
    },
    {
@@ -2197,20 +2064,20 @@
    {
     "name": "Flügel rechts Stab 2o",
     "kind": "member",
-    "volume": 276169.595,
+    "volume": 276924.985,
     "box": [
      1767.083,
      -8,
      370,
      1783.083,
      8,
-     1449.146
+     1452.214
     ],
     "profileId": "VK 16",
-    "length": 1079.146,
+    "length": 1082.214,
     "miters": [
      0,
-     2.57
+     0
     ]
    },
    {
@@ -2235,20 +2102,20 @@
    {
     "name": "Flügel rechts Stab 3o",
     "kind": "member",
-    "volume": 274661.732,
+    "volume": 274722.43,
     "box": [
      1884.875,
      -8,
      370,
      1900.875,
      8,
-     1443.86
+     1443.818
     ],
     "profileId": "VK 16",
-    "length": 1073.86,
+    "length": 1073.818,
     "miters": [
      0,
-     7.04
+     0
     ]
    },
    {
@@ -2273,20 +2140,20 @@
    {
     "name": "Flügel rechts Stab 4o",
     "kind": "member",
-    "volume": 270936.92,
+    "volume": 271736.435,
     "box": [
      2002.667,
      -8,
      370,
      2018.667,
      8,
-     1429.336
+     1432.362
     ],
     "profileId": "VK 16",
-    "length": 1059.336,
+    "length": 1062.362,
     "miters": [
      0,
-     7.04
+     0
     ]
    },
    {
@@ -2311,20 +2178,20 @@
    {
     "name": "Flügel rechts Stab 5o",
     "kind": "member",
-    "volume": 267212.043,
+    "volume": 267960.963,
     "box": [
      2120.458,
      -8,
      370,
      2136.458,
      8,
-     1414.785
+     1417.825
     ],
     "profileId": "VK 16",
-    "length": 1044.785,
+    "length": 1047.825,
     "miters": [
      0,
-     7.04
+     0
     ]
    },
    {
@@ -2349,20 +2216,20 @@
    {
     "name": "Flügel rechts Stab 6o",
     "kind": "member",
-    "volume": 263405.397,
+    "volume": 263388.294,
     "box": [
      2238.25,
      -8,
      370,
      2254.25,
      8,
-     1400.235
+     1400.175
     ],
     "profileId": "VK 16",
-    "length": 1030.235,
+    "length": 1030.175,
     "miters": [
      0,
-     11.56
+     0
     ]
    },
    {
@@ -2387,20 +2254,20 @@
    {
     "name": "Flügel rechts Stab 7o",
     "kind": "member",
-    "volume": 257253.261,
+    "volume": 258008.939,
     "box": [
      2356.042,
      -8,
      370,
      2372.042,
      8,
-     1376.532
+     1379.378
     ],
     "profileId": "VK 16",
-    "length": 1006.532,
+    "length": 1009.378,
     "miters": [
      0,
-     11.56
+     0
     ]
    },
    {
@@ -2425,20 +2292,20 @@
    {
     "name": "Flügel rechts Stab 8o",
     "kind": "member",
-    "volume": 251086.413,
+    "volume": 251811.546,
     "box": [
      2473.833,
      -8,
      370,
      2489.833,
      8,
-     1352.442
+     1355.388
     ],
     "profileId": "VK 16",
-    "length": 982.442,
+    "length": 985.388,
     "miters": [
      0,
-     11.56
+     0
     ]
    },
    {
@@ -2463,20 +2330,20 @@
    {
     "name": "Flügel rechts Stab 9o",
     "kind": "member",
-    "volume": 244879.333,
+    "volume": 244782.765,
     "box": [
      2591.625,
      -8,
      370,
      2607.625,
      8,
-     1328.353
+     1328.154
     ],
     "profileId": "VK 16",
-    "length": 958.353,
+    "length": 958.154,
     "miters": [
      0,
-     17.13
+     0
     ]
    },
    {
@@ -2496,6 +2363,25 @@
     "miters": [
      0,
      0
+    ]
+   },
+   {
+    "name": "Flügel rechts Unterriegel",
+    "kind": "member",
+    "volume": 604933.065,
+    "box": [
+     1507.5,
+     -20,
+     50,
+     2985,
+     20,
+     90
+    ],
+    "profileId": "QR 40x40x3",
+    "length": 1477.5,
+    "miters": [
+     45,
+     45
     ]
    },
    {
@@ -2726,7 +2612,7 @@
    {
     "name": "Geländer links Handlauf 1",
     "kind": "member",
-    "volume": 1624243.808,
+    "volume": 1624243.803,
     "box": [
      -73.636,
      1020.8,
@@ -2766,17 +2652,17 @@
    {
     "name": "Geländer links Knieleiste 1.1",
     "kind": "member",
-    "volume": 864652.865,
+    "volume": 845263.68,
     "box": [
      -27.128,
      1028.55,
      482.794,
-     4108.857,
+     4016.357,
      1055.45,
-     3085.775
+     3027.962
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 4868.253,
+    "length": 4759.173,
     "miters": [
      0,
      16
@@ -2785,17 +2671,17 @@
    {
     "name": "Geländer links Knieleiste 1.2",
     "kind": "member",
-    "volume": 864652.865,
+    "volume": 845263.68,
     "box": [
      -27.128,
      1028.55,
      801.994,
-     4108.857,
+     4016.357,
      1055.45,
-     3404.975
+     3347.163
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 4868.253,
+    "length": 4759.173,
     "miters": [
      0,
      16
@@ -2804,9 +2690,9 @@
    {
     "name": "Geländer links Knieleiste 2.1",
     "kind": "member",
-    "volume": 70211.768,
+    "volume": 86653.765,
     "box": [
-     4101.143,
+     4008.643,
      1028.55,
      3105.75,
      4500,
@@ -2814,7 +2700,7 @@
      3132.65
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 398.857,
+    "length": 491.357,
     "miters": [
      16,
      0
@@ -2823,9 +2709,9 @@
    {
     "name": "Geländer links Knieleiste 2.2",
     "kind": "member",
-    "volume": 70211.768,
+    "volume": 86653.765,
     "box": [
-     4101.143,
+     4008.643,
      1028.55,
      3424.95,
      4500,
@@ -2833,7 +2719,7 @@
      3451.85
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 398.857,
+    "length": 491.357,
     "miters": [
      16,
      0
@@ -2842,17 +2728,17 @@
    {
     "name": "Geländer links Pfosten 1",
     "kind": "member",
-    "volume": 451152.094,
+    "volume": 398680.215,
     "box": [
      -40,
      1022,
-     -13.75,
+     110.939,
      0,
      1062,
      1068.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 957.661,
     "miters": [
      0,
      0
@@ -2862,14 +2748,14 @@
    {
     "name": "Geländer links Pfosten 1 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     -100,
+     -50,
      1012,
-     -13.75,
-     60,
+     3.939,
+     10,
      1022,
-     146.25
+     163.939
     ]
    },
    {
@@ -2907,17 +2793,17 @@
    {
     "name": "Geländer links Pfosten 2",
     "kind": "member",
-    "volume": 446826.413,
+    "volume": 401798.351,
     "box": [
-     800,
+     810,
      1022,
-     511.25,
-     840,
+     624.5,
+     850,
      1062,
-     1593.6
+     1599.85
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 975.35,
     "miters": [
      0,
      0
@@ -2927,14 +2813,14 @@
    {
     "name": "Geländer links Pfosten 2 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     740,
+     800,
      1012,
-     511.25,
-     900,
+     517.5,
+     860,
      1022,
-     671.25
+     677.5
     ]
    },
    {
@@ -2942,12 +2828,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     800,
+     810,
      1022,
-     1593.6,
-     840,
+     1599.85,
+     850,
      1062,
-     1597.6
+     1603.85
     ]
    },
    {
@@ -2955,12 +2841,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     814,
+     824,
      1036,
-     1597.6,
-     826,
+     1603.85,
+     836,
      1048,
-     1678.8
+     1685.05
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -2972,17 +2858,17 @@
    {
     "name": "Geländer links Pfosten 3",
     "kind": "member",
-    "volume": 446826.413,
+    "volume": 401798.351,
     "box": [
-     1640,
+     1650,
      1022,
-     1036.25,
-     1680,
+     1149.5,
+     1690,
      1062,
-     2118.6
+     2124.85
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 975.35,
     "miters": [
      0,
      0
@@ -2992,14 +2878,14 @@
    {
     "name": "Geländer links Pfosten 3 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     1580,
+     1640,
      1012,
-     1036.25,
-     1740,
+     1042.5,
+     1700,
      1022,
-     1196.25
+     1202.5
     ]
    },
    {
@@ -3007,12 +2893,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     1640,
+     1650,
      1022,
-     2118.6,
-     1680,
+     2124.85,
+     1690,
      1062,
-     2122.6
+     2128.85
     ]
    },
    {
@@ -3020,12 +2906,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     1654,
+     1664,
      1036,
-     2122.6,
-     1666,
+     2128.85,
+     1676,
      1048,
-     2203.8
+     2210.05
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -3037,17 +2923,17 @@
    {
     "name": "Geländer links Pfosten 4",
     "kind": "member",
-    "volume": 446826.413,
+    "volume": 401798.351,
     "box": [
-     2480,
+     2490,
      1022,
-     1561.25,
-     2520,
+     1674.5,
+     2530,
      1062,
-     2643.6
+     2649.85
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 975.35,
     "miters": [
      0,
      0
@@ -3057,14 +2943,14 @@
    {
     "name": "Geländer links Pfosten 4 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     2420,
+     2480,
      1012,
-     1561.25,
-     2580,
+     1567.5,
+     2540,
      1022,
-     1721.25
+     1727.5
     ]
    },
    {
@@ -3072,12 +2958,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     2480,
+     2490,
      1022,
-     2643.6,
-     2520,
+     2649.85,
+     2530,
      1062,
-     2647.6
+     2653.85
     ]
    },
    {
@@ -3085,12 +2971,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     2494,
+     2504,
      1036,
-     2647.6,
-     2506,
+     2653.85,
+     2516,
      1048,
-     2728.8
+     2735.05
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -3102,17 +2988,17 @@
    {
     "name": "Geländer links Pfosten 5",
     "kind": "member",
-    "volume": 446826.413,
+    "volume": 401798.351,
     "box": [
-     3320,
+     3330,
      1022,
-     2086.25,
-     3360,
+     2199.5,
+     3370,
      1062,
-     3168.6
+     3174.85
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 975.35,
     "miters": [
      0,
      0
@@ -3122,14 +3008,14 @@
    {
     "name": "Geländer links Pfosten 5 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     3260,
+     3320,
      1012,
-     2086.25,
-     3420,
+     2092.5,
+     3380,
      1022,
-     2246.25
+     2252.5
     ]
    },
    {
@@ -3137,12 +3023,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     3320,
+     3330,
      1022,
-     3168.6,
-     3360,
+     3174.85,
+     3370,
      1062,
-     3172.6
+     3178.85
     ]
    },
    {
@@ -3150,12 +3036,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     3334,
+     3344,
      1036,
-     3172.6,
-     3346,
+     3178.85,
+     3356,
      1048,
-     3253.8
+     3260.05
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -3167,17 +3053,17 @@
    {
     "name": "Geländer links Pfosten 6",
     "kind": "member",
-    "volume": 447483.923,
+    "volume": 422306.044,
     "box": [
-     4085,
+     3992.5,
      1022,
-     2564.375,
-     4125,
+     2566.393,
+     4032.5,
      1062,
-     3646.725
+     3588.913
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 1022.52,
     "miters": [
      0,
      0
@@ -3187,14 +3073,14 @@
    {
     "name": "Geländer links Pfosten 6 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     4025,
+     3982.5,
      1012,
-     2564.375,
-     4185,
+     2459.393,
+     4042.5,
      1022,
-     2724.375
+     2619.393
     ]
    },
    {
@@ -3202,12 +3088,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     4085,
+     3992.5,
      1022,
-     3646.725,
-     4125,
+     3588.913,
+     4032.5,
      1062,
-     3650.725
+     3592.913
     ]
    },
    {
@@ -3215,12 +3101,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     4099,
+     4006.5,
      1036,
-     3650.725,
-     4111,
+     3592.913,
+     4018.5,
      1048,
-     3731.925
+     3674.113
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -3297,7 +3183,7 @@
    {
     "name": "Geländer rechts Handlauf 1",
     "kind": "member",
-    "volume": 1624243.808,
+    "volume": 1624243.803,
     "box": [
      -73.636,
      -63.2,
@@ -3337,17 +3223,17 @@
    {
     "name": "Geländer rechts Knieleiste 1.1",
     "kind": "member",
-    "volume": 864652.865,
+    "volume": 845263.68,
     "box": [
      -27.128,
      -55.45,
      482.794,
-     4108.857,
+     4016.357,
      -28.55,
-     3085.775
+     3027.962
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 4868.253,
+    "length": 4759.173,
     "miters": [
      0,
      16
@@ -3356,17 +3242,17 @@
    {
     "name": "Geländer rechts Knieleiste 1.2",
     "kind": "member",
-    "volume": 864652.865,
+    "volume": 845263.68,
     "box": [
      -27.128,
      -55.45,
      801.994,
-     4108.857,
+     4016.357,
      -28.55,
-     3404.975
+     3347.163
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 4868.253,
+    "length": 4759.173,
     "miters": [
      0,
      16
@@ -3375,9 +3261,9 @@
    {
     "name": "Geländer rechts Knieleiste 2.1",
     "kind": "member",
-    "volume": 70211.768,
+    "volume": 86653.765,
     "box": [
-     4101.143,
+     4008.643,
      -55.45,
      3105.75,
      4500,
@@ -3385,7 +3271,7 @@
      3132.65
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 398.857,
+    "length": 491.357,
     "miters": [
      16,
      0
@@ -3394,9 +3280,9 @@
    {
     "name": "Geländer rechts Knieleiste 2.2",
     "kind": "member",
-    "volume": 70211.768,
+    "volume": 86653.765,
     "box": [
-     4101.143,
+     4008.643,
      -55.45,
      3424.95,
      4500,
@@ -3404,7 +3290,7 @@
      3451.85
     ],
     "profileId": "RR 26,9x2,3",
-    "length": 398.857,
+    "length": 491.357,
     "miters": [
      16,
      0
@@ -3413,17 +3299,17 @@
    {
     "name": "Geländer rechts Pfosten 1",
     "kind": "member",
-    "volume": 451152.094,
+    "volume": 398680.215,
     "box": [
      -40,
      -62,
-     -13.75,
+     110.939,
      0,
      -22,
      1068.6
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 957.661,
     "miters": [
      0,
      0
@@ -3433,14 +3319,14 @@
    {
     "name": "Geländer rechts Pfosten 1 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     -100,
+     -50,
      -22,
-     -13.75,
-     60,
+     3.939,
+     10,
      -12,
-     146.25
+     163.939
     ]
    },
    {
@@ -3478,17 +3364,17 @@
    {
     "name": "Geländer rechts Pfosten 2",
     "kind": "member",
-    "volume": 446826.413,
+    "volume": 401798.351,
     "box": [
-     800,
+     810,
      -62,
-     511.25,
-     840,
+     624.5,
+     850,
      -22,
-     1593.6
+     1599.85
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 975.35,
     "miters": [
      0,
      0
@@ -3498,14 +3384,14 @@
    {
     "name": "Geländer rechts Pfosten 2 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     740,
+     800,
      -22,
-     511.25,
-     900,
+     517.5,
+     860,
      -12,
-     671.25
+     677.5
     ]
    },
    {
@@ -3513,12 +3399,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     800,
+     810,
      -62,
-     1593.6,
-     840,
+     1599.85,
+     850,
      -22,
-     1597.6
+     1603.85
     ]
    },
    {
@@ -3526,12 +3412,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     814,
+     824,
      -48,
-     1597.6,
-     826,
+     1603.85,
+     836,
      -36,
-     1678.8
+     1685.05
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -3543,17 +3429,17 @@
    {
     "name": "Geländer rechts Pfosten 3",
     "kind": "member",
-    "volume": 446826.413,
+    "volume": 401798.351,
     "box": [
-     1640,
+     1650,
      -62,
-     1036.25,
-     1680,
+     1149.5,
+     1690,
      -22,
-     2118.6
+     2124.85
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 975.35,
     "miters": [
      0,
      0
@@ -3563,14 +3449,14 @@
    {
     "name": "Geländer rechts Pfosten 3 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     1580,
+     1640,
      -22,
-     1036.25,
-     1740,
+     1042.5,
+     1700,
      -12,
-     1196.25
+     1202.5
     ]
    },
    {
@@ -3578,12 +3464,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     1640,
+     1650,
      -62,
-     2118.6,
-     1680,
+     2124.85,
+     1690,
      -22,
-     2122.6
+     2128.85
     ]
    },
    {
@@ -3591,12 +3477,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     1654,
+     1664,
      -48,
-     2122.6,
-     1666,
+     2128.85,
+     1676,
      -36,
-     2203.8
+     2210.05
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -3608,17 +3494,17 @@
    {
     "name": "Geländer rechts Pfosten 4",
     "kind": "member",
-    "volume": 446826.413,
+    "volume": 401798.351,
     "box": [
-     2480,
+     2490,
      -62,
-     1561.25,
-     2520,
+     1674.5,
+     2530,
      -22,
-     2643.6
+     2649.85
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 975.35,
     "miters": [
      0,
      0
@@ -3628,14 +3514,14 @@
    {
     "name": "Geländer rechts Pfosten 4 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     2420,
+     2480,
      -22,
-     1561.25,
-     2580,
+     1567.5,
+     2540,
      -12,
-     1721.25
+     1727.5
     ]
    },
    {
@@ -3643,12 +3529,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     2480,
+     2490,
      -62,
-     2643.6,
-     2520,
+     2649.85,
+     2530,
      -22,
-     2647.6
+     2653.85
     ]
    },
    {
@@ -3656,12 +3542,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     2494,
+     2504,
      -48,
-     2647.6,
-     2506,
+     2653.85,
+     2516,
      -36,
-     2728.8
+     2735.05
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -3673,17 +3559,17 @@
    {
     "name": "Geländer rechts Pfosten 5",
     "kind": "member",
-    "volume": 446826.413,
+    "volume": 401798.351,
     "box": [
-     3320,
+     3330,
      -62,
-     2086.25,
-     3360,
+     2199.5,
+     3370,
      -22,
-     3168.6
+     3174.85
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 975.35,
     "miters": [
      0,
      0
@@ -3693,14 +3579,14 @@
    {
     "name": "Geländer rechts Pfosten 5 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     3260,
+     3320,
      -22,
-     2086.25,
-     3420,
+     2092.5,
+     3380,
      -12,
-     2246.25
+     2252.5
     ]
    },
    {
@@ -3708,12 +3594,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     3320,
+     3330,
      -62,
-     3168.6,
-     3360,
+     3174.85,
+     3370,
      -22,
-     3172.6
+     3178.85
     ]
    },
    {
@@ -3721,12 +3607,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     3334,
+     3344,
      -48,
-     3172.6,
-     3346,
+     3178.85,
+     3356,
      -36,
-     3253.8
+     3260.05
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -3738,17 +3624,17 @@
    {
     "name": "Geländer rechts Pfosten 6",
     "kind": "member",
-    "volume": 447483.923,
+    "volume": 422306.044,
     "box": [
-     4085,
+     3992.5,
      -62,
-     2564.375,
-     4125,
+     2566.393,
+     4032.5,
      -22,
-     3646.725
+     3588.913
     ],
     "profileId": "QR 40x40x3",
-    "length": 1082.35,
+    "length": 1022.52,
     "miters": [
      0,
      0
@@ -3758,14 +3644,14 @@
    {
     "name": "Geländer rechts Pfosten 6 Befestigungsblech",
     "kind": "solid",
-    "volume": 250274.447,
+    "volume": 93137.224,
     "box": [
-     4025,
+     3982.5,
      -22,
-     2564.375,
-     4185,
+     2459.393,
+     4042.5,
      -12,
-     2724.375
+     2619.393
     ]
    },
    {
@@ -3773,12 +3659,12 @@
     "kind": "solid",
     "volume": 6400,
     "box": [
-     4085,
+     3992.5,
      -62,
-     3646.725,
-     4125,
+     3588.913,
+     4032.5,
      -22,
-     3650.725
+     3592.913
     ]
    },
    {
@@ -3786,12 +3672,12 @@
     "kind": "member",
     "volume": 9183.504,
     "box": [
-     4099,
+     4006.5,
      -48,
-     3650.725,
-     4111,
+     3592.913,
+     4018.5,
      -36,
-     3731.925
+     3674.113
     ],
     "profileId": "RD 12",
     "length": 81.2,
@@ -4453,7 +4339,7 @@
    {
     "name": "Wange links",
     "kind": "member",
-    "volume": 15154568.074,
+    "volume": 15175180.064,
     "box": [
      -361.85,
      1000,
@@ -4468,17 +4354,17 @@
      57.99,
      32.01
     ],
-    "drills": 54
+    "drills": 42
    },
    {
     "name": "Wange links Fußwinkel",
     "kind": "solid",
-    "volume": 116921.239,
+    "volume": 96921.239,
     "box": [
-     -20.15,
+     9.85,
      900,
      0,
-     99.85,
+     109.85,
      1000,
      10
     ]
@@ -4486,12 +4372,12 @@
    {
     "name": "Wange links Fußwinkel Steg",
     "kind": "solid",
-    "volume": 96000,
+    "volume": 80000,
     "box": [
-     -20.15,
+     9.85,
      990,
      10,
-     99.85,
+     109.85,
      1000,
      90
     ]
@@ -4499,20 +4385,20 @@
    {
     "name": "Wange links Kopfplatte",
     "kind": "solid",
-    "volume": 586847.727,
+    "volume": 485022.295,
     "box": [
      4185,
      1000,
      2516.969,
      4200,
-     1112,
+     1092,
      2871.781
     ]
    },
    {
     "name": "Wange rechts",
     "kind": "member",
-    "volume": 15154568.074,
+    "volume": 15175180.064,
     "box": [
      -361.85,
      -12,
@@ -4527,17 +4413,17 @@
      57.99,
      32.01
     ],
-    "drills": 54
+    "drills": 42
    },
    {
     "name": "Wange rechts Fußwinkel",
     "kind": "solid",
-    "volume": 116921.239,
+    "volume": 96921.239,
     "box": [
-     -20.15,
+     9.85,
      0,
      0,
-     99.85,
+     109.85,
      100,
      10
     ]
@@ -4545,12 +4431,12 @@
    {
     "name": "Wange rechts Fußwinkel Steg",
     "kind": "solid",
-    "volume": 96000,
+    "volume": 80000,
     "box": [
-     -20.15,
+     9.85,
      0,
      10,
-     99.85,
+     109.85,
      10,
      90
     ]
@@ -4558,10 +4444,10 @@
    {
     "name": "Wange rechts Kopfplatte",
     "kind": "solid",
-    "volume": 586847.727,
+    "volume": 485022.295,
     "box": [
      4185,
-     -112,
+     -92,
      2516.969,
      4200,
      0,
@@ -4570,7 +4456,7 @@
    }
   ],
   "notes": [
-   "16 Steigungen à 175 mm, Auftritt 280 mm, 2s + a = 630 mm, Neigung 32°, Lauflänge 4200 mm, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø 14, Lochabstand 180 mm), Geländer: rechts und links, 14 Pfosten, 8 Knieleisten, Handlaufhalter mit Bohrung Ø 12,1, Knieleisten durch die Pfosten (4 Stück, Aufmaß 1 mm); Befestigung: 14 Befestigungsbleche (2 davon oben mit Fußplatte, wo kein Bauteil daneben liegt), 2 Pfosten gerückt, damit die Platte ganz auf dem Bauteil liegt, 48 Gegenbohrungen übertragen, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen, Fußwinkel am Boden, Kopfplatten 15 mm an der Decke"
+   "16 Steigungen à 175 mm, Auftritt 280 mm, 2s + a = 630 mm, Neigung 32°, Lauflänge 4200 mm, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø 14, Lochabstand 180 mm), Geländer: rechts und links, 14 Pfosten, 8 Knieleisten, Handlaufhalter mit Bohrung Ø 12,1, Knieleisten durch die Pfosten (4 Stück, Aufmaß 1 mm); Befestigung: 14 Befestigungsbleche (2 davon oben mit Fußplatte, wo kein Bauteil daneben liegt), 2 Pfosten gerückt, damit die Platte ganz auf dem Bauteil liegt, 24 Gegenbohrungen übertragen, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen, Fußwinkel am Boden, Kopfplatten 15 mm an der Decke"
   ]
  },
  "Zaun": {

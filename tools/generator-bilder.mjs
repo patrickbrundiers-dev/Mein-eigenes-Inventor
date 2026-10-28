@@ -1,5 +1,5 @@
 // Bilder zur Generator-Prüfung: rendert die Netze aus tools/generator-pruefung.mjs mit three.js in Chromium.
-// Farben: grau = in Ordnung, rot = Kollision, orange = loses Teil, blau = Normteile (Schrauben).
+// Farben: grau = in Ordnung, rot = Kollision, orange = loses Teil, violett = verdeckt eine Bohrung, blau = Normteile.
 // Aufruf: node tools/generator-bilder.mjs <Ordner mit *.mesh.json> [Filter] [Ansicht-JSON]
 // Ansicht je Fall optional: { "<name>": { dir: [x, y, z], zoom: 1, focus: "<Teilname-Regex>" } }
 
@@ -29,7 +29,7 @@ window.draw = (meshes, view) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(m.v, 3));
     g.setIndex(m.t); g.computeVertexNormals();
-    const col = m.flag === "kollision" ? 0xe03030 : m.flag === "lose" ? 0xff9a00 : m.norm ? 0x3070e0 : 0xb8bcc4;
+    const col = m.flag === "kollision" ? 0xe03030 : m.flag === "lose" ? 0xff9a00 : m.flag === "verdeckt" ? 0xa040d0 : m.norm ? 0x3070e0 : 0xb8bcc4;
     scene.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col, metalness: 0.1, roughness: 0.7, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 })));
     const e = new THREE.BufferGeometry(); e.setAttribute("position", new THREE.Float32BufferAttribute(m.l, 3));
     scene.add(new THREE.LineSegments(e, new THREE.LineBasicMaterial({ color: 0x30343a })));

@@ -2,6 +2,8 @@
 //  – Kollisionen (Durchdringung zweier Körper > 1 mm³, z. B. Schraube ohne Bohrung, Stab ohne Loch im Gurt)
 //  – lose Teile (Körper ohne Berührung zu einem anderen Körper, Luft > 0,5 mm)
 //  – Verschraubungen: Schraube braucht in jedem geklemmten Teil eine Bohrung (zeigt sich als Kollision)
+//  – verdeckte Bohrungen: Achse jeder Schraubenbohrung (Ø 8 … 30) samt 30 mm Platz für Kopf/Mutter je Seite darf kein
+//    anderes Teil treffen (außer Teilen mit passender Bohrung und dem Stab, der in der Bohrung steckt)
 // Aufruf: node --stack-size=8000 tools/generator-pruefung.mjs [Ausgabeordner] [Filter]
 // Ergebnis: <Ausgabe>/bericht.json und je Fall <name>.mesh.json (für tools/generator-bilder.mjs).
 
@@ -9,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { createKernel } from "../src/kernel/build.js";
-import { defaultGenerator } from "../src/core/generator.js";
+import { defaultGenerator, GENERATORS, resolveGenParams } from "../src/core/generator.js";
 import { defaultGestell } from "../src/core/gestell.js";
 
 const require = createRequire(import.meta.url);
@@ -41,7 +43,7 @@ export const CASES = [
   ["gelaender-seitlich-profil", "gelaender", { base: "seitlich", mTarget: "profil" }],
   ["gelaender-fussplatte", "gelaender", { base: "fussplatte", beltMode: "zwischen" }],
   ["treppe-gerade", "treppe", {}],
-  ["treppe-gerade-staketen", "treppe", { gelFill: "staketen", gelMount: "oben" }],
+  ["treppe-gerade-staketen", "treppe", { gelFill: "staketen" }],
   ["treppe-upn", "treppe", { support: "upn" }],
   ["treppe-holm2", "treppe", { support: "holm2", gelMount: "oben" }],
   ["treppe-holm1", "treppe", { support: "holm1", gel: "keine" }],
@@ -73,6 +75,50 @@ function feature(gen, over) {
   return { id: "f", ...f };
 }
 
+const sub = (a, b) => a.map((x, i) => x - b[i]), add = (a, b) => a.map((x, i) => x + b[i]), mul = (a, k) => a.map((x) => x * k);
+const dot = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0), len = (a) => Math.sqrt(dot(a, a)), norm = (a) => mul(a, 1 / (len(a) || 1));
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const SPACE = 30; // Platz für Schraubenkopf bzw. Mutter mit Scheibe je Seite
+
+/** Schraubenbohrungen des Bauplans als Achsen a → b (mit Platz je Seite) */
+function holeAxes(plan) {
+  const out = [];
+  for (const d of plan.drills || []) {
+    if (!(d.d >= 8 && d.d <= 30)) continue;
+    const u = norm(d.dir);
+    out.push({ target: d.target, a: sub(d.p, mul(u, SPACE)), b: add(d.p, mul(u, d.len + SPACE)), d: d.d, u });
+  }
+  for (const pl of plan.plates || []) {
+    const n = norm(pl.normal), x = norm(pl.xDir), y = cross(n, x);
+    for (const [hx, hy, hd] of pl.holes || []) {
+      const dd = hd || pl.d;
+      if (!(dd >= 8 && dd <= 30)) continue;
+      const q = add(add(pl.center, mul(x, hx)), mul(y, hy));
+      out.push({ target: pl.name, a: sub(q, mul(n, SPACE)), b: add(q, mul(n, pl.t + SPACE)), d: dd, u: n });
+    }
+  }
+  return out;
+}
+
+/** Stäbe, die in der Bohrung stecken (Achse parallel und nah): dürfen die Achse treffen */
+function insertedNames(plan, h) {
+  const names = new Set();
+  const segs = [...(plan.members || []).map((m) => [m.name, m.a, m.b]), ...(plan.chains || []).flatMap((c) => c.points.slice(1).map((b, i) => [c.points.length > 2 ? `${c.name} ${i + 1}` : c.name, c.points[i], b]))];
+  for (const [nm, a, b] of segs) {
+    const u = norm(sub(b, a));
+    if (Math.abs(dot(u, h.u)) < 0.8) continue; // auch schräg durchgesteckt (Knieleiste am Knick)
+    // kleinster Abstand der Stabachse zur Bohrungsachse (Stichproben entlang des Stabs)
+    let dm = Infinity;
+    for (let k = 0; k <= 40; k++) {
+      const w = sub(add(a, mul(sub(b, a), k / 40)), h.a), t = dot(w, h.u);
+      if (t < -h.d || t > len(sub(h.b, h.a)) + h.d) continue;
+      dm = Math.min(dm, len(sub(w, mul(h.u, t))));
+    }
+    if (dm < h.d) names.add(nm);
+  }
+  return names;
+}
+
 const bbox = (s) => { const b = s.boundingBox.bounds; return { lo: b[0], hi: b[1] }; };
 const boxGap = (a, b) => Math.max(0, ...[0, 1, 2].map((k) => Math.max(a.lo[k] - b.hi[k], b.lo[k] - a.hi[k])));
 
@@ -81,7 +127,7 @@ export async function checkCase([name, gen, over]) {
   const res = await K.buildPart({ id: "p-" + name, kind: "part", name, params: [], features: [feature(gen, over)] }, { useCache: false, validate: false });
   const st = res.status.f;
   if (!st?.ok) return { name, gen, error: st?.error || "Aufbau fehlgeschlagen" };
-  const bodies = res.bodies.map((b, i) => ({ i, name: b.name, shape: b.shape, norm: !!b.meta?.norm, box: bbox(b.shape) }));
+  const bodies = res.bodies.map((b, i) => ({ i, name: b.name, shape: b.shape, norm: !!b.meta?.norm, grid: !!b.meta?.density, box: bbox(b.shape) }));
   // Kollisionen
   const coll = [];
   for (let i = 0; i < bodies.length; i++)
@@ -103,6 +149,22 @@ export async function checkCase([name, gen, over]) {
       if (d <= 0.5) { touch[i].push(j); touch[j].push(i); }
     }
   const loose = bodies.filter((b, i) => !touch[i].length).map((b) => ({ name: b.name, i: b.i }));
+  // verdeckte Bohrungen
+  const covered = [];
+  const plan = gen === "gestell" ? null : GENERATORS[gen].plan(resolveGenParams(gen, feature(gen, over).params, (x) => Number(String(x).replace(",", "."))));
+  for (const h of plan ? holeAxes(plan) : []) {
+    const L = len(sub(h.b, h.a));
+    const skip = insertedNames(plan, h);
+    if (skip.size) continue; // Durchgang für einen Stab (Knieleiste, Gurt), keine Schraube
+    const cyl = R.makeCylinder((h.d / 2) * 0.85, L, h.a, h.u), cb = bbox(cyl);
+    for (const b of bodies) {
+      // Gitterrost/Glas sind vereinfacht als Vollkörper gebaut (Schrauben sitzen real zwischen den Tragstäben); Teilstücke des Zielkörpers zählen mit ihm
+      if (b.norm || b.grid || b.name === h.target || b.name.startsWith(h.target + " ") || skip.has(b.name) || boxGap(cb, b.box) > 1e-3) continue;
+      let v = 0;
+      try { v = R.measureVolume(cyl.clone().intersect(b.shape.clone())); } catch { v = 0; }
+      if (v > 1) covered.push({ hole: h.target, by: b.name, at: h.a.map((x) => Math.round(x)), volume: Math.round(v) });
+    }
+  }
   // zusammenhängende Gruppen
   const comp = new Array(bodies.length).fill(-1);
   let nc = 0;
@@ -119,10 +181,10 @@ export async function checkCase([name, gen, over]) {
     const e = b.shape.meshEdges({ tolerance: 0.5, angularTolerance: 0.4 });
     return { name: b.name, norm: b.norm, v: Array.from(m.vertices, (x) => Math.round(x * 10) / 10), t: Array.from(m.triangles), l: Array.from(e.lines, (x) => Math.round(x * 10) / 10) };
   });
-  const bad = new Set([...coll.flatMap((c) => [c.ia, c.ib])]), lose = new Set(loose.map((l) => l.i));
-  meshes.forEach((m, i) => { m.flag = bad.has(i) ? "kollision" : lose.has(i) ? "lose" : ""; });
+  const bad = new Set([...coll.flatMap((c) => [c.ia, c.ib])]), lose = new Set(loose.map((l) => l.i)), cov = new Set(covered.map((c) => c.by));
+  meshes.forEach((m, i) => { m.flag = bad.has(i) ? "kollision" : lose.has(i) ? "lose" : cov.has(m.name) ? "verdeckt" : ""; });
   fs.writeFileSync(path.join(out, name + ".mesh.json"), JSON.stringify(meshes));
-  return { name, gen, bodies: bodies.length, info: st.info, warning: st.warning || "", collisions: coll.map(({ ia, ib, ...c }) => c), loose: loose.map((l) => l.name), groups: groups.length > 1 ? groups.map((g) => (g.length > 6 ? [...g.slice(0, 6), `… (${g.length})`] : g)) : [], ms: Date.now() - t0 };
+  return { name, gen, bodies: bodies.length, info: st.info, warning: st.warning || "", collisions: coll.map(({ ia, ib, ...c }) => c), covered, loose: loose.map((l) => l.name), groups: groups.length > 1 ? groups.map((g) => (g.length > 6 ? [...g.slice(0, 6), `… (${g.length})`] : g)) : [], ms: Date.now() - t0 };
 }
 
 const report = [];
@@ -131,6 +193,6 @@ for (const c of CASES) {
   let r;
   try { r = await checkCase(c); } catch (e) { r = { name: c[0], gen: c[1], error: e.message }; }
   report.push(r);
-  console.log(`${r.name}: ${r.error ? "FEHLER " + r.error : `${r.bodies} Körper, ${r.collisions.length} Kollisionen, ${r.loose.length} lose, ${r.groups.length || 1} Gruppe(n)`}`);
+  console.log(`${r.name}: ${r.error ? "FEHLER " + r.error : `${r.bodies} Körper, ${r.collisions.length} Kollisionen, ${r.covered.length} verdeckte Bohrungen, ${r.loose.length} lose, ${r.groups.length || 1} Gruppe(n)`}`);
+  fs.writeFileSync(path.join(out, "bericht.json"), JSON.stringify(report, null, 1)); // nach jedem Fall (Zwischenstand lesbar)
 }
-fs.writeFileSync(path.join(out, "bericht.json"), JSON.stringify(report, null, 1));

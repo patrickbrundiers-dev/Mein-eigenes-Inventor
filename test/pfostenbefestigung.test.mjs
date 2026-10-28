@@ -7,6 +7,8 @@ import { sectionOf, defaultGenerator, resolveGenParams, GENERATORS } from "../sr
 const near = (a, b, tol = 1e-6, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg || ""} ${a} ≠ ${b}`);
 const nearV = (a, b, tol = 1e-6, msg) => a.forEach((x, i) => near(x, b[i], tol, msg));
 const E = (x) => Number(String(x).replace(",", "."));
+// Befestigungsblech wie vor der Ausrichtung an den Stufen (160 × 160, 4 Bohrungen, Pfosten gleichmäßig verteilt)
+const KLASSISCH = { gelSW: "160", gelSH: "160", gelSHoles: "4", gelSDown: "0", gelRhythm: false };
 const treppe = (patch = {}, drop = []) => {
   const params = { ...defaultGenerator("treppe").params, ...patch };
   for (const k of drop) delete params[k];
@@ -220,7 +222,7 @@ test("Bestehende Treppe und bestehendes Geländer ohne Befestigungsparameter rec
 });
 
 test("Seitliche Befestigung ohne Abstandsausgleich: Blech plan an der Wange, Pfosten liegt an, Bohrungen frei", () => {
-  const p = treppe({}); // Standard: Flachstahl-Wange, seitlich mit Befestigungsblech
+  const p = treppe(KLASSISCH); // Standard: Flachstahl-Wange, seitlich mit Befestigungsblech
   assert.equal(p.issues.length, 0, p.issues.map((x) => x.message).join("\n"));
   const w = p.members.find((m) => m.name === "Wange rechts");
   const face = M.memberFace(w, [0, -1, 0]);
@@ -241,13 +243,40 @@ test("Seitliche Befestigung ohne Abstandsausgleich: Blech plan an der Wange, Pfo
   assert.ok(dr.every((d) => Math.abs(M.faceCoords(face, d.p)[2] - 1) < 1e-9 && Math.abs(d.len - 14) < 1e-9));
   assert.match(p.info, /Befestigungsbleche \(2 davon oben mit Fußplatte, wo kein Bauteil daneben liegt\), 2 Pfosten gerückt/);
   // zu schmales Blech: Pfosten verdeckt die Bohrungen
-  const narrow = treppe({ gelSW: "80", gelE: "15" });
+  const narrow = treppe({ ...KLASSISCH, gelSW: "80", gelE: "15" });
   assert.match(narrow.issues.map((x) => x.message).join(), /vom Pfosten verdeckt/);
   // UPN offen nach außen: Pfosten automatisch oben auf der Wange mit Fußplatte, Hinweis statt Pfosten ohne Befestigung
-  const upn = treppe({ support: "upn", upn: { kind: "upn", size: "200" } });
+  const upn = treppe({ ...KLASSISCH, support: "upn", upn: { kind: "upn", size: "200" } });
   assert.match(upn.issues.map((x) => x.message).join(), /Wange aus U-Profil ist außen offen – Pfosten oben auf der Wange mit Fußplatte/);
   assert.equal(upn.issues.filter((x) => x.level === "Fehler").length, 0, upn.issues.map((x) => x.message).join("\n"));
   assert.ok(upn.plates.some((x) => x.name === "Geländer rechts Pfosten 1 Fußplatte"));
+});
+
+test("Treppe: Pfosten im Stufenrhythmus, Lasche zwischen den Stufenbohrungen, Muttern innen frei; alte Projekte wie bisher", () => {
+  const p = treppe({});
+  assert.equal(p.issues.filter((i) => i.level !== "Hinweis").length, 0, p.issues.map((x) => x.message).join("\n"));
+  const holes = p.drills.filter((d) => d.target === "Wange rechts" && d.d === 14).map((d) => d.p);
+  const posts = p.members.filter((m) => /^Geländer rechts Pfosten \d+$/.test(m.name));
+  const inner = posts.slice(1).filter((m) => p.plates.find((x) => x.name === m.name + " Befestigungsblech") && m.a[0] < 4000);
+  assert.ok(inner.length >= 3);
+  // Zwischenpfosten genau mittig zwischen zwei Stufen (Stufenmitte + a/2), alle im gleichen Abstand
+  const gaps = inner.slice(1).map((m, i) => m.b[0] - inner[i].b[0]);
+  assert.ok(gaps.every((g) => Math.abs(g - gaps[0]) < 1e-6), JSON.stringify(gaps));
+  for (const m of inner) {
+    const bl = p.plates.find((x) => x.name === m.name + " Befestigungsblech");
+    near(bl.W, 60, 1e-9);
+    // keine Stufenbohrung unter dem Blech (mit Platz für die Scheibe)
+    for (const h of holes) {
+      const dx = Math.max(0, Math.abs(h[0] - bl.center[0]) - bl.W / 2), dz = Math.max(0, Math.abs(h[2] - bl.center[2]) - bl.H / 2);
+      assert.ok(Math.hypot(dx, dz) >= 15 - 1e-6, `${m.name}: Stufenbohrung bei x ${h[0]} verdeckt`);
+    }
+    // Pfostenfuß über den Schrauben der Lasche
+    assert.ok(bl.holes.every(([, y]) => m.a[2] > bl.center[2] + y + 13.5 - 1e-6));
+  }
+  // alte Projekte (ohne das Feld): Pfosten gleichmäßig verteilt wie bisher
+  const old = treppe({}, ["gelRhythm"]);
+  assert.equal(GENERATORS.treppe.schema.find((x) => x.key === "gelRhythm").missing, false);
+  assert.notDeepEqual(old.members.filter((m) => /Pfosten \d+$/.test(m.name)).map((m) => m.b[0]), posts.map((m) => m.b[0]));
 });
 
 test("Geländer seitlich: an der Deckenstirn bzw. am Randprofil, Randabstand zur Deckenkante", () => {
@@ -275,8 +304,8 @@ test("Abstandsausgleich: Flacheisen durch Schlitz im Pfosten, Stecknasen in Stec
   const tl = M.tabCenters(60, 2, 15, 5);
   assert.deepEqual(tl.centers, [-12.5, 12.5]);
   assert.match(M.tabCenters(60, 4, 20, 5).error, /passen nicht in 60 mm/);
-  const base = treppe();
-  const p = treppe({ gelMSpacer: true, gelMGap: "60" });
+  const base = treppe(KLASSISCH);
+  const p = treppe({ ...KLASSISCH, gelMSpacer: true, gelMGap: "60" });
   const post = (q) => q.members.find((m) => m.name === "Geländer rechts Pfosten 1");
   const w = p.members.find((m) => m.name === "Wange rechts"), face = M.memberFace(w, [0, -1, 0]);
   // Pfosten rückt um den Abstand von der Wange weg, Achse unverändert parallel
@@ -304,10 +333,10 @@ test("Abstandsausgleich: Flacheisen durch Schlitz im Pfosten, Stecknasen in Stec
   assert.match(p.info, /mit Flacheisen \(Stecknasen sichern nur die Lage/);
   // Abstand über dem Höchstmaß, zu viele Nasen, zu enger Schlitz, Abstand ohne Ausgleich
   const msg = (q) => q.issues.map((i) => i.message).join("\n");
-  assert.match(msg(treppe({ gelMSpacer: true, gelMGap: "200" })), /über dem Höchstmaß 150 mm/);
-  assert.match(msg(treppe({ gelMSpacer: true, gelMTabs: "4", gelMTabW: "20" })), /Stecknasen: 4 Stecknasen/);
-  assert.match(msg(treppe({ gelMSpacer: true, gelMSlotW: "9" })), /passt nicht in den Schlitz 9 mm/);
-  assert.match(msg(treppe({ gelMSpacer: true, gelMSlotW: "14" })), /Schlitz 14 mm für Flacheisen 10 mm/);
+  assert.match(msg(treppe({ ...KLASSISCH, gelMSpacer: true, gelMGap: "200" })), /über dem Höchstmaß 150 mm/);
+  assert.match(msg(treppe({ ...KLASSISCH, gelMSpacer: true, gelMTabs: "4", gelMTabW: "20" })), /Stecknasen: 4 Stecknasen/);
+  assert.match(msg(treppe({ ...KLASSISCH, gelMSpacer: true, gelMSlotW: "9" })), /passt nicht in den Schlitz 9 mm/);
+  assert.match(msg(treppe({ ...KLASSISCH, gelMSpacer: true, gelMSlotW: "14" })), /Schlitz 14 mm für Flacheisen 10 mm/);
   // Geländer an der Deckenstirn mit Flacheisen
   const g = gelaender({ runs: "2500", base: "seitlich", mSpacer: true });
   assert.equal(g.plates.filter((x) => /Flacheisen/.test(x.name)).length, 4);
@@ -316,10 +345,10 @@ test("Abstandsausgleich: Flacheisen durch Schlitz im Pfosten, Stecknasen in Stec
 
 test("Podestecken L/U: Futterblech gegen die Luft hinter der Wangenflucht, Blech am Rahmenende verlängert, eine Bohrreihe am niedrigen Rahmen", () => {
   for (const turn of ["links", "rechts"]) {
-    const p = treppe({ form: "L", turn });
+    const p = treppe({ ...KLASSISCH, form: "L", turn });
     assert.equal(p.issues.filter((i) => i.level !== "Hinweis").length, 0, `L ${turn}: ` + p.issues.map((i) => i.message).join("\n"));
   }
-  const p = treppe({ form: "L" });
+  const p = treppe({ ...KLASSISCH, form: "L" });
   const get = (n) => p.plates.find((x) => x.name === `Geländer rechts Pfosten ${n}`);
   // Eckpfosten: Blech zum Rahmen hin verlängert, beide Bohrungen auf dem Rahmen (Ende bei x = 2960), Pfosten ganz auf dem Blech
   const bl = get("4 Befestigungsblech"), post = p.members.find((m) => m.name === "Geländer rechts Pfosten 4");
@@ -336,16 +365,16 @@ test("Podestecken L/U: Futterblech gegen die Luft hinter der Wangenflucht, Blech
   assert.deepEqual(fu.holes, bl.holes);
   assert.match(p.info, /2 mit Futterblech, 1 zum Bauteil hin verlängert/);
   // Futterblech abschaltbar: dann wieder Fehler wegen Luft
-  assert.match(treppe({ form: "L", gelMShim: "0" }).issues.map((i) => i.message).join(), /12 mm Luft zwischen Pfosten und Blech/);
+  assert.match(treppe({ ...KLASSISCH, form: "L", gelMShim: "0" }).issues.map((i) => i.message).join(), /12 mm Luft zwischen Pfosten und Blech/);
 });
 
 test("Ausweichen: oben → seitlich, wo die Fußplatte nicht aufliegt (Podest neben der U200-Flucht); seitlich → oben mitten auf dem Podest", () => {
-  const u = treppe({ form: "L", support: "upn", upn: { kind: "upn", size: "200" }, gelMount: "oben" });
+  const u = treppe({ ...KLASSISCH, form: "L", support: "upn", upn: { kind: "upn", size: "200" }, gelMount: "oben" });
   assert.equal(u.issues.filter((i) => i.level === "Fehler").length, 0, u.issues.map((i) => i.message).join("\n"));
   assert.ok(u.plates.some((x) => x.name === "Geländer rechts Pfosten 5 Befestigungsblech"));
   assert.match(u.info, /2 davon seitlich mit Befestigungsblech, wo die Fußplatte nicht aufliegt/);
   // U: inneres Geländer läuft übers Podest – der Pfosten dort bekommt eine Fußplatte auf dem Podestbelag
-  const U = treppe({ form: "U" });
+  const U = treppe({ ...KLASSISCH, form: "U" });
   const fp = U.plates.find((x) => x.name === "Geländer links Pfosten 4 Fußplatte");
   assert.ok(fp, "Fußplatte mitten auf dem Podest");
   assert.ok(U.plates.find((x) => x.name === "Podest").holes?.length > 0, "Gegenbohrungen im Podestbelag");

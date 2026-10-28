@@ -413,15 +413,20 @@ test("Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCA
   const nr = plan({ runs: "1200", fill: "kreuz", ring: false }).members.filter((m) => /^Diagonale/.test(m.name));
   assert.deepEqual(nr.map((m) => m.name), ["Diagonale 1.1", "Diagonale 1.2 oben", "Diagonale 1.2 unten"]);
   assert.ok(Math.abs(nr[0].a[0] - 20) < 1e-9 && Math.abs(nr[0].b[0] - 1180) < 1e-9 && nr.slice(1).every((m) => m.copes.length >= 1));
-  const rings = k.chains.filter((c) => /^Ring/.test(c.name));
+  // Ring gewalzt: ein Teil je Feld (Kreis ⌀ 300 in der Feldebene), Diagonalen daran ausgeklinkt
+  const { pathPoint } = await import("../src/core/biegeteil.js");
+  const rings = k.tubes.filter((c) => /^Ring/.test(c.name));
   assert.equal(rings.length, 2);
-  const r0 = rings[0].points, c0 = [600, 0, (r0[0][2] + r0[12][2]) / 2];
-  assert.ok(r0.every((q) => Math.abs(Math.hypot(q[0] - c0[0], q[2] - c0[2]) - 150) < 1e-6 && Math.abs(q[1]) < 1e-9), "Kreis ⌀ 300 in der Feldebene");
+  assert.equal(k.chains.filter((c) => /^Ring/.test(c.name)).length, 0, "keine gegehrten Einzelstücke");
+  const r0 = rings[0].path, c0 = r0.c;
+  assert.ok(c0[0] === 600 && Math.abs(r0.sweep) === 360 && r0.rise === 0);
+  assert.ok(Array.from({ length: 24 }, (_, i) => pathPoint(r0, i / 24)).every((q) => Math.abs(Math.hypot(q[0] - c0[0], q[2] - c0[2]) - 150) < 1e-6 && Math.abs(q[1]) < 1e-9), "Kreis ⌀ 300 in der Feldebene");
+  assert.ok(diag.every((m) => m.copes.some((c) => c.path === rings[m.name.startsWith("Diagonale 1.") ? 0 : 1].path)), "Diagonale am Ring ausgeklinkt");
   assert.match(k.issues.map((x) => x.message).join(), /Öffnung \d+ mm über 120/, "Kreuz hält 120 mm nicht ein → Warnung");
   const open = Number(/Öffnung (\d+) mm/.exec(k.issues.map((x) => x.message).join())[1]);
   assert.ok(open < 580, `Inkreis kleiner als das halbe Feld (${open})`);
   assert.throws(() => plan({ runs: "2400", fill: "kreuz", ringD: "900" }), /Ring ⌀ 900 passt nicht/);
-  assert.equal(plan({ runs: "2400", fill: "kreuz", ring: false }).chains.filter((c) => /^Ring/.test(c.name)).length, 0);
+  assert.equal(plan({ runs: "2400", fill: "kreuz", ring: false }).tubes.filter((c) => /^Ring/.test(c.name)).length, 0);
   // über Eck: Diagonalen liegen in der gedrehten Feldebene
   const e = plan({ runs: "1200; 1200", angle: "90", fill: "kreuz", ring: false });
   const d2 = e.members.filter((m) => /^Diagonale 2\./.test(m.name));

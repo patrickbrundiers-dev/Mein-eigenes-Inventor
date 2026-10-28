@@ -91,7 +91,7 @@ export const GELAENDER = {
     const kind = mountKind(p);
     const holder = p.holder !== "keine";
     const zPostTop = H - railH - holderDrop(holder, post, p.holderGap);
-    const members = [], plates = [], chains = [], drills = [], norms = [];
+    const members = [], plates = [], chains = [], drills = [], norms = [], tubes = [];
     const P3 = (xy, z) => [xy[0], xy[1], z];
     const up = [0, 0, 1];
     // Pfostenbefestigung oben (pfostenbefestigung.js): Fußplatte auf dem Boden oder auf einem Randprofil, dessen
@@ -246,16 +246,16 @@ export const GELAENDER = {
         if (p.ring) {
           const r = p.ringD / 2, bw = Math.max(p.bar.geom.width, p.bar.geom.height);
           if (!(r > bw && 2 * r + bw < Math.min(clear, fillHi - fillLo))) throw fieldError(`Ring ⌀ ${p.ringD} passt nicht ins Feld ${Math.round(clear)} × ${Math.round(fillHi - fillLo)} mm`, "ringD");
-          const c = at((s0 + s1) / 2), zc = (fillLo + fillHi) / 2, N = 24;
-          ring = Array.from({ length: N + 1 }, (_, k) => { const t = (2 * Math.PI * k) / N; return [c[0] + fd.d[0] * r * Math.cos(t), c[1] + fd.d[1] * r * Math.cos(t), zc + r * Math.sin(t)]; });
-          chains.push({ section: p.bar, points: ring, name: `Ring ${i + 1}`, up: n });
-          const copes = ring.slice(1).map((b, k) => { const [a1, b1] = ext(ring[k], b, p.bar.geom.width / 2); return { section: p.bar, a: a1, b: b1, up: n }; });
+          // Ring gewalzt (ein Teil), Ebene des Feldes: Achse quer zum Feld, Winkel 0 in Laufrichtung
+          const c = at((s0 + s1) / 2), zc = (fillLo + fillHi) / 2;
+          ring = { c: [c[0], c[1], zc], r, a0: 0, sweep: 360, rise: 0, axis: [fd.d[1], -fd.d[0], 0], x0: [fd.d[0], fd.d[1], 0] };
+          tubes.push({ section: p.bar, path: ring, name: `Ring ${i + 1}` });
+          const rc = { section: p.bar, path: ring };
           // vier Stücke von der Ecke bis zur Ringmitte, am Ring ausgeklinkt
           for (const [q, j, pos] of [[A, 1, "unten"], [B, 1, "oben"], [C, 2, "oben"], [D, 2, "unten"]]) {
             const sg = q === A || q === C ? -1 : 1, e = add3(M, mul3(norm3(sub3(q, M)), r));
-            const near = copes.filter((c) => Math.hypot(...sub3(mul3(add3(c.a, c.b), 0.5), e)) < 0.6 * r + bw);
             const bc = beltCope(pos === "oben");
-            members.push({ section: p.bar, a: q, b: e, name: `Diagonale ${i + 1}.${j} ${pos}`, up: along, cuts: { start: [cut(q, sg)], end: [] }, copes: bc ? [...near, bc] : near });
+            members.push({ section: p.bar, a: q, b: e, name: `Diagonale ${i + 1}.${j} ${pos}`, up: along, cuts: { start: [cut(q, sg)], end: [] }, copes: bc ? [rc, bc] : [rc] });
           }
           nBars += 4;
         } else {
@@ -372,7 +372,7 @@ export const GELAENDER = {
     const total = runs.reduce((a, b) => a + b, 0);
     let info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, kind === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "");
     if (toeOn) info += `, Fußleiste ${toeH} × 5 mm`;
-    return { chains, members, plates, drills, norms, info, issues, sections: SEC };
+    return { chains, members, plates, drills, norms, tubes, info, issues, sections: SEC };
   },
 
   views: ["front", "top"],
