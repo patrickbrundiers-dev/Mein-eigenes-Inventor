@@ -2,6 +2,7 @@
 // und Hilfe-Verweise, rechts die zuletzt verwendeten Projekte als Kacheln mit Vorschaubild oder als Liste.
 import { h, icon, contextMenu, modal, toast } from "./dom.js";
 import { RECENT_SORTS, sortRecent, filterRecent, recentDate, recentSize } from "../core/recent.js";
+import { startTour, offerTour } from "./tour.js";
 
 const RELEASES_URL = "https://github.com/patrickbrundiers-dev/Mein-eigenes-Inventor/releases";
 const SEEN_KEY = "pbcad.neuigkeitenGesehen";
@@ -71,6 +72,7 @@ export class StartScreen {
     };
     this.renderHead();
     this.renderRecent();
+    offerTour(app);
     this.el.replaceChildren(h("div", { class: "st" }, side, h("main", { class: "st-main" }, this.head, this.listEl)));
   }
 
@@ -141,7 +143,7 @@ function firstSteps(app) {
       step(4, "Baugruppe", "Bauteile platzieren und mit Fläche an Fläche, Bündig oder Konzentrisch ausrichten. Geländer, Tore und Treppen erzeugen die Generatoren."),
       step(5, "Zeichnung und Fertigung", "»Zeichnung ableiten« erstellt Ansichten mit Maßen; Zuschnittliste, DXF und STEP stehen unter Export.")),
     h("p", { class: "hint" }, "Jeden Befehl findet die Befehlssuche (", app.ribbon.kbd("app.search") || "Strg+K", ").")),
-  buttons: [{ label: "Beispielprojekt öffnen", run: () => app.openExample() }, { label: "Schließen", primary: true }] });
+  buttons: [{ label: "Beispielprojekt öffnen", run: () => app.openExample() }, { label: "Rundgang starten", run: () => { setTimeout(() => startTour(app), 0); } }, { label: "Schließen", primary: true }] });
 }
 
 function kbd(app, id) { const k = app.ribbon.kbd(id); return k ? h("span", { class: "kbd" }, k) : null; }

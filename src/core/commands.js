@@ -20,6 +20,8 @@ export const COMMANDS = [
   { id: "part.variants", label: "Variantentabelle", group: "3D-Modell", scope: "part", keywords: "variante varianten tabelle ipart konfiguration familie baureihe größen" },
   { id: "part.rules", label: "Regeln", group: "3D-Modell", scope: "part", keywords: "regel regeln ilogic bedingung wenn prüfen unterdrücken automatisch" },
   { id: "app.search", label: "Befehl suchen", group: "Programm", scope: "global", key: "Strg+K", typing: true, keywords: "werkzeugsuche palette" },
+  { id: "app.help", label: "Kurzhilfe", group: "Programm", scope: "global", key: "F1", keywords: "hilfe erklärung anleitung tastatur maus rundgang" },
+  { id: "app.tour", label: "Rundgang starten", group: "Programm", scope: "global", keywords: "einführung tour erste schritte oberfläche lernen" },
   { id: "edit.undo", label: "Rückgängig", group: "Bearbeiten", scope: "global", key: "Strg+Z" },
   { id: "edit.redo", label: "Wiederholen", group: "Bearbeiten", scope: "global", key: "Strg+Y" },
 

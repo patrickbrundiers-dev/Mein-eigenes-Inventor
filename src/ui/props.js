@@ -361,6 +361,7 @@ export class Props {
         else if (c) { title = c.name || "Komponente"; body.append(...this.componentProps(d, c)); }
       } else { title = "Baugruppe"; body.append(...this.assemblyProps(d)); }
     }
+    tidyPanel(body);
     this.el.replaceChildren(h("div", { class: "pane-head" }, h("span", { class: "grow" }, title)), body);
   }
 
@@ -2647,3 +2648,38 @@ function cutListTotalsTable(t) {
       h("tr", { class: "sum" }, h("td", {}, h("b", {}, "Summe")), h("td", {}), h("td", { class: "num" }, String(t.qty)), h("td", { class: "num" }, fmtNum(t.length / 1000, 2)), h("td", {}), h("td", { class: "num" }, h("b", {}, fmtNum(t.mass, 2))))));
 }
 export { FEATURE_NAMES, scaleLabel, cutListRows, endsText };
+
+// Aufgeräumtes Eigenschaftenfeld: Abschnitte per Klick auf die Überschrift einklappen (gemerkt je Überschrift),
+// lange Erklärungen auf zwei Zeilen kürzen mit »mehr«.
+const ZU_KEY = "pbcad.props.zu";
+let zu = null;
+function zuSet() {
+  if (!zu) { try { zu = new Set(JSON.parse(localStorage.getItem(ZU_KEY) || "[]")); } catch { zu = new Set(); } }
+  return zu;
+}
+function tidyPanel(body) {
+  for (const h3 of body.querySelectorAll(".section > h3")) {
+    const sec = h3.parentElement, key = h3.textContent.trim();
+    if (!key || sec.children.length < 2) continue;
+    h3.classList.add("fold");
+    h3.tabIndex = 0;
+    h3.setAttribute("role", "button");
+    const set = (closed) => { sec.classList.toggle("zu", closed); h3.setAttribute("aria-expanded", String(!closed)); };
+    set(zuSet().has(key));
+    const toggle = (e) => {
+      if (e.target.closest("button, input, select, a, label") && e.target !== h3) return;
+      const closed = !sec.classList.contains("zu");
+      set(closed);
+      if (closed) zuSet().add(key); else zuSet().delete(key);
+      try { localStorage.setItem(ZU_KEY, JSON.stringify([...zuSet()])); } catch { /* ohne Speicher nur für diese Sitzung */ }
+    };
+    h3.addEventListener("click", toggle);
+    h3.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === h3) { e.preventDefault(); toggle(e); } });
+  }
+  for (const p of body.querySelectorAll(".hint")) {
+    if (p.textContent.length < 170 || p.querySelector("input, button, select")) continue;
+    p.classList.add("lang");
+    const more = h("button", { class: "hint-more", "aria-expanded": "false", onclick: () => { const open = p.classList.toggle("offen"); more.textContent = open ? "weniger" : "mehr"; more.setAttribute("aria-expanded", String(open)); } }, "mehr");
+    p.after(more);
+  }
+}

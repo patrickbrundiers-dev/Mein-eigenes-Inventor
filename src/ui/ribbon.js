@@ -30,6 +30,7 @@ import { applyRibbonLayout, setGroupHidden, moveGroup, resetRibbonLayout, PROTEC
 import { befehlHilfe } from "../core/befehlshilfe.js";
 import { SKETCH_TOOLS } from "./sketcher.js";
 import { bindTooltips } from "./tooltip.js";
+import { KeyTips } from "./keytips.js";
 
 export class Ribbon {
   constructor(app) {
@@ -38,6 +39,7 @@ export class Ribbon {
     this.tab = null;
     this.actions = this.defineActions();
     this.tips = bindTooltips(this.el);
+    this.keytips = new KeyTips(this);
   }
 
   defineActions() {
@@ -567,7 +569,8 @@ export class Ribbon {
     if (mode === "sketch") this.tab = this.tab === "ansicht" ? "ansicht" : "skizze";
     const tabBar = h("div", { class: "rb-tabs" },
       h("button", { class: "rb-file", onclick: (e) => this.fileMenu(e) }, "Datei"),
-      ...tabs.map((t) => h("button", { class: "rb-tab" + (t.id === this.tab ? " active" : "") + (t.context ? " context" : ""), onclick: () => { this.tab = t.id; this.render(); } }, t_(t.label))),
+      h("div", { class: "rb-tablist", role: "tablist", "aria-label": "Menüband", onkeydown: (e) => this.tabKey(e, tabs) },
+        ...tabs.map((t) => h("button", { class: "rb-tab" + (t.id === this.tab ? " active" : "") + (t.context ? " context" : ""), role: "tab", "aria-selected": String(t.id === this.tab), tabindex: t.id === this.tab ? "0" : "-1", "data-tab": t.id, onclick: () => { this.tab = t.id; this.render(); } }, t_(t.label)))),
       h("div", { class: "rb-spacer" }),
       h("button", { class: "rb-search", title: `Befehl suchen (${this.kbd("app.search") || "Strg+K"})`, onclick: () => app.commands.exec("app.search") }, icon("search"), h("span", {}, "Befehl suchen"), this.kbd("app.search") ? h("span", { class: "kbd" }, this.kbd("app.search")) : null),
       h("button", { class: "icon-btn", title: "Rückgängig (Strg+Z)", disabled: !app.undoStack.length, onclick: () => app.undo() }, icon("undo")),
@@ -576,14 +579,14 @@ export class Ribbon {
       this.docLabel = h("div", { class: "rb-doc" }));
     this.renderDocLabel();
     const tab = tabs.find((t) => t.id === this.tab);
-    const panel = h("div", { class: "rb-panel" });
+    const panel = h("div", { class: "rb-panel", role: "tabpanel", "aria-label": t_(tabs.find((t) => t.id === this.tab)?.label || "") });
     if (tab) {
       const L = applyRibbonLayout(tab.id, tab.groups, this.app.prefs.get("werkzeuge.menueband") || {});
       for (const g of L.groups) {
         const btns = h("div", { class: "rb-buttons" });
         // groß: alle (Standard), keine (small) oder die ersten g.big; der Rest klein in Spalten zu je 3
         const nBig = g.small ? 0 : g.big ?? g.buttons.length;
-        for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, ...this.tipAttrs(b) }, icon(b.icon), h("span", {}, t_(b.label))));
+        for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, ...this.tipAttrs(b) }, icon(b.icon), h("span", {}, ...breakable(t_(b.label)))));
         const rest = g.buttons.slice(nBig);
         for (let i = 0; i < rest.length; i += 3) {
           btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + 3).map((b) =>
@@ -596,7 +599,18 @@ export class Ribbon {
       panel.append(h("div", { class: "hint", style: { alignSelf: "center", padding: "0 8px" } }, "Neues Projekt anlegen oder vorhandenes öffnen."));
     }
     this.tips.hide();
+    this.app.minibar?.hide();
     this.el.replaceChildren(tabBar, panel);
+  }
+  /** Pfeiltasten wechseln den Reiter (Tablisten-Muster), Pos1/Ende springen an den Rand */
+  tabKey(e, tabs) {
+    const i = tabs.findIndex((t) => t.id === this.tab);
+    const n = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+    if (n === undefined || !tabs.length) return;
+    e.preventDefault();
+    this.tab = tabs[(n + tabs.length) % tabs.length].id;
+    this.render();
+    this.el.querySelector(`.rb-tab[data-tab="${this.tab}"]`)?.focus();
   }
   /** Rechtsklick auf eine Gruppe: verschieben, ausblenden, anpassen */
   groupMenu(e, tab, label) {
@@ -694,4 +708,10 @@ export class Ribbon {
     document.body.append(m);
     setTimeout(() => document.addEventListener("mousedown", out, true), 0);
   }
+}
+
+/** Beschriftung großer Knöpfe darf nach »/« umbrechen (»Kürzen/Verlängern«); <wbr> ändert den Namen des Knopfs nicht */
+function breakable(label) {
+  const parts = String(label).split(/(?<=\/)/);
+  return parts.flatMap((p, i) => (i ? [h("wbr"), p] : [p]));
 }

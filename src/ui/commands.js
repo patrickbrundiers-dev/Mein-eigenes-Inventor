@@ -8,6 +8,8 @@ import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap,
 import { problemsDialog } from "./pruefung.js";
 import { saveVersion, versionsDialog } from "./versionen.js";
 import { savePosition } from "./darstellungen.js";
+import { showHelp } from "./hilfe.js";
+import { startTour } from "./tour.js";
 
 /** id → Funktion. Ribbon-Aktionen werden wiederverwendet, damit Knopf und Kürzel dasselbe tun. */
 export function commandRunners(app) {
@@ -34,6 +36,8 @@ export function commandRunners(app) {
     "file.importStep": () => app.files.importStepAsPart(),
     "app.settings": () => app.props.settingsDialog(),
     "app.search": () => commandPalette(app),
+    "app.help": () => showHelp(app),
+    "app.tour": () => startTour(app),
     "app.macros": () => app.props.macroDialog(),
     "app.macroRecord": () => app.commands.toggleRecording(),
     "edit.undo": () => app.undo(),
