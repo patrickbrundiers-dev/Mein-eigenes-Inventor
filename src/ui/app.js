@@ -48,7 +48,7 @@ import { refreshAllGestelle, gestellPick, skeletonSegs } from "./gestell.js";
 import { insertFeature, beforeDelete, setEnd } from "../core/bauteilende.js";
 import { colorMap } from "../core/komponentenfarben.js";
 import { templateOf, isCustomTemplate } from "../core/zeichnungsvorlage.js";
-import { bindAssemblyDrag, bindDocDrop, updateDofGlyph, placeHover, placeClick, endPlacing, placeDialog } from "./baugruppe.js";
+import { bindAssemblyDrag, bindDocDrop, updateDofGlyph, placeHover, placeClick, endPlacing, placeDialog, beginPlacing } from "./baugruppe.js";
 
 const linkedMessage = (part, docOf = () => null) => (part.variant && !part.link
   ? `»${part.name}« ist eine Variante von »${docOf(part.variant.of)?.name || "?"}« – dort in der Variantentabelle ändern`
@@ -1051,6 +1051,8 @@ export class App {
   }
 
   // ---------- Baugruppe: Ausrichten ----------
+  /** Platzieren mit Vorschau am Mauszeiger (BG1); auch für die Teilebibliothek (ST12) */
+  beginPlacing(docId, opts) { return beginPlacing(this, docId, opts); }
   beginAlign(mode = "gegen") { beginPlace(this, { mode }); }
   /** »Abhängigkeit platzieren« (Stufe 44) */
   beginPlace(opts) { beginPlace(this, opts); }

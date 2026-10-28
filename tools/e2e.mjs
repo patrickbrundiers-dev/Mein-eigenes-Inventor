@@ -3631,6 +3631,73 @@ try {
       && after[2] === 10 && Math.hypot(after[0] - before[0], after[1] - before[1]) > 1 && q.n === 2 && q.last === "gegen" && Math.abs(q.z - 20) < 1e-6 && q.err === 0, JSON.stringify({ ghost, pl, dof, before, after, q }));
   }
 
+  // ---- Baugruppenerstellung BG7–BG11: Lochbild-Muster, Fügepunkte, Unterbaugruppe, Spiegeln ----
+  {
+    await evalApp(() => {
+      const a = window.__werkcad, asm = a.newAssembly();
+      a.edit("Komponenten", () => {
+        asm.components.push({ id: "lp", part: "beispiel_platte", name: "Platte:1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+        asm.components.push({ id: "lr", part: "beispiel_rohr", name: "Rohr:1", pos: [0, 0, 300], rot: [0, 0, 0] });
+        asm.components.push({ id: "lq", part: "beispiel_platte", name: "Platte:2", pos: [1000, 0, 0], rot: [0, 0, 0] });
+      });
+    });
+    await idle();
+    // Rohr konzentrisch in eine Bohrung der Platte, dann Muster → Lochbild (vier gleiche Bohrungen)
+    const lb = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc();
+      const hole = a.assemblyFaces("beispiel_platte").find((f) => f.type === "CYLINDER" && Math.abs(f.radius - 5.5) < 1e-6);
+      const tube = a.assemblyFaces("beispiel_rohr").find((f) => f.type === "CYLINDER" && Math.abs(f.axisD[0]) > 0.99);
+      a.beginAlign("konzentrisch");
+      a.alignPick({ kind: "face", key: "comp:lr", info: tube });
+      a.alignPick({ kind: "face", key: "comp:lp", info: hole });
+      a.sel = { type: "component", id: "lr" };
+      a.tree.render(); a.props.render(); a.ribbon.render();
+      return asm.constraints.at(-1)?.type;
+    });
+    await idle();
+    await rbClick("Muster");
+    await idle();
+    const pat = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { kind: asm.patterns?.[0]?.kind, copies: asm.components.filter((c) => c.pat).length, err: a.asmErrors?.[asm.patterns?.[0]?.id] || null }; });
+    // Fügepunkte aus der Abhängigkeit merken (Kontextmenü im Baum), neues Rohr fügt sich an die freie Platte 2
+    await page.locator("#browser .node").filter({ has: page.locator(".label", { hasText: /^Rohr:1$/ }) }).first().click({ button: "right" });
+    await page.locator(".menu button", { hasText: "Fügepunkte aus Abhängigkeiten merken" }).click();
+    await idle();
+    const fp = await evalApp(() => { const a = window.__werkcad; return [a.doc("beispiel_platte").fuegepunkte?.length || 0, a.doc("beispiel_rohr").fuegepunkte?.length || 0]; });
+    await evalApp(() => { const a = window.__werkcad; a.beginPlacing("beispiel_rohr"); });
+    const R = await page.locator("canvas").first().boundingBox();
+    const sq = await evalApp(() => { const a = window.__werkcad; a.viewer.fit(); const b = a.viewer.componentBox("lq"); return a.viewer.worldToScreen(b[0].map((x, i) => (x + b[1][i]) / 2)); });
+    await page.waitForTimeout(300);
+    await page.mouse.click(R.x + sq[0], R.y + sq[1]);
+    await idle();
+    await page.keyboard.press("Escape");
+    const am = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), k = asm.constraints.at(-1); return { fp: k?.fp || null, a: k?.a.comp, n: asm.components.filter((c) => !c.pat).length }; });
+    // Unterbaugruppe aus Platte 2 und dem neuen Rohr bilden, dann wieder auflösen
+    const newR = await evalApp(() => window.__werkcad.activeDoc().components.filter((c) => !c.pat).at(-1).name);
+    await rbClick("Unterbaugruppe");
+    await page.locator(".dialog label.check", { hasText: "Platte:2" }).locator("input").check();
+    await page.locator(".dialog label.check", { hasText: newR }).locator("input").check();
+    await page.locator(".dialog .btn.primary", { hasText: "Bilden" }).click();
+    await idle();
+    const sub = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), sc = asm.components.find((c) => a.doc(c.part)?.kind === "assembly"); const s = sc && a.doc(sc.part); return { top: asm.components.filter((c) => !c.pat).length, inner: s?.components.length, innerCons: s?.constraints?.length || 0, name: sc?.name, id: sc?.id }; });
+    await page.locator("#browser .node").filter({ has: page.locator(".label", { hasText: sub.name }) }).first().click({ button: "right" });
+    await page.locator(".menu button", { hasText: "Unterbaugruppe auflösen" }).click();
+    await idle();
+    const dis = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { top: asm.components.filter((c) => !c.pat).length, subs: asm.components.filter((c) => a.doc(c.part)?.kind === "assembly").length, cons: asm.constraints.length }; });
+    // Spiegeln: Rohr wiederverwenden an der XZ-Ebene
+    await evalApp(() => { const a = window.__werkcad; a.sel = { type: "component", id: "lr" }; a.tree.render(); a.props.render(); a.ribbon.render(); });
+    await rbClick("Spiegeln");
+    const row = page.locator(".dialog label.check", { hasText: "Rohr:1" });
+    await row.locator("select").selectOption("wieder");
+    await page.locator(".dialog select").last().selectOption("XZ");
+    await page.locator(".dialog .btn.primary", { hasText: "Spiegeln" }).click();
+    await idle();
+    const mir = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), src = asm.components.find((c) => c.id === "lr"), m = asm.components.filter((c) => !c.pat).at(-1); return { part: m.part, y: m.pos[1], srcY: src.pos[1] }; });
+    await shot("bg-lochbild-fuegepunkte");
+    step("Baugruppe: Lochbild-Muster, Fügepunkte, Unterbaugruppe, Spiegeln", lb === "konzentrisch" && pat.kind === "lochbild" && pat.copies === 3 && !pat.err && fp[0] >= 1 && fp[1] >= 1
+      && am.fp && am.a === "lq" && sub.inner === 2 && sub.innerCons === 1 && dis.subs === 0 && dis.top === sub.top + 1 && mir.part === "beispiel_rohr",
+      JSON.stringify({ lb, pat, fp, am, sub, dis, mir }));
+  }
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }
