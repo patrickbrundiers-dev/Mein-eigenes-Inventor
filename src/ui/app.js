@@ -877,7 +877,7 @@ export class App {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => this.viewerHover(e));
     });
-    cv.addEventListener("pointerleave", () => this.viewer.clearHover());
+    cv.addEventListener("pointerleave", () => { this.viewer.clearHover(); this.tree.setHot(null); });
   }
   pickOptions() {
     const p = this.pick;
@@ -901,6 +901,8 @@ export class App {
       return;
     }
     const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
+    // Gegenstück im Modellbrowser mit hervorheben (Komponente bzw. Feature, das den Körper erzeugt hat)
+    this.tree.setHot(!hit ? null : hit.key?.startsWith("comp:") ? hit.key.slice(5) : hit.key === "part" ? this.results.get(this.activeId)?.bodies?.[hit.body]?.fid || null : null);
     if (!hit) return this.viewer.clearHover();
     if (this.mode === "assembly" && this.pick?.kind !== "align" && this.pick?.kind !== "measure") this.viewer.highlight([{ kind: "group", key: hit.key }]);
     else this.viewer.highlight([hit]);
