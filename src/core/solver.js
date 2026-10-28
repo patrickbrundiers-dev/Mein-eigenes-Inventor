@@ -280,8 +280,11 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
           break;
         }
         const a = P(c.p), b = P(c.q);
-        if (c.dir === "h") add(c.id, (x) => Math.abs(x[b] - x[a]) - v);
-        else if (c.dir === "v") add(c.id, (x) => Math.abs(x[b + 1] - x[a + 1]) - v);
+        // waagrecht/senkrecht: Vorzeichen der aktuellen Lage festhalten – der Betrag hätte bei gleicher Höhe keine
+        // Steigung (Löser käme nicht los) und könnte die Punkte durcheinander springen lassen
+        const side = (k) => (vars.x[b + k] - vars.x[a + k] < 0 ? -1 : 1);
+        if (c.dir === "h") { const s = side(0); add(c.id, (x) => s * (x[b] - x[a]) - v); }
+        else if (c.dir === "v") { const s = side(1); add(c.id, (x) => s * (x[b + 1] - x[a + 1]) - v); }
         else add(c.id, (x) => Math.hypot(x[b] - x[a], x[b + 1] - x[a + 1]) - v);
         break;
       }
@@ -322,6 +325,14 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
         });
         break;
       }
+      case "lineAngle": { // Richtung der Linie p1→p2 zur Skizzen-x-Achse in Grad (gegen Uhrzeigersinn), aus der Maßeingabe
+        const v = val(c) * DEG, [a, b] = lineIdx(E(c.e));
+        add(c.id, (x) => {
+          const dx = x[b] - x[a], dy = x[b + 1] - x[a + 1], d = Math.atan2(dy, dx) - v;
+          return Math.atan2(Math.sin(d), Math.cos(d)) * Math.hypot(dx, dy);
+        });
+        break;
+      }
       case "semiAxis": { // Halbachse einer Ellipse: axis "a" (c→a) oder "b" (Nebenhalbachse)
         const v = val(c), g = ellFn(E(c.e));
         add(c.id, (x) => (c.axis === "b" ? g(x).B : g(x).A) - v);
@@ -358,6 +369,122 @@ function jacobian(res, x) {
     for (let i = 0; i < m; i++) J[i][j] = (fp[i] - fm[i]) / (2 * h);
   }
   return { J, f0 };
+}
+
+/** Je Spalte der Jacobi-Matrix die Zeilen mit Eintrag ≠ 0 (jede Bedingung berührt nur wenige Variablen) */
+function sparseCols(J, n) {
+  const cols = Array.from({ length: n }, () => []);
+  for (let i = 0; i < J.length; i++) { const r = J[i]; for (let j = 0; j < n; j++) if (r[j] !== 0) cols[j].push(i); }
+  return cols;
+}
+
+/** A = J·Jᵀ über die dünn besetzten Spalten statt dicht (m²·n) */
+function gramSparse(J, cols, m) {
+  const A = Array.from({ length: m }, () => new Float64Array(m));
+  cols.forEach((c, j) => {
+    for (let a = 0; a < c.length; a++) {
+      const i = c[a], vi = J[i][j];
+      for (let b = a; b < c.length; b++) {
+        const k = c[b], v = vi * J[k][j];
+        A[i][k] += v;
+        if (k !== i) A[k][i] += v;
+      }
+    }
+  });
+  return A;
+}
+
+/**
+ * Rang und freie Variablen in einem Durchgang: reduzierte Stufenform von J. Eine Variable ist bestimmt, wenn ihre
+ * Spalte eine Pivotspalte ist und ihre Pivotzeile in keiner freien Spalte einen Eintrag hat (sonst bewegt sie sich
+ * mit einer freien Variable mit). Ersetzt matrixRank + freeVariables für das Lösen (gleiches Ergebnis, viel schneller).
+ */
+export function rankAndFree(J, n, tol = 1e-7) {
+  const m = J.length;
+  const M = J.map((r) => Float64Array.from(r));
+  for (const r of M) {
+    let s = 0;
+    for (const v of r) s = Math.max(s, Math.abs(v));
+    if (s > 0) for (let j = 0; j < n; j++) r[j] /= s;
+  }
+  const pivRow = new Int32Array(n).fill(-1);
+  const rowUsed = new Uint8Array(m);
+  let rank = 0;
+  for (let col = 0; col < n && rank < m; col++) {
+    let piv = -1, best = tol;
+    for (let i = 0; i < m; i++) if (!rowUsed[i] && Math.abs(M[i][col]) > best) { best = Math.abs(M[i][col]); piv = i; }
+    if (piv < 0) continue;
+    rowUsed[piv] = 1;
+    pivRow[col] = piv;
+    rank++;
+    const R = M[piv], pv = R[col];
+    for (let j = col; j < n; j++) R[j] /= pv;
+    for (let i = 0; i < m; i++) {
+      if (i === piv) continue;
+      const f = M[i][col];
+      if (f === 0) continue;
+      const Mi = M[i];
+      for (let j = col; j < n; j++) if (R[j] !== 0) Mi[j] -= f * R[j];
+      Mi[col] = 0;
+    }
+  }
+  const free = new Uint8Array(n);
+  const freeCols = [];
+  for (let j = 0; j < n; j++) if (pivRow[j] < 0) { free[j] = 1; freeCols.push(j); }
+  for (let j = 0; j < n; j++) {
+    if (free[j]) continue;
+    const R = M[pivRow[j]];
+    for (const f of freeCols) if (Math.abs(R[f]) > 1e-6) { free[j] = 1; break; }
+  }
+  // Nullraum (Bewegungen ohne Verletzung): Komponente von Variable j im Basisvektor der freien Spalte f
+  const motion = (j, f) => (j === f ? 1 : pivRow[j] >= 0 ? -M[pivRow[j]][f] : 0);
+  return { rank, free, freeCols, motion };
+}
+
+/**
+ * Richtungen, in die sich freie Punkte noch bewegen lassen (Inventor »Freiheitsgrade anzeigen«):
+ * Projektion des Nullraums auf (x, y) des Punkts → ein oder zwei Einheitsrichtungen.
+ */
+function pointDirections(vars, an) {
+  const dirs = new Map();
+  for (const [k, i] of vars.idx) {
+    if (!k.startsWith("p:") || !(an.free[i] || an.free[i + 1])) continue;
+    let sxx = 0, sxy = 0, syy = 0;
+    for (const f of an.freeCols) { const a = an.motion(i, f), b = an.motion(i + 1, f); sxx += a * a; sxy += a * b; syy += b * b; }
+    const tr = sxx + syy;
+    if (!(tr > 1e-12)) continue;
+    const det = sxx * syy - sxy * sxy, disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
+    const l1 = tr / 2 + disc, l2 = tr / 2 - disc;
+    if (l2 > 1e-6 * l1) { dirs.set(k.slice(2), [[1, 0], [0, 1]]); continue; }
+    // Eigenvektor zum großen Eigenwert
+    let vx = sxy, vy = l1 - sxx;
+    if (Math.hypot(vx, vy) < 1e-12) { vx = l1 - syy; vy = sxy; }
+    const L = Math.hypot(vx, vy) || 1;
+    dirs.set(k.slice(2), [[vx / L, vy / L]]);
+  }
+  return dirs;
+}
+
+/**
+ * Welche vorhandenen Bedingungen legen das schon fest, was die neue Bedingung bestimmen will?
+ * Eine Bedingung gehört dazu, wenn die neue ohne sie einen Freiheitsgrad wegnehmen würde. → Bedingungs-IDs
+ */
+export function explainDependency(sketch, constraint, scope = {}) {
+  let after;
+  try { after = buildResiduals(sketch, scope, [constraint]); } catch { return []; }
+  const x = Float64Array.from(after.vars.x);
+  const { J } = jacobian(after.res, x);
+  const cids = after.res.map((r) => r.cid);
+  const ids = [...new Set(cids)].filter((id) => id !== constraint.id && !String(id).startsWith("arc:"));
+  if (ids.length > 400) return [];
+  const isNew = cids.map((c) => c === constraint.id);
+  const out = [];
+  for (const id of ids) {
+    const without = J.filter((_, i) => cids[i] !== id && !isNew[i]);
+    const withNew = J.filter((_, i) => cids[i] !== id);
+    if (matrixRank(withNew) > matrixRank(without)) out.push(id);
+  }
+  return out;
 }
 
 /** löst A y = b (A symmetrisch positiv definit) per Cholesky; fällt auf Gauss zurück */
@@ -494,17 +621,8 @@ export function solveSketch(sketch, scope = {}, opts = {}) {
   const maxIt = opts.maxIterations || 80;
   for (; it < maxIt && fn > 1e-10; it++) {
     const { J } = jacobian(res, x);
-    // A = J J^T
-    const A = Array.from({ length: m }, () => new Float64Array(m));
-    for (let i = 0; i < m; i++) {
-      for (let k = i; k < m; k++) {
-        let s = 0;
-        const Ji = J[i], Jk = J[k];
-        for (let j = 0; j < x.length; j++) s += Ji[j] * Jk[j];
-        A[i][k] = s;
-        A[k][i] = s;
-      }
-    }
+    const cols = sparseCols(J, x.length);
+    const A = gramSparse(J, cols, m);
     let improved = false;
     for (let tries = 0; tries < 12; tries++) {
       const Al = A.map((r, i) => { const c = Float64Array.from(r); c[i] += lambda * (1 + r[i]); return c; });
@@ -512,7 +630,7 @@ export function solveSketch(sketch, scope = {}, opts = {}) {
       const xn = Float64Array.from(x);
       for (let j = 0; j < x.length; j++) {
         let s = 0;
-        for (let i = 0; i < m; i++) s += J[i][j] * y[i];
+        for (const i of cols[j]) s += J[i][j] * y[i];
         xn[j] -= s;
       }
       const fnew = res.map((r) => r.f(xn));
@@ -538,8 +656,10 @@ export function solveSketch(sketch, scope = {}, opts = {}) {
   if (opts.computeDof !== false) {
     const real = res.filter((r) => !String(r.cid).startsWith("drag"));
     const { J } = jacobian(real, x);
-    dof = x.length - matrixRank(J);
-    if (opts.free) free = freeOf(vars, freeVariables(J, x.length));
+    const an = rankAndFree(J, x.length);
+    dof = x.length - an.rank;
+    if (opts.free) free = freeOf(vars, an.free);
+    if (opts.free && opts.directions) free.dirs = pointDirections(vars, an);
   }
   return { ok, residual: fn, iterations: it, dof, failed, free };
 }
@@ -591,6 +711,7 @@ export function measureConstraint(sketch, c) {
     }
     case "semiAxis": { const e = ents.get(c.e); return c.axis === "b" ? Math.abs(e.r) : Math.hypot(P(e.a).x - P(e.c).x, P(e.a).y - P(e.c).y); }
     case "axisAngle": { const e = ents.get(c.e); return (Math.atan2(P(e.a).y - P(e.c).y, P(e.a).x - P(e.c).x) * 180) / Math.PI; }
+    case "lineAngle": { const e = ents.get(c.e), d = (Math.atan2(P(e.p2).y - P(e.p1).y, P(e.p2).x - P(e.p1).x) * 180) / Math.PI; return d < -1e-9 ? d + 360 : Math.max(0, d); }
     case "radius": return rad(ents.get(c.e));
     case "diameter": return 2 * rad(ents.get(c.e));
     case "angle": {
@@ -603,4 +724,4 @@ export function measureConstraint(sketch, c) {
   return NaN;
 }
 
-export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset", "semiAxis", "axisAngle"]);
+export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset", "semiAxis", "axisAngle", "lineAngle"]);

@@ -1164,7 +1164,8 @@ export function createKernel(R) {
               if (!(L > 1e-6)) continue;
               const fr = memberFrame(m.a, v3.sub(m.b, m.a), m.rot || 0, m.up);
               const cuts = m.cuts || { start: [], end: [] };
-              let { solid } = memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts, cut);
+              // plain: ebener Sägeschnitt ohne Laser-Endbearbeitung (Fachwerk-Füllstäbe an Gurtflächen)
+              let { solid } = m.plain ? makeMember({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts) : memberWithEnds({ kind: m.section.kind, dims: m.section.dims }, L, fr, cuts, cut);
               // Hüllkörper anderer Stäbe abziehen (Gestell: Nuten, Stutzen an Rundrohr)
               for (const c of m.copes || []) {
                 const cl = v3.dist(c.a, c.b);
