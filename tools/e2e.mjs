@@ -2979,7 +2979,7 @@ try {
     await clickAt([50 + 15 * Math.SQRT1_2, 30 - 15 * Math.SQRT1_2, 35]);
     await idle();
     const a1 = await last();
-    // Punkt: gerade Kante anklicken → Kantenmitte
+    // Punkt: gerade Kante anklicken → Kantenmitte (auch abseits der Mitte wählbar)
     await rbClick("Arbeitspunkt");
     await clickAt([70, 0, 20]);
     await idle();

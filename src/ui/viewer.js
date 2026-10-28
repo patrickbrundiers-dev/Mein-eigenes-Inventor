@@ -1210,7 +1210,7 @@ export class Viewer {
           }
           for (let k = s; k < s + c - 1; k += 2) {
             const d = segDist(x, y, scr[k * 2], scr[k * 2 + 1], scr[(k + 1) * 2], scr[(k + 1) * 2 + 1]);
-            if (d < bd) { bd = d; best = { pk, ei }; }
+            if (d < bd) { bd = d; best = { pk, ei, k, scr }; }
           }
         }
       }
@@ -1232,7 +1232,11 @@ export class Viewer {
         const info = best.pk.lines.userData.edges[best.ei];
         let visible = true;
         if (faceHit && info.mid) {
-          const mid = new THREE.Vector3(...info.mid).applyMatrix4(best.pk.lines.matrixWorld);
+          // Verdeckung am getroffenen Segment prüfen (nicht an der Kantenmitte: lange Kanten laufen schräg in die Tiefe)
+          const pa = best.pk.lines.geometry.attributes.position.array, k = best.k, sc = best.scr;
+          const ex = sc[k * 2 + 2] - sc[k * 2], ey = sc[k * 2 + 3] - sc[k * 2 + 1], l2 = ex * ex + ey * ey;
+          const t = l2 > 0 ? Math.min(1, Math.max(0, ((x - sc[k * 2]) * ex + (y - sc[k * 2 + 1]) * ey) / l2)) : 0.5;
+          const mid = new THREE.Vector3(pa[k * 3] + (pa[k * 3 + 3] - pa[k * 3]) * t, pa[k * 3 + 1] + (pa[k * 3 + 4] - pa[k * 3 + 1]) * t, pa[k * 3 + 2] + (pa[k * 3 + 5] - pa[k * 3 + 2]) * t).applyMatrix4(best.pk.lines.matrixWorld);
           const camDir = new THREE.Vector3();
           this.camera.getWorldDirection(camDir);
           const dMid = mid.clone().sub(this.camera.position).dot(camDir);
