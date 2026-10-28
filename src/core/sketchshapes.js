@@ -400,12 +400,12 @@ function segSeg(a, b, c, d) {
 const NAMES = {
   horizontal: "Horizontal", vertical: "Vertikal", coincident: "Koinzident", fix: "Fixiert", pointOnLine: "Punkt auf Linie", pointOnCircle: "Punkt auf Kreis",
   midpoint: "Mittelpunkt", parallel: "Parallel", perpendicular: "Senkrecht", collinear: "Kollinear", equal: "Gleich", concentric: "Konzentrisch",
-  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", offset: "Versatz", pattern: "Muster", semiAxis: "Halbachse", axisAngle: "Achswinkel", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
+  tangent: "Tangential", tangentAt: "Tangential", symmetric: "Symmetrisch", distance: "Abstand", offset: "Versatz", pattern: "Muster", semiAxis: "Halbachse", axisAngle: "Achswinkel", lineAngle: "Winkel zur x-Achse", length: "Länge", radius: "Radius", diameter: "Durchmesser", angle: "Winkel",
 };
 /** Klartext einer Bedingung, z. B. »Abstand 120« oder »Parallel« */
 export function constraintLabel(c) {
   const n = NAMES[c.type] || c.type;
-  if (c.value !== undefined && c.value !== null && c.value !== "") return `${n} ${c.value}${c.type === "angle" ? "°" : ""}`;
+  if (c.value !== undefined && c.value !== null && c.value !== "") return `${n} ${c.value}${["angle", "axisAngle", "lineAngle"].includes(c.type) ? "°" : ""}`;
   return n;
 }
 
@@ -473,7 +473,7 @@ export function transformEntities(sk, entityIds, op, { uid }) {
   const inSel = (c) => [c.p, c.q].filter(Boolean).every((x) => moved.has(x)) && [c.e, c.e1, c.e2].filter(Boolean).every((x) => ids.has(x));
   sk.constraints = sk.constraints.filter((c) => {
     if (c.type === "fix" && moved.has(c.p)) { const p = P.get(c.p); c.x = p.x; c.y = p.y; }
-    if (op.kind === "rotate" && (c.type === "horizontal" || c.type === "vertical" || c.type === "axisAngle") && inSel(c)) return false;
+    if (op.kind === "rotate" && (c.type === "horizontal" || c.type === "vertical" || c.type === "axisAngle" || c.type === "lineAngle") && inSel(c)) return false;
     if (op.kind === "rotate" && c.type === "distance" && c.dir && inSel(c)) delete c.dir;
     if (k !== 1 && ["distance", "length", "diameter", "radius", "semiAxis", "offset"].includes(c.type) && inSel(c) && /^\s*\d+([.,]\d+)?\s*$/.test(String(c.value))) {
       c.value = String(Math.round(Number(String(c.value).replace(",", ".")) * k * 1e6) / 1e6);

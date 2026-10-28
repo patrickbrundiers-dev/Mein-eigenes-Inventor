@@ -5,7 +5,8 @@
 import { checkNewConstraint, measureConstraint, solveSketch } from "./solver.js";
 
 const round = (v) => String(Math.round(v * 100) / 100);
-const DIMS = new Set(["radius", "diameter", "length", "angle", "semiAxis", "axisAngle", "distance"]);
+const DIMS = new Set(["radius", "diameter", "length", "angle", "semiAxis", "axisAngle", "lineAngle", "distance"]);
+const ANGLES = new Set(["angle", "axisAngle", "lineAngle"]);
 
 /**
  * sketch wird nicht verändert. opts: {ref: Punkt-ID des Bezugs, kinds: {radius, length, angle, position}, uid}
@@ -30,7 +31,7 @@ export function autoDimension(sketch, scope = {}, opts = {}) {
     if (!(dof > 0)) return false;
     c.id = uid("m");
     try { c.value = round(measureConstraint(work, c)); } catch { return false; }
-    if (!Number.isFinite(Number(c.value)) || (c.type !== "angle" && c.type !== "axisAngle" && Number(c.value) <= 0)) return false;
+    if (!Number.isFinite(Number(c.value)) || (!ANGLES.has(c.type) && Number(c.value) <= 0)) return false;
     let res;
     try { res = checkNewConstraint(work, c, scope); } catch { return false; }
     if (res !== "ok") return false;
@@ -69,6 +70,11 @@ export function autoDimension(sketch, scope = {}, opts = {}) {
       tryAdd({ type: "angle", e1: a.id, e2: b.id, labelOffset: gap * 1.5 });
     }
     for (const e of ents) if (e.type === "ellipse" && !has((c) => c.e === e.id && c.type === "axisAngle")) tryAdd({ type: "axisAngle", e: e.id });
+    // einzelne schräge Linien ohne Nachbarlinie: Winkel zur x-Achse
+    for (const a of lines) {
+      if (lines.some((b) => b !== a && [a.p1, a.p2].some((p) => p === b.p1 || p === b.p2)) || has((c) => c.e === a.id && c.type === "lineAngle")) continue;
+      tryAdd({ type: "lineAngle", e: a.id, labelOffset: gap * 1.5 });
+    }
   }
   if (kinds.position) {
     const ref = P.get(opts.ref) || P.get("O") || work.points[0];

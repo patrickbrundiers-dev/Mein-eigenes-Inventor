@@ -325,6 +325,14 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
         });
         break;
       }
+      case "lineAngle": { // Richtung der Linie p1→p2 zur Skizzen-x-Achse in Grad (gegen Uhrzeigersinn), aus der Maßeingabe
+        const v = val(c) * DEG, [a, b] = lineIdx(E(c.e));
+        add(c.id, (x) => {
+          const dx = x[b] - x[a], dy = x[b + 1] - x[a + 1], d = Math.atan2(dy, dx) - v;
+          return Math.atan2(Math.sin(d), Math.cos(d)) * Math.hypot(dx, dy);
+        });
+        break;
+      }
       case "semiAxis": { // Halbachse einer Ellipse: axis "a" (c→a) oder "b" (Nebenhalbachse)
         const v = val(c), g = ellFn(E(c.e));
         add(c.id, (x) => (c.axis === "b" ? g(x).B : g(x).A) - v);
@@ -654,6 +662,7 @@ export function measureConstraint(sketch, c) {
     }
     case "semiAxis": { const e = ents.get(c.e); return c.axis === "b" ? Math.abs(e.r) : Math.hypot(P(e.a).x - P(e.c).x, P(e.a).y - P(e.c).y); }
     case "axisAngle": { const e = ents.get(c.e); return (Math.atan2(P(e.a).y - P(e.c).y, P(e.a).x - P(e.c).x) * 180) / Math.PI; }
+    case "lineAngle": { const e = ents.get(c.e), d = (Math.atan2(P(e.p2).y - P(e.p1).y, P(e.p2).x - P(e.p1).x) * 180) / Math.PI; return d < -1e-9 ? d + 360 : Math.max(0, d); }
     case "radius": return rad(ents.get(c.e));
     case "diameter": return 2 * rad(ents.get(c.e));
     case "angle": {
@@ -666,4 +675,4 @@ export function measureConstraint(sketch, c) {
   return NaN;
 }
 
-export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset", "semiAxis", "axisAngle"]);
+export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset", "semiAxis", "axisAngle", "lineAngle"]);
