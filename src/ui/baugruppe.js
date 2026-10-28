@@ -13,6 +13,8 @@ import { solveAssembly, endFaceFor, worldToLocal } from "../core/asmsolve.js";
 import { flattenAssembly, canInsert } from "../core/subasm.js";
 import { placementMatrix, rotationAbout, matApply, matApplyDir, v3 } from "../core/geom.js";
 import { classifyHit, buildConstraint, placeState } from "./abhaengigkeit.js";
+import { listLibrary, insertFromLibrary } from "./teilebibliothek.js";
+import { filterEntries } from "../core/teilebibliothek.js";
 
 const asmOf = (app) => (app.mode === "assembly" && app.activeDoc()?.kind === "assembly" ? app.activeDoc() : null);
 const compOf = (asm, id) => asm?.components?.find((c) => c.id === id);
@@ -42,19 +44,24 @@ export function placeDialog(app) {
   const asm = asmOf(app);
   if (!asm) return;
   const docs = insertableDocs(app, asm);
-  if (!docs.length) return toast("Im Projekt gibt es noch kein Bauteil");
   const search = h("input", { class: "inp", placeholder: "Suchen …", spellcheck: "false" });
   const list = h("div", { class: "place-list" });
-  let close = null;
+  let close = null, lib = [];
   const go = (id) => { close?.(); beginPlacing(app, id); };
+  // BG10: Projekt und eigene Teilebibliothek in einer Liste
   const fill = () => {
     const q = search.value.trim().toLowerCase();
+    const libHits = filterEntries(lib, q);
     list.replaceChildren(...docs.filter((d) => !q || `${d.name} ${d.number || ""}`.toLowerCase().includes(q)).map((d) =>
       h("button", { class: "place-item", "data-doc": d.id, onclick: () => go(d.id) },
-        h("b", {}, d.name), d.kind === "assembly" ? h("span", { class: "hint" }, " Baugruppe") : null, d.number ? h("span", { class: "hint" }, " " + d.number) : null)));
+        h("b", {}, d.name), d.kind === "assembly" ? h("span", { class: "hint" }, " Baugruppe") : null, d.number ? h("span", { class: "hint" }, " " + d.number) : null)),
+      ...(libHits.length ? [h("div", { class: "hint place-head" }, "Aus der Teilebibliothek")] : []),
+      ...libHits.map((e) => h("button", { class: "place-item", "data-lib": e.id, onclick: () => { close?.(); insertFromLibrary(app, e); } },
+        h("b", {}, e.name), e.category ? h("span", { class: "hint" }, " " + e.category) : null)));
   };
+  listLibrary().then((l) => { lib = l; fill(); }).catch(() => {});
   search.addEventListener("input", fill);
-  search.addEventListener("keydown", (e) => { if (e.key === "Enter") { const first = list.querySelector("button"); if (first) go(first.dataset.doc); } });
+  search.addEventListener("keydown", (e) => { if (e.key === "Enter") list.querySelector("button")?.click(); });
   fill();
   const dlg = modal({
     title: "Komponente platzieren", width: "420px",
