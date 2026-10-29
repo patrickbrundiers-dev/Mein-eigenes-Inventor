@@ -13,12 +13,14 @@ import { fieldError } from "./generror.js";
 import { sectionGeometry } from "./sections.js";
 import { NORM_THREADS } from "./normteile.js";
 import { railAlong } from "./treppengelaender.js";
+import { windingPlan } from "./verzogen.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { holderSchema } from "./handlaufhalter.js";
 import { mountSchema, mountConfig, topMount, sideMount, sideOffset, findSideFace, planeFace, findMemberFace, findPlateFace, faceCoords, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
 const podest = (p) => p.form === "L" || p.form === "U";
+const wendel = (p) => p.form === "Lw" || p.form === "Uw"; // gewendelt mit verzogenen Stufen (verzogen.js)
 const gel = (p) => p.gel !== "keine";
 const gk = (k) => "gel" + k[0].toUpperCase() + k.slice(1);
 const gelMount = (p) => (gel(p) && (p.gelMount === "oben" || p.gelMount === "seitlich") ? p.gelMount : null);
@@ -27,22 +29,23 @@ const gelThrough = (p) => gel(p) && p.gelFill !== "keine" && p.gelBeltMode !== "
 export const TREPPE = {
   label: "Treppe",
   schema: [
-    { key: "form", label: "Form", type: "select", options: [["gerade", "geradläufig"], ["L", "L-Form (viertelgewendelt mit Podest)"], ["U", "U-Form (halbgewendelt mit Podest)"]], default: "gerade", tiles: "top", group: "Lauf" },
+    { key: "form", label: "Form", type: "select", options: [["gerade", "geradläufig"], ["L", "L-Form mit Podest"], ["U", "U-Form mit Podest"], ["Lw", "viertelgewendelt (verzogene Stufen)"], ["Uw", "halbgewendelt (verzogene Stufen)"]], default: "gerade", tiles: "top", group: "Lauf" },
     { key: "height", label: "Geschosshöhe (Steigungshöhe gesamt)", type: "num", default: "2800", group: "Lauf" },
     { key: "steps", label: "Steigungen (0 = automatisch)", type: "num", unit: "Stk", default: "0", group: "Lauf" },
     { key: "going", label: "Auftritt a (0 = aus 2s + a = 630)", type: "num", default: "0", group: "Lauf" },
     { key: "nosing", label: "Unterschneidung", type: "num", default: "20", group: "Lauf" },
     { key: "width", label: "Laufbreite (lichte)", type: "num", default: "1000", group: "Lauf" },
-    { key: "support", label: "Tragwerk", type: "select", options: [["flach", "Wangen Flachstahl"], ["upn", "Wangen aus Profil (UPN, U …)"], ["holm2", "Zwei Holme"], ["holm1", "Mittelholm"]], default: "flach", tiles: "side", group: "Tragwerk" },
+    { key: "verzug", label: "Verzogene Stufen vor und nach der Wendung", type: "num", unit: "Stk", default: "3", group: "Lauf", when: wendel },
+    { key: "support", label: "Tragwerk", type: "select", options: [["flach", "Wangen Flachstahl"], ["upn", "Wangen aus Profil (UPN, U …)"], ["holm2", "Zwei Holme"], ["holm1", "Mittelholm"]], default: "flach", tiles: "side", group: "Tragwerk", when: (p) => !wendel(p) },
     { key: "wangeH", label: "Wangenhöhe", type: "num", default: "250", group: "Tragwerk", when: (p) => p.support === "flach" },
     { key: "wangeT", label: "Wangendicke", type: "num", default: "12", group: "Tragwerk", when: (p) => p.support === "flach" },
     { key: "upn", label: "Wangenprofil", type: "section", default: { kind: "upn", size: "200" }, group: "Tragwerk", when: (p) => p.support === "upn" },
     { key: "holm", label: "Holmprofil", type: "section", default: { kind: "rechteck", size: "160x80x5" }, group: "Tragwerk", when: (p) => p.support === "holm2" || p.support === "holm1" },
     { key: "holmInset", label: "Holm vom Stufenrand", type: "num", default: "150", group: "Tragwerk", when: (p) => p.support === "holm2" },
-    { key: "turn", label: "Richtung am Podest", type: "select", options: [["links", "nach links"], ["rechts", "nach rechts"]], default: "links", group: "Podest", when: podest },
-    { key: "n1", label: "Steigungen bis Podest (0 = Hälfte)", type: "num", unit: "Stk", default: "0", group: "Podest", when: podest },
+    { key: "turn", label: "Richtung am Podest bzw. der Wendung", type: "select", options: [["links", "nach links"], ["rechts", "nach rechts"]], default: "links", group: "Podest", when: (p) => podest(p) || wendel(p) },
+    { key: "n1", label: "Steigungen bis Podest bzw. Mitte der Wendung (0 = Hälfte)", type: "num", unit: "Stk", default: "0", group: "Podest", when: (p) => podest(p) || wendel(p) },
     { key: "podestD", label: "Podesttiefe (0 = Laufbreite)", type: "num", default: "0", group: "Podest", when: (p) => p.form === "U" },
-    { key: "gap", label: "Abstand der Läufe (Treppenauge)", type: "num", default: "100", group: "Podest", when: (p) => p.form === "U" },
+    { key: "gap", label: "Abstand der Läufe (Treppenauge)", type: "num", default: "100", group: "Podest", when: (p) => p.form === "U" || p.form === "Uw" },
     { key: "podestRahmen", label: "Podestrahmen", type: "section", default: { kind: "rechteck", size: "100x50x4" }, group: "Podest", when: podest },
     { key: "stuetzen", label: "Podeststützen", type: "select", options: [["aussen", "2 außen"], ["alle", "4 (alle Ecken)"], ["keine", "keine (an der Wand)"]], default: "aussen", group: "Podest", when: podest },
     { key: "anschluss", label: "Anschlüsse", type: "select", options: [["platten", "Fußwinkel bzw. Bodenplatten, Kopfplatten an der Decke, Stufenkonsolen auf Holmen"], ["keine", "ohne (bisher)"]], default: "platten", missing: "keine", group: "Tragwerk" },
@@ -93,6 +96,7 @@ export const TREPPE = {
     if (s > 200 + 1e-6) issues.push({ key: "steps", level: "Warnung", message: `Steigung ${fmt(s)} mm über 200 mm` });
     if (a < 230 - 1e-6) issues.push({ key: "going", level: "Warnung", message: `Auftritt ${fmt(a)} mm unter 230 mm` });
     if (a < 260 - 1e-6 && u < 30 - 1e-6) issues.push({ key: "nosing", level: "Hinweis", message: "Auftritt unter 260 mm: Unterschneidung ≥ 30 mm vorsehen" });
+    if (wendel(p)) return windingPlan(p, { n, s, a, issues });
     const tanA = s / a, alpha = Math.atan(tanA), cosA = Math.cos(alpha), sinA = Math.sin(alpha);
     const AN = p.anschluss === "platten";
     const FT = AN ? 15 : 0, KT = AN && !(p.support === "flach" || p.support === "upn") ? 8 : 0; // Fuß-/Kopfplatten an Boden und Decke, Konsolbleche unter aufgesattelten Stufen
@@ -313,6 +317,17 @@ export const TREPPE = {
     return out;
   },
 };
+
+// gewendelte Treppe: nur Flachstahlwangen, Geländerpfosten neben der Wange ohne Befestigung, Knieleisten zwischen den Pfosten
+{
+  const hide = new Set(["upn", "holm", "holmInset", "anschluss", "stepFix", "gelMount", "gelRhythm", "gelBeltMode", "gelBeltMax", "gelAllow", "gelStab", "gelPodest"]);
+  for (const f of TREPPE.schema) {
+    const w = f.when;
+    if (f.key === "wangeH" || f.key === "wangeT" || f.key === "gelDown") f.when = (p) => (wendel(p) ? f.key !== "gelDown" || gel(p) : !w || w(p));
+    else if (f.key === "gelBar") f.when = (p) => (wendel(p) ? gel(p) && p.gelFill !== "keine" : !w || w(p));
+    else if (hide.has(f.key) || f.group === "Pfostenbefestigung") f.when = (p) => !wendel(p) && (!w || w(p));
+  }
+}
 
 /**
  * Geländerzüge der Treppe. Gerechnet wird in der Lage »Podest nach links« (rechts = außen); bei »nach rechts« wird an

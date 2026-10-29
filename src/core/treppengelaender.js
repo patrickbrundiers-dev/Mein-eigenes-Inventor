@@ -140,7 +140,8 @@ export function railAlong(path, o, label) {
         const m = Math.max(1, Math.round(o.bars));
         for (let j = 1; j <= m; j++) {
           const h = (top * j) / (m + 1), a = at(s0, h), b = at(s1, h);
-          members.push({ section: o.bar, a, b, name: `${label} Knieleiste ${n}.${j}`, cuts: { start: [{ p: a, n: back }], end: [{ p: b, n: out }] } });
+          // steiler als der Kopfschwenk des Lasers (gewendelte Treppe innen): gesägt, ebener Schnitt
+          members.push({ section: o.bar, a, b, name: `${label} Knieleiste ${n}.${j}`, cuts: { start: [{ p: a, n: back }], end: [{ p: b, n: out }] }, ...(Math.abs(sg.slope) > Math.tan(40 * Math.PI / 180) ? { plain: true } : {}) });
         }
         bars += m;
         gapMax = Math.max(gapMax, top / (m + 1));

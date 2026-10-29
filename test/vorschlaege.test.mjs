@@ -79,3 +79,28 @@ test("N3: alte Dateien ohne glassMount bleiben bei der Lasche", () => {
   const p = GENERATORS.gelaender.plan(resolveGenParams("gelaender", { ...f.params, fill: "glas" }, E));
   assert.ok(p.members.some((m) => / Halter /.test(m.name)));
 });
+
+test("N1: viertelgewendelt – gleicher Auftritt auf der Lauflinie, innen ≥ 50 mm, außen ohne Kreuzung", async () => {
+  const { windingLayout, windingEdges } = await import("../src/core/verzogen.js");
+  const n = 16, a = 280, B = 1000;
+  const lay = windingLayout({ form: "Lw", B, Lw: (n - 1) * a, sMid: 7.5 * a, gap: 0 });
+  const ed = windingEdges(lay, n, a, 3);
+  for (let k = 1; k < n; k++) assert.ok(Math.abs(Math.hypot(ed.W[k][0] - ed.W[k - 1][0], ed.W[k][1] - ed.W[k - 1][1]) - a) < 10, "Sehne ≈ a");
+  for (let k = 1; k < n; k++) { assert.ok(ed.ti[k] - ed.ti[k - 1] >= 50); assert.ok(ed.to[k] > ed.to[k - 1]); }
+  assert.equal(ed.verzogen, 8);
+  // gerade Stufen außerhalb der Wendung: rechtwinklig (gleicher Parameter innen und außen)
+  assert.ok(Math.abs(ed.ti[1] - ed.to[1]) < 1e-6);
+});
+
+test("N1: Treppe halbgewendelt nach rechts – Stufen, Wangen, Geländer, gespiegelt", () => {
+  const p = plan("treppe", { form: "Uw", gap: "200", turn: "rechts" });
+  const st = p.plates.filter((x) => /^Stufe/.test(x.name));
+  assert.equal(st.length, 15);
+  assert.ok(st.every((x) => x.poly.length >= 4));
+  assert.ok(p.plates.some((x) => /^Wange innen/.test(x.name)) && p.plates.some((x) => /^Wange außen/.test(x.name)));
+  assert.ok(st.every((x) => x.poly.every(([, y]) => y <= 1e-6)), "nach rechts: alles bei y ≤ 0");
+  assert.ok(/halbgewendelt nach rechts/.test(p.info));
+  assert.throws(() => plan("treppe", { form: "Uw", gap: "20" }), /Treppenauge/);
+  const vis = GENERATORS.treppe.schema.filter((s) => !s.when || s.when({ ...defaultGenerator("treppe").params, form: "Lw" })).map((s) => s.key);
+  assert.ok(vis.includes("verzug") && vis.includes("wangeH") && !vis.includes("support") && !vis.includes("gelMount"));
+});

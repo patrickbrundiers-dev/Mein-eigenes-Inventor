@@ -54,6 +54,8 @@ export const CASES = [
   ["treppe-holm1", "treppe", { support: "holm1", gel: "keine" }],
   ["treppe-L", "treppe", { form: "L" }],
   ["treppe-U", "treppe", { form: "U", gap: "200" }],
+  ["treppe-viertelgewendelt", "treppe", { form: "Lw" }],
+  ["treppe-halbgewendelt-rechts", "treppe", { form: "Uw", gap: "200", turn: "rechts" }],
   ["treppe-U-boegen", "treppe", { form: "U", gap: "200", gelRailBend: "bogen" }],
   ["treppe-gerade-boegen-staketen", "treppe", { gelFill: "staketen", gelRailBend: "bogen" }],
   ["spindel", "spindel", {}],
