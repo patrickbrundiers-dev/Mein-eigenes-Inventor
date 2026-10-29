@@ -1487,7 +1487,7 @@ try {
     const prj0 = await evalApp(() => JSON.stringify(window.__werkcad.project));
     await page.locator("#ribbon .rb-file").click();
     await page.locator(".file-menu button", { hasText: "Einstellungen" }).click();
-    await page.locator(".set-search input").fill("fang");
+    await page.locator(".set-search input").fill("skizze fang"); // »fang« allein trifft auch den Fangradius beim Messen
     const fang = page.locator('.set-row[data-key="skizze.fangradius"] input');
     await fang.waitFor({ state: "visible" });
     const rows = await page.locator(".set-row").count(); // Rasterfang, Fangradius, Ausrichtungslinien (»fängt«)
@@ -1677,6 +1677,44 @@ try {
       && vx.types.join() === "POINT,POINT" && Math.abs(vx.d - ends.L) < 0.05 && /X-Abstand/.test(vx.text) && / in\)/.test(inch)
       && /Gesamtlänge \(2 Kanten\)|Gesamtfläche/.test(sum.text) && !sum.label,
       JSON.stringify({ one: { type: one.type, area: one.area }, two: { type: it.type, r: it.radius, d: two.r.distance, label: two.label }, off, vx: { types: vx.types, d: vx.d, L: ends.L }, inch, sum }));
+  }
+
+  // Messen mit Fangpunkten: Kreismitten zweier Bohrungen (Vollkreise) fangen (Symbol + Hinweis), Mittenabstand exakt; Filter »Punkte« fängt Quadranten
+  {
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("top", { animate: false }); v.fit(); });
+    await page.keyboard.press("m");
+    const centers = await evalApp(() => {
+      const v = window.__werkcad.viewer;
+      const r = v.container.getBoundingClientRect();
+      const out = [];
+      for (const pk of v.pickables) for (const e of pk.lines.userData.edges) if (e.type === "CIRCLE" && e.center && e.center[2] > 11 && Math.hypot(...[0, 1, 2].map((k) => e.positions[k] - e.positions[e.positions.length - 3 + k])) < 1e-6 && !out.some((o) => Math.hypot(o.c[0] - e.center[0], o.c[1] - e.center[1]) < 1e-6)) {
+        const [x, y] = v.worldToScreen(e.center); out.push({ c: e.center, s: [r.left + x, r.top + y], r: e.radius });
+      }
+      return out.slice(0, 2);
+    });
+    await page.mouse.move(centers[0].s[0] + 3, centers[0].s[1] + 2);
+    await page.waitForTimeout(300);
+    const hover = await evalApp(() => ({ tip: document.querySelector("#viewer .pick-tip")?.textContent || "", glyph: window.__werkcad.viewer.hoverGroup.children.some((o) => o.isPoints) }));
+    await shot("24b-messen-fangpunkt-hover");
+    await page.mouse.click(centers[0].s[0] + 3, centers[0].s[1] + 2);
+    await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 1 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
+    await page.mouse.click(centers[1].s[0] - 2, centers[1].s[1] + 3);
+    await page.waitForFunction(() => window.__werkcad.measure?.result?.items.length === 2 && !window.__werkcad.measure.busy, null, { timeout: 20000 });
+    await shot("24c-messen-kreismitten");
+    const cc = await evalApp(() => { const r = window.__werkcad.measure.result; return { labels: r.items.map((i) => i.label), d: r.distance, text: document.querySelector("#props").textContent }; });
+    const want = Math.hypot(centers[0].c[0] - centers[1].c[0], centers[0].c[1] - centers[1].c[1]);
+    // Filter »Punkte«: Quadrant der Bohrung
+    await page.locator("#props .seg button", { hasText: "Punkte" }).click();
+    const q = [centers[0].s[0], centers[0].s[1]];
+    const qs = await evalApp((c) => { const v = window.__werkcad.viewer, r = v.container.getBoundingClientRect(); const [x, y] = v.worldToScreen([c.c[0] + c.r, c.c[1], c.c[2]]); return [r.left + x, r.top + y]; }, centers[0]);
+    await page.mouse.move(qs[0] + 2, qs[1] + 1);
+    await page.waitForTimeout(300);
+    const qtip = await evalApp(() => document.querySelector("#viewer .pick-tip")?.textContent || "");
+    await shot("24d-messen-quadrant");
+    await page.locator("#props .seg button", { hasText: "Alle" }).click();
+    await page.keyboard.press("Escape");
+    step("Messen mit Fangpunkten", hover.tip === "Kreismitte" && hover.glyph && cc.labels.join() === "Kreismitte,Kreismitte" && Math.abs(cc.d - want) < 1e-6 && /Kreismitte/.test(cc.text) && qtip === "Quadrant",
+      JSON.stringify({ hover, cc: { labels: cc.labels, d: cc.d, want }, qtip, q }));
   }
 
   // Auswahlfilter und Körper ausblenden/isolieren (Rahmen hat mehrere Körper)

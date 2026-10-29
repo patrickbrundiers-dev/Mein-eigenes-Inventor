@@ -19,7 +19,7 @@ export function axisOf(it) {
   if (!it) return null;
   if (it.kind === "face" && it.axisD && it.axisP) return { p: it.axisP, d: norm(it.axisD) };
   if (it.kind === "edge" && it.type === "CIRCLE" && it.center && it.axisD) return { p: it.center, d: norm(it.axisD) };
-  if (it.kind === "edge" && it.type === "LINE" && it.start && it.dir) return { p: it.start, d: norm(it.dir) };
+  if ((it.kind === "edge" || it.kind === "axis") && it.type === "LINE" && it.start && it.dir) return { p: it.start, d: norm(it.dir) };
   return null;
 }
 
@@ -86,4 +86,39 @@ export function measureFormat({ dec = 3, angleDec = 2, second = "" } = {}) {
     angle: (v) => `${fmtFixed(v, angleDec)}°`,
     num: (v) => fmtFixed(v, dec),
   };
+}
+
+/** Auswahlfilter im Messwerkzeug (wie Inventor »Auswahlpriorität«) */
+export const MEASURE_FILTERS = [["alle", "Alle"], ["punkte", "Punkte"], ["kanten", "Kanten"], ["flaechen", "Flächen"]];
+
+/** Fangarten bei »Alle«: Quadranten und Flächenmitte nur mit Filter »Punkte«, sonst stören sie beim Wählen von Kreis und Fläche */
+export const MEASURE_SNAPS_ALL = ["end", "mid", "arcMid", "center"];
+
+/** Pick-Optionen fürs 3D-Fenster je Filter: Fangpunkte vor Kante vor Achse/Fläche; »Punkte« fängt alle Arten und weiter */
+export function measurePickOptions(filter = "alle", radius = 9) {
+  const r = Number.isFinite(radius) && radius > 0 ? radius : 9;
+  if (filter === "punkte") return { edges: false, faces: false, snaps: true, snapRadius: Math.round(r * 1.6), snapKinds: null, axes: false };
+  if (filter === "kanten") return { edges: true, faces: false, snaps: false, axes: false };
+  if (filter === "flaechen") return { edges: false, faces: true, snaps: false, axes: false };
+  return { edges: true, faces: true, snaps: true, snapRadius: r, snapKinds: MEASURE_SNAPS_ALL, axes: true };
+}
+
+const TYPE_LABEL = { PLANE: "eben", CYLINDER: "Zylinder", CONE: "Kegel", SPHERE: "Kugel", TORUS: "Torus", LINE: "Gerade", CIRCLE: "Kreis", ELLIPSE: "Ellipse" };
+/** Kurzer Hinweis am Mauszeiger: was ein Klick wählen würde (»Kreismitte«, »Kante · Kreis R 5«) */
+export function measureHitLabel(hit, fmt = (v) => fmtFixed(v, 2)) {
+  if (!hit) return "";
+  if (hit.kind === "point") return hit.label || "Punkt";
+  if (hit.kind === "vertex") return "Endpunkt";
+  if (hit.kind === "axis") return "Achse";
+  const t = TYPE_LABEL[hit.info?.type];
+  if (hit.kind === "edge") return "Kante" + (t ? " · " + t : "") + (hit.info?.type === "CIRCLE" && hit.info.radius > 0 ? " R " + fmt(hit.info.radius) : "");
+  if (hit.kind === "face") return "Fläche" + (t ? " · " + t : "") + (hit.info?.type === "CYLINDER" && hit.info.radius > 0 ? " R " + fmt(hit.info.radius) : "");
+  return "";
+}
+
+/** Zwei Treffer meinen dasselbe Messelement (auch dieselbe Fangart am selben Element) */
+export function sameMeasureHit(a, b) {
+  if (!a || !b || a.kind !== b.kind || a.key !== b.key || a.body !== b.body) return false;
+  if (a.kind === "point") return a.src === b.src && (a.src === "edge" ? a.edge === b.edge : a.face === b.face) && a.ref === b.ref;
+  return (a.edge ?? a.face) === (b.edge ?? b.face) && a.end === b.end;
 }

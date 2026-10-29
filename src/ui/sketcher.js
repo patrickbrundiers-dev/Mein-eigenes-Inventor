@@ -12,6 +12,7 @@ import { inferLine, inferCircle } from "../core/autoconstraints.js";
 import { buildSlot, buildPolygon, buildTangentArc, tangentArcCenter, constraintLabel, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
 import { splineSamples, splineNearest } from "../core/spline.js";
 import { specialSnap, alignSnap } from "../core/sketchsnap.js";
+import { glyphPath, sketchSnapKind } from "../core/fangpunkte.js";
 import { autoDimension } from "../core/autodim.js";
 import { cleanSketch, cleanReportText, CLEAN_KINDS, CLEAN_DEFAULTS } from "../core/sketchclean.js";
 import { splineCtrl } from "../core/sketch.js";
@@ -2011,8 +2012,9 @@ export class Sketcher {
     if (sn) {
       const [x, y] = this.S(sn.x, sn.y);
       for (const gl of sn.guides || []) { const [x1, y1] = this.S(gl.x1, gl.y1); g.append(svgEl("line", { x1, y1, x2: x, y2: y, class: "sk-guide" })); }
-      if (sn.on2) g.append(svgEl("path", { d: `M${x - 6} ${y - 6}L${x + 6} ${y + 6}M${x - 6} ${y + 6}L${x + 6} ${y - 6}`, class: "sk-snap" }));
-      else if (sn.pointId || sn.mid || sn.on) g.append(svgEl("circle", { cx: x, cy: y, r: 6, class: "sk-snap" }));
+      // schlankes Fangsymbol je Fangart (wie beim Messen im 3D-Fenster)
+      const kind = sketchSnapKind(sn);
+      if (kind) g.append(svgEl("path", { d: glyphPath(kind, kind === "on" ? 4 : 4.5), transform: `translate(${x} ${y})`, class: "sk-snap" }));
       if (sn.label) { const t = svgEl("text", { x: x + 9, y: y - 8, class: "sk-infer" }); t.textContent = sn.label; g.append(t); }
     }
     const st = this.state;

@@ -10,11 +10,12 @@ import { splineSamples } from "../core/spline.js";
 import { photoSurface, photoStage } from "../core/rendering.js";
 import { explodeOffsets } from "../core/kinematik.js";
 import { lighting } from "../core/viewlight.js";
+import { edgeSnaps, faceSnaps, nearestSnap, screenSegDist, axisSegment, glyphPath, SNAP_KINDS } from "../core/fangpunkte.js";
 
 const COL = {
   edge: 0x1c2733,
   hover: 0xef7d1a,
-  sel: 0xef7d1a,
+  sel: 0x1e78e6,
   sketch: 0x2457b8,
   sketchConstr: 0x7f97c6,
 };
@@ -1335,15 +1336,20 @@ export class Viewer {
    * opts: {edges, faces}
    * -> {kind:'edge', key, body, edge, info} | {kind:'face', key, body, face, info, point, normal}
    */
-  pick(cx, cy, { edges = true, faces = true, vertices = false, ghosts = false, exclude = null } = {}) {
+  pick(cx, cy, { edges = true, faces = true, vertices = false, ghosts = false, exclude = null, snaps = false, snapRadius = 9, snapKinds = null, axes = false } = {}) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const x = cx - rect.left, y = cy - rect.top;
     let faceHit = null;
-    if (faces || edges) {
+    if (faces || edges || snaps) {
       const rc = this.raycaster(cx, cy);
       const meshes = [...this.pickables, ...(ghosts ? this.ghosts : [])].filter((p) => p.mesh.visible && (!exclude || p.key !== exclude)).map((p) => p.mesh);
       const hits = rc.intersectObjects(meshes, false).filter((x) => !this.clipped(x.point));
       if (hits.length) faceHit = hits[0];
+    }
+    // Fangpunkte (Messen): Endpunkt, Mitte, Kreismitte, Quadrant, Flächenmitte vor Kante und Fläche
+    if (snaps) {
+      const s = this.pickSnap(x, y, snapRadius, faceHit, { exclude, kinds: snapKinds });
+      if (s) return s;
     }
     if (edges) {
       let best = null, bd = 7, bestV = null, bdV = 9;
@@ -1409,9 +1415,101 @@ export class Viewer {
       const info = flist[fi] || {};
       const nrm = faceHit.face ? faceHit.face.normal.clone().transformDirection(mesh.matrixWorld) : null;
       const pk = this.findPickable(mesh);
+      // Achse einer Zylinderfläche: Maus nahe der Mittellinie wählt die Achse statt der Fläche
+      if (axes && info.type === "CYLINDER" && info.axisP && info.axisD) {
+        const ax = this.faceAxis(mesh, info);
+        if (ax) {
+          const [ax1, ay1] = this.toScreen(ax.a), [bx1, by1] = this.toScreen(ax.b);
+          if (screenSegDist(x, y, ax1, ay1, bx1, by1) < 5) return { kind: "axis", key: pk.key, body: pk.body, face: fi, info, a: ax.a, b: ax.b, group: pk.group };
+        }
+      }
       return { kind: "face", key: pk.key, body: pk.body, face: fi, info, point: faceHit.point.toArray(), normal: nrm ? nrm.toArray() : null, group: pk.group, mesh };
     }
     return null;
+  }
+
+  /** Weltpunkt → Bildschirm-px relativ zum 3D-Fenster */
+  toScreen(p) {
+    const v = new THREE.Vector3(p[0], p[1], p[2]).project(this.camera);
+    return [((v.x + 1) / 2) * this.container.clientWidth, ((1 - v.y) / 2) * this.container.clientHeight];
+  }
+  /** Achsstück (Welt) einer Zylinderfläche über ihre Länge, aus Achse des Kerns und den Netzpunkten der Fläche */
+  faceAxis(mesh, info) {
+    const f = (mesh.userData.faces || []).find((q) => q === info) || info;
+    if (f.start === undefined) return null;
+    mesh.updateMatrixWorld();
+    const mw = mesh.matrixWorld, pos = mesh.geometry.attributes.position.array, idx = mesh.geometry.index?.array;
+    const v = new THREE.Vector3(), pts = [];
+    const step = Math.max(1, Math.floor(f.count / 400));
+    for (let i = f.start; i < f.start + f.count; i += step) { const k = idx ? idx[i] : i; pts.push(v.set(pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]).applyMatrix4(mw).toArray()); }
+    const P = new THREE.Vector3(...info.axisP).applyMatrix4(mw).toArray();
+    const D = new THREE.Vector3(...info.axisD).transformDirection(mw).toArray();
+    return axisSegment(P, D, pts);
+  }
+  /** Fangpunkte aller sichtbaren Körper in Körperkoordinaten (einmal je Körper) und auf dem Bildschirm (je Ansicht) */
+  ensureSnapCache() {
+    const edgeCache = this.ensureEdgeCache();
+    if (this.snapCache && this.snapCacheFor === edgeCache) return this.snapCache;
+    const w = this.container.clientWidth, h = this.container.clientHeight;
+    const v = new THREE.Vector3(), out = [];
+    for (const { pk, ranges, ghost } of edgeCache) {
+      if (ghost) continue;
+      if (!pk.snapLocal) {
+        const list = [], pos = pk.lines.geometry.attributes.position.array, infos = pk.lines.userData.edges || [];
+        ranges.forEach(([s0, c], ei) => {
+          const pts = [];
+          for (let k = s0; k < s0 + c; k++) if (k === s0 || (k - s0) % 2 === 1) pts.push([pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]]);
+          if (infos[ei]?.idx === undefined) return;
+          for (const sn of edgeSnaps(infos[ei], pts)) list.push({ ...sn, src: "edge", ei });
+        });
+        (pk.mesh.userData.faces || []).forEach((f, fi) => { if (f.idx !== undefined) for (const sn of faceSnaps(f)) list.push({ ...sn, src: "face", fi }); });
+        pk.snapLocal = list;
+      }
+      const mw = pk.lines.matrixWorld;
+      for (const sn of pk.snapLocal) {
+        v.set(sn.p[0], sn.p[1], sn.p[2]).applyMatrix4(mw);
+        const world = v.toArray();
+        v.project(this.camera);
+        if (v.z > 1 || v.z < -1) continue;
+        out.push({ ...sn, pk, world, sx: ((v.x + 1) / 2) * w, sy: ((1 - v.y) / 2) * h });
+      }
+    }
+    this.snapCache = out;
+    this.snapCacheFor = edgeCache;
+    return out;
+  }
+  /**
+   * Fangpunkt unter der Maus (x, y relativ zum Fenster) → {kind: "point", snap, label, point, src, key, body, edge|face, info}
+   * Flächenmitte nur für die Fläche unter der Maus; verdeckte Punkte (hinter der getroffenen Fläche) zählen nicht.
+   */
+  pickSnap(x, y, radius, faceHit, { exclude = null, kinds = null } = {}) {
+    let hitFace = -1;
+    if (faceHit) { const flist = faceHit.object.userData.faces || [], t = faceHit.faceIndex * 3; hitFace = flist.findIndex((f) => t >= f.start && t < f.start + f.count); }
+    const camDir = new THREE.Vector3();
+    this.camera.getWorldDirection(camDir);
+    const tol = 2 / this.pixelsPerUnit() + 0.5;
+    const dHit = faceHit ? faceHit.point.clone().sub(this.camera.position).dot(camDir) : Infinity;
+    const cands = this.ensureSnapCache().filter((c) => {
+      if (!c.pk.lines.visible || !c.pk.mesh.visible || (exclude && c.pk.key === exclude)) return false;
+      if (Math.abs(c.sx - x) > radius || Math.abs(c.sy - y) > radius || (kinds && !kinds.includes(c.kind))) return false;
+      if (c.src === "face") return faceHit && faceHit.object === c.pk.mesh && c.fi === hitFace;
+      const W = new THREE.Vector3(...c.world);
+      if (this.clipped(W)) return false;
+      // verdeckt: liegt deutlich hinter der Fläche unter der Maus (durchsichtige Körper verdecken nicht)
+      return !(faceHit && faceHit.object.material.opacity >= 1 && W.sub(this.camera.position).dot(camDir) > dHit + tol);
+    });
+    const c = nearestSnap(cands, x, y, radius);
+    if (!c) return null;
+    const info = c.src === "edge" ? c.pk.lines.userData.edges[c.ei] : c.pk.mesh.userData.faces[c.fi];
+    return { kind: "point", snap: c.kind, label: SNAP_KINDS[c.kind]?.label || "Punkt", ref: c.ref, src: c.src, point: c.world, key: c.pk.key, body: c.pk.body, edge: c.ei, face: c.fi, info, group: c.pk.group };
+  }
+  /** Kurzer Hinweis neben der Maus (was gewählt würde), null blendet aus */
+  showPickTip(text, cx, cy) {
+    if (!text) { this.pickTip?.remove(); this.pickTip = null; return; }
+    if (!this.pickTip) { this.pickTip = document.createElement("div"); this.pickTip.className = "pick-tip"; this.container.append(this.pickTip); }
+    const r = this.container.getBoundingClientRect();
+    this.pickTip.textContent = text;
+    this.pickTip.style.transform = `translate(${Math.round(cx - r.left + 14)}px, ${Math.round(cy - r.top + 16)}px)`;
   }
 
   /**
@@ -1467,6 +1565,7 @@ export class Viewer {
   }
 
   clearHover() {
+    this.showPickTip(null);
     disposeTree(this.hoverGroup);
     this.hoverGroup.clear();
     this.render();
@@ -1480,12 +1579,15 @@ export class Viewer {
       const pk = this.findPickable(hit);
       if (!pk) continue;
       pk.group.updateMatrixWorld();
-      if (hit.kind === "vertex") {
-        const r = 4 / this.pixelsPerUnit();
-        const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 8), new THREE.MeshBasicMaterial({ color, depthTest: false }));
-        m.position.set(...hit.point);
-        m.renderOrder = 21;
-        group.add(m);
+      if (hit.kind === "vertex" || hit.kind === "point") {
+        // schlankes Fangsymbol je Fangart statt großem Punkt
+        group.add(this.glyph(hit.point, hit.snap || "end", color));
+      } else if (hit.kind === "axis") {
+        const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...hit.a), new THREE.Vector3(...hit.b)]),
+          new THREE.LineDashedMaterial({ color, depthTest: false, transparent: true, dashSize: 6 / this.pixelsPerUnit(), gapSize: 3 / this.pixelsPerUnit() }));
+        l.computeLineDistances();
+        l.renderOrder = 20;
+        group.add(l);
       } else if (hit.kind === "edge") {
         const [s, c] = pk.lines.userData.edgeRanges[hit.edge];
         const src = pk.lines.geometry.attributes.position.array.slice(s * 3, (s + c) * 3);
@@ -1514,6 +1616,23 @@ export class Viewer {
         m.matrix.copy(pk.mesh.matrixWorld);
         m.renderOrder = 15;
         group.add(m);
+        // Umriss der Fläche (Dreieckskanten, die nur einmal vorkommen) in derselben Farbe, damit die Auswahl klar absetzt
+        const seen = new Map();
+        for (let i = 0; i < f.count; i += 3) for (let j = 0; j < 3; j++) {
+          const a = idx[f.start + i + j], b = idx[f.start + i + ((j + 1) % 3)], k = a < b ? a + "," + b : b + "," + a;
+          seen.set(k, seen.has(k) ? null : [a, b]);
+        }
+        const rim = [];
+        for (const ab of seen.values()) if (ab) for (const v of ab) rim.push(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]);
+        if (rim.length) {
+          const rg = new THREE.BufferGeometry();
+          rg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(rim), 3));
+          const l = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+          l.matrixAutoUpdate = false;
+          l.matrix.copy(pk.mesh.matrixWorld);
+          l.renderOrder = 16;
+          group.add(l);
+        }
       } else if (hit.kind === "body") {
         // ganzer Körper (z. B. alle Pfosten zum gewählten Generator-Feld)
         const m = new THREE.Mesh(pk.mesh.geometry, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false, side: THREE.DoubleSide }));
@@ -1560,8 +1679,7 @@ export class Viewer {
         dl.computeLineDistances();
         this.measureGroup.add(dl);
       }
-      const pts = new THREE.BufferGeometry().setFromPoints([V(spec.a), V(spec.b)]);
-      this.measureGroup.add(new THREE.Points(pts, new THREE.PointsMaterial({ color, size: 7, sizeAttenuation: false, depthTest: false, transparent: true })));
+      this.measureGroup.add(this.glyph(spec.a, "on", color), this.glyph(spec.b, "on", color));
       for (const o of this.measureGroup.children) o.renderOrder = 999;
       const el = document.createElement("div");
       el.className = "measure-label";
@@ -1638,11 +1756,19 @@ export class Viewer {
     const [x, y] = this.worldToScreen([(sp.a[0] + sp.b[0]) / 2, (sp.a[1] + sp.b[1]) / 2, (sp.a[2] + sp.b[2]) / 2]);
     el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -130%)`;
   }
+  /** Fangsymbol (fangpunkte.js) als Bildschirm-Sprite fester Größe an einem Weltpunkt */
+  glyph(point, kind, color) {
+    const size = 15; // px; three rechnet die Pixeldichte selbst ein
+    const pts = new THREE.Points(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(point[0], point[1], point[2])]),
+      new THREE.PointsMaterial({ color, size, map: glyphTexture(kind), sizeAttenuation: false, depthTest: false, transparent: true, alphaTest: 0.05 }));
+    pts.renderOrder = 21;
+    return pts;
+  }
   /** Dauerhafte Auswahl-Hervorhebung */
   setSelectionHits(hits) {
     this.selectedHits = hits || [];
     if (!this.selGroup) { this.selGroup = new THREE.Group(); this.scene.add(this.selGroup); }
-    this.highlight(hits, { group: this.selGroup, color: this.colors.sel, opacity: 0.45 });
+    this.highlight(hits, { group: this.selGroup, color: this.colors.sel, opacity: 0.5 });
   }
   /** Kanten anhand gespeicherter Mittelpunkte finden (für Rundung/Fase) */
   findEdgesByMid(points, key = "part") {
@@ -1785,6 +1911,23 @@ function disposeTree(obj) {
     if (o.geometry && !o.userData?.sharedGeo) o.geometry.dispose?.();
     if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose?.());
   });
+}
+/** Fangsymbol als Textur: weiße Linie (wird mit der Farbe eingefärbt) auf dunklem, halbdurchsichtigem Saum */
+const GLYPHS = new Map();
+function glyphTexture(kind) {
+  if (GLYPHS.has(kind)) return GLYPHS.get(kind);
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  g.translate(32, 32);
+  const path = new Path2D(glyphPath(kind, 19));
+  g.lineJoin = g.lineCap = "round";
+  g.strokeStyle = "rgba(0,0,0,0.45)"; g.lineWidth = 11; g.stroke(path);
+  g.strokeStyle = "#ffffff"; g.lineWidth = 5; g.stroke(path);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  GLYPHS.set(kind, t);
+  return t;
 }
 /** Achskreis mit Beschriftung als Textur */
 function bubbleTexture(text, active) {
