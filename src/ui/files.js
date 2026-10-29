@@ -12,6 +12,7 @@ import { linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, base
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
+import { bendSheetPage } from "../core/biegefolge.js";
 import { EXC_LEVELS, PROCESSES, weldPlanOf, weldPlanRows, weldPlanPage, weldPlanCsv } from "../core/schweissplan.js";
 import { collectNorm } from "../core/normteile.js";
 import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
@@ -550,6 +551,14 @@ export class Files {
     const html = mappeHtml([weldPlanPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", plan, rows })], { title: "Schweißplan " + d.name });
     if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + "_Schweissplan.pdf", [{ name: "PDF", extensions: ["pdf"] }]);
     else await this.saveText(html, base + "_Schweissplan.html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+  }
+  /** Biegeblatt eines Kantteils (W7): Biegefolge mit Skizze je Schritt */
+  async exportBiegeblatt(f, sh, tool, res) {
+    if (!res) return toast("Biegefolge konnte nicht berechnet werden");
+    const html = mappeHtml([bendSheetPage({ title: f.name, legs: sh.profile.legs, angles: sh.profile.angles, t: sh.t, tool, result: res })], { title: "Biegefolge " + f.name });
+    const base = safeName(f.name || "Kantteil") + "_Biegefolge";
+    if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+    else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
   }
   /** Alle Listen als Excel-Arbeitsmappe: Stückliste (Baugruppe), Zuschnitt, Summen je Profil, Nahtliste */
   /** Abwicklung eines Kantteils als DXF (Kontur, Biegelinien mit Winkel) */

@@ -718,7 +718,10 @@ export function createKernel(R) {
       const fm = S.flat;
       const nB = fm.bends.length;
       const name = f.name || `${f.src === "skizze" ? "Konturlasche" : "Kantteil"} ${round(t)} mm, Abw. ${round(fm.width)} × ${round(fm.height)}`;
-      const meta = { sheet: { t, flat: fm.width, length: fm.height, bends: fm.bends.map((b) => ({ angle: b.angle, r: b.ri, k: b.k })), bendLines: plan.bendLines, rule: ruleSummary(br), flatModel: fm } };
+      // Querschnitt als Mittellinie mit scharfen Ecken (Biegefolge W7): Schenkel bis zum Schnittpunkt, Winkel mit Vorzeichen
+      const half = (b) => (Math.abs(b.angle) > 179 ? b.rm : b.rm * Math.tan(b.theta / 2));
+      const profile = { legs: plan.center.map((c, i) => c.len + (i > 0 && plan.bends[i - 1] ? half(plan.bends[i - 1]) : 0) + (plan.bends[i] ? half(plan.bends[i]) : 0)), angles: plan.bends.map((b) => b.sgn * Math.abs(b.angle)) };
+      const meta = { sheet: { t, flat: fm.width, length: fm.height, bends: fm.bends.map((b) => ({ angle: b.angle, r: b.ri, k: b.k })), bendLines: plan.bendLines, rule: ruleSummary(br), flatModel: fm, profile } };
       const nClosed = S.ends.reduce((n, e) => n + (e.closed?.length || 0), 0);
       const feats2 = [S.parts.length && `${S.parts.length} Teil-Lasche(n)`, S.ends.length && `${S.ends.length} Stirnlasche(n)`, nClosed && `${nClosed} Ecke(n) geschlossen`, S.pierce.length && `${S.pierce.length} Durchzug/Durchzüge`, S.punch.length && `${S.punch.length} Stanzung(en)`].filter(Boolean);
       const info = `Abwicklung ${round(fm.width)} × ${round(fm.height)} mm, ${nB} Biegung(en)` + (plan.bends.length ? `, Biegezugabe ${plan.flatParts.filter((_, k) => k % 2).map(round).join(" / ")} mm` : "") + (feats2.length ? ` · ${feats2.join(", ")}` : "") + (nB && spec.rule !== "k" ? ` · ${ruleSummary(br)}` : "") + (spec.ruleName ? ` · Blechregel ${spec.ruleName}` : "") + (f.view === "abgewickelt" ? "" : " · Abwicklung als DXF in den Eigenschaften");

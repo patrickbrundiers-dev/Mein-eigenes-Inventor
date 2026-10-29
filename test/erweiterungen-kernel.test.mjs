@@ -126,3 +126,13 @@ test("W6 Vordach/Carport: Stützen, Pfetten, Sparren mit Gefälle, Kopfbänder, 
   assert.deepEqual(overl(vd), []);
   assert.match(vd.status.g.warning || "", /Anker bzw. Dübel/);
 });
+
+test("W7 Biegefolge: Kantteil liefert Querschnitt mit scharfen Ecken (außen bemaßt)", async () => {
+  const kt = { id: "k", type: "kantteil", legs: "40; 100; 40", angles: "90; 90", ref: "aussen", t: "2", ri: "2", k: "0.33", length: "500", pos: ["0", "0", "0"], view: "gefaltet" };
+  const res = await K.buildPart(part([kt]));
+  okAll(res);
+  const pr = res.bodies.find((b) => b.fid === "k").meta.sheet.profile;
+  assert.deepEqual(pr.angles, [90, 90]);
+  // außen 40/100/40 → Mittellinie 39/98/39
+  near(pr.legs[0], 39, 1e-6, "Schenkel 1"); near(pr.legs[1], 98, 1e-6, "Steg"); near(pr.legs[2], 39, 1e-6, "Schenkel 3");
+});

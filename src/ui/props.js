@@ -39,6 +39,7 @@ import { END_CUT_SECTIONS, featureCutSettings, roundTube3D, SWIVEL_DEFAULT } fro
 import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
+import { PUNCHES, bendSequence } from "../core/biegefolge.js";
 import { stretchCsv } from "../core/strecken.js";
 import { PLATE_HOLES, RIB_SIDES } from "../core/anschluss.js";
 import { GENERATORS, applyTemplate, genValues, resolveGenParams } from "../core/generator.js";
@@ -775,6 +776,22 @@ export class Props {
           this.seg("Ansicht", [["gefaltet", "gefaltet"], ["abgewickelt", "abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
           sh ? h("dl", { class: "kv" }, h("dt", {}, "Abwicklung"), h("dd", {}, `${fmtNum(sh.flat, 2)} × ${fmtNum(sh.length, 1)} mm`), h("dt", {}, "Biegelinien"), h("dd", {}, sh.bendLines.map((x) => fmtNum(x, 2)).join(" · ") || "–")) : null,
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportKantteilDxf(f) }, "Abwicklung als DXF"))));
+        if (sh?.profile?.angles?.length) {
+          const tool = { punch: f.press?.punch || "gerade", punchH: +f.press?.punchH || 100, V: +f.press?.V || 0 };
+          const setP = (k, v, label) => this.set(f, (x) => { x.press = { ...(x.press || {}), [k]: v }; }, label);
+          let res = null;
+          try { res = bendSequence(sh.profile.legs, sh.profile.angles, sh.t, tool); } catch { res = null; }
+          out.push(this.section("Biegefolge (Abkantpresse)",
+            this.select("Oberwerkzeug", Object.entries(PUNCHES).map(([k, p]) => [k, p.label]), tool.punch, (v) => setP("punch", v, "Oberwerkzeug")),
+            this.text("Werkzeughöhe (mm)", String(tool.punchH), (v) => setP("punchH", v, "Werkzeughöhe"), { placeholder: "100" }),
+            this.text("Matrize V (mm, leer = nach Blechdicke)", tool.V ? String(tool.V) : "", (v) => setP("V", v, "Matrize V"), { placeholder: "automatisch" }),
+            res ? h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Schritt"), h("th", {}, "Biegung"), h("th", {}, "Winkel"), h("th", {}, "Hinweis"))),
+              h("tbody", {}, ...res.steps.map((s, k) => h("tr", {}, h("td", {}, String(k + 1)), h("td", {}, String(s.bend)), h("td", {}, fmtNum(Math.abs(s.angle), 1) + "°"),
+                h("td", {}, [s.turn && "wenden", s.mirror && "umgedreht einlegen", s.hem && "Umschlag", s.hits.length && "stößt an: " + s.hits.join(", ")].filter(Boolean).join(", ") || "–"))))) : null,
+            res ? h("p", { class: "hint" }, (res.ok ? `Folge ohne Anstoßen gefunden (Matrize V ${res.V}).` : "Achtung: ") + (res.issues.length ? " " + res.issues.join(" · ") : "")) : null,
+            h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportBiegeblatt(f, sh, tool, res) }, "Biegeblatt (PDF)")),
+            h("p", { class: "hint" }, "Geprüft im Querschnitt bei 25/50/75/100 % jeder Biegung gegen Stempel, Oberwange, Matrize und Unterwange. Richtwerte – eigene Werkzeugmaße eintragen.")));
+        }
         const extras = part.features.filter((g) => SHEET_FEATURES.includes(g.type) && g.base === f.id);
         if (extras.length) out.push(this.section("Blech-Features", h("ul", { class: "hint" }, ...extras.map((g) => h("li", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); this.app.selectFeature(g.id); } }, g.name))))));
         break;
