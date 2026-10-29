@@ -320,13 +320,13 @@ export class Ribbon {
     const view = {
       id: "ansicht", label: "Ansicht", groups: [
         { label: "Ausrichtung", small: true, buttons: [
-          B("v_iso", "Iso", "view", { run: () => app.viewer.setView("iso") }),
-          B("v_front", "Vorne", "view", { run: () => app.viewer.setView("front") }),
-          B("v_back", "Hinten", "view", { run: () => app.viewer.setView("back") }),
-          B("v_left", "Links", "view", { run: () => app.viewer.setView("left") }),
-          B("v_right", "Rechts", "view", { run: () => app.viewer.setView("right") }),
-          B("v_top", "Oben", "view", { run: () => app.viewer.setView("top") }),
-          B("v_bottom", "Unten", "view", { run: () => app.viewer.setView("bottom") }),
+          B("v_iso", "Iso", "viewIso", { run: () => app.viewer.setView("iso") }),
+          B("v_front", "Vorne", "viewFront", { run: () => app.viewer.setView("front") }),
+          B("v_back", "Hinten", "viewBack", { run: () => app.viewer.setView("back") }),
+          B("v_left", "Links", "viewLeft", { run: () => app.viewer.setView("left") }),
+          B("v_right", "Rechts", "viewRight", { run: () => app.viewer.setView("right") }),
+          B("v_top", "Oben", "viewTop", { run: () => app.viewer.setView("top") }),
+          B("v_bottom", "Unten", "viewBottom", { run: () => app.viewer.setView("bottom") }),
           B("v_normal", "Normal zur Fläche", "plane", { run: () => app.viewNormalToFace() }),
         ] },
         { label: "Zoom", buttons: [
@@ -334,30 +334,30 @@ export class Ribbon {
           B("v_fitsel", "Auswahl zeigen", "fit", { run: () => app.zoomToSelection() }),
         ] },
         { label: "Benannt", buttons: [
-          B("v_save", "Ansicht speichern", "view", { disabled: !app.namedViewsDoc?.(), run: () => app.saveNamedView() }),
-          B("v_named", "Ansichten", "view", { disabled: !app.namedViewsDoc?.(), run: (e) => app.namedViewsMenu(e) }),
+          B("v_save", "Ansicht speichern", "viewSave", { disabled: !app.namedViewsDoc?.(), run: () => app.saveNamedView() }),
+          B("v_named", "Ansichten", "list", { disabled: !app.namedViewsDoc?.(), run: (e) => app.namedViewsMenu(e) }),
         ] },
         { label: "Projektion", buttons: [
-          B("v_ortho", "Orthogonal", "view", { on: !app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "orthogonal") }),
-          B("v_persp", "Perspektive", "view", { on: app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "perspektive") }),
+          B("v_ortho", "Orthogonal", "ortho", { on: !app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "orthogonal") }),
+          B("v_persp", "Perspektive", "persp", { on: app.viewer.perspective, run: () => app.prefs.set("ansicht.projektion", "perspektive") }),
         ] },
         { label: "Modus", small: true, buttons: [...DISPLAY.map((d) => B("dm_" + d.value, d.label, d.value === "draht" ? "grid" : d.value === "foto" ? "camera" : "eye", { on: app.viewer.displayMode === d.value, run: () => app.prefs.set("ansicht.darstellung", d.value) })),
           B("compColors", "Bauteilfarben", "steel", { on: !!app.compColors, disabled: app.mode !== "assembly", run: () => app.toggleCompColors() })] },
         { label: "Auswahl", small: true, buttons: [
-          B("sf_alles", "Alles wählbar", "view", { on: app.selFilter === "alles", run: () => app.setSelFilter("alles") }),
+          B("sf_alles", "Alles wählbar", "selAll", { on: app.selFilter === "alles", run: () => app.setSelFilter("alles") }),
           B("sf_flaechen", "Nur Flächen", "plane", { on: app.selFilter === "flaechen", run: () => app.setSelFilter("flaechen") }),
           B("sf_kanten", "Nur Kanten", "line", { on: app.selFilter === "kanten", run: () => app.setSelFilter("kanten") }),
-          B("sel_all", "Alle wählen", "view", { disabled: app.mode !== "part", run: () => app.selectEverything() }),
-          B("sel_inv", "Umkehren", "view", { disabled: app.mode !== "part", run: () => app.invertSelection() }),
+          B("sel_all", "Alle wählen", "selAll", { disabled: app.mode !== "part", run: () => app.selectEverything() }),
+          B("sel_inv", "Umkehren", "selInvert", { disabled: app.mode !== "part", run: () => app.invertSelection() }),
         ] },
         { label: "Fenster", small: true, buttons: (() => {
           const L = app.prefs.get("oberflaeche.layout") || DEFAULT_LAYOUT, set = (v) => app.prefs.set("oberflaeche.layout", v);
           return [
             B("w_browser", "Modellbrowser", "eye", { on: !L.hide.includes("browser"), run: () => set(togglePanel(L, "browser")) }),
             B("w_props", "Eigenschaften", "eye", { on: !L.hide.includes("props"), run: () => set(togglePanel(L, "props")) }),
-            B("w_reset", "Anordnung zurücksetzen", "view", { disabled: JSON.stringify(L) === JSON.stringify(DEFAULT_LAYOUT), run: () => app.prefs.reset(["oberflaeche.layout"]) }),
-            B("w_bside", "Browser rechts", "view", { on: L.browser === "right", run: () => set(movePanel(L, "browser", L.browser === "right" ? "left" : "right")) }),
-            B("w_pside", "Eigenschaften links", "view", { on: L.props === "left", run: () => set(movePanel(L, "props", L.props === "left" ? "right" : "left")) }),
+            B("w_reset", "Anordnung zurücksetzen", "layout", { disabled: JSON.stringify(L) === JSON.stringify(DEFAULT_LAYOUT), run: () => app.prefs.reset(["oberflaeche.layout"]) }),
+            B("w_bside", "Browser rechts", "layout", { on: L.browser === "right", run: () => set(movePanel(L, "browser", L.browser === "right" ? "left" : "right")) }),
+            B("w_pside", "Eigenschaften links", "layout", { on: L.props === "left", run: () => set(movePanel(L, "props", L.props === "left" ? "right" : "left")) }),
           ];
         })() },
         { label: "Sichtbarkeit", buttons: [B("v_showall", "Alle einblenden", "eye", { disabled: !app.viewer.hidden.size, run: () => app.showAllBodies() })] },
@@ -380,7 +380,7 @@ export class Ribbon {
           { label: "Körper", small: true, buttons: [B("kombinieren", "Kombinieren", "combine", { iconOnly: true }), B("stecksystem", "Stecksystem", "tabslot", { iconOnly: true }), B("trennen", "Trennen", "split", { iconOnly: true }), B("verschieben", "Verschieben", "move", { iconOnly: true }), B("aufdicken", "Aufdicken", "thicken", { iconOnly: true }), B("flaeche", "Fläche verschieben", "pushpull", { iconOnly: true }), B("entformung", "Entformung", "draft", { iconOnly: true })] },
           { label: "Muster", small: true, buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Arbeitselemente", small: true, buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
-          { label: "Prüfen", big: 1, buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) }), B("draftAnalysis", "Entformungsanalyse", "draftan", { on: !!app.viewer.draftOn, run: () => draftDialog(app) }), B("regionPropsPart", "Bereichseigenschaften", "area", { run: () => regionDialog(app) })] },
+          { label: "Prüfen", big: 1, buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) }), B("draftAnalysis", "Entformungsanalyse", "draftan", { on: !!app.viewer.draftOn, run: () => draftDialog(app) }), B("regionPropsPart", "Bereichseigenschaften", "area", { run: () => regionDialog(app) })] },
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
@@ -447,13 +447,13 @@ export class Ribbon {
         { id: "baugruppe", label: "Zusammenfügen", groups: [
           { label: "Komponente", big: 2, buttons: [B("place", "Platzieren", "place"), B("newPartInAsm", "Neues Bauteil", "part", { run: () => app.props.newPartForAssembly() }), B("normteilAsm", "Normteil", "normteil"), B("linkPart", "Aus Datei", "open", { run: () => app.files.linkPartFromFile() }), B("asmPattern", "Muster", "pattern"), B("steckAsm", "Stecksystem", "tabslot"), B("asmMirror", "Spiegeln", "mirror", { run: () => app.props.mirrorComponent() }), B("replaceComp", "Ersetzen", "update", { run: () => app.commands.exec("asm.replace") }), B("formSub", "Unterbaugruppe bilden", "assembly", { iconOnly: true, run: () => formSubDialog(app) })] },
           { label: "Position", small: true, buttons: [B("cmove", "Verschieben", "move", { run: () => app.props.moveComponentDialog("move") }), B("crotate", "Drehen", "rotate", { run: () => app.props.moveComponentDialog("rotate") }), B("ccopy", "Kopieren", "copy", { run: () => app.props.copySelectedComponent() })] },
-          { label: "Beziehungen", big: 2, buttons: [B("constraint", "Abhängigkeit", "align", { on: app.pick?.kind === "align" && !!app.align?.type }), B("joint", "Drehgelenk", "hinge", { run: () => app.props.jointDialog() }), B("align", "Fläche an Fläche", "align", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "align", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" }), B("alignInsert", "Einfügen", "insert", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "einfuegen" }), B("alignAngle", "Winkel", "angle", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "winkel" }), B("alignTangent", "Tangential", "tangent", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "tangential" }), B("jointCyl", "Zylindergelenk", "hinge", { iconOnly: true, run: () => app.props.jointDialog(null, "zylinder") }), B("jointPick", "Gelenk an Achse wählen", "hinge", { iconOnly: true, on: app.pick?.kind === "custom", run: () => jointPick(app) })] },
-          { label: "Verwalten", big: 1, buttons: [B("bom", "Stückliste", "bom"), B("weldment", "Schweißbaugruppe", "weldasm", { run: () => app.props.makeWeldment() }), B("cutlist", "Zuschnittliste", "cut", { run: () => app.props.cutListDialog() }), B("asmParams", "Parameter", "params", { run: () => app.props.paramsDialog() }), B("showComps", "Alle einblenden", "eye", { disabled: !asm?.components?.some((c) => c.hidden), run: () => app.props.showAllComponents() }), B("libInsert", "Aus Bibliothek", "open", { run: () => libraryDialog(app) }), B("libSaveAsm", "In Bibliothek ablegen", "save", { run: () => saveToLibrary(app) })] },
+          { label: "Beziehungen", big: 2, buttons: [B("constraint", "Abhängigkeit", "align", { on: app.pick?.kind === "align" && !!app.align?.type }), B("joint", "Drehgelenk", "hinge", { run: () => app.props.jointDialog() }), B("align", "Fläche an Fläche", "align", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "gegen" }), B("alignFlush", "Bündig", "flush", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "buendig" }), B("alignConc", "Konzentrisch", "concentric", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "konzentrisch" }), B("alignInsert", "Einfügen", "insert", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "einfuegen" }), B("alignAngle", "Winkel", "angle", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "winkel" }), B("alignTangent", "Tangential", "tangent", { iconOnly: true, on: app.pick?.kind === "align" && app.align?.mode === "tangential" }), B("jointCyl", "Zylindergelenk", "cylJoint", { iconOnly: true, run: () => app.props.jointDialog(null, "zylinder") }), B("jointPick", "Gelenk an Achse wählen", "hinge", { iconOnly: true, on: app.pick?.kind === "custom", run: () => jointPick(app) })] },
+          { label: "Verwalten", big: 1, buttons: [B("bom", "Stückliste", "bom"), B("weldment", "Schweißbaugruppe", "weldasm", { run: () => app.props.makeWeldment() }), B("cutlist", "Zuschnittliste", "cutlist", { run: () => app.props.cutListDialog() }), B("asmParams", "Parameter", "params", { run: () => app.props.paramsDialog() }), B("showComps", "Alle einblenden", "eye", { disabled: !asm?.components?.some((c) => c.hidden), run: () => app.props.showAllComponents() }), B("libInsert", "Aus Bibliothek", "open", { run: () => libraryDialog(app) }), B("libSaveAsm", "In Bibliothek ablegen", "save", { run: () => saveToLibrary(app) })] },
           { label: "Bewegung", small: true, buttons: [B("animate", "Bewegen", "motion", { run: () => app.props.animateJoints() }), B("explode", "Explosion", "explode", { on: app.viewer.explode > 0 || !!app.explodeSteps, run: () => app.props.explodeDialog() }), B("positions", "Positionen", "save", { run: () => app.commands.exec("asm.positionSave") }), B("contactSolver", "Kontaktlöser", "contact", { on: !!app.activeDoc()?.contactSolver, run: () => app.props.toggleContactSolver() }), B("contactSet", "Kontaktsatz", "contact", { run: () => app.props.toggleContactSet() }), B("motionVideo", "Video", "video", { run: () => app.props.recordMotion() })] },
           { label: "Zeichnung", small: true, buttons: [B("newDrawing", "Zeichnung ableiten", "drawing"), B("partDrawings", "Einzelteilzeichnungen", "drawing", { run: () => app.partDrawings(app.activeId) })] },
         ] },
         { id: "pruefen", label: "Prüfen", groups: [
-          { label: "Prüfen", buttons: [B("measure", "Messen", "dimension", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
+          { label: "Prüfen", buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
           { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun")] },
@@ -483,13 +483,13 @@ export class Ribbon {
       return [
         { id: "zeichnung", label: "Ansichten", groups: [
           { label: "Ansicht", buttons: [
-            B("dv_base", "Grundansichten", "view", { run: () => dr.autoViews() }),
+            B("dv_base", "Grundansichten", "baseViews", { run: () => dr.autoViews() }),
             B("dv_add", "Ansicht hinzufügen", "plus", { run: () => dr.addViewDialog() }),
-            B("dv_proj", "Projiziert", "view", { on: dr.tool === "proj", run: () => (dr.tool === "proj" ? dr.setTool(null) : dr.startProjected()) }),
+            B("dv_proj", "Projiziert", "projView", { on: dr.tool === "proj", run: () => (dr.tool === "proj" ? dr.setTool(null) : dr.startProjected()) }),
             B("dv_sec", "Schnitt", "cut", { run: () => dr.addSectionDialog() }),
             B("dv_hsec", "Schnitt Hohlprofil", "cut", { run: () => dr.hollowSection() }),
             B("dv_det", "Detail", "detail", { on: dr.tool === "detail", run: () => (dr.tool === "detail" ? dr.setTool(null) : dr.startDetail()) }),
-            B("dv_aux", "Hilfsansicht", "view", { on: dr.tool === "aux", run: () => (dr.tool === "aux" ? dr.setTool(null) : dr.startAux()) }),
+            B("dv_aux", "Hilfsansicht", "auxView", { on: dr.tool === "aux", run: () => (dr.tool === "aux" ? dr.setTool(null) : dr.startAux()) }),
             B("dv_flat", "Abwicklung", "kantteil", { run: () => dr.addFlatView() }),
             B("dv_break", "Bruch", "cut", { run: () => dr.breakDialog() }),
             B("dv_bo", "Ausbruch", "cut", { on: dr.tool === "breakout", run: () => (dr.tool === "breakout" ? dr.setTool(null) : dr.startBreakout()) }),
@@ -549,13 +549,13 @@ export class Ribbon {
     const groups = [];
     if (kind === "part") {
       groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
-      groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers()), B("x_cut", "Zuschnittliste (CSV)", "cut", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
+      groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers()), B("x_cut", "Zuschnittliste (CSV)", "cutlist", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
       groups.push({ label: "2D", buttons: [B("x_plate", "Platte als DXF", "drawing", () => f.exportPlateDxf()), B("x_dxf", "Skizze als DXF", "sketch", () => f.exportSketchDxf())] });
       groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
     } else if (kind === "assembly") {
       groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
       groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers())] });
-      groups.push({ label: "Listen", buttons: [B("x_bom", "Stückliste (CSV)", "bom", () => f.exportBom()), B("x_cut", "Zuschnittliste (CSV)", "cut", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
+      groups.push({ label: "Listen", buttons: [B("x_bom", "Stückliste (CSV)", "bom", () => f.exportBom()), B("x_cut", "Zuschnittliste (CSV)", "cutlist", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
       groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
     } else if (kind === "drawing") {
       groups.push({ label: "Zeichnung", buttons: [B("x_pdf", "PDF", "pdf", () => app.drawing.exportPdf()), B("x_dxf", "DXF", "drawing", () => app.drawing.exportDxf()), B("x_svg", "SVG", "drawing", () => app.drawing.exportSvg())] });

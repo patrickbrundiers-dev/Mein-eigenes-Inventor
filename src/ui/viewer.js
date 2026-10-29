@@ -186,9 +186,11 @@ export class Viewer {
       requestAnimationFrame(loop);
       if (this.anim) this.stepAnim();
       if (!this.needsRender) return;
-      this.needsRender = false;
       const r = this.renderer;
       const w = this.container.clientWidth, h = this.container.clientHeight;
+      // Verdeckt (Startseite, Zeichnung): nicht zeichnen – spart beim Start das Übersetzen der Shader (SY3)
+      if (!w || !h) return;
+      this.needsRender = false;
       r.setScissorTest(false);
       r.clear();
       r.setViewport(0, 0, w, h);
@@ -212,7 +214,8 @@ export class Viewer {
         r.setScissorTest(false);
       }
     };
-    loop();
+    // erst im nächsten Bild: bis dahin steht fest, ob die Ansicht überhaupt sichtbar ist
+    requestAnimationFrame(loop);
   }
   render() { this.needsRender = true; }
 
