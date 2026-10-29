@@ -10,6 +10,8 @@ import { beadSection, filletPair } from "../core/schweissbaugruppe.js";
 import { parseSections, shaftProfile, gearData, gearOutline, bearingGeometry, bearingDesignation, springData, springDesignation } from "../core/assistent.js";
 import { resolveDatums, resolvePlane, mirrorPlane, patternAxis, datumSummary } from "../core/datums.js";
 import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "../core/koerper.js";
+import { validateDirekt, moveDir, normalOffset, measureFromShift, validateAngle, direktSummary } from "../core/direkt.js";
+import { direktKernel } from "./direkt.js";
 import { capPlan, trimPlan } from "../core/rahmen.js";
 import { pathChain, reverseChain, pathLength as chainLength, pathPatternStations, coilParams, loopCentroid, validateLoft } from "../core/formen.js";
 import { sectionGeometry, sectionName, profileId, THREADS, loopLength } from "../core/sections.js";
@@ -73,6 +75,7 @@ export function hashString(str) {
 }
 
 export function createKernel(R) {
+  const DK = direktKernel(R);
   // ---------- 2D -> replicad ----------
   function loopToDrawing(loop) {
     if (loop.kind === "circle") return R.drawCircle(loop.r).translate(loop.c[0], loop.c[1]);
@@ -1760,6 +1763,47 @@ export function createKernel(R) {
               }
             }
             st.info = `${hits.length} Fläche(n) ${f.type === "flaeche" ? (t > 0 ? "herausgezogen" : "zurückgesetzt") : "aufgedickt"} um ${String(Math.abs(t)).replace(".", ",")} mm`;
+            break;
+          }
+          case "direkt": {
+            // Direktbearbeitung (Inventor »Direkt«): gewählte Flächen verschieben, drehen, löschen oder in der Größe ändern
+            const op = validateDirekt(f);
+            const hits = facesAt(f.faces.map((r) => r.p));
+            if (hits.length < f.faces.length) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+            let wert = 0;
+            if (op === "loeschen") {
+              for (const body of [...new Set(hits.map((x) => x.body))]) body.shape = DK.deleteFaces(body.shape, hits.filter((x) => x.body === body).map((x) => x.face));
+            } else if (op === "drehen") {
+              wert = validateAngle(E(f.angle || "0", "Winkel"));
+              for (const { body, p } of hits) {
+                const face = facesAt([p])[0]?.face;
+                if (!face) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+                const ax = (f.achse || "U") === "kante" ? { o: f.edge.p, d: v3.norm(f.edge.d) } : DK.faceAxis(face, f.achse);
+                body.shape = DK.rotateFace(body.shape, face, ax.o, ax.d, (wert * Math.PI) / 180);
+              }
+            } else if (op === "groesse") {
+              wert = E(f.size ?? "0", "Größe");
+              for (const { body, p } of hits) {
+                const face = facesAt([p])[0]?.face;
+                if (!face) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+                if (DK.isPlane(face)) { body.shape = DK.moveFace(body.shape, face, wert); continue; }
+                if (face.geomType !== "CYLINDRE") throw new Error("Größe: ebene Fläche oder Zylinder wählen");
+                const r0 = DK.cylinderOf(face).r, mode = f.sizeMode || "durchmesser";
+                const r1 = mode === "radius" ? wert : mode === "durchmesser" ? wert / 2 : r0 + (DK.cylinderOf(face).pin ? wert : -wert);
+                body.shape = DK.resizeCylinder(body.shape, face, r1).shape;
+              }
+            } else {
+              wert = E(f.distance ?? "0", "Abstand");
+              for (const { body, p } of hits) {
+                const face = facesAt([p])[0]?.face;
+                if (!face) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+                const n = DK.normalOf(face), dir = moveDir(f.richtung, n);
+                const s = f.from?.p ? measureFromShift(p, dir, f.from, wert) : wert;
+                body.shape = DK.moveFace(body.shape, face, normalOffset(n, dir, s));
+              }
+            }
+            st.info = op === "groesse" ? `${hits.length} Fläche(n) auf Größe ${String(wert).replace(".", ",")} gebracht`
+              : direktSummary(op, hits.length, wert) + (op === "verschieben" && f.from?.p ? " (gemessen ab Bezug)" : "");
             break;
           }
           case "entformung": {

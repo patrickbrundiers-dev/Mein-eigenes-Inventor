@@ -136,6 +136,7 @@ export const COMMANDS = [
   { id: "part.trennen", label: "Körper trennen", group: "3D-Modell", scope: "part", keywords: "teilen split schneiden ebene zerlegen" },
   { id: "part.verschieben", label: "Körper verschieben/drehen", group: "3D-Modell", scope: "part", keywords: "bewegen drehen kopieren versetzen" },
   { id: "part.aufdicken", label: "Aufdicken", group: "3D-Modell", scope: "part", keywords: "verdicken thicken fläche dicke" },
+  { id: "part.direkt", label: "Direkt bearbeiten", group: "3D-Modell", scope: "part", keywords: "direktbearbeitung fläche verschieben drehen löschen größe durchmesser radius versatz messen ab triade move size rotate delete" },
   { id: "part.flaeche", label: "Fläche verschieben", group: "3D-Modell", scope: "part", keywords: "push pull drücken ziehen fläche versetzen" },
   { id: "part.entformung", label: "Entformung (Flächenverjüngung)", group: "3D-Modell", scope: "part", keywords: "formschräge draft gießen schräge verjüngung" },
   { id: "part.datumPlane", label: "Arbeitsebene", group: "3D-Modell", scope: "part", keywords: "bezugsebene hilfsebene arbeitselement datum versatz mittelebene winkel tangential drei punkte senkrecht kante pfad" },
