@@ -14,6 +14,7 @@ import { holderSchema, holderDrop, holderParts, innerReach, entryDepth } from ".
 import { orientRot, rotExtent } from "./orient.js";
 import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
 import { sectionGeometry } from "./sections.js";
+import { bentChain } from "./biegeteil.js";
 import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, findPlateFace, faceCoords, holesBelow, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
 const mountKind = (p) => (p.base === "oben" || p.base === "seitlich" ? p.base : null);
@@ -38,6 +39,9 @@ export const GELAENDER = {
     { key: "rail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Handlauf und Gurte" },
     ...holderSchema(undefined, "Handlauf und Gurte"),
     { key: "overhang", label: "Handlauf-Überstand an den Enden", type: "num", default: "50", group: "Handlauf und Gurte" },
+    { key: "railBend", label: "Handlauf an den Ecken", type: "select", options: [["gehrung", "gegehrt"], ["bogen", "Bogen (Krümmling)"]], default: "gehrung", missing: "gehrung", group: "Handlauf und Gurte", when: (p) => ["rohr", "rund"].includes(p.rail?.kind) },
+    { key: "railEnd", label: "Handlauf-Enden", type: "select", options: [["gerade", "gerade"], ["bogen", "Endbogen nach unten"]], default: "gerade", missing: "gerade", group: "Handlauf und Gurte", when: (p) => ["rohr", "rund"].includes(p.rail?.kind) },
+    { key: "railR", label: "Biegeradius Handlauf (Mitte Rohr)", type: "num", default: "80", group: "Handlauf und Gurte", when: (p) => ["rohr", "rund"].includes(p.rail?.kind) && (p.railBend === "bogen" || p.railEnd === "bogen") },
     { key: "top", label: "Obergurt", type: "check", default: true, group: "Handlauf und Gurte" },
     { key: "topGap", label: "Obergurt unter Handlauf", type: "num", default: "100", group: "Handlauf und Gurte", when: (p) => p.top },
     { key: "bottom", label: "Untergurt", type: "check", default: true, group: "Handlauf und Gurte" },
@@ -118,6 +122,7 @@ export const GELAENDER = {
       rand = rp.slice(1).map((b, k) => ({ name: "Randprofil", a: rp[k], b, section: sec, up, rot }));
     }
     // Pfosten (Breite quer zur Lauflinie): Profil-u zeigt quer → Drehung so, dass Breite u ⟂ Lauf
+    let cornerPosts = 0;
     posts.forEach((q, i) => {
       const top = P3(q.at, zPostTop), name = `Pfosten ${i + 1}`, along = [q.d[0], q.d[1], 0];
       const ov = mount ? overrideFor(mount.per, name) : null, kindP = ov || kind; // einzelne Pfosten abweichend
@@ -148,7 +153,10 @@ export const GELAENDER = {
         members.push({ section: post, a: r.a, b: top, name, up: along, ...(r.cuts ? { cuts: r.cuts } : {}) });
         plates.push(r.plate, ...(r.parts || [])); drills.push(...r.drills); issues.push(...r.issues); mounted.push(r);
       } else members.push({ section: post, a: P3(q.at, mount ? 0 : zBase), b: top, name, up: [q.d[0], q.d[1], 0] });
-      if (holder) {
+      // Eckpfosten unter einem Krümmling: der Bogen läuft innen an der Ecke vorbei, kein Halter (Pfosten trägt über die Gurte)
+      const underBend = ["rohr", "rund"].includes(rail.kind) && p.railBend === "bogen" && pts.slice(1, -1).some((c) => Math.hypot(c[0] - q.at[0], c[1] - q.at[1]) < 1e-6);
+      if (underBend) cornerPosts++;
+      if (holder && !underBend) {
         const hp = holderParts({ q: P3(q.at, zPostTop), along: q.d, axisZ: H - railH / 2, post, railH, d: p.holderD, name: `Pfosten ${i + 1}`, target: "Handlauf" });
         members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
       }
@@ -165,7 +173,28 @@ export const GELAENDER = {
       rp[0] = ext(0, 1);
       rp[rp.length - 1] = ext(pts.length - 1, pts.length - 2);
     }
-    chains.push({ section: rail, points: rp, name: "Handlauf" });
+    // Krümmlinge (N2): Bögen an den Ecken bzw. Endbogen 90° nach unten (Schenkel 50 mm) statt Gehrung
+    const roundRail = ["rohr", "rund"].includes(rail.kind), bendCorners = roundRail && p.railBend === "bogen", bendEnds = roundRail && p.railEnd === "bogen";
+    if (bendCorners || bendEnds) {
+      const R = p.railR, rq = rp.map((q) => [...q]);
+      if (!(R >= rail.geom.width)) throw fieldError(`Biegeradius mindestens ${Math.ceil(rail.geom.width)} mm (Rohr-Ø)`, "railR");
+      // Endbogen beginnt erst nach dem Überstand: Enden um R weiter hinaus, dann senkrecht nach unten
+      const out = (i, j) => { const d = v3n(sub3(rq[i], rq[j])); rq[i] = rq[i].map((x, k) => x + d[k] * R); };
+      if (bendEnds) { out(0, 1); out(rq.length - 1, rq.length - 2); }
+      if (bendEnds) { rq.unshift([rq[0][0], rq[0][1], rq[0][2] - R - 50]); rq.push([rq.at(-1)[0], rq.at(-1)[1], rq.at(-1)[2] - R - 50]); }
+      // ohne Eckbögen: Enden als eigene Bogenstücke, der innere Zug bleibt eine gegehrte Kette
+      const parts = bendCorners ? [{ pts: rq, bend: true }] : splitAtCorners(rq);
+      let nb = 0, nm = 0;
+      for (const part of parts) {
+        if (!part.bend) { chains.push({ section: rail, points: part.pts, name: "Handlauf" }); continue; }
+        const bc = bentChain({ section: rail, points: part.pts, name: "Handlauf", radius: R });
+        for (const m of bc.members) members.push({ ...m, name: `Handlauf ${++nm}` });
+        for (const t of bc.tubes) tubes.push({ ...t, name: `Handlauf Bogen ${++nb}` });
+        if (bc.short.length) issues.push({ key: "railR", level: "Warnung", message: `Handlauf: an ${bc.short.length} Ecke(n) ist das Stück zu kurz für den Biegeradius – dort bleibt ein Knick` });
+      }
+      if (bendCorners && holder && runs.length > 1) issues.push({ key: "railBend", level: "Hinweis", message: "Eckpfosten ohne Handlaufhalter: der Bogen läuft innen an der Ecke vorbei – Pfosten trägt über die Gurte" });
+      if (bendCorners && R < 1.5 * rail.geom.width) issues.push({ key: "railR", level: "Warnung", message: `Biegeradius unter 1,5 × Ø (${Math.ceil(1.5 * rail.geom.width)} mm): Rohr knickt ohne Dorn ein – Formbogen verwenden` });
+    } else chains.push({ section: rail, points: rp, name: "Handlauf" });
     // Gurte und Füllung je Feld zwischen den Pfostenflächen
     const half = post.geom.height / 2; // Pfostentiefe entlang der Lauflinie (v zeigt entlang d)
     const belt = p.belt, beltH = belt?.geom.height || 0;
@@ -398,6 +427,17 @@ export const GELAENDER = {
 
 const sub2 = (a, b) => [a[0] - b[0], a[1] - b[1]];
 /** Linienzug um off nach links versetzt (Ecken auf der Winkelhalbierenden) */
+/** Handlauf nur mit Endbögen: [Bogen am Anfang], innerer Zug gegehrt, [Bogen am Ende]; Stöße mitten im ersten bzw. letzten Stück */
+const v3n = (a) => { const l = Math.hypot(...a) || 1; return a.map((x) => x / l); };
+
+function splitAtCorners(rq) {
+  const n = rq.length;
+  if (n <= 4) return [{ pts: rq, bend: true }]; // gerader Handlauf mit zwei Endbögen: ein Zug
+  const mid = (a, b) => a.map((x, k) => (x + b[k]) / 2);
+  const m0 = mid(rq[1], rq[2]), m1 = mid(rq[n - 3], rq[n - 2]);
+  return [{ pts: [rq[0], rq[1], m0], bend: true }, { pts: [m0, ...rq.slice(2, n - 2), m1], bend: false }, { pts: [m1, rq[n - 2], rq[n - 1]], bend: true }];
+}
+
 function offsetLine(pts, off) {
   return pts.map((q, i) => {
     const dA = i > 0 ? norm2(sub2(q, pts[i - 1])) : null, dB = i < pts.length - 1 ? norm2(sub2(pts[i + 1], q)) : null;

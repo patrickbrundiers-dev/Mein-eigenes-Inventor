@@ -1188,7 +1188,7 @@ export function createKernel(R) {
               // angesetzte Zapfen (Gestell: Stecknasen), Quader w × h ab p in Richtung dir
               for (const t of m.tabs || []) solid = solid.fuse(R.drawRectangle(t.w, t.h).sketchOnPlane(new R.Plane(t.p, t.xDir, v3.norm(t.dir))).extrude(t.len));
               // einzelner Stab: alle Bohrungen am Umfang (auch Schlitze nahe der Ecken, daher Diagonale)
-              const ds = drillsOf(m.name, m.a, m.b, Math.hypot(m.section.geom.width, m.section.geom.height));
+              const ds = drillsOf(m.target || m.name, m.a, m.b, Math.hypot(m.section.geom.width, m.section.geom.height));
               add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), miterParts: { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) }, ...(m.copes?.length ? { coped: true } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }), m.name);
             }
             // gebogene/gewalzte Profile (Wendel-Handlauf, Ring, Bogen): ein Körper entlang der Mittellinie

@@ -71,6 +71,8 @@ export const TREPPE = {
     { key: "gelRhythm", label: "Pfosten an den Stufen ausrichten (gleicher Rhythmus, Bleche neben den Stufenbohrungen)", type: "check", default: true, missing: false, group: "Pfostenbefestigung", when: (p) => !!gelMount(p) && (p.support === "flach" || p.support === "upn") },
     { key: "gelDown", label: "Pfosten unter Stufenkante (Befestigung)", type: "num", default: "150", group: "Geländer", when: (p) => gel(p) && !gelMount(p) },
     { key: "gelRail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Geländer", when: gel },
+    { key: "gelRailBend", label: "Handlauf an den Knicken", type: "select", options: [["gehrung", "gegehrt"], ["bogen", "Bogen (Krümmling)"]], default: "gehrung", missing: "gehrung", group: "Geländer", when: (p) => gel(p) && ["rohr", "rund"].includes(p.gelRail?.kind) },
+    { key: "gelRailR", label: "Biegeradius Handlauf (Mitte Rohr)", type: "num", default: "80", group: "Geländer", when: (p) => gel(p) && ["rohr", "rund"].includes(p.gelRail?.kind) && p.gelRailBend === "bogen" },
     ...holderSchema((k) => "gel" + k[0].toUpperCase() + k.slice(1), "Geländer", gel),
     { key: "gelAuslauf", label: "Auslauf oben (waagrecht)", type: "num", default: "300", group: "Geländer", when: gel },
   ],
@@ -95,7 +97,7 @@ export const TREPPE = {
     const AN = p.anschluss === "platten";
     const FT = AN ? 15 : 0, KT = AN && !(p.support === "flach" || p.support === "upn") ? 8 : 0; // Fuß-/Kopfplatten an Boden und Decke, Konsolbleche unter aufgesattelten Stufen
     const isTop = (nR, z0) => Math.abs(z0 + nR * s - H) < 1e-6;
-    const members = [], plates = [], chains = [], drills = [], norms = [];
+    const members = [], plates = [], chains = [], drills = [], norms = [], tubes = [];
     // Tragwerk: Querschnitt, Ausdehnung senkrecht zur Achse in der Laufebene (depth), Dicke quer (thick), Drehung je
     // Seite: hohe Seite senkrecht zum Lauf; offene Seite (U, UPN) nach außen, Steg an den Stufen; Winkel mit dem
     // Schenkel innen unter den Stufen; Mittelholm nur hochkant
@@ -269,6 +271,7 @@ export const TREPPE = {
       const off = !mk ? (side ? thick : 0) + p.gelPost.geom.width / 2 : mk === "seitlich" ? (side ? thick : 0) + sideOffset(mountConfig(p, gk, "seitlich"), p.gelPost) : side ? thick / 2 : -(Math.max(p.gelPost.geom.width, p.gelOW) / 2 + 10);
       const r = railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports: { members, chains, plates, drills } });
       chains.push(...r.chains);
+      tubes.push(...(r.tubes || []));
       members.push(...r.members);
       plates.push(...r.plates);
       drills.push(...r.drills);
@@ -278,7 +281,7 @@ export const TREPPE = {
     Object.assign(geo, { x1: podest(p) ? x1 : (n - 1) * a, D, zP });
     if (AN && !side) info += `, Stufen auf Konsolblechen verschraubt (M12)`;
     if (AN) info += side ? `, Fußwinkel am Boden, Kopfplatten ${FT} mm an der Decke` : `, Boden-/Kopfplatten ${FT} mm mit 4 × Ø 14 an Boden und Decke`;
-    return { chains, members, plates, drills, norms, info, issues, geo };
+    return { chains, members, plates, drills, norms, tubes, info, issues, geo };
   },
 
   parts: { support: /Wange|Holm/, stuetze: /Stütze/, podestRahmen: /Podest/, podestD: /Podest/, gel: /^Geländer/, gelPodest: /^Geländer/ },
@@ -362,6 +365,7 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
   if (left ? wantRight : wantLeft) sides.push([left ? "rechts" : "links", outer]);
   if (left ? wantLeft : wantRight) sides.push([left ? "links" : "rechts", inner]);
   const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100, holder: p.gelHolder !== "keine", holderGap: p.gelHolderGap, holderD: p.gelHolderD,
+    railBend: p.gelRailBend === "bogen" ? p.gelRailR : 0,
     through: gelThrough(p), allow: p.gelAllow || 0, beltMax: p.gelBeltMax, stab: p.gelStab, keys: { bar: "gelBar", belt: "gelBelt", stab: "gelStab", beltMax: "gelBeltMax" } };
   // Pfosten im Stufenrhythmus: Zwischenpfosten der Läufe genau mittig zwischen zwei Stufen (Lücke zwischen den
   // Bohrgruppen der Stufenbefestigung), alle im gleichen Abstand von n Stufen; Endfelder höchstens so lang wie erlaubt
@@ -542,8 +546,9 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
   }
   if (!(o.H > 300)) throw fieldError("Geländerhöhe zu klein", "gelH");
   if (!(o.postMax > post)) throw fieldError("Pfostenabstand zu klein", "gelPostMax");
-  const chains = [], members = [], plates = [], drills = [];
-  let posts = 0, bars = 0, gapMax = 0, pieces = 0;
+  if (o.railBend && !(o.railBend >= p.gelRail.geom.width)) throw fieldError(`Biegeradius mindestens ${Math.ceil(p.gelRail.geom.width)} mm (Rohr-Ø)`, "gelRailR");
+  const chains = [], members = [], plates = [], drills = [], tubes = [];
+  let posts = 0, bars = 0, gapMax = 0, pieces = 0, freeCorners = 0;
   for (const [name, paths] of sides) {
     paths.forEach((path, i) => {
       const r = railAlong(mirror(path), o, `Geländer ${name}${paths.length > 1 ? " " + (i + 1) : ""}`);
@@ -551,6 +556,7 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
       members.push(...r.members);
       plates.push(...r.plates);
       drills.push(...r.drills);
+      tubes.push(...(r.tubes || [])); freeCorners += r.freeCorners || 0;
       posts += r.posts; bars += r.bars; gapMax = Math.max(gapMax, r.gapMax); pieces += r.pieces || 0;
     });
   }
@@ -559,7 +565,9 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
   issues.push(...railingIssues({ use: p.gelUse, fall: p.height, height: o.H, fill: p.gelFill, gap: gapMax, bottom: 0, open: o.H - p.gelRail.geom.height, rail: p.gelRail },
     { height: "gelH", fill: "gelFill", gap: p.gelFill === "quer" ? "gelBars" : "gelGap", rail: "gelRail", use: "gelUse" }));
   const what = p.gelFill === "quer" ? `${bars} Knieleisten` : p.gelFill === "staketen" ? `${bars} Stäbe` : "nur Handlauf";
-  return { chains, members, plates, drills, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` + (o.holder ? `, Handlaufhalter mit Bohrung Ø ${fmt(o.holderD + 0.1)}` : "") + (o.through && pieces ? `, ${p.gelFill === "quer" ? "Knieleisten" : "Untergurt"} durch die Pfosten (${pieces} Stück, Aufmaß ${fmt(o.allow)} mm)` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, gelMount(p) === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "") };
+  if (freeCorners) issues.push({ key: "gelRailBend", level: "Hinweis", message: `${freeCorners} Eckpfosten ohne Handlaufhalter: der Bogen läuft innen an der Podestecke vorbei` });
+  if (o.railBend && o.railBend < 1.5 * p.gelRail.geom.width) issues.push({ key: "gelRailR", level: "Warnung", message: `Biegeradius unter 1,5 × Ø (${Math.ceil(1.5 * p.gelRail.geom.width)} mm): Rohr knickt ohne Dorn ein – Formbogen verwenden` });
+  return { chains, members, plates, drills, tubes, issues, info: `${sides.map((x) => x[0]).join(" und ")}, ${posts} Pfosten, ${what}` + (o.holder ? `, Handlaufhalter mit Bohrung Ø ${fmt(o.holderD + 0.1)}` : "") + (o.through && pieces ? `, ${p.gelFill === "quer" ? "Knieleisten" : "Untergurt"} durch die Pfosten (${pieces} Stück, Aufmaß ${fmt(o.allow)} mm)` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, gelMount(p) === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "") };
 }
 
 const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");

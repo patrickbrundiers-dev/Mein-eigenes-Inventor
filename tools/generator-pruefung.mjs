@@ -33,6 +33,8 @@ const gestellSegs = [...rect.map((a, i) => ({ id: "s" + i, a, b: rect[(i + 1) % 
 /** Testfälle: Name, Generator, geänderte Parameter */
 export const CASES = [
   ["gelaender-staketen", "gelaender", { runs: "3000; 1500" }],
+  ["gelaender-boegen", "gelaender", { runs: "3000; 1500", railBend: "bogen", railEnd: "bogen" }],
+  ["gelaender-endbogen", "gelaender", { runs: "3000; 1500", railEnd: "bogen" }],
   ["gelaender-kreuz", "gelaender", { fill: "kreuz" }],
   ["gelaender-kreuz-ohne-ring", "gelaender", { fill: "kreuz", ring: false }],
   ["gelaender-rahmen", "gelaender", { fill: "rahmen" }],
@@ -49,6 +51,8 @@ export const CASES = [
   ["treppe-holm1", "treppe", { support: "holm1", gel: "keine" }],
   ["treppe-L", "treppe", { form: "L" }],
   ["treppe-U", "treppe", { form: "U", gap: "200" }],
+  ["treppe-U-boegen", "treppe", { form: "U", gap: "200", gelRailBend: "bogen" }],
+  ["treppe-gerade-boegen-staketen", "treppe", { gelFill: "staketen", gelRailBend: "bogen" }],
   ["spindel", "spindel", {}],
   ["spindel-fussplatte", "spindel", { stabMount: "oben" }],
   ["balkon", "balkon", {}],
