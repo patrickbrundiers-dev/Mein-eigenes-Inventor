@@ -92,3 +92,37 @@ test("W3 Muster: Abstände einzeln, Exemplare auslassen, Winkel einzeln", async 
   assert.match(circ.status.m.info, /^3 Exemplare/);
   await assert.rejects(K.buildPart(part([...base, { id: "m", type: "pattern", kind: "linear", feature: "e1", dir: "X", count: "3", spacing: "20", skip: "1" }])).then((r) => { if (!r.status.m.ok) throw new Error(r.status.m.error); }), /Original/);
 });
+
+test("W6 Vordach/Carport: Stützen, Pfetten, Sparren mit Gefälle, Kopfbänder, Dachhaut und Rinne ohne Überschneidung", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const build = async (params) => {
+    const f = defaultGenerator("vordach");
+    const res = await K.buildPart(part([{ id: "g", ...f, params: { ...f.params, ...params } }]));
+    assert.ok(res.status.g.ok, JSON.stringify(res.status.g));
+    return res;
+  };
+  const count = (res, re) => res.bodies.filter((b) => re.test(b.name)).length;
+  const overl = (res) => K.collisions(res.bodies.map((b, i) => ({ key: `${i}:${b.name}`, shape: b.shape })), { tol: 1 }).map((c) => `${c.a} × ${c.b}`);
+  const car = await build({});
+  console.log("[info]", car.status.g.info);
+  assert.equal(count(car, /^Stütze \d+$/), 6); // 3 je Reihe bei 4500 Abstand
+  assert.equal(count(car, /^Sparren \d+$/), 8);
+  assert.equal(count(car, /^Kopfband/), 8);
+  assert.equal(count(car, /^Dachhaut$/), 1);
+  assert.equal(count(car, /^Kastenrinne$/), 1);
+  assert.deepEqual(overl(car), []);
+  // Gefälle: Dachhaut hinten höher als vorne um ≈ 3 % der Tiefe
+  const roof = car.bodies.find((b) => b.name === "Dachhaut").shape.boundingBox.bounds;
+  near(roof[1][2] - roof[0][2], 5400 * 0.03, 3, "Höhenunterschied");
+  // Stegplatten: eigene Dichte (≈ 2,7 kg/m²)
+  const st = await build({ roof: "steg", slope: "6" });
+  const sp = st.bodies.find((b) => b.name === "Dachhaut");
+  assert.equal(sp.meta.density, 0.17);
+  const vd = await build({ form: "vordach", depth: "2500", width: "4000" });
+  console.log("[info]", vd.status.g.info);
+  assert.equal(count(vd, /^Stütze \d+$/), 2);
+  assert.equal(count(vd, /^Ankerplatte \d$/), 2);
+  assert.equal(count(vd, /^Wandpfette$/), 1);
+  assert.deepEqual(overl(vd), []);
+  assert.match(vd.status.g.warning || "", /Anker bzw. Dübel/);
+});

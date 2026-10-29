@@ -62,6 +62,8 @@ export const CASES = [
   ["windverband", "windverband", {}],
   ["pfette", "pfette", { spans: "5000; 5000; 5000" }],
   ["rahmenecke", "rahmenecke", {}],
+  ["carport", "vordach", {}],
+  ["vordach", "vordach", { form: "vordach", depth: "2500", width: "4000", roof: "glas", slope: "8" }],
   ["gestell", "gestell", null],
 ];
 

@@ -138,6 +138,7 @@ export const BEFEHLSHILFE = {
   balkon: "Balkon mit Stützen, Trägern, Belag und Geländer.",
   tor: "Dreh- oder Doppelflügeltor mit Rahmen, Füllung und Bändern.",
   schiebetor: "Freitragendes Schiebetor mit Laufschiene, Rollenböcken und Gegengewichtsteil.",
+  vordach: "Vordach an der Wand oder freistehenden Carport mit Stützen, Pfetten, Sparren, Dachhaut und Rinne erzeugen.",
   zaun: "Zaunfelder in Reihe mit Pfosten, auch mit Gefälle oder Stufung am Hang.",
   rahmenecke: "Biegesteife Rahmenecke für Stahlbau-Träger mit Stirnplatten und Steifen.",
   pfette: "Pfette mit Pfettenschuhen auf Binder setzen.",

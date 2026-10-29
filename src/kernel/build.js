@@ -1215,7 +1215,7 @@ export function createKernel(R) {
               const pds = (plan.drills || []).filter((x) => x.target === pl.name);
               const solid = drill(d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t), pds);
               const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length + pds.length, ...(pl.slots?.length ? { slots: pl.slots.length } : {}), d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
-              const dens = pl.glass ? FILL_DENSITY.glas : FILL_DENSITY[pl.tread];
+              const dens = pl.density ?? (pl.glass ? FILL_DENSITY.glas : FILL_DENSITY[pl.tread]);
               if (dens) meta.density = dens;
               state.bodies.push({ shape: solid, kind: "solid", name: pl.name, fid: f.id, meta });
               list.push({ shape: solid, kind: "solid", meta, name: pl.name });
