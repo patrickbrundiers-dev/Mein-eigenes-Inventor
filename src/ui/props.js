@@ -46,6 +46,7 @@ import { sketchViews, VIEW_LABEL, fieldParts } from "../core/genskizze.js";
 import { sketchSvg, linkFieldToSketch } from "./genskizze.js";
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gentemplates.js";
 import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
+import { weldPlanOf } from "../core/schweissplan.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { newPart, newAssembly } from "../core/examples.js";
 import { NORM_KINDS, NORM_SIZES, normDesignation, collectNorm } from "../core/normteile.js";
@@ -582,7 +583,7 @@ export class Props {
       h("table", { class: "grid" },
         h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Naht"), h("th", {}, "Anz."), h("th", {}, "Länge mm"), h("th", {}, "kg"))),
         h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, weldText(r)), h("td", { class: "num" }, String(r.count)), h("td", { class: "num" }, fmtNum(r.length, 0)), h("td", { class: "num" }, fmtNum(r.mass, 3)))))),
-      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportWeldList() }, "Nahtliste CSV")));
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportWeldList() }, "Nahtliste CSV"), h("button", { class: "btn", onclick: () => this.app.files.weldPlanDialog() }, "Schweißplan…")));
   }
   /** Normteile des Bauteils mit Anzahl */
   normListSection(part) {
@@ -1031,6 +1032,10 @@ export class Props {
           this.seg("Seite", Object.entries(WELD_SIDES), f.side || "pfeil", (v) => this.set(f, "side", v, "Seite")),
           this.check("Umlaufend", !!f.around, (v) => this.set(f, "around", v, "Umlaufend")),
           this.check("Montagenaht (auf der Baustelle)", !!f.field, (v) => this.set(f, "field", v, "Montagenaht")),
+          (() => {
+            const plan = weldPlanOf(app.project);
+            return this.select("Schweißanweisung (WPS)", [["", plan.defaultWps ? `Standard (${plan.defaultWps})` : "Standard – noch keine WPS"], ...plan.wps.map((w) => [w.id, `${w.id}${w.process ? " · " + w.process : ""}`])], f.wps || "", (v) => this.set(f, "wps", v || undefined, "WPS"));
+          })(),
           kind === "kehl" ? this.check("Naht als Körper (Volumen und Masse, in der Kehle zwischen zwei Teilen)", !!f.bead, (v) => this.set(f, "bead", v || undefined, "Nahtkörper")) : null,
           h("div", { class: picking ? "picking" : "" },
             h("div", {}, `${(f.edges || []).length} Kante(n) gewählt`),

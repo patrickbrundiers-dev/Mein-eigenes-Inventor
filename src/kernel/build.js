@@ -1254,7 +1254,7 @@ export function createKernel(R) {
               found.push(best);
             }
             if (!p3) throw new Error("Gewählte Kanten nicht mehr gefunden");
-            state.welds.push({ fid: f.id, kind: f.kind || "kehl", a, side: f.side || "pfeil", around: !!f.around, field: !!f.field, length, p3, name: f.name });
+            state.welds.push({ fid: f.id, kind: f.kind || "kehl", a, side: f.side || "pfeil", around: !!f.around, field: !!f.field, length, p3, name: f.name, ...(f.wps ? { wps: f.wps } : {}) });
             st.info = `${WELD_KINDS[f.kind || "kehl"].dim}${round(a)}, ${round(length)} mm an ${refs.length - miss} Kante(n)`;
             const warn = miss ? [`${miss} Kante(n) nicht mehr gefunden`] : [];
             // Schweißbaugruppe (Stufe 53): Kehlnaht als Körper (Dreiecksquerschnitt in der Kehle zwischen zwei Teilen)

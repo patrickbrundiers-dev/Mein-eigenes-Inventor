@@ -242,6 +242,7 @@ export const BEFEHLSHILFE = {
   x_mappe: "Fertigungsmappe als ZIP: Zeichnungen als PDF, Listen, STEP- und DXF-Dateien.",
   x_angebot: "Angebotsblatt mit Bild, Hauptmaßen, Werkstoff und Gewicht als PDF.",
   x_etiketten: "Werkstatt-Etiketten mit QR-Code je Position oder Zuschnitt als PDF, auf A4-Bögen oder für den Etikettendrucker.",
+  x_schweissplan: "Schweißplan nach EN 1090: WPS je Naht, Ausführungsklasse, Prüfumfang und Felder für Schweißer und Prüfer.",
   x_versand: "Versandliste mit Packstücken, Gewicht und Hüllmaß zum Abhaken beim Verladen.",
   x_pdf: "Zeichnung als PDF speichern.",
   x_svg: "Zeichnung als SVG-Grafik speichern.",

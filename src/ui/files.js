@@ -12,6 +12,7 @@ import { linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, base
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
+import { EXC_LEVELS, PROCESSES, weldPlanOf, weldPlanRows, weldPlanPage, weldPlanCsv } from "../core/schweissplan.js";
 import { collectNorm } from "../core/normteile.js";
 import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
 import { decomposePlacement } from "../core/geom.js";
@@ -497,6 +498,59 @@ export class Files {
     if (!rows.length) return toast("Keine Schweißnähte vorhanden – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
     await this.saveText(weldCsv(rows, d.name), safeName(d.number || d.name) + "_Nahtliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
   }
+  /**
+   * Schweißplan (W11): Ausführungsklasse, Schweißaufsicht und WPS-Liste für das ganze Projekt pflegen, dann als PDF
+   * (A4 quer) oder CSV ausgeben. Die WPS je Naht wählt man an der Schweißnaht; alle übrigen Nähte bekommen die Standard-WPS.
+   */
+  async weldPlanDialog(d = this.app.activeDoc()) {
+    const app = this.app;
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Schweißplan gibt es für Bauteile und Baugruppen");
+    const plan = JSON.parse(JSON.stringify(weldPlanOf(app.project)));
+    const mem = (v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem("pbcad.wps") || "[]"); localStorage.setItem("pbcad.wps", JSON.stringify(v)); } catch { /* ohne Speicher */ } return []; };
+    if (!plan.wps.length) plan.wps = mem();
+    const table = h("div", {});
+    const inp = (w, k, ph, width) => { const el = h("input", { class: "inp", placeholder: ph, style: { width } }); el.value = w[k] || ""; el.addEventListener("input", () => { w[k] = el.value.trim(); }); return el; };
+    const defSel = h("select", { class: "inp" });
+    const draw = () => {
+      table.replaceChildren(h("table", { class: "grid" },
+        h("thead", {}, h("tr", {}, ...["WPS-Nr.", "Prozess", "Grundwerkstoff", "Zusatz", "Positionen", ""].map((x) => h("th", {}, x)))),
+        h("tbody", {}, ...plan.wps.map((w, i) => {
+          const pr = h("select", { class: "inp" }, ...Object.entries(PROCESSES).map(([k, l]) => h("option", { value: k, selected: String(w.process) === k ? true : undefined }, l)));
+          if (!w.process) w.process = "135";
+          pr.addEventListener("change", () => { w.process = pr.value; });
+          return h("tr", {}, h("td", {}, inp(w, "id", "WPS-01", "90px")), h("td", {}, pr), h("td", {}, inp(w, "material", "S235–S355", "110px")), h("td", {}, inp(w, "filler", "G3Si1", "80px")), h("td", {}, inp(w, "positions", "PA, PB", "70px")),
+            h("td", {}, h("button", { class: "btn", title: "entfernen", onclick: () => { plan.wps.splice(i, 1); draw(); } }, "×")));
+        }))),
+        h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { plan.wps.push({ id: `WPS-${String(plan.wps.length + 1).padStart(2, "0")}`, process: "135" }); draw(); } }, "WPS hinzufügen")));
+      defSel.replaceChildren(...plan.wps.map((w) => h("option", { value: w.id, selected: w.id === plan.defaultWps ? true : undefined }, w.id || "?")));
+    };
+    draw();
+    defSel.addEventListener("change", () => { plan.defaultWps = defSel.value; });
+    const exc = h("select", { class: "inp" }, ...EXC_LEVELS.map((x) => h("option", { value: x, selected: x === plan.exc ? true : undefined }, x)));
+    exc.addEventListener("change", () => { plan.exc = exc.value; });
+    const sup = h("input", { class: "inp", placeholder: "Name der Schweißaufsicht" }); sup.value = plan.supervisor; sup.addEventListener("input", () => { plan.supervisor = sup.value; });
+    const field = (label, el) => h("div", { class: "field" }, h("label", {}, label), el);
+    const out = await new Promise((res) => modal({
+      title: "Schweißplan nach EN 1090", width: "720px", onClose: (r) => res(r || null),
+      body: h("div", {}, field("Ausführungsklasse", exc), field("Schweißaufsicht", sup), table, field("Standard-WPS (Nähte ohne eigene WPS)", defSel),
+        h("p", { class: "hint" }, "Gilt für das ganze Projekt. Die WPS einer einzelnen Naht wählst du an der Schweißnaht; Nähte von Platten, Rippen und Endkappen bekommen die Standard-WPS. Der Prüfumfang folgt der Ausführungsklasse (Richtwerte EN 1090-2, Tabelle 24).")),
+      buttons: [{ label: "Abbrechen" }, { label: "Nur speichern", value: "save" }, { label: "CSV", value: "csv" }, { label: "PDF erstellen", primary: true, value: "pdf" }],
+    }));
+    if (!out) return;
+    plan.wps = plan.wps.filter((w) => w.id);
+    if (!plan.wps.some((w) => w.id === plan.defaultWps)) plan.defaultWps = plan.wps[0]?.id || "";
+    app.edit("Schweißplan", () => { app.project.weldPlan = plan; }, { rebuild: false });
+    if (plan.wps.length) mem(plan.wps);
+    if (out === "save") return toast("Schweißplan gespeichert", { kind: "ok" });
+    await app.builtParts(d);
+    const rows = weldPlanRows(collectWelds(collectCutSources(app, d)), plan);
+    if (!rows.length) return toast("Keine Schweißnähte vorhanden – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
+    const base = safeName(d.number || d.name);
+    if (out === "csv") return this.saveText(weldPlanCsv(rows, plan, d.name), base + "_Schweissplan.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
+    const html = mappeHtml([weldPlanPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", plan, rows })], { title: "Schweißplan " + d.name });
+    if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + "_Schweissplan.pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+    else await this.saveText(html, base + "_Schweissplan.html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+  }
   /** Alle Listen als Excel-Arbeitsmappe: Stückliste (Baugruppe), Zuschnitt, Summen je Profil, Nahtliste */
   /** Abwicklung eines Kantteils als DXF (Kontur, Biegelinien mit Winkel) */
   async exportKantteilDxf(f) {
@@ -689,7 +743,10 @@ export class Files {
       const bends = parts.flatMap((p) => (app.results.get(p.id)?.bodies || []).filter((b) => b.meta?.bends?.length).map((b) => ({ name: `${p.name} – ${b.name}`, bends: b.meta.bends, last: b.meta.lastStraight || 0, length: b.meta.length })));
       const base = mappeName(d.number || d.name);
       const status = open.length ? "nicht freigegeben" : releaseText(d, (id) => app.doc(id));
-      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends }), ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
+      // Schweißplan (W11), sobald es Nähte gibt
+      const wRows = weldPlanRows(collectWelds(cutSrc), weldPlanOf(app.project));
+      const wPage = wRows.length ? [weldPlanPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", plan: weldPlanOf(app.project), rows: wRows })] : [];
+      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
       const files = [];
       const pdf = this.bridge?.renderPdf ? await this.bridge.renderPdf(html) : null;
       files.push(pdf ? [base + "_Fertigungsmappe.pdf", new Uint8Array(pdf)] : [base + "_Fertigungsmappe.html", html]);
