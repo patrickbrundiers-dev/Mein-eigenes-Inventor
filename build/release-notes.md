@@ -1,10 +1,5 @@
-**Neu in 0.29.0**
+**Neu in 0.30.0**
 
-- **Handlauf mit Bögen** statt Gehrung bei Geländer, Treppe und Arbeitsbühne.
-- **Glasgeländer** mit Glasklemmhaltern, Punkthaltern oder Bodenklemmprofil (neue Normteile).
-- **Gewendelte Treppe** (viertel- und halbgewendelt) mit verzogenen Stufen.
-- **Generatoren deutlich schneller:** unveränderte Teile kommen aus dem Zwischenspeicher.
-- **Neue Generatoren:** Lamellendach/Pergola und Voutenträger (Voute an einem oder beiden Enden oder linear).
-- **Zeichnung:** Winkelmaße (automatisch und von Hand) und der Befehl „Aufräumen“ für doppelte und verwaiste Maße.
-- **Baugruppe:** Spiegeln bleibt verknüpft, die gespiegelte Seite folgt dem Original; einzelne Teile sind abwählbar.
-- **Bohrungsangaben und Gewinde direkt am 3D-Modell** (in den Einstellungen abschaltbar).
+- **Messen mit Fangpunkten wie in Inventor und Fusion:** Endpunkt, Mittelpunkt, Kreismitte und Bogenmitte, mit der Auswahl „Punkte“ auch Quadrant und Flächenmitte, exakt aus dem Geometriekern. Achsen von Bohrungen und Zylindern sind direkt wählbar. Ein Hinweis am Mauszeiger zeigt, was ein Klick wählt. Dazu gibt es den Auswahlfilter Alle/Punkte/Kanten/Flächen und einen einstellbaren Fangradius.
+- **Kleine, schlanke Fangsymbole** je Fangart im 3D-Fenster und in der Skizze statt großer Punkte.
+- **Gewählte Flächen deutlich hervorgehoben:** eigene Auswahlfarbe Blau mit Umriss, die Vorhervorhebung bleibt Orange.
