@@ -119,3 +119,31 @@ test("N4: Lamellendach – Lamellen, Achsbolzen, Endkappen, Ablauf, Wand ohne hi
   assert.ok(w.plates.some((x) => /^Wandplatte/.test(x.name)));
   assert.throws(() => plan("pergola", { angle: "120" }), /Stellung/);
 });
+
+test("N7: Winkelmaß an schräger Kante, je Winkel einmal; doppelte Maße; Winkel von Hand", async () => {
+  const { angleDims, angleValue, duplicateDims, cleanupDrawing, angleFromSegments } = await import("../src/core/aufraeumen.js");
+  // Stütze senkrecht, Kopfband unter 45° (Linienzüge der Ansicht)
+  const view = { id: "v1", bbox: { x0: 0, y0: 0, x1: 1000, y1: 2000 }, lines: [[[0, 0], [0, 2000]], [[0, 1400], [400, 1800]], [[0, 0], [1000, 0]], [[1000, 0], [1000, 2000]]] };
+  const used = {};
+  const a = angleDims(view, used);
+  assert.equal(a.length, 1);
+  assert.ok(Math.abs(angleValue(a[0]) - 45) < 1e-6);
+  assert.equal(angleDims({ ...view, id: "v2" }, used).length, 0, "derselbe Winkel nur einmal");
+  // rechtwinklige Ecken bekommen kein Winkelmaß
+  assert.equal(angleDims({ id: "v3", bbox: view.bbox, lines: [[[0, 0], [1000, 0], [1000, 2000]]] }, {}).length, 0);
+  const views = { f: { axes: ["X", "Z"] }, t: { axes: ["X", "Y"] } };
+  const dims = [
+    { id: "a", view: "f", kind: "h", p1: [0, 0], p2: [500, 0] },
+    { id: "b", view: "t", kind: "h", p1: [0, 300], p2: [500, 300] }, // gleiche X-Strecke in der Draufsicht
+    { id: "c", view: "t", kind: "h", p1: [500, 300], p2: [1000, 300] }, // gleiche Länge, andere Lage: bleibt
+    { id: "d", view: "f", kind: "dia", circle: { cx: 1, cy: 1, r: 5 } },
+    { id: "e", view: "t", kind: "dia", circle: { cx: 9, cy: 9, r: 5 } },
+  ];
+  assert.deepEqual(duplicateDims(dims, views), ["b", "e"]);
+  const r = cleanupDrawing({ dims: [...dims, { id: "x", view: "weg", kind: "h", p1: [0, 0], p2: [1, 0] }], leaders: [], balloons: [{ id: "b1", view: "weg" }] }, views, new Set(["f", "t"]));
+  assert.deepEqual(r.dims.map((m) => m.id), ["a", "c", "d"]);
+  assert.deepEqual(r.removed, { duplicates: 2, orphans: 2 });
+  const g = angleFromSegments({ a: [0, 0], b: [100, 0] }, [80, 0], { a: [0, 10], b: [10, 20] }, [8, 18]);
+  assert.ok(Math.abs(angleValue({ kind: "ang", ...g }) - 45) < 1e-6);
+  assert.ok(Math.hypot(g.c[0] + 10, g.c[1]) < 1e-6, "Scheitel im Schnittpunkt");
+});

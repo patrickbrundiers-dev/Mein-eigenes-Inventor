@@ -18,6 +18,7 @@ import { gridViewSvg } from "./achsraster.js";
 import { weldSymbol } from "../core/weld.js";
 import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
+import { angleValue, cleanupDrawing, angleFromSegments } from "../core/aufraeumen.js";
 import { bomRows } from "./props.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { bendNote, bendTableCells } from "../core/blech.js";
@@ -1207,6 +1208,7 @@ export class DrawingEditor {
     return g;
   }
   dimValue(m) {
+    if (m.kind === "ang") return angleValue(m);
     if (m.kind === "arc") return arcLength(m.circle.r, m.sweep);
     if (m.kind === "dia") return m.circle.r * 2;
     if (m.kind === "rad") return m.circle.r;
@@ -1221,9 +1223,9 @@ export class DrawingEditor {
     const xf = this.viewXf(v);
     const g = svgEl("g", { "data-dim": m.id, class: interactive ? "dw-dimgrp" + (this.sel?.type === "dim" && this.sel.id === m.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
     const val = this.dimValue(m);
-    const tol = toleranceText(m.tol, val, classOf(d.title?.toleranz), m.kind === "rad" ? "rad" : "lin");
+    const tol = m.kind === "ang" ? "" : toleranceText(m.tol, val, classOf(d.title?.toleranz), m.kind === "rad" ? "rad" : "lin");
     // Bohrungs- und Teilungsangaben bleiben, wie sie sind (Nennmaße der Bohrung); die Toleranz kommt dahinter
-    const txt = (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m) + tol
+    const txt = m.kind === "ang" ? dimLabel(m) : (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m) + tol
       : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : m.kind === "arc" ? "⌒" : "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + tol + (m.suffix || "");
     const arrowHead = (x, y, ux, uy) => {
       const L = 3, w = 0.9;
@@ -1234,6 +1236,27 @@ export class DrawingEditor {
       t.textContent = txt;
       return t;
     };
+    if (m.kind === "ang") {
+      // Winkelmaß (DIN 406): Maßbogen um den Scheitel, Hilfslinien als Verlängerung der Schenkel, Zahl außen am Bogen
+      const C = xf.to(...m.c), P1 = xf.to(...m.p1), P2 = xf.to(...m.p2), R = Math.max(4, m.off ?? 12);
+      const a1 = Math.atan2(P1[1] - C[1], P1[0] - C[0]);
+      let sw = Math.atan2(P2[1] - C[1], P2[0] - C[0]) - a1;
+      while (sw > Math.PI) sw -= 2 * Math.PI;
+      while (sw < -Math.PI) sw += 2 * Math.PI;
+      const at = (a, r) => [C[0] + Math.cos(a) * r, C[1] + Math.sin(a) * r];
+      const steps = Math.max(8, Math.ceil(Math.abs(sw) * 24));
+      const pts = Array.from({ length: steps + 1 }, (_, i) => at(a1 + (sw * i) / steps, R));
+      let dd = "M" + pts.map((q) => `${r3(q[0])} ${r3(q[1])}`).join("L");
+      // Hilfslinie, wo der Schenkel kürzer als der Bogenradius ist
+      for (const [P, a] of [[P1, a1], [P2, a1 + sw]]) { const L = Math.hypot(P[0] - C[0], P[1] - C[1]); if (L < R) { const E = at(a, L + 1), F = at(a, R + 2); dd += `M${r3(E[0])} ${r3(E[1])}L${r3(F[0])} ${r3(F[1])}`; } }
+      g.append(svgEl("path", { d: dd }));
+      const sg = sw >= 0 ? 1 : -1, tg = (a, s2) => [-Math.sin(a) * s2, Math.cos(a) * s2];
+      const E0 = pts[0], E1 = pts[pts.length - 1], t0 = tg(a1, sg), t1 = tg(a1 + sw, sg);
+      g.append(arrowHead(E0[0], E0[1], -t0[0], -t0[1]), arrowHead(E1[0], E1[1], t1[0], t1[1]));
+      const Mid = at(a1 + sw / 2, R + 3);
+      g.append(text(Mid[0], Mid[1] + 1.2, 0));
+      return g;
+    }
     if (m.kind === "arc") {
       // Bogenlänge (DIN 406): Maßbogen konzentrisch, Hilfslinien radial, Bogenzeichen vor der Zahl
       const R = m.circle.r * v.scale + (m.off ?? 8);
@@ -1574,11 +1597,12 @@ export class DrawingEditor {
   setTool(t) {
     this.tool = t;
     this.pendingDim = null;
+    this.pendingAngle = null;
     this.pendingChain = null;
     if (t !== "aux") this.pendingAux = null;
     if (t !== "breakout") this.pendingBo = null;
     if (t !== "proj") { this.pendingProj = null; this.projGhost = null; }
-    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : t === "chain" ? "Kettenmaß: Punkte der Reihe nach anklicken, nach dem zweiten Punkt die Lage der Maßreihe; Esc beendet" : t === "base" ? "Bezugsmaß: Bezugspunkt, dann weitere Punkte anklicken, nach dem zweiten Punkt die Lage; Esc beendet" : t === "arclen" ? "Bogenlänge: Bogen in einer Ansicht anklicken" : t === "center" ? "Mittelpunkt: Kreis oder Bogen anklicken (nochmal klicken entfernt)" : "");
+    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : t === "chain" ? "Kettenmaß: Punkte der Reihe nach anklicken, nach dem zweiten Punkt die Lage der Maßreihe; Esc beendet" : t === "base" ? "Bezugsmaß: Bezugspunkt, dann weitere Punkte anklicken, nach dem zweiten Punkt die Lage; Esc beendet" : t === "arclen" ? "Bogenlänge: Bogen in einer Ansicht anklicken" : t === "angle" ? "Winkelmaß: zwei Kanten derselben Ansicht anklicken" : t === "center" ? "Mittelpunkt: Kreis oder Bogen anklicken (nochmal klicken entfernt)" : "");
     this.app.ribbon.render();
     this.render();
   }
@@ -1605,6 +1629,7 @@ export class DrawingEditor {
       if (this.tool === "dim") return this.dimClick(sx, sy);
       if (this.tool === "chain" || this.tool === "base") return this.chainClick(sx, sy);
       if (this.tool === "arclen") return this.arcLenClick(sx, sy);
+      if (this.tool === "angle") return this.angleClick(sx, sy);
       if (this.tool === "center") return this.centerClick(sx, sy);
       if (this.tool === "text") return this.textClick(sx, sy);
       if (this.tool === "detail") return this.detailClick(sx, sy);
@@ -1780,6 +1805,23 @@ export class DrawingEditor {
     }
     return null;
   }
+  /** Winkelmaß von Hand: erste Kante merken, mit der zweiten das Maß setzen */
+  angleClick(sx, sy) {
+    const d = this.doc;
+    const rects = this.sheetRects(d);
+    const v = d.views.find((x) => { const r = rects[x.id]?.rect; return x.type !== "iso" && r && sx >= r[0] - 3 && sx <= r[2] + 3 && sy >= r[1] - 3 && sy <= r[3] + 3; });
+    if (!v) return toast("Kante in einer Ansicht anklicken");
+    const q = this.viewXf(v).from(sx, sy), seg = nearestSegment(this.proj.get(v.id).visible, q, 3 / (v.scale * this.zoom));
+    if (!seg) return toast("Keine Kante getroffen");
+    const first = this.pendingAngle;
+    if (!first || first.view !== v.id) { this.pendingAngle = { view: v.id, seg, q }; return toast("Zweite Kante anklicken", { timeout: 1200 }); }
+    this.pendingAngle = null;
+    const g = angleFromSegments(first.seg, first.q, seg, q);
+    if (!g) return toast("Die Kanten sind parallel – kein Winkel");
+    const m = { id: uid("m"), view: v.id, kind: "ang", ...g, off: 12 };
+    this.app.edit("Winkelmaß", () => { (d.dims = d.dims || []).push(m); }, { rebuild: false });
+    this.render();
+  }
   arcLenClick(sx, sy) {
     const hit = this.arcAt(sx, sy);
     if (!hit) return;
@@ -1815,7 +1857,7 @@ export class DrawingEditor {
     return parts.length ? svgEl("path", { d: parts.join(""), fill: "none", stroke: "#111a24", "stroke-width": LW.thin, "stroke-dasharray": "6 1 1 1" }) : null;
   }
   /** Waagrechte und senkrechte Maße je Ansicht in Reihen ausrichten (DIN 406: 10 mm, dann 7 mm) */
-  alignDims() {
+  alignDims({ quiet = false } = {}) {
     const d = this.doc;
     const changes = new Map();
     for (const v of d.views) {
@@ -1830,10 +1872,25 @@ export class DrawingEditor {
         for (const it of items) changes.set(it.id, pos.get(it.id) - it.edge);
       }
     }
-    if (!changes.size) return toast("Keine waagrechten oder senkrechten Maße zum Ausrichten");
+    if (!changes.size) return quiet ? undefined : toast("Keine waagrechten oder senkrechten Maße zum Ausrichten");
     this.app.edit("Maße ausrichten", () => { for (const m of d.dims) if (changes.has(m.id)) m.off = Math.round(changes.get(m.id) * 100) / 100; }, { rebuild: false });
     this.render();
-    toast(`${changes.size} Maße in Reihen ausgerichtet`, { kind: "ok" });
+    if (!quiet) toast(`${changes.size} Maße in Reihen ausgerichtet`, { kind: "ok" });
+  }
+  /** Zeichnung aufräumen (N7): doppelte Maße und Verwaistes entfernen, Maße und Positionsnummern in Reihen */
+  cleanup() {
+    const d = this.doc;
+    if (!d) return;
+    const views = Object.fromEntries(d.views.map((v) => { const c = this.viewCam(d, v); return [v.id, { axes: v.type === "flat" ? ["F1", "F2"] : c ? viewAxes(c.dir, c.up) : [null, null] }]; }));
+    const r = cleanupDrawing(d, views, new Set(d.views.map((v) => v.id)));
+    if (r.removed.duplicates + r.removed.orphans) {
+      this.app.edit("Zeichnung aufräumen", () => { d.dims = r.dims; d.leaders = r.leaders; d.balloons = r.balloons; }, { rebuild: false });
+    }
+    if (d.dims.some((m) => m.kind === "h" || m.kind === "v")) this.alignDims({ quiet: true });
+    if (d.balloons?.length) this.alignBalloonRows();
+    this.render();
+    const parts = [r.removed.duplicates ? `${r.removed.duplicates} doppelte Maße entfernt` : "", r.removed.orphans ? `${r.removed.orphans} Einträge ohne Ansicht entfernt` : ""].filter(Boolean);
+    toast((parts.length ? parts.join(", ") + "; " : "Keine doppelten Maße; ") + "Maße und Positionsnummern ausgerichtet", { kind: "ok" });
   }
   /** Positionsnummern im Uhrzeigersinn neu nummerieren (Reihenfolge gilt für Stückliste dieser Zeichnung) */
   renumberBalloons() {
@@ -1865,6 +1922,7 @@ export class DrawingEditor {
     this.render();
   }
   offsetFor(m, xf, sx, sy) {
+    if (m.kind === "ang") { const C = xf.to(...m.c); return Math.max(4, Math.hypot(sx - C[0], sy - C[1])); }
     const A = xf.to(...m.p1), B = xf.to(...m.p2);
     if (m.kind === "h") { const top = Math.max(A[1], B[1]), bot = Math.min(A[1], B[1]); return sy >= top ? sy - top : sy <= bot ? sy - bot : sy - top; }
     if (m.kind === "v") { const r = Math.max(A[0], B[0]), l = Math.min(A[0], B[0]); return sx >= r ? sx - r : sx <= l ? sx - l : sx - r; }
