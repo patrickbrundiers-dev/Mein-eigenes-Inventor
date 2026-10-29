@@ -1,14 +1,8 @@
-**Neu in 0.25.0**
+**Neu in 0.26.0**
 
-Ein großes Sammel-Update.
-
-- **Normteil-Bibliothek wie das Inventor Inhaltscenter:** 36 Familien von M3 bis M36, darunter Schrauben, Muttern, Scheiben, Dübel und Anker, Blindniete und Stifte. Es gibt Suche (auch nach alten DIN-Nummern), Vorschau, Masse und Bezeichnung. „An Bohrung einbauen“ wählt Größe und Klemmlänge selbst und setzt eine ganze Garnitur aus Schraube, Scheiben und Mutter. Eigene Normteile lassen sich per JSON einbinden.
-- **Baugruppen schneller aufbauen:** Das Platzieren geht mit Vorschau am Mauszeiger. Komponenten lassen sich ziehen, die Freiheitsgrade werden angezeigt, und Alt-Ziehen erkennt die passende Abhängigkeit. Dazu kommen Unterbaugruppen aus der Auswahl, Fügepunkte, ein Muster am Lochbild, Spiegeln mehrerer Komponenten, Komponenten aus Skelett-Körpern und ein Gelenk an einer gewählten Achse.
-- **Dokument-Reiter unten wie in Inventor:** Startseite, Dokumentliste und ein Reiter je offenem Dokument. Beim Schließen kommt die Rückfrage nur bei ungespeicherten Änderungen. Dazu gibt es GLB-Export, einen Render-Dialog und Beschläge als Normteile.
-- **Modellbrowser:** Skizzen stehen unter ihrem Feature, Warnungen haben Plaketten, und das Auge blendet direkt aus und ein. Umbenennen geht mit F2, und erweiterte Namen zeigen das Maß. Außerdem gibt es eine Suche im Baum, Ordner und Pfeiltasten, und das Überfahren hebt die Teile zwischen Baum und 3D gegenseitig hervor.
-- **Arbeitsebenen, -achsen und -punkte wie in Inventor:** Du klickst Geometrie an, die Art wird erkannt, und eine Vorschau zeigt das Ergebnis. Neu sind Mittelebene, tangentiale Ebene, Ebene senkrecht zu einer Kante, Achse durch Zylinder oder Kreis und Punkt in Kanten- oder Kreismitte. Den Abstand ziehst du mit einem Griff.
-- **Oberfläche:** Tooltips mit Kürzeln, ein Markierungsmenü per Rechtsklick, eine Mini-Leiste an der Auswahl, Tastenhinweise mit Alt, die Kurzhilfe auf F1 und ein geführter Rundgang.
-- **Skizze:** Der Löser ist deutlich schneller. Das Maß erscheint schon an der Maus, und die Maßeingabe gibt es für mehr Formen. Neu sind Fase, Kreis durch 3 Punkte und tangentialer Bogen. Bei Widersprüchen werden die Ursachen genannt, und „Freiheitsgrade anzeigen“ zeigt, was noch beweglich ist.
-- **Stahlbau:** DSTV-NC- und IFC-Export. Neue Generatoren für Stützenfuß, Trägerstoß, Trägeranschluss, Steigleiter, Fachwerkträger und Arbeitsbühne. Dazu ein Achsraster, Einzelteil-Positionsnummern und eine eigene Teilebibliothek.
-- **Zeichnungen:** Achsen an Bohrungen und Rohren, DIN-Schnitt durch Baugruppen mit eigener Schraffur je Teil und ungeschnittenen Normteilen, ein Blattrahmen mit Feldeinteilung, das Werkzeug „Projiziert“ und ein eigener Maßstab je Ansicht. Behoben ist der Absturz bei Baugruppenzeichnungen mit Normteilen.
-- **Generatoren geprüft:** Geländer, Treppen, Tore, Zäune, Balkone und Stahlbau-Generatoren sind jetzt praktisch frei von Kollisionen. Alle nötigen Bohrungen, Laschen und Befestigungen sind da. Gebogene Rohre wie Wendel-Handlauf und Torbogen sind ein Teil statt vieler Segmente.
+- **Stabiler bei langer Arbeit:** Der Geometrie-Kern wächst bei jeder Änderung im Speicher. PBCAD startet ihn jetzt in einer Rechenpause unbemerkt neu, bevor er volläuft und abstürzt.
+- **Nach einem Absturz des Geometrie-Kerns** sind eigene Werkstoffe und Biegetabellen wieder da. Bisher gingen sie verloren.
+- **Abbrechen:** Dauert eine Berechnung länger als 8 Sekunden, erscheint „Abbrechen“. Stürzt der Kern wiederholt ab, gibt es einen Hinweis, was hilft.
+- **Schnellerer Start:** Die 3D-Ansicht wird hinter der Startseite nicht mehr gezeichnet.
+- **Rückgängig** braucht bei großen Projekten deutlich weniger Arbeitsspeicher.
+- **Optik:** Hinweistexte sind in Hell und Dunkel besser lesbar, und die Ansichtsleiste passt zum dunklen Schema. Das Menüband hat 20 neue Symbole. Im Menüband der Zeichnung laufen die Beschriftungen nicht mehr ineinander.
