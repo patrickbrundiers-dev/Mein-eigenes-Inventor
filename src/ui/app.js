@@ -597,7 +597,8 @@ export class App {
       this.fittedFor = part.id;
       const saved = this.mode !== "sketch" && this.docViews.get(part.id);
       if (saved) this.viewer.applyViewState(saved, { animate: false });
-      else if (res.bodies.length || part.features.some((f) => f.type === "sketch")) {
+      // auch ein leeres Bauteil bekommt die Grundansicht statt der Kamera des vorigen Dokuments
+      else {
         if (this.mode !== "sketch") this.viewer.setView("iso", { animate: false });
         this.viewer.fit();
       }
