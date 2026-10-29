@@ -1,6 +1,7 @@
 // Automatische Hauptmaße einer Zeichnung (ohne DOM/Geometrie-Kern)
 // Regel nach DIN 406 / ISO 129-1: jedes Maß steht nur einmal in der Zeichnung.
 import { THREADS, sectionName } from "./sections.js";
+import { angleDims, angleLabel } from "./aufraeumen.js";
 
 const EPS = 1e-6;
 const key = (v) => Math.round(v * 1000);
@@ -279,6 +280,8 @@ export function planAutoDims(views, used = {}) {
         out.push(dm);
       }
     }
+    // Winkelmaße an schrägen Kanten (Profil an Blech, Kopfband an Stütze), je Winkel einmal (N7)
+    if (!used.noAngles && !endView) out.push(...angleDims(v, used));
     // Fasen aus den Fasen-Features: 45°-Kante mit Länge a·√2 -> Hinweis „2 × 45°“, je Fasenmaß einmal
     for (const ch of used.chamfers || []) {
       const done = used.chamfersDone || (used.chamfersDone = new Set());
@@ -323,6 +326,7 @@ const overlap = (a, b) => area([Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math
 
 /** Text eines Maßes (wie in der Zeichnung) für die Breitenabschätzung */
 export function dimLabel(m) {
+  if (m.kind === "ang") return angleLabel(m) + (m.suffix || "");
   if (m.kind === "dia" && m.hole) return holeText(m.hole, m.count) + (m.suffix || "");
   if (m.kind === "dia" && m.pcd) return "LK Ø" + fmt(m.circle.r * 2) + ", " + m.pcd.n + "× " + fmt(360 / m.pcd.n) + "°" + (m.suffix || "");
   if (m.pitch) return m.pitch.n + "× " + fmt(m.pitch.p) + " (=" + fmt(m.pitch.n * m.pitch.p) + ")" + (m.suffix || "");

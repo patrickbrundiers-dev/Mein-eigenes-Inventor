@@ -182,6 +182,28 @@ export class App {
     if (num) p.number = nextName(num, this.parts().map((d) => d.number).filter(Boolean), { projekt: this.project.name }, this.parts().length + 1);
     return p;
   }
+  /**
+   * Gespiegeltes Bauteil (abgeleitet, folgt dem Original) zu partId und lokaler Spiegelnormale: vorhandenes
+   * wiederverwenden, sonst anlegen. Rückgabe die Dokument-ID.
+   */
+  mirroredPart(partId, normal) {
+    const p = this.doc(partId);
+    if (!p) return null;
+    const same = (a, b) => a.length === 3 && a.every((x, i) => Math.abs(Number(x) - b[i]) < 1e-9);
+    let doc = this.parts().find((d) => d.features?.[0]?.type === "abgeleitet" && d.features[0].source === p.id && d.features[0].mirror === "frei" && same(d.features[0].mirrorN || [], normal));
+    if (!doc) {
+      doc = this.withPartDefaults(newPart(`${p.name} gespiegelt`));
+      doc.material = p.material;
+      doc.features = [{ id: uid("f"), type: "abgeleitet", name: "Abgeleitet 1", source: p.id, mirror: "frei", mirrorN: normal.map(String), scale: "1" }];
+      this.project.docs.push(doc);
+    }
+    return doc.id;
+  }
+  /** Mitte des Hüllquaders eines Bauteils im Bauteil-System */
+  partCenter(partId) {
+    const bb = (this.results.get(partId)?.bodies || []).map((b) => b.props?.bbox).filter(Boolean);
+    return bb.length ? [0, 1, 2].map((i) => (Math.min(...bb.map((b) => b[0][i])) + Math.max(...bb.map((b) => b[1][i]))) / 2) : [0, 0, 0];
+  }
   /** Allgemeintoleranz und Nachkommastellen neuer Zeichnungen aus den Einstellungen */
   withDrawingDefaults(d) {
     d.title.toleranz = classText(this.prefs.get("dokument.toleranzklasse"));
@@ -534,6 +556,9 @@ export class App {
         if (this.activeId !== d.id) return;
         void results;
         this.solveAssemblyConstraints(d);
+        // Spiegelungen (N6) legen gespiegelte Bauteile beim Lösen an – die gleich mitrechnen
+        const added = [...new Set(flattenAssembly(d, (id) => this.doc(id), { includeHidden: true }).map((o) => o.part.id))].filter((id) => !ids.includes(id));
+        if (added.length) { await Promise.all(added.map((id) => this.buildPart(this.doc(id)))); if (this.activeId !== d.id) return; }
         this.showAssembly(d);
         this.showSketches3D();
       } else if (d.kind === "drawing") {
@@ -646,6 +671,9 @@ export class App {
   }
   showSketches3D() {
     const part = this.activeDoc();
+    // N9: Bohrungsangaben und Gewinde am 3D-Modell (Ansicht → Bohrungsangaben schaltet sie)
+    const notes = part?.kind === "part" && this.mode === "part" && this.prefs.get("ansicht.bohrungsangaben") !== false ? this.results.get(part.id)?.holeNotes || [] : [];
+    if (notes !== this.shownNotes) { this.shownNotes = notes; this.viewer.showHoleNotes(notes); }
     if (!part || part.kind !== "part") { this.viewer.showDatums([]); this.viewer.showGrids(part?.kind === "assembly" ? gridDisplay(this, part) : []); return this.viewer.showSketches(part?.gestell ? this.skeletonSketches(part) : []); }
     this.viewer.showGrids([]);
     const res = this.results.get(part.id);
@@ -1170,7 +1198,7 @@ export class App {
   solveAssemblyConstraints(asm) {
     const res = asm.constraints?.length ? solveAssembly(asm, (pid) => this.assemblyFaces(pid), (g) => safeNum(g)) : { changed: false, errors: {} };
     // Komponentenmuster nach den Abhängigkeiten: Kopien folgen der gelösten Lage der Quelle
-    const pat = asm.patterns?.length || asm.components.some((c) => c.pat) ? applyPatterns(asm, (g) => safeNum(g), (pid) => this.assemblyFaces(pid)) : { changed: false, errors: {} };
+    const pat = asm.patterns?.length || asm.components.some((c) => c.pat) ? applyPatterns(asm, (g) => safeNum(g), (pid) => this.assemblyFaces(pid), { partFor: (pid, n) => this.mirroredPart(pid, n), center: (pid) => this.partCenter(pid) }) : { changed: false, errors: {} };
     this.asmErrors = { ...res.errors, ...pat.errors };
     if (res.changed || pat.changed) { this.dirty = true; this.updateTitle(); }
   }

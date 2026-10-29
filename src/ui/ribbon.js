@@ -181,11 +181,13 @@ export class Ribbon {
       spindel: () => this.addGenerator("spindel"),
       balkon: () => this.addGenerator("balkon"),
       rahmenecke: () => this.addGenerator("rahmenecke"),
+      voute: () => this.addGenerator("voute"),
       pfette: () => this.addGenerator("pfette"),
       windverband: () => this.addGenerator("windverband"),
       fachwerk: () => this.addGenerator("fachwerk"),
       arbeitsbuehne: () => this.addGenerator("arbeitsbuehne"),
       vordach: () => this.addGenerator("vordach"),
+      pergola: () => this.addGenerator("pergola"),
       fenstergitter: () => this.addGenerator("fenstergitter"),
       steigleiter: () => this.addGenerator("steigleiter"),
       stuetzenfuss: () => this.addGenerator("stuetzenfuss"),
@@ -469,8 +471,8 @@ export class Ribbon {
           { label: "Prüfen", buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
-          { label: "Generatoren", big: 6, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("fenstergitter", "Fenstergitter", "fenstergitter")] },
-          { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne")] },
+          { label: "Generatoren", big: 4, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("pergola", "Pergola", "pergola"), B("fenstergitter", "Fenstergitter", "fenstergitter")] },
+          { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("voute", "Voutenträger", "voute"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne")] },
           { label: "Gestell", big: 1, buttons: (() => {
             const g = !!app.activeDoc()?.gestell, on = (t) => app.pick?.kind === "gestell" && app.pick.tool === t;
             return [
@@ -513,7 +515,9 @@ export class Ribbon {
             B("dd_base", "Bezugsmaß", "dimension", { on: dr.tool === "base", run: () => dr.setTool(dr.tool === "base" ? null : "base") }),
             B("dd_arclen", "Bogenlänge", "arc", { on: dr.tool === "arclen", run: () => dr.setTool(dr.tool === "arclen" ? null : "arclen") }),
             B("dd_center", "Mittelpunkt", "circle", { on: dr.tool === "center", run: () => dr.setTool(dr.tool === "center" ? null : "center") }),
+            B("dd_angle", "Winkel", "dimension", { on: dr.tool === "angle", run: () => dr.setTool(dr.tool === "angle" ? null : "angle") }),
             B("dd_align", "Maße ausrichten", "align", { run: () => dr.alignDims() }),
+            B("dd_clean", "Aufräumen", "align", { run: () => dr.cleanup() }),
             B("dd_auto", "Hauptmaße", "dimension", { run: () => dr.autoDims() }),
             B("dd_text", "Text", "text", { on: dr.tool === "text", run: () => dr.setTool(dr.tool === "text" ? null : "text") }),
             B("dd_leader", "Hinweis", "text", { on: dr.tool === "leader", run: () => dr.setTool(dr.tool === "leader" ? null : "leader") }),

@@ -71,6 +71,7 @@ export const SETTINGS = [
   { key: "ansicht.drehpunktCursor", cat: "ansicht", label: "Um den Punkt unter dem Mauszeiger drehen", type: "bool", default: true, help: "Drehpunkt ist der Modellpunkt, auf den die Maus beim Drücken zeigt; im Leeren die Bildmitte." },
   { key: "ansicht.markierungsmenue", cat: "ansicht", label: "Rechtsklick öffnet das Markierungsmenü", type: "bool", default: true, help: "Häufige Befehle im Kreis um den Mauszeiger, seltene als Liste darunter (wie Inventor). Aus: nur die Liste." },
   { key: "ansicht.miniLeiste", cat: "ansicht", label: "Mini-Werkzeugleiste an der Auswahl", type: "bool", default: true, help: "Nach dem Anklicken von Kanten oder Flächen erscheinen passende Befehle (Rundung, Fase, Skizze …) neben dem Mauszeiger." },
+  { key: "ansicht.bohrungsangaben", cat: "ansicht", label: "Bohrungsangaben und Gewinde am 3D-Modell", type: "bool", default: true, help: "Bohrungen zeigen ihre Angabe (z. B. „4× M8, 12 tief“) mit Hinweislinie, Gewinde als Ring im Nenndurchmesser." },
   { key: "ansicht.zoomZumCursor", cat: "ansicht", label: "Zum Mauszeiger zoomen", type: "bool", default: true },
   { key: "ansicht.zoomGeschwindigkeit", cat: "ansicht", label: "Zoomgeschwindigkeit", type: "number", default: 1.2, min: 0.2, max: 5 },
   { key: "ansicht.drehGeschwindigkeit", cat: "ansicht", label: "Drehgeschwindigkeit", type: "number", default: 0.9, min: 0.1, max: 5 },

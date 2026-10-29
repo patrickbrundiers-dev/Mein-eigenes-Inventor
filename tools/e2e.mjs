@@ -81,6 +81,11 @@ try {
   await page.waitForTimeout(300);
   await shot("06-feature-eigenschaften");
   step("Feature-Eigenschaften", (await page.locator("#props .section").count()) > 0);
+  // N9: Bohrungsangabe und Gewinde am 3D-Modell
+  {
+    const hn = await page.locator("#viewport .hole-note, .hole-note").allTextContents();
+    step("Bohrungsangabe im 3D", hn.some((t) => /^4× Ø11 durch$/.test(t)), JSON.stringify(hn));
+  }
 
   // Parameter ändern -> Neuaufbau
   await evalApp(() => { const a = window.__werkcad; const p = a.activeDoc(); a.edit("Test", () => { p.params.find((x) => x.name === "Länge").expr = "400"; }); });
@@ -947,7 +952,7 @@ try {
   const gl1 = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return { n: r.bodies.length, glass: r.bodies.filter((b) => b.meta?.glass).length, members: r.bodies.filter((b) => b.kind === "member").length, info: Object.values(r.status)[0]?.info }; });
   await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
   await shot("20f-gelaender");
-  step("Geländer-Generator", gl0.ok && gl0.n > 30 && /Pfosten/.test(gl0.info) && gl1.glass === 5 && gl1.members === 6 + 2 + 4 + 6 + 4 * 5 /* je Glas 4 Halter */ && /6 Pfosten/.test(gl1.info) && /6 Handlaufhalter \(Bohrung Ø 12,1\)/.test(gl1.info), JSON.stringify({ gl0, gl1 }));
+  step("Geländer-Generator", gl0.ok && gl0.n > 30 && /Pfosten/.test(gl0.info) && gl1.glass === 5 && gl1.members === 6 + 2 + 4 + 6 && gl1.n >= 18 + 5 + 4 * 5 /* je Glas 4 Glasklemmhalter (Normteile) */ && /6 Pfosten/.test(gl1.info) && /6 Handlaufhalter \(Bohrung Ø 12,1\)/.test(gl1.info), JSON.stringify({ gl0, gl1 }));
 
   // Tor-Generator (MegaCAD-Abgleich M12): Doppeltor mit Stichbogen, dann Rundbogen
   await evalApp(() => window.__werkcad.newPart("Tor"));
@@ -3545,7 +3550,11 @@ try {
     await idle(60000);
     const mc = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); const c = asm.components.at(-1), p = a.doc(c.part); return { n: asm.components.length, pos: c.pos, part: p?.name, type: p?.features?.[0]?.type, normal: p?.features?.[0]?.mirrorN }; });
     await shot("42-komponente-gespiegelt");
-    step("Abgeleitet, 3D-Skizze, Feature duplizieren/ziehen, Komponente spiegeln", !!der && s42.ok && /gespiegelt/.test(s42.info || "") && s42.paths === 1 && s42.moved === "skizze3d" && s42.n === 3 && s42b.ok && mc.n === 2 && mc.pos[0] === -100 && mc.type === "abgeleitet" && /gespiegelt/.test(mc.part), JSON.stringify({ s42, s42b, mc }));
+    // N6: assoziativ – Quelle verschieben, gespiegelte Seite folgt
+    await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); a.edit("Verschieben", () => { asm.components.find((c) => c.id === "cm1").pos = [150, 0, 0]; }); });
+    await idle(60000);
+    const mc2 = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.src === "cm1"); return { x: c?.pos?.[0], built: !!a.results.get(c?.part)?.bodies?.length }; });
+    step("Abgeleitet, 3D-Skizze, Feature duplizieren/ziehen, Komponente spiegeln", !!der && s42.ok && /gespiegelt/.test(s42.info || "") && s42.paths === 1 && s42.moved === "skizze3d" && s42.n === 3 && s42b.ok && mc.n === 2 && mc.pos[0] === -100 && mc.type === "abgeleitet" && /gespiegelt/.test(mc.part) && mc2.x === -150 && mc2.built, JSON.stringify({ s42, s42b, mc, mc2 }));
   }
 
   // ---- Stufe 43: Variantentabelle, Regeln, Makros, Sprache ----

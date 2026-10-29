@@ -67,7 +67,7 @@ export function localPlan(plan, body) {
     // tabs: angesetzte Quader (Gestell: Stecknasen)
     const tabs = m.tabs && { tabs: m.tabs.map((t) => ({ ...t, p: P(t.p), xDir: D(t.xDir), dir: D(t.dir) })) };
     out.members.push({ ...m, a: P(m.a), b: P(m.b), up: D(body.frame.up), ...(m.cuts ? { cuts: cutsL(m.cuts) } : {}), ...copes, ...tabs });
-    out.drills = drillsFor(m.name);
+    out.drills = drillsFor(m.target || m.name);
   } else if (body.kind === "chain") {
     const ch = plan.chains[body.index];
     // nur das Stück und seine Nachbarn (Gehrungen hängen nur von ihnen ab)

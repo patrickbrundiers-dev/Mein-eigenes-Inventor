@@ -608,6 +608,7 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .macro ol { margin: 6px 0; padding-left: 22px; }
 
 /* Messen (Stufe 47): Maß im 3D-Fenster und Ergebnisliste wie Inventor */
+.hole-note { position: absolute; left: 0; top: 0; pointer-events: none; padding: 0 4px; border-bottom: 1px solid var(--dye); color: var(--dye); background: color-mix(in srgb, var(--surface) 70%, transparent); font: 600 var(--fs-s)/1.4 var(--din); white-space: nowrap; z-index: 4; }
 .measure-label { position: absolute; left: 0; top: 0; pointer-events: none; padding: 1px 6px; border-radius: var(--radius-s); background: color-mix(in srgb, var(--surface) 85%, transparent); color: var(--dye); font: 600 var(--fs-s)/1.5 var(--din); white-space: nowrap; z-index: 5; }
 .measure-list { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin: 0; }
 .measure-list dt { color: var(--ink-soft); }

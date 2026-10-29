@@ -32,8 +32,10 @@ function defaults(gen, over) {
 function place(g, P, D, prefix, into, keep = () => false) {
   const cut = (c) => c && { start: c.start.map((x) => ({ p: P(x.p), n: D(x.n) })), end: c.end.map((x) => ({ p: P(x.p), n: D(x.n) })) };
   for (const c of g.chains || []) into.chains.push({ ...c, points: c.points.map(P), up: D(c.up || [0, 0, 1]), name: prefix + c.name });
-  for (const m of g.members || []) into.members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: prefix + m.name, cuts: cut(m.cuts),
-    ...(m.copes ? { copes: m.copes.map((c) => ({ ...c, a: P(c.a), b: P(c.b), up: c.up ? D(c.up) : undefined, cuts: cut(c.cuts) })) } : {}) });
+  const path = (pa) => ({ ...pa, c: P(pa.c), axis: D(pa.axis || [0, 0, 1]), x0: D(pa.x0 || [1, 0, 0]) });
+  for (const m of g.members || []) into.members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: prefix + m.name, ...(m.target ? { target: prefix + m.target } : {}), cuts: cut(m.cuts),
+    ...(m.copes ? { copes: m.copes.map((c) => (c.path ? { ...c, path: path(c.path) } : { ...c, a: P(c.a), b: P(c.b), up: c.up ? D(c.up) : undefined, cuts: cut(c.cuts) })) } : {}) });
+  for (const t of g.tubes || []) into.tubes.push({ ...t, path: path(t.path), name: prefix + t.name, ...(t.target ? { target: prefix + t.target } : {}), ...(t.copes ? { copes: t.copes.map((c) => ({ ...c, path: path(c.path) })) } : {}) });
   for (const pl of g.plates || []) into.plates.push({ ...pl, center: P(pl.center), xDir: D(pl.xDir), normal: D(pl.normal), name: prefix + pl.name });
   for (const n of g.norms || []) into.norms.push({ ...n, pos: P(n.pos), dir: D(n.dir) });
   for (const d of g.drills || []) into.drills.push({ ...d, p: P(d.p), dir: D(d.dir), ...(d.xDir ? { xDir: D(d.xDir) } : {}), target: keep(d.target) ? d.target : prefix + d.target });
@@ -76,7 +78,7 @@ export const ARBEITSBUEHNE = {
     const W = p.width, T = p.depth, Hp = p.height, tt = p.deckT;
     if (!(W >= 1000 && T >= 800)) throw fieldError("Breite mindestens 1000, Tiefe mindestens 800 mm", "width");
     if (!(tt > 0)) throw fieldError("Belagdicke muss > 0 sein", "deckT");
-    const out = { chains: [], members: [], plates: [], norms: [], drills: [] };
+    const out = { chains: [], members: [], plates: [], norms: [], drills: [], tubes: [] };
     const { chains, members, plates, norms, drills } = out;
     // Randträger: Rahmen mit Gehrung, hochkant, offene Seite nach außen (Querträger am Steg); Oberkante unter dem Belag
     const fr = p.frame, frRot = orientRot(fr, [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, -1, 0] });

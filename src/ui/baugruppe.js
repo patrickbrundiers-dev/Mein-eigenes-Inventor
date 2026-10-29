@@ -5,8 +5,9 @@ import * as THREE from "three";
 import { h, toast, modal } from "./dom.js";
 import { uid } from "../core/examples.js";
 import { componentDof, projectFree, dofLabel } from "../core/asmdof.js";
-import { quickMate, placeAt, applyDelta, deltaBetween, moveIntoSub, dissolveSub, mirrorReusePlacement, planeFromFace, inferFuegepunkte, addFuegepunkte, autoMate } from "../core/baugruppe.js";
-import { mirrorPlacement, MIRROR_PLANES } from "../core/ableiten.js";
+import { quickMate, placeAt, applyDelta, deltaBetween, moveIntoSub, dissolveSub, planeFromFace, inferFuegepunkte, addFuegepunkte, autoMate } from "../core/baugruppe.js";
+import { MIRROR_PLANES } from "../core/ableiten.js";
+import { defaultAsmPattern } from "../core/asmmuster.js";
 import { newPart } from "../core/examples.js";
 import { newAssembly } from "../core/examples.js";
 import { solveAssembly, endFaceFor, worldToLocal } from "../core/asmsolve.js";
@@ -404,38 +405,17 @@ export function mirrorDialog(app, preselect = null) {
   const plane = h("select", { class: "inp" }, ...Object.keys(MIRROR_PLANES).map((k) => h("option", { value: k }, `${k}-Ebene der Baugruppe`)), h("option", { value: "flaeche" }, "Fläche im 3D-Fenster wählen …"));
   const off = h("input", { class: "inp", value: "0" });
   const err = h("div", { class: "hint" });
+  // N6: assoziativ – ein Spiegel-Muster; die Kopien folgen Lage und Form der Quellen, Teile lassen sich später abwählen
   const run = (pl) => {
     const chosen = rows.filter((r) => r.box.checked);
-    let made = 0, reused = 0;
-    const sel = [];
-    app.edit("Komponenten spiegeln", () => {
-      for (const { c, how } of chosen) {
-        const p = app.doc(c.part);
-        if (how.value === "wieder") {
-          const bb = (app.results.get(p.id)?.bodies || []).map((b) => b.props?.bbox).filter(Boolean);
-          const ctr = bb.length ? [0, 1, 2].map((i) => (Math.min(...bb.map((b) => b[0][i])) + Math.max(...bb.map((b) => b[1][i]))) / 2) : [0, 0, 0];
-          const m = mirrorReusePlacement(c.pos, c.rot, pl.n, pl.c, ctr);
-          const comp = { id: uid("c"), part: p.id, name: `${p.name}:${asm.components.filter((x) => x.part === p.id).length + 1}`, pos: m.pos, rot: m.rot };
-          asm.components.push(comp); sel.push(comp.id); reused++;
-          continue;
-        }
-        const m = mirrorPlacement(c.pos || [0, 0, 0], c.rot || [0, 0, 0], pl.n, pl.c);
-        const same = (a, b) => a.every((x, i) => Math.abs(Number(x) - b[i]) < 1e-9);
-        let doc = app.parts().find((d) => d.features?.[0]?.type === "abgeleitet" && d.features[0].source === p.id && d.features[0].mirror === "frei" && same(d.features[0].mirrorN || [], m.normal));
-        if (!doc) {
-          doc = app.withPartDefaults(newPart(`${p.name} gespiegelt`));
-          doc.material = p.material;
-          doc.features = [{ id: uid("f"), type: "abgeleitet", name: "Abgeleitet 1", source: p.id, mirror: "frei", mirrorN: m.normal.map(String), scale: "1" }];
-          app.project.docs.push(doc);
-          made++;
-        }
-        const comp = { id: uid("c"), part: doc.id, name: `${doc.name}:${asm.components.filter((x) => x.part === doc.id).length + 1}`, pos: m.pos, rot: m.rot };
-        asm.components.push(comp); sel.push(comp.id);
-      }
-    });
-    if (sel.length) app.sel = { type: "component", id: sel[0] };
+    const pm = defaultAsmPattern(uid("pm"), chosen.map((r) => r.c.id), "spiegel");
+    pm.name = `Spiegelung ${(asm.patterns || []).filter((x) => x.kind === "spiegel").length + 1}`;
+    if (pl.key) { pm.plane = pl.key; pm.offset = String(pl.c); } else { pm.plane = null; pm.normal = pl.n.map((x) => Math.round(x * 1e9) / 1e9); pm.offset = String(Math.round(pl.c * 1e6) / 1e6); }
+    for (const r of chosen) if (r.how.value === "wieder") pm.modes[r.c.id] = "wieder";
+    app.edit("Komponenten spiegeln", () => { asm.patterns = [...(asm.patterns || []), pm]; });
+    app.sel = { type: "asmpattern", id: pm.id };
     app.refreshSelectionHits(); app.tree.render(); app.props.render();
-    toast(`${chosen.length} Komponente(n) gespiegelt${made ? `, ${made} gespiegelte(s) Bauteil(e) neu` : ""}${reused ? `, ${reused} wiederverwendet` : ""}`, { kind: "ok" });
+    toast(`${chosen.length} Komponente(n) gespiegelt – die Spiegelung folgt den Quellen`, { kind: "ok" });
   };
   modal({
     title: "Komponenten spiegeln", width: "560px",
@@ -443,13 +423,13 @@ export function mirrorDialog(app, preselect = null) {
       h("div", { class: "place-list" }, ...rows.map((r) => h("label", { class: "check", style: { display: "flex", gap: "6px", alignItems: "center" } }, r.box, h("span", { class: "grow" }, r.c.name), r.how))),
       h("div", { class: "field wide" }, h("label", {}, "Spiegelebene"), plane),
       h("div", { class: "field" }, h("label", {}, "Abstand vom Ursprung (mm)"), off),
-      h("p", { class: "hint" }, "Gespiegeltes Bauteil: abgeleitet, folgt Änderungen am Original. Wiederverwenden: dasselbe Bauteil an der Spiegelstelle – nur für Teile, die in sich symmetrisch sind (Rohre, Platten, Normteile)."), err),
+      h("p", { class: "hint" }, "Die Spiegelung bleibt verknüpft: verschiebt oder ändert sich eine Quelle, folgt die gespiegelte Seite. Gespiegeltes Bauteil: abgeleitet, folgt Änderungen am Original. Wiederverwenden: dasselbe Bauteil an der Spiegelstelle – nur für Teile, die in sich symmetrisch sind (Rohre, Platten, Normteile)."), err),
     buttons: [{ label: "Abbrechen" }, { label: "Spiegeln", primary: true, run: () => {
       if (!rows.some((r) => r.box.checked)) { err.textContent = "Mindestens eine Komponente wählen"; return false; }
       if (plane.value !== "flaeche") {
         const c = Number(String(off.value).replace(",", "."));
         if (!Number.isFinite(c)) { err.textContent = "Abstand als Zahl"; return false; }
-        run({ n: MIRROR_PLANES[plane.value], c });
+        run({ key: plane.value, n: MIRROR_PLANES[plane.value], c });
         return true;
       }
       app.pick = { kind: "custom", onPick: (hit) => {

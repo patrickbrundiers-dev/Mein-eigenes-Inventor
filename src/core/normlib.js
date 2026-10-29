@@ -323,6 +323,16 @@ F.bodenanschlag = beschlag({ label: "Bodenanschlag für Tore", noun: "Bodenansch
   sizes: { "klein (40 hoch)": { w: 60, d: 50, h: 40, t: 5 }, "groß (60 hoch)": { w: 80, d: 60, h: 60, t: 6 } },
   build: (m) => [box(m.w, m.d, m.t), box(m.w, m.t, m.h - m.t, m.t, { y: m.d / 2 - m.t / 2 }), ...[-m.w / 4, m.w / 4].map((x) => cut(cyl(9, m.t + 2, -1, { x, y: -m.t, vol: (Math.PI / 4) * 81 * m.t })))] });
 
+// Glashalter (N3), Größe nach Glasdicke VSG. Glasklemmhalter: Rücken an z = 0 (Pfostenfläche), Klemmschlitz quer (y)
+// ab z = 12, offen nach oben und unten (x = Höhe). Punkthalter: Abstandhalter ab z = 0 (Deckenstirn), Glas von a bis
+// a + tg, Rosette außen; Bolzen durch das Glasloch Ø 22.
+const VSG = Object.fromEntries([8.76, 10.76, 12.76, 16.76, 20.76].map((tg) => [`VSG ${String(tg).replace(".", ",")}`, { tg }]));
+const glasklemmeSizes = Object.fromEntries(Object.entries(VSG).filter(([, v]) => v.tg <= 12.76));
+F.glasklemme = beschlag({ label: "Glasklemmhalter für Pfosten", noun: "Glasklemmhalter", alias: ["Glashalter", "Klemmhalter"], grades: ["A2", "A4"], def: { size: "VSG 10,76" }, sizes: glasklemmeSizes,
+  build: (m) => { const w = 45, L = 45, dy = m.tg + 14, slot = m.tg + 1; return [box(w, dy, L), cut(box(w + 2, slot, L - 12 + 1, 12, { vol: w * slot * (L - 12) }))]; } });
+F.glaspunkthalter = beschlag({ label: "Glas-Punkthalter mit Abstand (Rosette Ø 50)", noun: "Glas-Punkthalter", alias: ["Punkthalter", "Rosette"], grades: ["A2", "A4"], def: { size: "VSG 16,76" }, sizes: VSG,
+  build: (m) => { const a = 40; return [cyl(30, a - 8), cyl(50, 8, a - 8), cyl(16, m.tg, a), cyl(50, 8, a + m.tg)]; } });
+
 /** Kategorien in der Reihenfolge des Dialogs */
 export const NORM_CATEGORIES = [["schrauben", "Schrauben"], ["muttern", "Muttern"], ["scheiben", "Scheiben & Federringe"], ["gewinde", "Gewindestangen & Spannschlösser"], ["anker", "Dübel & Anker"], ["nieten", "Nieten"], ["stifte", "Stifte & Bolzen"], ["beschlaege", "Beschläge"]];
 

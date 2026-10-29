@@ -15,6 +15,7 @@
 
 import { holderDrop, holderParts, innerReach, entryDepth } from "./handlaufhalter.js";
 import { fieldError } from "./generror.js";
+import { bentChain } from "./biegeteil.js";
 
 const ROUND = new Set(["rohr", "rund"]);
 /** Bohrung für ein Profil (rund: Ø, sonst Rechteck quer zur Richtung, w entlang xDir) mit Aufmaß */
@@ -25,9 +26,9 @@ const copeAt = (section, q, dir, len = 40) => ({ section, a: q.map((x, k) => x -
 
 /** Bauplan-Teile eines Geländerzugs; label steht vor allen Namen (z. B. »Geländer links«) */
 export function railAlong(path, o, label) {
-  const members = [], chains = [], plates = [], drills = [];
+  const members = [], chains = [], plates = [], drills = [], tubes = [];
   const pts = path.filter((q, i) => i === 0 || Math.hypot(q[0] - path[i - 1][0], q[1] - path[i - 1][1], q[2] - path[i - 1][2]) > 1e-6);
-  if (pts.length < 2) return { members, chains, plates, drills, posts: 0, fields: 0, bars: 0, gapMax: 0, mounted: [] };
+  if (pts.length < 2) return { members, chains, plates, drills, tubes, posts: 0, fields: 0, bars: 0, gapMax: 0, mounted: [] };
   const railH = o.rail.geom.height, postW = o.post.geom.width, half = o.post.geom.height / 2;
   const segs = [];
   for (let i = 0; i + 1 < pts.length; i++) {
@@ -81,6 +82,18 @@ export function railAlong(path, o, label) {
       movedEnds.add(i);
     });
   }
+  // Krümmlinge (N2): Bogen mit Radius o.railBend an jedem Knick; wo er weiter als 5 mm an der Ecke vorbeiläuft
+  // (Podestecke im Grundriss), bekommt der Pfosten dort keinen Halter
+  const bend = o.railBend > 0 && ROUND.has(o.rail.kind) ? o.railBend : 0;
+  const offCorner = (q) => {
+    if (!bend) return false;
+    const j = pts.findIndex((c, k) => k > 0 && k < pts.length - 1 && Math.hypot(c[0] - q[0], c[1] - q[1]) < 1);
+    if (j < 0) return false;
+    const u = (a, b) => { const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], l = Math.hypot(...d); return d.map((x) => x / l); };
+    const d1 = u(pts[j - 1], pts[j]), d2 = u(pts[j], pts[j + 1]), th = Math.acos(Math.max(-1, Math.min(1, d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2])));
+    return bend * (1 / Math.cos(th / 2) - 1) > 5;
+  };
+  let freeCorners = 0;
   const mounted = [];
   posts.forEach((p, i) => {
     const top = [p.q[0], p.q[1], p.q[2] + o.H - railH - drop], name = `${label} Pfosten ${i + 1}`;
@@ -91,6 +104,7 @@ export function railAlong(path, o, label) {
       plates.push(r.plate, ...(r.parts || [])); drills.push(...r.drills); mounted.push(r);
     } else members.push({ section: o.post, a: [p.q[0], p.q[1], p.q[2] - o.postDown], b: top, name, up: [p.d[0], p.d[1], 0] });
     if (!o.holder) return;
+    if (offCorner(p.q)) { freeCorners++; return; }
     const hp = holderParts({ q: top, along: p.d, axisZ: p.q[2] + o.H - railH / 2, post: o.post, railH, d: o.holderD, slope: p.slope, name: `${label} Pfosten ${i + 1}`, target: `${label} Handlauf` });
     members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
   });
@@ -100,14 +114,17 @@ export function railAlong(path, o, label) {
     const ext = (i, j) => { const d = [rp[i][0] - rp[j][0], rp[i][1] - rp[j][1], rp[i][2] - rp[j][2]], l = Math.hypot(...d) || 1; rp[i] = rp[i].map((x, k) => x + (d[k] / l) * 50); };
     ext(0, 1); ext(rp.length - 1, rp.length - 2);
   }
-  chains.push({ section: o.rail, points: rp, name: `${label} Handlauf` });
+  if (bend) {
+    const bc = bentChain({ section: o.rail, points: rp, name: `${label} Handlauf`, radius: bend });
+    members.push(...bc.members); tubes.push(...bc.tubes);
+  } else chains.push({ section: o.rail, points: rp, name: `${label} Handlauf` });
   // Felder zwischen den Pfosten eines Abschnitts
   let fields = 0, bars = 0, gapMax = 0;
   const top = o.H - railH;
   if (o.through && (o.fill === "quer" || o.fill === "staketen")) {
     const r = through(segs, o, label, { top, half, railAxis: o.H - railH / 2, postName: (i) => `${label} Pfosten ${i + 1}` });
     members.push(...r.members); drills.push(...r.drills);
-    return { members, chains, plates, drills, posts: posts.length, fields: r.fields, bars: r.bars, gapMax: r.gapMax, pieces: r.pieces, mounted };
+    return { members, chains, plates, drills, tubes, freeCorners, posts: posts.length, fields: r.fields, bars: r.bars, gapMax: r.gapMax, pieces: r.pieces, mounted };
   }
   for (const sg of segs) {
     const at = (s, h) => [sg.A[0] + sg.d[0] * s, sg.A[1] + sg.d[1] * s, sg.A[2] + sg.slope * s + h];
@@ -123,7 +140,8 @@ export function railAlong(path, o, label) {
         const m = Math.max(1, Math.round(o.bars));
         for (let j = 1; j <= m; j++) {
           const h = (top * j) / (m + 1), a = at(s0, h), b = at(s1, h);
-          members.push({ section: o.bar, a, b, name: `${label} Knieleiste ${n}.${j}`, cuts: { start: [{ p: a, n: back }], end: [{ p: b, n: out }] } });
+          // steiler als der Kopfschwenk des Lasers (gewendelte Treppe innen): gesägt, ebener Schnitt
+          members.push({ section: o.bar, a, b, name: `${label} Knieleiste ${n}.${j}`, cuts: { start: [{ p: a, n: back }], end: [{ p: b, n: out }] }, ...(Math.abs(sg.slope) > Math.tan(40 * Math.PI / 180) ? { plain: true } : {}) });
         }
         bars += m;
         gapMax = Math.max(gapMax, top / (m + 1));
@@ -146,7 +164,7 @@ export function railAlong(path, o, label) {
       }
     }
   }
-  return { members, chains, plates, drills, posts: posts.length, fields, bars, gapMax, mounted };
+  return { members, chains, plates, drills, tubes, freeCorners, posts: posts.length, fields, bars, gapMax, mounted };
 }
 
 /**

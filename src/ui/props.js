@@ -2252,12 +2252,20 @@ export class Props {
           box.addEventListener("change", () => set("Komponenten", () => { p.comps = box.checked ? [...new Set([...p.comps, c.id])] : p.comps.filter((x) => x !== c.id); }));
           return h("label", { class: "check" }, box, " ", c.name);
         })), true),
-        this.seg("Art", [["linear", "Rechteckig"], ["circular", "Kreisförmig"], ["lochbild", "Lochbild"]], p.kind, (v) => {
+        this.seg("Art", [["linear", "Rechteckig"], ["circular", "Kreisförmig"], ["lochbild", "Lochbild"], ["spiegel", "Spiegeln"]], p.kind, (v) => {
           const hole = v === "lochbild" ? p.comps.map((id) => holeFromConstraints(asm, id)).find(Boolean) : null;
           if (v === "lochbild" && !hole) return toast("Lochbild: die Quelle zuerst mit »Einfügen« oder »Konzentrisch« in eine Bohrung setzen – dann folgen Kopien in alle gleich großen Bohrungen", { timeout: 7000 });
           set("Art", () => { for (const k of Object.keys(p)) if (!["id", "comps", "name", "suppressed"].includes(k)) delete p[k]; Object.assign(p, defaultAsmPattern(p.id, p.comps, v, hole), { name: p.name }); });
         }),
-        p.kind === "lochbild" ? h("p", { class: "hint" }, `Kopien in alle Bohrungen Ø ${fmtNum(2 * (p.hole?.r || 0), 2)} mm von »${asm.components.find((c) => c.id === p.hole?.comp)?.name || "?"}« – folgt Änderungen am Lochbild.`) : p.kind === "circular" ? [
+        p.kind === "spiegel" ? [
+          this.seg("Spiegelebene", [["YZ", "YZ"], ["XZ", "XZ"], ["XY", "XY"], ...(p.normal ? [["flaeche", "Fläche"]] : [])], p.normal ? "flaeche" : p.plane || "YZ", (v) => { if (v !== "flaeche") set("Spiegelebene", () => { p.plane = v; delete p.normal; }); }),
+          E("Abstand vom Ursprung", "offset"),
+          ...p.comps.map((id) => {
+            const c = asm.components.find((x) => x.id === id);
+            return c ? this.seg(c.name, [["spiegeln", "gespiegelt"], ["wieder", "wiederverwendet"]], (p.modes || {})[id] === "wieder" ? "wieder" : "spiegeln", (v) => set("Spiegelart", () => { p.modes = { ...(p.modes || {}) }; if (v === "wieder") p.modes[id] = v; else delete p.modes[id]; })) : null;
+          }),
+          h("p", { class: "hint" }, "Verknüpft: die gespiegelte Seite folgt Lage und Form der Quellen. Abgewählte Komponenten werden nicht gespiegelt. »Wiederverwendet« setzt dasselbe Bauteil ein – nur für in sich symmetrische Teile."),
+        ] : p.kind === "lochbild" ? h("p", { class: "hint" }, `Kopien in alle Bohrungen Ø ${fmtNum(2 * (p.hole?.r || 0), 2)} mm von »${asm.components.find((c) => c.id === p.hole?.comp)?.name || "?"}« – folgt Änderungen am Lochbild.`) : p.kind === "circular" ? [
           this.seg("Achse", dirs.slice(0, 3), p.axis || "Z", (v) => set("Achse", () => { p.axis = v; })),
           this.vec3("Mittelpunkt", p.center, (v) => set("Mittelpunkt", () => { p.center = v; })),
           E("Anzahl", "count", { unit: "Stk" }), E("Gesamtwinkel", "angle", { unit: "°" }),

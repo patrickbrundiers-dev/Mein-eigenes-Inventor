@@ -5,6 +5,7 @@
 import { orientRot, rotExtent } from "./orient.js";
 import { NORM_THREADS, boltSet, turnbuckleDims } from "./normteile.js";
 import { sectionGeometry } from "./sections.js";
+import { v3 } from "./geom.js";
 
 const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
 const THREAD_OPTS = ["M12", "M16", "M20", "M24", "M27", "M30"].map((s) => [s, s]);
@@ -237,5 +238,115 @@ export const RAHMENECKE = {
     const bs = boltSet(p.bolt, clamp);
     const info = `Stirnplatte ${Math.round(pw)} × ${Math.round(plateTop - plateBot)} × ${fmt(tp)} mm, ${rows.length * 2} × ${p.bolt} x ${bs.length} - ${p.grade}, Bohrung Ø ${hole} in Stirnplatte und Stützenflansch, Klemmlänge ${fmt(clamp)} mm, Neigung ${fmt(p.pitch)}°`;
     return { chains, members, plates, norms, drills, info, issues };
+  },
+};
+
+// ---------- Gevouteter Träger (N8, W16) ----------
+// Geschweißter I-Träger mit veränderlicher Höhe: Obergurt gerade, Untergurt folgt der Voute (Rahmenecke, Kragarm,
+// Hallenriegel). Steg als Zuschnitt (Vieleck), Untergurt als Flachstahl-Stücke mit Gehrung am Knick. Träger liegt in
+// der XZ-Ebene: x = Länge, Oberkante z = 0, Höhe nach unten.
+const VOUTE_FORMS = [["voute1", "Voute an einem Ende"], ["voute2", "Vouten an beiden Enden"], ["linear", "Höhe linear veränderlich"]];
+
+/** Höhenverlauf: Stützpunkte [[x, h]] der Unterkante (h = Gesamthöhe) */
+export function vouteProfile({ form, L, h0, h, lv }) {
+  if (form === "linear") return [[0, h0], [L, h]];
+  if (form === "voute2") return [[0, h0], [lv, h], [L - lv, h], [L, h0]];
+  return [[0, h0], [lv, h], [L, h]];
+}
+
+/** Linienzug (x, z) um d nach oben (links der Laufrichtung) versetzt, Ecken als Schnitt der versetzten Geraden */
+function offsetUp(pts, d) {
+  const n = pts.length, nrm = [];
+  for (let i = 0; i + 1 < n; i++) { const dx = pts[i + 1][0] - pts[i][0], dz = pts[i + 1][1] - pts[i][1], l = Math.hypot(dx, dz); nrm.push([-dz / l, dx / l]); }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    if (i === 0 || i === n - 1) {
+      // Enden senkrecht: auf x des Endpunkts bleiben
+      const m = nrm[i === 0 ? 0 : n - 2];
+      out.push([pts[i][0], pts[i][1] + d / m[1]]);
+      continue;
+    }
+    const a = nrm[i - 1], b = nrm[i], s = [a[0] + b[0], a[1] + b[1]], k = d / (1 + a[0] * b[0] + a[1] * b[1]);
+    out.push([pts[i][0] + s[0] * k, pts[i][1] + s[1] * k]);
+  }
+  return out;
+}
+
+export const VOUTE = {
+  label: "Voutenträger",
+  schema: [
+    { key: "form", label: "Form", type: "select", options: VOUTE_FORMS, default: "voute1", group: "Geometrie" },
+    { key: "length", label: "Länge", type: "num", default: "6000", group: "Geometrie" },
+    { key: "h0", label: "Höhe an der Voute", type: "num", default: "700", group: "Geometrie" },
+    { key: "h", label: "Regelhöhe", type: "num", default: "400", group: "Geometrie" },
+    { key: "lv", label: "Voutenlänge", type: "num", default: "1500", group: "Geometrie", when: (p) => p.form !== "linear" },
+    { key: "B", label: "Gurtbreite", type: "num", default: "200", group: "Querschnitt" },
+    { key: "tf", label: "Gurtdicke", type: "num", default: "15", group: "Querschnitt" },
+    { key: "tw", label: "Stegdicke", type: "num", default: "8", group: "Querschnitt" },
+    { key: "endPlates", label: "Stirnplatten an den Enden", type: "check", default: true, group: "Anschluss" },
+    { key: "plateT", label: "Stirnplatte Dicke", type: "num", default: "20", group: "Anschluss", when: (p) => p.endPlates },
+    { key: "stiff", label: "Steifen am Voutenknick", type: "check", default: true, group: "Anschluss", when: (p) => p.form !== "linear" },
+    { key: "stiffT", label: "Steifendicke", type: "num", default: "10", group: "Anschluss", when: (p) => p.form !== "linear" && p.stiff },
+  ],
+  plan(p) {
+    const issues = [];
+    const L = p.length, h0 = p.h0, h = p.h, lv = p.lv, B = p.B, tf = p.tf, tw = p.tw;
+    if (!(L > 0 && h0 > 0 && h > 0 && B > 0 && tf > 0 && tw > 0)) throw new Error("Länge, Höhen und Blechdicken müssen > 0 sein");
+    if (!(tw < B)) throw new Error("Steg dicker als der Gurt breit");
+    if (Math.min(h0, h) < 2 * tf + 50) throw new Error(`Höhe mindestens ${fmt(2 * tf + 50)} mm (zwei Gurte + 50 mm Steg)`);
+    if (p.form !== "linear") {
+      if (!(lv > 0)) throw new Error("Voutenlänge muss > 0 sein");
+      if (p.form === "voute2" ? 2 * lv >= L : lv >= L) throw new Error(p.form === "voute2" ? "Zwei Vouten länger als der Träger" : "Voute länger als der Träger");
+      if (Math.abs(h0 - h) < 1) issues.push({ level: "Hinweis", message: "Höhe an der Voute = Regelhöhe: Träger ohne Voute" });
+    }
+    const prof = vouteProfile({ form: p.form, L, h0, h, lv });
+    const outer = prof.map(([x, H]) => [x, -H]);
+    // Neigung der Voute
+    let maxSlope = 0;
+    for (let i = 0; i + 1 < outer.length; i++) maxSlope = Math.max(maxSlope, Math.abs(Math.atan2(outer[i + 1][1] - outer[i][1], outer[i + 1][0] - outer[i][0])) / (Math.PI / 180));
+    if (maxSlope > 30) issues.push({ level: "Warnung", message: `Voute ${fmt(maxSlope)}° steil – Untergurt am Knick mit Steife und Kehlnaht prüfen` });
+    const mid = offsetUp(outer, tf / 2), inner = offsetUp(outer, tf);
+    const members = [], plates = [], chains = [];
+    // Obergurt: Oberkante z = 0
+    plates.push({ center: [L / 2, 0, -tf], xDir: [1, 0, 0], normal: [0, 0, 1], W: L, H: B, t: tf, name: "Obergurt" });
+    // Untergurt: Flachstahl B × tf je Abschnitt, Enden senkrecht, Gehrung am Knick
+    const flat = { kind: "flach", dims: { B, t: tf }, geom: sectionGeometry("flach", { B, t: tf }), size: `${fmt(B)}x${fmt(tf)}` };
+    const P3 = (q) => [q[0], 0, q[1]];
+    const cut = [];
+    for (let i = 0; i + 1 < mid.length; i++) {
+      const a = P3(mid[i]), b = P3(mid[i + 1]), d = v3.norm(v3.sub(b, a)), up = [-d[2], 0, d[0]];
+      const prevD = i > 0 ? v3.norm(v3.sub(a, P3(mid[i - 1]))) : null, nextD = i + 2 < mid.length ? v3.norm(v3.sub(P3(mid[i + 2]), b)) : null;
+      // Stück über die Schnittebenen hinaus verlängern, damit der Schnitt den ganzen Querschnitt trifft
+      const ext = 2 * tf + 10;
+      const A = v3.sub(a, v3.mul(d, ext)), Bp = v3.add(b, v3.mul(d, ext));
+      const start = [i === 0 ? { p: a, n: [-1, 0, 0] } : { p: a, n: v3.mul(v3.norm(v3.add(prevD, d)), -1) }];
+      const end = [i + 2 === mid.length ? { p: b, n: [1, 0, 0] } : { p: b, n: v3.norm(v3.add(d, nextD)) }];
+      members.push({ section: flat, a: A, b: Bp, name: mid.length > 2 ? `Untergurt ${i + 1}` : "Untergurt", target: "Untergurt", up, cuts: { start, end } });
+      cut.push(Math.hypot(mid[i + 1][0] - mid[i][0], mid[i + 1][1] - mid[i][1]));
+    }
+    // Steg: zwischen Obergurt-Unterseite und Untergurt-Oberseite; Plattenebene x = Welt-x, y = −Welt-z
+    const web = [[0, tf], [L, tf], ...inner.slice().reverse().map(([x, z]) => [x, -z])];
+    plates.push({ center: [0, -tw / 2, 0], xDir: [1, 0, 0], normal: [0, 1, 0], W: L, H: Math.max(h0, h), t: tw, poly: web, name: "Steg" });
+    // Stirnplatten
+    if (p.endPlates) {
+      const tp = p.plateT;
+      if (!(tp > 0)) throw new Error("Stirnplattendicke muss > 0 sein");
+      for (const [x, n, H, label] of [[0, [-1, 0, 0], prof[0][1], "Anfang"], [L, [1, 0, 0], prof.at(-1)[1], "Ende"]])
+        plates.push({ center: [x, 0, -H / 2], xDir: [0, 1, 0], normal: n, W: B, H, t: tp, name: `Stirnplatte ${label}` });
+    }
+    // Steifen am Knick (Voutenende), beidseits des Stegs
+    if (p.form !== "linear" && p.stiff) {
+      const ts = p.stiffT, sw = (B - tw) / 2 - 2;
+      if (!(ts > 0)) throw new Error("Steifendicke muss > 0 sein");
+      if (sw < 20) issues.push({ level: "Hinweis", message: "Gurt zu schmal für Steifen" });
+      else for (let i = 1; i + 1 < inner.length; i++) {
+        const [x, z] = inner[i], H = -tf - z, zc = (-tf + z) / 2;
+        for (const sg of [-1, 1])
+          plates.push({ center: [x - ts / 2, sg * (tw / 2 + sw / 2), zc], xDir: [0, 1, 0], normal: [1, 0, 0], W: sw, H, t: ts, name: `Steife ${i} ${sg < 0 ? "links" : "rechts"}` });
+      }
+    }
+    const area = (pts) => { let s = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s) / 2; };
+    const info = `Voutenträger ${fmt(L)} mm, Höhe ${fmt(h0)} → ${fmt(h)} mm, Gurte ${fmt(B)} × ${fmt(tf)}, Steg ${fmt(tw)} mm (Zuschnitt ${fmt(area(web) / 1e6)} m²), Untergurt ${cut.map(fmt).join(" + ")} mm` + (maxSlope > 0.01 ? `, Voute ${fmt(maxSlope)}°` : "");
+    return { chains, members, plates, norms: [], drills: [], info, issues };
   },
 };

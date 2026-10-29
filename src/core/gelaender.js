@@ -14,8 +14,12 @@ import { holderSchema, holderDrop, holderParts, innerReach, entryDepth } from ".
 import { orientRot, rotExtent } from "./orient.js";
 import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
 import { sectionGeometry } from "./sections.js";
+import { bentChain } from "./biegeteil.js";
 import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, findPlateFace, faceCoords, holesBelow, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 
+const GLASS_T = [8.76, 10.76, 12.76, 16.76, 20.76];
+/** Ganzglas: Glasscheiben tragen selbst, keine Pfosten, Gurte und Pfostenbefestigung */
+const allGlass = (p) => p.fill === "glas" && (p.glassMount === "boden" || p.glassMount === "punkt");
 const mountKind = (p) => (p.base === "oben" || p.base === "seitlich" ? p.base : null);
 const SEC = { rohr: "Rundrohr", vierkant: "Quadratrohr", rechteck: "Rechteckrohr", flach: "Flachstahl", rund: "Rundstahl", vierkantvoll: "Vierkantstahl" };
 
@@ -38,6 +42,9 @@ export const GELAENDER = {
     { key: "rail", label: "Handlauf", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Handlauf und Gurte" },
     ...holderSchema(undefined, "Handlauf und Gurte"),
     { key: "overhang", label: "Handlauf-Überstand an den Enden", type: "num", default: "50", group: "Handlauf und Gurte" },
+    { key: "railBend", label: "Handlauf an den Ecken", type: "select", options: [["gehrung", "gegehrt"], ["bogen", "Bogen (Krümmling)"]], default: "gehrung", missing: "gehrung", group: "Handlauf und Gurte", when: (p) => ["rohr", "rund"].includes(p.rail?.kind) },
+    { key: "railEnd", label: "Handlauf-Enden", type: "select", options: [["gerade", "gerade"], ["bogen", "Endbogen nach unten"]], default: "gerade", missing: "gerade", group: "Handlauf und Gurte", when: (p) => ["rohr", "rund"].includes(p.rail?.kind) },
+    { key: "railR", label: "Biegeradius Handlauf (Mitte Rohr)", type: "num", default: "80", group: "Handlauf und Gurte", when: (p) => ["rohr", "rund"].includes(p.rail?.kind) && (p.railBend === "bogen" || p.railEnd === "bogen") },
     { key: "top", label: "Obergurt", type: "check", default: true, group: "Handlauf und Gurte" },
     { key: "topGap", label: "Obergurt unter Handlauf", type: "num", default: "100", group: "Handlauf und Gurte", when: (p) => p.top },
     { key: "bottom", label: "Untergurt", type: "check", default: true, group: "Handlauf und Gurte" },
@@ -53,12 +60,15 @@ export const GELAENDER = {
     { key: "ring", label: "Ring in der Kreuzmitte", type: "check", default: true, group: "Füllung", when: (p) => p.fill === "kreuz" },
     { key: "ringD", label: "Ring-Durchmesser (Mitte Stab)", type: "num", default: "300", group: "Füllung", when: (p) => p.fill === "kreuz" && p.ring },
     { key: "frame", label: "Füllungsrahmen", type: "section", default: { kind: "vierkant", size: "20x2" }, group: "Füllung", when: (p) => p.fill === "rahmen" },
-    { key: "panelT", label: "Dicke", type: "num", default: "3", group: "Füllung", when: (p) => p.fill === "blech" || p.fill === "glas" },
+    { key: "glassMount", label: "Glas-Befestigung", type: "select", options: [["klemme", "Glasklemmhalter am Pfosten"], ["lasche", "Lasche am Pfosten, verschraubt"], ["boden", "Ganzglas im Bodenprofil (ohne Pfosten)"], ["punkt", "Ganzglas mit Punkthaltern an der Deckenstirn"]], default: "klemme", missing: "lasche", group: "Füllung", when: (p) => p.fill === "glas" },
+    { key: "glassT", label: "Glas (VSG)", type: "select", options: GLASS_T.map((t) => [String(t), `VSG ${String(t).replace(".", ",")} mm`]), default: "10.76", group: "Füllung", when: (p) => p.fill === "glas" && p.glassMount !== "lasche" },
+    { key: "panelT", label: "Dicke", type: "num", default: "3", group: "Füllung", when: (p) => p.fill === "blech" || (p.fill === "glas" && p.glassMount === "lasche") },
     { key: "panelGap", label: "Abstand zu Pfosten/Gurt", type: "num", default: "15", group: "Füllung", when: (p) => ["blech", "glas", "rahmen"].includes(p.fill) },
   ],
 
   /** Bauplan aus aufgelösten Parametern (Zahlen, Profile mit geom) */
   plan(p) {
+    if (allGlass(p)) return glassPlan(p);
     const issues = [];
     const runs = p.runs;
     if (!runs.length || runs.some((x) => !(x > 0))) throw fieldError("Läufe: Längen > 0 angeben", "runs");
@@ -118,6 +128,7 @@ export const GELAENDER = {
       rand = rp.slice(1).map((b, k) => ({ name: "Randprofil", a: rp[k], b, section: sec, up, rot }));
     }
     // Pfosten (Breite quer zur Lauflinie): Profil-u zeigt quer → Drehung so, dass Breite u ⟂ Lauf
+    let cornerPosts = 0;
     posts.forEach((q, i) => {
       const top = P3(q.at, zPostTop), name = `Pfosten ${i + 1}`, along = [q.d[0], q.d[1], 0];
       const ov = mount ? overrideFor(mount.per, name) : null, kindP = ov || kind; // einzelne Pfosten abweichend
@@ -148,7 +159,10 @@ export const GELAENDER = {
         members.push({ section: post, a: r.a, b: top, name, up: along, ...(r.cuts ? { cuts: r.cuts } : {}) });
         plates.push(r.plate, ...(r.parts || [])); drills.push(...r.drills); issues.push(...r.issues); mounted.push(r);
       } else members.push({ section: post, a: P3(q.at, mount ? 0 : zBase), b: top, name, up: [q.d[0], q.d[1], 0] });
-      if (holder) {
+      // Eckpfosten unter einem Krümmling: der Bogen läuft innen an der Ecke vorbei, kein Halter (Pfosten trägt über die Gurte)
+      const underBend = ["rohr", "rund"].includes(rail.kind) && p.railBend === "bogen" && pts.slice(1, -1).some((c) => Math.hypot(c[0] - q.at[0], c[1] - q.at[1]) < 1e-6);
+      if (underBend) cornerPosts++;
+      if (holder && !underBend) {
         const hp = holderParts({ q: P3(q.at, zPostTop), along: q.d, axisZ: H - railH / 2, post, railH, d: p.holderD, name: `Pfosten ${i + 1}`, target: "Handlauf" });
         members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
       }
@@ -165,7 +179,28 @@ export const GELAENDER = {
       rp[0] = ext(0, 1);
       rp[rp.length - 1] = ext(pts.length - 1, pts.length - 2);
     }
-    chains.push({ section: rail, points: rp, name: "Handlauf" });
+    // Krümmlinge (N2): Bögen an den Ecken bzw. Endbogen 90° nach unten (Schenkel 50 mm) statt Gehrung
+    const roundRail = ["rohr", "rund"].includes(rail.kind), bendCorners = roundRail && p.railBend === "bogen", bendEnds = roundRail && p.railEnd === "bogen";
+    if (bendCorners || bendEnds) {
+      const R = p.railR, rq = rp.map((q) => [...q]);
+      if (!(R >= rail.geom.width)) throw fieldError(`Biegeradius mindestens ${Math.ceil(rail.geom.width)} mm (Rohr-Ø)`, "railR");
+      // Endbogen beginnt erst nach dem Überstand: Enden um R weiter hinaus, dann senkrecht nach unten
+      const out = (i, j) => { const d = v3n(sub3(rq[i], rq[j])); rq[i] = rq[i].map((x, k) => x + d[k] * R); };
+      if (bendEnds) { out(0, 1); out(rq.length - 1, rq.length - 2); }
+      if (bendEnds) { rq.unshift([rq[0][0], rq[0][1], rq[0][2] - R - 50]); rq.push([rq.at(-1)[0], rq.at(-1)[1], rq.at(-1)[2] - R - 50]); }
+      // ohne Eckbögen: Enden als eigene Bogenstücke, der innere Zug bleibt eine gegehrte Kette
+      const parts = bendCorners ? [{ pts: rq, bend: true }] : splitAtCorners(rq);
+      let nb = 0, nm = 0;
+      for (const part of parts) {
+        if (!part.bend) { chains.push({ section: rail, points: part.pts, name: "Handlauf" }); continue; }
+        const bc = bentChain({ section: rail, points: part.pts, name: "Handlauf", radius: R });
+        for (const m of bc.members) members.push({ ...m, name: `Handlauf ${++nm}` });
+        for (const t of bc.tubes) tubes.push({ ...t, name: `Handlauf Bogen ${++nb}` });
+        if (bc.short.length) issues.push({ key: "railR", level: "Warnung", message: `Handlauf: an ${bc.short.length} Ecke(n) ist das Stück zu kurz für den Biegeradius – dort bleibt ein Knick` });
+      }
+      if (bendCorners && holder && runs.length > 1) issues.push({ key: "railBend", level: "Hinweis", message: "Eckpfosten ohne Handlaufhalter: der Bogen läuft innen an der Ecke vorbei – Pfosten trägt über die Gurte" });
+      if (bendCorners && R < 1.5 * rail.geom.width) issues.push({ key: "railR", level: "Warnung", message: `Biegeradius unter 1,5 × Ø (${Math.ceil(1.5 * rail.geom.width)} mm): Rohr knickt ohne Dorn ein – Formbogen verwenden` });
+    } else chains.push({ section: rail, points: rp, name: "Handlauf" });
     // Gurte und Füllung je Feld zwischen den Pfostenflächen
     const half = post.geom.height / 2; // Pfostentiefe entlang der Lauflinie (v zeigt entlang d)
     const belt = p.belt, beltH = belt?.geom.height || 0;
@@ -295,6 +330,24 @@ export const GELAENDER = {
           const bc = beltCope(top);
           if (bc) for (const s of ss) members.push({ section: sp, a: P3(at(s), zb), b: P3(at(s), zf), name: `Füllungsrahmen ${i + 1} Abstandhalter ${++k}`, up: [fd.d[0], fd.d[1], 0], copes: [bc] });
         }
+      } else if (p.fill === "glas" && p.glassMount === "klemme") {
+        // Glasklemmhalter (N3): Glas mittig auf der Lauflinie, je Pfostenseite 2 Halter (bei kleinen Feldern 1),
+        // Halter mit M8 in den Pfosten (Gewindebohrung), Glas nur geklemmt (ohne Bohrung)
+        const tg = Number(p.glassT), W = clear - 2 * p.panelGap, Hp = fillHi - fillLo - 2 * p.panelGap;
+        if (!(W > 0 && Hp > 0)) throw fieldError("Füllung: Abstand zu groß für das Feld", "panelGap");
+        if (!(p.panelGap >= 8 && p.panelGap <= 30)) issues.push({ key: "panelGap", level: "Hinweis", message: `Glasklemmhalter: Glas ${Math.round(p.panelGap)} mm vom Pfosten – der Klemmschlitz fasst 8 … 30 mm` });
+        const n = [-fd.d[1], fd.d[0], 0], c = at((s0 + s1) / 2), zc = (fillLo + fillHi) / 2, nm = `Glas ${i + 1}`;
+        const hz = Hp > 400 ? [zc - Hp / 2 + 100, zc + Hp / 2 - 100] : [zc];
+        for (const [j, sp0, sg] of [[0, s0, 1], [1, s1, -1]]) {
+          if (!posts2[j]) continue;
+          for (const z of hz) {
+            const dir = [fd.d[0] * sg, fd.d[1] * sg, 0];
+            norms.push({ kind: "glasklemme", size: `VSG ${String(tg).replace(".", ",")}`, grade: "A2", pos: P3(at(sp0), z), dir, xDir: [0, 0, 1] });
+            drills.push({ target: `Pfosten ${fd.pa + j + 1}`, p: P3(at(sp0 + sg), z), dir: dir.map((x) => -x), len: 8, d: 6.8 });
+          }
+        }
+        plates.push({ center: [c[0] - (n[0] * tg) / 2, c[1] - (n[1] * tg) / 2, zc], xDir: [fd.d[0], fd.d[1], 0], normal: n, W, H: Hp, t: tg, name: nm, glass: true, vertical: true });
+        gapMaxSeen = Math.max(gapMaxSeen, p.panelGap);
       } else if (p.fill === "blech" || p.fill === "glas") {
         const W = clear - 2 * p.panelGap, Hp = fillHi - fillLo - 2 * p.panelGap;
         if (!(W > 0 && Hp > 0)) throw fieldError("Füllung: Abstand zu groß für das Feld", "panelGap");
@@ -396,7 +449,103 @@ export const GELAENDER = {
   },
 };
 
+// Felder, die nur für Pfosten-Geländer gelten: bei Ganzglas ausblenden
+{
+  const keep = new Set(["runs", "angle", "height", "rail", "railBend", "railR", "fill", "glassMount", "glassT"]);
+  for (const s of GELAENDER.schema) {
+    if (keep.has(s.key) || ["Lauflinie"].includes(s.group)) continue;
+    const w = s.when;
+    s.when = s.key === "mSlab" ? (p) => (allGlass(p) ? p.glassMount === "punkt" : !w || w(p)) : (p) => !allGlass(p) && (!w || w(p));
+  }
+}
+
+const GLASS_JOINT = 10, GLASS_MAX_W = 1500, STANDOFF = 40;
+/**
+ * Ganzglas-Geländer (N3) ohne Pfosten. »boden«: Glas mittig auf der Lauflinie in einem Alu-U-Bodenprofil (Klemmkeile
+ * je Seite 15 mm, Setzklotz 5 mm), Profil mit Bohrungen Ø 11 für Betonschrauben. »punkt«: Deckenstirn auf der Lauflinie
+ * (Decke links wie bei seitlicher Pfostenbefestigung), Glas außen davor auf Punkthaltern (Abstand 40 mm), zwei Reihen,
+ * Glasunterkante bündig mit der Deckenunterseite. Handlauf als Nutrohr auf der Glaskante.
+ */
+function glassPlan(p) {
+  const issues = [], members = [], plates = [], chains = [], drills = [], norms = [], tubes = [];
+  const runs = p.runs, H = p.height, rail = p.rail, tg = Number(p.glassT), boden = p.glassMount === "boden";
+  if (!runs.length || runs.some((x) => !(x > 0))) throw fieldError("Läufe: Längen > 0 angeben", "runs");
+  if (runs.length > 1 && !(Math.abs(p.angle) > 0 && Math.abs(p.angle) < 180)) throw fieldError("Eckwinkel zwischen 0° und 180° angeben", "angle");
+  const pts = [[0, 0]];
+  let ang = 0;
+  runs.forEach((L, i) => { if (i > 0) ang += (p.angle * Math.PI) / 180; const [x, y] = pts.at(-1); pts.push([x + L * Math.cos(ang), y + L * Math.sin(ang)]); });
+  const railH = rail.geom.height, zTop = H - railH;
+  const prof = boden ? (() => { const B = Math.ceil((tg + 2 * 15 + 2 * 6) / 5) * 5; return { kind: "u", dims: { B, H: 110, t: 6 }, geom: sectionGeometry("u", { B, H: 110, t: 6 }) }; })() : null;
+  const slab = p.mSlab || 200;
+  if (!boden && !(slab >= 160)) throw fieldError("Deckenstirn zu niedrig für zwei Reihen Punkthalter (mindestens 160 mm)", "mSlab");
+  const zBot = boden ? prof.dims.t + 5 : -slab;
+  if (!(zTop - zBot > 300)) throw fieldError("Höhe zu klein für Ganzglas", "height");
+  const out = (d) => [d[1], -d[0], 0]; // nach außen = rechts der Lauflinie
+  // Glasebene: Mitte auf der Lauflinie (Boden) bzw. Abstand + halbe Glasdicke vor der Deckenstirn (Punkthalter)
+  const gl = boden ? pts : offsetLine(pts, -(STANDOFF + tg / 2));
+  let nGlass = 0, nHold = 0;
+  for (let r = 0; r < runs.length; r++) {
+    const a = gl[r], b = gl[r + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = norm2(sub2(b, a)), o = out(d);
+    const inset = tg + GLASS_JOINT, s0 = r > 0 ? inset : 0, s1 = L - (r < runs.length - 1 ? inset : 0);
+    const n = Math.max(1, Math.ceil((s1 - s0 + GLASS_JOINT) / (GLASS_MAX_W + GLASS_JOINT) - 1e-9)), W = (s1 - s0 - (n - 1) * GLASS_JOINT) / n;
+    if (!(W > 200)) throw fieldError(`Lauf ${r + 1}: zu kurz für eine Glasscheibe`, "runs");
+    for (let k = 0; k < n; k++) {
+      const sm = s0 + k * (W + GLASS_JOINT) + W / 2, q = [a[0] + d[0] * sm, a[1] + d[1] * sm], zc = (zTop + zBot) / 2, Hg = zTop - zBot;
+      const name = `Glas ${++nGlass}`, hs = [];
+      if (!boden) {
+        // Punkthalter je Scheibe: 2 Spalten (120 mm vom Rand) × 2 Reihen in der Deckenstirn
+        const xs = W > 500 ? [-W / 2 + 120, W / 2 - 120] : [0];
+        for (const x of xs) for (const z of [-60, -(slab - 60)]) {
+          const f = [q[0] + d[0] * x - o[0] * (STANDOFF + tg / 2), q[1] + d[1] * x - o[1] * (STANDOFF + tg / 2), z];
+          norms.push({ kind: "glaspunkthalter", size: `VSG ${String(tg).replace(".", ",")}`, grade: "A2", pos: f, dir: o });
+          hs.push([x, z - zc, 22]);
+          nHold++;
+        }
+        if (xs.length < 2) issues.push({ key: "runs", level: "Warnung", message: `${name}: nur ${W.toFixed(0)} mm breit – eine Spalte Punkthalter, Statik prüfen` });
+      }
+      // Platte: Mittelebene + Normale; Glas mittig auf gl (Normale nach außen, Dicke tg)
+      plates.push({ center: [q[0] - (o[0] * tg) / 2, q[1] - (o[1] * tg) / 2, zc], xDir: [d[0], d[1], 0], normal: o, W, H: Hg, t: tg, name, glass: true, vertical: true, ...(hs.length ? { holes: hs, d: 22 } : {}) });
+      // Setzklötze (Kunststoff 100 × Glasdicke × 5) im Bodenprofil, je 1/4 vom Rand
+      if (boden) for (const x of [-W / 4, W / 4]) plates.push({ center: [q[0] + d[0] * x, q[1] + d[1] * x, prof.dims.t], xDir: [d[0], d[1], 0], normal: [0, 0, 1], W: 100, H: tg, t: 5, name: `Setzklotz ${nGlass}.${x < 0 ? 1 : 2}`, density: 1.2 });
+    }
+    if (boden) {
+      const A = pts[r], B = pts[r + 1], Lr = Math.hypot(B[0] - A[0], B[1] - A[1]), dr = norm2(sub2(B, A)), m = Math.max(1, Math.ceil((Lr - 200) / 300 - 1e-9));
+      for (let k = 0; k <= m; k++) { const s = 100 + ((Lr - 200) * k) / m; drills.push({ target: "Bodenprofil", p: [A[0] + dr[0] * s, A[1] + dr[1] * s, prof.dims.t + 1], dir: [0, 0, -1], len: prof.dims.t + 2, d: 11 }); }
+    }
+  }
+  if (boden) {
+    const d0 = norm2(sub2(pts[1], pts[0]));
+    const rot = orientRot(prof, [d0[0], d0[1], 0], [0, 0, 1], { open: [0, 0, 1], legs: [-d0[1], d0[0], 1], stem: [0, 0, -1] });
+    chains.push({ section: prof, points: pts.map((q) => [q[0], q[1], prof.dims.H / 2]), name: "Bodenprofil", up: [0, 0, 1], rot, density: 2.7 });
+  }
+  // Handlauf auf der Glaskante, an den Ecken gegehrt oder gebogen
+  const rp = gl.map((q) => [q[0], q[1], H - railH / 2]);
+  if (["rohr", "rund"].includes(rail.kind) && p.railBend === "bogen" && runs.length > 1) {
+    const bc = bentChain({ section: rail, points: rp, name: "Handlauf", radius: p.railR });
+    let nm = 0, nb = 0;
+    for (const m of bc.members) members.push({ ...m, name: `Handlauf ${++nm}` });
+    for (const t of bc.tubes) tubes.push({ ...t, name: `Handlauf Bogen ${++nb}` });
+  } else chains.push({ section: rail, points: rp, name: "Handlauf" });
+  if (tg < 16.76 - 1e-6) issues.push({ key: "glassT", level: "Warnung", message: `Ganzglas ohne Pfosten trägt die Holmlast allein: VSG ${String(tg).replace(".", ",")} ist dafür meist zu dünn – üblich ab VSG 16,76 aus TVG, Nachweis (abZ/AbP) nötig` });
+  issues.push(...railingIssues({ use: p.use, fall: p.fall, height: H, fill: "glas", toe: false, gap: 0, bottom: Math.max(0, zBot), open: zTop - zBot, rail }, { height: "height", fill: "fill", gap: "glassMount", bottom: "glassMount", rail: "rail", use: "use" }));
+  const total = runs.reduce((x, y) => x + y, 0);
+  const info = `Ganzglas ${boden ? "im Bodenprofil" : "mit Punkthaltern an der Deckenstirn"}: ${nGlass} Scheiben VSG ${String(tg).replace(".", ",")} (Fuge ${GLASS_JOINT} mm), Lauflänge ${Math.round(total)} mm` +
+    (boden ? `, Bodenprofil Alu U ${prof.dims.B} × ${prof.dims.H} (Klemmkeile je Seite 15 mm), Betonschrauben Ø 10 alle ≤ 300 mm` : `, ${nHold} Punkthalter (Glasbohrung Ø 22, Abstand ${STANDOFF} mm)`) + ", Handlauf als Nutrohr auf der Glaskante";
+  return { chains, members, plates, drills, norms, tubes, info, issues, sections: SEC };
+}
+
 const sub2 = (a, b) => [a[0] - b[0], a[1] - b[1]];
+/** Handlauf nur mit Endbögen: [Bogen am Anfang], innerer Zug gegehrt, [Bogen am Ende]; Stöße mitten im ersten bzw. letzten Stück */
+const v3n = (a) => { const l = Math.hypot(...a) || 1; return a.map((x) => x / l); };
+
+function splitAtCorners(rq) {
+  const n = rq.length;
+  if (n <= 4) return [{ pts: rq, bend: true }]; // gerader Handlauf mit zwei Endbögen: ein Zug
+  const mid = (a, b) => a.map((x, k) => (x + b[k]) / 2);
+  const m0 = mid(rq[1], rq[2]), m1 = mid(rq[n - 3], rq[n - 2]);
+  return [{ pts: [rq[0], rq[1], m0], bend: true }, { pts: [m0, ...rq.slice(2, n - 2), m1], bend: false }, { pts: [m1, rq[n - 2], rq[n - 1]], bend: true }];
+}
+
 /** Linienzug um off nach links versetzt (Ecken auf der Winkelhalbierenden) */
 function offsetLine(pts, off) {
   return pts.map((q, i) => {

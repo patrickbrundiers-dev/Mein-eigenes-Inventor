@@ -200,6 +200,7 @@ export class Viewer {
       if (this.directGlyph) this.directGlyph.scale.setScalar(70 / this.pixelsPerUnit());
       r.render(this.scene, this.camera);
       this.placeMeasureLabel();
+      this.placeHoleNotes();
       // ViewCube
       if (!this.hideCube && this.showCube) {
         const cs = this.cubeSize;
@@ -1570,6 +1571,66 @@ export class Viewer {
     }
     this.placeMeasureLabel();
     this.render();
+  }
+  /**
+   * Bohrungsangaben am 3D-Modell (N9): je Bohrungs-Feature eine Notiz mit Hinweislinie an der ersten Bohrung, Gewinde
+   * als Ring im Nenndurchmesser an jeder Bohrung (bei Sacklöchern auch am Gewindeende).
+   * notes: [{ text, points: [[x,y,z]], dir, depth, threadR, r }]
+   */
+  showHoleNotes(notes = []) {
+    if (!this.noteGroup) { this.noteGroup = new THREE.Group(); this.scene.add(this.noteGroup); }
+    disposeTree(this.noteGroup);
+    this.noteGroup.clear();
+    for (const n of this.noteEls || []) n.el.remove();
+    this.noteEls = [];
+    const V = (p) => new THREE.Vector3(p[0], p[1], p[2]);
+    const color = 0x1f4fa8;
+    for (const n of notes || []) {
+      const a = V(n.dir).normalize();
+      const u = new THREE.Vector3().crossVectors(a, Math.abs(a.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize();
+      const w = new THREE.Vector3().crossVectors(a, u);
+      if (n.threadR > 0) {
+        const ring = (c, r, dashed) => {
+          const pts = [];
+          for (let i = 0; i <= 48; i++) { const t = (i / 48) * Math.PI * 2; pts.push(c.clone().addScaledVector(u, Math.cos(t) * r).addScaledVector(w, Math.sin(t) * r)); }
+          const mat = dashed ? new THREE.LineDashedMaterial({ color, dashSize: r / 3, gapSize: r / 4 }) : new THREE.LineBasicMaterial({ color });
+          const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat);
+          if (dashed) l.computeLineDistances();
+          this.noteGroup.add(l);
+        };
+        for (const p of n.points) {
+          const c = V(p).addScaledVector(a, 0.02);
+          ring(c, n.threadR, false);
+          if (n.depth > 0) ring(V(p).addScaledVector(a, n.depth), n.threadR, true);
+        }
+      }
+      if (!n.text || !n.points?.length) continue;
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(n.points[0]), V(n.points[0])]), new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true }));
+      line.renderOrder = 998;
+      this.noteGroup.add(line);
+      const el = document.createElement("div");
+      el.className = "hole-note";
+      el.textContent = n.text;
+      this.container.append(el);
+      this.noteEls.push({ el, line, p: V(n.points[0]), out: a.clone().negate(), side: u.clone(), r: n.threadR || n.r || 0 });
+    }
+    this.placeHoleNotes();
+    this.render();
+  }
+  placeHoleNotes() {
+    if (!this.noteEls?.length) return;
+    const k = 36 / this.pixelsPerUnit();
+    for (const n of this.noteEls) {
+      // Knick aus der Bohrung heraus und schräg zur Seite; Text am Ende der Hinweislinie
+      const q = n.p.clone().addScaledVector(n.out, k).addScaledVector(n.side, k + n.r);
+      const pos = n.line.geometry.attributes.position;
+      pos.setXYZ(0, n.p.x + n.side.x * n.r, n.p.y + n.side.y * n.r, n.p.z + n.side.z * n.r);
+      pos.setXYZ(1, q.x, q.y, q.z);
+      pos.needsUpdate = true;
+      n.line.geometry.computeBoundingSphere();
+      const [x, y] = this.worldToScreen([q.x, q.y, q.z]);
+      n.el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(2px, -100%)`;
+    }
   }
   placeMeasureLabel() {
     const sp = this.measureSpec, el = this.measureLabel;

@@ -138,7 +138,7 @@ export const BALKON = {
       for (const c of g.chains) chains.push({ ...c, points: c.points.map(P), up: c.up ? D(c.up) : [0, 0, 1], name: "Geländer " + c.name });
       const pathP = (pa) => ({ ...pa, c: P(pa.c), axis: D(pa.axis || [0, 0, 1]), x0: D(pa.x0 || [1, 0, 0]) });
       const cutsP = (cs) => cs && { start: cs.start.map((c) => ({ p: P(c.p), n: D(c.n) })), end: cs.end.map((c) => ({ p: P(c.p), n: D(c.n) })) };
-      for (const m of g.members) members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: "Geländer " + m.name, cuts: cutsP(m.cuts),
+      for (const m of g.members) members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: "Geländer " + m.name, ...(m.target ? { target: "Geländer " + m.target } : {}), cuts: cutsP(m.cuts),
         ...(m.copes ? { copes: m.copes.map((c) => (c.path ? { ...c, path: pathP(c.path) } : { ...c, a: P(c.a), b: P(c.b), up: D(c.up || [0, 0, 1]), cuts: cutsP(c.cuts) })) } : {}) });
       for (const t of g.tubes || []) tubes.push({ ...t, path: pathP(t.path), name: "Geländer " + t.name, ...(t.target ? { target: "Geländer " + t.target } : {}), ...(t.copes ? { copes: t.copes.map((c) => ({ ...c, path: pathP(c.path) })) } : {}) });
       for (const n of g.norms || []) norms.push({ ...n, pos: P(n.pos), dir: D(n.dir) });
