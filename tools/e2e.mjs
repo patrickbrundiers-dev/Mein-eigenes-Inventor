@@ -3885,6 +3885,95 @@ try {
       && mini.includes("Skizze auf Fläche") && mini.includes("Wandung") && miniGone, JSON.stringify({ tip, ring, list, closed, mini, miniGone }));
   }
 
+  // Direktbearbeitung (Inventor »Direkt«): Fläche wählen, Mini-Leiste »Direkt bearbeiten«, Wert eintippen, Messen ab, Größe, Löschen
+  {
+    await evalApp(() => { const a = window.__werkcad; a.openDoc("beispiel_platte"); });
+    await idle();
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    const vb = await page.locator("#viewer canvas").first().boundingBox();
+    const findFace = (type, nz) => evalApp(([x0, y0, w, hh, type, nz]) => {
+      const v = window.__werkcad.viewer;
+      for (let fy = 0.3; fy <= 0.7; fy += 0.02) for (let fx = 0.3; fx <= 0.7; fx += 0.02) {
+        const hit = v.pick(x0 + w * fx, y0 + hh * fy, { edges: false, faces: true });
+        if (hit?.info?.type === type && (nz == null || Math.abs((v.faceWorldInfo(hit).normal || [0, 0, 0])[2] - nz) < 1e-6)) return { x: x0 + w * fx, y: y0 + hh * fy };
+      }
+      return null;
+    }, [vb.x, vb.y, vb.width, vb.height, type, nz]);
+    const top = await findFace("PLANE", 1);
+    await evalApp(() => window.__werkcad.prefs.set("ansicht.miniLeiste", true));
+    const vol = () => evalApp(() => { const a = window.__werkcad, r = a.results.get(a.activeId); return { n: a.activeDoc().features.length, st: Object.values(r.status).filter((s) => !s.ok).map((s) => s.error), info: r.status[a.activeDoc().features.at(-1).id]?.info, bb: r.bodies.map((b) => b.bbox || null) }; });
+    const before = await vol();
+    await page.mouse.click(top.x, top.y);
+    await page.waitForTimeout(300);
+    const mini = await page.locator(".mini-bar button").evaluateAll((b) => b.map((x) => x.getAttribute("aria-label")));
+    await page.locator(".mini-bar button[aria-label^='Direkt bearbeiten']").click();
+    await idle();
+    const bar = await page.locator(".direct-bar").isVisible();
+    const btns = await page.locator(".direct-bar .dbar-btn").allTextContents();
+    await page.locator(".direct-bar .dbar-inp").fill("12");
+    await page.locator(".direct-bar .dbar-inp").press("Enter");
+    await idle();
+    await shot("49-direkt-verschieben");
+    const moved = await vol();
+    // Messen ab: Bezug = Unterseite (über die Pick-Funktion wie ein Klick)
+    await page.locator(".direct-bar .dbar-btn", { hasText: "Messen ab" }).click();
+    const fromSet = await evalApp(() => {
+      const a = window.__werkcad, f = a.feature(a.sel.id);
+      const z0 = Math.min(...a.results.get(a.activeId).bodies.map((b) => b.shape?.boundingBox?.bounds?.[0]?.[2] ?? 0));
+      a.pick.onPick({ kind: "edge", point: [f.faces[0].p[0], f.faces[0].p[1], 0] });
+      return { from: f.from, dist: f.distance, z0 };
+    });
+    await page.locator(".direct-bar .dbar-inp").fill("40");
+    await page.locator(".direct-bar .dbar-inp").press("Enter");
+    await idle();
+    await shot("50-direkt-messen-ab");
+    const measured = await vol();
+    const fm = await evalApp(() => { const a = window.__werkcad, f = a.feature(a.sel.id); return { from: !!f.from, d: f.distance, label: document.querySelector(".measure-label")?.textContent || "" }; });
+    // Löschen-Vorgang zeigt keine Maßeingabe; Abbrechen entfernt das Feature
+    await page.locator(".direct-bar .dbar-btn", { hasText: "Löschen" }).click();
+    await idle();
+    const delNoInp = (await page.locator(".direct-bar .dbar-inp").count()) === 0;
+    await page.locator(".direct-bar .dbar-btn[title^='Abbrechen']").click();
+    await idle();
+    const after = await vol();
+    const gone = (await page.locator(".direct-bar").count()) === 0;
+    // Größe: Bohrung anklicken → Durchmesser vorbelegt, neuer Durchmesser
+    const hole = await evalApp(([x0, y0, w, hh]) => {
+      const a = window.__werkcad, v = a.viewer;
+      // an eine Bohrung heranzoomen (Iso-Ansicht), damit ihre Wand anklickbar ist
+      const cyl = a.results.get(a.activeId).bodies[0].mesh.faces.find((f) => f.type === "CYLINDER" && f.radius < 8);
+      if (!cyl) return null;
+      const [cx, cy, cz] = cyl.axisP;
+      v.fitPoints([[cx - 20, cy - 20, cz - 5], [cx + 20, cy + 20, cz + 15]]);
+      for (let fy = 0.2; fy <= 0.8; fy += 0.005) for (let fx = 0.2; fx <= 0.8; fx += 0.005) {
+        const hit = v.pick(x0 + w * fx, y0 + hh * fy);
+        if (hit?.kind === "face" && hit.info?.type === "CYLINDER" && hit.info.radius < 8) return { x: x0 + w * fx, y: y0 + hh * fy };
+      }
+      return null;
+    }, [vb.x, vb.y, vb.width, vb.height]);
+    let size = null;
+    if (hole) {
+      await page.mouse.click(hole.x, hole.y);
+      await page.waitForTimeout(300);
+      await page.locator(".mini-bar button[aria-label^='Direkt bearbeiten']").click();
+      await idle();
+      const pre = await page.locator(".direct-bar .dbar-inp").inputValue();
+      await page.locator(".direct-bar .dbar-inp").fill("16");
+      await page.locator(".direct-bar .dbar-inp").press("Enter");
+      await idle();
+      await shot("51-direkt-groesse");
+      const r = await vol();
+      await page.locator(".direct-bar .dbar-btn[title^='Fertig']").click();
+      size = { pre, info: r.info, st: r.st, n: r.n, bar: await page.locator(".direct-bar").count() };
+    }
+    await evalApp(() => window.__werkcad.prefs.set("ansicht.miniLeiste", false));
+    step("Direktbearbeitung: Fläche verschieben, Messen ab, Abbrechen, Größe",
+      mini.includes("Fläche löschen") && bar && btns.some((t) => /Größe/.test(t)) && moved.n === before.n + 1 && moved.st.length === 0 && /um 12 mm verschoben/.test(moved.info || "")
+        && fromSet.from && measured.st.length === 0 && /gemessen ab/.test(measured.info || "") && fm.d === "40" && /40/.test(fm.label) && delNoInp && after.n === before.n && gone
+        && size && /^1[01]/.test(size.pre) && /Größe 16/.test(size.info || "") && size.st.length === 0 && size.n === before.n + 1 && size.bar === 0,
+      JSON.stringify({ mini, bar, btns, before: before.n, moved, fromSet, measured, fm, delNoInp, after: after.n, gone, size }));
+  }
+
   // Dokument-Reiter unten: offene Dokumente, Wechsel per Klick, Schließen wechselt zum Nachbarn, Startseite
   {
     await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));

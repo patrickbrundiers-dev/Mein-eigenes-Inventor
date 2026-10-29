@@ -4,6 +4,7 @@ import { problemsDialog, quickCounts, countText } from "./pruefung.js";
 import { invertSelection } from "../core/boxselect.js";
 import { Sketcher } from "./sketcher.js";
 import { MiniBar } from "./minibar.js";
+import { DirectBar, directFaceRef } from "./direkt.js";
 import { DocTabs } from "./doctabs.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
@@ -95,6 +96,7 @@ export class App {
     this.files = new Files(this);
     this.ribbon = new Ribbon(this);
     this.minibar = new MiniBar(this);
+    this.direct = new DirectBar(this);
     this.doctabs = new DocTabs(this);
     this.tree = new Tree(this);
     this.props = new Props(this);
@@ -817,6 +819,7 @@ export class App {
     if (f && (f.type === "fillet" || f.type === "chamfer") && (f.mode || "edges") === "edges") this.pick = { kind: "edges", feature: f.id };
     if (f && f.type === "naht") this.pick = { kind: "edges", feature: f.id };
     if (f && ["shell", "aufdicken", "flaeche", "entformung"].includes(f.type)) this.pick = { kind: "faces", feature: f.id };
+    if (f?.type === "direkt" && !(f.faces || []).length) this.pick = { kind: "faces", feature: f.id };
     const wasEditing = this._editingFeature;
     this._editingFeature = this.pick?.feature || null;
     if (wasEditing !== this._editingFeature) this.rebuild();
@@ -1113,7 +1116,7 @@ export class App {
   toggleFeatureFace(fid, hit) {
     if (!hit || hit.kind !== "face") return;
     const f = this.feature(fid);
-    const ref = { p: hit.point.map(r6) };
+    const ref = f.type === "direkt" ? directFaceRef(this, hit) : { p: hit.point.map(r6) };
     this.edit("Fläche wählen", () => {
       f.faces = f.faces || [];
       const same = this.viewer.findFacesByPoint(f.faces.map((x) => x.p)).find((x) => x.face === hit.face && x.body === hit.body);
@@ -1532,7 +1535,7 @@ export const FEATURE_NAMES = {
   sketch: "Skizze", blechkasten: "Blechkasten", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
   arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
-  endkappe: "Endkappe", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung",
+  endkappe: "Endkappe", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung", direkt: "Direkt",
 };
 
 /** Welche Bedingungen nicht erfüllbar sind, in Klartext (rot markiert in der Skizze) */

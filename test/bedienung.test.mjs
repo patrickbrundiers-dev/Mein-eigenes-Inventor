@@ -9,9 +9,9 @@ test("Mini-Leiste: Kanten bieten Rundung, Fase, Naht", () => {
 });
 
 test("Mini-Leiste: eine ebene Fläche bietet Skizze und Normalansicht", () => {
-  assert.deepEqual(ids([{ kind: "face", info: { type: "PLANE" } }]), ["faceSketch", "normal", "shell", "measure", "fitSel"]);
-  assert.deepEqual(ids([{ kind: "face", info: { type: "CYLINDER" } }]), ["shell", "measure", "fitSel"]);
-  assert.deepEqual(ids([{ kind: "face", info: { type: "PLANE" } }, { kind: "face", info: { type: "PLANE" } }]), ["shell", "measure", "fitSel"]);
+  assert.deepEqual(ids([{ kind: "face", info: { type: "PLANE" } }]), ["faceSketch", "normal", "direkt", "direktLoeschen", "shell", "measure", "fitSel"]);
+  assert.deepEqual(ids([{ kind: "face", info: { type: "CYLINDER" } }]), ["direkt", "direktLoeschen", "shell", "measure", "fitSel"]);
+  assert.deepEqual(ids([{ kind: "face", info: { type: "PLANE" } }, { kind: "face", info: { type: "PLANE" } }]), ["direkt", "direktLoeschen", "shell", "measure", "fitSel"]);
 });
 
 test("Mini-Leiste: gemischte Auswahl nur Messen und Zeigen, leere gar nichts", () => {

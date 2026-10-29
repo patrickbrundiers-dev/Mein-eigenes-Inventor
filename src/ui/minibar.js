@@ -4,6 +4,7 @@
 import { h, icon } from "./dom.js";
 import { planeFromFace } from "../core/geom.js";
 import { miniBarItems } from "../core/minileiste.js";
+import { startDirekt } from "./direkt.js";
 
 export class MiniBar {
   constructor(app) {
@@ -27,6 +28,8 @@ export class MiniBar {
       chamfer: () => app.ribbon.run("chamfer"),
       naht: () => app.ribbon.run("naht"),
       shell: () => app.ribbon.run("shell"),
+      direkt: () => startDirekt(app),
+      direktLoeschen: () => startDirekt(app, "loeschen"),
       faceSketch: () => { const f = app.selHits[0]; app.createSketch(planeFromFace(f.info.point || f.point, f.info.normal || f.normal)); },
       normal: () => app.viewNormalToFace(),
       measure: () => app.beginMeasure(),
