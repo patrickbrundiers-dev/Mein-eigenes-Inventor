@@ -162,6 +162,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .node:hover .eye-btn, .node:focus-within .eye-btn, .node .eye-btn.off { visibility: visible; }
 .node .eye-btn:hover { color: var(--ink); }
 .node .eye-btn.off { color: var(--steel-3, #b7c0cb); }
+.node.hot { background: var(--laser-soft); }
+.node:focus-visible { outline: 2px solid var(--dye); outline-offset: -2px; }
+.tree-top { position: sticky; top: 0; z-index: 3; }
+.tree-search { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--steel-0); border-bottom: 1px solid var(--steel-1); color: var(--steel-4); }
+.tree-search svg { width: 14px; height: 14px; flex: none; }
+.tree-search-input { flex: 1; min-width: 0; border: 1px solid var(--steel-2); border-radius: var(--radius-s); padding: 2px 6px; font: inherit; font-size: 12px; background: var(--surface); color: var(--ink); }
+.tree-search-input:focus { outline: none; border-color: var(--dye); }
+.node.folder > .ico-wrap .ico { color: var(--warn); }
 .tree ul.kids { border-left: 1px dotted var(--steel-2); margin-left: 12px; padding-left: 8px; }
 .tree-sep { height: 1px; background: var(--steel-2); margin: 6px 8px; }
 
