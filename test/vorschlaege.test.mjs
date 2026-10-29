@@ -104,3 +104,18 @@ test("N1: Treppe halbgewendelt nach rechts – Stufen, Wangen, Geländer, gespie
   const vis = GENERATORS.treppe.schema.filter((s) => !s.when || s.when({ ...defaultGenerator("treppe").params, form: "Lw" })).map((s) => s.key);
   assert.ok(vis.includes("verzug") && vis.includes("wangeH") && !vis.includes("support") && !vis.includes("gelMount"));
 });
+
+test("N4: Lamellendach – Lamellen, Achsbolzen, Endkappen, Ablauf, Wand ohne hintere Stützen", () => {
+  const p = plan("pergola");
+  const lam = p.members.filter((m) => /^Lamelle \d+$/.test(m.name));
+  assert.ok(lam.length >= 10);
+  assert.equal(p.members.filter((m) => /Achsbolzen/.test(m.name)).length, 2 * lam.length);
+  assert.equal(p.plates.filter((x) => /Endkappe/.test(x.name)).length, 2 * lam.length);
+  assert.ok(lam.every((m) => m.density === 2.7));
+  assert.equal(p.members.filter((m) => /^Stütze/.test(m.name)).length, 4);
+  assert.ok(p.drills.some((d) => d.target === "Stütze 1" && d.w), "Auslass unten an der Stütze");
+  const w = plan("pergola", { form: "wand" });
+  assert.equal(w.members.filter((m) => /^Stütze/.test(m.name)).length, 2);
+  assert.ok(w.plates.some((x) => /^Wandplatte/.test(x.name)));
+  assert.throws(() => plan("pergola", { angle: "120" }), /Stellung/);
+});

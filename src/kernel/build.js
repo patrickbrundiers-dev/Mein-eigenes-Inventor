@@ -487,6 +487,11 @@ export function createKernel(R) {
 
   // ---------- Bauteil aufbauen ----------
   const prefixCache = new Map(); // partId -> [{key, state}]
+  // N5: Teile-Zwischenspeicher je Generator-Feature (Bauteil + Feature): Teile mit gleichen Eingaben (Profil, Lage,
+  // Schnitte, Bohrungen …) werden beim Neuberechnen nicht neu gebaut, sondern kopiert. Nur die Teile des letzten
+  // Laufs bleiben gespeichert, nicht mehr gebrauchte werden freigegeben.
+  const genPartCache = new Map(); // `${partId}/${fid}` -> Map(key -> [{ solid, meta, name, kind }])
+  const recipeCache = new Map(); // Normteil-Grundkörper je Familie/Größe/Länge
 
   function cloneState(st) {
     return {
@@ -1151,6 +1156,15 @@ export function createKernel(R) {
             const list = [];
             const cut = cutCfg(f);
             const add = (solid, meta, name) => { pushMember(state, solid, f, meta, name); list.push({ shape: solid, kind: "member", meta, name }); };
+            const cacheId = `${part.id}/${f.id}`, oldC = genPartCache.get(cacheId) || new Map(), newC = new Map();
+            const keyOf = (x) => JSON.stringify(x, (k, v) => (k === "name" || k === "segName" || k === "target" ? undefined : v));
+            /** Teile aus dem Zwischenspeicher (Kopie) oder neu gebaut: build() → [{ solid, meta, name }] */
+            const memo = (key, build) => {
+              let e = newC.get(key) || oldC.get(key);
+              if (!e) e = build();
+              newC.set(key, e);
+              return e.map((x) => ({ ...x, solid: x.solid.clone(), meta: JSON.parse(JSON.stringify(x.meta)) }));
+            };
             const metaOf = (sec, solid, fr, extra = {}) => ({ section: sectionName(sec.kind, sec.dims), profileId: profileId(sec.kind, sec.dims), area: sec.geom.area, length: memberLength(solid, fr), miterStart: 0, miterEnd: 0, frameZ: fr.z, axis: memberAxis(solid, fr, sec.geom), generator: f.gen, sec: { kind: sec.kind, dims: sec.dims }, ...extra });
             // Bohrungen (z. B. Handlaufhalter): Zylinder ab p in Richtung dir, nur am Stab, durch dessen Achse p geht
             const drillsOf = (name, A, B, size) => (plan.drills || []).filter((d) => {
@@ -1163,18 +1177,25 @@ export function createKernel(R) {
             const drill = (solid, list) => list.reduce((sh, d) => sh.cut(drillTool(d)), solid);
             for (const ch of plan.chains) {
               const segs = ch.points.slice(1).map((b, i) => ({ id: "s" + (i + 1), a: ch.points[i], b }));
-              const ms = buildMembers(segs, { kind: ch.section.kind, dims: ch.section.dims }, { corner: "gehrung", align: "mitte", rotation: String(ch.rot || 0) }, E, cut, () => ch.up || [0, 0, 1], ch.name);
               const g = ch.section.geom || sectionGeometry(ch.section.kind, ch.section.dims); // Kette oft nur mit kind/dims
               const size = Math.max(g?.width || 0, g?.height || 0);
-              ms.forEach((m, i) => {
-                if (ch.onlySeg != null && i !== ch.onlySeg) return;
-                const ds = segs[i] ? drillsOf(ch.name, segs[i].a, segs[i].b, size) : [];
-                add(drill(m.solid, ds), { ...m.meta, generator: f.gen, ...(ch.density ? { density: ch.density } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }, ch.segName || (ms.length > 1 ? m.name : ch.name));
+              const dss = segs.map((sg) => drillsOf(ch.name, sg.a, sg.b, size));
+              const parts = memo(keyOf(["c", f.gen, cut, { ...ch, section: { kind: ch.section.kind, dims: ch.section.dims } }, dss]), () => {
+                const ms = buildMembers(segs, { kind: ch.section.kind, dims: ch.section.dims }, { corner: "gehrung", align: "mitte", rotation: String(ch.rot || 0) }, E, cut, () => ch.up || [0, 0, 1], ch.name);
+                return ms.map((m, i) => {
+                  if (ch.onlySeg != null && i !== ch.onlySeg) return null;
+                  const ds = dss[i] || [];
+                  return { solid: drill(m.solid, ds), meta: { ...m.meta, generator: f.gen, ...(ch.density ? { density: ch.density } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }, multi: ms.length > 1, suffix: m.name.slice(ch.name.length) };
+                }).filter(Boolean);
               });
+              // Namen nicht aus dem Speicher (gleiche Geometrie, anderer Name): Name der Kette + Stücknummer
+              for (const x of parts) add(x.solid, x.meta, ch.segName || (x.multi ? ch.name + x.suffix : ch.name));
             }
             for (const m of plan.members) {
               const L = v3.dist(m.a, m.b);
               if (!(L > 1e-6)) continue;
+              const ds0 = drillsOf(m.target || m.name, m.a, m.b, Math.hypot(m.section.geom.width, m.section.geom.height));
+              const [x] = memo(keyOf(["m", f.gen, cut, { ...m, section: { kind: m.section.kind, dims: m.section.dims }, copes: (m.copes || []).map((c) => ({ ...c, section: { kind: c.section.kind, dims: c.section.dims } })) }, ds0]), () => {
               const fr = memberFrame(m.a, v3.sub(m.b, m.a), m.rot || 0, m.up);
               const cuts = m.cuts || { start: [], end: [] };
               // plain: ebener Sägeschnitt ohne Laser-Endbearbeitung (Fachwerk-Füllstäbe an Gurtflächen)
@@ -1188,8 +1209,10 @@ export function createKernel(R) {
               // angesetzte Zapfen (Gestell: Stecknasen), Quader w × h ab p in Richtung dir
               for (const t of m.tabs || []) solid = solid.fuse(R.drawRectangle(t.w, t.h).sketchOnPlane(new R.Plane(t.p, t.xDir, v3.norm(t.dir))).extrude(t.len));
               // einzelner Stab: alle Bohrungen am Umfang (auch Schlitze nahe der Ecken, daher Diagonale)
-              const ds = drillsOf(m.target || m.name, m.a, m.b, Math.hypot(m.section.geom.width, m.section.geom.height));
-              add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), miterParts: { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) }, ...(m.copes?.length ? { coped: true } : {}), ...(m.density ? { density: m.density } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }), m.name);
+              const ds = ds0;
+              return [{ solid: drill(solid, ds), meta: metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), miterParts: { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) }, ...(m.copes?.length ? { coped: true } : {}), ...(m.density ? { density: m.density } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }) }];
+              });
+              add(x.solid, x.meta, m.name);
             }
             // gebogene/gewalzte Profile (Wendel-Handlauf, Ring, Bogen): ein Körper entlang der Mittellinie
             for (const tb of plan.tubes || []) {
@@ -1197,6 +1220,7 @@ export function createKernel(R) {
               const ds = (plan.drills || []).filter((d) => d.target === (tb.target || tb.name) && pathDistance(tb.path, d.p) <= Math.max(g.width, g.height) / 2 + 5);
               // Booleans an der langen Freiformfläche sind sehr langsam: mit vielen Bohrungen (Handlaufhalter an der Wendel) in
               // kurzen Abschnitten (≤ 30°) ziehen und bohren, als ein Körper (Verbund) zusammengesetzt
+              const [x] = memo(keyOf(["t", f.gen, { ...tb, section: { kind: tb.section.kind, dims: tb.section.dims }, copes: (tb.copes || []).map((c) => ({ ...c, section: { kind: c.section.kind, dims: c.section.dims } })) }, ds]), () => {
               const n = ds.length > 2 ? Math.max(1, Math.ceil(Math.abs(tb.path.sweep) / 30)) : 1, rad = Math.max(g.width, g.height) / 2 + 5;
               const pieces = (n > 1 ? splitPath(tb.path, tubeLength(tb.path) / n + 1e-6) : [tb.path]).map((pa, k) => {
                 let sh = sweepAlong(pa, g);
@@ -1208,9 +1232,13 @@ export function createKernel(R) {
               const solid = pieces.length > 1 ? R.makeCompound(pieces) : pieces[0];
               const meta = { section: sectionName(tb.section.kind, tb.section.dims), profileId: profileId(tb.section.kind, tb.section.dims), area: g.area, length: tubeLength(tb.path), miterStart: 0, miterEnd: 0, generator: f.gen, sec: { kind: tb.section.kind, dims: tb.section.dims },
                 rolled: { radius: bendRadius(tb.path), angle: Math.abs(tb.path.sweep), rise: tb.path.rise || 0 }, center: { path: tb.path }, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) };
-              add(solid, meta, tb.name);
+              return [{ solid, meta }];
+              });
+              add(x.solid, x.meta, tb.name);
             }
             for (const pl of plan.plates) {
+              const pds = (plan.drills || []).filter((x) => x.target === pl.name);
+              const [x] = memo(keyOf(["p", f.gen, pl, pds]), () => {
               let d;
               if (pl.poly) { d = R.draw(pl.poly[0]); for (const q of pl.poly.slice(1)) d = d.lineTo(q); d = d.close(); }
               else d = R.drawRoundedRectangle(pl.W, pl.H, pl.r || 0);
@@ -1218,11 +1246,13 @@ export function createKernel(R) {
               for (const [x, y, len] of pl.slots || []) d = d.cut(R.drawRoundedRectangle(len, pl.d, pl.d / 2 - 0.01).translate(x, y)); // Langloch entlang xDir
               for (const [x, y, w, hh] of pl.rects || []) d = d.cut(R.drawRectangle(w, hh).translate(x, y)); // Rechteckausschnitt (Steckschlitz)
               // Bohrungen quer zur Plattenebene (z. B. im Schenkel eines Pfettenschuhs): drills mit dem Plattennamen
-              const pds = (plan.drills || []).filter((x) => x.target === pl.name);
               const solid = drill(d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t), pds);
               const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length + pds.length, ...(pl.slots?.length ? { slots: pl.slots.length } : {}), d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
               const dens = pl.density ?? (pl.glass ? FILL_DENSITY.glas : FILL_DENSITY[pl.tread]);
               if (dens) meta.density = dens;
+              return [{ solid, meta }];
+              });
+              const { solid, meta } = x;
               state.bodies.push({ shape: solid, kind: "solid", name: pl.name, fid: f.id, meta });
               list.push({ shape: solid, kind: "solid", meta, name: pl.name });
             }
@@ -1231,6 +1261,9 @@ export function createKernel(R) {
               else pushNorm(state, f, list, n, n.pos, v3.norm(n.dir));
             }
             state.tools.set(f.id, { op: "member", shapes: list });
+            // Zwischenspeicher: nur die Teile dieses Laufs behalten, die übrigen freigeben
+            for (const [k, e] of oldC) if (!newC.has(k)) for (const x of e) x.solid.delete?.();
+            genPartCache.set(cacheId, newC);
             st.info = plan.info;
             if (plan.issues.length) st.warning = plan.issues.map((x) => x.message).join("; ");
             break;
@@ -2065,7 +2098,9 @@ export function createKernel(R) {
     const fam = familyOf(n.kind, n.custom);
     if (!fam) throw new Error("Unbekanntes Normteil: " + n.kind);
     // xDir: Lage um die Achse (Beschläge mit eigener Form, z. B. Glasklemmhalter)
-    const solid = orientZ(recipeSolid(normRecipe(fam, n.size, n.length || 0)), dir, pos, n.xDir);
+    const rk = `${n.kind}|${n.size}|${n.length || 0}|${n.custom ? JSON.stringify(n.custom) : ""}`;
+    if (!recipeCache.has(rk)) { if (recipeCache.size > 300) { for (const v of recipeCache.values()) v.delete?.(); recipeCache.clear(); } recipeCache.set(rk, recipeSolid(normRecipe(fam, n.size, n.length || 0))); }
+    const solid = orientZ(recipeCache.get(rk).clone(), dir, pos, n.xDir);
     const designation = normDesignation(n);
     const mat = gradeInfo(n.grade);
     const meta = { norm: { kind: n.kind, size: n.size, length: n.length || 0, grade: n.grade || "", designation, norm: fam.norm, material: mat.label, cat: fam.cat }, density: mat.density };

@@ -74,6 +74,8 @@ export const CASES = [
   ["carport", "vordach", {}],
   ["fenstergitter", "fenstergitter", {}],
   ["fenstergitter-durchsteck", "fenstergitter", { fill: "durchsteck", mount: "vorgesetzt", bar: { kind: "vierkantvoll", size: "16" } }],
+  ["pergola", "pergola", {}],
+  ["pergola-wand-zu", "pergola", { form: "wand", angle: "0" }],
   ["vordach", "vordach", { form: "vordach", depth: "2500", width: "4000", roof: "glas", slope: "8" }],
   ["gestell", "gestell", null],
 ];

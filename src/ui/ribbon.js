@@ -186,6 +186,7 @@ export class Ribbon {
       fachwerk: () => this.addGenerator("fachwerk"),
       arbeitsbuehne: () => this.addGenerator("arbeitsbuehne"),
       vordach: () => this.addGenerator("vordach"),
+      pergola: () => this.addGenerator("pergola"),
       fenstergitter: () => this.addGenerator("fenstergitter"),
       steigleiter: () => this.addGenerator("steigleiter"),
       stuetzenfuss: () => this.addGenerator("stuetzenfuss"),
@@ -469,7 +470,7 @@ export class Ribbon {
           { label: "Prüfen", buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
-          { label: "Generatoren", big: 6, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("fenstergitter", "Fenstergitter", "fenstergitter")] },
+          { label: "Generatoren", big: 6, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("pergola", "Pergola", "pergola"), B("fenstergitter", "Fenstergitter", "fenstergitter")] },
           { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne")] },
           { label: "Gestell", big: 1, buttons: (() => {
             const g = !!app.activeDoc()?.gestell, on = (t) => app.pick?.kind === "gestell" && app.pick.tool === t;
