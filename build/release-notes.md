@@ -1,12 +1,10 @@
-**Neu in 0.28.0**
+**Neu in 0.29.0**
 
-- **Verzinkungsbohrungen:** Entlüftungslöcher in Hohlprofilen nach Profilgröße, nur bei verzinkt oder Duplex.
-- **Rohr strecken:** Ein gebogenes Rohr wird als gerades Rohr mit allen Bohrungen dargestellt (Lage s/φ, CSV für den Rohrlaser).
-- **Muster:** Abstände und Winkel einzeln einstellbar, Exemplare lassen sich auslassen.
-- **Werkstatt-Etiketten mit QR-Code** (70×37, 105×48, Rolle) und eine Versandliste mit Gewichten.
-- **Stückliste:** Masse überschreiben (Kaufteile) und Reihenfolge festlegen.
-- **Neue Generatoren:** Vordach/Carport und Fenstergitter (in der Laibung oder vorgesetzt, Durchsteckgitter).
-- **Schweißplan nach EN 1090** mit WPS je Naht, Ausführungsklasse und Prüfumfang, in der Fertigungsmappe.
-- **Biegefolge für die Abkantpresse** mit Kollisionsprüfung und Biegeblatt (PDF).
-- **Vereinfachen für den Export:** Normteile, Nähte und kleine Körper weglassen, Hüllquader.
-- **Variable Rundung:** Radius von Anfang bis Ende verlaufend.
+- **Handlauf mit Bögen** statt Gehrung bei Geländer, Treppe und Arbeitsbühne.
+- **Glasgeländer** mit Glasklemmhaltern, Punkthaltern oder Bodenklemmprofil (neue Normteile).
+- **Gewendelte Treppe** (viertel- und halbgewendelt) mit verzogenen Stufen.
+- **Generatoren deutlich schneller:** unveränderte Teile kommen aus dem Zwischenspeicher.
+- **Neue Generatoren:** Lamellendach/Pergola und Voutenträger (Voute an einem oder beiden Enden oder linear).
+- **Zeichnung:** Winkelmaße (automatisch und von Hand) und der Befehl „Aufräumen“ für doppelte und verwaiste Maße.
+- **Baugruppe:** Spiegeln bleibt verknüpft, die gespiegelte Seite folgt dem Original; einzelne Teile sind abwählbar.
+- **Bohrungsangaben und Gewinde direkt am 3D-Modell** (in den Einstellungen abschaltbar).
