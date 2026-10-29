@@ -467,3 +467,22 @@ test("Spindeltreppe: Stab mit Fußplatte liegt wie geprüft (entlang der Tangent
   assert.doesNotMatch(s.issues.map((i) => i.message).join(), /unter dem Pfosten/, "40 entlang der Tangente: Bohrungen bei ± 38 frei, so wie der Stab gebaut wird");
   assert.throws(() => sp({ stabMount: "oben", stabMPer: "2 seitlich" }), (e) => e.key === "stabMPer");
 });
+
+test("Treppe: letzter Laufpfosten vor dem Auslauf zurückgerückt – Knieleisten bzw. Untergurt knicken im Pfosten ohne Höhensprung", () => {
+  for (const patch of [{}, { gelBeltMode: "zwischen" }, { gelFill: "staketen" }, { gelFill: "staketen", gelBeltMode: "zwischen" }, { gelMount: "oben" }]) {
+    const p = treppe({ gelPost: { kind: "rohr", size: "48.3x2.6" }, ...patch });
+    const bars = p.members.filter((m) => /^Geländer links (Knieleiste|Untergurt) /.test(m.name));
+    const flat = bars.filter((m) => Math.abs(m.a[2] - m.b[2]) < 1e-6 && Math.abs(m.a[0] - m.b[0]) > 1);
+    assert.ok(flat.length, JSON.stringify(patch));
+    for (const f of flat) {
+      // das schräge Stück endet am gleichen Punkt, an dem das waagrechte beginnt
+      const slope = bars.find((m) => m.b[2] > m.a[2] + 1 && Math.abs(m.b[0] - f.a[0]) < 60 && Math.abs(m.b[2] - f.a[2]) < 60);
+      assert.ok(slope, `${JSON.stringify(patch)}: ${f.name} ohne schrägen Anschluss`);
+      if (!/zwischen/.test(JSON.stringify(patch))) nearV(slope.b, f.a, 1e-6, `${JSON.stringify(patch)} ${f.name}`);
+      else { // zwischen den Pfosten: beide Achsen treffen sich in der Pfostenmitte
+        const c = (slope.b[0] + f.a[0]) / 2;
+        near(slope.b[2] + (c - slope.b[0]) * (slope.b[2] - slope.a[2]) / (slope.b[0] - slope.a[0]), f.a[2], 1e-6, `${JSON.stringify(patch)} ${f.name}`);
+      }
+    }
+  }
+});

@@ -82,6 +82,18 @@ export function railAlong(path, o, label) {
       movedEnds.add(i);
     });
   }
+  // Knickpfosten, der in den Nachbarabschnitt gerückt ist (Lauf → Auslauf bzw. Podest): Füllung des Abschnitts, auf dem
+  // der Pfosten nicht steht, um fz senkrecht versetzt, damit Knieleisten bzw. Untergurt im Pfosten auf gleicher Höhe
+  // knicken (sonst springen sie dort um Versatz · Neigung)
+  for (const sg of segs) {
+    sg.fz = 0;
+    for (const k of [0, sg.ts.length - 1]) {
+      const t = sg.ts[k];
+      if (t > -1e-6 && t < sg.L + 1e-6) continue;
+      sg.fz = posts[sg.ps[k]].q[2] - (sg.A[2] + sg.slope * t);
+      break;
+    }
+  }
   // Krümmlinge (N2): Bogen mit Radius o.railBend an jedem Knick; wo er weiter als 5 mm an der Ecke vorbeiläuft
   // (Podestecke im Grundriss), bekommt der Pfosten dort keinen Halter
   const bend = o.railBend > 0 && ROUND.has(o.rail.kind) ? o.railBend : 0;
@@ -127,8 +139,8 @@ export function railAlong(path, o, label) {
     return { members, chains, plates, drills, tubes, freeCorners, posts: posts.length, fields: r.fields, bars: r.bars, gapMax: r.gapMax, pieces: r.pieces, mounted };
   }
   for (const sg of segs) {
-    const at = (s, h) => [sg.A[0] + sg.d[0] * s, sg.A[1] + sg.d[1] * s, sg.A[2] + sg.slope * s + h];
-    const out = [sg.d[0], sg.d[1], 0], back = [-sg.d[0], -sg.d[1], 0];
+    const at = (s, h) => [sg.A[0] + sg.d[0] * s, sg.A[1] + sg.d[1] * s, sg.A[2] + sg.slope * s + sg.fz + h];
+    const out = [sg.d[0], sg.d[1], 0], back = [-sg.d[0], -sg.d[1], 0], rz = o.H - railH / 2 - sg.fz; // Handlaufachse ohne Versatz
     const k3 = Math.hypot(1, sg.slope), dir = [sg.d[0] / k3, sg.d[1] / k3, sg.slope / k3];
     for (let k = 0; k + 1 < sg.ts.length; k++) {
       const s0 = sg.ts[k] + half, s1 = sg.ts[k + 1] - half;
@@ -144,7 +156,7 @@ export function railAlong(path, o, label) {
           members.push({ section: o.bar, a, b, name: `${label} Knieleiste ${n}.${j}`, cuts: { start: [{ p: a, n: back }], end: [{ p: b, n: out }] }, ...(Math.abs(sg.slope) > Math.tan(40 * Math.PI / 180) ? { plain: true } : {}) });
         }
         bars += m;
-        gapMax = Math.max(gapMax, top / (m + 1));
+        gapMax = Math.max(gapMax, top / (m + 1) + Math.abs(sg.fz));
       } else if (o.fill === "staketen") {
         const beltH = o.belt.geom.height, lo = o.bottomZ + beltH / 2;
         if (!(top - lo > 100)) throw new Error(`${label}: kein Platz für Staketen – Höhe oder Untergurt prüfen`);
@@ -153,12 +165,12 @@ export function railAlong(path, o, label) {
         const bw = o.bar.geom.height, clear = s1 - s0;
         const m = Math.max(0, Math.ceil((clear - o.gap) / (bw + o.gap) - 1e-9));
         const gap = (clear - m * bw) / (m + 1);
-        gapMax = Math.max(gapMax, gap, o.bottomZ - beltH / 2);
+        gapMax = Math.max(gapMax, gap, o.bottomZ + sg.fz - beltH / 2);
         for (let j = 0; j < m; j++) {
           const s = s0 + gap * (j + 1) + bw * j + bw / 2;
           // Stab von der Gurtachse bis zur Handlaufachse, an Gurt und Handlauf ausgeklinkt (Sattel, voll anliegend)
-          members.push({ section: o.bar, a: at(s, o.bottomZ), b: at(s, o.H - railH / 2), name: `${label} Stab ${n}.${j + 1}`, up: out,
-            copes: [copeAt(o.belt, at(s, o.bottomZ), dir), copeAt(o.rail, at(s, o.H - railH / 2), dir)] });
+          members.push({ section: o.bar, a: at(s, o.bottomZ), b: at(s, rz), name: `${label} Stab ${n}.${j + 1}`, up: out,
+            copes: [copeAt(o.belt, at(s, o.bottomZ), dir), copeAt(o.rail, at(s, rz), dir)] });
         }
         bars += m;
       }
@@ -188,11 +200,12 @@ function through(segs, o, label, { top, half, railAxis, postName }) {
     const prev = si > 0 ? dirOf(segs[si - 1]) : null, next = si + 1 < segs.length ? dirOf(segs[si + 1]) : null;
     const miterStart = prev && Math.hypot(...prev.map((x, k) => x - dir[k])) > 1e-6 ? unit(prev.map((x, k) => -(x + dir[k]))) : null;
     const miterEnd = next && Math.hypot(...next.map((x, k) => x - dir[k])) > 1e-6 ? unit(next.map((x, k) => x + dir[k])) : null;
-    const at = (s, h) => [sg.A[0] + sg.d[0] * s, sg.A[1] + sg.d[1] * s, sg.A[2] + sg.slope * s + h];
+    const at = (s, h) => [sg.A[0] + sg.d[0] * s, sg.A[1] + sg.d[1] * s, sg.A[2] + sg.slope * s + sg.fz + h];
+    const ra = railAxis - sg.fz; // Handlaufachse ohne Versatz
     const ts = sg.ts;
     fields += ts.length - 1;
     const hs = o.fill === "quer" ? Array.from({ length: Math.max(1, Math.round(o.bars)) }, (_, j) => (top * (j + 1)) / (Math.max(1, Math.round(o.bars)) + 1)) : [o.bottomZ];
-    if (o.fill === "quer") gapMax = Math.max(gapMax, top / (hs.length + 1));
+    if (o.fill === "quer") gapMax = Math.max(gapMax, top / (hs.length + 1) + Math.abs(sg.fz));
     // Stücke bis beltMax (wahre Länge)
     for (let from = 0; from < ts.length - 1;) {
       let to = from + 1;
@@ -225,15 +238,15 @@ function through(segs, o, label, { top, half, railAxis, postName }) {
           if (clear < 20) continue;
           const m = Math.max(0, Math.ceil((clear - o.gap) / (sw + o.gap) - 1e-9));
           const gap = (clear - m * sw) / (m + 1);
-          gapMax = Math.max(gapMax, gap, o.bottomZ - rv);
+          gapMax = Math.max(gapMax, gap, o.bottomZ + sg.fz - rv);
           for (let q = 0; q < m; q++) {
             const sb = s0 + gap * (q + 1) + sw * q + sw / 2;
             const foot = at(sb, h - reach), cutFoot = sg.slope ? { cuts: { start: [{ p: foot, n: nUp.map((x) => -x) }], end: [] } } : {};
             const low = sg.slope ? at(sb, h - reach - (stab.geom.height / 2) * Math.abs(sg.slope) - 1) : foot;
-            members.push({ section: stab, a: low, b: at(sb, railAxis), name: `${label} Stab ${fno}.${q + 1}`, up: [sg.d[0], sg.d[1], 0], ...cutFoot,
-              copes: [copeAt(o.rail, at(sb, railAxis), dir),
+            members.push({ section: stab, a: low, b: at(sb, ra), name: `${label} Stab ${fno}.${q + 1}`, up: [sg.d[0], sg.d[1], 0], ...cutFoot,
+              copes: [copeAt(o.rail, at(sb, ra), dir),
                 // nah am Knick: auch das anschließende Handlaufstück (gegehrt) aussparen
-                ...(next && sg.L - sb < 100 ? [copeAt(o.rail, at(sg.L, railAxis), next, 100)] : []), ...(prev && sb < 100 ? [copeAt(o.rail, at(0, railAxis), prev, 100)] : [])] });
+                ...(next && sg.L - sb < 100 ? [copeAt(o.rail, at(sg.L, ra), next, 100)] : []), ...(prev && sb < 100 ? [copeAt(o.rail, at(0, ra), prev, 100)] : [])] });
             drills.push({ target: name, p: at(sb, h + rv + ext), dir: [0, 0, -1], len: wd + 2 * ext + 1, ...sh });
           }
           bars += m;
