@@ -230,6 +230,7 @@ export const BEFEHLSHILFE = {
   x_iges: "Modell als IGES speichern.",
   x_stl: "Modell als STL für den 3D-Druck speichern.",
   x_glb: "3D-Modell mit Farben als GLB speichern: öffnet im Browser, am Handy und im Windows-3D-Viewer, ideal für Kunden.",
+  x_vereinfachen: "Export vereinfachen: Normteile, Schweißnähte und kleine Körper weglassen oder durch Hüllquader ersetzen – für Architekt, Kunde und BIM.",
   x_png: "Aktuelle Ansicht als Bild speichern.",
   x_render: "Fotorealistisches Bild der aktuellen Ansicht berechnen.",
   x_members: "Jedes Profil einzeln als STEP, z. B. für den Rohrlaser.",

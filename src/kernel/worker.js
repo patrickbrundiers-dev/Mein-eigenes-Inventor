@@ -8,6 +8,7 @@ import { svgPathSegments } from "../core/svgpath.js";
 import { segmentsToDxf } from "../core/dxf.js";
 import { writeIges } from "../core/iges.js";
 import { igesFaces } from "./igesocc.js";
+import { simplifyAction } from "../core/vereinfachen.js";
 import { memberHoles, plateNc, plateInfo } from "./dstvocc.js";
 import { v3, placementMatrix, matInvertRigid, matApply, matApplyDir } from "../core/geom.js";
 
@@ -63,13 +64,26 @@ function bodyName(base, b, index, count) {
   return base;
 }
 
-async function placedShapes(items) {
+/** Vereinfachen (W10): Körper behalten, weglassen oder als Hüllquader; zählt in count */
+function simplified(b, opt, count) {
+  if (!opt) return b.shape;
+  let bb = null;
+  try { bb = b.shape.boundingBox.bounds; } catch { bb = null; }
+  const act = simplifyAction(b, bb, opt);
+  if (act === "drop") { count.drop++; return null; }
+  if (act === "box" && bb) { count.box++; return R.makeBox(bb[0], bb[1]); }
+  return b.shape;
+}
+
+async function placedShapes(items, simplify = null, count = { drop: 0, box: 0 }) {
   const out = [];
   for (const it of items) {
     const res = await getBuilt(it.part);
     const base = it.name || it.part.number || it.part.name || "Bauteil";
     res.bodies.forEach((b, i) => {
-      out.push({ shape: K.placed(b.shape, it.pos || [0, 0, 0], it.rot || [0, 0, 0]), name: bodyName(base, b, i, res.bodies.length), color: it.color || partColor(it.part), body: b });
+      const shape = simplified(b, simplify, count);
+      if (!shape) return;
+      out.push({ shape: K.placed(shape, it.pos || [0, 0, 0], it.rot || [0, 0, 0]), name: bodyName(base, b, i, res.bodies.length), color: it.color || partColor(it.part), body: b });
     });
   }
   return out;
@@ -123,8 +137,8 @@ const handlers = {
     return K.measure(entries);
   },
 
-  async exportStep({ items, merge = false }) {
-    const shapes = await placedShapes(items);
+  async exportStep({ items, merge = false, simplify = null }) {
+    const shapes = await placedShapes(items, simplify);
     if (!shapes.length) throw new Error("Nichts zu exportieren");
     let blob;
     if (merge || shapes.length === 1) {
@@ -134,8 +148,8 @@ const handlers = {
     return await blob.text();
   },
 
-  async exportIges({ items, fileName = "export.igs" }) {
-    const shapes = await placedShapes(items);
+  async exportIges({ items, fileName = "export.igs", simplify = null }) {
+    const shapes = await placedShapes(items, simplify);
     if (!shapes.length) throw new Error("Nichts zu exportieren");
     const faces = [];
     let approx = 0;
@@ -143,8 +157,8 @@ const handlers = {
     return { text: writeIges(faces, { fileName }), faces: faces.length, approx };
   },
 
-  async exportStl({ items, quality = "fein" }) {
-    const shapes = await placedShapes(items);
+  async exportStl({ items, quality = "fein", simplify = null }) {
+    const shapes = await placedShapes(items, simplify);
     if (!shapes.length) throw new Error("Nichts zu exportieren");
     const s = shapes.length === 1 ? shapes[0].shape : R.makeCompound(shapes.map((x) => x.shape));
     const tol = quality === "fein" ? 0.02 : 0.1;
@@ -199,14 +213,16 @@ const handlers = {
   /**
    * IFC (ST2): je Körper Dreiecksnetz in Weltlage und die Angaben für Klasse und Eigenschaften; den Text schreibt src/core/ifc.js.
    */
-  async ifcData({ items, tolerance = 0.2 }) {
-    const out = [];
+  async ifcData({ items, tolerance = 0.2, simplify = null }) {
+    const out = [], count = { drop: 0, box: 0 };
     for (const it of items) {
       const res = await getBuilt(it.part);
       const M = placementMatrix(it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
       res.bodies.forEach((b, index) => {
         const m = b.meta || {};
-        const shape = K.placed(b.shape, it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
+        const own = simplified(b, simplify, count);
+        if (!own) return;
+        const shape = K.placed(own, it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
         const mesh = shape.mesh({ tolerance, angularTolerance: 0.3 });
         let plate = !!(m.plate || m.rib || m.endcap || (m.sheet && !m.sheet.bends?.length));
         if (!plate && b.kind !== "member" && !m.norm && !m.weld) { try { plate = !!plateInfo(R, b.shape); } catch { plate = false; } }

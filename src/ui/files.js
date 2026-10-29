@@ -13,6 +13,7 @@ import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
 import { bendSheetPage } from "../core/biegefolge.js";
+import { simplifyOf, simplifyAction, ENVELOPES } from "../core/vereinfachen.js";
 import { EXC_LEVELS, PROCESSES, weldPlanOf, weldPlanRows, weldPlanPage, weldPlanCsv } from "../core/schweissplan.js";
 import { collectNorm } from "../core/normteile.js";
 import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
@@ -332,7 +333,7 @@ export class Files {
     if (!items?.length) return toast("Nichts zu exportieren");
     const d = this.app.activeDoc();
     await this.withBusy("STEP-Export", async () => {
-      const text = await this.app.kernel.call("exportStep", { items });
+      const text = await this.app.kernel.call("exportStep", { items, simplify: simplifyOf(d) });
       await this.saveText(text, safeName(d.number || d.name) + ".step", "model/step", [{ name: "STEP", extensions: ["step", "stp"] }]);
     });
   }
@@ -343,7 +344,7 @@ export class Files {
     const d = this.app.activeDoc();
     await this.withBusy("IGES-Export", async () => {
       const name = safeName(d.number || d.name) + ".igs";
-      const r = await this.app.kernel.call("exportIges", { items, fileName: name });
+      const r = await this.app.kernel.call("exportIges", { items, fileName: name, simplify: simplifyOf(d) });
       await this.saveText(r.text, name, "model/iges", [{ name: "IGES", extensions: ["igs", "iges"] }]);
       toast(`IGES gespeichert: ${r.faces} Flächen` + (r.approx ? `, davon ${r.approx} als Näherung (Raster)` : ""), { kind: "ok" });
     });
@@ -354,7 +355,7 @@ export class Files {
     if (!items?.length) return toast("Nichts zu exportieren");
     const app = this.app, d = app.activeDoc();
     await this.withBusy("IFC-Export", async () => {
-      const data = await app.kernel.call("ifcData", { items });
+      const data = await app.kernel.call("ifcData", { items, simplify: simplifyOf(d) });
       // Einzelteil-Positionen wie im DSTV-NC als Kennzeichen (Tag) der Stäbe und Platten
       const tags = new Map();
       if (data.some((b) => b.kind === "member" || b.plate)) for (const p of (await this.dstvFiles(d)).pieces) for (const k of p.keys || []) tags.set(k, p.pos);
@@ -369,7 +370,7 @@ export class Files {
     if (!items?.length) return toast("Nichts zu exportieren");
     const d = this.app.activeDoc();
     await this.withBusy("STL-Export", async () => {
-      const buf = await this.app.kernel.call("exportStl", { items });
+      const buf = await this.app.kernel.call("exportStl", { items, simplify: simplifyOf(d) });
       await this.saveBinary(buf, safeName(d.number || d.name) + ".stl", [{ name: "STL", extensions: ["stl"] }]);
     });
   }
@@ -378,11 +379,21 @@ export class Files {
     const app = this.app, d = app.activeDoc();
     if (d?.kind !== "part" && d?.kind !== "assembly") return toast("GLB gibt es für Bauteile und Baugruppen");
     const comps = new Map((d.components || []).map((c) => [c.id, c.name]));
+    const compPart = new Map((d.components || []).map((c) => [c.id, c.part]));
+    const opt = simplifyOf(d);
+    // Vereinfachen (W10): im GLB nur weglassen (Normteile, Nähte, kleine Körper); Hüllquader gibt es in STEP/IFC
+    const keep = opt ? (key, body, mesh) => {
+      const id = String(key).startsWith("comp:") ? key.slice(5) : null;
+      const b = app.results.get(id ? compPart.get(id) : d.id)?.bodies?.[body];
+      mesh.geometry.computeBoundingBox();
+      const bb = mesh.geometry.boundingBox;
+      return simplifyAction(b, [[bb.min.x, bb.min.y, bb.min.z], [bb.max.x, bb.max.y, bb.max.z]], { ...opt, envelope: "nein" }) === "keep";
+    } : null;
     const scene = app.viewer.exportScene((key, body) => {
       const id = String(key).startsWith("comp:") ? key.slice(5) : null;
       const r = d.kind === "part" ? app.results.get(d.id) : null;
       return id ? comps.get(id) || "" : r?.bodies?.[body]?.name || `${d.name} ${body + 1}`;
-    });
+    }, keep);
     if (!scene.children.length) return toast("Nichts zu exportieren");
     await this.withBusy("GLB-Export", async () => {
       const buf = await new GLTFExporter().parseAsync(scene, { binary: true });
@@ -551,6 +562,29 @@ export class Files {
     const html = mappeHtml([weldPlanPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", plan, rows })], { title: "Schweißplan " + d.name });
     if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + "_Schweissplan.pdf", [{ name: "PDF", extensions: ["pdf"] }]);
     else await this.saveText(html, base + "_Schweissplan.html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+  }
+  /** Vereinfachen für den Export (W10): Einstellung am Dokument, gilt für STEP, IGES, IFC, STL und GLB */
+  async simplifyDialog(d = this.app.activeDoc()) {
+    const app = this.app;
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Vereinfachen gibt es für Bauteile und Baugruppen");
+    const s = { on: true, minSize: "", norm: true, welds: true, envelope: "nein", envSize: "100", ...(d.simplify || {}) };
+    const field = (label, el) => h("div", { class: "field" }, h("label", {}, label), el);
+    const chk = (k, label) => { const el = h("input", { type: "checkbox" }); el.checked = s[k] !== false; el.addEventListener("change", () => { s[k] = el.checked; }); return h("label", { class: "chk" }, el, " ", label); };
+    const num = (k, ph) => { const el = h("input", { class: "inp", placeholder: ph }); el.value = s[k] ?? ""; el.addEventListener("input", () => { s[k] = el.value.trim().replace(",", "."); }); return el; };
+    const env = h("select", { class: "inp" }, ...ENVELOPES.map(([k, l]) => h("option", { value: k, selected: k === s.envelope ? true : undefined }, l)));
+    env.addEventListener("change", () => { s.envelope = env.value; });
+    const out = await new Promise((res) => modal({
+      title: "Vereinfachen für den Export", width: "520px", onClose: (r) => res(r || null),
+      body: h("div", {}, chk("norm", "Normteile weglassen (Schrauben, Muttern, Scheiben, Dübel)"), chk("welds", "Schweißnähte weglassen"),
+        field("Körper kleiner als (mm, größte Kante; leer = alle behalten)", num("minSize", "z. B. 20")),
+        field("Durch Hüllquader ersetzen", env), field("Hüllgröße (mm, für »nur Körper unter Hüllgröße«)", num("envSize", "100")),
+        h("p", { class: "hint" }, "Gilt für STEP, IGES, IFC, STL und GLB dieses Dokuments – für Architekt, Kunde oder BIM. Das Modell selbst, Zeichnungen und Listen bleiben unverändert. Hüllquader gibt es nicht im GLB.")),
+      buttons: [{ label: "Abbrechen" }, { label: "Ausschalten", value: "off" }, { label: "Übernehmen", primary: true, value: "on" }],
+    }));
+    if (!out) return;
+    app.edit("Vereinfachen", () => { if (out === "off") delete d.simplify; else d.simplify = { ...s, on: true }; }, { rebuild: false });
+    app.ribbon?.render?.();
+    toast(out === "off" ? "Export wieder vollständig" : "Export wird vereinfacht", { kind: "ok" });
   }
   /** Biegeblatt eines Kantteils (W7): Biegefolge mit Skizze je Schritt */
   async exportBiegeblatt(f, sh, tool, res) {

@@ -98,6 +98,7 @@ const P = {
   stretch: '<path d="M3 18c0-6 3-9 9-9"/><path d="M14 9h7"/><path d="M3 21h18"/><circle cx="8" cy="21" r=".8"/><circle cx="15" cy="21" r=".8"/>',
   qr: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3z"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
   ventholes: '<path d="M2 8h20v8H2z"/><circle cx="6" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/>',
+  simplify: '<path d="M3 7h8v10H3z"/><path d="M14 9l3 3-3 3"/><path d="M17 12h4"/><circle cx="7" cy="12" r="1.5"/>',
   circpattern: '<circle cx="12" cy="12" r="8" stroke-dasharray="2 2"/><circle cx="12" cy="4" r="2"/><circle cx="19" cy="15" r="2"/><circle cx="5" cy="15" r="2"/>',
   mirror: '<path d="M12 3v18" stroke-dasharray="3 2"/><path d="M9 6L3 18h6zM15 6l6 12h-6z"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',

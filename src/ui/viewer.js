@@ -519,7 +519,7 @@ export class Viewer {
    * Sichtbare Körper als eigene Szene für den glTF-Export (E15): Weltlage, Grundfarbe (ohne Hervorhebung),
    * Meter statt mm und Y nach oben wie in glTF üblich. nameOf(key, body) liefert den Knotennamen.
    */
-  exportScene(nameOf = () => "") {
+  exportScene(nameOf = () => "", keep = null) {
     const root = new THREE.Group();
     root.name = "PBCAD";
     root.rotation.x = -Math.PI / 2;
@@ -528,6 +528,7 @@ export class Viewer {
       const m = p.mesh;
       if (!m.visible || this.isHidden(p.key, p.body)) continue;
       m.updateMatrixWorld();
+      if (keep && !keep(p.key, p.body, m)) continue;
       const mat = new THREE.MeshStandardMaterial({ color: (m.userData.baseColor || m.material.color).clone(), metalness: m.material.metalness, roughness: m.material.roughness, side: THREE.DoubleSide,
         transparent: m.material.transparent, opacity: m.material.opacity });
       const c = new THREE.Mesh(m.geometry, mat);
