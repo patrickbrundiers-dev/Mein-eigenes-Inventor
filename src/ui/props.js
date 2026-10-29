@@ -20,7 +20,7 @@ import { datumPropsPanel, datumCreatePanel } from "./arbeitselemente.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { COMBINE_OPS, SPLIT_KEEP, THICKEN_SIDES } from "../core/koerper.js";
 import { CONSTRAINT_TYPES } from "../core/asmsolve.js";
-import { defaultAsmPattern } from "../core/asmmuster.js";
+import { holeFromConstraints, defaultAsmPattern } from "../core/asmmuster.js";
 import { CAP_MODES, equalParts } from "../core/rahmen.js";
 import { LASCHE_EDGES, HEM_KINDS, PUNCH_FORMS, CORNER_THROUGH, SHEET_FEATURES } from "../core/blechplus.js";
 import { ROLL_AXES } from "../core/konturwalzen.js";
@@ -47,12 +47,15 @@ import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gent
 import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { newPart, newAssembly } from "../core/examples.js";
-import { NORM_KINDS, NORM_SIZES, BOLT_LENGTHS, defaultNormteil, normDesignation, collectNorm } from "../core/normteile.js";
+import { NORM_KINDS, NORM_SIZES, normDesignation, collectNorm } from "../core/normteile.js";
+import { familyOf, lengthsFor } from "../core/normlib.js";
+import { normLibraryDialog } from "./normlib.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
+import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
 import { linkedPart, asmParamValues } from "../core/baugruppenparameter.js";
 import { pushParamsDialog, invalidateLinked, explosionDialog, positionsSection, explosionSection, asmParamsSection } from "./darstellungen.js";
@@ -588,48 +591,10 @@ export class Props {
         h("thead", {}, h("tr", {}, h("th", {}, "Bezeichnung"), h("th", {}, "Anz."), h("th", {}, "kg/Stk"))),
         h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, r.name), h("td", { class: "num" }, String(r.qty)), h("td", { class: "num" }, fmtNum(r.mass, 3)))))));
   }
-  /** Baugruppe: Normteil wählen, als eigenes Bauteil anlegen (gleiche Bezeichnung → vorhandenes Bauteil) und platzieren */
+  /** Baugruppe: Normteil-Bibliothek (wie Inventor Inhaltscenter); gleiche Bezeichnung → vorhandenes Bauteil */
   normteilDialog() {
-    const app = this.app;
-    const asm = app.activeDoc();
-    if (asm?.kind !== "assembly") return;
-    const f = defaultNormteil("schraube4017");
-    const sel = (opts, val, on) => h("select", { class: "inp", onchange: (e) => on(e.target.value) }, ...opts.map(([v, l]) => h("option", { value: v, selected: v === val }, l)));
-    const body = h("div");
-    const qty = h("input", { class: "inp", type: "number", min: 1, value: 1 });
-    const draw = () => {
-      const def = NORM_KINDS[f.kind];
-      const len = h("input", { class: "inp", type: "number", min: 1, value: f.length, oninput: (e) => { f.length = e.target.value; name.textContent = normDesignation(f); } });
-      const name = h("b", {}, normDesignation(f));
-      body.replaceChildren(
-        this.field("Art", sel(Object.entries(NORM_KINDS).map(([k, d]) => [k, `${d.label} (${d.norm})`]), f.kind, (v) => { const d = defaultNormteil(v); f.kind = v; f.grade = d.grade; f.length = d.length; draw(); })),
-        this.field("Gewinde", sel(NORM_SIZES.map((s) => [s, s]), f.size, (v) => { f.size = v; draw(); })),
-        def.length ? this.field(f.kind === "gewindestange" ? "Länge mm" : "Nennlänge mm", len) : null,
-        this.field("Festigkeit", sel(def.grades.map((g) => [g, g]), f.grade, (v) => { f.grade = v; draw(); })),
-        this.field("Anzahl", qty),
-        h("p", {}, name));
-    };
-    draw();
-    modal({
-      title: "Normteil einfügen",
-      body,
-      buttons: [{ label: "Abbrechen" }, { label: "Einfügen", primary: true, run: () => {
-        const designation = normDesignation(f);
-        const n = Math.max(1, Math.min(100, Number(qty.value) || 1));
-        let p = app.parts().find((x) => x.normDesignation === designation);
-        app.edit("Normteil einfügen", () => {
-          if (!p) {
-            p = newPart(designation);
-            p.normDesignation = designation;
-            p.features.push({ id: uid("f"), name: designation, ...f, pos: ["0", "0", "0"], axis: "Z" });
-            app.project.docs.push(p);
-          }
-          const have = asm.components.filter((c) => c.part === p.id).length;
-          for (let i = 0; i < n; i++) asm.components.push({ id: uid("c"), part: p.id, name: `${designation}:${have + i + 1}`, pos: [i * 40, 0, 0], rot: [0, 0, 0] });
-        });
-        toast(`${n} × ${designation} eingefügt`, { kind: "ok" });
-      } }],
-    });
+    if (this.app.activeDoc()?.kind !== "assembly") return;
+    normLibraryDialog(this.app, { mode: "assembly" });
   }
   featureProps(part, f) {
     const app = this.app;
@@ -983,17 +948,20 @@ export class Props {
         break;
       }
       case "normteil": {
-        const kind = f.kind || "schraube4017", def = NORM_KINDS[kind];
+        const kind = f.kind || "schraube4017", def = familyOf(kind, f.custom) || NORM_KINDS.schraube4017;
+        const lens = lengthsFor(def, f.size);
+        const apply = (v) => this.set(f, (x) => { Object.assign(x, v); if (!v.custom) delete x.custom; }, "Normteil");
         out.push(this.section("Normteil",
-          this.select("Art", Object.entries(NORM_KINDS).map(([k, d]) => [k, `${d.label} (${d.norm})`]), kind, (v) => this.set(f, (x) => { const d = defaultNormteil(v); x.kind = v; x.grade = d.grade; if (NORM_KINDS[v].length && !NORM_KINDS[kind].length) x.length = d.length; if (v === "gewindestange" && kind !== v) x.length = "1000"; }, "Art")),
-          this.select("Gewinde", NORM_SIZES.map((s) => [s, s]), f.size || "M12", (v) => this.set(f, "size", v, "Gewinde")),
-          def.length ? E(kind === "gewindestange" ? "Länge" : "Nennlänge (unter Kopf)", "length", { allowNeg: false, allowZero: false }) : null,
-          def.length && kind !== "gewindestange" ? h("p", { class: "hint" }, "Vorzugslängen: " + BOLT_LENGTHS.filter((l) => l <= 200).join(", ")) : null,
+          h("div", { class: "btn-row" }, h("button", { class: "btn primary", onclick: () => normLibraryDialog(app, { mode: "feature", initial: f, onApply: apply }) }, "Aus Bibliothek wählen …")),
+          h("dl", { class: "kv" }, h("dt", {}, "Art"), h("dd", {}, `${def.label} (${def.norm})`)),
+          this.select("Größe", def.sizeList.map((s) => [s, (def.sizePrefix || "") + s]), def.sizes[f.size] ? f.size : def.sizeList[0], (v) => this.set(f, "size", v, "Größe")),
+          def.length ? E(def.freeLength ? "Länge" : "Nennlänge", "length", { allowNeg: false, allowZero: false }) : null,
+          def.length && lens.length && !def.freeLength ? h("p", { class: "hint" }, "Vorzugslängen: " + lens.join(", ")) : null,
           this.select("Festigkeit / Werkstoff", def.grades.map((g) => [g, g]), f.grade || def.grades[0], (v) => this.set(f, "grade", v, "Festigkeit")),
-          kind !== "spannschloss" ? this.check("feuerverzinkt (tZn)", !!f.galv, (v) => this.set(f, "galv", v, "Verzinkt")) : null,
+          def.noGalv ? null : this.check("feuerverzinkt (tZn)", !!f.galv, (v) => this.set(f, "galv", v, "Verzinkt")),
           h("dl", { class: "kv" }, h("dt", {}, "Bezeichnung"), h("dd", {}, st?.info || normDesignation({ ...f, kind })))));
         out.push(this.section("Lage",
-          this.vec3(kind.startsWith("schraube") ? "Basispunkt (Kopfunterseite)" : kind === "spannschloss" ? "Mittelpunkt" : "Basispunkt (Auflagefläche)", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
+          this.vec3(def.seat === "center" ? "Mittelpunkt" : def.seat === "flush" ? "Basispunkt (Kopfoberseite)" : def.seat === "in" && def.template !== "stift" && def.template !== "duebel" ? "Basispunkt (Kopfunterseite)" : "Basispunkt (Auflagefläche)", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
           this.seg("Achse", [["Z", "Z"], ["Y", "Y"], ["X", "X"], ["-Z", "−Z"], ["-Y", "−Y"], ["-X", "−X"], ["custom", "frei"]], f.axis || "Z", (v) => this.set(f, "axis", v, "Achse")),
           f.axis === "custom" ? this.vec3("Richtungsvektor", f.dir || ["0", "0", "1"], (v) => this.set(f, "dir", v, "Richtung")) : null,
           h("p", { class: "hint" }, "Normteile bleiben eigene Körper und stehen mit Normbezeichnung in der Stückliste. Mehrere gleiche: Feature »Muster«.")));
@@ -1821,6 +1789,7 @@ export class Props {
         h("button", { class: "btn", onclick: () => this.replaceComponentDialog(c.id) }, "Ersetzen…"),
         h("button", { class: "btn danger", onclick: () => this.deleteComponent(c.id) }, "Entfernen")),
       this.jointSection(asm, c),
+      fuegepunkteSection(this, asm, c),
     ];
   }
   /** Dreh- oder Schiebegelenk der Komponente (M23, E8): Wert live verstellen, Bereich, Bewegen, Kollision im Bereich */
@@ -1878,13 +1847,14 @@ export class Props {
         h("button", { class: "btn danger", onclick: () => app.edit(jointLabel(j) + " entfernen", () => { delete c.joint; }) }, "Gelenk entfernen")));
   }
   /** Schiebegelenk anlegen: Richtung (±X, ±Y, ±Z), Weg von … bis in mm; 0 = heutige Lage */
-  slideDialog(c) {
+  slideDialog(c, preset = null) {
     const app = this.app;
     const box = app.viewer.componentBox(c.id);
-    const st = { dir: "-x", min: 0, max: box ? Math.round(box[1][0] - box[0][0]) : 1000 };
-    const dirs = { "+x": [1, 0, 0], "-x": [-1, 0, 0], "+y": [0, 1, 0], "-y": [0, -1, 0], "+z": [0, 0, 1], "-z": [0, 0, -1] };
+    const st = { dir: preset ? "gew" : "-x", min: 0, max: box ? Math.round(box[1][0] - box[0][0]) : 1000 };
+    const dirs = { ...(preset ? { gew: preset.d, "gew-": preset.d.map((x) => -x) } : {}), "+x": [1, 0, 0], "-x": [-1, 0, 0], "+y": [0, 1, 0], "-y": [0, -1, 0], "+z": [0, 0, 1], "-z": [0, 0, -1] };
+    const dirLabel = (k) => (k === "gew" ? "gewählt" : k === "gew-" ? "gewählt umgekehrt" : k.toUpperCase());
     const seg = h("div", { class: "seg" });
-    const draw = () => seg.replaceChildren(...Object.keys(dirs).map((k) => h("button", { class: st.dir === k ? "on" : "", onclick: () => { st.dir = k; draw(); } }, k.toUpperCase())));
+    const draw = () => seg.replaceChildren(...Object.keys(dirs).map((k) => h("button", { class: st.dir === k ? "on" : "", onclick: () => { st.dir = k; draw(); } }, dirLabel(k))));
     draw();
     const num = (key) => { const i = h("input", { class: "inp", type: "number", step: "10", value: st[key] }); i.addEventListener("change", () => { st[key] = Number(i.value); }); return i; };
     modal({ title: "Schiebegelenk anlegen", width: "480px", body: h("div", {},
@@ -1897,23 +1867,25 @@ export class Props {
       app.edit("Schiebegelenk", () => { c.joint = defaultJoint([0, 0, 0], dirs[st.dir], { min: st.min, max: st.max, kind: "schiebe" }); });
       app.sel = { type: "component", id: c.id };
       this.render();
+      if (preset) setTimeout(() => this.animateJoints([c.id], { duration: 2000 }), 300);
     } }] });
   }
   /** Drehgelenk anlegen: Achse an einer Kante der Komponente, an einer Konzentrisch-Abhängigkeit oder frei */
-  jointDialog(comp, kind = "dreh") {
+  jointDialog(comp, kind = "dreh", preset = null) {
     const app = this.app, asm = app.activeDoc();
     if (asm?.kind !== "assembly") return;
     const c = comp || (app.sel?.type === "component" ? asm.components.find((x) => x.id === app.sel.id) : null);
     if (!c) return toast("Erst die Komponente wählen, die sich drehen soll (z. B. den Torflügel)");
     if (c.joint) return toast(`${c.name} hat schon ein ${jointLabel(c.joint)}`);
     if (c.fixed) return toast("Fixierte Komponenten bewegen sich nicht – Fixierung lösen");
-    if (kind === "schiebe") return this.slideDialog(c);
+    if (kind === "schiebe") return this.slideDialog(c, preset);
     const box = app.viewer.componentBox(c.id);
     if (!box) return toast("Komponente ist leer oder ausgeblendet");
     // Achse aus Konzentrisch-Abhängigkeit (Bolzen, Scharnier) in Baugruppen-Koordinaten
     const conc = (asm.constraints || []).find((k) => !k.suppressed && k.type === "konzentrisch" && (k.a.comp === c.id || k.b.comp === c.id));
-    let concAxis = null;
-    if (conc) { const ref = conc.a.comp === c.id ? conc.b : conc.a, other = asm.components.find((x) => x.id === ref.comp); if (other) { const M = placementMatrix(other.pos, other.rot); concAxis = { p: matApply(M, ref.p), d: matApplyDir(M, ref.d) }; } }
+    // BG14: im 3D-Fenster gewählte Achse
+    let concAxis = preset ? { p: preset.p, d: preset.d } : null;
+    if (!preset && conc) { const ref = conc.a.comp === c.id ? conc.b : conc.a, other = asm.components.find((x) => x.id === ref.comp); if (other) { const M = placementMatrix(other.pos, other.rot); concAxis = { p: matApply(M, ref.p), d: matApplyDir(M, ref.d) }; } }
     const st = { at: concAxis ? "bolzen" : "links", dir: "z", min: 0, max: 90, smin: 0, smax: 100 };
     const point = () => {
       if (st.at === "bolzen") return concAxis.p;
@@ -1929,7 +1901,7 @@ export class Props {
     const fill = () => point().forEach((x, k) => { pIn[k].value = String(Math.round(x * 100) / 100); });
     const seg = (opts, key) => { const w = h("div", { class: "seg" }); const draw = () => { w.replaceChildren(...opts.map(([v, l]) => h("button", { class: st[key] === v ? "on" : "", onclick: () => { st[key] = v; draw(); fill(); } }, l))); }; draw(); return w; };
     const num = (key) => { const i = h("input", { class: "inp", type: "number", step: "1", value: st[key] }); i.addEventListener("change", () => { st[key] = Number(i.value); }); return i; };
-    const atOpts = [...(concAxis ? [["bolzen", "Bolzenachse"]] : []), ["links", "links"], ["rechts", "rechts"], ["vorne", "vorne"], ["hinten", "hinten"], ["mitte", "Mitte"]];
+    const atOpts = [...(concAxis ? [["bolzen", preset ? "gewählte Achse" : "Bolzenachse"]] : []), ["links", "links"], ["rechts", "rechts"], ["vorne", "vorne"], ["hinten", "hinten"], ["mitte", "Mitte"]];
     fill();
     const body = h("div", {},
       h("p", {}, `Komponente »${c.name}« dreht sich um eine Achse. Winkel 0° ist die heutige Lage.`),
@@ -1950,6 +1922,8 @@ export class Props {
       app.edit(label, () => { c.joint = defaultJoint(p, dirVec(), { min: st.min, max: st.max, kind, smin: st.smin, smax: st.smax }); });
       app.sel = { type: "component", id: c.id };
       this.render();
+      // wie Fusion: Bewegung gleich einmal vorführen
+      if (preset) setTimeout(() => this.animateJoints([c.id], { duration: 2000 }), 300);
     } }] });
   }
   /** Gelenke hin und zurück bewegen (nur Anzeige); ids = Komponenten mit Gelenk, sonst alle */
@@ -2128,31 +2102,8 @@ export class Props {
     const asm = this.app.activeDoc();
     this.app.edit("Abhängigkeit löschen", () => { asm.constraints = (asm.constraints || []).filter((c) => c.id !== id); this.app.sel = null; });
   }
-  placeComponentDialog() {
-    const app = this.app;
-    const asm = app.activeDoc();
-    if (asm?.kind !== "assembly") return;
-    const parts = [...app.parts(), ...app.project.docs.filter((x) => x.kind === "assembly" && canInsert(asm, x, (id) => app.doc(id)))];
-    if (!parts.length) return toast("Im Projekt gibt es noch kein Bauteil");
-    let chosen = parts[0].id;
-    const qty = h("input", { class: "inp", type: "number", min: 1, value: 1 });
-    const list = h("div", {}, ...parts.map((p) => h("label", { class: "chk" }, h("input", { type: "radio", name: "pp", checked: p.id === chosen, onchange: () => { chosen = p.id; } }), p.name, p.kind === "assembly" ? h("span", { class: "hint" }, " (Unterbaugruppe)") : null, p.number ? h("span", { class: "hint" }, " " + p.number) : null)));
-    modal({
-      title: "Bauteil oder Unterbaugruppe platzieren",
-      body: h("div", {}, list, this.field("Anzahl", qty)),
-      buttons: [{ label: "Abbrechen" }, { label: "Platzieren", primary: true, run: () => {
-        const n = Math.max(1, Math.min(100, Number(qty.value) || 1));
-        const p = app.doc(chosen);
-        const occ = p.kind === "assembly" ? flattenAssembly(p, (id) => app.doc(id)) : [{ part: p }];
-        const bb = unionBox(occ.flatMap((o) => (app.results.get(o.part.id)?.bodies || []).map((b) => b.props?.bbox).filter(Boolean)));
-        const w = bb ? bb[1][0] - bb[0][0] + 20 : 100;
-        app.edit("Platzieren", () => {
-          const existing = asm.components.length;
-          for (let i = 0; i < n; i++) asm.components.push({ id: uid("c"), part: chosen, name: `${p.name}:${asm.components.filter((c) => c.part === chosen).length + 1}`, pos: [(existing + i) * w * 0 + i * w, 0, 0], rot: [0, 0, 0], fixed: asm.components.length === 0 && i === 0 });
-        });
-      } }],
-    });
-  }
+  /** Platzieren mit Vorschau am Mauszeiger (BG1, src/ui/baugruppe.js) */
+  placeComponentDialog() { return placeDialog(this.app); }
   /** Schiebetor (E8) als Baugruppe: Bauteil Flügel (Schiebegelenk −X, 0 … Durchfahrt) und Bauteil feste Teile */
   slidingGateAssembly(f, planOf, { into } = {}) {
     const app = this.app, src = into ? {} : app.activeDoc();
@@ -2196,9 +2147,11 @@ export class Props {
     const c = app.sel?.type === "component" ? asm.components.find((x) => x.id === app.sel.id && !x.pat) : null;
     if (!c) return toast("Erst die Komponente wählen, die vervielfältigt werden soll");
     const box = app.viewer.componentBox(c.id);
-    const p = defaultAsmPattern(uid("pm"), [c.id]);
+    // BG9: sitzt die Quelle in einer Bohrung, gleich als Lochbild-Muster (wie Inventor »Feature-Muster«)
+    const hole = holeFromConstraints(asm, c.id);
+    const p = hole ? defaultAsmPattern(uid("pm"), [c.id], "lochbild", hole) : defaultAsmPattern(uid("pm"), [c.id]);
     p.name = `Muster ${(asm.patterns || []).length + 1}`;
-    if (box) p.spacing = String(Math.round((box[1][0] - box[0][0]) * 1.5) || 100);
+    if (box && !hole) p.spacing = String(Math.round((box[1][0] - box[0][0]) * 1.5) || 100);
     app.edit("Komponentenmuster", () => { asm.patterns = [...(asm.patterns || []), p]; });
     app.sel = { type: "asmpattern", id: p.id };
     this.render();
@@ -2220,8 +2173,12 @@ export class Props {
           box.addEventListener("change", () => set("Komponenten", () => { p.comps = box.checked ? [...new Set([...p.comps, c.id])] : p.comps.filter((x) => x !== c.id); }));
           return h("label", { class: "check" }, box, " ", c.name);
         })), true),
-        this.seg("Art", [["linear", "Rechteckig"], ["circular", "Kreisförmig"]], p.kind, (v) => set("Art", () => { Object.assign(p, defaultAsmPattern(p.id, p.comps, v), { name: p.name }); })),
-        p.kind === "circular" ? [
+        this.seg("Art", [["linear", "Rechteckig"], ["circular", "Kreisförmig"], ["lochbild", "Lochbild"]], p.kind, (v) => {
+          const hole = v === "lochbild" ? p.comps.map((id) => holeFromConstraints(asm, id)).find(Boolean) : null;
+          if (v === "lochbild" && !hole) return toast("Lochbild: die Quelle zuerst mit »Einfügen« oder »Konzentrisch« in eine Bohrung setzen – dann folgen Kopien in alle gleich großen Bohrungen", { timeout: 7000 });
+          set("Art", () => { for (const k of Object.keys(p)) if (!["id", "comps", "name", "suppressed"].includes(k)) delete p[k]; Object.assign(p, defaultAsmPattern(p.id, p.comps, v, hole), { name: p.name }); });
+        }),
+        p.kind === "lochbild" ? h("p", { class: "hint" }, `Kopien in alle Bohrungen Ø ${fmtNum(2 * (p.hole?.r || 0), 2)} mm von »${asm.components.find((c) => c.id === p.hole?.comp)?.name || "?"}« – folgt Änderungen am Lochbild.`) : p.kind === "circular" ? [
           this.seg("Achse", dirs.slice(0, 3), p.axis || "Z", (v) => set("Achse", () => { p.axis = v; })),
           this.vec3("Mittelpunkt", p.center, (v) => set("Mittelpunkt", () => { p.center = v; })),
           E("Anzahl", "count", { unit: "Stk" }), E("Gesamtwinkel", "angle", { unit: "°" }),
@@ -2298,34 +2255,8 @@ export class Props {
   variantDialog() { return variantDialog(this.app); }
   rulesDialog() { return rulesDialog(this.app); }
   macroDialog() { return macroDialog(this.app); }
-  /** Komponente an einer Ebene der Baugruppe spiegeln: gespiegeltes Bauteil (abgeleitet) an der gespiegelten Lage */
-  mirrorComponent(id) {
-    const app = this.app, asm = app.activeDoc();
-    const c = asm?.components?.find((x) => x.id === (id || (app.sel?.type === "component" ? app.sel.id : null)));
-    if (!c || c.pat) return toast("Erst die Komponente wählen, die gespiegelt werden soll");
-    const p = app.doc(c.part);
-    if (p?.kind !== "part") return toast("Nur Bauteile lassen sich spiegeln (Unterbaugruppen nicht)");
-    const run = (key) => {
-      const m = mirrorPlacement(c.pos || [0, 0, 0], c.rot || [0, 0, 0], MIRROR_PLANES[key], 0);
-      const same = (a, b) => a.every((x, i) => Math.abs(Number(x) - b[i]) < 1e-9);
-      let doc = app.parts().find((d) => d.features?.[0]?.type === "abgeleitet" && d.features[0].source === p.id && d.features[0].mirror === "frei" && same(d.features[0].mirrorN || [], m.normal));
-      const fresh = !doc;
-      if (fresh) {
-        doc = app.withPartDefaults(newPart(`${p.name} gespiegelt`));
-        doc.material = p.material;
-        doc.features = [{ id: uid("f"), type: "abgeleitet", name: "Abgeleitet 1", source: p.id, mirror: "frei", mirrorN: m.normal.map(String), scale: "1" }];
-      }
-      const comp = { id: uid("c"), part: doc.id, name: `${doc.name}:${asm.components.filter((x) => x.part === doc.id).length + 1}`, pos: m.pos, rot: m.rot };
-      app.edit("Komponente spiegeln", () => { if (fresh) app.project.docs.push(doc); asm.components.push(comp); });
-      app.sel = { type: "component", id: comp.id };
-      toast(fresh ? `»${doc.name}« als gespiegeltes Bauteil angelegt und eingefügt` : `Gespiegeltes Bauteil »${doc.name}« wiederverwendet`, { kind: "ok" });
-    };
-    modal({
-      title: `»${c.name}« spiegeln`,
-      body: h("p", {}, "Ebene der Baugruppe wählen. Es entsteht ein gespiegeltes Bauteil (abgeleitet, folgt Änderungen am Original) an der gespiegelten Lage."),
-      buttons: [{ label: "an YZ", run: () => run("YZ") }, { label: "an XZ", run: () => run("XZ") }, { label: "an XY", run: () => run("XY") }, { label: "Abbrechen" }],
-    });
-  }
+  /** Komponenten spiegeln (BG11, src/ui/baugruppe.js): mehrere, beliebige Ebene, auf Wunsch wiederverwenden */
+  mirrorComponent(id) { return mirrorDialog(this.app, id); }
   duplicateComponent(id) {
     const asm = this.app.activeDoc();
     const c = asm.components.find((x) => x.id === id);

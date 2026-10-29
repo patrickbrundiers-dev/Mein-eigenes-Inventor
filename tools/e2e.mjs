@@ -686,7 +686,7 @@ try {
   step("Unterbaugruppe", sub.leaves === sub.expected && sub.sheets.includes("Strukturstückliste") && sub.sheets.includes("Baukastenstückliste") && sub.nested >= 2, JSON.stringify(sub));
   // Normteil (MegaCAD-Abgleich M20): Dialog in der Baugruppe, 4 × M12 x 40 → eigene Zeile in der Stückliste
   await page.locator("#ribbon button", { hasText: /^Normteil$/ }).first().click();
-  await page.locator("#modal-root .dialog input[type=number]").last().fill("4");
+  await page.locator("#modal-root .dialog input.normlib-qty").fill("4");
   await page.locator("#modal-root .dialog footer .btn", { hasText: "Einfügen" }).click();
   await idle(60000);
   const nt = await evalApp(async () => {
@@ -699,6 +699,45 @@ try {
     return { comps: top.components.filter((c) => c.part === p?.id).length, body: r?.bodies?.[0]?.name, ok: r && Object.values(r.status).every((x) => x.ok), inXlsx: text.includes("Sechskantschraube ISO 4017 - M12 x 40 - 8.8"), partRow: text.includes(">" + p?.name + "<") };
   });
   step("Normteil in der Baugruppe", nt.comps === 4 && nt.ok && nt.body === "Sechskantschraube ISO 4017 - M12 x 40 - 8.8" && nt.inXlsx, JSON.stringify(nt));
+  // Normteil-Bibliothek (Inhaltscenter): Suche nach alter DIN-Nummer, Vorschau, dann Garnitur an einer Bohrung
+  await page.locator("#ribbon button", { hasText: /^Normteil$/ }).first().click();
+  await page.locator("#modal-root .normlib-cats input").fill("DIN 912");
+  await page.locator("#modal-root .normlib-fam").first().click();
+  await shot("normteil-bibliothek");
+  const lib = await evalApp(() => ({ fams: document.querySelectorAll("#modal-root .normlib-fam").length, title: document.querySelector("#modal-root .normlib-detail h4")?.textContent, svg: document.querySelectorAll("#modal-root .normlib-prev polygon").length, desig: document.querySelector("#modal-root .normlib-detail .kv b")?.textContent }));
+  await page.locator("#modal-root .normlib-cats input").fill("");
+  await page.locator("#modal-root .normlib-cat", { hasText: "Schrauben" }).click();
+  await page.locator("#modal-root .normlib-fam", { hasText: "Gewinde bis Kopf" }).click();
+  await page.locator("#modal-root .dialog footer .btn", { hasText: "An Bohrung" }).click();
+  const holePlate = await evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc();
+    const p = { id: "pLoch", kind: "part", name: "Lochplatte", material: "S235", color: null, params: [], description: "", number: "", features: [
+      { id: "q", type: "regelkoerper", name: "Platte", kind: "quader", dims: { L: "100", B: "100", H: "10" }, pos: ["0", "0", "0"], axis: "Z", op: "join" },
+      { id: "z", type: "regelkoerper", name: "Loch", kind: "zylinder", dims: { D: "13.5", H: "12" }, pos: ["0", "0", "-1"], axis: "Z", op: "cut" }] };
+    a.edit("Lochplatte", () => { a.project.docs.push(p); asm.components.push({ id: "cLoch", part: p.id, name: "Lochplatte:1", pos: [0, 0, 300], rot: [0, 0, 0], fixed: true }); });
+    return a.pick?.kind;
+  });
+  await idle(60000);
+  const hole = await evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc();
+    const faces = a.assemblyFaces("pLoch");
+    const cylF = faces.find((f) => f.type === "CYLINDER" && Math.abs(f.radius - 6.75) < 0.01);
+    if (!cylF) return { err: "keine Bohrung", faces: faces.length };
+    const top = Math.max(...faces.filter((f) => f.type === "PLANE" && f.normal[2] > 0.99).map((f) => f.point[2]));
+    const hit = { kind: "face", key: "comp:cLoch", info: { ...cylF }, point: [cylF.axisP[0] + 6.75, cylF.axisP[1], top - 0.5 + 300], group: { userData: {} } };
+    const orig = a.viewer.pick; a.viewer.pick = () => hit;
+    try { a.viewerClick({ clientX: 0, clientY: 0 }); } finally { a.viewer.pick = orig; }
+    a.cancelPick();
+    const added = asm.components.filter((c) => c.id !== "cLoch" && asm.constraints?.some((k) => k.b.comp === c.id && k.type === "einfuegen"));
+    return { names: added.map((c) => a.doc(c.part).normDesignation), z: added.map((c) => Math.round(c.pos[2] * 100) / 100), top };
+  });
+  await idle(60000);
+  const solved = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); a.solveAssemblyConstraints(asm); return Object.keys(a.asmErrors || {}).filter((id) => asm.constraints.find((k) => k.id === id)?.type === "einfuegen").length; });
+  await evalApp(() => { const a = window.__werkcad; a.sel = { type: "component", id: "cLoch" }; a.viewer.fit?.(); });
+  await shot("normteil-an-bohrung");
+  step("Normteil-Bibliothek: Suche, Vorschau, Garnitur an Bohrung", lib.title === "Zylinderschraube mit Innensechskant" && lib.svg > 2 && holePlate === "normHole"
+    && hole.names?.join("|") === "Scheibe ISO 7089 - 12 - 200 HV|Sechskantschraube ISO 4017 - M12 x 30 - 8.8|Scheibe ISO 7089 - 12 - 200 HV|Sechskantmutter ISO 4032 - M12 - 8" && solved === 0,
+    JSON.stringify({ lib, hole, solved }));
   await evalApp((id) => window.__werkcad.openDoc(id), inner);
   await idle();
 
@@ -1216,10 +1255,14 @@ try {
     a.prefs.set("ansicht.darstellung", "kanten");
     const orig = a.files.saveBinary; let got = null;
     a.files.saveBinary = async (buf, name) => { got = { name, head: Array.from(buf.slice(0, 4)), n: buf.length }; };
-    try { await a.files.exportPng({ photo: true }); } finally { a.files.saveBinary = orig; }
+    // Rendern fragt Hintergrund und Bildgröße: Vorgaben übernehmen
+    let dlg = false;
+    const ok = setInterval(() => { const b = [...document.querySelectorAll(".backdrop .btn.primary")].find((x) => x.textContent === "Rendern"); if (b) { dlg = true; clearInterval(ok); b.click(); } }, 50);
+    try { await a.files.exportPng({ photo: true }); } finally { clearInterval(ok); a.files.saveBinary = orig; }
+    st.dlg = dlg;
     return { ...st, png: got, after: { mode: v.displayMode, env: !!v.scene.environment, stage: v.stage.children.length, lines: pk?.lines.visible, metal: pk?.mesh.material.metalness } };
   });
-  step("Fotorealistische Darstellung", ft.env && ft.tone && ft.shadow && ft.ground && !ft.grid && ft.lines === false && ft.metal > 0.5 && ft.cast && /_Render\.png$/.test(ft.png?.name || "") && ft.png.head.join() === "137,80,78,71" && ft.after.mode === "kanten" && !ft.after.env && ft.after.stage === 0 && ft.after.lines && ft.after.metal < 0.2, JSON.stringify(ft));
+  step("Fotorealistische Darstellung", ft.dlg && ft.env && ft.tone && ft.shadow && ft.ground && !ft.grid && ft.lines === false && ft.metal > 0.5 && ft.cast && /_Render\.png$/.test(ft.png?.name || "") && ft.png.head.join() === "137,80,78,71" && ft.after.mode === "kanten" && !ft.after.env && ft.after.stage === 0 && ft.after.lines && ft.after.metal < 0.2, JSON.stringify(ft));
   // Oberfläche und RAL-Farbe je Bauteil (E7): Auswahl im Eigenschaftenfeld, Farbe im Viewer, Text in der Stückliste
   {
     await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); });
@@ -3490,7 +3533,7 @@ try {
     await evalApp((srcId) => { const a = window.__werkcad; const asm = a.newAssembly(); a.edit("Bauteil", () => asm.components.push({ id: "cm1", part: srcId, name: "Winkel links:1", pos: [100, 0, 0], rot: [0, 0, 0] })); a.sel = { type: "component", id: "cm1" }; }, q);
     await idle(60000);
     await evalApp(() => window.__werkcad.props.mirrorComponent("cm1"));
-    await page.locator(".dialog button", { hasText: /^an YZ$/ }).click();
+    await page.locator(".dialog button", { hasText: /^Spiegeln$/ }).click(); // Vorgabe: YZ-Ebene, gewählte Komponente angehakt
     await idle(60000);
     const mc = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); const c = asm.components.at(-1), p = a.doc(c.part); return { n: asm.components.length, pos: c.pos, part: p?.name, type: p?.features?.[0]?.type, normal: p?.features?.[0]?.mirrorN }; });
     await shot("42-komponente-gespiegelt");
@@ -3676,6 +3719,134 @@ try {
     step("Stecksystem in der Baugruppe", /3 Zapfen 20 × 4 mm/.test(s46.info) && s46.z === "steckzapfen" && s46.s === "steckschlitz" && s46.zs === true && /3 Schlitze aus/.test(s46.ss || "") && s46.tree && d46[0] === 0 && d46[1] === 0, JSON.stringify({ s46, d46 }));
   }
 
+  // ---- Baugruppenerstellung BG1–BG6: Platzieren mit Vorschau, Freiheitsgrade, Ziehen, Alt-Ziehen ----
+  {
+    await evalApp(() => { window.__werkcad.newAssembly(); });
+    await idle();
+    await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+    await rbClick("Platzieren");
+    await page.locator(".place-item", { hasText: "Grundplatte" }).first().click();
+    await idle();
+    const cvb = await page.locator("#viewport canvas, canvas").first().boundingBox();
+    const at = [cvb.x + cvb.width * 0.75, cvb.y + cvb.height * 0.3];
+    await page.mouse.move(at[0], at[1]);
+    await page.waitForTimeout(200);
+    const ghost = await evalApp(() => !!window.__werkcad.viewer.placeGhost);
+    await page.mouse.click(at[0], at[1]);
+    await idle();
+    await page.mouse.click(at[0], at[1], { button: "right" });
+    const pl = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { n: asm.components.length, fixed: !!asm.components[0].fixed, pick: a.pick?.kind || null, ghost: !!a.viewer.placeGhost }; });
+    // Fläche an Fläche → 2 Verschiebungen und 1 Drehung frei, Pfeile an der Auswahl
+    const dof = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc(), [c1, c2] = asm.components;
+      const fs = a.planarFaces(c1.part);
+      a.beginAlign("gegen");
+      a.align.gap = "0"; // Versatz bleibt wie in Inventor vom letzten Mal stehen
+      a.alignPick({ kind: "face", key: "comp:" + c2.id, info: fs.find((f) => f.normal[2] < -0.99) });
+      a.alignPick({ kind: "face", key: "comp:" + c1.id, info: fs.find((f) => f.normal[2] > 0.99) });
+      a.sel = { type: "component", id: c2.id }; a.refreshSelectionHits(); a.tree.render(); a.props.render();
+      return { z: c2.pos[2], top: fs.find((f) => f.normal[2] > 0.99).point[2], bot: fs.find((f) => f.normal[2] < -0.99).point[2], glyph: !!a.viewer.dofGlyph, meta: [...document.querySelectorAll("#browser .node")].some((n) => /Grundplatte:2.*2 V · 1 D frei/.test(n.textContent)) };
+    });
+    await idle();
+    await shot("bg-freiheitsgrade");
+    // Ziehen mit der Maus: bleibt auf der Fläche
+    const scr = (cid) => evalApp((id) => { const a = window.__werkcad, b = a.viewer.componentBox(id), c = b[0].map((x, i) => (x + b[1][i]) / 2); c[2] = b[1][2]; return a.viewer.worldToScreen(c); }, cid);
+    const ids = await evalApp(() => window.__werkcad.activeDoc().components.map((c) => c.id));
+    const R = await page.locator("canvas").first().boundingBox();
+    let s0 = await scr(ids[1]);
+    const before = await evalApp((id) => window.__werkcad.activeDoc().components.find((c) => c.id === id).pos, ids[1]);
+    await page.mouse.move(R.x + s0[0], R.y + s0[1]); await page.mouse.down();
+    for (let i = 1; i <= 8; i++) await page.mouse.move(R.x + s0[0] + i * 10, R.y + s0[1] + i * 6);
+    await page.mouse.up();
+    await idle();
+    const after = await evalApp((id) => window.__werkcad.activeDoc().components.find((c) => c.id === id).pos, ids[1]);
+    // Alt-Ziehen: dritte Platte mit ihrer Oberseite auf Platte 1 fügen
+    await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); a.edit("Dritte", () => asm.components.push({ id: "bg3", part: asm.components[0].part, name: "Grundplatte:3", pos: [-300, -250, 0], rot: [0, 0, 0] })); });
+    await idle();
+    await evalApp(() => window.__werkcad.viewer.fit());
+    await page.waitForTimeout(600);
+    s0 = await scr("bg3");
+    const s1 = await scr(ids[0]);
+    await page.keyboard.down("Alt");
+    await page.mouse.move(R.x + s0[0], R.y + s0[1]); await page.mouse.down();
+    for (let i = 1; i <= 12; i++) await page.mouse.move(R.x + s0[0] + ((s1[0] - s0[0]) * i) / 12, R.y + s0[1] + ((s1[1] - s0[1]) * i) / 12 + 20);
+    await page.waitForTimeout(300);
+    await shot("bg-alt-ziehen");
+    await page.mouse.up();
+    await page.keyboard.up("Alt");
+    await idle();
+    const q = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === "bg3"); return { z: c.pos[2], n: asm.constraints.length, last: asm.constraints.at(-1)?.type, err: Object.keys(a.asmErrors || {}).length }; });
+    step("Baugruppe: Platzieren mit Vorschau, Freiheitsgrade, Ziehen, Alt-Ziehen", ghost && pl.n === 2 && pl.fixed && !pl.pick && !pl.ghost && Math.abs(dof.z - (dof.top - dof.bot)) < 1e-6 && dof.glyph && dof.meta
+      && Math.abs(after[2] - dof.z) < 1e-6 && Math.hypot(after[0] - before[0], after[1] - before[1]) > 1 && q.n === 2 && q.last === "gegen" && Math.abs(q.z - 2 * dof.top) < 1e-6 && q.err === 0, JSON.stringify({ ghost, pl, dof, before, after, q }));
+  }
+
+  // ---- Baugruppenerstellung BG7–BG11: Lochbild-Muster, Fügepunkte, Unterbaugruppe, Spiegeln ----
+  {
+    await evalApp(() => {
+      const a = window.__werkcad, asm = a.newAssembly();
+      a.edit("Komponenten", () => {
+        asm.components.push({ id: "lp", part: "beispiel_platte", name: "Platte:1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+        asm.components.push({ id: "lr", part: "beispiel_rohr", name: "Rohr:1", pos: [0, 0, 300], rot: [0, 0, 0] });
+        asm.components.push({ id: "lq", part: "beispiel_platte", name: "Platte:2", pos: [1000, 0, 0], rot: [0, 0, 0] });
+      });
+    });
+    await idle();
+    // Rohr konzentrisch in eine Bohrung der Platte, dann Muster → Lochbild (vier gleiche Bohrungen)
+    const lb = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc();
+      const hole = a.assemblyFaces("beispiel_platte").find((f) => f.type === "CYLINDER" && Math.abs(f.radius - 5.5) < 1e-6);
+      const tube = a.assemblyFaces("beispiel_rohr").find((f) => f.type === "CYLINDER" && Math.abs(f.axisD[0]) > 0.99);
+      a.beginAlign("konzentrisch");
+      a.alignPick({ kind: "face", key: "comp:lr", info: tube });
+      a.alignPick({ kind: "face", key: "comp:lp", info: hole });
+      a.sel = { type: "component", id: "lr" };
+      a.tree.render(); a.props.render(); a.ribbon.render();
+      return asm.constraints.at(-1)?.type;
+    });
+    await idle();
+    await rbClick("Muster");
+    await idle();
+    const pat = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { kind: asm.patterns?.[0]?.kind, copies: asm.components.filter((c) => c.pat).length, err: a.asmErrors?.[asm.patterns?.[0]?.id] || null }; });
+    // Fügepunkte aus der Abhängigkeit merken (Kontextmenü im Baum), neues Rohr fügt sich an die freie Platte 2
+    await page.locator("#browser .node").filter({ has: page.locator(".label", { hasText: /^Rohr:1$/ }) }).first().click({ button: "right" });
+    await page.locator(".menu button", { hasText: "Fügepunkte aus Abhängigkeiten merken" }).click();
+    await idle();
+    const fp = await evalApp(() => { const a = window.__werkcad; return [a.doc("beispiel_platte").fuegepunkte?.length || 0, a.doc("beispiel_rohr").fuegepunkte?.length || 0]; });
+    await evalApp(() => { const a = window.__werkcad; a.beginPlacing("beispiel_rohr"); });
+    const R = await page.locator("canvas").first().boundingBox();
+    const sq = await evalApp(() => { const a = window.__werkcad; a.viewer.fit(); const b = a.viewer.componentBox("lq"); return a.viewer.worldToScreen(b[0].map((x, i) => (x + b[1][i]) / 2)); });
+    await page.waitForTimeout(300);
+    await page.mouse.click(R.x + sq[0], R.y + sq[1]);
+    await idle();
+    await page.keyboard.press("Escape");
+    const am = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), k = asm.constraints.at(-1); return { fp: k?.fp || null, a: k?.a.comp, n: asm.components.filter((c) => !c.pat).length }; });
+    // Unterbaugruppe aus Platte 2 und dem neuen Rohr bilden, dann wieder auflösen
+    const newR = await evalApp(() => window.__werkcad.activeDoc().components.filter((c) => !c.pat).at(-1).name);
+    await rbClick("Unterbaugruppe bilden");
+    await page.locator(".dialog label.check", { hasText: "Platte:2" }).locator("input").check();
+    await page.locator(".dialog label.check", { hasText: newR }).locator("input").check();
+    await page.locator(".dialog .btn.primary", { hasText: "Bilden" }).click();
+    await idle();
+    const sub = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), sc = asm.components.find((c) => a.doc(c.part)?.kind === "assembly"); const s = sc && a.doc(sc.part); return { top: asm.components.filter((c) => !c.pat).length, inner: s?.components.length, innerCons: s?.constraints?.length || 0, name: sc?.name, id: sc?.id }; });
+    await page.locator("#browser .node").filter({ has: page.locator(".label", { hasText: sub.name }) }).first().click({ button: "right" });
+    await page.locator(".menu button", { hasText: "Unterbaugruppe auflösen" }).click();
+    await idle();
+    const dis = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { top: asm.components.filter((c) => !c.pat).length, subs: asm.components.filter((c) => a.doc(c.part)?.kind === "assembly").length, cons: asm.constraints.length }; });
+    // Spiegeln: Rohr wiederverwenden an der XZ-Ebene
+    await evalApp(() => { const a = window.__werkcad; a.sel = { type: "component", id: "lr" }; a.tree.render(); a.props.render(); a.ribbon.render(); });
+    await rbClick("Spiegeln");
+    const row = page.locator(".dialog label.check", { hasText: "Rohr:1" });
+    await row.locator("select").selectOption("wieder");
+    await page.locator(".dialog select").last().selectOption("XZ");
+    await page.locator(".dialog .btn.primary", { hasText: "Spiegeln" }).click();
+    await idle();
+    const mir = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), src = asm.components.find((c) => c.id === "lr"), m = asm.components.filter((c) => !c.pat).at(-1); return { part: m.part, y: m.pos[1], srcY: src.pos[1] }; });
+    await shot("bg-lochbild-fuegepunkte");
+    step("Baugruppe: Lochbild-Muster, Fügepunkte, Unterbaugruppe, Spiegeln", lb === "konzentrisch" && pat.kind === "lochbild" && pat.copies === 3 && !pat.err && fp[0] >= 1 && fp[1] >= 1
+      && am.fp && am.a === "lq" && sub.inner === 2 && sub.innerCons === 1 && dis.subs === 0 && dis.top === sub.top + 1 && mir.part === "beispiel_rohr",
+      JSON.stringify({ lb, pat, fp, am, sub, dis, mir }));
+  }
+
   // Bedienung: Tooltip-Karte im Menüband, Markierungsmenü (Rechtsklick), Mini-Werkzeugleiste an der Auswahl
   {
     await evalApp(() => { const a = window.__werkcad; a.openDoc("beispiel_platte"); });
@@ -3712,6 +3883,35 @@ try {
     await evalApp(() => window.__werkcad.prefs.set("ansicht.miniLeiste", false));
     step("Tooltip, Markierungsmenü, Mini-Leiste", /Skizzenkontur/.test(tip) && /\(?E\)?/.test(tip) && ring.length >= 6 && ring.includes("Skizze auf dieser Fläche") && list > 0 && closed
       && mini.includes("Skizze auf Fläche") && mini.includes("Wandung") && miniGone, JSON.stringify({ tip, ring, list, closed, mini, miniGone }));
+  }
+
+  // Dokument-Reiter unten: offene Dokumente, Wechsel per Klick, Schließen wechselt zum Nachbarn, Startseite
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    const tabs0 = await page.locator("#doctabs .dt-tab .dt-name").allTextContents();
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_rahmen']").click();
+    await idle();
+    const act1 = await evalApp(() => window.__werkcad.activeId);
+    // ungespeichert: Rückfrage, Abbrechen lässt den Reiter offen; gespeichert: ohne Rückfrage
+    await evalApp(() => { window.__werkcad.dirty = true; });
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_rahmen'] .dt-x").click();
+    const asked = await page.locator(".dialog footer .btn", { hasText: "Nur schließen" }).isVisible();
+    await page.locator(".dialog footer .btn", { hasText: "Abbrechen" }).click();
+    const kept = await evalApp(() => window.__werkcad.openIds.includes("beispiel_rahmen"));
+    await evalApp(() => { window.__werkcad.dirty = false; });
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_rahmen'] .dt-x").click();
+    await idle();
+    const after = await evalApp(() => ({ open: window.__werkcad.openIds, active: window.__werkcad.activeId, mode: window.__werkcad.mode }));
+    await page.locator("#doctabs .dt-btn[aria-label='Startseite']").click();
+    const home = await evalApp(() => window.__werkcad.mode);
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_platte']").click();
+    await idle();
+    const back = await evalApp(() => window.__werkcad.mode);
+    step("Dokument-Reiter", asked && kept && tabs0.includes("Rahmen") && tabs0.includes("Grundplatte") && act1 === "beispiel_rahmen" && !after.open.includes("beispiel_rahmen") && after.active !== "beispiel_rahmen" && home === "start" && back === "part",
+      JSON.stringify({ asked, kept, tabs0, act1, after, home, back }));
   }
 
 } catch (e) {

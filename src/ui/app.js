@@ -4,6 +4,7 @@ import { problemsDialog, quickCounts, countText } from "./pruefung.js";
 import { invertSelection } from "../core/boxselect.js";
 import { Sketcher } from "./sketcher.js";
 import { MiniBar } from "./minibar.js";
+import { DocTabs } from "./doctabs.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
 import { Tree } from "./tree.js";
@@ -15,7 +16,7 @@ import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
-import { h, toast, confirmDialog, promptDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
+import { h, toast, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
 import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { moveProblem, copyFeatures } from "../core/ableiten.js";
@@ -39,6 +40,7 @@ import { sketchRefs, dependents } from "../core/featurerefs.js";
 import { applyPatterns } from "../core/asmmuster.js";
 import { worldToLocal, solveAssembly, CONSTRAINT_TYPES } from "../core/asmsolve.js";
 import { beginPlace, placePick, placeState } from "./abhaengigkeit.js";
+import { normHolePick } from "./normlib.js";
 import { partContent, baseName } from "../core/links.js";
 import { finishColor } from "../core/oberflaeche.js";
 import { Docking } from "./layout.js";
@@ -52,6 +54,7 @@ import { insertFeature, beforeDelete, setEnd } from "../core/bauteilende.js";
 import { colorMap } from "../core/komponentenfarben.js";
 import { templateOf, isCustomTemplate } from "../core/zeichnungsvorlage.js";
 import { snapshot, restoreSnapshot, trimStack } from "../core/undo.js";
+import { bindAssemblyDrag, bindDocDrop, updateDofGlyph, placeHover, placeClick, endPlacing, placeDialog, beginPlacing } from "./baugruppe.js";
 
 const linkedMessage = (part, docOf = () => null) => (part.variant && !part.link
   ? `»${part.name}« ist eine Variante von »${docOf(part.variant.of)?.name || "?"}« – dort in der Variantentabelle ändern`
@@ -67,6 +70,8 @@ export class App {
     this.filePath = null;
     this.dirty = false;
     this.activeId = null;
+    this.openIds = []; // Dokument-Reiter: in dieser Sitzung geöffnete Dokumente
+    this.docViews = new Map(); // Kamerastand je Dokument beim Wechsel über die Reiter
     this.mode = "start";
     this.sel = null;
     this.selHits = [];
@@ -90,6 +95,7 @@ export class App {
     this.files = new Files(this);
     this.ribbon = new Ribbon(this);
     this.minibar = new MiniBar(this);
+    this.doctabs = new DocTabs(this);
     this.tree = new Tree(this);
     this.props = new Props(this);
     this.drawing = new DrawingEditor(this);
@@ -115,6 +121,9 @@ export class App {
     if (this.mode === "sketch") this.finishSketch(true);
     const d = this.doc(id);
     if (!d) return;
+    const prev = this.activeDoc();
+    if (prev && prev.id !== id && (this.mode === "part" || this.mode === "assembly")) this.docViews.set(prev.id, this.viewer.viewState());
+    if (!this.openIds.includes(id)) this.openIds.push(id);
     this.activeId = id;
     this.sel = null;
     this.selHits = [];
@@ -207,7 +216,10 @@ export class App {
       if (into) into.components.push({ id: uid("c"), part: asm.id, name: asm.name + ":1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: !into.components.length });
     }, { rebuild: false });
     this.openDoc(asm.id);
-    toast(`Baugruppe »${asm.name}« mit ${new Set(asm.components.map((c) => c.part)).size} Einzelteilen angelegt${into ? `, in »${into.name}« eingebaut` : ""}`, { kind: "ok" });
+    // BG13: in einer Baugruppe mit Teilen gleich andocken – zurück, Komponente gewählt, Alt-Ziehen an die Zielfläche
+    const comp = into && into.components.length > 1 ? into.components.at(-1) : null;
+    toast(`Baugruppe »${asm.name}« mit ${new Set(asm.components.map((c) => c.part)).size} Einzelteilen angelegt${into ? `, in »${into.name}« eingebaut` : ""}`, { kind: "ok", timeout: comp ? 9000 : 4000,
+      action: comp ? { label: "Andocken", run: () => { this.openDoc(into.id); this.sel = { type: "component", id: comp.id }; this.refreshSelectionHits(); this.tree.render(); this.props.render(); this.setHint(`»${comp.name}« andocken: mit Alt an einer Fläche greifen und auf die Zielfläche ziehen (Leertaste wechselt die Lösung) – oder »Abhängigkeit«`); } } : null });
     return asm;
   }
   /**
@@ -305,8 +317,51 @@ export class App {
     this.checkpoint("Löschen");
     this.project.docs = this.project.docs.filter((x) => x.id !== id);
     for (const a of this.project.docs) if (a.kind === "assembly") a.components = a.components.filter((c) => c.part !== id);
+    this.openIds = this.openIds.filter((x) => x !== id);
+    this.docViews.delete(id);
     if (this.activeId === id) { this.activeId = null; this.setMode(this.project.docs.length ? "start" : "start"); }
     this.changed();
+  }
+  /** Dokument-Reiter schließen: nur aus der Leiste, das Dokument bleibt im Projekt. Aktives → Nachbar oder Startseite */
+  async closeDoc(id, { ask = true } = {}) {
+    const i = this.openIds.indexOf(id);
+    if (i < 0) return;
+    // Ungespeichert: nachfragen (Speichern und schließen / nur schließen); gespeichert: ohne Rückfrage
+    if (ask && this.dirty && !this.readOnly) {
+      const r = await choiceDialog("Ungespeicherte Änderungen", `Das Projekt hat ungespeicherte Änderungen. »${this.doc(id)?.name}« trotzdem schließen? Die Änderungen bleiben im Projekt, bis es geschlossen wird.`, [
+        { label: "Abbrechen", value: null }, { label: "Nur schließen", value: "close" }, { label: "Speichern und schließen", value: "save", primary: true }]);
+      if (!r) return;
+      if (r === "save" && !(await this.files.save(false))) return;
+      if (this.openIds.indexOf(id) < 0) return;
+      return this.closeDoc(id, { ask: false });
+    }
+    if (this.mode === "sketch" && this.activeId === id) this.finishSketch(true);
+    this.openIds.splice(i, 1);
+    this.docViews.delete(id);
+    if (this.activeId === id && this.mode !== "start") {
+      const next = this.openIds[i] || this.openIds[i - 1];
+      if (next) return this.openDoc(next);
+      this.goHome();
+    } else this.doctabs.render();
+  }
+  async closeOtherDocs(keep) {
+    if (this.dirty && !this.readOnly) {
+      const r = await choiceDialog("Ungespeicherte Änderungen", "Das Projekt hat ungespeicherte Änderungen. Reiter trotzdem schließen? Die Änderungen bleiben im Projekt, bis es geschlossen wird.", [
+        { label: "Abbrechen", value: null }, { label: "Nur schließen", value: "close" }, { label: "Speichern und schließen", value: "save", primary: true }]);
+      if (!r || (r === "save" && !(await this.files.save(false)))) return;
+    }
+    this.openIds = keep ? [keep] : [];
+    if (keep && this.activeId !== keep) return this.openDoc(keep);
+    if (!keep) return this.goHome();
+    this.doctabs.render();
+  }
+  /** Startseite zeigen, ohne Dokumente zu schließen; ein Reiter führt zurück */
+  goHome() {
+    if (this.mode === "sketch") this.finishSketch(true);
+    if (this.activeDoc() && (this.mode === "part" || this.mode === "assembly")) this.docViews.set(this.activeId, this.viewer.viewState());
+    this.fittedFor = null;
+    this.setMode("start");
+    this.refreshAll();
   }
   duplicateDoc(id) {
     const d = this.doc(id);
@@ -332,6 +387,8 @@ export class App {
     if (this.context) this.leaveContext({ reopen: false });
     this.results.clear();
     this.activeId = null;
+    this.openIds = [];
+    this.docViews.clear();
     const first = prj.docs.find((d) => d.kind === "assembly") || prj.docs[0];
     if (first) this.openDoc(first.id);
     else { this.setMode("start"); this.refreshAll(); }
@@ -546,7 +603,10 @@ export class App {
     this.showSketches3D();
     if (this.fittedFor !== part.id) {
       this.fittedFor = part.id;
-      if (res.bodies.length || part.features.some((f) => f.type === "sketch")) {
+      const saved = this.mode !== "sketch" && this.docViews.get(part.id);
+      if (saved) this.viewer.applyViewState(saved, { animate: false });
+      // auch ein leeres Bauteil bekommt die Grundansicht statt der Kamera des vorigen Dokuments
+      else {
         if (this.mode !== "sketch") this.viewer.setView("iso", { animate: false });
         this.viewer.fit();
       }
@@ -573,8 +633,12 @@ export class App {
     this.viewer.showSketches([]);
     if (this.fittedFor !== asm.id && comps.length) {
       this.fittedFor = asm.id;
-      this.viewer.setView("iso", { animate: false });
-      this.viewer.fit();
+      const saved = this.docViews.get(asm.id);
+      if (saved) this.viewer.applyViewState(saved, { animate: false });
+      else {
+        this.viewer.setView("iso", { animate: false });
+        this.viewer.fit();
+      }
     }
     this.refreshSelectionHits();
   }
@@ -869,6 +933,7 @@ export class App {
       down = null;
       if (moved) return;
       if (b === 2 && this.mode === "sketch") { this.sketcher.state = null; this.sketcher.render(); return; }
+      if (b === 2 && this.pick?.kind === "place") return this.cancelPick();
       if (b === 2) return this.viewerContextMenu(e);
       if (b !== 0 || this.mode === "sketch") return;
       if (this.viewer.handleCubeClick(e.clientX, e.clientY)) return;
@@ -876,18 +941,23 @@ export class App {
     });
     let raf = 0;
     cv.addEventListener("pointermove", (e) => {
-      if (this.mode === "sketch" || down) return;
+      if (this.mode === "sketch" || this.dragState) return;
+      if (this.pick?.kind === "place") return placeHover(this, e);
+      if (down) return;
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => this.viewerHover(e));
     });
-    cv.addEventListener("pointerleave", () => this.viewer.clearHover());
+    cv.addEventListener("pointerleave", () => { this.viewer.clearHover(); this.tree.setHot(null); });
+    // Baugruppe (BG1/BG2/BG6/BG10): Komponenten ziehen, Alt-Ziehen fügt, Bauteile aus dem Browser ablegen
+    bindAssemblyDrag(this);
+    bindDocDrop(this);
   }
   pickOptions() {
     const p = this.pick;
     if (p?.kind === "edges") return { edges: true, faces: false };
     if (p?.kind === "measure") return { edges: true, faces: true, vertices: true };
     if (p?.kind === "align") return { edges: true, faces: true, vertices: true };
-    if (p?.kind === "faces" || p?.kind === "sketchPlane") return { edges: false, faces: true };
+    if (p?.kind === "faces" || p?.kind === "sketchPlane" || p?.kind === "normHole") return { edges: false, faces: true };
     if (this.mode === "assembly") return { edges: false, faces: true };
     if (this.selFilter === "flaechen") return { edges: false, faces: true };
     if (this.selFilter === "kanten") return { edges: true, faces: false };
@@ -904,8 +974,10 @@ export class App {
       return;
     }
     const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
+    // Gegenstück im Modellbrowser mit hervorheben (Komponente bzw. Feature, das den Körper erzeugt hat)
+    this.tree.setHot(!hit ? null : hit.key?.startsWith("comp:") ? hit.key.slice(5) : hit.key === "part" ? this.results.get(this.activeId)?.bodies?.[hit.body]?.fid || null : null);
     if (!hit) return this.viewer.clearHover();
-    if (this.mode === "assembly" && this.pick?.kind !== "align" && this.pick?.kind !== "measure") this.viewer.highlight([{ kind: "group", key: hit.key }]);
+    if (this.mode === "assembly" && this.pick?.kind !== "align" && this.pick?.kind !== "measure" && this.pick?.kind !== "custom" && this.pick?.kind !== "normHole") this.viewer.highlight([{ kind: "group", key: hit.key }]);
     else this.viewer.highlight([hit]);
   }
   viewerClick(e) {
@@ -929,7 +1001,10 @@ export class App {
     if (p?.kind === "faces") return this.toggleFeatureFace(p.feature, hit);
     if (p?.kind === "datumFace") return this.datumFacePick(p.feature, hit);
     if (p?.kind === "align") return this.alignPick(hit);
+    if (p?.kind === "place") return placeClick(this, e);
+    if (p?.kind === "custom") return p.onPick(hit, e);
     if (p?.kind === "gestell") return this.gestellPick(hit);
+    if (p?.kind === "normHole") return normHolePick(this, hit);
     if (this.mode === "assembly") {
       const cid = hit?.key?.startsWith("comp:") ? hit.key.slice(5) : null;
       this.sel = cid ? { type: "component", id: cid } : null;
@@ -1062,9 +1137,13 @@ export class App {
     else if (this.sel?.type === "body") hits = [];
     if (this.align?.first) hits = hits.concat([this.align.first.hit]);
     this.viewer.setSelectionHits(part ? hits : []);
+    if (this.pick?.kind !== "place" && this.viewer.placeGhost) endPlacing(this);
+    updateDofGlyph(this);
   }
 
   // ---------- Baugruppe: Ausrichten ----------
+  /** Platzieren mit Vorschau am Mauszeiger (BG1); auch für die Teilebibliothek (ST12) */
+  beginPlacing(docId, opts) { return beginPlacing(this, docId, opts); }
   beginAlign(mode = "gegen") { beginPlace(this, { mode }); }
   /** »Abhängigkeit platzieren« (Stufe 44) */
   beginPlace(opts) { beginPlace(this, opts); }
@@ -1088,7 +1167,7 @@ export class App {
   solveAssemblyConstraints(asm) {
     const res = asm.constraints?.length ? solveAssembly(asm, (pid) => this.assemblyFaces(pid), (g) => safeNum(g)) : { changed: false, errors: {} };
     // Komponentenmuster nach den Abhängigkeiten: Kopien folgen der gelösten Lage der Quelle
-    const pat = asm.patterns?.length || asm.components.some((c) => c.pat) ? applyPatterns(asm, (g) => safeNum(g)) : { changed: false, errors: {} };
+    const pat = asm.patterns?.length || asm.components.some((c) => c.pat) ? applyPatterns(asm, (g) => safeNum(g), (pid) => this.assemblyFaces(pid)) : { changed: false, errors: {} };
     this.asmErrors = { ...res.errors, ...pat.errors };
     if (res.changed || pat.changed) { this.dirty = true; this.updateTitle(); }
   }
@@ -1173,6 +1252,7 @@ export class App {
     const datumMode = datumPicking(this);
     if (this.pick?.kind === "measure") { this.endMeasure(); this.ribbon.render(); }
     if (this.pick?.feature) { this._editingFeature = null; this.rebuild(); }
+    if (this.pick?.kind === "place") { endPlacing(this); this.ribbon?.render?.(); }
     this.pick = null;
     this.align = this.align ? { ...placeState(this.align), picks: [], first: null, edit: null } : null;
     this.viewer.clearPlanes();
@@ -1192,6 +1272,7 @@ export class App {
     if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
     this.viewer.applyPrefs(p.values);
     this.sketcher.applyPrefs(p.values);
+    if (!keys || keys.includes("baugruppe.freiheitsgrade")) updateDofGlyph(this);
     if (!keys || keys.includes("darstellung.skalierung")) window.werkcad?.setZoom?.(p.get("darstellung.skalierung") / 100);
     if (keys?.includes("ansicht.qualitaet") && this.quality !== p.get("ansicht.qualitaet")) { this.quality = p.get("ansicht.qualitaet"); this.ribbon.render(); this.rebuild(); }
     if (!keys || keys.includes("werkzeuge.kuerzel")) this.commands.update();
@@ -1239,6 +1320,7 @@ export class App {
     document.title = `${this.dirty ? "• " : ""}${name}${ver}${this.readOnly ? " [schreibgeschützt]" : ""} – PBCAD`;
     window.werkcad?.setTitle?.(document.title);
     this.ribbon.renderDocLabel?.();
+    this.doctabs?.render();
   }
   setHint(text) {
     this.hint = text;
@@ -1465,7 +1547,7 @@ function defaultHint(mode, mouse) {
     case "part": return mouse === "mitte-drehen"
       ? "Mittlere Taste: drehen · rechte Taste: schwenken · Rad: zoomen · Klick: Fläche/Kante wählen"
       : "Mittlere Taste: schwenken · Umschalt+Mitte oder rechte Taste: drehen · Rad: zoomen · Klick: Fläche/Kante wählen";
-    case "assembly": return "Bauteil anklicken zum Auswählen · Rechtsklick: Bauteil platzieren";
+    case "assembly": return this.prefs?.get("baugruppe.ziehen") === false ? "Bauteil anklicken zum Auswählen · Rechtsklick: Bauteil platzieren" : "Klicken: auswählen · Ziehen: verschieben (Umschalt: drehen, Alt: an Fläche fügen) · Bauteil aus dem Browser hineinziehen: platzieren";
     case "sketch": return "Werkzeug wählen · Esc beendet Werkzeug bzw. Skizze";
     case "drawing": return "Ansicht ziehen zum Verschieben · Mausrad: zoomen · mittlere Taste: schwenken";
     default: return "";

@@ -1,5 +1,6 @@
 // Öffnen, Speichern, Import/Export – über die Electron-Brücke oder im Browser per Download
 import { pruneImages } from "../core/skizzenbild.js";
+import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { toast, choiceDialog, downloadBlob, h, modal } from "./dom.js";
 import { sketchToDxf, DxfWriter } from "../core/dxf.js";
 import { sheetFlatDxf } from "../core/blechplus.js";
@@ -369,6 +370,22 @@ export class Files {
       await this.saveBinary(buf, safeName(d.number || d.name) + ".stl", [{ name: "STL", extensions: ["stl"] }]);
     });
   }
+  /** GLB (glTF binär, E15): 3D-Ansicht mit Farben für Kunden, öffnet im Browser, am Handy und in Windows 3D-Viewer */
+  async exportGlb() {
+    const app = this.app, d = app.activeDoc();
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("GLB gibt es für Bauteile und Baugruppen");
+    const comps = new Map((d.components || []).map((c) => [c.id, c.name]));
+    const scene = app.viewer.exportScene((key, body) => {
+      const id = String(key).startsWith("comp:") ? key.slice(5) : null;
+      const r = d.kind === "part" ? app.results.get(d.id) : null;
+      return id ? comps.get(id) || "" : r?.bodies?.[body]?.name || `${d.name} ${body + 1}`;
+    });
+    if (!scene.children.length) return toast("Nichts zu exportieren");
+    await this.withBusy("GLB-Export", async () => {
+      const buf = await new GLTFExporter().parseAsync(scene, { binary: true });
+      await this.saveBinary(buf, safeName(d.number || d.name) + ".glb", [{ name: "glTF binär", extensions: ["glb"] }]);
+    });
+  }
   /** Jedes Profil/Rohr als eigene STEP-Datei – direkt für die Rohrlaser-Software */
   async exportMembers() {
     const app = this.app;
@@ -494,10 +511,17 @@ export class Files {
   async exportPng({ photo = false } = {}) {
     const d = this.app.activeDoc();
     const v = this.app.viewer;
+    // Rendern (V7): Hintergrund und Bildgröße wählbar, letzte Wahl gemerkt
+    let opt = { bg: "weiss", scale: photo ? 4 : 2 };
+    if (photo) {
+      opt = await renderOptions(v, opt);
+      if (!opt) return;
+    }
+    const background = { weiss: 0xffffff, transparent: "transparent", grau: 0xe8edf1 }[opt.bg] ?? 0xffffff;
     const prev = v.displayMode;
     if (photo && prev !== "foto") v.setDisplayMode("foto");
     let img;
-    try { img = v.snapshotPng({ scale: photo ? 4 : 2 }); } finally { if (photo && prev !== "foto") v.setDisplayMode(prev); }
+    try { img = v.snapshotPng({ scale: opt.scale, background }); } finally { if (photo && prev !== "foto") v.setDisplayMode(prev); }
     await this.saveBinary(img.data, safeName(d?.number || d?.name || "Ansicht") + (photo ? "_Render" : "") + ".png", [{ name: "PNG-Bild", extensions: ["png"] }]);
     toast(`Bild ${img.width} × ${img.height} px gespeichert`, { kind: "ok" });
   }
@@ -758,4 +782,25 @@ function showIssues(issues, context) {
   if (!shown.length) return;
   const more = shown.length > 1 ? ` (+${shown.length - 1} weitere Hinweise)` : "";
   toast(`${context}: ${shown[0].message}${more}`, { kind: shown.some((i) => i.severity === "error") ? "err" : "", timeout: 8000 });
+}
+
+const RENDER_KEY = "pbcad.rendern";
+/** Dialog vor dem Rendern: Hintergrund und Größe (Faktor zur Fenstergröße, mit Pixelangabe) */
+function renderOptions(viewer, def) {
+  let last = def;
+  try { last = { ...def, ...JSON.parse(localStorage.getItem(RENDER_KEY) || "{}") }; } catch { /* */ }
+  const w = viewer.container.clientWidth, hh = viewer.container.clientHeight;
+  const bg = h("select", { class: "inp" }, ...[["weiss", "Weiß"], ["grau", "Hellgrau"], ["transparent", "Transparent (für Angebote und Webseiten)"]].map(([v, l]) => h("option", { value: v, selected: v === last.bg }, l)));
+  const sc = h("select", { class: "inp" }, ...[2, 3, 4, 6].map((f) => h("option", { value: String(f), selected: f === Number(last.scale) }, `${f}× – ${Math.round(w * f)} × ${Math.round(hh * f)} px`)));
+  return new Promise((res) => {
+    modal({ title: "Rendern", width: 420, onClose: (v) => res(v ?? null),
+      body: h("div", { class: "form-grid" },
+        h("label", {}, "Hintergrund", bg), h("label", {}, "Bildgröße", sc),
+        h("p", { class: "hint" }, "Ausschnitt und Blickrichtung wie im 3D-Fenster.")),
+      buttons: [{ label: "Abbrechen" }, { label: "Rendern", primary: true, run: () => {
+        const o = { bg: bg.value, scale: Number(sc.value) };
+        try { localStorage.setItem(RENDER_KEY, JSON.stringify(o)); } catch { /* */ }
+        return o;
+      } }] });
+  });
 }
