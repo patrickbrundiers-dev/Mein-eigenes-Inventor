@@ -53,7 +53,7 @@ import { familyOf, lengthsFor } from "../core/normlib.js";
 import { normLibraryDialog } from "./normlib.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
-import { bodiesMass, hasOwnDensity } from "../core/mass.js";
+import { bodiesMass, hasOwnDensity, massOverride, orderBomRows } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
@@ -423,12 +423,13 @@ export class Props {
       const bb = unionBox(r.bodies.map((b) => b.props?.bbox).filter(Boolean));
       out.push(this.section("Masse-Eigenschaften", h("dl", { class: "kv" },
         h("dt", {}, "Volumen"), h("dd", {}, fmtNum(vol / 1000, 2) + " cm³"),
-        h("dt", {}, "Masse"), h("dd", {}, fmtNum(bodiesMass(r.bodies, dens), 3) + " kg"),
+        h("dt", {}, "Masse"), h("dd", {}, fmtNum(bodiesMass(r.bodies, dens), 3) + " kg" + (massOverride(part) != null ? ` (berechnet), Stückliste: ${fmtNum(massOverride(part), 3)} kg` : "")),
         h("dt", {}, "Dichte"), h("dd", {}, fmtNum(dens, 2) + " g/cm³" + (hasOwnDensity(r.bodies) ? " (Glas, Gitterrost, Holz eigene)" : "")),
         h("dt", {}, "Oberfläche"), h("dd", {}, fmtNum(r.bodies.reduce((s, b) => s + (b.props?.area || 0), 0) / 100, 2) + " cm²"),
         centerOf(r.bodies) ? [h("dt", {}, "Schwerpunkt"), h("dd", {}, centerOf(r.bodies).map((v) => fmtNum(v, 1)).join(" / ") + " mm")] : null,
         bb ? [h("dt", {}, "Abmessungen"), h("dd", {}, `${fmtNum(bb[1][0] - bb[0][0], 1)} × ${fmtNum(bb[1][1] - bb[0][1], 1)} × ${fmtNum(bb[1][2] - bb[0][2], 1)}`)] : null,
         h("dt", {}, "Körper"), h("dd", {}, String(r.bodies.length))),
+        this.text("Masse für Stückliste (kg, leer = berechnet)", part.massOverride, (v) => app.edit("Masse von Hand", () => { part.massOverride = v.trim() ? v.trim().replace(",", ".") : undefined; }, { rebuild: false }), { placeholder: "z. B. Kaufteil laut Datenblatt" }),
         this.inertiaBlock(r, dens, vol)));
       const members = r.bodies.filter((b) => b.kind === "member");
       if (members.length) {
@@ -2416,14 +2417,29 @@ export class Props {
   bomDialog() {
     const app = this.app;
     const asm = app.activeDoc();
-    const rows = bomRows(app, asm);
     const docOf = (id) => app.doc(id);
     const nested = asm.components.some((c) => docOf(c.part)?.kind === "assembly");
     const body = h("div", {});
+    // Reihenfolge fest einstellen (W5): gilt für Positionsnummern, Listen und Excel
+    const reorder = (label, fn) => { app.edit(label, () => { asm.bomOrder = fn(bomRows(app, asm).filter((r) => r.part).map((r) => r.part.id)); }, { rebuild: false }); show("menge"); };
+    const sortBy = (key) => reorder("Stückliste sortieren", () => bomRows(app, asm).filter((r) => r.part).sort((a, b) => String(a[key] || "").localeCompare(String(b[key] || ""), "de", { numeric: true })).map((r) => r.part.id));
+    const move = (i, d) => reorder("Stückliste umsortieren", (ids) => { [ids[i], ids[i + d]] = [ids[i + d], ids[i]]; return ids; });
     const show = (form) => {
       if (form === "struktur") body.replaceChildren(structureTable(structureBom(asm, docOf), app));
       else if (form === "baukasten") body.replaceChildren(...modularBom(asm, docOf).map((x) => h("div", {}, h("h4", {}, x.asm.name), modularTable(x.rows, app))));
-      else body.replaceChildren(bomTable(rows));
+      else {
+        const rows = bomRows(app, asm), own = rows.filter((r) => r.part).length;
+        const t = bomTable(rows);
+        t.querySelector("thead tr")?.append(h("th", {}, ""));
+        [...t.querySelectorAll("tbody tr")].forEach((tr, i) => tr.append(h("td", {}, i < own ? [
+          h("button", { class: "btn", title: "nach oben", disabled: i === 0 ? true : undefined, onclick: () => move(i, -1) }, "↑"),
+          h("button", { class: "btn", title: "nach unten", disabled: i === own - 1 ? true : undefined, onclick: () => move(i, 1) }, "↓")] : null)));
+        body.replaceChildren(t, h("div", { class: "btn-row" },
+          h("button", { class: "btn", onclick: () => sortBy("number") }, "Nach Teilenummer"),
+          h("button", { class: "btn", onclick: () => sortBy("name") }, "Nach Benennung"),
+          asm.bomOrder?.length ? h("button", { class: "btn", onclick: () => { app.edit("Stückliste Reihenfolge", () => { delete asm.bomOrder; }, { rebuild: false }); show("menge"); } }, "Wie eingefügt") : null),
+          h("p", { class: "hint" }, "Die Reihenfolge bleibt gespeichert und bestimmt die Positionsnummern in Zeichnung, Listen und Excel. Normteile stehen immer am Ende. Masse von Hand (z. B. Kaufteil) im Bauteil unter Masse-Eigenschaften."));
+      }
     };
     const tabs = h("div", {});
     const setForm = (v) => { tabs.replaceChildren(this.seg("", [["menge", "Mengen"], ["struktur", "Struktur"], ["baukasten", "Baukasten"]], v, setForm)); show(v); };
@@ -2540,13 +2556,13 @@ export function bomRows(app, asm) {
     const own = (r?.bodies || []).filter((b) => !b.meta?.norm);
     if (r && r.bodies.length && !own.length) { norm.push({ bodies: r.bodies, qty: 1 }); continue; }
     if (r && own.length < r.bodies.length) norm.push({ bodies: r.bodies, qty: 1 });
-    const mass = r ? bodiesMass(own, materialOf(p.material).density) : NaN;
-    const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: p.material ? materialOf(p.material).label : "", finish: finishLabel(p), qty: 0, mass };
+    const mass = massOverride(p) ?? (r ? bodiesMass(own, materialOf(p.material).density) : NaN);
+    const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: p.material ? materialOf(p.material).label : "", finish: finishLabel(p), qty: 0, mass, massSet: massOverride(p) != null };
     row.qty++;
     map.set(p.id, row);
   }
   const normRows = collectNorm(norm).map((x) => ({ name: x.name, number: "", material: x.material, qty: x.qty, mass: x.mass, norm: true }));
-  return [...map.values(), ...normRows].map((r, i) => ({ ...r, pos: i + 1 }));
+  return orderBomRows([...map.values(), ...normRows], asm.bomOrder).map((r, i) => ({ ...r, pos: i + 1 }));
 }
 function bomTable(rows, compact = false) {
   return h("table", { class: "grid" },

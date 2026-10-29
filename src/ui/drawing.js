@@ -3,7 +3,7 @@ import { templateOf, extraFields, LINE_GROUPS, DIM_TEXT_SIZES, MAX_EXTRA, valida
 import { chainDims, alignRows, clockwiseOrder, alignBalloons, arcLength } from "../core/bemassung.js";
 import { h, svgEl, toast, modal, promptDialog, fmtNum, downloadBlob } from "./dom.js";
 import { classOf, toleranceText, validateTolerance, TOL_KINDS } from "../core/tolerance.js";
-import { bodiesMass } from "../core/mass.js";
+import { partMass } from "../core/mass.js";
 import { DxfWriter } from "../core/dxf.js";
 import { materialOf, materialList } from "../core/materials.js";
 import { finishLabel } from "../core/oberflaeche.js";
@@ -1476,7 +1476,7 @@ export class DrawingEditor {
     let mass = "", material = "";
     if (src?.kind === "part") {
       const r = this.app.results.get(src.id);
-      if (r) mass = fmtNum(bodiesMass(r.bodies, materialOf(src.material).density), 2) + " kg";
+      if (r) mass = fmtNum(partMass(src, r.bodies, materialOf(src.material).density), 2) + " kg";
       material = src.material ? materialOf(src.material).label : "";
     } else if (src?.kind === "assembly") {
       const rows = this.bomRowsOf(d);

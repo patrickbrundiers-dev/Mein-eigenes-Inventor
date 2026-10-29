@@ -23,7 +23,7 @@ import { releaseText } from "../core/pruefung.js";
 import { angebotPage } from "../core/angebot.js";
 import { LABEL_FORMATS, labelItems, labelPages, shippingPage, boxDims } from "../core/etiketten.js";
 import { bendListCsv } from "../core/biegerohr.js";
-import { bodiesMass } from "../core/mass.js";
+import { partMass } from "../core/mass.js";
 import { materialOf } from "../core/materials.js";
 import { finishLabel } from "../core/oberflaeche.js";
 import { listSheets } from "../core/lists.js";
@@ -559,7 +559,7 @@ export class Files {
     const app = this.app;
     if (d.kind === "assembly") return bomRows(app, d);
     const own = (app.results.get(d.id)?.bodies || []).filter((b) => !b.meta?.norm);
-    return [{ part: d, pos: 1, name: d.name, number: d.number || "", material: d.material ? materialOf(d.material).label : "", finish: finishLabel(d), qty: 1, mass: bodiesMass(own, materialOf(d.material).density) }];
+    return [{ part: d, pos: 1, name: d.name, number: d.number || "", material: d.material ? materialOf(d.material).label : "", finish: finishLabel(d), qty: 1, mass: partMass(d, own, materialOf(d.material).density) }];
   }
   /** Werkstatt-Etiketten mit QR-Code (W4) je Position oder je Zuschnitt, als PDF (Electron) bzw. HTML */
   async exportEtiketten(d = this.app.activeDoc()) {
@@ -641,7 +641,7 @@ export class Files {
     app.edit("Angebotsangaben", () => { d.angebot = { ...v }; }, { rebuild: false });
     await this.withBusy("Angebotsblatt", async () => {
       await app.builtParts(d);
-      const rows = d.kind === "assembly" ? bomRows(app, d) : [{ part: d, qty: 1, mass: bodiesMass((app.results.get(d.id)?.bodies || []).filter((b) => !b.meta?.norm), materialOf(d.material).density) }];
+      const rows = d.kind === "assembly" ? bomRows(app, d) : [{ part: d, qty: 1, mass: partMass(d, (app.results.get(d.id)?.bodies || []).filter((b) => !b.meta?.norm), materialOf(d.material).density) }];
       const own = rows.filter((r) => r.part);
       const uniq = (a) => [...new Set(a.filter(Boolean))];
       const viewer = app.viewer, prev = viewer.displayMode;
