@@ -284,10 +284,18 @@ export const TREPPE = {
       const fr = p.podestRahmen, frRot = orientRot(fr, [1, 0, 0], [0, 0, 1], { tall: [0, 0, 1], open: [0, -1, 0], legs: [0, Math.SQRT1_2, -Math.SQRT1_2], stem: [0, 0, -1] });
       const { high: fh, wide: fw } = rotExtent(fr, frRot), zf = zP - tt - fh / 2;
       const rx0 = x1 + fw / 2, rx1 = x1 + D - fw / 2, ry0 = yLo + fw / 2, ry1 = yHi - fw / 2;
-      chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[rx0, ry0, zf], [rx1, ry0, zf], [rx1, ry1, zf], [rx0, ry1, zf], [rx0, ry0, zf]], name: "Podestrahmen", up: [0, 0, 1], rot: frRot });
       // Podestwange in einem Stück (O6, wie Tekla S71): die äußere Flachstahlwange läuft waagrecht ums Podest weiter –
-      // Achse in Höhe der Podestrahmen-Mitte, Stöße auf Gehrung geschnitten und verschweißt
-      if (p.podestWange && p.support === "flach") {
+      // Achse in Höhe der Podestrahmen-Mitte, Stöße auf Gehrung geschnitten und verschweißt. Sie trägt das Podest außen:
+      // der Rahmen bleibt nur an den Lauf-Seiten (stumpf an die Wange), die Stützen stehen unter der Wange
+      const PW_ON = !!(p.podestWange && p.support === "flach");
+      const outerY = !PW_ON ? [] : p.form === "U" ? [yLo, yHi] : [left ? yLo : yHi];
+      if (!PW_ON) chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[rx0, ry0, zf], [rx1, ry0, zf], [rx1, ry1, zf], [rx0, ry1, zf], [rx0, ry0, zf]], name: "Podestrahmen", up: [0, 0, 1], rot: frRot });
+      else if (p.form === "U") chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[rx0, yLo, zf], [rx0, yHi, zf]], name: "Podestrahmen", up: [0, 0, 1], rot: frRot });
+      else {
+        const yIn = left ? ry1 : ry0, yOut = left ? yLo : yHi;
+        chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[x1 + D, yIn, zf], [rx0, yIn, zf], [rx0, yOut, zf]], name: "Podestrahmen", up: [0, 0, 1], rot: frRot });
+      }
+      if (PW_ON) {
         const o = left ? 0 : 1, yo = ys[o], zh = zf, unit = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); };
         const xk1 = (zh - c) / tanA, xk2 = (zh - zP - c) / tanA;
         if (!(xk1 > x1 - D / 2 && -xk2 < (p.form === "L" ? B : D) - 1)) throw fieldError("Podestwange: Wange und Podestrahmen passen in der Höhe nicht zusammen", "podestRahmen");
@@ -302,21 +310,32 @@ export const TREPPE = {
         for (let i = 0; i < pts.length - 1; i++) {
           const da = i ? dir(i - 1) : d1, db = dir(i), dc = i < pts.length - 2 ? dir(i + 1) : d2, e = depth * 2;
           const a = pts[i].map((x, k) => x - db[k] * e), b = pts[i + 1].map((x, k) => x + db[k] * e);
-          members.push({ section: sec, a, b, name: `${sideNames[o]} Podest ${i + 1}`, up: [0, 0, 1], rot: orientRot(sec, db, [0, 0, 1], { tall: [0, 0, 1] }),
+          members.push({ section: sec, a, b, name: `Podestwange ${sideNames[o].split(" ")[1]} ${i + 1}`, up: [0, 0, 1], rot: orientRot(sec, db, [0, 0, 1], { tall: [0, 0, 1] }),
             cuts: { start: [{ p: pts[i], n: miter(da, db).map((x) => -x) }], end: [{ p: pts[i + 1], n: miter(db, dc) }] } });
         }
         geo.podestWange = pts.length - 1;
+        geo.podestKnick = k2[1];
       }
       if (p.stuetzen !== "keine") {
         const st = p.stuetze, sw = Math.max(st.geom.width, st.geom.height) / 2;
         const zTop = zP - tt - fh;
         if (!(zTop > 100)) throw fieldError("Podest zu niedrig für Stützen", "height");
-        const corners = [[x1 + D - sw, yLo + sw], [x1 + D - sw, yHi - sw]];
+        let corners = [[x1 + D - sw, yLo + sw], [x1 + D - sw, yHi - sw]];
         if (p.stuetzen === "alle") corners.push([x1 + sw, yLo + sw], [x1 + sw, yHi - sw]);
+        // Podestwange (O6): Stützen an der Wange stehen unter ihr (Mitte auf der Wangenachse), Oberkante = Unterkante Wange
+        const tops = corners.map(() => zTop);
+        if (PW_ON) corners = corners.map(([x, y], i) => {
+          const onX = x > x1 + D / 2, yEdge = y < (yLo + yHi) / 2 ? yLo : yHi, onY = outerY.includes(yEdge);
+          if (!onX && !onY) return [x, y];
+          tops[i] = zf - depth / 2;
+          // L-Form: die Ecke ohne Wange längs y liegt hinter dem Knick zum Lauf 2 – Stütze davor unter die Wange
+          const yk = geo.podestKnick, yy = !onY && yk != null ? yk + (yEdge === yHi ? -sw : sw) : y;
+          return [onX ? x1 + D + wt / 2 : x, onY ? yEdge + (yEdge === yLo ? -wt / 2 : wt / 2) : yy];
+        });
         // Stützen auf Fußplatten (4 × Ø 14 für Dübel/Anker M12), oben unter den Podestrahmen geschweißt
         const bs = 2 * sw + 100, ft = AN ? FT : 0;
         corners.forEach(([x, y], i) => {
-          members.push({ section: st, a: [x, y, FT], b: [x, y, zTop], name: `Podeststütze ${i + 1}`, up: [1, 0, 0] });
+          members.push({ section: st, a: [x, y, FT], b: [x, y, tops[i]], name: `Podeststütze ${i + 1}`, up: [1, 0, 0] });
           if (AN) plates.push({ center: [x, y, 0], xDir: [1, 0, 0], normal: [0, 0, 1], W: bs, H: bs, t: FT, holes: [[-bs / 2 + 25, -bs / 2 + 25], [bs / 2 - 25, -bs / 2 + 25], [bs / 2 - 25, bs / 2 - 25], [-bs / 2 + 25, bs / 2 - 25]], d: 14, name: `Podeststütze ${i + 1} Bodenplatte` });
         });
       }

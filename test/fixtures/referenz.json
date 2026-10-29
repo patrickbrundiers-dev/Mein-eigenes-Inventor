@@ -1343,8 +1343,21 @@
  },
  "Tor": {
   "errors": [],
-  "count": 67,
+  "count": 69,
   "bodies": [
+   {
+    "name": "Bodenriegel",
+    "kind": "solid",
+    "volume": 108357.868,
+    "box": [
+     1399.5,
+     -41,
+     10,
+     1490.5,
+     -20,
+     460
+    ]
+   },
    {
     "name": "Flügel links Anschlagleiste",
     "kind": "solid",
@@ -2385,6 +2398,19 @@
     ]
    },
    {
+    "name": "Kastenschloss",
+    "kind": "solid",
+    "volume": 524912.388,
+    "box": [
+     1492.5,
+     -105,
+     970,
+     1632.5,
+     -20,
+     1130
+    ]
+   },
+   {
     "name": "Pfostenkappe links",
     "kind": "solid",
     "volume": 40000,
@@ -2602,7 +2628,7 @@
    }
   ],
   "notes": [
-   "Doppeltor, Flügel 1478 mm breit, 22 Stäbe, Scheitel 1500 mm, 4 Torbänder Ø 15 × 120"
+   "Doppeltor, Flügel 1478 mm breit, 22 Stäbe, Scheitel 1500 mm, 4 Torbänder Ø 15 × 120, Kastenschloss Dorn 60, Bodenriegel (Bodenhülse Ø 20 bauseits)"
   ]
  },
  "Treppe": {

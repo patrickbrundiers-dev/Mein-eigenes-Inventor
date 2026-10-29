@@ -116,7 +116,7 @@ export const STUETZENFUSS = {
       for (const d of set) while (rest >= d - 1e-6 && stack.length < 12) { stack.push(d); rest -= d; }
       if (!stack.length) throw new Error(`Mörtelfuge ${fmt(g)} mm dünner als das dünnste Futterblech`);
       if (rest > 0.5) issues.push({ key: "shimSet", level: "Hinweis", message: `Futterbleche ${stack.map(fmt).join(" + ")} mm, ${fmt(rest)} mm bleiben bis zum Fundament (Mörtel)` });
-      const a = wa.a, h = a / 2, r = (th.d + 2) / 2, arc = Array.from({ length: 7 }, (_, k) => { const t = -Math.PI / 2 - (k * Math.PI) / 6; return [r * Math.cos(t), r * Math.sin(t)]; });
+      const a = wa.a, h = a / 2, r = d0 / 2, arc = Array.from({ length: 7 }, (_, k) => { const t = -Math.PI / 2 - (k * Math.PI) / 6; return [r * Math.cos(t), r * Math.sin(t)]; });
       const poly = [[-h, -h], [h, -h], [h, -r], ...arc, [h, r], [h, h], [-h, h]];
       pts.forEach(([x, y], i) => {
         const xDir = Math.abs(x) >= L / 2 - e - 1 ? [Math.sign(x), 0, 0] : [0, Math.sign(y), 0];

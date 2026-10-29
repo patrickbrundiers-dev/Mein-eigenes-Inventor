@@ -285,15 +285,15 @@ test("O5: Kastenschloss, Bodenriegel, Torfeststeller am Tor", () => {
 // ---------- O6–O9: Podestwange, Voute, Knotenblech, Futterbleche ----------
 test("O6: äußere Wange läuft ums Podest weiter (Gehrung an den Stößen)", () => {
   const L = plan("treppe", { form: "L", podestWange: true });
-  const pw = L.members.filter((m) => /^Wange rechts Podest \d$/.test(m.name));
+  const pw = L.members.filter((m) => /^Podestwange rechts \d$/.test(m.name));
   assert.equal(pw.length, 2);
   const w1 = L.members.find((m) => m.name === "Wange rechts Lauf 1"), w2 = L.members.find((m) => m.name === "Wange rechts Lauf 2");
   assert.ok(near(w1.cuts.end[0].p, pw[0].cuts.start[0].p), "Stoß Lauf 1 – Podest");
   assert.ok(near(w2.cuts.start[0].p, pw[1].cuts.end[0].p), "Stoß Podest – Lauf 2");
   assert.ok(near(w1.cuts.end[0].n, pw[0].cuts.start[0].n.map((x) => -x)), "gleiche Gehrungsebene");
   const U = plan("treppe", { form: "U", podestWange: true, turn: "rechts", gap: "200" });
-  assert.equal(U.members.filter((m) => /^Wange links Podest \d$/.test(m.name)).length, 3);
-  assert.equal(plan("treppe", { form: "L" }).members.filter((m) => / Podest \d$/.test(m.name)).length, 0);
+  assert.equal(U.members.filter((m) => /^Podestwange links \d$/.test(m.name)).length, 3);
+  assert.equal(plan("treppe", { form: "L" }).members.filter((m) => /^Podestwange/.test(m.name)).length, 0);
 });
 
 test("O7: Rahmenecke mit Voute: Gurt, Steg, Stirnplatte bis unter die Voute, vierte Schraubenreihe", () => {

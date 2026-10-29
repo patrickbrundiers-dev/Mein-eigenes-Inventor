@@ -341,7 +341,8 @@ F.kastenschloss = beschlag({ label: "Kastenschloss zum Aufschweißen (Tor)", nou
   build: (m) => [box(m.w, m.h, m.t), cyl(18, 60, m.t, { x: -m.w / 2 + 30, y: 25 }), box(110, 18, 16, m.t + 44, { x: -m.w / 2 + 30 + 55, y: 25 })] });
 F.bodenriegel = beschlag({ label: "Bodenriegel für Torflügel", noun: "Bodenriegel", alias: ["Stangenriegel", "Fallriegel"], grades: ["verzinkt", "A2"], def: { size: "Ø16 x 450" },
   sizes: { "Ø16 x 450": { d: 16, L: 450 }, "Ø20 x 600": { d: 20, L: 600 } },
-  build: (m) => { const D = m.d + 10, y = D / 2, sl = (z) => [cyl(D, 30, z), box(D, 2, 30, z, { y: y - 1 })]; return [cyl(m.d, m.L), ...sl(m.L * 0.35), ...sl(m.L * 0.85), cyl(12, 70, m.L - 20, { axis: "x" })]; } });
+  // Stange, zwei Führungslaschen an der Anschweißseite (+y, bündig mit Ø d + 10), Griff seitlich am oberen Ende
+  build: (m) => { const D = m.d + 10, sl = (z) => box(D, (D - m.d) / 2, 30, z, { y: (D + m.d) / 4 }); return [cyl(m.d, m.L), sl(m.L * 0.35), sl(m.L * 0.85), box(70, 12, 12, m.L - 26, { x: m.d / 2 + 35 })]; } });
 F.torfeststeller = beschlag({ label: "Torfeststeller (Bodenteil)", noun: "Torfeststeller", alias: ["Feststeller", "Torhalter"], grades: ["verzinkt", "A2"], def: { size: "Standard" },
   sizes: { Standard: { w: 100, d: 70, t: 6, h: 45 }, "schwer": { w: 120, d: 80, t: 8, h: 60 } },
   build: (m) => [box(m.w, m.d, m.t), box(8, m.d, m.h, m.t, { x: -16 }), box(8, m.d, m.h, m.t, { x: 16 }), ...[-m.w / 2 + 15, m.w / 2 - 15].map((x) => cut(cyl(9, m.t + 2, -1, { x, vol: (Math.PI / 4) * 81 * m.t })))] });
