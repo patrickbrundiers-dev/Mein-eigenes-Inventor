@@ -1454,19 +1454,28 @@ export function createKernel(R) {
           }
           case "fillet":
           case "chamfer": {
-            const r = E(f.radius, f.type === "fillet" ? "Radius" : "Abstand");
-            if (!(r > 0)) throw new Error("Wert muss > 0 sein");
+            const r0 = E(f.radius, f.type === "fillet" ? "Radius" : "Abstand");
+            if (!(r0 > 0)) throw new Error("Wert muss > 0 sein");
+            // Variable Rundung (W8): [Anfang, Ende] je Kante, Anfang = kleinere Koordinate in der Hauptrichtung der Kante
+            const r2 = f.type === "fillet" && f.variable ? E(f.radius2 || f.radius, "Radius Ende") : null;
+            if (r2 != null && !(r2 > 0)) throw new Error("Radius Ende muss > 0 sein");
+            const r = r2 != null && Math.abs(r2 - r0) > 1e-9 ? (e) => {
+              const d = v3.sub(tuple(e.endPoint), tuple(e.startPoint));
+              if (Math.hypot(...d) < 1e-6) return r0; // geschlossene Kante (Kreis): fest
+              const k = [0, 1, 2].reduce((m, i) => (Math.abs(d[i]) > Math.abs(d[m]) ? i : m), 0);
+              return (d[k] >= 0) !== !!f.flip ? [r0, r2] : [r2, r0];
+            } : () => r0;
             let total = 0, miss = 0;
             for (const b of state.bodies) {
               const seams = seamEdges(b.shape);
               let fn;
-              if (f.mode === "all") fn = () => r;
+              if (f.mode === "all") fn = (e) => r(e);
               else if (f.mode === "dir") {
                 const ax = AXES[f.dir || "Z"];
                 fn = (e) => {
                   if (e.geomType !== "LINE") return null;
                   const d = v3.norm(v3.sub(tuple(e.endPoint), tuple(e.startPoint)));
-                  return Math.abs(Math.abs(v3.dot(d, ax)) - 1) < 1e-6 ? r : null;
+                  return Math.abs(Math.abs(v3.dot(d, ax)) - 1) < 1e-6 ? r(e) : null;
                 };
               } else {
                 const bb = b.shape.boundingBox;
@@ -1478,7 +1487,7 @@ export function createKernel(R) {
                 if (!found.length) continue;
                 fn = (e) => {
                   const m = edgeMid(e);
-                  return found.some((p) => v3.dist(p, m) < 1e-5) ? r : null;
+                  return found.some((p) => v3.dist(p, m) < 1e-5) ? r(e) : null;
                 };
               }
               let any = false;

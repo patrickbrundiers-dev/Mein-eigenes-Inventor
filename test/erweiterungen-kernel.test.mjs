@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createKernel } from "../src/kernel/build.js";
+import { rectSketchFeature } from "../src/core/examples.js";
 
 const require = createRequire(import.meta.url);
 const R = await import("replicad");
@@ -135,4 +136,19 @@ test("W7 Biegefolge: Kantteil liefert Querschnitt mit scharfen Ecken (außen bem
   assert.deepEqual(pr.angles, [90, 90]);
   // außen 40/100/40 → Mittellinie 39/98/39
   near(pr.legs[0], 39, 1e-6, "Schenkel 1"); near(pr.legs[1], 98, 1e-6, "Steg"); near(pr.legs[2], 39, 1e-6, "Schenkel 3");
+});
+
+test("W8 Variable Rundung: Radius 2 → 10 entlang einer Kante, Volumen zwischen den festen Rundungen", async () => {
+  const sk = rectSketchFeature("s", "XY", 0, 0, 0, "100", "40");
+  const ex = { id: "e", type: "extrude", sketch: "s", distance: "40" };
+  const sel = { mode: "dir", dir: "X" };
+  const fixed = async (r) => vol(await K.buildPart(part([sk, ex, { id: "f", type: "fillet", radius: String(r), ...sel }])));
+  const v2 = await fixed(2), v10 = await fixed(10);
+  const res = await K.buildPart(part([sk, ex, { id: "f", type: "fillet", radius: "2", radius2: "10", variable: true, ...sel }]));
+  okAll(res);
+  const v = vol(res);
+  assert.ok(v < v2 - 1 && v > v10 + 1, `${v10} < ${v} < ${v2}`);
+  const flip = await K.buildPart(part([sk, ex, { id: "f", type: "fillet", radius: "2", radius2: "10", variable: true, flip: true, ...sel }]));
+  okAll(flip);
+  near(vol(flip), v, 1, "umgekehrt gleiches Volumen");
 });

@@ -1160,7 +1160,11 @@ export class Props {
         const isF = f.type === "fillet";
         const picking = app.pick?.kind === "edges" && app.pick.feature === f.id;
         out.push(this.section(isF ? "Rundung" : "Fase",
-          E(isF ? "Radius" : "Abstand", "radius", { allowNeg: false, allowZero: false }),
+          isF ? this.seg("Radius", [["fest", "fest"], ["variabel", "variabel (Anfang → Ende)"]], f.variable ? "variabel" : "fest", (v) => this.set(f, (x) => { if (v === "variabel") { x.variable = true; x.radius2 = x.radius2 || x.radius; } else delete x.variable; }, "Radius")) : null,
+          E(isF ? (f.variable ? "Radius Anfang" : "Radius") : "Abstand", "radius", { allowNeg: false, allowZero: false }),
+          isF && f.variable ? E("Radius Ende", "radius2", { allowNeg: false, allowZero: false }) : null,
+          isF && f.variable ? this.seg("Anfang", [["", "kleinere Koordinate"], ["1", "größere Koordinate"]], f.flip ? "1" : "", (v) => this.set(f, (x) => { if (v) x.flip = true; else delete x.flip; }, "Anfang")) : null,
+          isF && f.variable ? h("p", { class: "hint" }, "Der Radius ändert sich gleichmäßig entlang jeder Kante. Anfang = Kantenende mit der kleineren Koordinate in der Hauptrichtung der Kante (z. B. links bzw. unten).") : null,
           this.seg("Kanten", [["edges", "Gewählte"], ["dir", "Richtung"], ["all", "Alle"]], f.mode || "edges", (v) => { this.set(f, "mode", v, "Modus"); app.selectFeature(f.id); }),
           f.mode === "dir" ? this.seg("Parallel zu", [["X", "X"], ["Y", "Y"], ["Z", "Z"]], f.dir || "Z", (v) => this.set(f, "dir", v, "Richtung")) : null,
           (f.mode || "edges") === "edges" ? h("div", { class: picking ? "picking" : "" },
