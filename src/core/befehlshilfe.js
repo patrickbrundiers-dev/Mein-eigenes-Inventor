@@ -169,6 +169,8 @@ export const BEFEHLSHILFE = {
   dv_bo: "Bereich einer Ansicht aufbrechen, um innenliegende Teile zu zeigen.",
   dd_dim: "Längen-, Winkel-, Radius- oder Durchmessermaß setzen.",
   dd_chain: "Mehrere Maße als Kette aneinanderreihen.",
+  dd_angle: "Winkelmaß zwischen zwei Kanten: erste Kante, dann zweite Kante anklicken.",
+  dd_clean: "Doppelte Maße und Maße ohne Ansicht entfernen, Maße ausrichten.",
   dd_base: "Mehrere Maße von einer gemeinsamen Bezugskante aus.",
   dd_arclen: "Länge eines Bogens bemaßen.",
   dd_center: "Mittellinien und Mittelpunktkreuze an Bohrungen setzen.",
