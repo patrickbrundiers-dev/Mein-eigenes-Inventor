@@ -117,10 +117,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .rb-hidden { align-self: center; margin: 0 6px; padding: 2px 6px; font: 600 var(--fs-xs) var(--din); color: var(--text-faint); background: none; border: 1px dashed var(--steel-3); border-radius: var(--radius-s); cursor: pointer; }
 .rb-hidden:hover { color: var(--dye); border-color: var(--dye); }
 .rb-list .chk { display: flex; align-items: center; gap: 6px; }
-.rb-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 54px; max-width: 104px; padding: 4px 4px 2px; border: 1px solid transparent; background: transparent; border-radius: var(--radius-s); cursor: pointer; font-size: var(--fs-s); line-height: 1.15; text-align: center; overflow-wrap: break-word; }
+.rb-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 54px; max-width: 76px; padding: 4px 4px 2px; border: 1px solid transparent; background: transparent; border-radius: var(--radius-s); cursor: pointer; font-size: var(--fs-s); line-height: 1.15; text-align: center; overflow-wrap: break-word; }
 .rb-btn svg { width: 26px; height: 26px; flex: none; }
 .rb-btn { flex: none; } /* nicht stauchen: Wörter wie »Bohrungstabelle« ragten sonst in den Nachbarknopf; zu breit → Menüband rollt */
-.rb-btn > span { max-width: 100%; }
+.rb-btn > span { max-width: 100%; hyphens: auto; }
 .rb-btn:hover:not(:disabled) { background: var(--dye-soft); border-color: color-mix(in srgb, var(--dye) 35%, transparent); }
 .rb-btn.on { background: var(--laser-soft); border-color: color-mix(in srgb, var(--laser) 55%, transparent); }
 .rb-btn:disabled { opacity: .4; cursor: default; }
