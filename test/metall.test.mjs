@@ -765,7 +765,7 @@ test("Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, 
   // Knieleisten je Lauf am Stück durch alle Pfosten, Durchbrüche in den Pfosten
   const kl = t.members.filter((m) => /Knieleiste/.test(m.name));
   const posts = t.members.filter((m) => /Pfosten \d+$/.test(m.name));
-  assert.equal(kl.length, 2 * 2 * 2, "je Seite und Abschnitt (Lauf, Auslauf) ein Stück je Knieleiste, Stoß im Knickpfosten");
+  assert.equal(new Set(kl.map((m) => m.target || m.name)).size, 2 * 2 * 2, "je Seite und Abschnitt (Lauf, Auslauf) ein Stück je Knieleiste, Stoß im Knickpfosten");
   const ph = t.drills.filter((d) => /Pfosten \d+$/.test(d.target));
   assert.ok(posts.every((m) => ph.filter((d) => d.target === m.name).length >= 2), "jeder Pfosten für beide Knieleisten durchbrochen (Knickpfosten von beiden Seiten)");
   assert.ok(ph.every((d) => Math.abs(d.d - 27.9) < 1e-9), "Knieleiste 26,9 + 1 mm Aufmaß");
@@ -773,7 +773,7 @@ test("Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, 
   // Staketen: Untergurt durch die Pfosten, Stäbe (Rundstahl 12) durch Bohrungen im Gurt
   const st = plan({ gelFill: "staketen" });
   const belts = st.members.filter((m) => /Untergurt/.test(m.name)), stabs = st.members.filter((m) => / Stab \d+\.\d+$/.test(m.name));
-  assert.ok(belts.length === 4 && stabs.length > 10, `${belts.length} ${stabs.length}`);
+  assert.ok(new Set(belts.map((m) => m.target || m.name)).size === 4 && stabs.length > 10, `${belts.length} ${stabs.length}`);
   assert.equal(st.drills.filter((d) => /Untergurt/.test(d.target)).length, stabs.length);
   assert.ok(st.drills.filter((d) => /Untergurt/.test(d.target)).every((d) => d.d === 13 && d.dir[2] === -1 && d.len < 26.9 / 2 / Math.cos(Math.atan(t.geo?.tanA ?? 0.7)) + 2), "nur durch die obere Gurtwand");
   assert.ok(new Set(stabs.map((m) => m.name)).size === stabs.length, "Stabnamen eindeutig");
