@@ -2474,6 +2474,8 @@ try {
       while (a.busy) await new Promise((r) => setTimeout(r, 100));
       const r1 = a.results.get(d.id);
       const rolled = Object.values(r1.status).filter((s) => s.rolledBack).length;
+      d.features.forEach((f) => a.tree.expanded.add("kids:" + f.id)); // eingerückte Skizzen mitzählen
+      a.tree.render();
       const greyed = document.querySelectorAll("#browser .node.suppressed").length;
       const marker = !!document.querySelector("#browser .node.part-end.rolled");
       const sk = a.createSketch({ ref: "XY" });
@@ -3492,7 +3494,7 @@ try {
     await evalApp((srcId) => { const a = window.__werkcad; const asm = a.newAssembly(); a.edit("Bauteil", () => asm.components.push({ id: "cm1", part: srcId, name: "Winkel links:1", pos: [100, 0, 0], rot: [0, 0, 0] })); a.sel = { type: "component", id: "cm1" }; }, q);
     await idle(60000);
     await evalApp(() => window.__werkcad.props.mirrorComponent("cm1"));
-    await page.locator(".dialog button", { hasText: /^an YZ$/ }).click();
+    await page.locator(".dialog button", { hasText: /^Spiegeln$/ }).click(); // Vorgabe: YZ-Ebene, gewählte Komponente angehakt
     await idle(60000);
     const mc = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); const c = asm.components.at(-1), p = a.doc(c.part); return { n: asm.components.length, pos: c.pos, part: p?.name, type: p?.features?.[0]?.type, normal: p?.features?.[0]?.mirrorN }; });
     await shot("42-komponente-gespiegelt");
@@ -3676,6 +3678,134 @@ try {
     await idle(60000);
     const d46 = await evalApp(({ pl, ri }) => { const a = window.__werkcad; return [a.doc(pl), a.doc(ri)].map((d) => d.features.filter((f) => f.steck).length); }, ids);
     step("Stecksystem in der Baugruppe", /3 Zapfen 20 × 4 mm/.test(s46.info) && s46.z === "steckzapfen" && s46.s === "steckschlitz" && s46.zs === true && /3 Schlitze aus/.test(s46.ss || "") && s46.tree && d46[0] === 0 && d46[1] === 0, JSON.stringify({ s46, d46 }));
+  }
+
+  // ---- Baugruppenerstellung BG1–BG6: Platzieren mit Vorschau, Freiheitsgrade, Ziehen, Alt-Ziehen ----
+  {
+    await evalApp(() => { window.__werkcad.newAssembly(); });
+    await idle();
+    await page.locator("#ribbon .rb-tab", { hasText: "Zusammenfügen" }).click();
+    await rbClick("Platzieren");
+    await page.locator(".place-item", { hasText: "Grundplatte" }).first().click();
+    await idle();
+    const cvb = await page.locator("#viewport canvas, canvas").first().boundingBox();
+    const at = [cvb.x + cvb.width * 0.75, cvb.y + cvb.height * 0.3];
+    await page.mouse.move(at[0], at[1]);
+    await page.waitForTimeout(200);
+    const ghost = await evalApp(() => !!window.__werkcad.viewer.placeGhost);
+    await page.mouse.click(at[0], at[1]);
+    await idle();
+    await page.mouse.click(at[0], at[1], { button: "right" });
+    const pl = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { n: asm.components.length, fixed: !!asm.components[0].fixed, pick: a.pick?.kind || null, ghost: !!a.viewer.placeGhost }; });
+    // Fläche an Fläche → 2 Verschiebungen und 1 Drehung frei, Pfeile an der Auswahl
+    const dof = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc(), [c1, c2] = asm.components;
+      const fs = a.planarFaces(c1.part);
+      a.beginAlign("gegen");
+      a.align.gap = "0"; // Versatz bleibt wie in Inventor vom letzten Mal stehen
+      a.alignPick({ kind: "face", key: "comp:" + c2.id, info: fs.find((f) => f.normal[2] < -0.99) });
+      a.alignPick({ kind: "face", key: "comp:" + c1.id, info: fs.find((f) => f.normal[2] > 0.99) });
+      a.sel = { type: "component", id: c2.id }; a.refreshSelectionHits(); a.tree.render(); a.props.render();
+      return { z: c2.pos[2], top: fs.find((f) => f.normal[2] > 0.99).point[2], bot: fs.find((f) => f.normal[2] < -0.99).point[2], glyph: !!a.viewer.dofGlyph, meta: [...document.querySelectorAll("#browser .node")].some((n) => /Grundplatte:2.*2 V · 1 D frei/.test(n.textContent)) };
+    });
+    await idle();
+    await shot("bg-freiheitsgrade");
+    // Ziehen mit der Maus: bleibt auf der Fläche
+    const scr = (cid) => evalApp((id) => { const a = window.__werkcad, b = a.viewer.componentBox(id), c = b[0].map((x, i) => (x + b[1][i]) / 2); c[2] = b[1][2]; return a.viewer.worldToScreen(c); }, cid);
+    const ids = await evalApp(() => window.__werkcad.activeDoc().components.map((c) => c.id));
+    const R = await page.locator("canvas").first().boundingBox();
+    let s0 = await scr(ids[1]);
+    const before = await evalApp((id) => window.__werkcad.activeDoc().components.find((c) => c.id === id).pos, ids[1]);
+    await page.mouse.move(R.x + s0[0], R.y + s0[1]); await page.mouse.down();
+    for (let i = 1; i <= 8; i++) await page.mouse.move(R.x + s0[0] + i * 10, R.y + s0[1] + i * 6);
+    await page.mouse.up();
+    await idle();
+    const after = await evalApp((id) => window.__werkcad.activeDoc().components.find((c) => c.id === id).pos, ids[1]);
+    // Alt-Ziehen: dritte Platte mit ihrer Oberseite auf Platte 1 fügen
+    await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); a.edit("Dritte", () => asm.components.push({ id: "bg3", part: asm.components[0].part, name: "Grundplatte:3", pos: [-300, -250, 0], rot: [0, 0, 0] })); });
+    await idle();
+    await evalApp(() => window.__werkcad.viewer.fit());
+    await page.waitForTimeout(600);
+    s0 = await scr("bg3");
+    const s1 = await scr(ids[0]);
+    await page.keyboard.down("Alt");
+    await page.mouse.move(R.x + s0[0], R.y + s0[1]); await page.mouse.down();
+    for (let i = 1; i <= 12; i++) await page.mouse.move(R.x + s0[0] + ((s1[0] - s0[0]) * i) / 12, R.y + s0[1] + ((s1[1] - s0[1]) * i) / 12 + 20);
+    await page.waitForTimeout(300);
+    await shot("bg-alt-ziehen");
+    await page.mouse.up();
+    await page.keyboard.up("Alt");
+    await idle();
+    const q = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === "bg3"); return { z: c.pos[2], n: asm.constraints.length, last: asm.constraints.at(-1)?.type, err: Object.keys(a.asmErrors || {}).length }; });
+    step("Baugruppe: Platzieren mit Vorschau, Freiheitsgrade, Ziehen, Alt-Ziehen", ghost && pl.n === 2 && pl.fixed && !pl.pick && !pl.ghost && Math.abs(dof.z - (dof.top - dof.bot)) < 1e-6 && dof.glyph && dof.meta
+      && Math.abs(after[2] - dof.z) < 1e-6 && Math.hypot(after[0] - before[0], after[1] - before[1]) > 1 && q.n === 2 && q.last === "gegen" && Math.abs(q.z - 2 * dof.top) < 1e-6 && q.err === 0, JSON.stringify({ ghost, pl, dof, before, after, q }));
+  }
+
+  // ---- Baugruppenerstellung BG7–BG11: Lochbild-Muster, Fügepunkte, Unterbaugruppe, Spiegeln ----
+  {
+    await evalApp(() => {
+      const a = window.__werkcad, asm = a.newAssembly();
+      a.edit("Komponenten", () => {
+        asm.components.push({ id: "lp", part: "beispiel_platte", name: "Platte:1", pos: [0, 0, 0], rot: [0, 0, 0], fixed: true });
+        asm.components.push({ id: "lr", part: "beispiel_rohr", name: "Rohr:1", pos: [0, 0, 300], rot: [0, 0, 0] });
+        asm.components.push({ id: "lq", part: "beispiel_platte", name: "Platte:2", pos: [1000, 0, 0], rot: [0, 0, 0] });
+      });
+    });
+    await idle();
+    // Rohr konzentrisch in eine Bohrung der Platte, dann Muster → Lochbild (vier gleiche Bohrungen)
+    const lb = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc();
+      const hole = a.assemblyFaces("beispiel_platte").find((f) => f.type === "CYLINDER" && Math.abs(f.radius - 5.5) < 1e-6);
+      const tube = a.assemblyFaces("beispiel_rohr").find((f) => f.type === "CYLINDER" && Math.abs(f.axisD[0]) > 0.99);
+      a.beginAlign("konzentrisch");
+      a.alignPick({ kind: "face", key: "comp:lr", info: tube });
+      a.alignPick({ kind: "face", key: "comp:lp", info: hole });
+      a.sel = { type: "component", id: "lr" };
+      a.tree.render(); a.props.render(); a.ribbon.render();
+      return asm.constraints.at(-1)?.type;
+    });
+    await idle();
+    await rbClick("Muster");
+    await idle();
+    const pat = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { kind: asm.patterns?.[0]?.kind, copies: asm.components.filter((c) => c.pat).length, err: a.asmErrors?.[asm.patterns?.[0]?.id] || null }; });
+    // Fügepunkte aus der Abhängigkeit merken (Kontextmenü im Baum), neues Rohr fügt sich an die freie Platte 2
+    await page.locator("#browser .node").filter({ has: page.locator(".label", { hasText: /^Rohr:1$/ }) }).first().click({ button: "right" });
+    await page.locator(".menu button", { hasText: "Fügepunkte aus Abhängigkeiten merken" }).click();
+    await idle();
+    const fp = await evalApp(() => { const a = window.__werkcad; return [a.doc("beispiel_platte").fuegepunkte?.length || 0, a.doc("beispiel_rohr").fuegepunkte?.length || 0]; });
+    await evalApp(() => { const a = window.__werkcad; a.beginPlacing("beispiel_rohr"); });
+    const R = await page.locator("canvas").first().boundingBox();
+    const sq = await evalApp(() => { const a = window.__werkcad; a.viewer.fit(); const b = a.viewer.componentBox("lq"); return a.viewer.worldToScreen(b[0].map((x, i) => (x + b[1][i]) / 2)); });
+    await page.waitForTimeout(300);
+    await page.mouse.click(R.x + sq[0], R.y + sq[1]);
+    await idle();
+    await page.keyboard.press("Escape");
+    const am = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), k = asm.constraints.at(-1); return { fp: k?.fp || null, a: k?.a.comp, n: asm.components.filter((c) => !c.pat).length }; });
+    // Unterbaugruppe aus Platte 2 und dem neuen Rohr bilden, dann wieder auflösen
+    const newR = await evalApp(() => window.__werkcad.activeDoc().components.filter((c) => !c.pat).at(-1).name);
+    await rbClick("Unterbaugruppe bilden");
+    await page.locator(".dialog label.check", { hasText: "Platte:2" }).locator("input").check();
+    await page.locator(".dialog label.check", { hasText: newR }).locator("input").check();
+    await page.locator(".dialog .btn.primary", { hasText: "Bilden" }).click();
+    await idle();
+    const sub = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), sc = asm.components.find((c) => a.doc(c.part)?.kind === "assembly"); const s = sc && a.doc(sc.part); return { top: asm.components.filter((c) => !c.pat).length, inner: s?.components.length, innerCons: s?.constraints?.length || 0, name: sc?.name, id: sc?.id }; });
+    await page.locator("#browser .node").filter({ has: page.locator(".label", { hasText: sub.name }) }).first().click({ button: "right" });
+    await page.locator(".menu button", { hasText: "Unterbaugruppe auflösen" }).click();
+    await idle();
+    const dis = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); return { top: asm.components.filter((c) => !c.pat).length, subs: asm.components.filter((c) => a.doc(c.part)?.kind === "assembly").length, cons: asm.constraints.length }; });
+    // Spiegeln: Rohr wiederverwenden an der XZ-Ebene
+    await evalApp(() => { const a = window.__werkcad; a.sel = { type: "component", id: "lr" }; a.tree.render(); a.props.render(); a.ribbon.render(); });
+    await rbClick("Spiegeln");
+    const row = page.locator(".dialog label.check", { hasText: "Rohr:1" });
+    await row.locator("select").selectOption("wieder");
+    await page.locator(".dialog select").last().selectOption("XZ");
+    await page.locator(".dialog .btn.primary", { hasText: "Spiegeln" }).click();
+    await idle();
+    const mir = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), src = asm.components.find((c) => c.id === "lr"), m = asm.components.filter((c) => !c.pat).at(-1); return { part: m.part, y: m.pos[1], srcY: src.pos[1] }; });
+    await shot("bg-lochbild-fuegepunkte");
+    step("Baugruppe: Lochbild-Muster, Fügepunkte, Unterbaugruppe, Spiegeln", lb === "konzentrisch" && pat.kind === "lochbild" && pat.copies === 3 && !pat.err && fp[0] >= 1 && fp[1] >= 1
+      && am.fp && am.a === "lq" && sub.inner === 2 && sub.innerCons === 1 && dis.subs === 0 && dis.top === sub.top + 1 && mir.part === "beispiel_rohr",
+      JSON.stringify({ lb, pat, fp, am, sub, dis, mir }));
   }
 
   // Bedienung: Tooltip-Karte im Menüband, Markierungsmenü (Rechtsklick), Mini-Werkzeugleiste an der Auswahl
