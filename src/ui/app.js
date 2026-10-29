@@ -4,6 +4,7 @@ import { problemsDialog, quickCounts, countText } from "./pruefung.js";
 import { invertSelection } from "../core/boxselect.js";
 import { Sketcher } from "./sketcher.js";
 import { MiniBar } from "./minibar.js";
+import { DocTabs } from "./doctabs.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
 import { Tree } from "./tree.js";
@@ -15,7 +16,7 @@ import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
-import { h, toast, confirmDialog, promptDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
+import { h, toast, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
 import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { moveProblem, copyFeatures } from "../core/ableiten.js";
@@ -67,6 +68,8 @@ export class App {
     this.filePath = null;
     this.dirty = false;
     this.activeId = null;
+    this.openIds = []; // Dokument-Reiter: in dieser Sitzung geöffnete Dokumente
+    this.docViews = new Map(); // Kamerastand je Dokument beim Wechsel über die Reiter
     this.mode = "start";
     this.sel = null;
     this.selHits = [];
@@ -90,6 +93,7 @@ export class App {
     this.files = new Files(this);
     this.ribbon = new Ribbon(this);
     this.minibar = new MiniBar(this);
+    this.doctabs = new DocTabs(this);
     this.tree = new Tree(this);
     this.props = new Props(this);
     this.drawing = new DrawingEditor(this);
@@ -115,6 +119,9 @@ export class App {
     if (this.mode === "sketch") this.finishSketch(true);
     const d = this.doc(id);
     if (!d) return;
+    const prev = this.activeDoc();
+    if (prev && prev.id !== id && (this.mode === "part" || this.mode === "assembly")) this.docViews.set(prev.id, this.viewer.viewState());
+    if (!this.openIds.includes(id)) this.openIds.push(id);
     this.activeId = id;
     this.sel = null;
     this.selHits = [];
@@ -308,8 +315,51 @@ export class App {
     this.checkpoint("Löschen");
     this.project.docs = this.project.docs.filter((x) => x.id !== id);
     for (const a of this.project.docs) if (a.kind === "assembly") a.components = a.components.filter((c) => c.part !== id);
+    this.openIds = this.openIds.filter((x) => x !== id);
+    this.docViews.delete(id);
     if (this.activeId === id) { this.activeId = null; this.setMode(this.project.docs.length ? "start" : "start"); }
     this.changed();
+  }
+  /** Dokument-Reiter schließen: nur aus der Leiste, das Dokument bleibt im Projekt. Aktives → Nachbar oder Startseite */
+  async closeDoc(id, { ask = true } = {}) {
+    const i = this.openIds.indexOf(id);
+    if (i < 0) return;
+    // Ungespeichert: nachfragen (Speichern und schließen / nur schließen); gespeichert: ohne Rückfrage
+    if (ask && this.dirty && !this.readOnly) {
+      const r = await choiceDialog("Ungespeicherte Änderungen", `Das Projekt hat ungespeicherte Änderungen. »${this.doc(id)?.name}« trotzdem schließen? Die Änderungen bleiben im Projekt, bis es geschlossen wird.`, [
+        { label: "Abbrechen", value: null }, { label: "Nur schließen", value: "close" }, { label: "Speichern und schließen", value: "save", primary: true }]);
+      if (!r) return;
+      if (r === "save" && !(await this.files.save(false))) return;
+      if (this.openIds.indexOf(id) < 0) return;
+      return this.closeDoc(id, { ask: false });
+    }
+    if (this.mode === "sketch" && this.activeId === id) this.finishSketch(true);
+    this.openIds.splice(i, 1);
+    this.docViews.delete(id);
+    if (this.activeId === id && this.mode !== "start") {
+      const next = this.openIds[i] || this.openIds[i - 1];
+      if (next) return this.openDoc(next);
+      this.goHome();
+    } else this.doctabs.render();
+  }
+  async closeOtherDocs(keep) {
+    if (this.dirty && !this.readOnly) {
+      const r = await choiceDialog("Ungespeicherte Änderungen", "Das Projekt hat ungespeicherte Änderungen. Reiter trotzdem schließen? Die Änderungen bleiben im Projekt, bis es geschlossen wird.", [
+        { label: "Abbrechen", value: null }, { label: "Nur schließen", value: "close" }, { label: "Speichern und schließen", value: "save", primary: true }]);
+      if (!r || (r === "save" && !(await this.files.save(false)))) return;
+    }
+    this.openIds = keep ? [keep] : [];
+    if (keep && this.activeId !== keep) return this.openDoc(keep);
+    if (!keep) return this.goHome();
+    this.doctabs.render();
+  }
+  /** Startseite zeigen, ohne Dokumente zu schließen; ein Reiter führt zurück */
+  goHome() {
+    if (this.mode === "sketch") this.finishSketch(true);
+    if (this.activeDoc() && (this.mode === "part" || this.mode === "assembly")) this.docViews.set(this.activeId, this.viewer.viewState());
+    this.fittedFor = null;
+    this.setMode("start");
+    this.refreshAll();
   }
   duplicateDoc(id) {
     const d = this.doc(id);
@@ -335,6 +385,8 @@ export class App {
     if (this.context) this.leaveContext({ reopen: false });
     this.results.clear();
     this.activeId = null;
+    this.openIds = [];
+    this.docViews.clear();
     const first = prj.docs.find((d) => d.kind === "assembly") || prj.docs[0];
     if (first) this.openDoc(first.id);
     else { this.setMode("start"); this.refreshAll(); }
@@ -547,7 +599,10 @@ export class App {
     this.showSketches3D();
     if (this.fittedFor !== part.id) {
       this.fittedFor = part.id;
-      if (res.bodies.length || part.features.some((f) => f.type === "sketch")) {
+      const saved = this.mode !== "sketch" && this.docViews.get(part.id);
+      if (saved) this.viewer.applyViewState(saved, { animate: false });
+      // auch ein leeres Bauteil bekommt die Grundansicht statt der Kamera des vorigen Dokuments
+      else {
         if (this.mode !== "sketch") this.viewer.setView("iso", { animate: false });
         this.viewer.fit();
       }
@@ -574,8 +629,12 @@ export class App {
     this.viewer.showSketches([]);
     if (this.fittedFor !== asm.id && comps.length) {
       this.fittedFor = asm.id;
-      this.viewer.setView("iso", { animate: false });
-      this.viewer.fit();
+      const saved = this.docViews.get(asm.id);
+      if (saved) this.viewer.applyViewState(saved, { animate: false });
+      else {
+        this.viewer.setView("iso", { animate: false });
+        this.viewer.fit();
+      }
     }
     this.refreshSelectionHits();
   }
@@ -1256,6 +1315,7 @@ export class App {
     document.title = `${this.dirty ? "• " : ""}${name}${ver}${this.readOnly ? " [schreibgeschützt]" : ""} – PBCAD`;
     window.werkcad?.setTitle?.(document.title);
     this.ribbon.renderDocLabel?.();
+    this.doctabs?.render();
   }
   setHint(text) {
     this.hint = text;

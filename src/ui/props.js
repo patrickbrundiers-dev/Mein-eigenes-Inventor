@@ -47,7 +47,7 @@ import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gent
 import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { newPart, newAssembly } from "../core/examples.js";
-import { NORM_KINDS, NORM_SIZES, BOLT_LENGTHS, defaultNormteil, normDesignation, collectNorm } from "../core/normteile.js";
+import { NORM_KINDS, NORM_SIZES, BOLT_LENGTHS, defaultNormteil, normDesignation, collectNorm, normSizes } from "../core/normteile.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity } from "../core/mass.js";
@@ -603,8 +603,8 @@ export class Props {
       const len = h("input", { class: "inp", type: "number", min: 1, value: f.length, oninput: (e) => { f.length = e.target.value; name.textContent = normDesignation(f); } });
       const name = h("b", {}, normDesignation(f));
       body.replaceChildren(
-        this.field("Art", sel(Object.entries(NORM_KINDS).map(([k, d]) => [k, `${d.label} (${d.norm})`]), f.kind, (v) => { const d = defaultNormteil(v); f.kind = v; f.grade = d.grade; f.length = d.length; draw(); })),
-        this.field("Gewinde", sel(NORM_SIZES.map((s) => [s, s]), f.size, (v) => { f.size = v; draw(); })),
+        this.field("Art", sel(Object.entries(NORM_KINDS).map(([k, d]) => [k, `${d.label} (${d.norm})`]), f.kind, (v) => { const d = defaultNormteil(v); f.kind = v; f.grade = d.grade; f.length = d.length; f.size = d.size; draw(); })),
+        this.field(def.sizes ? "Größe" : "Gewinde", sel(normSizes(f.kind).map((s) => [s, s]), f.size, (v) => { f.size = v; draw(); })),
         def.length ? this.field(f.kind === "gewindestange" ? "Länge mm" : "Nennlänge mm", len) : null,
         this.field("Festigkeit", sel(def.grades.map((g) => [g, g]), f.grade, (v) => { f.grade = v; draw(); })),
         this.field("Anzahl", qty),
@@ -989,15 +989,15 @@ export class Props {
       case "normteil": {
         const kind = f.kind || "schraube4017", def = NORM_KINDS[kind];
         out.push(this.section("Normteil",
-          this.select("Art", Object.entries(NORM_KINDS).map(([k, d]) => [k, `${d.label} (${d.norm})`]), kind, (v) => this.set(f, (x) => { const d = defaultNormteil(v); x.kind = v; x.grade = d.grade; if (NORM_KINDS[v].length && !NORM_KINDS[kind].length) x.length = d.length; if (v === "gewindestange" && kind !== v) x.length = "1000"; }, "Art")),
-          this.select("Gewinde", NORM_SIZES.map((s) => [s, s]), f.size || "M12", (v) => this.set(f, "size", v, "Gewinde")),
+          this.select("Art", Object.entries(NORM_KINDS).map(([k, d]) => [k, `${d.label} (${d.norm})`]), kind, (v) => this.set(f, (x) => { const d = defaultNormteil(v); x.kind = v; x.grade = d.grade; if (!normSizes(v).includes(x.size)) x.size = d.size; if (NORM_KINDS[v].length && !NORM_KINDS[kind].length) x.length = d.length; if (v === "gewindestange" && kind !== v) x.length = "1000"; }, "Art")),
+          this.select(def.sizes ? "Größe" : "Gewinde", normSizes(kind).map((s) => [s, s]), f.size || defaultNormteil(kind).size, (v) => this.set(f, "size", v, "Größe")),
           def.length ? E(kind === "gewindestange" ? "Länge" : "Nennlänge (unter Kopf)", "length", { allowNeg: false, allowZero: false }) : null,
           def.length && kind !== "gewindestange" ? h("p", { class: "hint" }, "Vorzugslängen: " + BOLT_LENGTHS.filter((l) => l <= 200).join(", ")) : null,
           this.select("Festigkeit / Werkstoff", def.grades.map((g) => [g, g]), f.grade || def.grades[0], (v) => this.set(f, "grade", v, "Festigkeit")),
           kind !== "spannschloss" ? this.check("feuerverzinkt (tZn)", !!f.galv, (v) => this.set(f, "galv", v, "Verzinkt")) : null,
           h("dl", { class: "kv" }, h("dt", {}, "Bezeichnung"), h("dd", {}, st?.info || normDesignation({ ...f, kind })))));
         out.push(this.section("Lage",
-          this.vec3(kind.startsWith("schraube") ? "Basispunkt (Kopfunterseite)" : kind === "spannschloss" ? "Mittelpunkt" : "Basispunkt (Auflagefläche)", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
+          this.vec3(kind.startsWith("schraube") ? "Basispunkt (Kopfunterseite)" : kind === "spannschloss" ? "Mittelpunkt" : /kappe$/.test(kind) ? "Basispunkt (Rohrende)" : kind === "anschweissband" ? "Basispunkt (Unterkante, Achse = Drehachse)" : kind === "bodenanschlag" ? "Basispunkt (Boden)" : "Basispunkt (Auflagefläche)", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
           this.seg("Achse", [["Z", "Z"], ["Y", "Y"], ["X", "X"], ["-Z", "−Z"], ["-Y", "−Y"], ["-X", "−X"], ["custom", "frei"]], f.axis || "Z", (v) => this.set(f, "axis", v, "Achse")),
           f.axis === "custom" ? this.vec3("Richtungsvektor", f.dir || ["0", "0", "1"], (v) => this.set(f, "dir", v, "Richtung")) : null,
           h("p", { class: "hint" }, "Normteile bleiben eigene Körper und stehen mit Normbezeichnung in der Stückliste. Mehrere gleiche: Feature »Muster«.")));

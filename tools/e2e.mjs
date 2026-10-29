@@ -1216,10 +1216,14 @@ try {
     a.prefs.set("ansicht.darstellung", "kanten");
     const orig = a.files.saveBinary; let got = null;
     a.files.saveBinary = async (buf, name) => { got = { name, head: Array.from(buf.slice(0, 4)), n: buf.length }; };
-    try { await a.files.exportPng({ photo: true }); } finally { a.files.saveBinary = orig; }
+    // Rendern fragt Hintergrund und Bildgröße: Vorgaben übernehmen
+    let dlg = false;
+    const ok = setInterval(() => { const b = [...document.querySelectorAll(".backdrop .btn.primary")].find((x) => x.textContent === "Rendern"); if (b) { dlg = true; clearInterval(ok); b.click(); } }, 50);
+    try { await a.files.exportPng({ photo: true }); } finally { clearInterval(ok); a.files.saveBinary = orig; }
+    st.dlg = dlg;
     return { ...st, png: got, after: { mode: v.displayMode, env: !!v.scene.environment, stage: v.stage.children.length, lines: pk?.lines.visible, metal: pk?.mesh.material.metalness } };
   });
-  step("Fotorealistische Darstellung", ft.env && ft.tone && ft.shadow && ft.ground && !ft.grid && ft.lines === false && ft.metal > 0.5 && ft.cast && /_Render\.png$/.test(ft.png?.name || "") && ft.png.head.join() === "137,80,78,71" && ft.after.mode === "kanten" && !ft.after.env && ft.after.stage === 0 && ft.after.lines && ft.after.metal < 0.2, JSON.stringify(ft));
+  step("Fotorealistische Darstellung", ft.dlg && ft.env && ft.tone && ft.shadow && ft.ground && !ft.grid && ft.lines === false && ft.metal > 0.5 && ft.cast && /_Render\.png$/.test(ft.png?.name || "") && ft.png.head.join() === "137,80,78,71" && ft.after.mode === "kanten" && !ft.after.env && ft.after.stage === 0 && ft.after.lines && ft.after.metal < 0.2, JSON.stringify(ft));
   // Oberfläche und RAL-Farbe je Bauteil (E7): Auswahl im Eigenschaftenfeld, Farbe im Viewer, Text in der Stückliste
   {
     await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); });
@@ -3840,6 +3844,35 @@ try {
     await evalApp(() => window.__werkcad.prefs.set("ansicht.miniLeiste", false));
     step("Tooltip, Markierungsmenü, Mini-Leiste", /Skizzenkontur/.test(tip) && /\(?E\)?/.test(tip) && ring.length >= 6 && ring.includes("Skizze auf dieser Fläche") && list > 0 && closed
       && mini.includes("Skizze auf Fläche") && mini.includes("Wandung") && miniGone, JSON.stringify({ tip, ring, list, closed, mini, miniGone }));
+  }
+
+  // Dokument-Reiter unten: offene Dokumente, Wechsel per Klick, Schließen wechselt zum Nachbarn, Startseite
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    const tabs0 = await page.locator("#doctabs .dt-tab .dt-name").allTextContents();
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_rahmen']").click();
+    await idle();
+    const act1 = await evalApp(() => window.__werkcad.activeId);
+    // ungespeichert: Rückfrage, Abbrechen lässt den Reiter offen; gespeichert: ohne Rückfrage
+    await evalApp(() => { window.__werkcad.dirty = true; });
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_rahmen'] .dt-x").click();
+    const asked = await page.locator(".dialog footer .btn", { hasText: "Nur schließen" }).isVisible();
+    await page.locator(".dialog footer .btn", { hasText: "Abbrechen" }).click();
+    const kept = await evalApp(() => window.__werkcad.openIds.includes("beispiel_rahmen"));
+    await evalApp(() => { window.__werkcad.dirty = false; });
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_rahmen'] .dt-x").click();
+    await idle();
+    const after = await evalApp(() => ({ open: window.__werkcad.openIds, active: window.__werkcad.activeId, mode: window.__werkcad.mode }));
+    await page.locator("#doctabs .dt-btn[aria-label='Startseite']").click();
+    const home = await evalApp(() => window.__werkcad.mode);
+    await page.locator("#doctabs .dt-tab[data-doc='beispiel_platte']").click();
+    await idle();
+    const back = await evalApp(() => window.__werkcad.mode);
+    step("Dokument-Reiter", asked && kept && tabs0.includes("Rahmen") && tabs0.includes("Grundplatte") && act1 === "beispiel_rahmen" && !after.open.includes("beispiel_rahmen") && after.active !== "beispiel_rahmen" && home === "start" && back === "part",
+      JSON.stringify({ asked, kept, tabs0, act1, after, home, back }));
   }
 
 } catch (e) {

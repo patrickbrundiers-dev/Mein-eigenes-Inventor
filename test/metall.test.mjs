@@ -825,3 +825,16 @@ test("Generator als Baugruppe: Einzelteile in eigener Lage, Platzierung führt z
   const zaun = groupParts(GENERATORS.zaun.plan(resolveGenParams("zaun", defaultGenerator("zaun").params, E)));
   assert.ok(zaun.find((p) => p.name === "Pfosten").bodies.length === 5, "5 gleiche Pfosten = ein Bauteil");
 });
+
+test("Beschläge: Größenlisten, Bezeichnung, Prüfung (E11)", async () => {
+  const { normSizes, normDesignation, checkNorm, defaultNormteil, NORM_SIZES, normDensity } = await import("../src/core/normteile.js");
+  assert.deepEqual(normSizes("mutter"), NORM_SIZES);
+  assert.ok(normSizes("kugelkappe").includes("Ø42,4"));
+  const f = defaultNormteil("anschweissband");
+  assert.equal(f.size, "Ø20 x 100");
+  assert.equal(normDesignation({ ...f, galv: true }), "Anschweißband Ø20 x 100 - S235 - tZn");
+  assert.equal(normDesignation({ ...defaultNormteil("vierkantkappe"), grade: "Kunststoff", galv: true }), "Vierkantkappe 40 x 40 - Kunststoff");
+  assert.deepEqual(checkNorm("kugelkappe", "Ø48,3", 0), []);
+  assert.throws(() => checkNorm("kugelkappe", "M12", 0), /Unbekannte Größe/);
+  assert.equal(normDensity("Kunststoff"), 0.95);
+});

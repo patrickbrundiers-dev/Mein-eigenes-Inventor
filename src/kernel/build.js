@@ -30,7 +30,7 @@ import { bendRule, ruleSummary } from "../core/bendtable.js";
 import { pathAxes, pathPoint, pathLength as tubeLength, pathDistance, bendRadius, splitPath } from "../core/biegeteil.js";
 import { effectiveSheet } from "../core/blechregeln.js";
 import { planBlechkasten, boxFromBody, boxSideFrame } from "../core/blechkasten.js";
-import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims, boltSizeForHole, boltSet } from "../core/normteile.js";
+import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims, boltSizeForHole, boltSet, beschlagDims } from "../core/normteile.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
 import { GENERATORS, resolveGenParams } from "../core/generator.js";
@@ -2180,6 +2180,7 @@ export function createKernel(R) {
   }
   // ---------- Normteile in lokaler Lage: Achse +z, Basispunkt = Auflagefläche (Schraube: Kopfunterseite) ----------
   function normSolid(kind, size, L) {
+    if (NORM_KINDS[kind]?.beschlag) return beschlagSolid(kind, beschlagDims(kind, size));
     const t = NORM_THREADS[size];
     const hex = (s, h, z0 = 0) => R.drawPolysides(s / Math.sqrt(3), 6).sketchOnPlane("XY", z0).extrude(h);
     const cyl = (r, h, z0 = 0) => R.makeCylinder(r, h, [0, 0, z0], [0, 0, 1]);
@@ -2204,6 +2205,40 @@ export function createKernel(R) {
       }
     }
     throw new Error("Unbekanntes Normteil: " + kind);
+  }
+  /**
+   * Beschläge (E11), Achse +z: Anschweißband ab Unterkante (zwei Hälften mit 2 mm Fuge, Stift durchgehend),
+   * Kappen ab Rohrende (Stopfen zeigt in −z ins Rohr), Bodenanschlag ab Boden (Winkel mit Steg in +y).
+   */
+  function beschlagSolid(kind, m) {
+    const cyl = (r, h, z0 = 0) => R.makeCylinder(r, h, [0, 0, z0], [0, 0, 1]);
+    const box = (x, y, z, at) => R.makeBaseBox(x, y, z).translate(at);
+    switch (kind) {
+      case "anschweissband": {
+        const half = (m.L - 2) / 2;
+        return cyl(m.D / 2, half).fuse(cyl(m.D / 2, half, half + 2)).fuse(cyl(m.D * 0.22, m.L - 2 * 3, 3));
+      }
+      case "kugelkappe": {
+        const r = m.D / 2, wall = Math.max(2, m.D * 0.06);
+        const ball = R.makeSphere(r * 1.05).translate([0, 0, 3 + r * 0.8]);
+        return cyl(r - wall, 12, -12).fuse(cyl(r, 3)).fuse(cyl(r * 0.55, r * 0.5, 2.5)).fuse(ball);
+      }
+      case "rohrkappe": {
+        const r = m.D / 2, wall = Math.max(2, m.D * 0.06);
+        return cyl(r - wall, 12, -12).fuse(cyl(r + 1, 3));
+      }
+      case "vierkantkappe": {
+        const a = m.a, wall = Math.max(2, a * 0.06);
+        return box(a - 2 * wall, a - 2 * wall, 12, [0, 0, -12]).fuse(box(a + 2, a + 2, 3, [0, 0, 0]));
+      }
+      case "bodenanschlag": {
+        // Grundplatte w × d, Anschlagsteg h hoch an der Hinterkante, zwei Dübellöcher Ø 9
+        let s = box(m.w, m.d, m.t, [0, 0, 0]).fuse(box(m.w, m.t, m.h, [0, m.d / 2 - m.t / 2, 0]));
+        for (const x of [-m.w / 4, m.w / 4]) s = s.cut(cyl(4.5, m.t + 2, -1).translate([x, -m.t, 0]));
+        return s;
+      }
+    }
+    throw new Error("Unbekannter Beschlag: " + kind);
   }
   /** Körper mit Achse +z an Punkt pos auf Richtung dir drehen */
   function orientZ(shape, dir, pos) {
