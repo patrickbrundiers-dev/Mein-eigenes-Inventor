@@ -226,3 +226,43 @@ test("O3: Pfostenaufteilung max/anzahl/abstand/liste", () => {
   const posts = pl.members.filter((m) => /^Pfosten \d+$/.test(m.name)).map((m) => Math.round(m.a[0]));
   assert.deepEqual(posts.slice(0, 3), [0, 500, 1500]);
 });
+
+// ---------- O2: Handlaufstoß ----------
+import { jointStations, splitPolyline } from "../src/core/handlaufstoss.js";
+test("O2: Handlauf über Stangenlänge geteilt, Stoß hinter Pfosten, Einschiebling", () => {
+  assert.deepEqual(jointStations(10000, { max: 6000, posts: [0, 1250, 2500, 3750, 5000, 6250, 7500, 8750, 10000], off: 150 }), [5150]);
+  assert.equal(splitPolyline([[0, 0, 0], [10, 0, 0]], [4]).length, 2);
+  const pl = plan("gelaender", { runs: "7000; 3000", railMax: "6000" });
+  const rails = pl.chains.filter((c) => c.target === "Handlauf");
+  assert.equal(rails.length, 2);
+  assert.ok(pl.members.some((m) => /Einschiebling/.test(m.name)));
+  assert.match(pl.info, /2 Stücke \(1 Stoß mit Einschiebling\)/);
+  assert.equal(plan("gelaender", { runs: "3000" }).chains.filter((c) => c.name === "Handlauf").length, 1, "kurz: am Stück");
+});
+
+// ---------- O1: Wandhandlauf ----------
+test("O1: Wandhandlauf mit Konsolen an der Wandseite", () => {
+  const pl = plan("treppe", { gel: "rechts", wand: "links" });
+  const wr = pl.chains.find((c) => c.name === "Wandhandlauf");
+  assert.ok(wr, "Handlauf da");
+  const B = Number(defaultGenerator("treppe").params.width);
+  assert.ok(wr.points.every((q) => q[1] > B - 200 && q[1] < B), "links (großes y) innerhalb der Laufbreite");
+  const k = pl.plates.filter((x) => /^Wandkonsole/.test(x.name)).length;
+  assert.ok(k >= 3);
+  assert.equal(pl.drills.filter((d) => d.target === "Wandhandlauf").length, k);
+  assert.match(pl.info, /Wandkonsolen/);
+  assert.throws(() => plan("treppe", { gel: "beide", wand: "links" }), /schon das Geländer/);
+  const pr = plan("treppe", { gel: "keine", wand: "links", turn: "rechts", form: "L" });
+  assert.equal(pr.chains.filter((c) => /^Wandhandlauf Lauf/.test(c.name)).length, 2);
+});
+
+// ---------- O4: Treppe oben aufgelegt, Wange an der Wand ----------
+test("O4: Auflagerwinkel oben, Wange an der Wand verdübelt", () => {
+  const pl = plan("treppe", { anschluss: "auflager", wangeWand: "links", gel: "rechts" });
+  assert.equal(pl.plates.filter((x) => /Auflagerwinkel oben$/.test(x.name)).length, 2);
+  assert.ok(!pl.plates.some((x) => /Kopfplatte$/.test(x.name)));
+  assert.ok(pl.members.some((m) => /Distanzhülse Wange links/.test(m.name)));
+  assert.ok(pl.drills.filter((d) => d.target === "Wange links" && d.d === 14).length >= 2);
+  assert.match(pl.info, /Auflagerwinkel auf der Decke.*Wange links an der Wand/);
+  assert.ok(plan("treppe", { wangeWand: "rechts", gel: "rechts" }).issues.some((x) => x.key === "wangeWand"));
+});

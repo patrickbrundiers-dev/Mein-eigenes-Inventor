@@ -15,6 +15,7 @@ import { orientRot, rotExtent } from "./orient.js";
 import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
 import { sectionGeometry } from "./sections.js";
 import { bentChain } from "./biegeteil.js";
+import { jointStations, splitPolyline, paramOf, arcLengths, pointAt, sleeveFor } from "./handlaufstoss.js";
 import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, findPlateFace, faceCoords, holesBelow, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
 const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
 
@@ -88,6 +89,8 @@ export const GELAENDER = {
     { key: "railBend", label: "Handlauf an den Ecken", type: "select", options: [["gehrung", "gegehrt"], ["bogen", "Bogen (Krümmling)"]], default: "gehrung", missing: "gehrung", group: "Handlauf und Gurte", when: (p) => ["rohr", "rund"].includes(p.rail?.kind) },
     { key: "railEnd", label: "Handlauf-Enden", type: "select", options: [["gerade", "gerade"], ["bogen", "Endbogen nach unten"]], default: "gerade", missing: "gerade", group: "Handlauf und Gurte", when: (p) => ["rohr", "rund"].includes(p.rail?.kind) },
     { key: "railR", label: "Biegeradius Handlauf (Mitte Rohr)", type: "num", default: "80", group: "Handlauf und Gurte", when: (p) => ["rohr", "rund"].includes(p.rail?.kind) && (p.railBend === "bogen" || p.railEnd === "bogen") },
+    { key: "railMax", label: "Handlauf am Stück bis (sonst Stoß)", type: "num", default: "6000", missing: "0", group: "Handlauf und Gurte" },
+    { key: "railJoint", label: "Handlaufstoß", type: "select", options: [["einschiebling", "mit Einschiebling (Hohlprofil)"], ["stumpf", "stumpf geschweißt"]], default: "einschiebling", group: "Handlauf und Gurte", when: (p) => p.railMax > 0 },
     { key: "top", label: "Obergurt", type: "check", default: true, group: "Handlauf und Gurte" },
     { key: "topGap", label: "Obergurt unter Handlauf", type: "num", default: "100", group: "Handlauf und Gurte", when: (p) => p.top },
     { key: "bottom", label: "Untergurt", type: "check", default: true, group: "Handlauf und Gurte" },
@@ -224,6 +227,22 @@ export const GELAENDER = {
       rp[0] = ext(0, 1);
       rp[rp.length - 1] = ext(pts.length - 1, pts.length - 2);
     }
+    // Handlauf als Kette; über railMax geteilt (O2): Stoß kurz hinter einem Pfosten, Einschiebling bei Hohlprofilen
+    let railJoints = 0, railPiece = 0;
+    const pushRail = (line) => {
+      const total = arcLengths(line).at(-1);
+      if (!(p.railMax > 0) || total <= p.railMax + 1e-6) { chains.push({ section: rail, points: line, name: "Handlauf" }); return; }
+      const s = arcLengths(line);
+      let ts;
+      try { ts = jointStations(total, { max: p.railMax, posts: posts.map((q) => paramOf(line, q.at)), corners: s.slice(1, -1), off: Math.max(150, post.geom.width / 2 + 60) }); } catch (e) { throw fieldError(e.message, "railMax"); }
+      for (const piece of splitPolyline(line, ts)) chains.push({ section: rail, points: piece, name: `Handlauf ${++railPiece}`, target: "Handlauf" });
+      for (const t of ts) {
+        railJoints++;
+        const { p: q, d } = pointAt(line, t);
+        const sl = p.railJoint === "stumpf" ? null : sleeveFor(rail, q, d, 160, `Handlauf Einschiebling ${railJoints}`);
+        if (sl) members.push({ ...sl, up: [0, 0, 1] });
+      }
+    };
     // Krümmlinge (N2): Bögen an den Ecken bzw. Endbogen 90° nach unten (Schenkel 50 mm) statt Gehrung
     const roundRail = ["rohr", "rund"].includes(rail.kind), bendCorners = roundRail && p.railBend === "bogen", bendEnds = roundRail && p.railEnd === "bogen";
     if (bendCorners || bendEnds) {
@@ -237,7 +256,7 @@ export const GELAENDER = {
       const parts = bendCorners ? [{ pts: rq, bend: true }] : splitAtCorners(rq);
       let nb = 0, nm = 0;
       for (const part of parts) {
-        if (!part.bend) { chains.push({ section: rail, points: part.pts, name: "Handlauf" }); continue; }
+        if (!part.bend) { pushRail(part.pts); continue; }
         const bc = bentChain({ section: rail, points: part.pts, name: "Handlauf", radius: R });
         for (const m of bc.members) members.push({ ...m, name: `Handlauf ${++nm}` });
         for (const t of bc.tubes) tubes.push({ ...t, name: `Handlauf Bogen ${++nb}` });
@@ -245,7 +264,7 @@ export const GELAENDER = {
       }
       if (bendCorners && holder && runs.length > 1) issues.push({ key: "railBend", level: "Hinweis", message: "Eckpfosten ohne Handlaufhalter: der Bogen läuft innen an der Ecke vorbei – Pfosten trägt über die Gurte" });
       if (bendCorners && R < 1.5 * rail.geom.width) issues.push({ key: "railR", level: "Warnung", message: `Biegeradius unter 1,5 × Ø (${Math.ceil(1.5 * rail.geom.width)} mm): Rohr knickt ohne Dorn ein – Formbogen verwenden` });
-    } else chains.push({ section: rail, points: rp, name: "Handlauf" });
+    } else pushRail(rp);
     // Gurte und Füllung je Feld zwischen den Pfostenflächen
     const half = post.geom.height / 2; // Pfostentiefe entlang der Lauflinie (v zeigt entlang d)
     const belt = p.belt, beltH = belt?.geom.height || 0;
@@ -468,7 +487,7 @@ export const GELAENDER = {
     const gapKey = ["staketen", "quer", "rahmen"].includes(p.fill) ? "gapMax" : ["blech", "glas"].includes(p.fill) ? "panelGap" : p.fill === "kreuz" ? (p.ring ? "ringD" : "fill") : "fill";
     issues.push(...railingIssues({ use: p.use, fall: p.fall, height: H, fill: p.fill, toe: toeOn, gap: gapMaxSeen, bottom: bottomEdge, open: fillHi - fillLo, rail }, { height: "height", fill: "fill", gap: gapKey, bottom: p.bottom ? "bottomZ" : "fill", rail: "rail", use: "use" }));
     const total = runs.reduce((a, b) => a + b, 0);
-    let info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, kind === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "");
+    let info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "") + (railJoints ? `, Handlauf ${railPiece} Stücke (${railJoints} Stoß${railJoints > 1 ? "e" : ""}${p.railJoint === "stumpf" ? ", stumpf" : " mit Einschiebling"})` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, kind === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "");
     if (toeOn) info += `, Fußleiste ${toeH} × 5 mm`;
     return { chains, members, plates, drills, norms, tubes, info, issues, sections: SEC };
   },
