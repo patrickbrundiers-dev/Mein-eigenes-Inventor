@@ -11,6 +11,7 @@ import { parseSections, shaftProfile, gearData, gearOutline, bearingGeometry, be
 import { resolveDatums, resolvePlane, mirrorPlane, patternAxis, datumSummary } from "../core/datums.js";
 import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "../core/koerper.js";
 import { capPlan, trimPlan } from "../core/rahmen.js";
+import { ventPlan, needsVent } from "../core/verzinkung.js";
 import { pathChain, reverseChain, pathLength as chainLength, pathPatternStations, coilParams, loopCentroid, validateLoft } from "../core/formen.js";
 import { sectionGeometry, sectionName, profileId, THREADS, loopLength } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
@@ -527,7 +528,9 @@ export function createKernel(R) {
     const usesVars = feats.some((f) => f.type === "sketch" && (f.entities || []).some((e) => e.type === "text" && /\{\w+\}/.test(e.text || "")));
     const keys = [];
     // Werkstoff wählt die Biegetabelle; Schnitt 2D/3D und Restwand am Bauteil gelten für alle Features; Textplatzhalter nur wenn benutzt
-    let acc = JSON.stringify(values) + (part.material || "") + JSON.stringify([part.cutMode, part.swivel, part.restwand]) + (usesVars ? JSON.stringify(textVars) : "");
+    let acc = JSON.stringify(values) + (part.material || "") + JSON.stringify([part.cutMode, part.swivel, part.restwand]) + (usesVars ? JSON.stringify(textVars) : "")
+    // Verzinkungsbohrungen hängen an der Oberfläche des Bauteils
+    if (feats.some((f) => f.type === "zinkloch")) acc += JSON.stringify(part.finish?.kind || "");
     const keepWall = part.restwand !== false;
     for (const f of feats) { acc = hashString(acc + JSON.stringify(f)); keys.push(acc); }
     let startAt = 0;
@@ -1624,6 +1627,37 @@ export function createKernel(R) {
             if (!n) throw new Error("Keine Kappe gesetzt – Enden auf Gehrung");
             state.tools.set(f.id, { op: "new", shapes });
             st.info = `${n} Endkappe(n) ${f.mode === "eingesetzt" ? "eingesetzt" : "aufgesetzt"}, ${String(E(f.thickness || "3", "Dicke")).replace(".", ",")} mm`;
+            break;
+          }
+          case "zinkloch": {
+            // Verzinkungsbohrungen (W1): je Hohlprofil-Stab eine Querbohrung an den Enden, Ø nach DIN EN ISO 14713-2
+            const galv = needsVent(part.finish?.kind);
+            if (f.onlyGalv !== false && !galv) { st.info = "Oberfläche nicht verzinkt – keine Bohrungen"; break; }
+            const bodies = state.bodies.filter((b) => b.kind === "member" && (!f.target || b.fid === f.target) && b.meta?.axis && b.meta?.sec);
+            const idx = f.target && f.members?.length ? f.members : bodies.map((_, k) => k);
+            const dIn = f.d ? E(f.d, "Durchmesser") : 0, edge = E(f.edge || "10", "Randabstand");
+            if (dIn < 0 || edge < 0) throw new Error("Durchmesser und Randabstand dürfen nicht negativ sein");
+            let n = 0, nb = 0;
+            const ds = new Set(), notes = [];
+            for (const mi of idx) {
+              const b = bodies[mi];
+              if (!b) continue;
+              if (!sectionGeometryOf(b.meta).holes.length) continue; // offene Profile laufen von selbst leer
+              const plan = ventPlan(b.meta.axis, { d: dIn, edge, ends: f.ends || "beide", dir: f.dir || "v", miterA: b.meta.miterStart, miterB: b.meta.miterEnd });
+              const old = b.shape;
+              let shape = old;
+              for (const hl of plan.holes) shape = shape.cut(R.makeCylinder(hl.d / 2, hl.len, hl.p, hl.dir));
+              b.shape = shape;
+              b.meta = { ...b.meta, vent: { n: plan.holes.length, d: plan.d } };
+              const tm = state.tools.get(b.fid)?.shapes.find((x) => x.shape === old);
+              if (tm) { tm.shape = shape; tm.meta = b.meta; }
+              for (const m of plan.issues) notes.push(`${b.name}: ${m}`);
+              ds.add(plan.d);
+              n += plan.holes.length; nb++;
+            }
+            if (!nb) throw new Error("Kein geschlossenes Hohlprofil gefunden");
+            st.info = `${n} Verzinkungsbohrung(en) in ${nb} Stab/Stäben, Ø ${[...ds].sort((a, b) => a - b).join(" / ")} mm${galv ? "" : " (Oberfläche nicht verzinkt)"}`;
+            if (notes.length) st.warning = [...new Set(notes)].join("; ");
             break;
           }
           case "kuerzen": {

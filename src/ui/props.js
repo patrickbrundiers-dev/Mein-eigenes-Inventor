@@ -1260,6 +1260,27 @@ export class Props {
         }
         break;
       }
+      case "zinkloch": {
+        const targets = part.features.filter((g) => ["profile", "frame", "profilzug", "generator"].includes(g.type));
+        const members = f.target ? (r?.bodies || []).filter((b) => b.fid === f.target && b.kind === "member") : [];
+        const cur = f.members || [];
+        const memberChecks = members.length > 1 ? this.field("Stäbe (keiner gewählt = alle)", h("div", { class: "checks" }, ...members.map((b, i) => {
+          const c = h("input", { type: "checkbox", checked: cur.includes(i) ? true : undefined });
+          c.addEventListener("change", () => this.set(f, (x) => { x.members = c.checked ? [...new Set([...cur, i])].sort((a, b2) => a - b2) : cur.filter((y) => y !== i); }, "Stäbe"));
+          return h("label", { class: "check" }, c, " ", b.name);
+        })), true) : null;
+        const fin = part.finish?.kind;
+        out.push(this.section("Verzinkungsbohrungen",
+          this.select("Profile", [["", "alle Hohlprofile im Bauteil"], ...targets.map((g) => [g.id, g.name])], f.target || "", (v) => this.set(f, (x) => { x.target = v; x.members = []; }, "Profile")),
+          memberChecks,
+          this.seg("Enden", [["beide", "Beide"], ["A", "A"], ["B", "B"]], f.ends || "beide", (v) => this.set(f, "ends", v, "Enden")),
+          this.seg("Bohrrichtung", [["v", "durch die Höhe"], ["u", "durch die Breite"]], f.dir || "v", (v) => this.set(f, "dir", v, "Bohrrichtung")),
+          E("Durchmesser (leer = Richtwert)", "d", { allowNeg: false, allowZero: false, allowEmpty: true }),
+          E("Randabstand zum Stabende", "edge", { allowNeg: false }),
+          this.check("Nur wenn die Oberfläche verzinkt ist", f.onlyGalv !== false, (v) => this.set(f, "onlyGalv", v ? undefined : false, "Nur verzinkt")),
+          h("p", { class: "hint" }, `Je Stabende eine Querbohrung durch beide Wände, so nah am Ende wie möglich (bei Gehrung hinter der Spitze). Richtwert-Ø nach DIN EN ISO 14713-2 aus der Profilgröße, z. B. 40er Rohr 12 mm, 80er 16 mm, 100er 20 mm – mit dem Verzinker abstimmen. Oberfläche des Bauteils: ${fin === "verzinkt" || fin === "duplex" ? "verzinkt" : "nicht verzinkt (unter Bauteil-Eigenschaften einstellen)"}.`)));
+        break;
+      }
       case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "aufdicken": case "flaeche": case "entformung":
         out.push(...this.bodyToolProps(part, f, E));
         break;

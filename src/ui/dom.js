@@ -94,6 +94,7 @@ const P = {
   insert: '<path d="M8 3h8v3H8z"/><path d="M10 6v10M14 6v10"/><path d="M3 13h6M15 13h6" /><path d="M3 18h18" stroke-dasharray="2 2"/>',
   angle: '<path d="M4 20h16M4 20L16 6"/><path d="M10 20a6 6 0 0 0-2-4.5"/>',
   endcap: '<path d="M3 9h12v6H3z"/><path d="M15 7h4v10h-4z"/>',
+  ventholes: '<path d="M2 8h20v8H2z"/><circle cx="6" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/>',
   circpattern: '<circle cx="12" cy="12" r="8" stroke-dasharray="2 2"/><circle cx="12" cy="4" r="2"/><circle cx="19" cy="15" r="2"/><circle cx="5" cy="15" r="2"/>',
   mirror: '<path d="M12 3v18" stroke-dasharray="3 2"/><path d="M9 6L3 18h6zM15 6l6 12h-6z"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',

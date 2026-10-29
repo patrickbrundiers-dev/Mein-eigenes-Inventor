@@ -158,6 +158,10 @@ export class Ribbon {
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
         app.addFeature({ type: "endkappe", target: t, end: "beide", mode: "aufgesetzt", thickness: "3", overhang: "0" });
       },
+      zinkloch: () => {
+        if (!this.lastOf(["profile", "frame", "profilzug", "generator"])) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
+        app.addFeature({ type: "zinkloch", target: "", ends: "beide", dir: "v", d: "", edge: "10" });
+      },
       kuerzen: () => {
         const t = this.lastOf(["profile", "frame", "profilzug", "generator"]);
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
@@ -384,7 +388,7 @@ export class Ribbon {
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
-          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend")] },
+          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend"), B("zinkloch", "Verzinkungsbohrungen", "ventholes")] },
           { label: "Blech", big: 1, buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("blechkasten", "Blechkasten", "kantteil"), B("inBlech", "In Blech umwandeln", "kantteil"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar"), B("eckeschliessen", "Ecke schließen", "cornerseam"), B("stanzung", "Stanzwerkzeug", "punch"), B("konturwalzen", "Konturwalzen", "contourroll"), B("trennfuge", "Trennfuge", "rip")] },
           { label: "Anschluss", buttons: [B("naht", "Schweißnaht", "naht"), B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("normteil", "Normteil", "normteil")] },
         ] },
