@@ -124,6 +124,8 @@ const handlers = {
   async measure({ items }) {
     const entries = [];
     for (const it of items) {
+      // Achse (aus dem Anzeigenetz der Zylinderfläche, Lage exakt aus dem Kern) als gerades Achsstück
+      if (it.kind === "axis") { entries.push({ shape: R.makeLine(it.start, it.end), kind: "axis" }); continue; }
       const res = await getBuilt(it.part);
       const body = res.bodies[it.body];
       if (!body) throw new Error("Körper nicht gefunden – Modell neu berechnen");
@@ -132,7 +134,9 @@ const handlers = {
       if (!sub) throw new Error("Element nicht gefunden – Modell neu berechnen");
       const shape = K.placed(sub, it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
       // Ecke: Anfang oder Ende der Kante (it.end), als Punkt-Form für den Abstand
-      entries.push(it.kind === "vertex" ? { ...K.vertexOf(shape, it.end), kind: "vertex" } : { shape, kind: it.kind });
+      // Fangpunkt (Mitte, Kreismitte, Quadrant, Flächenmitte): exakt aus Kante bzw. Fläche
+      if (it.snap) { const point = K.snapPoint(shape, it.kind, it.ref); entries.push({ shape: R.makeVertex(point), point, kind: "vertex", label: it.label }); continue; }
+      entries.push(it.kind === "vertex" ? { ...K.vertexOf(shape, it.end), kind: "vertex", label: it.label } : { shape, kind: it.kind });
     }
     return K.measure(entries);
   },
@@ -216,6 +220,8 @@ const handlers = {
   async ifcData({ items, tolerance = 0.2, simplify = null }) {
     const out = [], count = { drop: 0, box: 0 };
     for (const it of items) {
+      // Achse (aus dem Anzeigenetz der Zylinderfläche, Lage exakt aus dem Kern) als gerades Achsstück
+      if (it.kind === "axis") { entries.push({ shape: R.makeLine(it.start, it.end), kind: "axis" }); continue; }
       const res = await getBuilt(it.part);
       const M = placementMatrix(it.pos || [0, 0, 0], it.rot || [0, 0, 0]);
       res.bodies.forEach((b, index) => {

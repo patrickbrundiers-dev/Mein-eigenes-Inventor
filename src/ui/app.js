@@ -34,7 +34,7 @@ import { contextScene, contextLabel } from "../core/kontext.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
-import { axisDistance, measureFormat, MAX_MEASURE_ITEMS } from "../core/messen.js";
+import { axisDistance, measureFormat, MAX_MEASURE_ITEMS, measurePickOptions, measureHitLabel, sameMeasureHit } from "../core/messen.js";
 import { resolveDatums, resolvePlane } from "../core/datums.js";
 import { datumDisplay, datumPickClick, datumHover, datumSelectClick, datumHandleDown, finishDatumPick, toggleAllDatums, datumPicking } from "./arbeitselemente.js";
 import { sketchRefs, dependents } from "../core/featurerefs.js";
@@ -986,7 +986,7 @@ export class App {
   pickOptions() {
     const p = this.pick;
     if (p?.kind === "edges") return { edges: true, faces: false };
-    if (p?.kind === "measure") return { edges: true, faces: true, vertices: true };
+    if (p?.kind === "measure") return measurePickOptions(this.measure?.filter, this.prefs.get("messen.fangradius"));
     if (p?.kind === "align") return { edges: true, faces: true, vertices: true };
     if (p?.kind === "faces" || p?.kind === "sketchPlane" || p?.kind === "normHole") return { edges: false, faces: true };
     if (this.mode === "assembly") return { edges: false, faces: true };
@@ -1008,6 +1008,7 @@ export class App {
     // Gegenstück im Modellbrowser mit hervorheben (Komponente bzw. Feature, das den Körper erzeugt hat)
     this.tree.setHot(!hit ? null : hit.key?.startsWith("comp:") ? hit.key.slice(5) : hit.key === "part" ? this.results.get(this.activeId)?.bodies?.[hit.body]?.fid || null : null);
     if (!hit) return this.viewer.clearHover();
+    if (this.pick?.kind === "measure") { this.viewer.highlight([hit]); return this.viewer.showPickTip(measureHitLabel(hit), e.clientX, e.clientY); }
     if (this.mode === "assembly" && this.pick?.kind !== "align" && this.pick?.kind !== "measure" && this.pick?.kind !== "custom" && this.pick?.kind !== "normHole") this.viewer.highlight([{ kind: "group", key: hit.key }]);
     else this.viewer.highlight([hit]);
   }
@@ -1206,10 +1207,10 @@ export class App {
   beginMeasure() {
     if (this.mode !== "part" && this.mode !== "assembly") return;
     this.pick = { kind: "measure" };
-    this.measure = { hits: [] };
+    this.measure = { hits: [], filter: this.measureFilter || "alle" };
     this.viewer.setSelectionHits([]);
     this.viewer.showMeasure(null);
-    this.setHint("Messen: Fläche, Kante oder Ecke anklicken, dann optional ein zweites Element (Strg/Umschalt: weitere) – Esc beendet");
+    this.setHint("Messen: Fläche, Kante, Achse oder Fangpunkt (Endpunkt, Mitte, Kreismitte, Quadrant) anklicken, dann optional ein zweites Element (Strg/Umschalt: weitere) – Esc beendet");
     this.props.render();
     this.ribbon.render();
   }
@@ -1218,7 +1219,7 @@ export class App {
     const multi = !!(e?.ctrlKey || e?.shiftKey || e?.metaKey);
     if (!hit || hit.info?.idx === undefined) { m.hits = []; m.result = null; m.error = hit ? "Dieses Element lässt sich nicht messen" : null; }
     else {
-      const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face) && a.end === hit.end;
+      const same = (a) => sameMeasureHit(a, hit);
       if (multi && m.hits.some(same)) m.hits = m.hits.filter((a) => !same(a)); // Strg-Klick auf Gewähltes nimmt es heraus
       else {
         if (!multi && (m.hits.length >= 2 || m.hits.some(same))) m.hits = [];
@@ -1260,7 +1261,10 @@ export class App {
   /** Pick-Treffer → Messauftrag für den Kern (Bauteil oder platzierte Komponente) */
   measureItem(hit) {
     const d = this.activeDoc();
-    const base = { body: hit.body, kind: hit.kind, idx: hit.info.idx, end: hit.end };
+    // Achse: Lage schon in Weltkoordinaten; Fangpunkt: Kante bzw. Fläche + Fangart, der Kern rechnet den Punkt exakt
+    if (hit.kind === "axis") return { kind: "axis", start: hit.a, end: hit.b };
+    const base = hit.kind === "point" ? { body: hit.body, kind: hit.src, idx: hit.info.idx, snap: true, ref: hit.ref, label: hit.label }
+      : { body: hit.body, kind: hit.kind, idx: hit.info.idx, end: hit.end };
     if (d.kind === "part") return { ...base, part: d };
     const c = d.components.find((x) => "comp:" + x.id === hit.key);
     const inner = hit.group?.userData?.inner;
