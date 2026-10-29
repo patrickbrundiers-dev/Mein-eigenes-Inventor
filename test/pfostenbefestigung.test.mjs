@@ -467,3 +467,25 @@ test("Spindeltreppe: Stab mit Fußplatte liegt wie geprüft (entlang der Tangent
   assert.doesNotMatch(s.issues.map((i) => i.message).join(), /unter dem Pfosten/, "40 entlang der Tangente: Bohrungen bei ± 38 frei, so wie der Stab gebaut wird");
   assert.throws(() => sp({ stabMount: "oben", stabMPer: "2 seitlich" }), (e) => e.key === "stabMPer");
 });
+
+test("Treppe: letzter Laufpfosten vor dem Auslauf zurückgerückt – Knieleisten bzw. Untergurt knicken wie der Handlauf an der Treppenkante", () => {
+  for (const patch of [{}, { gelBeltMode: "zwischen" }, { gelFill: "staketen" }, { gelFill: "staketen", gelBeltMode: "zwischen" }, { gelMount: "oben" }]) {
+    const tag = JSON.stringify(patch), p = treppe({ gelPost: { kind: "rohr", size: "48.3x2.6" }, ...patch });
+    const rail = p.chains.find((c) => c.name === "Geländer links Handlauf").points, knick = rail[1];
+    const post = p.members.filter((m) => /^Geländer links Pfosten \d+$/.test(m.name)).find((m) => m.a[0] < knick[0] - 50 && m.a[0] > knick[0] - 400);
+    assert.ok(post, `${tag}: Pfosten vor der Treppenkante`);
+    const bars = p.members.filter((m) => /^Geländer links (Knieleiste|Untergurt) /.test(m.name));
+    const flat = bars.filter((m) => Math.abs(m.a[2] - m.b[2]) < 1e-6 && m.b[0] > knick[0]);
+    assert.ok(flat.length, tag);
+    for (const f of flat) {
+      // waagrechtes Teil beginnt am Knick (x der Treppenkante), dort endet ein schräges Teil gegehrt am gleichen Punkt
+      near(f.a[0], knick[0], 1e-6, `${tag} ${f.name}`);
+      const s = bars.find((m) => m.b[2] > m.a[2] + 1 && Math.hypot(...m.b.map((x, k) => x - f.a[k])) < 1e-6);
+      assert.ok(s, `${tag}: ${f.name} ohne schrägen Anschluss`);
+      assert.equal(s.target, f.target, tag);
+      nearV(s.cuts.end[0].n.map((x, k) => x + f.cuts.start[0].n[k]), [0, 0, 0], 1e-9, tag);
+      // gleicher Abstand zum Handlauf wie auf dem Lauf (nicht abgesenkt)
+      assert.ok(f.a[2] >= 2800 + 100 - 1e-6, `${tag} ${f.name} ${f.a[2]}`);
+    }
+  }
+});
