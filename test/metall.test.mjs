@@ -828,7 +828,7 @@ test("Generator als Baugruppe: Einzelteile in eigener Lage, Platzierung führt z
 
 test("Beschläge: Größenlisten, Bezeichnung, Prüfung (E11)", async () => {
   const { normSizes, normDesignation, checkNorm, defaultNormteil, NORM_SIZES, normDensity } = await import("../src/core/normteile.js");
-  assert.deepEqual(normSizes("mutter"), NORM_SIZES);
+  assert.ok(normSizes("mutter").includes("M12") && normSizes("mutter").length >= NORM_SIZES.length, "Muttern aus der Bibliothek (M3–M36)");
   assert.ok(normSizes("kugelkappe").includes("Ø42,4"));
   const f = defaultNormteil("anschweissband");
   assert.equal(f.size, "Ø20 x 100");

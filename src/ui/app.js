@@ -40,6 +40,7 @@ import { sketchRefs, dependents } from "../core/featurerefs.js";
 import { applyPatterns } from "../core/asmmuster.js";
 import { worldToLocal, solveAssembly, CONSTRAINT_TYPES } from "../core/asmsolve.js";
 import { beginPlace, placePick, placeState } from "./abhaengigkeit.js";
+import { normHolePick } from "./normlib.js";
 import { partContent, baseName } from "../core/links.js";
 import { finishColor } from "../core/oberflaeche.js";
 import { Docking } from "./layout.js";
@@ -953,7 +954,7 @@ export class App {
     if (p?.kind === "edges") return { edges: true, faces: false };
     if (p?.kind === "measure") return { edges: true, faces: true, vertices: true };
     if (p?.kind === "align") return { edges: true, faces: true, vertices: true };
-    if (p?.kind === "faces" || p?.kind === "sketchPlane") return { edges: false, faces: true };
+    if (p?.kind === "faces" || p?.kind === "sketchPlane" || p?.kind === "normHole") return { edges: false, faces: true };
     if (this.mode === "assembly") return { edges: false, faces: true };
     if (this.selFilter === "flaechen") return { edges: false, faces: true };
     if (this.selFilter === "kanten") return { edges: true, faces: false };
@@ -973,7 +974,7 @@ export class App {
     // Gegenstück im Modellbrowser mit hervorheben (Komponente bzw. Feature, das den Körper erzeugt hat)
     this.tree.setHot(!hit ? null : hit.key?.startsWith("comp:") ? hit.key.slice(5) : hit.key === "part" ? this.results.get(this.activeId)?.bodies?.[hit.body]?.fid || null : null);
     if (!hit) return this.viewer.clearHover();
-    if (this.mode === "assembly" && this.pick?.kind !== "align" && this.pick?.kind !== "measure" && this.pick?.kind !== "custom") this.viewer.highlight([{ kind: "group", key: hit.key }]);
+    if (this.mode === "assembly" && this.pick?.kind !== "align" && this.pick?.kind !== "measure" && this.pick?.kind !== "custom" && this.pick?.kind !== "normHole") this.viewer.highlight([{ kind: "group", key: hit.key }]);
     else this.viewer.highlight([hit]);
   }
   viewerClick(e) {
@@ -1000,6 +1001,7 @@ export class App {
     if (p?.kind === "place") return placeClick(this, e);
     if (p?.kind === "custom") return p.onPick(hit, e);
     if (p?.kind === "gestell") return this.gestellPick(hit);
+    if (p?.kind === "normHole") return normHolePick(this, hit);
     if (this.mode === "assembly") {
       const cid = hit?.key?.startsWith("comp:") ? hit.key.slice(5) : null;
       this.sel = cid ? { type: "component", id: cid } : null;

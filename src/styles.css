@@ -744,3 +744,25 @@ body.is-busy #ribbon::after { animation: busy-in .2s .3s forwards, busy-run 1.1s
 .datum-ref > .btn { margin-bottom: 5px; white-space: nowrap; }
 .datum-picks { margin: 6px 0; padding-left: 20px; }
 .datum-picks li { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 1px 0; }
+/* Normteil-Bibliothek (wie Inventor Inhaltscenter) */
+.normlib { display: grid; grid-template-columns: 200px 1fr 300px; gap: 10px; height: min(520px, 70vh); }
+.normlib > div { overflow: auto; min-height: 0; }
+.normlib-cats { display: flex; flex-direction: column; gap: 2px; }
+.normlib-cats > .inp { margin-bottom: 6px; }
+.normlib-cat, .normlib-fam, .normlib-recent { display: flex; gap: 6px; align-items: center; text-align: left; border: 1px solid transparent; background: none; border-radius: var(--radius-s); padding: 5px 7px; cursor: pointer; color: var(--ink); font: inherit; }
+.normlib-cat:hover, .normlib-fam:hover, .normlib-recent:hover { background: var(--steel-1); }
+.normlib-cat.on, .normlib-fam.on { background: var(--dye-soft); border-color: var(--dye); }
+.normlib-recent { font-size: 11px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.normlib-sub { margin: 10px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--steel-4); }
+.normlib-list { display: flex; flex-direction: column; gap: 2px; border-left: 1px solid var(--steel-2); border-right: 1px solid var(--steel-2); padding: 0 6px; }
+.normlib-fam { flex-direction: column; align-items: flex-start; gap: 1px; }
+.normlib-fam .muted { font-size: 11px; }
+.normlib-detail h4 { margin: 0 0 2px; }
+.normlib-prev { width: 100%; height: 150px; margin: 6px 0; background: var(--steel-0); border: 1px solid var(--steel-2); border-radius: var(--radius-s); }
+.normlib-prev .add { fill: var(--steel-3); stroke: var(--ink-soft); }
+.normlib-prev .cut { fill: var(--steel-0); stroke: var(--ink-soft); }
+.normlib-prev .seat { stroke: var(--laser); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.normlib-len { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.normlib .hint.warn { color: var(--warn); }
+@media (max-width: 900px) { .normlib { grid-template-columns: 1fr; height: auto; } }
+.normlib .muted { color: var(--steel-4); }

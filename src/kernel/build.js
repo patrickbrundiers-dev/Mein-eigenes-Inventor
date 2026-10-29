@@ -30,7 +30,8 @@ import { bendRule, ruleSummary } from "../core/bendtable.js";
 import { pathAxes, pathPoint, pathLength as tubeLength, pathDistance, bendRadius, splitPath } from "../core/biegeteil.js";
 import { effectiveSheet } from "../core/blechregeln.js";
 import { planBlechkasten, boxFromBody, boxSideFrame } from "../core/blechkasten.js";
-import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, normDensity, threadLength4014, turnbuckleDims, boltSizeForHole, boltSet, beschlagDims } from "../core/normteile.js";
+import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, boltSizeForHole, boltSet } from "../core/normteile.js";
+import { familyOf, normRecipe, gradeInfo } from "../core/normlib.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
 import { GENERATORS, resolveGenParams } from "../core/generator.js";
@@ -1407,12 +1408,12 @@ export function createKernel(R) {
           }
           case "normteil": {
             const kind = f.kind || "schraube4017";
-            const L = NORM_KINDS[kind]?.length ? E(f.length ?? "40", "Länge") : 0;
-            const warn = checkNorm(kind, f.size, L);
+            const L = familyOf(kind, f.custom)?.length ? E(f.length ?? "40", "Länge") : 0;
+            const warn = checkNorm(kind, f.size, L, f.custom);
             const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Basispunkt " + "XYZ"[k]));
             const dir = f.axis === "custom" ? (f.dir || ["0", "0", "1"]).map((x) => E(x, "Richtung")) : AXES[f.axis || "Z"];
             const list = [];
-            const b = pushNorm(state, f, list, { kind, size: f.size, length: L, grade: f.grade, galv: f.galv, name: f.name }, pos, dir);
+            const b = pushNorm(state, f, list, { kind, size: f.size, length: L, grade: f.grade, galv: f.galv, name: f.name, custom: f.custom }, pos, dir);
             state.tools.set(f.id, { op: "new", shapes: list });
             st.info = b.meta.norm.designation;
             if (warn.length) st.warning = warn.join("; ");
@@ -1925,9 +1926,12 @@ export function createKernel(R) {
     return { shape, name: designation, info: `R = ${num(sp.rate, 2)} N/mm, Blocklänge ${num(sp.Lc)} mm, Fc ${num(sp.Fc, 0)} N, τkc ${num(sp.tauKc, 0)} N/mm²`, meta: { norm: { kind: "feder", size: designation, length: sp.L0, grade: "Federdraht EN 10270-1", designation }, spring: sp, density: 7.85 } };
   }
   function pushNorm(state, f, list, n, pos, dir) {
-    const solid = orientZ(normSolid(n.kind, n.size, n.length || 0), dir, pos);
+    const fam = familyOf(n.kind, n.custom);
+    if (!fam) throw new Error("Unbekanntes Normteil: " + n.kind);
+    const solid = orientZ(recipeSolid(normRecipe(fam, n.size, n.length || 0)), dir, pos);
     const designation = normDesignation(n);
-    const meta = { norm: { kind: n.kind, size: n.size, length: n.length || 0, grade: n.grade || "", designation }, density: normDensity(n.grade) };
+    const mat = gradeInfo(n.grade);
+    const meta = { norm: { kind: n.kind, size: n.size, length: n.length || 0, grade: n.grade || "", designation, norm: fam.norm, material: mat.label, cat: fam.cat }, density: mat.density };
     const body = { shape: solid, kind: "solid", name: n.name || designation, fid: f.id, meta };
     state.bodies.push(body);
     list?.push({ shape: solid, kind: "norm", meta, name: body.name });
@@ -2179,67 +2183,30 @@ export function createKernel(R) {
     throw new Error("Unbekannter Regelkörper: " + kind);
   }
   // ---------- Normteile in lokaler Lage: Achse +z, Basispunkt = Auflagefläche (Schraube: Kopfunterseite) ----------
-  function normSolid(kind, size, L) {
-    if (NORM_KINDS[kind]?.beschlag) return beschlagSolid(kind, beschlagDims(kind, size));
-    const t = NORM_THREADS[size];
-    const hex = (s, h, z0 = 0) => R.drawPolysides(s / Math.sqrt(3), 6).sketchOnPlane("XY", z0).extrude(h);
-    const cyl = (r, h, z0 = 0) => R.makeCylinder(r, h, [0, 0, z0], [0, 0, 1]);
-    const core = t.d - 1.0825 * t.P; // Kerndurchmesser Bolzen (Flankendurchmesser-Näherung) für den Gewindebereich
-    switch (kind) {
-      case "schraube4017":
-      case "schraube4014": {
-        const b = kind === "schraube4014" ? Math.min(L, threadLength4014(t.d, L)) : L;
-        let s = hex(t.s, t.k, -t.k);
-        if (L - b > 0.01) s = s.fuse(cyl(t.d / 2, L - b));
-        return s.fuse(cyl(core / 2, b, L - b));
+  /** Normteil-Körper aus dem Rezept der Bibliothek (src/core/normlib.js): Grundkörper entlang z, nacheinander vereinigt/abgezogen */
+  function recipeSolid(ops) {
+    let s = null;
+    for (const o of ops) {
+      let p;
+      switch (o.op) {
+        case "cyl": p = o.axis === "x" ? R.makeCylinder(o.d / 2, o.h, [-o.h / 2, o.y || 0, o.z0], [1, 0, 0]) : R.makeCylinder(o.d / 2, o.h, [o.x || 0, o.y || 0, o.z0], [0, 0, 1]); break;
+        case "hex": p = R.drawPolysides(o.s / Math.sqrt(3), 6).sketchOnPlane("XY", o.z0).extrude(o.h); break;
+        case "sq": p = R.drawRectangle(o.a, o.a).sketchOnPlane("XY", o.z0).extrude(o.h); break;
+        case "box": p = R.makeBaseBox(o.w, o.dy, o.h).translate([o.x || 0, o.y || 0, o.z0]); break;
+        case "rev": { let d = R.draw(o.pts[0]); for (const q of o.pts.slice(1)) d = d.lineTo(q); p = d.close().sketchOnPlane("XZ").revolve([0, 0, 1], { origin: [0, 0, 0] }); break; }
+        case "wedge": {
+          const pts = [[-o.a / 2, 0], [o.a / 2, 0], [o.a / 2, o.h2], [-o.a / 2, o.h1]];
+          let d = R.draw(pts[0]); for (const q of pts.slice(1)) d = d.lineTo(q);
+          p = d.close().sketchOnPlane("XZ", -o.b / 2).extrude(o.b);
+          break;
+        }
+        default: throw new Error("Normteil: unbekannter Grundkörper " + o.op);
       }
-      case "mutter": return hex(t.s, t.m).cut(cyl(t.d / 2, t.m + 2, -1));
-      case "scheibe": return cyl(t.d2 / 2, t.h).cut(cyl(t.d1 / 2, t.h + 2, -1));
-      case "gewindestange": return cyl(core / 2, L);
-      case "spannschloss": {
-        // offener Bügel: zwei Naben mit Gewinde, verbunden durch zwei Seitenstege; Mitte bei z = 0
-        const { l, b, e } = turnbuckleDims(size);
-        const w = Math.max(3, (b - t.d) / 2), bar = (y) => R.makeBaseBox(w, w, l).translate([0, y, -l / 2]);
-        let s = cyl(b / 2 * 0.8, e, l / 2).fuse(cyl(b / 2 * 0.8, e, -l / 2 - e)).fuse(bar(b / 2 - w / 2)).fuse(bar(-(b / 2 - w / 2)));
-        return s.cut(cyl(t.d / 2, l + 2 * e + 2, -l / 2 - e - 1));
-      }
+      s = o.cut ? s.cut(p) : s ? s.fuse(p) : p;
     }
-    throw new Error("Unbekanntes Normteil: " + kind);
+    return s;
   }
-  /**
-   * Beschläge (E11), Achse +z: Anschweißband ab Unterkante (zwei Hälften mit 2 mm Fuge, Stift durchgehend),
-   * Kappen ab Rohrende (Stopfen zeigt in −z ins Rohr), Bodenanschlag ab Boden (Winkel mit Steg in +y).
-   */
-  function beschlagSolid(kind, m) {
-    const cyl = (r, h, z0 = 0) => R.makeCylinder(r, h, [0, 0, z0], [0, 0, 1]);
-    const box = (x, y, z, at) => R.makeBaseBox(x, y, z).translate(at);
-    switch (kind) {
-      case "anschweissband": {
-        const half = (m.L - 2) / 2;
-        return cyl(m.D / 2, half).fuse(cyl(m.D / 2, half, half + 2)).fuse(cyl(m.D * 0.22, m.L - 2 * 3, 3));
-      }
-      case "kugelkappe": {
-        const r = m.D / 2, wall = Math.max(2, m.D * 0.06);
-        const ball = R.makeSphere(r * 1.05).translate([0, 0, 3 + r * 0.8]);
-        return cyl(r - wall, 12, -12).fuse(cyl(r, 3)).fuse(cyl(r * 0.55, r * 0.5, 2.5)).fuse(ball);
-      }
-      case "rohrkappe": {
-        const r = m.D / 2, wall = Math.max(2, m.D * 0.06);
-        return cyl(r - wall, 12, -12).fuse(cyl(r + 1, 3));
-      }
-      case "vierkantkappe": {
-        const a = m.a, wall = Math.max(2, a * 0.06);
-        return box(a - 2 * wall, a - 2 * wall, 12, [0, 0, -12]).fuse(box(a + 2, a + 2, 3, [0, 0, 0]));
-      }
-      case "bodenanschlag": {
-        // Grundplatte w × d, Anschlagsteg h hoch an der Hinterkante, zwei Dübellöcher Ø 9
-        let s = box(m.w, m.d, m.t, [0, 0, 0]).fuse(box(m.w, m.t, m.h, [0, m.d / 2 - m.t / 2, 0]));
-        for (const x of [-m.w / 4, m.w / 4]) s = s.cut(cyl(4.5, m.t + 2, -1).translate([x, -m.t, 0]));
-        return s;
-      }
-    }
-    throw new Error("Unbekannter Beschlag: " + kind);
-  }
+
   /** Körper mit Achse +z an Punkt pos auf Richtung dir drehen */
   function orientZ(shape, dir, pos) {
     const n = v3.norm(dir), z = [0, 0, 1];

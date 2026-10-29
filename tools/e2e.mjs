@@ -686,7 +686,7 @@ try {
   step("Unterbaugruppe", sub.leaves === sub.expected && sub.sheets.includes("Strukturstückliste") && sub.sheets.includes("Baukastenstückliste") && sub.nested >= 2, JSON.stringify(sub));
   // Normteil (MegaCAD-Abgleich M20): Dialog in der Baugruppe, 4 × M12 x 40 → eigene Zeile in der Stückliste
   await page.locator("#ribbon button", { hasText: /^Normteil$/ }).first().click();
-  await page.locator("#modal-root .dialog input[type=number]").last().fill("4");
+  await page.locator("#modal-root .dialog input.normlib-qty").fill("4");
   await page.locator("#modal-root .dialog footer .btn", { hasText: "Einfügen" }).click();
   await idle(60000);
   const nt = await evalApp(async () => {
@@ -699,6 +699,45 @@ try {
     return { comps: top.components.filter((c) => c.part === p?.id).length, body: r?.bodies?.[0]?.name, ok: r && Object.values(r.status).every((x) => x.ok), inXlsx: text.includes("Sechskantschraube ISO 4017 - M12 x 40 - 8.8"), partRow: text.includes(">" + p?.name + "<") };
   });
   step("Normteil in der Baugruppe", nt.comps === 4 && nt.ok && nt.body === "Sechskantschraube ISO 4017 - M12 x 40 - 8.8" && nt.inXlsx, JSON.stringify(nt));
+  // Normteil-Bibliothek (Inhaltscenter): Suche nach alter DIN-Nummer, Vorschau, dann Garnitur an einer Bohrung
+  await page.locator("#ribbon button", { hasText: /^Normteil$/ }).first().click();
+  await page.locator("#modal-root .normlib-cats input").fill("DIN 912");
+  await page.locator("#modal-root .normlib-fam").first().click();
+  await shot("normteil-bibliothek");
+  const lib = await evalApp(() => ({ fams: document.querySelectorAll("#modal-root .normlib-fam").length, title: document.querySelector("#modal-root .normlib-detail h4")?.textContent, svg: document.querySelectorAll("#modal-root .normlib-prev polygon").length, desig: document.querySelector("#modal-root .normlib-detail .kv b")?.textContent }));
+  await page.locator("#modal-root .normlib-cats input").fill("");
+  await page.locator("#modal-root .normlib-cat", { hasText: "Schrauben" }).click();
+  await page.locator("#modal-root .normlib-fam", { hasText: "Gewinde bis Kopf" }).click();
+  await page.locator("#modal-root .dialog footer .btn", { hasText: "An Bohrung" }).click();
+  const holePlate = await evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc();
+    const p = { id: "pLoch", kind: "part", name: "Lochplatte", material: "S235", color: null, params: [], description: "", number: "", features: [
+      { id: "q", type: "regelkoerper", name: "Platte", kind: "quader", dims: { L: "100", B: "100", H: "10" }, pos: ["0", "0", "0"], axis: "Z", op: "join" },
+      { id: "z", type: "regelkoerper", name: "Loch", kind: "zylinder", dims: { D: "13.5", H: "12" }, pos: ["0", "0", "-1"], axis: "Z", op: "cut" }] };
+    a.edit("Lochplatte", () => { a.project.docs.push(p); asm.components.push({ id: "cLoch", part: p.id, name: "Lochplatte:1", pos: [0, 0, 300], rot: [0, 0, 0], fixed: true }); });
+    return a.pick?.kind;
+  });
+  await idle(60000);
+  const hole = await evalApp(() => {
+    const a = window.__werkcad, asm = a.activeDoc();
+    const faces = a.assemblyFaces("pLoch");
+    const cylF = faces.find((f) => f.type === "CYLINDER" && Math.abs(f.radius - 6.75) < 0.01);
+    if (!cylF) return { err: "keine Bohrung", faces: faces.length };
+    const top = Math.max(...faces.filter((f) => f.type === "PLANE" && f.normal[2] > 0.99).map((f) => f.point[2]));
+    const hit = { kind: "face", key: "comp:cLoch", info: { ...cylF }, point: [cylF.axisP[0] + 6.75, cylF.axisP[1], top - 0.5 + 300], group: { userData: {} } };
+    const orig = a.viewer.pick; a.viewer.pick = () => hit;
+    try { a.viewerClick({ clientX: 0, clientY: 0 }); } finally { a.viewer.pick = orig; }
+    a.cancelPick();
+    const added = asm.components.filter((c) => c.id !== "cLoch" && asm.constraints?.some((k) => k.b.comp === c.id && k.type === "einfuegen"));
+    return { names: added.map((c) => a.doc(c.part).normDesignation), z: added.map((c) => Math.round(c.pos[2] * 100) / 100), top };
+  });
+  await idle(60000);
+  const solved = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); a.solveAssemblyConstraints(asm); return Object.keys(a.asmErrors || {}).filter((id) => asm.constraints.find((k) => k.id === id)?.type === "einfuegen").length; });
+  await evalApp(() => { const a = window.__werkcad; a.sel = { type: "component", id: "cLoch" }; a.viewer.fit?.(); });
+  await shot("normteil-an-bohrung");
+  step("Normteil-Bibliothek: Suche, Vorschau, Garnitur an Bohrung", lib.title === "Zylinderschraube mit Innensechskant" && lib.svg > 2 && holePlate === "normHole"
+    && hole.names?.join("|") === "Scheibe ISO 7089 - 12 - 200 HV|Sechskantschraube ISO 4017 - M12 x 30 - 8.8|Scheibe ISO 7089 - 12 - 200 HV|Sechskantmutter ISO 4032 - M12 - 8" && solved === 0,
+    JSON.stringify({ lib, hole, solved }));
   await evalApp((id) => window.__werkcad.openDoc(id), inner);
   await idle();
 
