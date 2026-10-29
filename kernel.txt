@@ -1,0 +1,199 @@
+✔ Fläche verschieben: Normale, Weltachse, Messen ab (580.65487ms)
+✔ Fläche verschieben mit schräger Nachbarfläche (Fase) verlängert die Fase (385.43438ms)
+✔ Fläche drehen um Kante und um Achse U (505.021223ms)
+✔ Fläche löschen: Bohrung, Rundung, Fase (1224.895209ms)
+✔ Größe: Bohrung und Bolzen auf neuen Durchmesser, ebene Fläche mit Versatz (314.352977ms)
+[info] [{"face":"u","x":200,"y":30.000000000000004,"d":14},{"face":"o","x":100,"y":30,"d":10},{"face":"u","x":300,"y":30.000000000000004,"d":14},{"face":"u","x":400,"y":30.000000000000004,"d":14},{"face":"v","x":800,"y":20.000000000000004,"d":12,"slot":{"l":28,"angle":0}}] 0 60 40
+[info] {"t":15,"L":280,"W":180,"holes":[{"face":"v","x":250,"y":30,"d":18},{"face":"v","x":250,"y":150,"d":18},{"face":"v","x":30,"y":150,"d":18},{"face":"v","x":30,"y":30,"d":18}],"ak":[[0,0,0],[280,0,0],[280,180,0],[0,180,0]]}
+✔ DSTV: Rechteckrohr mit Bohrungen oben/unten und Langloch vorne – Fläche, Lage, Durchmesser (2131.374658ms)
+✔ DSTV: IPE 200 mit Stirnplatte – Stab ohne Bohrungen, Platte mit Kontur und 4 Bohrungen, Text lesbar (269.498845ms)
+✔ DSTV: Platte mit Eckradien – Bögen mit Radius, Außenkontur gegen den Uhrzeiger (78.29543ms)
+[info] Carport 6000 × 5000 mm, Gefälle 3 %, 6 Stützen, 8 Sparren, Dachfläche 34,6 m² – statisch nicht nachgewiesen
+[info] Vordach 4000 × 2500 mm, Gefälle 3 %, 2 Stützen, 6 Sparren, Dachfläche 11,8 m² – statisch nicht nachgewiesen
+✔ W1 Verzinkungsbohrungen: Quadratrohr 40×3, Ø 12 an beiden Enden, nur wenn verzinkt (1775.767817ms)
+✔ W2 Rohr strecken: Bohrungen am gebogenen Rohr landen am geraden Rohr bei s und φ (2878.433823ms)
+✔ W3 Muster: Abstände einzeln, Exemplare auslassen, Winkel einzeln (176.730757ms)
+✔ W6 Vordach/Carport: Stützen, Pfetten, Sparren mit Gefälle, Kopfbänder, Dachhaut und Rinne ohne Überschneidung (14437.902529ms)
+✔ W7 Biegefolge: Kantteil liefert Querschnitt mit scharfen Ecken (außen bemaßt) (15.365689ms)
+✔ W8 Variable Rundung: Radius 2 → 10 entlang einer Kante, Volumen zwischen den festen Rundungen (493.704362ms)
+✔ W12 Fenstergitter: Laibung mit Ankerbohrungen, Durchsteckgitter vor der Fassade ohne Überschneidung (3955.237894ms)
+✔ Anzeigenetz: Kreiskanten tragen Mitte, Radius, Achse und x-Richtung (59.329924ms)
+✔ Fangpunkt exakt: Kreismitte, Quadrant, Kantenmitte, Flächenmitte; Abstand Punkt–Punkt (46.646878ms)
+✔ Achse als Messelement: gerades Achsstück, Winkel und Abstand zur Fläche (39.608385ms)
+✔ Text in der Skizze: Gravur 1 mm tief nimmt Volumen weg, Löcher in »A« und »8« bleiben stehen (2387.208927ms)
+✔ Text in der Skizze: Platzhalter {teilenummer} folgt der Teilenummer (Zwischenspeicher) (1196.977016ms)
+✔ Bauteilende (FU5): Features hinter der Markierung werden nicht gerechnet (47.060511ms)
+✔ Blechkasten (FU19): Volumen = Abwicklungsfläche × Dicke, Ecken aufgetrennt, abgewickelt gleiches Volumen (544.656096ms)
+✔ In Blech umwandeln: Quader wird Blechkasten mit seinen Außenmaßen, anderer Körper wird abgelehnt (264.674598ms)
+✔ Gestell: Gehrung, Auf Gestell stutzen und Nuten als Einzelteile (Länge und Volumen) (2534.238208ms)
+✔ Gestell: Eckverbindung, Verlängern und Wiederverwenden teilen sich ein Bauteil (231.927164ms)
+✔ Gestell: Rundrohr am Rundrohr gestutzt bekommt den Sattelschnitt (852.064188ms)
+✔ Gestell: Stecknasen am T-Stoß – Zapfen am stoßenden Stab, Schlitze mit Spiel im durchlaufenden (1245.020873ms)
+✔ Gestell: Fußplatte wird ein eigenes Einzelteil mit Bohrungen (21.250794ms)
+[info] Platte bbox [[-8.881784197001252e-16,-8.881784197001252e-16,0],[100,50,10]]
+[info] faces 12 edges 30 top {"start":642,"count":480,"type":"PLANE","idx":4,"normal":[0,0,1],"point":[50,25,10]}
+[info] Volumen Bohrungen 76888.85220101455 1 Bohrung(en) Ø6.8 (M8)
+[info] Profil meta {"section":"Quadratrohr 40x40x3","profileId":"QR 40x40x3","area":420.82300164692447,"length":540,"miterStart":45,"miterEnd":45,"sec":{"kind":"vierkant","dims":{"B":40,"t":3,"r":6}},"endCuts":{"A":"3D","B":"3D"},"axis":{"origin":[0,0,0],"z":[1,0,0],"u":[0,1,0],"v":[0,0,1],"lo":-20,"hi":520,"width":40,"height":40,"perimeter":149.6991118430775},"miterParts":{"A":{"b":0,"h":-45},"B":{"b":0,"h":45}}}
+[info] Gehrung Längen 1040, 640, 1040, 640
+[info] Stumpf Längen 1040, 600, 1000, 560 coped false,false,false,false
+[info] T-Stoß Längen 500.00, 300.00 coped false,true
+[info] Wandung {"ok":true}
+[info] Fehlermeldungen {"s1":{"ok":true,"dof":0},"e1":{"ok":true},"f1":{"ok":false,"error":"Rundung nicht möglich – Radius zu groß? (Geometrie-Fehler: StdFail_NotDone BRep_API: command not done)"},"e2":{"ok":false,"error":"Skizze fehlt (gelöscht?)"}}
+[info] Zeiten ms 3.8 14.3
+[info] Vorne x 0 60 y -0 30 Bögen sichtbar 1 verdeckt 1
+[info] Hinten Bögen sichtbar 0 verdeckt 1
+[info] Draufsicht y -0 40 verdeckte Linien 5
+[info] platziert [[80,0,0],[100,10.000000000000002,5]]
+[info] Beispiel Grundplatte Körper 1 Fehler []
+[info] Beispiel Rahmen Körper 5 Fehler []
+[info] Beispiel Rohr mit Gehrung Körper 1 Fehler []
+[info] translate verbraucht Original: ja: This object has been deleted
+[info] FaceFinder constructor clone parallelTo ofSurfaceType inPlane shouldKeep applyFilter | constructor when inList atAngleWith atDistance containsPoint near withinDistance inBox inShape
+[info] hashCode typ number isNull typ boolean
+[info] revolution.length 1 mirror 2
+[info] größte Fläche {"area":59426.725635973344,"normal":[0,0,-1],"point":[150.00000000000009,99.99999999999997,0]}
+[info] Platten-DXF 4 Kreise 4 Bögen 4 Linien 300 x 200
+[info] Schnittkonturen 2 4,4
+[info] Schnittfläche (Summe Konturen) 2000
+[info] Knick 30 Abwicklung 1414.951 Volumen 757097 757072
+[info] Knick 45 Abwicklung 1423.016 Volumen 757075 757038
+[info] Knick 90 Abwicklung 1454.267 Volumen 756865 756790
+[info] Quader Netzabweichung 4.440892098500626e-16 I 189.7 680.3 817.7
+[info] Zylinder Netzabweichung -0.0025277729336146137 I 498.3 498.3 157.0
+[info] Rohr Netzabweichung -0.0011658516299948296 I 15915.9 15915.9 611.8
+[info] Profilzug Längen 1024.78, 710.82, 1024.78 Gehrungen 0/45, 45/45, 45/0
+[info] Ecke 1 Anteile {"b":41.8,"h":24.1}
+[info] Biegerohr {"L":"1214.16","bends":[[500,0,90],[200.00000000000003,90,90]]}
+✔ Platte mit Bohrungen und Rundung (470.806432ms)
+✔ Senkung, Flachsenkung, Sackloch, Gewinde (118.908855ms)
+✔ Rotation voll und teilweise (18.325613ms)
+✔ Profil Quadratrohr mit Gehrungen (693.863583ms)
+✔ Rahmen aus Skizze: Gehrung und Stumpf (2881.021003ms)
+✔ Bohrungsachsen für die Bohrungstabelle: nur innere Zylinderflächen (41.660309ms)
+✔ Muster, Spiegeln, Fase an Kante, Wandung (297.839219ms)
+✔ Fehler werden gemeldet statt abzustürzen (115.778421ms)
+✔ Zwischenspeicher liefert gleiche Ergebnisse (23.759806ms)
+✔ Zeichnungsprojektion: sichtbar/verdeckt, Kreise (76.137042ms)
+✔ Export STEP/STL und Baugruppen-Platzierung (228.925527ms)
+✔ Beispielprojekt baut fehlerfrei (1921.536864ms)
+✔ API-Annahmen (23.444338ms)
+✔ Platte als DXF: Kontur, Eckenradien, Bohrungen als Kreise (24.8115ms)
+✔ Schnitt: Körper kappen und Schnittfläche finden (62.197089ms)
+✔ Profil-ID in Zuschnitt-Daten (50.10543ms)
+✔ Knickrahmen: gerades Rohr, 30/45/90°, gebogene Außenwand, Gehrungslinie, beide Ansichten gültig (9075.919342ms)
+✔ Knickrahmen: Faltung passt zur Abwicklung (K = 0,5, Wand ohne Eckradius → gleiches Volumen) (4226.309285ms)
+✔ Knickrahmen: drei Segmente, gegensinnig, Ebene XZ, Profillage (8379.896266ms)
+✔ Knickrahmen: ungültige Eingaben ohne Teilergebnis, Parameter und Neuaufbau (5912.416331ms)
+✔ Knickrahmen: Speichern/Laden und STEP-Rückimport (11987.852291ms)
+✔ Knickrahmen: Freistellung über die Biegezone, Schweißspalt, Zapfen (18559.059992ms)
+✔ Messen: exakte Werte für Flächen, Kanten, Abstand, Winkel, Schwerpunkt (136.462866ms)
+✔ Konturen am Rohr (Rohr-Editor): Bohrung, Langloch, Ausklinkung, Seite und Muster (774.435379ms)
+✔ Enden in 2D und 3D (Rohr-Editor) mit Winkelkorrektur, Einstellung je Profil für beide Enden (61625.863304ms)
+✔ Bohrung in 3D (Rohr-Editor): Neigung längs/quer, Winkelkorrektur (275.531844ms)
+✔ Prägen / Gravieren: Skizze auf Rundrohr abgewickelt, auf Vierkant eben, über Kante gemeldet (1774.199388ms)
+✔ Schlitz und Polygon am Rohr: Volumen und Lage (403.589306ms)
+✔ Trägheitsmomente aus dem Netz: Quader, Zylinder, Rohr gegen Formeln (35.516467ms)
+✔ Ellipse extrudieren: Volumen π·a·b·h, auch mit b > a (9.274124ms)
+✔ 3D-Profilzug: räumlicher Zug mit Gehrungen, Längen und Masse (MegaCAD-Abgleich M2) (1233.677169ms)
+✔ Spline extrudieren: geschlossene Kurve und Spline mit Linie (5.691475ms)
+✔ Biegerohr über Polygonzug: Volumen = Fläche × Abwicklung, Biegeliste (MegaCAD-Abgleich M4) (474.113599ms)
+✔ Langloch 30 breit an QR 40x40x3: über die Eckrundung (2D senkrecht zur Mantelfläche, 3D eben) (4569.104296ms)
+✔ Rundrohr: 2D radial auf der Abwicklung, 3D parallel bis zur Winkelkorrektur (4841.201405ms)
+✔ Schnitt 2D/3D am Bauteil gilt für alle Profile (1320.618546ms)
+✔ Mindest-Restwand: Tiefe = Wandstärke lässt 0,1 mm stehen (153.019082ms)
+✔ Regelkörper: Volumen aller Arten gegen die Formel, Lage und Achse (MegaCAD-Abgleich M5) (406.256007ms)
+✔ Stahlprofile DSTV als Profil und Rahmen: Volumen = Fläche × Länge (MegaCAD-Abgleich M6) (662.804677ms)
+✔ Stirn-/Fußplatte mit Bohrbild und Rippen am Profilende (MegaCAD-Abgleich M8) (321.544283ms)
+✔ Schweißnähte: Kehlnaht der Platte umlaufend, Rippen beidseitig, Naht an gewählten Kanten (MegaCAD-Abgleich M9) (169.819798ms)
+✔ Geländer-Generator: Pfostenaufteilung, Staketen, Handlauf über Eck, Fußplatten (MegaCAD-Abgleich M10/M11) (20502.229362ms)
+✔ Geländer Stufe 2: Kreuz mit Ring und Rahmen mit Staketen bauen (MegaCAD-Abgleich M11) (6331.629538ms)
+✔ Tor-Generator: Doppeltor mit Stichbogen, Rahmen gegehrt, Stäbe bis unter den Bogen (MegaCAD-Abgleich M12) (15462.48552ms)
+✔ Treppen-Generator: Wangen unten waagrecht/oben senkrecht geschnitten, Stufen, Holme (MegaCAD-Abgleich M13) (17937.891142ms)
+✔ Normteile: Schraube, Mutter, Scheibe, Gewindestange, Spannschloss mit Normbezeichnung (MegaCAD-Abgleich M20) (1429.633546ms)
+✔ Treppe L- und U-Form mit Podest, Rahmen und Stützen (MegaCAD-Abgleich M14) (28004.905558ms)
+✔ Spindeltreppe: Stufen als Ringausschnitt, Träger, Geländer, Prüfung Durchgangshöhe (MegaCAD-Abgleich M14) (39787.26548ms)
+✔ Balkon-Generator: Rahmen, Querträger, Belag, Stützen, Wandplatten, Geländer an drei Seiten (MegaCAD-Abgleich M16) (9068.847098ms)
+✔ Stirnplattenstoß: Gegenplatte und Verschraubung mit Normteilen (MegaCAD-Abgleich M15) (235.608558ms)
+✔ Stahlbau-Generatoren: Windverband, Pfette mit Stoß, Rahmenecke mit Normteilen (MegaCAD-Abgleich M15) (1204.519952ms)
+✔ Kantteil: Volumen = Mittellinie × t × Länge, Abwicklung als Platte (MegaCAD-Abgleich M17) (22.000342ms)
+✔ Kantteil und Knickrahmen mit Biegetabelle bzw. DIN 6935 (Werkzeuge Stufe 31) (1860.905383ms)
+✔ Treppe mit Geländer: beidseitig, ums Podest, Knieleisten/Staketen, Höhe über Stufenkante (44013.597083ms)
+✔ Schiebetor: Flügel mit Gegengewicht, Rollenböcke, Pfosten; Teile Flügel/fest (E8) (3332.618116ms)
+✔ Zaun: eben, Gefälle mit schrägen Riegeln, gestuft, Blech mit Fußplatten (E9) (11029.445772ms)
+✔ Handlaufhalter: Bohrung 12,1 mm im Handlauf, Stift und Endkappe als Körper; UPN-Wangen offen nach außen (15195.073783ms)
+✔ Pfostenbefestigung oben: Fußplatte auf der U200-Wange, Gegenbohrungen im Flansch, Pfostenfuß schräg (6028.870793ms)
+✔ Pfostenbefestigung seitlich: Befestigungsblech an der Flachstahl-Wange, Gegenbohrungen, Pfosten liegt am Blech an (3764.151744ms)
+✔ Pfostenbefestigung mit Abstandsausgleich: Flacheisen mit Stecknasen bündig im Blech, Schlitz im Pfosten, keine Durchdringung (3858.171846ms)
+✔ Pfostenbefestigung Balkon oben und L-Podestecke: Gegenbohrungen in Belag und Rahmen, Futterblech, verlängertes Blech (9101.96072ms)
+✔ Normteil-Bibliothek: alle Familien, größte Länge, und eigenes Normteil aus dem Feature (989.880324ms)
+✔ Beschläge als Normteile: alle Größen bauen einen Körper mit Bezeichnung (E11) (255.115494ms)
+✔ Vorgelagertes Maß ändern: Folge-Features bleiben gültig und passen sich an (1031.49792ms)
+✔ Neuaufbau ist deterministisch (mit und ohne Zwischenspeicher) (268.00679ms)
+✔ Folgefehler nennen die Ursache (129.887489ms)
+✔ v1-Projektdatei baut wie beim Einfrieren und übersteht Speichern → Laden (3758.454846ms)
+✔ Referenz: Beispielprojekt Schweißrahmen (alle Bauteile) (2549.334017ms)
+✔ Referenz: Knickrahmen (Vorgabe) (1717.255084ms)
+✔ Referenz: Kantteil (Vorgabe) und Rohr gebogen (633.230194ms)
+✔ Referenz: Geländer über Eck, Tor, Treppe mit Geländer, Zaun (45070.924524ms)
+✔ Referenz: Gestell mit Gehrung und Mittelstab (Einzelteile) (573.406923ms)
+[info] Fußplatte 360 × 320 × 25 mm, 4 Anker M20 × 390 - 4.8 (Loch Ø 26), Unterlegplatten 60 × 60 × 8, 2 Steifen 12 mm; Mörtelfuge 30 mm – statisch nicht nachgewiesen 
+[info] Flanschlaschen 290 × 300 × 15, Steglaschen 2 × 150 × 198 × 10 mm; 20 Schrauben M20 - 10.9 (Flansch 16, Steg 4), Loch Ø 22, e1 35, p1 70 – statisch nicht nachgewiesen 
+[info] traeger fahnenblech Fahnenblech 70 × 139 × 10 mm, 2 × M16 - 8.8, Loch Ø 18 – gelenkig, statisch nicht nachgewiesen Nebenträger oben ausgeklinkt: 71 × 31 mm; Fahnenblech endet unter dem Hauptträgerflansch – Montage von unten prüfen
+[info] traeger winkel Doppelwinkel L 70x70x7 × 139, 6 × M16 - 8.8 (Steg 2, Auflager 4), Loch Ø 18 – gelenkig, statisch nicht nachgewiesen Nebenträger oben ausgeklinkt: 71 × 31 mm
+[info] traeger stirnplatte Stirnplatte 106 × 139 × 10 mm, 4 × M16 - 8.8, Querabstand 46 mm, Loch Ø 18 – gelenkig, statisch nicht nachgewiesen Nebenträger oben ausgeklinkt: 71 × 31 mm; Stirnplatte 106 mm breiter als der Trägerflansch (100 mm) – Platz für M16
+[info] stuetze fahnenblech Fahnenblech 70 × 149 × 10 mm, 2 × M16 - 8.8, Loch Ø 18 – gelenkig, statisch nicht nachgewiesen 
+[info] stuetze winkel Doppelwinkel L 70x70x7 × 149, 6 × M16 - 8.8 (Steg 2, Auflager 4), Loch Ø 18 – gelenkig, statisch nicht nachgewiesen 
+[info] stuetze stirnplatte Stirnplatte 106 × 149 × 10 mm, 4 × M16 - 8.8, Querabstand 46 mm, Loch Ø 18 – gelenkig, statisch nicht nachgewiesen Stirnplatte 106 mm breiter als der Trägerflansch (100 mm) – Platz für M16
+[info] 18 Sprossen à 277,8 mm, Holme 6100 mm (Haltegriffe 1100 mm über Austritt), 8 Wandhalter, Rückenschutz ab 2500 mm: 4 Bügel 50 × 8 (abgewickelt 1881 mm), 5 Längsstäbe – ISO 14122-4 geometrisch geprüft 
+[info] parallel N Parallelträger 12000 mm, 8 Felder à 1500, Füllung N: 8 Diagonalen, 9 Pfosten, Neigung 39,9 … 39,9° – statisch nicht nachgewiesen 
+[info] pult V Pultdachträger 12000 mm, 8 Felder à 1500, Füllung V: 8 Diagonalen, 9 Pfosten, Neigung 41,7 … 50,8° – statisch nicht nachgewiesen 
+[info] sattel W Satteldachträger 12000 mm, 8 Felder à 1500, Füllung W: 8 Diagonalen, 2 Pfosten, Neigung 41,8 … 47,8° – statisch nicht nachgewiesen 
+[info] sattel N Satteldachträger 12000 mm, 8 Felder à 1500, Füllung N: 8 Diagonalen, 9 Pfosten, Neigung 40 … 49,6° – statisch nicht nachgewiesen 
+[info] treppe Arbeitsbühne 4000 × 2500 mm auf 3000 mm, 4 Stützen VIERKANT 120x6.3, 4 Belagfelder, 3 Querträger, Treppe: 17 Steigungen à 176,5 mm, Auftritt 277,1 mm, 2s + a = 630 mm, Neigung 32,5°, Lauflänge 4433 mm, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø 14, Lochabstand 180 mm), Geländer: rechts und links, 16 Pfosten, 8 Knieleisten, Handlaufhalter mit Bohrung Ø 12,1, Knieleisten durch die Pfosten (4 Stück, Aufmaß 1 mm); Befestigung: 16 Befestigungsbleche (2 davon oben mit Fußplatte, wo kein Bauteil daneben liegt), 2 Pfosten gerückt, damit die Platte ganz auf dem Bauteil liegt, 28 Gegenbohrungen übertragen, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen, Fußwinkel am Boden, Kopfplatten 15 mm an der Decke, Geländer: 10 Pfosten, 9 Feld(er) à 1368 / 1210 / 1307 mm, Lauflänge 11496 mm, 10 Handlaufhalter (Bohrung Ø 12,1), Gurte durchgesteckt (5 Stück, Aufmaß 1 mm), Handlauf 3 Stücke (2 Stoße mit Einschiebling); Befestigung: 10 Fußplatten, 4 zum Bauteil hin verlängert (Pfosten am Bauteilende, Bohrbild neben dem Pfosten), 40 Gegenbohrungen übertragen, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen, Fußleiste 100 × 5 mm – statisch nicht nachgewiesen Aussteifung (Verband oder eingespannte Stützen) und Anker statisch nachweisen
+[info] leiter Arbeitsbühne 4000 × 2500 mm auf 3000 mm, 4 Stützen VIERKANT 120x6.3, 4 Belagfelder, 3 Querträger, Steigleiter: 11 Sprossen à 272,7 mm, Holme 4100 mm (Haltegriffe 1100 mm über Austritt), 2 Halter am Randträger – ISO 14122-4 geometrisch geprüft, Geländer: 12 Pfosten, 11 Feld(er) à 818 / 1210 / 1307 mm, Lauflänge 12030 mm, 12 Handlaufhalter (Bohrung Ø 12,1), Gurte durchgesteckt (5 Stück, Aufmaß 1 mm), Handlauf 3 Stücke (2 Stoße mit Einschiebling); Befestigung: 12 Fußplatten, 4 zum Bauteil hin verlängert (Pfosten am Bauteilende, Bohrbild neben dem Pfosten), 48 Gegenbohrungen übertragen, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen, Fußleiste 100 × 5 mm – statisch nicht nachgewiesen Aussteifung (Verband oder eingespannte Stützen) und Anker statisch nachweisen; Durchstieg mit selbstschließender Schranke sichern und Leiterfuß am Boden befestigen (ISO 14122-4) – wird nicht erzeugt
+[info] offen Arbeitsbühne 4000 × 2500 mm auf 3000 mm, 4 Stützen VIERKANT 120x6.3, 4 Belagfelder, 3 Querträger, Geländer: 12 Pfosten, 11 Feld(er) à 780 / 1210 / 1307 mm, Lauflänge 11880 mm, 12 Handlaufhalter (Bohrung Ø 12,1), Gurte durchgesteckt (5 Stück, Aufmaß 1 mm), Handlauf 3 Stücke (2 Stoße mit Einschiebling); Befestigung: 12 Fußplatten, 4 zum Bauteil hin verlängert (Pfosten am Bauteilende, Bohrbild neben dem Pfosten), 48 Gegenbohrungen übertragen, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen, Fußleiste 100 × 5 mm – statisch nicht nachgewiesen Aussteifung (Verband oder eingespannte Stützen) und Anker statisch nachweisen
+✔ Stützenfuß: Platte mit 4 Ankerlöchern, Steifen, Anker mit Unterlegplatte und Muttern, keine Überschneidungen (1144.315781ms)
+✔ Trägerstoß: Flansch- und Steglaschen, Schrauben durch Laschen und Träger ohne Überschneidung (4689.470575ms)
+✔ Trägeranschluss: Fahnenblech, Doppelwinkel und Stirnplatte an Hauptträger und Stütze ohne Überschneidung (3218.953385ms)
+✔ Steigleiter: Sprossen gleichmäßig bis zum Austritt, Rückenschutz ab 3 m, Teile ohne Überschneidung (4112.817083ms)
+✔ Fachwerkträger: Parallel, Pult und Sattel mit N/V/W-Füllung, Füllstäbe an den Gurten geschnitten, Spaltknoten ohne Überschneidung (16544.434026ms)
+✔ Arbeitsbühne: Stützen, Randträger, Gitterrost, Bordblech, Geländer und Aufgang (Treppe, Leiter, Durchgang) ohne Überschneidung (51136.2103ms)
+[info] Beispielprojekt ohne Prüfung 1332 ms, mit Prüfung 1376 ms
+[info] 151 Komponenten, 351 Körper: platzieren 204 ms, Kollision 1561 ms, Zuschnittliste 5.3 ms
+✔ Körperprüfung: Quader gültig, selbstschneidende Extrusion ungültig (57.950703ms)
+✔ Körperprüfung: Beispielprojekt und v1-Referenzdatei ohne Hinweis (3944.535443ms)
+✔ Körperprüfung: Laufzeit bleibt im Rahmen (4061.480237ms)
+✔ Vorabprüfung Profil: Gehrung außerhalb ±90° und kreuzende Schnitte (601.056139ms)
+✔ Vorabprüfung Profil: Wandstärke nennt die Grenze (1.243311ms)
+✔ Vorabprüfung Extrusion, Rotation, Bohrung, Wandung (10.738136ms)
+✔ Zylinderflächen tragen Achse und Radius (Bohrungen der Beispielplatte) (106.541676ms)
+✔ Kollision: Berührung nicht, Überschneidung ja, Abstand nicht, gleiche Komponente nicht (51.310333ms)
+✔ Kollision: Beispiel-Baugruppe ist kollisionsfrei (1460.848272ms)
+✔ Große Baugruppe: 150 Komponenten, Kollision und Zuschnittliste in vertretbarer Zeit (1833.761428ms)
+✔ N5: Generator neu berechnen – unveränderte Teile aus dem Zwischenspeicher, gleiches Ergebnis (15824.753495ms)
+✔ N9: Bohrungsangabe und Gewinde fürs 3D-Fenster (44.672565ms)
+✔ O10: Langloch als Bohrungs-Feature – Volumen, Richtung, Angabe (78.149461ms)
+✔ Arbeitsebene: Skizze darauf, Spiegeln an ihr, Muster um Arbeitsachse (Stufe 36) (278.861601ms)
+✔ Sweeping, Erhebung, Spirale und Muster entlang Pfad (Stufe 37) (810.905942ms)
+✔ Körper kombinieren, trennen, verschieben, aufdicken, Fläche verschieben, Entformung (Stufe 38) (351.368916ms)
+✔ Rahmen: Endkappe, Kürzen/Verlängern an Ebene (Stufe 40) (1049.535072ms)
+✔ Blech: Lasche, Teil-Lasche mit Freischnitt, Umschlag, Stirnlasche, Durchzug, Konturlasche (Stufe 41) (1031.426156ms)
+✔ 3D-Skizze als Sweep-Pfad, abgeleitetes Bauteil gespiegelt und skaliert (Stufe 42) (18.982904ms)
+✔ Regeln vor dem Aufbau: Parameter setzen, Feature unterdrücken, Meldung (Stufe 43) (19.08802ms)
+✔ Blechregel am Kantteil: Dicke, Radius und K aus der Regel (Stufe 44) (20.579705ms)
+✔ Stecksystem: Zapfen durch die Platte, Schlitze mit Spiel (Stufe 45) (404.74945ms)
+✔ Stecksystem zwischen zwei Bauteilen einer Baugruppe (Stufe 46) (132.652281ms)
+✔ Blech: Ecke schließen, Stanzwerkzeug, Konturwalzen mit Trennfuge (Stufe 48) (2718.363661ms)
+✔ IGES-Export: Flächen aus dem Kern als NURBS mit Rand (Stufe 49) (149.824353ms)
+✔ Schraubenverbindung: Klemmlänge aus den Platten, Bohrungen, Mutter oder Gewinde (Stufe 50) (295.605361ms)
+✔ iFeature: Tasche aus einem Bauteil auf die Oberseite eines anderen einsetzen (Stufe 52) (58.504154ms)
+✔ Schweißbaugruppe: Teile an ihrer Lage, Vorbereitung, Kehlnaht als Körper, Nachbearbeitung (Stufe 53) (65.11293ms)
+✔ Konstruktions-Assistent: Welle, Stirnrad, Rillenkugellager, Druckfeder (Stufe 55) (3829.643298ms)
+ℹ tests 135
+ℹ suites 0
+ℹ pass 135
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 252595.247562

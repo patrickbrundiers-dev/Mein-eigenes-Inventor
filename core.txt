@@ -1,0 +1,3070 @@
+TAP version 13
+# Subtest: Abstände mit Wiederholung, Beschriftung mit Zahlen und Buchstaben (Z → AA)
+ok 1 - Abstände mit Wiederholung, Beschriftung mit Zahlen und Buchstaben (Z → AA)
+  ---
+  duration_ms: 3.903405
+  type: 'test'
+  ...
+# Subtest: Raster 3 × 2: Achsen mit Überstand, Schnittpunkte A/1 … B/3 in der Rasterebene
+ok 2 - Raster 3 × 2: Achsen mit Überstand, Schnittpunkte A/1 … B/3 in der Rasterebene
+  ---
+  duration_ms: 3.211357
+  type: 'test'
+  ...
+# Subtest: Zeichnungsansicht: Grundriss zeigt alle Achsen, Vorderansicht nur die Achsen quer zur Blickrichtung, Isometrie keine
+ok 3 - Zeichnungsansicht: Grundriss zeigt alle Achsen, Vorderansicht nur die Achsen quer zur Blickrichtung, Isometrie keine
+  ---
+  duration_ms: 1.396259
+  type: 'test'
+  ...
+# Subtest: Arbeitsebene: Mittelebene parallel und als Winkelhalbierende
+ok 4 - Arbeitsebene: Mittelebene parallel und als Winkelhalbierende
+  ---
+  duration_ms: 4.240512
+  type: 'test'
+  ...
+# Subtest: Arbeitsebene: parallel durch Punkt, durch Achse und Punkt, zwei Achsen
+ok 5 - Arbeitsebene: parallel durch Punkt, durch Achse und Punkt, zwei Achsen
+  ---
+  duration_ms: 0.917758
+  type: 'test'
+  ...
+# Subtest: Arbeitsebene: senkrecht zu Kante an Stelle, tangential an Zylinder, Winkel um Modellkante
+ok 6 - Arbeitsebene: senkrecht zu Kante an Stelle, tangential an Zylinder, Winkel um Modellkante
+  ---
+  duration_ms: 0.831397
+  type: 'test'
+  ...
+# Subtest: Arbeitsachse: Kante, Zylinder, Kreis, senkrecht zu Ebene, parallel zu Arbeitsachse
+ok 7 - Arbeitsachse: Kante, Zylinder, Kreis, senkrecht zu Ebene, parallel zu Arbeitsachse
+  ---
+  duration_ms: 1.210914
+  type: 'test'
+  ...
+# Subtest: Arbeitspunkt: Modellecke, Mitte, Versatz, drei Ebenen
+ok 8 - Arbeitspunkt: Modellecke, Mitte, Versatz, drei Ebenen
+  ---
+  duration_ms: 0.668134
+  type: 'test'
+  ...
+# Subtest: Polylinie: Stelle und Rückrechnung
+ok 9 - Polylinie: Stelle und Rückrechnung
+  ---
+  duration_ms: 0.350221
+  type: 'test'
+  ...
+# Subtest: Erzeugen durch Anklicken: Art aus der Auswahl
+ok 10 - Erzeugen durch Anklicken: Art aus der Auswahl
+  ---
+  duration_ms: 1.64936
+  type: 'test'
+  ...
+# Subtest: Kreis aus drei Punkten, Bezüge für Vorschau und Abhängigkeiten
+ok 11 - Kreis aus drei Punkten, Bezüge für Vorschau und Abhängigkeiten
+  ---
+  duration_ms: 2.478913
+  type: 'test'
+  ...
+# Subtest: Arbeitsebene umkehren: Normale zur Gegenseite, Rahmen bleibt rechtshändig
+ok 12 - Arbeitsebene umkehren: Normale zur Gegenseite, Rahmen bleibt rechtshändig
+  ---
+  duration_ms: 0.56429
+  type: 'test'
+  ...
+# Subtest: alignAxes: Achse von B liegt danach auf Achse A, kleinste Drehung
+ok 13 - alignAxes: Achse von B liegt danach auf Achse A, kleinste Drehung
+  ---
+  duration_ms: 4.612394
+  type: 'test'
+  ...
+# Subtest: Konzentrisch: Bolzen in Bohrung, fixierte Platte, Abschluss erfüllt
+ok 14 - Konzentrisch: Bolzen in Bohrung, fixierte Platte, Abschluss erfüllt
+  ---
+  duration_ms: 3.022294
+  type: 'test'
+  ...
+# Subtest: Konzentrisch: Achse folgt Bauteiländerung, fehlende Achse wird gemeldet
+ok 15 - Konzentrisch: Achse folgt Bauteiländerung, fehlende Achse wird gemeldet
+  ---
+  duration_ms: 0.604896
+  type: 'test'
+  ...
+# Subtest: Konzentrisch und Fläche an Fläche zusammen: Bolzen steckt in der Bohrung und liegt auf
+ok 16 - Konzentrisch und Fläche an Fläche zusammen: Bolzen steckt in der Bohrung und liegt auf
+  ---
+  duration_ms: 5.108748
+  type: 'test'
+  ...
+# Subtest: Große Baugruppe: 150 gestapelte Platten lösen schnell und exakt
+ok 17 - Große Baugruppe: 150 gestapelte Platten lösen schnell und exakt
+  ---
+  duration_ms: 14.176634
+  type: 'test'
+  ...
+# Subtest: Unterbaugruppen: Auflösen mit Gesamt-Platzierung, Zyklus-Schutz, Struktur- und Baukastenstückliste (MegaCAD-Abgleich M19)
+ok 18 - Unterbaugruppen: Auflösen mit Gesamt-Platzierung, Zyklus-Schutz, Struktur- und Baukastenstückliste (MegaCAD-Abgleich M19)
+  ---
+  duration_ms: 3.269275
+  type: 'test'
+  ...
+# Subtest: Kinematik: Drehgelenk, Winkelbereich, Mitläufer, Explosion (MegaCAD-Abgleich M23)
+ok 19 - Kinematik: Drehgelenk, Winkelbereich, Mitläufer, Explosion (MegaCAD-Abgleich M23)
+  ---
+  duration_ms: 4.209344
+  type: 'test'
+  ...
+# Subtest: Kinematik: Schiebegelenk verschiebt entlang der Richtung in mm (E8)
+ok 20 - Kinematik: Schiebegelenk verschiebt entlang der Richtung in mm (E8)
+  ---
+  duration_ms: 0.742362
+  type: 'test'
+  ...
+# Subtest: Kinematik: Komponente mit Gelenk wird von Abhängigkeiten nicht verschoben (M23)
+ok 21 - Kinematik: Komponente mit Gelenk wird von Abhängigkeiten nicht verschoben (M23)
+  ---
+  duration_ms: 0.904152
+  type: 'test'
+  ...
+# Subtest: Freiheitsgrade: ohne Abhängigkeit 6, fixiert 0
+ok 22 - Freiheitsgrade: ohne Abhängigkeit 6, fixiert 0
+  ---
+  duration_ms: 4.119757
+  type: 'test'
+  ...
+# Subtest: Freiheitsgrade: Fläche an Fläche lässt 2 Verschiebungen in der Ebene und 1 Drehung um die Normale
+ok 23 - Freiheitsgrade: Fläche an Fläche lässt 2 Verschiebungen in der Ebene und 1 Drehung um die Normale
+  ---
+  duration_ms: 1.485604
+  type: 'test'
+  ...
+# Subtest: Freiheitsgrade: Konzentrisch 2 (Schieben und Drehen um die Achse), Einfügen 1
+ok 24 - Freiheitsgrade: Konzentrisch 2 (Schieben und Drehen um die Achse), Einfügen 1
+  ---
+  duration_ms: 1.14969
+  type: 'test'
+  ...
+# Subtest: Freiheitsgrade: drei Flächen (Ecke) bestimmt, starr bestimmt, unterdrückt zählt nicht
+ok 25 - Freiheitsgrade: drei Flächen (Ecke) bestimmt, starr bestimmt, unterdrückt zählt nicht
+  ---
+  duration_ms: 1.43984
+  type: 'test'
+  ...
+# Subtest: Freiheitsgrade: Gelenke und Musterkopien
+ok 26 - Freiheitsgrade: Gelenke und Musterkopien
+  ---
+  duration_ms: 2.043223
+  type: 'test'
+  ...
+# Subtest: Freiheitsgrade: Drehachse liegt bei Einfügen auf der Bohrungsachse
+ok 27 - Freiheitsgrade: Drehachse liegt bei Einfügen auf der Bohrungsachse
+  ---
+  duration_ms: 0.627628
+  type: 'test'
+  ...
+# Subtest: Schnellfügen: Art aus Fläche/Achse, Leertaste wechselt die Lösung
+ok 28 - Schnellfügen: Art aus Fläche/Achse, Leertaste wechselt die Lösung
+  ---
+  duration_ms: 0.253622
+  type: 'test'
+  ...
+# Subtest: Platzieren und Ziehen: Lage aus Punkt und Bewegung
+ok 29 - Platzieren und Ziehen: Lage aus Punkt und Bewegung
+  ---
+  duration_ms: 0.856845
+  type: 'test'
+  ...
+# Subtest: Unterbaugruppe bilden: Lage bleibt, innere Abhängigkeit wandert mit, äußere hängt an der Unterbaugruppe
+ok 30 - Unterbaugruppe bilden: Lage bleibt, innere Abhängigkeit wandert mit, äußere hängt an der Unterbaugruppe
+  ---
+  duration_ms: 7.127976
+  type: 'test'
+  ...
+# Subtest: Unterbaugruppe bilden: Grenzen und Auflösen
+ok 31 - Unterbaugruppe bilden: Grenzen und Auflösen
+  ---
+  duration_ms: 2.137167
+  type: 'test'
+  ...
+# Subtest: Muster am Lochbild: Kopien in alle gleich großen Bohrungen, folgt der Platte
+ok 32 - Muster am Lochbild: Kopien in alle gleich großen Bohrungen, folgt der Platte
+  ---
+  duration_ms: 1.887072
+  type: 'test'
+  ...
+# Subtest: Spiegeln: Wiederverwenden legt das symmetrische Teil an die Spiegelstelle
+ok 33 - Spiegeln: Wiederverwenden legt das symmetrische Teil an die Spiegelstelle
+  ---
+  duration_ms: 0.460297
+  type: 'test'
+  ...
+# Subtest: Fügepunkte: aus Abhängigkeit ableiten, beim Platzieren automatisch fügen (nächste Bohrung)
+ok 34 - Fügepunkte: aus Abhängigkeit ableiten, beim Platzieren automatisch fügen (nächste Bohrung)
+  ---
+  duration_ms: 1.173844
+  type: 'test'
+  ...
+# Subtest: Fügepunkte: neue Komponente ist immer die bewegte Seite (b), auch wenn ihr Fügepunkt Seite a ist
+ok 35 - Fügepunkte: neue Komponente ist immer die bewegte Seite (b), auch wenn ihr Fügepunkt Seite a ist
+  ---
+  duration_ms: 0.600408
+  type: 'test'
+  ...
+# Subtest: Unterbaugruppe auflösen: fixierte Unterbaugruppe bleibt fixiert
+ok 36 - Unterbaugruppe auflösen: fixierte Unterbaugruppe bleibt fixiert
+  ---
+  duration_ms: 0.22037
+  type: 'test'
+  ...
+# Subtest: Verknüpfter Parameter rechnet mit dem Wert der Baugruppe, eigener Ausdruck bleibt Rückfall
+ok 37 - Verknüpfter Parameter rechnet mit dem Wert der Baugruppe, eigener Ausdruck bleibt Rückfall
+  ---
+  duration_ms: 4.381575
+  type: 'test'
+  ...
+# Subtest: An Bauteile weitergeben: gleichnamige verknüpfen, fehlende auf Wunsch anlegen
+ok 38 - An Bauteile weitergeben: gleichnamige verknüpfen, fehlende auf Wunsch anlegen
+  ---
+  duration_ms: 2.110979
+  type: 'test'
+  ...
+# Subtest: Verknüpfung lösen: letzter Wert bleibt als eigener Ausdruck
+ok 39 - Verknüpfung lösen: letzter Wert bleibt als eigener Ausdruck
+  ---
+  duration_ms: 0.310528
+  type: 'test'
+  ...
+# Subtest: genutzte Skizzen stehen unter ihrem Feature
+ok 40 - genutzte Skizzen stehen unter ihrem Feature
+  ---
+  duration_ms: 5.274924
+  type: 'test'
+  ...
+# Subtest: flache Liste, wenn ausgeschaltet
+ok 41 - flache Liste, wenn ausgeschaltet
+  ---
+  duration_ms: 0.295851
+  type: 'test'
+  ...
+# Subtest: geteilte Skizze nur unter dem ersten Feature
+ok 42 - geteilte Skizze nur unter dem ersten Feature
+  ---
+  duration_ms: 0.440631
+  type: 'test'
+  ...
+# Subtest: Skizze vor dem Bauteilende bleibt oben, wenn ihr Feature dahinter liegt
+ok 43 - Skizze vor dem Bauteilende bleibt oben, wenn ihr Feature dahinter liegt
+  ---
+  duration_ms: 0.371612
+  type: 'test'
+  ...
+# Subtest: erweiterte Namen rechnen Parameter aus
+ok 44 - erweiterte Namen rechnen Parameter aus
+  ---
+  duration_ms: 25.473669
+  type: 'test'
+  ...
+# Subtest: Suche: Wörter, Groß-/Kleinschreibung, Unterpunkte
+ok 45 - Suche: Wörter, Groß-/Kleinschreibung, Unterpunkte
+  ---
+  duration_ms: 1.175137
+  type: 'test'
+  ...
+# Subtest: Ordner: aufeinanderfolgende Features zusammen, Nachbarordner
+ok 46 - Ordner: aufeinanderfolgende Features zusammen, Nachbarordner
+  ---
+  duration_ms: 3.38003
+  type: 'test'
+  ...
+# Subtest: Markierung: zählt vorn, unbekannt = alles, vor allen = 0
+ok 47 - Markierung: zählt vorn, unbekannt = alles, vor allen = 0
+  ---
+  duration_ms: 3.081996
+  type: 'test'
+  ...
+# Subtest: Einfügen an der Markierung, Markierung rückt nach
+ok 48 - Einfügen an der Markierung, Markierung rückt nach
+  ---
+  duration_ms: 0.379216
+  type: 'test'
+  ...
+# Subtest: Löschen: Markierung rückt auf den Vorgänger
+ok 49 - Löschen: Markierung rückt auf den Vorgänger
+  ---
+  duration_ms: 0.368586
+  type: 'test'
+  ...
+# Subtest: Mini-Leiste: Kanten bieten Rundung, Fase, Naht
+ok 50 - Mini-Leiste: Kanten bieten Rundung, Fase, Naht
+  ---
+  duration_ms: 6.045161
+  type: 'test'
+  ...
+# Subtest: Mini-Leiste: eine ebene Fläche bietet Skizze und Normalansicht
+ok 51 - Mini-Leiste: eine ebene Fläche bietet Skizze und Normalansicht
+  ---
+  duration_ms: 0.410754
+  type: 'test'
+  ...
+# Subtest: Mini-Leiste: gemischte Auswahl nur Messen und Zeigen, leere gar nichts
+ok 52 - Mini-Leiste: gemischte Auswahl nur Messen und Zeigen, leere gar nichts
+  ---
+  duration_ms: 0.237262
+  type: 'test'
+  ...
+# Subtest: jeder Menüband-Knopf hat eine Kurzbeschreibung
+ok 53 - jeder Menüband-Knopf hat eine Kurzbeschreibung
+  ---
+  duration_ms: 5.000907
+  type: 'test'
+  ...
+# Subtest: Kurzbeschreibungen sind kurze ganze Sätze
+ok 54 - Kurzbeschreibungen sind kurze ganze Sätze
+  ---
+  duration_ms: 1.048562
+  type: 'test'
+  ...
+# Subtest: Skizzenwerkzeuge nutzen ihre Bedienhilfe ohne Namensvorspann
+ok 55 - Skizzenwerkzeuge nutzen ihre Bedienhilfe ohne Namensvorspann
+  ---
+  duration_ms: 0.312532
+  type: 'test'
+  ...
+# Subtest: Kettenmaß und Bezugsmaß
+ok 56 - Kettenmaß und Bezugsmaß
+  ---
+  duration_ms: 3.250179
+  type: 'test'
+  ...
+# Subtest: Reihen: kurze innen, überlappende in die nächste Reihe, je Seite
+ok 57 - Reihen: kurze innen, überlappende in die nächste Reihe, je Seite
+  ---
+  duration_ms: 0.563278
+  type: 'test'
+  ...
+# Subtest: Positionsnummern: Uhrzeigersinn ab oben, an die Seiten ausrichten
+ok 58 - Positionsnummern: Uhrzeigersinn ab oben, an die Seiten ausrichten
+  ---
+  duration_ms: 0.722855
+  type: 'test'
+  ...
+# Subtest: Bogenlänge
+ok 59 - Bogenlänge
+  ---
+  duration_ms: 1.66088
+  type: 'test'
+  ...
+# Subtest: Tabelle prüfen
+ok 60 - Tabelle prüfen
+  ---
+  duration_ms: 4.452537
+  type: 'test'
+  ...
+# Subtest: Interpolation, Rand, leere Zellen, Öffnungswinkel
+ok 61 - Interpolation, Rand, leere Zellen, Öffnungswinkel
+  ---
+  duration_ms: 0.964065
+  type: 'test'
+  ...
+# Subtest: Umrechnung Verkürzung/Zugabe → K, DIN 6935
+ok 62 - Umrechnung Verkürzung/Zugabe → K, DIN 6935
+  ---
+  duration_ms: 0.307863
+  type: 'test'
+  ...
+# Subtest: Biegeregel: fest, DIN, Tabelle mit Ersatz
+ok 63 - Biegeregel: fest, DIN, Tabelle mit Ersatz
+  ---
+  duration_ms: 1.860883
+  type: 'test'
+  ...
+# Subtest: CSV aus Excel und zurück
+ok 64 - CSV aus Excel und zurück
+  ---
+  duration_ms: 1.10125
+  type: 'test'
+  ...
+# Subtest: Projektkopien und verknüpfte Bauteile
+ok 65 - Projektkopien und verknüpfte Bauteile
+  ---
+  duration_ms: 3.763855
+  type: 'test'
+  ...
+# Subtest: Matrize nach Blechdicke und Mindestschenkel
+ok 66 - Matrize nach Blechdicke und Mindestschenkel
+  ---
+  duration_ms: 1.388785
+  type: 'test'
+  ...
+# Subtest: Polylinie: U-Profil schließt rechtwinklig
+ok 67 - Polylinie: U-Profil schließt rechtwinklig
+  ---
+  duration_ms: 0.378144
+  type: 'test'
+  ...
+# Subtest: Flaches U geht, tiefes U stößt an der Oberwange an
+ok 68 - Flaches U geht, tiefes U stößt an der Oberwange an
+  ---
+  duration_ms: 40.533158
+  type: 'test'
+  ...
+# Subtest: Umschlag kommt zuletzt, Kurzschenkel wird gemeldet
+ok 69 - Umschlag kommt zuletzt, Kurzschenkel wird gemeldet
+  ---
+  duration_ms: 19.882664
+  type: 'test'
+  ...
+# Subtest: Biegeblatt als A4-Seite
+ok 70 - Biegeblatt als A4-Seite
+  ---
+  duration_ms: 6.065779
+  type: 'test'
+  ...
+# Subtest: Vier Wände: Ecken aufgetrennt, eine Richtung läuft durch, Abwicklung als Kreuz
+ok 71 - Vier Wände: Ecken aufgetrennt, eine Richtung läuft durch, Abwicklung als Kreuz
+  ---
+  duration_ms: 5.991321
+  type: 'test'
+  ...
+# Subtest: Ohne Wand bleibt der Boden bis zur Außenkante, U-Form ohne Ecken
+ok 72 - Ohne Wand bleibt der Boden bis zur Außenkante, U-Form ohne Ecken
+  ---
+  duration_ms: 1.020389
+  type: 'test'
+  ...
+# Subtest: Umwandeln nur für Quader
+ok 73 - Umwandeln nur für Quader
+  ---
+  duration_ms: 0.485784
+  type: 'test'
+  ...
+# Subtest: Eintrag: Dauer, aktive Features, Fehler und Warnungen je Feature
+ok 74 - Eintrag: Dauer, aktive Features, Fehler und Warnungen je Feature
+  ---
+  duration_ms: 3.715134
+  type: 'test'
+  ...
+# Subtest: Ringpuffer: neueste zuerst, höchstens max Einträge
+ok 75 - Ringpuffer: neueste zuerst, höchstens max Einträge
+  ---
+  duration_ms: 0.479874
+  type: 'test'
+  ...
+# Subtest: Befehle und Einstellungen
+ok 76 - Befehle und Einstellungen
+  ---
+  duration_ms: 0.724208
+  type: 'test'
+  ...
+# Subtest: Standardbelegung hat keine Konflikte und gültige Kürzel
+ok 77 - Standardbelegung hat keine Konflikte und gültige Kürzel
+  ---
+  duration_ms: 3.957315
+  type: 'test'
+  ...
+# Subtest: Tastendruck → Kürzeltext
+ok 78 - Tastendruck → Kürzeltext
+  ---
+  duration_ms: 0.419712
+  type: 'test'
+  ...
+# Subtest: Kürzeltext prüfen: Reihenfolge, feste Tasten, Fehler
+ok 79 - Kürzeltext prüfen: Reihenfolge, feste Tasten, Fehler
+  ---
+  duration_ms: 0.247822
+  type: 'test'
+  ...
+# Subtest: Konflikte nur in überlappenden Bereichen
+ok 80 - Konflikte nur in überlappenden Bereichen
+  ---
+  duration_ms: 2.030388
+  type: 'test'
+  ...
+# Subtest: Befehl je Modus finden
+ok 81 - Befehl je Modus finden
+  ---
+  duration_ms: 0.612439
+  type: 'test'
+  ...
+# Subtest: Befehlssuche: Bereich, Schlüsselwörter, Umlaute, Reihenfolge
+ok 82 - Befehlssuche: Bereich, Schlüsselwörter, Umlaute, Reihenfolge
+  ---
+  duration_ms: 4.131669
+  type: 'test'
+  ...
+# Subtest: Kürzel als Einstellung: Rundreise und Ablehnung von Konflikten
+ok 83 - Kürzel als Einstellung: Rundreise und Ablehnung von Konflikten
+  ---
+  duration_ms: 1.714271
+  type: 'test'
+  ...
+# Subtest: 3D-Fensterauswahl: Kanten, Flächen, Umkehren, Strg+A je Bereich
+ok 84 - 3D-Fensterauswahl: Kanten, Flächen, Umkehren, Strg+A je Bereich
+  ---
+  duration_ms: 1.055535
+  type: 'test'
+  ...
+# Subtest: Ausdrücke
+ok 85 - Ausdrücke
+  ---
+  duration_ms: 4.514069
+  type: 'test'
+  ...
+# Subtest: Parametertabelle mit Abhängigkeiten und Zyklen
+ok 86 - Parametertabelle mit Abhängigkeiten und Zyklen
+  ---
+  duration_ms: 0.654849
+  type: 'test'
+  ...
+# Subtest: Rechteck mit Bemaßung wird gelöst
+ok 87 - Rechteck mit Bemaßung wird gelöst
+  ---
+  duration_ms: 3.942398
+  type: 'test'
+  ...
+# Subtest: Freiheitsgrade und Redundanz
+ok 88 - Freiheitsgrade und Redundanz
+  ---
+  duration_ms: 2.371093
+  type: 'test'
+  ...
+# Subtest: Kreis, Bogen, Tangente, Winkel
+ok 89 - Kreis, Bogen, Tangente, Winkel
+  ---
+  duration_ms: 2.679717
+  type: 'test'
+  ...
+# Subtest: Minimale Bewegung bei Maßänderung
+ok 90 - Minimale Bewegung bei Maßänderung
+  ---
+  duration_ms: 3.77751
+  type: 'test'
+  ...
+# Subtest: Beispielskizzen lösbar, Profile erkannt
+ok 91 - Beispielskizzen lösbar, Profile erkannt
+  ---
+  duration_ms: 32.315173
+  type: 'test'
+  ...
+# Subtest: SVG-Pfade, DXF, Querschnitte
+ok 92 - SVG-Pfade, DXF, Querschnitte
+  ---
+  duration_ms: 3.026844
+  type: 'test'
+  ...
+# Subtest: Platzierung, Zerlegung, Flächen ausrichten
+ok 93 - Platzierung, Zerlegung, Flächen ausrichten
+  ---
+  duration_ms: 1.55254
+  type: 'test'
+  ...
+# Subtest: Profil-IDs wie Rohrlaser-Kalkulation
+ok 94 - Profil-IDs wie Rohrlaser-Kalkulation
+  ---
+  duration_ms: 0.800079
+  type: 'test'
+  ...
+# Subtest: Schnittpunkte Linie/Kreis/Bogen
+ok 95 - Schnittpunkte Linie/Kreis/Bogen
+  ---
+  duration_ms: 0.793737
+  type: 'test'
+  ...
+# Subtest: Stutzen: Linienende, Mitte, ganze Linie, Kreis
+ok 96 - Stutzen: Linienende, Mitte, ganze Linie, Kreis
+  ---
+  duration_ms: 2.505814
+  type: 'test'
+  ...
+# Subtest: Verlängern und Teilen
+ok 97 - Verlängern und Teilen
+  ---
+  duration_ms: 2.462233
+  type: 'test'
+  ...
+# Subtest: Skizzenrundung an Rechteckecke
+ok 98 - Skizzenrundung an Rechteckecke
+  ---
+  duration_ms: 2.596823
+  type: 'test'
+  ...
+# Subtest: Exakte DXF-Kontur aus SVG
+ok 99 - Exakte DXF-Kontur aus SVG
+  ---
+  duration_ms: 1.865261
+  type: 'test'
+  ...
+# Subtest: Baugruppen-Abhängigkeiten: gegeneinander, bündig, nach Bauteiländerung
+ok 100 - Baugruppen-Abhängigkeiten: gegeneinander, bündig, nach Bauteiländerung
+  ---
+  duration_ms: 7.046995
+  type: 'test'
+  ...
+# Subtest: Schraffur mit Loch
+ok 101 - Schraffur mit Loch
+  ---
+  duration_ms: 0.748463
+  type: 'test'
+  ...
+# Subtest: Knickrahmen: Mittellinie, Abwicklung mit K-Faktor, Prüfregeln
+ok 102 - Knickrahmen: Mittellinie, Abwicklung mit K-Faktor, Prüfregeln
+  ---
+  duration_ms: 5.982374
+  type: 'test'
+  ...
+# Subtest: Maßeingabe: tippen, Tab, Backspace, Enter
+ok 103 - Maßeingabe: tippen, Tab, Backspace, Enter
+  ---
+  duration_ms: 0.46171
+  type: 'test'
+  ...
+# Subtest: Maßeingabe: Werte, Ausdrücke und Fehler
+ok 104 - Maßeingabe: Werte, Ausdrücke und Fehler
+  ---
+  duration_ms: 0.361673
+  type: 'test'
+  ...
+# Subtest: Rechteck-Ecke folgt der Mausrichtung
+ok 105 - Rechteck-Ecke folgt der Mausrichtung
+  ---
+  duration_ms: 0.277046
+  type: 'test'
+  ...
+# Subtest: Rechteck 50×25 per Maßeingabe ist bemaßt und voll bestimmt
+ok 106 - Rechteck 50×25 per Maßeingabe ist bemaßt und voll bestimmt
+  ---
+  duration_ms: 1.152344
+  type: 'test'
+  ...
+# Subtest: Rechteck nach unten links, Bildschirm-Y nach unten: Breite an der oberen Kante
+ok 107 - Rechteck nach unten links, Bildschirm-Y nach unten: Breite an der oberen Kante
+  ---
+  duration_ms: 0.371452
+  type: 'test'
+  ...
+# Subtest: Rechteck ohne Eingabe bleibt unbemaßt
+ok 108 - Rechteck ohne Eingabe bleibt unbemaßt
+  ---
+  duration_ms: 0.356083
+  type: 'test'
+  ...
+# Subtest: Maßeingabe Linie: Länge und Winkel
+ok 109 - Maßeingabe Linie: Länge und Winkel
+  ---
+  duration_ms: 0.294899
+  type: 'test'
+  ...
+# Subtest: Maßeingabe: Winkelfeld erlaubt 0 und negative Werte, Länge nicht
+ok 110 - Maßeingabe: Winkelfeld erlaubt 0 und negative Werte, Länge nicht
+  ---
+  duration_ms: 0.326769
+  type: 'test'
+  ...
+# Subtest: Linie mit Längenmaß und Kreis mit Durchmesser sind lösbar
+ok 111 - Linie mit Längenmaß und Kreis mit Durchmesser sind lösbar
+  ---
+  duration_ms: 0.35984
+  type: 'test'
+  ...
+# Subtest: Update-Quelle auch ohne build-Feld (wie im Installer)
+ok 112 - Update-Quelle auch ohne build-Feld (wie im Installer)
+  ---
+  duration_ms: 5.678348
+  type: 'test'
+  ...
+# Subtest: Bestimmtheit je Element: frei, teilbemaßt, vollständig
+ok 113 - Bestimmtheit je Element: frei, teilbemaßt, vollständig
+  ---
+  duration_ms: 1.13874
+  type: 'test'
+  ...
+# Subtest: Ellipse: Halbachsen und Winkel bestimmen die Ellipse, Punkt auf Ellipse, Tangente, Profil, DXF
+ok 114 - Ellipse: Halbachsen und Winkel bestimmen die Ellipse, Punkt auf Ellipse, Tangente, Profil, DXF
+  ---
+  duration_ms: 4.372368
+  type: 'test'
+  ...
+# Subtest: Spline: Enden auf Kontrollpunkten, tangential an Linie, Punkt auf Spline, Profil, DXF
+ok 115 - Spline: Enden auf Kontrollpunkten, tangential an Linie, Punkt auf Spline, Profil, DXF
+  ---
+  duration_ms: 15.608951
+  type: 'test'
+  ...
+# Subtest: Skizze vollständig bemaßen: Rechteck mit Bohrung danach voll bestimmt, ohne doppelte Maße
+ok 116 - Skizze vollständig bemaßen: Rechteck mit Bohrung danach voll bestimmt, ohne doppelte Maße
+  ---
+  duration_ms: 32.932842
+  type: 'test'
+  ...
+# Subtest: Gleiches Profil, Länge, Enden, Werkstoff = eine Zeile mit Anzahl
+ok 117 - Gleiches Profil, Länge, Enden, Werkstoff = eine Zeile mit Anzahl
+  ---
+  duration_ms: 16.714167
+  type: 'test'
+  ...
+# Subtest: Enden unabhängig von der Richtung, andere Gehrung oder Werkstoff = eigene Zeile
+ok 118 - Enden unabhängig von der Richtung, andere Gehrung oder Werkstoff = eigene Zeile
+  ---
+  duration_ms: 0.615085
+  type: 'test'
+  ...
+# Subtest: Enden als Text und Knickrahmen als ausgeklinkt
+ok 119 - Enden als Text und Knickrahmen als ausgeklinkt
+  ---
+  duration_ms: 12.839896
+  type: 'test'
+  ...
+# Subtest: CSV: Kopf unverändert (Rohrlaser-Import), deutsches Zahlenformat, Masse aus Volumen
+ok 120 - CSV: Kopf unverändert (Rohrlaser-Import), deutsches Zahlenformat, Masse aus Volumen
+  ---
+  duration_ms: 3.074261
+  type: 'test'
+  ...
+# Subtest: Summen je Profil: Stück, Gesamtlänge, Gewicht (Megacad-Abgleich M1)
+ok 121 - Summen je Profil: Stück, Gesamtlänge, Gewicht (Megacad-Abgleich M1)
+  ---
+  duration_ms: 1.243094
+  type: 'test'
+  ...
+# Subtest: Gehrung in zwei Ebenen: Anteile Breite/Höhe, Kennzeichen und Kopf unverändert (MegaCAD-Abgleich M3)
+ok 122 - Gehrung in zwei Ebenen: Anteile Breite/Höhe, Kennzeichen und Kopf unverändert (MegaCAD-Abgleich M3)
+  ---
+  duration_ms: 2.453576
+  type: 'test'
+  ...
+# Subtest: Biegerohr in der Zuschnittliste: Abwicklungslänge, Kennzeichen gebogen
+ok 123 - Biegerohr in der Zuschnittliste: Abwicklungslänge, Kennzeichen gebogen
+  ---
+  duration_ms: 0.583526
+  type: 'test'
+  ...
+# Subtest: Excel-Export: gültiges ZIP mit Blättern, Zahlen als Zahlen (MegaCAD-Abgleich M18)
+ok 124 - Excel-Export: gültiges ZIP mit Blättern, Zahlen als Zahlen (MegaCAD-Abgleich M18)
+  ---
+  duration_ms: 10.897903
+  type: 'test'
+  ...
+# Subtest: Position speichern, Gelenk verstellen, Position wieder einstellen – Folgeteile gehen mit
+ok 125 - Position speichern, Gelenk verstellen, Position wieder einstellen – Folgeteile gehen mit
+  ---
+  duration_ms: 6.077712
+  type: 'test'
+  ...
+# Subtest: Werte außerhalb des Bereichs werden begrenzt; Kopie lässt das Original
+ok 126 - Werte außerhalb des Bereichs werden begrenzt; Kopie lässt das Original
+  ---
+  duration_ms: 0.732644
+  type: 'test'
+  ...
+# Subtest: Explosion: Schritte addieren sich, Teilschritt für die Wiedergabe
+ok 127 - Explosion: Schritte addieren sich, Teilschritt für die Wiedergabe
+  ---
+  duration_ms: 0.900155
+  type: 'test'
+  ...
+# Subtest: Explosion automatisch: Richtung von der Mitte weg, Fixiertes bleibt, äußere Teile weiter
+ok 128 - Explosion automatisch: Richtung von der Mitte weg, Fixiertes bleibt, äußere Teile weiter
+  ---
+  duration_ms: 1.041678
+  type: 'test'
+  ...
+# Subtest: Darstellung der Zeichnungsansicht: Position, dann Explosion
+ok 129 - Darstellung der Zeichnungsansicht: Position, dann Explosion
+  ---
+  duration_ms: 0.791554
+  type: 'test'
+  ...
+# Subtest: Sicherungen: jüngste ist .bak, ältere rücken weiter, Überzählige gehen
+ok 130 - Sicherungen: jüngste ist .bak, ältere rücken weiter, Überzählige gehen
+  ---
+  duration_ms: 9.331176
+  type: 'test'
+  ...
+# Subtest: Projekt paketieren: Verknüpfungen gelöst, Original unverändert
+ok 131 - Projekt paketieren: Verknüpfungen gelöst, Original unverändert
+  ---
+  duration_ms: 0.781484
+  type: 'test'
+  ...
+# Subtest: Zuletzt verwendet: vorne einreihen, ohne Doppelte, höchstens 12, entfernen
+ok 132 - Zuletzt verwendet: vorne einreihen, ohne Doppelte, höchstens 12, entfernen
+  ---
+  duration_ms: 0.363486
+  type: 'test'
+  ...
+# Subtest: Zuletzt verwendet: Einträge mit Datum, Größe und Vorschaubild; fehlende Dateien fallen weg
+ok 133 - Zuletzt verwendet: Einträge mit Datum, Größe und Vorschaubild; fehlende Dateien fallen weg
+  ---
+  duration_ms: 1.940271
+  type: 'test'
+  ...
+# Subtest: Zuletzt verwendet: sortieren, suchen, Datum und Größe
+ok 134 - Zuletzt verwendet: sortieren, suchen, Datum und Größe
+  ---
+  duration_ms: 13.662638
+  type: 'test'
+  ...
+# Subtest: Startseite: Ansicht und Sortierung sind Einstellungen mit Prüfung
+ok 135 - Startseite: Ansicht und Sortierung sind Einstellungen mit Prüfung
+  ---
+  duration_ms: 0.243282
+  type: 'test'
+  ...
+# Subtest: Achsen U/V liegen in der Fläche und stehen senkrecht
+ok 136 - Achsen U/V liegen in der Fläche und stehen senkrecht
+  ---
+  duration_ms: 1.390508
+  type: 'test'
+  ...
+# Subtest: Verschieben: Weltrichtung wird auf die Normale umgerechnet, in der Fläche geht nicht
+ok 137 - Verschieben: Weltrichtung wird auf die Normale umgerechnet, in der Fläche geht nicht
+  ---
+  duration_ms: 0.668234
+  type: 'test'
+  ...
+# Subtest: Messen ab: Weg bis zum Zielabstand, Vorzeichen bleibt
+ok 138 - Messen ab: Weg bis zum Zielabstand, Vorzeichen bleibt
+  ---
+  duration_ms: 0.428818
+  type: 'test'
+  ...
+# Subtest: Drehen und Eckrichtungen
+ok 139 - Drehen und Eckrichtungen
+  ---
+  duration_ms: 0.507544
+  type: 'test'
+  ...
+# Subtest: Feature prüfen
+ok 140 - Feature prüfen
+  ---
+  duration_ms: 0.663915
+  type: 'test'
+  ...
+# Subtest: Projektion wie Kernel-Kamera (Werte aus replicad-Messung)
+ok 141 - Projektion wie Kernel-Kamera (Werte aus replicad-Messung)
+  ---
+  duration_ms: 2.200205
+  type: 'test'
+  ...
+# Subtest: Anker: erste sichtbare Komponente je Bauteil, Platzierung angewendet
+ok 142 - Anker: erste sichtbare Komponente je Bauteil, Platzierung angewendet
+  ---
+  duration_ms: 2.697821
+  type: 'test'
+  ...
+# Subtest: Kreise außerhalb der Ansicht und ohne Überlappung
+ok 143 - Kreise außerhalb der Ansicht und ohne Überlappung
+  ---
+  duration_ms: 0.745528
+  type: 'test'
+  ...
+# Subtest: Detail: Linien am Kreis abschneiden
+ok 144 - Detail: Linien am Kreis abschneiden
+  ---
+  duration_ms: 0.681137
+  type: 'test'
+  ...
+# Subtest: Detail: Projektion zuschneiden, nur ganz innen liegende Kreise bleiben
+ok 145 - Detail: Projektion zuschneiden, nur ganz innen liegende Kreise bleiben
+  ---
+  duration_ms: 0.40266
+  type: 'test'
+  ...
+# Subtest: Ansichtsachsen der Normalansichten
+ok 146 - Ansichtsachsen der Normalansichten
+  ---
+  duration_ms: 1.882113
+  type: 'test'
+  ...
+# Subtest: Hauptmaße: jedes Maß nur einmal, Bohrungen mit Anzahl und Lagemaßen
+ok 147 - Hauptmaße: jedes Maß nur einmal, Bohrungen mit Anzahl und Lagemaßen
+  ---
+  duration_ms: 3.439291
+  type: 'test'
+  ...
+# Subtest: Hauptmaße: Rundrohr von vorne ohne Lagemaße
+ok 148 - Hauptmaße: Rundrohr von vorne ohne Lagemaße
+  ---
+  duration_ms: 0.80603
+  type: 'test'
+  ...
+# Subtest: Kurze verdeckte Linien entfallen (Bohrung durch dünne Wand)
+ok 149 - Kurze verdeckte Linien entfallen (Bohrung durch dünne Wand)
+  ---
+  duration_ms: 0.550735
+  type: 'test'
+  ...
+# Subtest: Maßplatzierung: kurze Maße innen, lange außen, feste Reihenabstände
+ok 150 - Maßplatzierung: kurze Maße innen, lange außen, feste Reihenabstände
+  ---
+  duration_ms: 4.254688
+  type: 'test'
+  ...
+# Subtest: Maßplatzierung: Maße weichen Nachbaransicht und Schriftfeld aus
+ok 151 - Maßplatzierung: Maße weichen Nachbaransicht und Schriftfeld aus
+  ---
+  duration_ms: 1.639702
+  type: 'test'
+  ...
+# Subtest: Maßplatzierung: Durchmesser-Hinweislinie läuft nicht durch Nachbarbohrung
+ok 152 - Maßplatzierung: Durchmesser-Hinweislinie läuft nicht durch Nachbarbohrung
+  ---
+  duration_ms: 0.669746
+  type: 'test'
+  ...
+# Subtest: Bohrungsangaben aus dem Feature: Gewinde, Tiefe, Senkung
+ok 153 - Bohrungsangaben aus dem Feature: Gewinde, Tiefe, Senkung
+  ---
+  duration_ms: 0.5482
+  type: 'test'
+  ...
+# Subtest: Hauptmaße: Kernlochkreise werden als Gewinde angegeben, Senkungskreis ohne eigenes Maß
+ok 154 - Hauptmaße: Kernlochkreise werden als Gewinde angegeben, Senkungskreis ohne eigenes Maß
+  ---
+  duration_ms: 1.191077
+  type: 'test'
+  ...
+# Subtest: Hauptmaße: mehrdeutige Bohrungs-Features fallen auf das reine Ø zurück
+ok 155 - Hauptmaße: mehrdeutige Bohrungs-Features fallen auf das reine Ø zurück
+  ---
+  duration_ms: 0.333962
+  type: 'test'
+  ...
+# Subtest: Bohrungsbilder: symmetrisch, Lochkreis, Koordinatenmaße
+ok 156 - Bohrungsbilder: symmetrisch, Lochkreis, Koordinatenmaße
+  ---
+  duration_ms: 0.879177
+  type: 'test'
+  ...
+# Subtest: Koordinatenmaße teilen sich eine Reihe, weitere Maße liegen dahinter
+ok 157 - Koordinatenmaße teilen sich eine Reihe, weitere Maße liegen dahinter
+  ---
+  duration_ms: 1.628701
+  type: 'test'
+  ...
+# Subtest: Profilteil: Profilangabe statt Querschnittsmaßen, nur die Länge wird bemaßt
+ok 158 - Profilteil: Profilangabe statt Querschnittsmaßen, nur die Länge wird bemaßt
+  ---
+  duration_ms: 1.632679
+  type: 'test'
+  ...
+# Subtest: Wandstärke eines Hohlprofils aus den Kanten, nicht bei gerundeten Außenkanten
+ok 159 - Wandstärke eines Hohlprofils aus den Kanten, nicht bei gerundeten Außenkanten
+  ---
+  duration_ms: 1.355753
+  type: 'test'
+  ...
+# Subtest: Profilangabe als Hinweis frei neben der Ansicht
+ok 160 - Profilangabe als Hinweis frei neben der Ansicht
+  ---
+  duration_ms: 0.271455
+  type: 'test'
+  ...
+# Subtest: Bohrung auf der Mittellinie bekommt kein Lagemaß quer zur Achse
+ok 161 - Bohrung auf der Mittellinie bekommt kein Lagemaß quer zur Achse
+  ---
+  duration_ms: 0.27398
+  type: 'test'
+  ...
+# Subtest: Kreis aus vielen kurzen Kantenstücken erkennen (Bohrung im Rundrohr)
+ok 162 - Kreis aus vielen kurzen Kantenstücken erkennen (Bohrung im Rundrohr)
+  ---
+  duration_ms: 1.157234
+  type: 'test'
+  ...
+# Subtest: Ansichtswahl: Platte ohne Seitenansicht, Profil ohne Stirnansicht, Winkel mit allen nötigen
+ok 163 - Ansichtswahl: Platte ohne Seitenansicht, Profil ohne Stirnansicht, Winkel mit allen nötigen
+  ---
+  duration_ms: 1.377123
+  type: 'test'
+  ...
+# Subtest: Profilangabe nennt die Zuschnittlänge (Gehrung: Außenlänge wie in der Zuschnittliste)
+ok 164 - Profilangabe nennt die Zuschnittlänge (Gehrung: Außenlänge wie in der Zuschnittliste)
+  ---
+  duration_ms: 0.223265
+  type: 'test'
+  ...
+# Subtest: Fertigungsmappe: jede Seite behält ihr Blattformat, Listen auf A4 mit Folgeseiten
+ok 165 - Fertigungsmappe: jede Seite behält ihr Blattformat, Listen auf A4 mit Folgeseiten
+  ---
+  duration_ms: 28.787827
+  type: 'test'
+  ...
+# Subtest: ZIP: Einträge aus Text und Bytes, gültige Signaturen
+ok 166 - ZIP: Einträge aus Text und Bytes, gültige Signaturen
+  ---
+  duration_ms: 0.745007
+  type: 'test'
+  ...
+# Subtest: Angebotsblatt: Preis von Hand, MwSt., Fakten aus dem Modell
+ok 167 - Angebotsblatt: Preis von Hand, MwSt., Fakten aus dem Modell
+  ---
+  duration_ms: 1.7678
+  type: 'test'
+  ...
+# Subtest: Fertigungsmappe: Biegeliste je Rohr
+ok 168 - Fertigungsmappe: Biegeliste je Rohr
+  ---
+  duration_ms: 0.939008
+  type: 'test'
+  ...
+# Subtest: Bohrungstabelle: Kennbuchstaben je Ø, Lage ab Nullpunkt, Gewinde aus dem Feature
+ok 169 - Bohrungstabelle: Kennbuchstaben je Ø, Lage ab Nullpunkt, Gewinde aus dem Feature
+  ---
+  duration_ms: 1.60682
+  type: 'test'
+  ...
+# Subtest: Hilfsansicht: Blick senkrecht auf die schräge Kante, von außen
+ok 170 - Hilfsansicht: Blick senkrecht auf die schräge Kante, von außen
+  ---
+  duration_ms: 0.668725
+  type: 'test'
+  ...
+# Subtest: Hinweise: Bohrung, Fase oder frei; Änderungsindex
+ok 171 - Hinweise: Bohrung, Fase oder frei; Änderungsindex
+  ---
+  duration_ms: 3.37974
+  type: 'test'
+  ...
+# Subtest: Abwicklungsansicht: Kontur, Biegelinien, Biegenotiz und Biegetabelle
+ok 172 - Abwicklungsansicht: Kontur, Biegelinien, Biegenotiz und Biegetabelle
+  ---
+  duration_ms: 2.26222
+  type: 'test'
+  ...
+# Subtest: Symbole: Oberfläche, Form- und Lagetoleranz, Bezug
+ok 173 - Symbole: Oberfläche, Form- und Lagetoleranz, Bezug
+  ---
+  duration_ms: 3.357919
+  type: 'test'
+  ...
+# Subtest: Bruchansicht: Abbildung, Linien und Schnittflächen ohne den entfernten Bereich
+ok 174 - Bruchansicht: Abbildung, Linien und Schnittflächen ohne den entfernten Bereich
+  ---
+  duration_ms: 2.779012
+  type: 'test'
+  ...
+# Subtest: Ausbruch: außen normale Projektion, innen Schnitt mit Schraffur, Tiefe aus Hüllquadern
+ok 175 - Ausbruch: außen normale Projektion, innen Schnitt mit Schraffur, Tiefe aus Hüllquadern
+  ---
+  duration_ms: 3.91695
+  type: 'test'
+  ...
+# Subtest: Rundungen: je Radius ein Maß „4× R15“, Maßlinie trifft den Bogen; Bohrungshälften und Fasenkanten zählen nicht
+ok 176 - Rundungen: je Radius ein Maß „4× R15“, Maßlinie trifft den Bogen; Bohrungshälften und Fasenkanten zählen nicht
+  ---
+  duration_ms: 1.79474
+  type: 'test'
+  ...
+# Subtest: Fasen: 45°-Kanten mit Länge a·√2 bekommen einen Hinweis „2 × 45°“, keine falsche Wandstärke
+ok 177 - Fasen: 45°-Kanten mit Länge a·√2 bekommen einen Hinweis „2 × 45°“, keine falsche Wandstärke
+  ---
+  duration_ms: 1.836047
+  type: 'test'
+  ...
+# Subtest: Achsen ragen 2 mm auf dem Blatt über die Kontur
+ok 178 - Achsen ragen 2 mm auf dem Blatt über die Kontur
+  ---
+  duration_ms: 0.270283
+  type: 'test'
+  ...
+# Subtest: Schnittschraffur wechselt je Teil Richtung, dann Abstand
+ok 179 - Schnittschraffur wechselt je Teil Richtung, dann Abstand
+  ---
+  duration_ms: 0.287615
+  type: 'test'
+  ...
+# Subtest: Feldeinteilung A3 quer: 8 Spalten, 6 Zeilen, Grenzen auf den Mittenmarken
+ok 180 - Feldeinteilung A3 quer: 8 Spalten, 6 Zeilen, Grenzen auf den Mittenmarken
+  ---
+  duration_ms: 0.626205
+  type: 'test'
+  ...
+# Subtest: Projizierte Ansicht nach Projektionsmethode 1
+ok 181 - Projizierte Ansicht nach Projektionsmethode 1
+  ---
+  duration_ms: 0.922758
+  type: 'test'
+  ...
+# Subtest: Grundansichten: größerer Maßstab, Isometrie in die freie Ecke mit Normmaßstab
+ok 182 - Grundansichten: größerer Maßstab, Isometrie in die freie Ecke mit Normmaßstab
+  ---
+  duration_ms: 0.750296
+  type: 'test'
+  ...
+# Subtest: Detailausschnitt schneidet auch die Achsen zu
+ok 183 - Detailausschnitt schneidet auch die Achsen zu
+  ---
+  duration_ms: 0.223075
+  type: 'test'
+  ...
+# Subtest: Eigener Maßstab: 1:25, 3:1, Faktor, Unsinn abgelehnt
+ok 184 - Eigener Maßstab: 1:25, 3:1, Faktor, Unsinn abgelehnt
+  ---
+  duration_ms: 0.690776
+  type: 'test'
+  ...
+# Subtest: DSTV: Profilcode und Kopfmaße je Querschnitt
+ok 185 - DSTV: Profilcode und Kopfmaße je Querschnitt
+  ---
+  duration_ms: 4.031954
+  type: 'test'
+  ...
+# Subtest: DSTV: Fläche und y je Lage der Bohrung (v/h ab Unterkante, o ab Vorderkante, u ab Hinterkante)
+ok 186 - DSTV: Fläche und y je Lage der Bohrung (v/h ab Unterkante, o ab Vorderkante, u ab Hinterkante)
+  ---
+  duration_ms: 0.34396
+  type: 'test'
+  ...
+# Subtest: DSTV: Text – Kopf mit 24 Zeilen, Blöcke BO/AK/SI, Langloch und geschlossene Kontur, Leser liest es zurück
+ok 187 - DSTV: Text – Kopf mit 24 Zeilen, Blöcke BO/AK/SI, Langloch und geschlossene Kontur, Leser liest es zurück
+  ---
+  duration_ms: 2.307734
+  type: 'test'
+  ...
+# Subtest: DSTV: Gleichteile zusammenfassen, Stäbe vor Platten, Dateiname, Gehrungen und Werkstoff
+ok 188 - DSTV: Gleichteile zusammenfassen, Stäbe vor Platten, Dateiname, Gehrungen und Werkstoff
+  ---
+  duration_ms: 12.860953
+  type: 'test'
+  ...
+# Subtest: DSTV: Stücke aus Kernel-Daten – übersprungene Körper mit Grund, Ausklinkung als Hinweis
+ok 189 - DSTV: Stücke aus Kernel-Daten – übersprungene Körper mit Grund, Ausklinkung als Hinweis
+  ---
+  duration_ms: 0.717235
+  type: 'test'
+  ...
+# Subtest: Einzelteil-Positionen bleiben stabil: neue Stücke hinten anhängen, verschwundene Nummern nicht neu vergeben
+ok 190 - Einzelteil-Positionen bleiben stabil: neue Stücke hinten anhängen, verschwundene Nummern nicht neu vergeben
+  ---
+  duration_ms: 3.303698
+  type: 'test'
+  ...
+# Subtest: eine Komponente ersetzen: Lage, Fixierung, Gelenk und Abhängigkeiten bleiben, Name folgt
+ok 191 - eine Komponente ersetzen: Lage, Fixierung, Gelenk und Abhängigkeiten bleiben, Name folgt
+  ---
+  duration_ms: 3.425886
+  type: 'test'
+  ...
+# Subtest: alle Vorkommen ersetzen; eigener Name bleibt
+ok 192 - alle Vorkommen ersetzen; eigener Name bleibt
+  ---
+  duration_ms: 0.672382
+  type: 'test'
+  ...
+# Subtest: kein Kreisbezug: Baugruppe nicht durch sich selbst oder eine übergeordnete ersetzen
+ok 193 - kein Kreisbezug: Baugruppe nicht durch sich selbst oder eine übergeordnete ersetzen
+  ---
+  duration_ms: 1.931414
+  type: 'test'
+  ...
+# Subtest: QR-Code: Version nach Länge, Funktionsmuster, stabile Ausgabe
+ok 194 - QR-Code: Version nach Länge, Funktionsmuster, stabile Ausgabe
+  ---
+  duration_ms: 258.602072
+  type: 'test'
+  ...
+# Subtest: Etiketten aus Stückliste und Zuschnitt, je Stück oder je Zeile
+ok 195 - Etiketten aus Stückliste und Zuschnitt, je Stück oder je Zeile
+  ---
+  duration_ms: 990.873525
+  type: 'test'
+  ...
+# Subtest: Versandliste mit Summe, schwerstem und längstem Teil
+ok 196 - Versandliste mit Summe, schwerstem und längstem Teil
+  ---
+  duration_ms: 5.589773
+  type: 'test'
+  ...
+# Subtest: Gerade Kante: zwei Endpunkte und Mittelpunkt mit Bezug für den Kern
+ok 197 - Gerade Kante: zwei Endpunkte und Mittelpunkt mit Bezug für den Kern
+  ---
+  duration_ms: 4.806135
+  type: 'test'
+  ...
+# Subtest: Vollkreis: Kreismitte und vier Quadranten, keine Endpunkte
+ok 198 - Vollkreis: Kreismitte und vier Quadranten, keine Endpunkte
+  ---
+  duration_ms: 0.985504
+  type: 'test'
+  ...
+# Subtest: Viertelbogen: Enden, Bogenmitte, Kreismitte; Quadranten auf den Enden fallen weg
+ok 199 - Viertelbogen: Enden, Bogenmitte, Kreismitte; Quadranten auf den Enden fallen weg
+  ---
+  duration_ms: 3.12186
+  type: 'test'
+  ...
+# Subtest: Quadrant folgt der Kreislage (Achse × x-Richtung)
+ok 200 - Quadrant folgt der Kreislage (Achse × x-Richtung)
+  ---
+  duration_ms: 0.236139
+  type: 'test'
+  ...
+# Subtest: Flächenmitte nur für ebene Flächen
+ok 201 - Flächenmitte nur für ebene Flächen
+  ---
+  duration_ms: 0.470125
+  type: 'test'
+  ...
+# Subtest: Nächster Fangpunkt: Abstand, bei gleichem Abstand der Vorrang (Endpunkt vor Quadrant)
+ok 202 - Nächster Fangpunkt: Abstand, bei gleichem Abstand der Vorrang (Endpunkt vor Quadrant)
+  ---
+  duration_ms: 0.298986
+  type: 'test'
+  ...
+# Subtest: Achsstück über die Länge der Fläche mit Überstand
+ok 203 - Achsstück über die Länge der Fläche mit Überstand
+  ---
+  duration_ms: 0.466007
+  type: 'test'
+  ...
+# Subtest: Fangsymbole: eigener schlanker Umriss je Fangart; Skizzen-Fang wird zugeordnet
+ok 204 - Fangsymbole: eigener schlanker Umriss je Fangart; Skizzen-Fang wird zugeordnet
+  ---
+  duration_ms: 0.675527
+  type: 'test'
+  ...
+# Subtest: Auswahlfilter im Messwerkzeug
+ok 205 - Auswahlfilter im Messwerkzeug
+  ---
+  duration_ms: 0.667482
+  type: 'test'
+  ...
+# Subtest: Hinweis am Mauszeiger und Gleichheit von Treffern
+ok 206 - Hinweis am Mauszeiger und Gleichheit von Treffern
+  ---
+  duration_ms: 0.953785
+  type: 'test'
+  ...
+# Subtest: Achse als Messelement: Achsabstand zu Punkt und zu paralleler Achse
+ok 207 - Achse als Messelement: Achsabstand zu Punkt und zu paralleler Achse
+  ---
+  duration_ms: 0.692799
+  type: 'test'
+  ...
+# Subtest: Skelett: Skizzenlinien in Weltlage, Profilzug als Stücke, Konstruktionslinien zählen nicht
+ok 208 - Skelett: Skizzenlinien in Weltlage, Profilzug als Stücke, Konstruktionslinien zählen nicht
+  ---
+  duration_ms: 4.101033
+  type: 'test'
+  ...
+# Subtest: Gestell: Automatik mit Gehrung an den Ecken und Stutzen am T-Stoß, gleiche Stäbe ein Bauteil
+ok 209 - Gestell: Automatik mit Gehrung an den Ecken und Stutzen am T-Stoß, gleiche Stäbe ein Bauteil
+  ---
+  duration_ms: 14.226718
+  type: 'test'
+  ...
+# Subtest: Gestell: Eckverbindung, Spalt der Gehrung, Verlängern und Lage zur Linie
+ok 210 - Gestell: Eckverbindung, Spalt der Gehrung, Verlängern und Lage zur Linie
+  ---
+  duration_ms: 2.149421
+  type: 'test'
+  ...
+# Subtest: Gestell: Nuten statt Stutzen, Verbindung »keine«, Wiederverwenden, Entfernen und CSV
+ok 211 - Gestell: Nuten statt Stutzen, Verbindung »keine«, Wiederverwenden, Entfernen und CSV
+  ---
+  duration_ms: 5.156136
+  type: 'test'
+  ...
+# Subtest: Gestell: Spalt der Automatik gilt für Ecken und T-Stöße, setJoint nimmt Spalt nur wo er wirkt
+ok 212 - Gestell: Spalt der Automatik gilt für Ecken und T-Stöße, setJoint nimmt Spalt nur wo er wirkt
+  ---
+  duration_ms: 1.78888
+  type: 'test'
+  ...
+# Subtest: Gestell: Stecknasen von Hand, Schlitze als Durchbrüche im durchlaufenden Stab, Wiederverwenden nimmt sie mit
+ok 213 - Gestell: Stecknasen von Hand, Schlitze als Durchbrüche im durchlaufenden Stab, Wiederverwenden nimmt sie mit
+  ---
+  duration_ms: 4.763826
+  type: 'test'
+  ...
+# Subtest: Gestell: Kopf- und Fußplatte am geraden Stabende, nicht an der Gehrung
+ok 214 - Gestell: Kopf- und Fußplatte am geraden Stabende, nicht an der Gehrung
+  ---
+  duration_ms: 1.516262
+  type: 'test'
+  ...
+# Subtest: IFC: GlobalId 22 Zeichen aus dem IFC-Alphabet, erstes Zeichen 0–3, Folge ohne Doppelte
+ok 215 - IFC: GlobalId 22 Zeichen aus dem IFC-Alphabet, erstes Zeichen 0–3, Folge ohne Doppelte
+  ---
+  duration_ms: 27.936944
+  type: 'test'
+  ...
+# Subtest: IFC: Texte mit Apostroph und Umlauten nach ISO 10303-21
+ok 216 - IFC: Texte mit Apostroph und Umlauten nach ISO 10303-21
+  ---
+  duration_ms: 0.514588
+  type: 'test'
+  ...
+# Subtest: IFC: Klasse aus Achse, Platte und Normteil
+ok 217 - IFC: Klasse aus Achse, Platte und Normteil
+  ---
+  duration_ms: 0.331608
+  type: 'test'
+  ...
+# Subtest: IFC: Datei mit Projekt, Geschoss, Elementen, Werkstoff und Eigenschaften
+ok 218 - IFC: Datei mit Projekt, Geschoss, Elementen, Werkstoff und Eigenschaften
+  ---
+  duration_ms: 4.635397
+  type: 'test'
+  ...
+# Subtest: Kern startet über der Speichergrenze erst im Leerlauf neu und setzt Werkstoffe erneut
+ok 219 - Kern startet über der Speichergrenze erst im Leerlauf neu und setzt Werkstoffe erneut
+  ---
+  duration_ms: 1732.961479
+  type: 'test'
+  ...
+# Subtest: unter der Grenze kein Neustart
+ok 220 - unter der Grenze kein Neustart
+  ---
+  duration_ms: 1706.106851
+  type: 'test'
+  ...
+# Subtest: großes Modell: Grenze wächst mit dem Bedarf nach dem ersten Bau
+ok 221 - großes Modell: Grenze wächst mit dem Bedarf nach dem ersten Bau
+  ---
+  duration_ms: 1704.855657
+  type: 'test'
+  ...
+# Subtest: Abbrechen startet den Kern neu und lehnt offene Aufträge ab, ohne als Absturz zu zählen
+ok 222 - Abbrechen startet den Kern neu und lehnt offene Aufträge ab, ohne als Absturz zu zählen
+  ---
+  duration_ms: 1.936033
+  type: 'test'
+  ...
+# Subtest: dreimal abgestürzt in einer Minute: Hinweis zur Abhilfe
+ok 223 - dreimal abgestürzt in einer Minute: Hinweis zur Abhilfe
+  ---
+  duration_ms: 0.685365
+  type: 'test'
+  ...
+# Subtest: Tastenhinweise: Wortanfang bevorzugt, eindeutig und präfixfrei
+ok 224 - Tastenhinweise: Wortanfang bevorzugt, eindeutig und präfixfrei
+  ---
+  duration_ms: 5.581267
+  type: 'test'
+  ...
+# Subtest: Tastenhinweise: Umlaute zählen als Grundbuchstabe
+ok 225 - Tastenhinweise: Umlaute zählen als Grundbuchstabe
+  ---
+  duration_ms: 0.239166
+  type: 'test'
+  ...
+# Subtest: Tastenhinweise: Tippen trifft, wartet oder verfehlt
+ok 226 - Tastenhinweise: Tippen trifft, wartet oder verfehlt
+  ---
+  duration_ms: 0.282465
+  type: 'test'
+  ...
+# Subtest: Farben: gültig, unterscheidbar, gleiche Bauteile gleich
+ok 227 - Farben: gültig, unterscheidbar, gleiche Bauteile gleich
+  ---
+  duration_ms: 2.434201
+  type: 'test'
+  ...
+# Subtest: Nachbarn stehen relativ zum bearbeiteten Bauteil, Unterbaugruppe mit jedem Teil
+ok 228 - Nachbarn stehen relativ zum bearbeiteten Bauteil, Unterbaugruppe mit jedem Teil
+  ---
+  duration_ms: 3.569644
+  type: 'test'
+  ...
+# Subtest: Auswahl und Text
+ok 229 - Auswahl und Text
+  ---
+  duration_ms: 0.351884
+  type: 'test'
+  ...
+# Subtest: Werkstoff prüfen: Dichte > 0, Kürzel eindeutig und nicht eingebaut
+ok 230 - Werkstoff prüfen: Dichte > 0, Kürzel eindeutig und nicht eingebaut
+  ---
+  duration_ms: 2.634624
+  type: 'test'
+  ...
+# Subtest: Werkstoffbibliothek: Export und Import im Rundlauf, gleiches Kürzel wird ersetzt
+ok 231 - Werkstoffbibliothek: Export und Import im Rundlauf, gleiches Kürzel wird ersetzt
+  ---
+  duration_ms: 0.586412
+  type: 'test'
+  ...
+# Subtest: Eigener Werkstoff wirkt in Masse und Zuschnittliste, Unbekanntes fällt sichtbar auf S235 zurück
+ok 232 - Eigener Werkstoff wirkt in Masse und Zuschnittliste, Unbekanntes fällt sichtbar auf S235 zurück
+  ---
+  duration_ms: 0.690475
+  type: 'test'
+  ...
+# Subtest: Projekt mit eigenem Werkstoff öffnet sich auch ohne Bibliothekseintrag
+ok 233 - Projekt mit eigenem Werkstoff öffnet sich auch ohne Bibliothekseintrag
+  ---
+  duration_ms: 0.612099
+  type: 'test'
+  ...
+# Subtest: Profilzug: absolute und relative Punkte, offen und geschlossen
+ok 234 - Profilzug: absolute und relative Punkte, offen und geschlossen
+  ---
+  duration_ms: 5.153221
+  type: 'test'
+  ...
+# Subtest: Profilzug: Fehler bei zu wenigen oder doppelten Punkten
+ok 235 - Profilzug: Fehler bei zu wenigen oder doppelten Punkten
+  ---
+  duration_ms: 0.80541
+  type: 'test'
+  ...
+# Subtest: Profilzug: Richtung oben mit Ersatzachse, Eckwinkel, Vorgabe
+ok 236 - Profilzug: Richtung oben mit Ersatzachse, Eckwinkel, Vorgabe
+  ---
+  duration_ms: 0.446931
+  type: 'test'
+  ...
+# Subtest: Profilzug: Umkehr am Punkt wird gemeldet, neuer Punkt quer zum letzten Segment
+ok 237 - Profilzug: Umkehr am Punkt wird gemeldet, neuer Punkt quer zum letzten Segment
+  ---
+  duration_ms: 0.360901
+  type: 'test'
+  ...
+# Subtest: Biegerohr: Geraden, Bögen, Biegeliste L-R-A und Abwicklungslänge (MegaCAD-Abgleich M4)
+ok 238 - Biegerohr: Geraden, Bögen, Biegeliste L-R-A und Abwicklungslänge (MegaCAD-Abgleich M4)
+  ---
+  duration_ms: 2.912471
+  type: 'test'
+  ...
+# Subtest: Biegerohr: zu kurzes Segment, Umkehr, kleiner Radius, kurze Spannlänge
+ok 239 - Biegerohr: zu kurzes Segment, Umkehr, kleiner Radius, kurze Spannlänge
+  ---
+  duration_ms: 0.933588
+  type: 'test'
+  ...
+# Subtest: Regelkörper: Prüfung und exakte Volumen (MegaCAD-Abgleich M5)
+ok 240 - Regelkörper: Prüfung und exakte Volumen (MegaCAD-Abgleich M5)
+  ---
+  duration_ms: 1.578868
+  type: 'test'
+  ...
+# Subtest: Stahlprofile DSTV: Metergewicht gegen Tabellenwerte, Profil-ID, Schnelleingabe (MegaCAD-Abgleich M6)
+ok 241 - Stahlprofile DSTV: Metergewicht gegen Tabellenwerte, Profil-ID, Schnelleingabe (MegaCAD-Abgleich M6)
+  ---
+  duration_ms: 41.695402
+  type: 'test'
+  ...
+# Subtest: Anschlussplatte und Rippe: Maße, Bohrbild, Prüfungen (MegaCAD-Abgleich M8)
+ok 242 - Anschlussplatte und Rippe: Maße, Bohrbild, Prüfungen (MegaCAD-Abgleich M8)
+  ---
+  duration_ms: 2.152246
+  type: 'test'
+  ...
+# Subtest: Skizze säubern: Punkte, Nulllängen, Doppelte, Überlappungen, Geradestellen (MegaCAD-Abgleich M7)
+ok 243 - Skizze säubern: Punkte, Nulllängen, Doppelte, Überlappungen, Geradestellen (MegaCAD-Abgleich M7)
+  ---
+  duration_ms: 13.738139
+  type: 'test'
+  ...
+# Subtest: Schweißnähte: Querschnitt, Text, Nahtliste, Symbol ISO 2553 (MegaCAD-Abgleich M9)
+ok 244 - Schweißnähte: Querschnitt, Text, Nahtliste, Symbol ISO 2553 (MegaCAD-Abgleich M9)
+  ---
+  duration_ms: 2.998771
+  type: 'test'
+  ...
+# Subtest: Generator-Gerüst und Geländer-Plan: Parameter, Aufteilung, Öffnungen, Vorlagen (MegaCAD-Abgleich M10/M11)
+ok 245 - Generator-Gerüst und Geländer-Plan: Parameter, Aufteilung, Öffnungen, Vorlagen (MegaCAD-Abgleich M10/M11)
+  ---
+  duration_ms: 54.177188
+  type: 'test'
+  ...
+# Subtest: Tor-Plan: Flügelbreite, Bogen, Stäbe, Prüfungen (MegaCAD-Abgleich M12)
+ok 246 - Tor-Plan: Flügelbreite, Bogen, Stäbe, Prüfungen (MegaCAD-Abgleich M12)
+  ---
+  duration_ms: 4.270508
+  type: 'test'
+  ...
+# Subtest: Masse mit eigener Dichte je Körper (Glas, Gitterrost, Holz)
+ok 247 - Masse mit eigener Dichte je Körper (Glas, Gitterrost, Holz)
+  ---
+  duration_ms: 0.922077
+  type: 'test'
+  ...
+# Subtest: Normteile: Bezeichnung, Prüfung, Tabellen (MegaCAD-Abgleich M20)
+ok 248 - Normteile: Bezeichnung, Prüfung, Tabellen (MegaCAD-Abgleich M20)
+  ---
+  duration_ms: 14.105572
+  type: 'test'
+  ...
+# Subtest: DXF-Import: Rundreise, Polylinie mit Bögen, Blöcke, Einheiten, Ellipse, Spline, OCS (MegaCAD-Abgleich M21)
+ok 249 - DXF-Import: Rundreise, Polylinie mit Bögen, Blöcke, Einheiten, Ellipse, Spline, OCS (MegaCAD-Abgleich M21)
+  ---
+  duration_ms: 12.86284
+  type: 'test'
+  ...
+# Subtest: Generatoren: Standardprofile stehen im Katalog (Auswahlliste nicht leer)
+ok 250 - Generatoren: Standardprofile stehen im Katalog (Auswahlliste nicht leer)
+  ---
+  duration_ms: 0.751538
+  type: 'test'
+  ...
+# Subtest: Kantteil: Mittellinie aus Außenmaßen, Abwicklung über Biegezugabe, Umriss, DXF (MegaCAD-Abgleich M17)
+ok 251 - Kantteil: Mittellinie aus Außenmaßen, Abwicklung über Biegezugabe, Umriss, DXF (MegaCAD-Abgleich M17)
+  ---
+  duration_ms: 3.153408
+  type: 'test'
+  ...
+# Subtest: Fotodarstellung: Oberflächen je Werkstoff und Körperart, Bühne aus der Inhaltsbox (MegaCAD-Abgleich M22)
+ok 252 - Fotodarstellung: Oberflächen je Werkstoff und Körperart, Bühne aus der Inhaltsbox (MegaCAD-Abgleich M22)
+  ---
+  duration_ms: 2.063942
+  type: 'test'
+  ...
+# Subtest: Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCAD-Abgleich M11)
+ok 253 - Geländer Stufe 2: Füllung Kreuz mit Ring und Rahmen mit Staketen (MegaCAD-Abgleich M11)
+  ---
+  duration_ms: 16.287964
+  type: 'test'
+  ...
+# Subtest: Generator-Listen: Ausdrücke mit Leerzeichen bleiben ganz (V1)
+ok 254 - Generator-Listen: Ausdrücke mit Leerzeichen bleiben ganz (V1)
+  ---
+  duration_ms: 1.27875
+  type: 'test'
+  ...
+# Subtest: Oberfläche und RAL-Farbe je Bauteil (E7)
+ok 255 - Oberfläche und RAL-Farbe je Bauteil (E7)
+  ---
+  duration_ms: 2.699875
+  type: 'test'
+  ...
+# Subtest: Generator-Skizze: Ansicht und Maße je Generator, Maße gehören zu Parametern
+ok 256 - Generator-Skizze: Ansicht und Maße je Generator, Maße gehören zu Parametern
+  ---
+  duration_ms: 1204.174582
+  type: 'test'
+  ...
+# Subtest: Treppengeländer: Pfostenabstand entlang des schrägen Handlaufs ≤ Höchstmaß
+ok 257 - Treppengeländer: Pfostenabstand entlang des schrägen Handlaufs ≤ Höchstmaß
+  ---
+  duration_ms: 223.281424
+  type: 'test'
+  ...
+# Subtest: Schiebetor-Plan: Gegengewicht, Rollenböcke unter dem Schwanz, Teile getrennt (E8)
+ok 258 - Schiebetor-Plan: Gegengewicht, Rollenböcke unter dem Schwanz, Teile getrennt (E8)
+  ---
+  duration_ms: 2.861205
+  type: 'test'
+  ...
+# Subtest: Zaun-Plan: Felder, Pfosten, Gefälle und Stufung am Hang (E9)
+ok 259 - Zaun-Plan: Felder, Pfosten, Gefälle und Stufung am Hang (E9)
+  ---
+  duration_ms: 3.523027
+  type: 'test'
+  ...
+# Subtest: Generator-Meldungen am Feld und Körper je Feld (V5)
+ok 260 - Generator-Meldungen am Feld und Körper je Feld (V5)
+  ---
+  duration_ms: 563.237393
+  type: 'test'
+  ...
+# Subtest: Generatoren: jede Profilart in jedem Profilfeld rechnet (oder meldet am Feld), keine NaN-Koordinaten
+ok 261 - Generatoren: jede Profilart in jedem Profilfeld rechnet (oder meldet am Feld), keine NaN-Koordinaten
+  ---
+  duration_ms: 22935.863768
+  type: 'test'
+  ...
+# Subtest: Profillage: Treppenwangen U/UPN offen nach außen, Rahmen offen nach außen, Riegel offen zu den Stäben
+ok 262 - Profillage: Treppenwangen U/UPN offen nach außen, Rahmen offen nach außen, Riegel offen zu den Stäben
+  ---
+  duration_ms: 415.922886
+  type: 'test'
+  ...
+# Subtest: Handlaufhalter: Pfosten endet unter dem Handlauf, Endkappe, Stift, Bohrung 12,1 im Handlauf
+ok 263 - Handlaufhalter: Pfosten endet unter dem Handlauf, Endkappe, Stift, Bohrung 12,1 im Handlauf
+  ---
+  duration_ms: 407.146917
+  type: 'test'
+  ...
+# Subtest: Gurte durch die Pfosten: ein Stück bis 5800 mm, Stoß im Pfosten, Durchbrüche und Stabbohrungen mit Aufmaß
+ok 264 - Gurte durch die Pfosten: ein Stück bis 5800 mm, Stoß im Pfosten, Durchbrüche und Stabbohrungen mit Aufmaß
+  ---
+  duration_ms: 7.057752
+  type: 'test'
+  ...
+# Subtest: Geländernorm Deutschland: Höhe, Öffnungen, Leitereffekt, Boden nach Nutzung
+ok 265 - Geländernorm Deutschland: Höhe, Öffnungen, Leitereffekt, Boden nach Nutzung
+  ---
+  duration_ms: 522.534934
+  type: 'test'
+  ...
+# Subtest: Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, Stufen nach DIN 24531 verschraubt
+ok 266 - Treppe: Knieleisten/Untergurt durch die Pfosten, Staketen durch den Gurt, Stufen nach DIN 24531 verschraubt
+  ---
+  duration_ms: 663.335491
+  type: 'test'
+  ...
+# Subtest: Generator als Baugruppe: Einzelteile in eigener Lage, Platzierung führt zurück, gleiche Teile einmal
+ok 267 - Generator als Baugruppe: Einzelteile in eigener Lage, Platzierung führt zurück, gleiche Teile einmal
+  ---
+  duration_ms: 376.764544
+  type: 'test'
+  ...
+# Subtest: Beschläge: Größenlisten, Bezeichnung, Prüfung (E11)
+ok 268 - Beschläge: Größenlisten, Bezeichnung, Prüfung (E11)
+  ---
+  duration_ms: 0.54826
+  type: 'test'
+  ...
+# Subtest: Auslassen: Nummern, Bereiche, Reihe/Spalte
+ok 269 - Auslassen: Nummern, Bereiche, Reihe/Spalte
+  ---
+  duration_ms: 3.598578
+  type: 'test'
+  ...
+# Subtest: Abstände als Liste mit Ausdrücken
+ok 270 - Abstände als Liste mit Ausdrücken
+  ---
+  duration_ms: 1.432295
+  type: 'test'
+  ...
+# Subtest: Vorlage prüfen
+ok 271 - Vorlage prüfen
+  ---
+  duration_ms: 3.425234
+  type: 'test'
+  ...
+# Subtest: Platzhalter füllen
+ok 272 - Platzhalter füllen
+  ---
+  duration_ms: 0.67706
+  type: 'test'
+  ...
+# Subtest: Nächster freier Name
+ok 273 - Nächster freier Name
+  ---
+  duration_ms: 0.377352
+  type: 'test'
+  ...
+# Subtest: Einstellungen Dokument und Modell
+ok 274 - Einstellungen Dokument und Modell
+  ---
+  duration_ms: 0.689994
+  type: 'test'
+  ...
+# Subtest: Bibliothek: alle Kategorien belegt, jede Familie vollständig und baubar
+ok 275 - Bibliothek: alle Kategorien belegt, jede Familie vollständig und baubar
+  ---
+  duration_ms: 22.393767
+  type: 'test'
+  ...
+# Subtest: Maße: Schrauben, Muttern, Scheiben folgen den Normtabellen
+ok 276 - Maße: Schrauben, Muttern, Scheiben folgen den Normtabellen
+  ---
+  duration_ms: 0.651963
+  type: 'test'
+  ...
+# Subtest: Bezeichnung: Stifte mit Toleranz, HV-Garnitur, Scheiben mit Nenn-Ø, Dübel mit Ø
+ok 277 - Bezeichnung: Stifte mit Toleranz, HV-Garnitur, Scheiben mit Nenn-Ø, Dübel mit Ø
+  ---
+  duration_ms: 0.868606
+  type: 'test'
+  ...
+# Subtest: Suche: Norm, alte DIN-Nummer (auch ohne Leerzeichen), Benennung und Größe
+ok 278 - Suche: Norm, alte DIN-Nummer (auch ohne Leerzeichen), Benennung und Größe
+  ---
+  duration_ms: 4.344206
+  type: 'test'
+  ...
+# Subtest: Bohrung: Größe aus Durchgangs-, Gewinde- und Bohrloch-Ø
+ok 279 - Bohrung: Größe aus Durchgangs-, Gewinde- und Bohrloch-Ø
+  ---
+  duration_ms: 0.588506
+  type: 'test'
+  ...
+# Subtest: Garnitur: Länge aus Klemmlänge, Scheiben und Mutter passend zur Festigkeit
+ok 280 - Garnitur: Länge aus Klemmlänge, Scheiben und Mutter passend zur Festigkeit
+  ---
+  duration_ms: 0.742561
+  type: 'test'
+  ...
+# Subtest: An Bohrung: Einbauachse, Tiefe, Lage der Garnitur
+ok 281 - An Bohrung: Einbauachse, Tiefe, Lage der Garnitur
+  ---
+  duration_ms: 1.85894
+  type: 'test'
+  ...
+# Subtest: An Bohrung: Abhängigkeiten »Einfügen« passen zur berechneten Lage (Löser bewegt nichts)
+ok 282 - An Bohrung: Abhängigkeiten »Einfügen« passen zur berechneten Lage (Löser bewegt nichts)
+  ---
+  duration_ms: 6.647452
+  type: 'test'
+  ...
+# Subtest: Eigene Normteile: Prüfung, Familie, Bezeichnung und Feature-Vorgabe
+ok 283 - Eigene Normteile: Prüfung, Familie, Bezeichnung und Feature-Vorgabe
+  ---
+  duration_ms: 2.25666
+  type: 'test'
+  ...
+# Subtest: Stückliste: Normteile mit Norm und Werkstoff
+ok 284 - Stückliste: Normteile mit Norm und Werkstoff
+  ---
+  duration_ms: 0.74156
+  type: 'test'
+  ...
+# Subtest: Beschläge (E11): Größenlisten, Bezeichnung, Prüfung
+ok 285 - Beschläge (E11): Größenlisten, Bezeichnung, Prüfung
+  ---
+  duration_ms: 0.417517
+  type: 'test'
+  ...
+# Subtest: CSV schreiben: Semikolon, Dezimalkomma, Anführungszeichen, BOM
+ok 286 - CSV schreiben: Semikolon, Dezimalkomma, Anführungszeichen, BOM
+  ---
+  duration_ms: 1.02666
+  type: 'test'
+  ...
+# Subtest: CSV lesen: rundum, Kopfzeile in anderer Reihenfolge, Komma-Datei, Fehler
+ok 287 - CSV lesen: rundum, Kopfzeile in anderer Reihenfolge, Komma-Datei, Fehler
+  ---
+  duration_ms: 4.434704
+  type: 'test'
+  ...
+# Subtest: Einarbeiten: gleiche Namen ändern, neue anhängen, übrige bleiben
+ok 288 - Einarbeiten: gleiche Namen ändern, neue anhängen, übrige bleiben
+  ---
+  duration_ms: 0.409141
+  type: 'test'
+  ...
+# Subtest: Profilflächen: U200 (UPN), Rechteckrohr, I-Profil, Winkel, Rundrohr
+ok 289 - Profilflächen: U200 (UPN), Rechteckrohr, I-Profil, Winkel, Rundrohr
+  ---
+  duration_ms: 10.094911
+  type: 'test'
+  ...
+# Subtest: Anschlussfläche an der U200-Wange: Oberseite = Flansch, außen offen, innen Steg
+ok 290 - Anschlussfläche an der U200-Wange: Oberseite = Flansch, außen offen, innen Steg
+  ---
+  duration_ms: 16.332708
+  type: 'test'
+  ...
+# Subtest: Montagerahmen: Balkonpfosten auf ebener Fläche, Treppenpfosten auf geneigter Wange
+ok 291 - Montagerahmen: Balkonpfosten auf ebener Fläche, Treppenpfosten auf geneigter Wange
+  ---
+  duration_ms: 2.427518
+  type: 'test'
+  ...
+# Subtest: Anschlussfläche: mehrdeutig, rund, nächstes Bauteil, Platte
+ok 292 - Anschlussfläche: mehrdeutig, rund, nächstes Bauteil, Platte
+  ---
+  duration_ms: 0.803966
+  type: 'test'
+  ...
+# Subtest: Kollision der Hüllquader
+ok 293 - Kollision der Hüllquader
+  ---
+  duration_ms: 0.969144
+  type: 'test'
+  ...
+# Subtest: Fußplatte: Bohrbild, Prüfungen in der Platte
+ok 294 - Fußplatte: Bohrbild, Prüfungen in der Platte
+  ---
+  duration_ms: 1.643869
+  type: 'test'
+  ...
+# Subtest: Balkonpfosten auf ebener Fläche: Fußplatte am Boden, Pfosten steht auf der Platte
+ok 295 - Balkonpfosten auf ebener Fläche: Fußplatte am Boden, Pfosten steht auf der Platte
+  ---
+  duration_ms: 10.863839
+  type: 'test'
+  ...
+# Subtest: Randprofil U200 unter dem Geländer: Bohrbild auf den Flansch übertragen, zu breites Bohrbild abgelehnt
+ok 296 - Randprofil U200 unter dem Geländer: Bohrbild auf den Flansch übertragen, zu breites Bohrbild abgelehnt
+  ---
+  duration_ms: 13.892245
+  type: 'test'
+  ...
+# Subtest: U200-Treppe: Fußplatte auf der geneigten Wange, Bohrbild auf die kurze Seite übertragen
+ok 297 - U200-Treppe: Fußplatte auf der geneigten Wange, Bohrbild auf die kurze Seite übertragen
+  ---
+  duration_ms: 40.950644
+  type: 'test'
+  ...
+# Subtest: Treppenwinkel und Pfostenlage ändern: Platte und Bohrbild gehen mit
+ok 298 - Treppenwinkel und Pfostenlage ändern: Platte und Bohrbild gehen mit
+  ---
+  duration_ms: 37.008919
+  type: 'test'
+  ...
+# Subtest: Bohrung nahe der Profilkante abgelehnt, Wange aus Flachstahl: kein Platz oben
+ok 299 - Bohrung nahe der Profilkante abgelehnt, Wange aus Flachstahl: kein Platz oben
+  ---
+  duration_ms: 24.85596
+  type: 'test'
+  ...
+# Subtest: Bestehende Treppe und bestehendes Geländer ohne Befestigungsparameter rechnen wie bisher
+ok 300 - Bestehende Treppe und bestehendes Geländer ohne Befestigungsparameter rechnen wie bisher
+  ---
+  duration_ms: 2.712288
+  type: 'test'
+  ...
+# Subtest: Seitliche Befestigung ohne Abstandsausgleich: Blech plan an der Wange, Pfosten liegt an, Bohrungen frei
+ok 301 - Seitliche Befestigung ohne Abstandsausgleich: Blech plan an der Wange, Pfosten liegt an, Bohrungen frei
+  ---
+  duration_ms: 30.729381
+  type: 'test'
+  ...
+# Subtest: Treppe: Pfosten im Stufenrhythmus, Lasche zwischen den Stufenbohrungen, Muttern innen frei; alte Projekte wie bisher
+ok 302 - Treppe: Pfosten im Stufenrhythmus, Lasche zwischen den Stufenbohrungen, Muttern innen frei; alte Projekte wie bisher
+  ---
+  duration_ms: 321.764653
+  type: 'test'
+  ...
+# Subtest: Geländer seitlich: an der Deckenstirn bzw. am Randprofil, Randabstand zur Deckenkante
+ok 303 - Geländer seitlich: an der Deckenstirn bzw. am Randprofil, Randabstand zur Deckenkante
+  ---
+  duration_ms: 5.716539
+  type: 'test'
+  ...
+# Subtest: Abstandsausgleich: Flacheisen durch Schlitz im Pfosten, Stecknasen in Steckschlitzen des Blechs, eine Passungsregel
+ok 304 - Abstandsausgleich: Flacheisen durch Schlitz im Pfosten, Stecknasen in Steckschlitzen des Blechs, eine Passungsregel
+  ---
+  duration_ms: 65.264666
+  type: 'test'
+  ...
+# Subtest: Podestecken L/U: Futterblech gegen die Luft hinter der Wangenflucht, Blech am Rahmenende verlängert, eine Bohrreihe am niedrigen Rahmen
+ok 305 - Podestecken L/U: Futterblech gegen die Luft hinter der Wangenflucht, Blech am Rahmenende verlängert, eine Bohrreihe am niedrigen Rahmen
+  ---
+  duration_ms: 44.930642
+  type: 'test'
+  ...
+# Subtest: Ausweichen: oben → seitlich, wo die Fußplatte nicht aufliegt (Podest neben der U200-Flucht); seitlich → oben mitten auf dem Podest
+ok 306 - Ausweichen: oben → seitlich, wo die Fußplatte nicht aufliegt (Podest neben der U200-Flucht); seitlich → oben mitten auf dem Podest
+  ---
+  duration_ms: 18.86405
+  type: 'test'
+  ...
+# Subtest: Holmtreppe oben: Pfosten rücken auf die Stufen, Fußplatte ganz auf der Stufe, Bohrungen in die Stufe
+ok 307 - Holmtreppe oben: Pfosten rücken auf die Stufen, Fußplatte ganz auf der Stufe, Bohrungen in die Stufe
+  ---
+  duration_ms: 8.484881
+  type: 'test'
+  ...
+# Subtest: Balkon: oben auf dem Belag mit Bohrungen auch im Rahmen, seitlich an der Rahmenaußenseite, alte Projekte mit einfacher Fußplatte
+ok 308 - Balkon: oben auf dem Belag mit Bohrungen auch im Rahmen, seitlich an der Rahmenaußenseite, alte Projekte mit einfacher Fußplatte
+  ---
+  duration_ms: 10.371963
+  type: 'test'
+  ...
+# Subtest: Spindeltreppe: Fußplatte je Geländerstab auf der Stufe, entlang der Tangente, Bohrungen in die Stufe; alte Projekte geschweißt
+ok 309 - Spindeltreppe: Fußplatte je Geländerstab auf der Stufe, entlang der Tangente, Bohrungen in die Stufe; alte Projekte geschweißt
+  ---
+  duration_ms: 50.608636
+  type: 'test'
+  ...
+# Subtest: Einzelne Pfosten abweichend: aus, andere Art, Seite, verständlicher Fehler
+ok 310 - Einzelne Pfosten abweichend: aus, andere Art, Seite, verständlicher Fehler
+  ---
+  duration_ms: 457.90687
+  type: 'test'
+  ...
+# Subtest: Spindeltreppe: Stab mit Fußplatte liegt wie geprüft (entlang der Tangente), »seitlich« abgelehnt
+ok 311 - Spindeltreppe: Stab mit Fußplatte liegt wie geprüft (entlang der Tangente), »seitlich« abgelehnt
+  ---
+  duration_ms: 20.394387
+  type: 'test'
+  ...
+# Subtest: Treppe: letzter Laufpfosten vor dem Auslauf zurückgerückt – Knieleisten bzw. Untergurt knicken wie der Handlauf an der Treppenkante
+ok 312 - Treppe: letzter Laufpfosten vor dem Auslauf zurückgerückt – Knieleisten bzw. Untergurt knicken wie der Handlauf an der Treppenkante
+  ---
+  duration_ms: 662.126377
+  type: 'test'
+  ...
+# Subtest: Bibliothek: jeder Eintrag ergibt einen gültigen Querschnitt, keine doppelten
+ok 313 - Bibliothek: jeder Eintrag ergibt einen gültigen Querschnitt, keine doppelten
+  ---
+  duration_ms: 25.024594
+  type: 'test'
+  ...
+# Subtest: Werkstoffgruppen: eingebaute Werkstoffe und eigene nach Dichte
+ok 314 - Werkstoffgruppen: eingebaute Werkstoffe und eigene nach Dichte
+  ---
+  duration_ms: 2.062027
+  type: 'test'
+  ...
+# Subtest: Auswahl in Schritten: Abmessung, dann nur deren Wandstärken
+ok 315 - Auswahl in Schritten: Abmessung, dann nur deren Wandstärken
+  ---
+  duration_ms: 1.979645
+  type: 'test'
+  ...
+# Subtest: Radien je Werkstoffgruppe; Treffer und Abmessung aus Maßen
+ok 316 - Radien je Werkstoffgruppe; Treffer und Abmessung aus Maßen
+  ---
+  duration_ms: 1.91822
+  type: 'test'
+  ...
+# Subtest: Katalog (Generatoren, Schnelleingabe) enthält die Bibliothek und alle bisherigen Größen
+ok 317 - Katalog (Generatoren, Schnelleingabe) enthält die Bibliothek und alle bisherigen Größen
+  ---
+  duration_ms: 11.366165
+  type: 'test'
+  ...
+# Subtest: Generatoren: Katalog-Größe zerlegen, ohne Werkstoffgruppe alle Gruppen
+ok 318 - Generatoren: Katalog-Größe zerlegen, ohne Werkstoffgruppe alle Gruppen
+  ---
+  duration_ms: 1.987178
+  type: 'test'
+  ...
+# Subtest: Generator-Profil mit Werkstoffgruppe: Kantenradius aus der Bibliothek
+ok 319 - Generator-Profil mit Werkstoffgruppe: Kantenradius aus der Bibliothek
+  ---
+  duration_ms: 36.940822
+  type: 'test'
+  ...
+# Subtest: Projektdatei: gültige Datei wird gelesen
+ok 320 - Projektdatei: gültige Datei wird gelesen
+  ---
+  duration_ms: 2.78293
+  type: 'test'
+  ...
+# Subtest: Projektdatei: unlesbare Inhalte werden abgelehnt
+ok 321 - Projektdatei: unlesbare Inhalte werden abgelehnt
+  ---
+  duration_ms: 0.622028
+  type: 'test'
+  ...
+# Subtest: Projektdatei: Speichern setzt den Zeitpunkt und behält alles andere
+ok 322 - Projektdatei: Speichern setzt den Zeitpunkt und behält alles andere
+  ---
+  duration_ms: 0.491695
+  type: 'test'
+  ...
+# Subtest: Projektdatei: Roundtrip der eingefrorenen v1-Datei ist byte-gleich
+ok 323 - Projektdatei: Roundtrip der eingefrorenen v1-Datei ist byte-gleich
+  ---
+  duration_ms: 0.348759
+  type: 'test'
+  ...
+# Subtest: Projektdatei: Roundtrip des aktuellen Beispielprojekts
+ok 324 - Projektdatei: Roundtrip des aktuellen Beispielprojekts
+  ---
+  duration_ms: 15.970012
+  type: 'test'
+  ...
+# Subtest: Version: aktuelle Datei bleibt unverändert
+ok 325 - Version: aktuelle Datei bleibt unverändert
+  ---
+  duration_ms: 0.527943
+  type: 'test'
+  ...
+# Subtest: Version: fehlende Version wird als 1 gelesen
+ok 326 - Version: fehlende Version wird als 1 gelesen
+  ---
+  duration_ms: 0.3437
+  type: 'test'
+  ...
+# Subtest: Version: neuere Datei öffnet mit Warnung, Inhalt bleibt erhalten
+ok 327 - Version: neuere Datei öffnet mit Warnung, Inhalt bleibt erhalten
+  ---
+  duration_ms: 0.331908
+  type: 'test'
+  ...
+# Subtest: Version: ungültige Angaben werden abgelehnt
+ok 328 - Version: ungültige Angaben werden abgelehnt
+  ---
+  duration_ms: 0.513335
+  type: 'test'
+  ...
+# Subtest: Migration: Kette läuft schrittweise und verändert das Original nicht
+ok 329 - Migration: Kette läuft schrittweise und verändert das Original nicht
+  ---
+  duration_ms: 0.59142
+  type: 'test'
+  ...
+# Subtest: Migration: fehlender Schritt bricht mit klarer Meldung ab
+ok 330 - Migration: fehlender Schritt bricht mit klarer Meldung ab
+  ---
+  duration_ms: 0.235899
+  type: 'test'
+  ...
+# Subtest: Prüfung: Beispielprojekt und Referenzdatei sind fehlerfrei
+ok 331 - Prüfung: Beispielprojekt und Referenzdatei sind fehlerfrei
+  ---
+  duration_ms: 0.888203
+  type: 'test'
+  ...
+# Subtest: Prüfung: Fehler, die das Öffnen verhindern
+ok 332 - Prüfung: Fehler, die das Öffnen verhindern
+  ---
+  duration_ms: 0.31166
+  type: 'test'
+  ...
+# Subtest: Prüfung: Hinweise, mit denen sich das Projekt öffnen lässt
+ok 333 - Prüfung: Hinweise, mit denen sich das Projekt öffnen lässt
+  ---
+  duration_ms: 0.207827
+  type: 'test'
+  ...
+# Subtest: Öffnen: Strukturfehler → verständliche Meldung, Warnungen → öffnen
+ok 334 - Öffnen: Strukturfehler → verständliche Meldung, Warnungen → öffnen
+  ---
+  duration_ms: 0.3864
+  type: 'test'
+  ...
+# Subtest: Öffnen: Prüfung verändert die Datei nicht
+ok 335 - Öffnen: Prüfung verändert die Datei nicht
+  ---
+  duration_ms: 0.363246
+  type: 'test'
+  ...
+# Subtest: Verknüpfte Bauteile: Pfade, Suche, Übernahme, eigene Datei (MegaCAD-Abgleich M24)
+ok 336 - Verknüpfte Bauteile: Pfade, Suche, Übernahme, eigene Datei (MegaCAD-Abgleich M24)
+  ---
+  duration_ms: 2.173154
+  type: 'test'
+  ...
+# Subtest: Featurefehler und -warnungen mit Feature-Namen
+ok 337 - Featurefehler und -warnungen mit Feature-Namen
+  ---
+  duration_ms: 2.479836
+  type: 'test'
+  ...
+# Subtest: Problemliste des Projekts: fehlende Verweise, Features, Fertigungsprüfung; Fehler zuerst
+ok 338 - Problemliste des Projekts: fehlende Verweise, Features, Fertigungsprüfung; Fehler zuerst
+  ---
+  duration_ms: 8.05909
+  type: 'test'
+  ...
+# Subtest: Freigabeprüfung: Werkstoff Pflicht, Teilenummer je Einstellung, Normteile ausgenommen
+ok 339 - Freigabeprüfung: Werkstoff Pflicht, Teilenummer je Einstellung, Normteile ausgenommen
+  ---
+  duration_ms: 1.118401
+  type: 'test'
+  ...
+# Subtest: Freigabeprüfung: ungültiger Körper und nicht berechnetes Bauteil sind Fehler, leere Baugruppe auch
+ok 340 - Freigabeprüfung: ungültiger Körper und nicht berechnetes Bauteil sind Fehler, leere Baugruppe auch
+  ---
+  duration_ms: 0.632577
+  type: 'test'
+  ...
+# Subtest: Fingerabdruck: Name/Beschreibung egal, Maße und Bauteile der Baugruppe zählen
+ok 341 - Fingerabdruck: Name/Beschreibung egal, Maße und Bauteile der Baugruppe zählen
+  ---
+  duration_ms: 0.695775
+  type: 'test'
+  ...
+# Subtest: Freigabestatus: freigegeben, nach Änderung »geändert«, zurück auf In Arbeit
+ok 342 - Freigabestatus: freigegeben, nach Änderung »geändert«, zurück auf In Arbeit
+  ---
+  duration_ms: 0.680176
+  type: 'test'
+  ...
+# Subtest: partsOf: Bauteil selbst, Baugruppe mit ausgeblendeten Komponenten, jedes Bauteil einmal
+ok 343 - partsOf: Bauteil selbst, Baugruppe mit ausgeblendeten Komponenten, jedes Bauteil einmal
+  ---
+  duration_ms: 0.362264
+  type: 'test'
+  ...
+# Subtest: Fertigungsmappe: Stand in der Kopfzeile der Listen
+ok 344 - Fertigungsmappe: Stand in der Kopfzeile der Listen
+  ---
+  duration_ms: 8.045433
+  type: 'test'
+  ...
+# Subtest: Anordnung prüfen: Form, Namen, geschützte Gruppen fallen aus hide
+ok 345 - Anordnung prüfen: Form, Namen, geschützte Gruppen fallen aus hide
+  ---
+  duration_ms: 2.661693
+  type: 'test'
+  ...
+# Subtest: Reihenfolge: gespeicherte zuerst, neue Gruppen hinter ihrem Vorgänger, Unbekanntes ignoriert
+ok 346 - Reihenfolge: gespeicherte zuerst, neue Gruppen hinter ihrem Vorgänger, Unbekanntes ignoriert
+  ---
+  duration_ms: 0.388663
+  type: 'test'
+  ...
+# Subtest: Ausblenden und Verschieben
+ok 347 - Ausblenden und Verschieben
+  ---
+  duration_ms: 0.903321
+  type: 'test'
+  ...
+# Subtest: Schutz: letzte sichtbare Gruppe und »Beenden« in der Skizze bleiben
+ok 348 - Schutz: letzte sichtbare Gruppe und »Beenden« in der Skizze bleiben
+  ---
+  duration_ms: 0.32241
+  type: 'test'
+  ...
+# Subtest: Profil-Treffer: doppelte Maße dürfen fehlen, gleiche Maße zuerst
+ok 349 - Profil-Treffer: doppelte Maße dürfen fehlen, gleiche Maße zuerst
+  ---
+  duration_ms: 41.48042
+  type: 'test'
+  ...
+# Subtest: Profil-Treffer: Kürzel vorne muss passen, Arten begrenzbar
+ok 350 - Profil-Treffer: Kürzel vorne muss passen, Arten begrenzbar
+  ---
+  duration_ms: 12.222898
+  type: 'test'
+  ...
+# Subtest: Profil-ID lesen, auch ohne Normgröße
+ok 351 - Profil-ID lesen, auch ohne Normgröße
+  ---
+  duration_ms: 0.724248
+  type: 'test'
+  ...
+# Subtest: Eingabe auflösen: genau, Profil-ID, eindeutiger Treffer, sonst Fehler
+ok 352 - Eingabe auflösen: genau, Profil-ID, eindeutiger Treffer, sonst Fehler
+  ---
+  duration_ms: 33.692529
+  type: 'test'
+  ...
+# Subtest: Fertigung: Teil zu lang gegen nutzbare Stange, genau an der Grenze in Ordnung
+ok 353 - Fertigung: Teil zu lang gegen nutzbare Stange, genau an der Grenze in Ordnung
+  ---
+  duration_ms: 18.698661
+  type: 'test'
+  ...
+# Subtest: Fertigung: kürzestes Teil nur mit Grenze
+ok 354 - Fertigung: kürzestes Teil nur mit Grenze
+  ---
+  duration_ms: 0.580029
+  type: 'test'
+  ...
+# Subtest: Fertigung: Hüllkreis und Metergewicht
+ok 355 - Fertigung: Hüllkreis und Metergewicht
+  ---
+  duration_ms: 0.572184
+  type: 'test'
+  ...
+# Subtest: Fertigung: Knickrahmen-Schenkel und Wand, schwerste Stufe zuerst
+ok 356 - Fertigung: Knickrahmen-Schenkel und Wand, schwerste Stufe zuerst
+  ---
+  duration_ms: 0.757239
+  type: 'test'
+  ...
+# Subtest: Fertigung: Grenzen kommen aus den Einstellungen, Startwerte gleich
+ok 357 - Fertigung: Grenzen kommen aus den Einstellungen, Startwerte gleich
+  ---
+  duration_ms: 0.689423
+  type: 'test'
+  ...
+# Subtest: Rohr-Konturen: Muster „3x25“ wie im Rohr-Editor
+ok 358 - Rohr-Konturen: Muster „3x25“ wie im Rohr-Editor
+  ---
+  duration_ms: 1.017594
+  type: 'test'
+  ...
+# Subtest: Rohr-Konturen: Schnittlängen nach schneidweg.py
+ok 359 - Rohr-Konturen: Schnittlängen nach schneidweg.py
+  ---
+  duration_ms: 0.274231
+  type: 'test'
+  ...
+# Subtest: Rohr-Konturen: Planung mit Muster, durchgehend, Schneidweg und Einstiche
+ok 360 - Rohr-Konturen: Planung mit Muster, durchgehend, Schneidweg und Einstiche
+  ---
+  duration_ms: 1.052319
+  type: 'test'
+  ...
+# Subtest: Rohr-Konturen: Prüfungen nennen die Kontur
+ok 361 - Rohr-Konturen: Prüfungen nennen die Kontur
+  ---
+  duration_ms: 1.114334
+  type: 'test'
+  ...
+# Subtest: 2D/3D: 2D Innenkante unter der Außenkante, 3D eben, Winkelkorrektur begrenzt
+ok 362 - 2D/3D: 2D Innenkante unter der Außenkante, 3D eben, Winkelkorrektur begrenzt
+  ---
+  duration_ms: 1.234578
+  type: 'test'
+  ...
+# Subtest: Bohrung 3D: Neigung, Ellipse, Begrenzung
+ok 363 - Bohrung 3D: Neigung, Ellipse, Begrenzung
+  ---
+  duration_ms: 0.302133
+  type: 'test'
+  ...
+# Subtest: Maßbild: je Konturart genau die Maßbuchstaben der Eingabefelder
+ok 364 - Maßbild: je Konturart genau die Maßbuchstaben der Eingabefelder
+  ---
+  duration_ms: 0.743403
+  type: 'test'
+  ...
+# Subtest: Prüfregeln: Abwicklung des Umfangs
+ok 365 - Prüfregeln: Abwicklung des Umfangs
+  ---
+  duration_ms: 0.634842
+  type: 'test'
+  ...
+# Subtest: Prüfregeln: Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende (dfm.py)
+ok 366 - Prüfregeln: Bohrung zu klein, Steg zu schmal, Kontur zu nah am Ende (dfm.py)
+  ---
+  duration_ms: 14.83524
+  type: 'test'
+  ...
+# Subtest: Prüfregeln laufen über die Zuschnittliste mit
+ok 367 - Prüfregeln laufen über die Zuschnittliste mit
+  ---
+  duration_ms: 0.453454
+  type: 'test'
+  ...
+# Subtest: Polygon: Eckpunkte wie im Rohr-Editor, Bögen als Bulge, Schnittlänge = Umfang
+ok 368 - Polygon: Eckpunkte wie im Rohr-Editor, Bögen als Bulge, Schnittlänge = Umfang
+  ---
+  duration_ms: 1.033023
+  type: 'test'
+  ...
+# Subtest: Schlitz und Polygon: Lage, Schneidweg, Prüfregeln
+ok 369 - Schlitz und Polygon: Lage, Schneidweg, Prüfregeln
+  ---
+  duration_ms: 0.560303
+  type: 'test'
+  ...
+# Subtest: Schnitt 2D/3D: Bauteil gibt allen Profilen Art und Winkelkorrektur vor
+ok 370 - Schnitt 2D/3D: Bauteil gibt allen Profilen Art und Winkelkorrektur vor
+  ---
+  duration_ms: 0.259754
+  type: 'test'
+  ...
+# Subtest: Langloch 30 breit an QR 40x40x3 (Patricks Test): über die Eckrundung statt übersprungen
+ok 371 - Langloch 30 breit an QR 40x40x3 (Patricks Test): über die Eckrundung statt übersprungen
+  ---
+  duration_ms: 0.734797
+  type: 'test'
+  ...
+# Subtest: Schrifthöhe = Versalhöhe: »H« ist genau h hoch und steht auf der Grundlinie
+ok 372 - Schrifthöhe = Versalhöhe: »H« ist genau h hoch und steht auf der Grundlinie
+  ---
+  duration_ms: 1.999552
+  type: 'test'
+  ...
+# Subtest: Konturen: »o« hat Außen- und Innenkontur → ein Bereich mit Loch; Umlaute aus zusammengesetzten Zeichen
+ok 373 - Konturen: »o« hat Außen- und Innenkontur → ein Bereich mit Loch; Umlaute aus zusammengesetzten Zeichen
+  ---
+  duration_ms: 3.620478
+  type: 'test'
+  ...
+# Subtest: Ausrichtung und Winkel: Mitte halbiert, rechts endet am Punkt, 90° stellt den Text auf
+ok 374 - Ausrichtung und Winkel: Mitte halbiert, rechts endet am Punkt, 90° stellt den Text auf
+  ---
+  duration_ms: 2.525481
+  type: 'test'
+  ...
+# Subtest: Mehrere Zeilen, fett breiter, Zeichenabstand verlängert
+ok 375 - Mehrere Zeilen, fett breiter, Zeichenabstand verlängert
+  ---
+  duration_ms: 0.597743
+  type: 'test'
+  ...
+# Subtest: Platzhalter: Teilenummer, Name, Werkstoff, Datum; unbekannte und leere bleiben stehen
+ok 376 - Platzhalter: Teilenummer, Name, Werkstoff, Datum; unbekannte und leere bleiben stehen
+  ---
+  duration_ms: 0.54291
+  type: 'test'
+  ...
+# Subtest: Unbekannte Zeichen als »?«, Leerzeichen ohne Kontur, Höhe 0 ohne Kontur
+ok 377 - Unbekannte Zeichen als »?«, Leerzeichen ohne Kontur, Höhe 0 ohne Kontur
+  ---
+  duration_ms: 0.718136
+  type: 'test'
+  ...
+# Subtest: Skizzengrenzen, Fensterauswahl und DXF kennen den Text
+ok 378 - Skizzengrenzen, Fensterauswahl und DXF kennen den Text
+  ---
+  duration_ms: 2.859282
+  type: 'test'
+  ...
+# Subtest: Prüfumfang nach Ausführungsklasse und Nahtart
+ok 379 - Prüfumfang nach Ausführungsklasse und Nahtart
+  ---
+  duration_ms: 0.978351
+  type: 'test'
+  ...
+# Subtest: Plan: Standardwerte, Zeilen je WPS, Seite und CSV
+ok 380 - Plan: Standardwerte, Zeilen je WPS, Seite und CSV
+  ---
+  duration_ms: 17.542679
+  type: 'test'
+  ...
+# Subtest: Standardwerte sind gültig und jede Option hat eine Kategorie
+ok 381 - Standardwerte sind gültig und jede Option hat eine Kategorie
+  ---
+  duration_ms: 4.83022
+  type: 'test'
+  ...
+# Subtest: Geplante Kategorien haben keine Optionen
+ok 382 - Geplante Kategorien haben keine Optionen
+  ---
+  duration_ms: 0.244105
+  type: 'test'
+  ...
+# Subtest: Prüfung: Grenzen, Typen, keine stille Ersetzung
+ok 383 - Prüfung: Grenzen, Typen, keine stille Ersetzung
+  ---
+  duration_ms: 0.282406
+  type: 'test'
+  ...
+# Subtest: Laden: leer → Standard, Rundreise erhält Werte
+ok 384 - Laden: leer → Standard, Rundreise erhält Werte
+  ---
+  duration_ms: 1.549413
+  type: 'test'
+  ...
+# Subtest: Beschädigte oder fremde Datei → Standardwerte mit Warnung
+ok 385 - Beschädigte oder fremde Datei → Standardwerte mit Warnung
+  ---
+  duration_ms: 0.576292
+  type: 'test'
+  ...
+# Subtest: Ungültige und unbekannte Werte werden gemeldet, Rest übernommen
+ok 386 - Ungültige und unbekannte Werte werden gemeldet, Rest übernommen
+  ---
+  duration_ms: 0.35487
+  type: 'test'
+  ...
+# Subtest: Migration: Werte ohne Hülle (Version 0) werden übernommen
+ok 387 - Migration: Werte ohne Hülle (Version 0) werden übernommen
+  ---
+  duration_ms: 0.272067
+  type: 'test'
+  ...
+# Subtest: Neuere Version: bekannte Werte übernehmen, unbekannte still lassen
+ok 388 - Neuere Version: bekannte Werte übernehmen, unbekannte still lassen
+  ---
+  duration_ms: 0.263491
+  type: 'test'
+  ...
+# Subtest: Effektiver Wert: explizit > Dokument > Benutzer > Standard
+ok 389 - Effektiver Wert: explizit > Dokument > Benutzer > Standard
+  ---
+  duration_ms: 0.523995
+  type: 'test'
+  ...
+# Subtest: Suche findet Optionen und Kategorien, auch ohne Umlaute
+ok 390 - Suche findet Optionen und Kategorien, auch ohne Umlaute
+  ---
+  duration_ms: 2.62214
+  type: 'test'
+  ...
+# Subtest: Schnellzugriff und Werkzeug-Standardwerte
+ok 391 - Schnellzugriff und Werkzeug-Standardwerte
+  ---
+  duration_ms: 0.588486
+  type: 'test'
+  ...
+# Subtest: Farbschema und letzte Werkzeugwerte: Prüfung und Rundlauf
+ok 392 - Farbschema und letzte Werkzeugwerte: Prüfung und Rundlauf
+  ---
+  duration_ms: 0.489621
+  type: 'test'
+  ...
+# Subtest: Panel-Anordnung: Prüfung, Spalten, Rundlauf
+ok 393 - Panel-Anordnung: Prüfung, Spalten, Rundlauf
+  ---
+  duration_ms: 0.705273
+  type: 'test'
+  ...
+# Subtest: Langloch: 5 Freiheitsgrade, geschlossene Kontur, Fläche, Radius über Maß
+ok 394 - Langloch: 5 Freiheitsgrade, geschlossene Kontur, Fläche, Radius über Maß
+  ---
+  duration_ms: 6.611199
+  type: 'test'
+  ...
+# Subtest: Langloch: ungültige Eingaben werden abgelehnt
+ok 395 - Langloch: ungültige Eingaben werden abgelehnt
+  ---
+  duration_ms: 0.571797
+  type: 'test'
+  ...
+# Subtest: Polygon: regelmäßig, 4 Freiheitsgrade, folgt Seitenlänge
+ok 396 - Polygon: regelmäßig, 4 Freiheitsgrade, folgt Seitenlänge
+  ---
+  duration_ms: 5.362755
+  type: 'test'
+  ...
+# Subtest: Spiegeln: Kopie symmetrisch, Punkte auf der Achse geteilt, folgt Original
+ok 397 - Spiegeln: Kopie symmetrisch, Punkte auf der Achse geteilt, folgt Original
+  ---
+  duration_ms: 1.9098
+  type: 'test'
+  ...
+# Subtest: Bogen spiegeln behält gültige Kontur (Umlaufsinn getauscht)
+ok 398 - Bogen spiegeln behält gültige Kontur (Umlaufsinn getauscht)
+  ---
+  duration_ms: 1.777465
+  type: 'test'
+  ...
+# Subtest: Versatz: Rechteck außen und innen, Ecken im Schnittpunkt, ein Maß steuert alle
+ok 399 - Versatz: Rechteck außen und innen, Ecken im Schnittpunkt, ein Maß steuert alle
+  ---
+  duration_ms: 3.905513
+  type: 'test'
+  ...
+# Subtest: Versatz: Langloch bleibt tangential, Kreis innen/außen, offene Kette
+ok 400 - Versatz: Langloch bleibt tangential, Kreis innen/außen, offene Kette
+  ---
+  duration_ms: 2.029862
+  type: 'test'
+  ...
+# Subtest: Fensterauswahl: ganz innen bzw. berührend
+ok 401 - Fensterauswahl: ganz innen bzw. berührend
+  ---
+  duration_ms: 1.224676
+  type: 'test'
+  ...
+# Subtest: Klartext für Bedingungen
+ok 402 - Klartext für Bedingungen
+  ---
+  duration_ms: 0.414721
+  type: 'test'
+  ...
+# Subtest: Muster: rechteckig und kreisförmig, Werte änderbar
+ok 403 - Muster: rechteckig und kreisförmig, Werte änderbar
+  ---
+  duration_ms: 6.790028
+  type: 'test'
+  ...
+# Subtest: Automatische Bedingungen: parallel, senkrecht, tangential, gleich
+ok 404 - Automatische Bedingungen: parallel, senkrecht, tangential, gleich
+  ---
+  duration_ms: 1.176049
+  type: 'test'
+  ...
+# Subtest: Verschieben, Drehen, Skalieren, Kopieren (Inventor Move/Rotate/Scale/Copy): Bedingungen bleiben lösbar
+ok 405 - Verschieben, Drehen, Skalieren, Kopieren (Inventor Move/Rotate/Scale/Copy): Bedingungen bleiben lösbar
+  ---
+  duration_ms: 2.083178
+  type: 'test'
+  ...
+# Subtest: Schnittpunkt zweier Linien wird gefangen und an beide gebunden
+ok 406 - Schnittpunkt zweier Linien wird gefangen und an beide gebunden
+  ---
+  duration_ms: 2.809755
+  type: 'test'
+  ...
+# Subtest: Linienmitte, Kreismittelpunkt, Quadrant, Bogenmitte
+ok 407 - Linienmitte, Kreismittelpunkt, Quadrant, Bogenmitte
+  ---
+  duration_ms: 0.845525
+  type: 'test'
+  ...
+# Subtest: Ausrichtung waagrecht/senkrecht zu Punkten, auch beides zugleich
+ok 408 - Ausrichtung waagrecht/senkrecht zu Punkten, auch beides zugleich
+  ---
+  duration_ms: 0.4436
+  type: 'test'
+  ...
+# Subtest: S1: Rang und freie Variablen in einem Durchgang wie bisher (Gram-Schmidt)
+ok 409 - S1: Rang und freie Variablen in einem Durchgang wie bisher (Gram-Schmidt)
+  ---
+  duration_ms: 12.625591
+  type: 'test'
+  ...
+# Subtest: S1: Löser mit vielen bemaßten Rechtecken bleibt schnell
+ok 410 - S1: Löser mit vielen bemaßten Rechtecken bleibt schnell
+  ---
+  duration_ms: 135.823691
+  type: 'test'
+  ...
+# Subtest: S1: waagrechtes/senkrechtes Maß zwischen Punkten auf gleicher Höhe ist lösbar
+ok 411 - S1: waagrechtes/senkrechtes Maß zwischen Punkten auf gleicher Höhe ist lösbar
+  ---
+  duration_ms: 0.992801
+  type: 'test'
+  ...
+# Subtest: S2: Winkel zur x-Achse hält die Linie, lässt sich ändern und messen
+ok 412 - S2: Winkel zur x-Achse hält die Linie, lässt sich ändern und messen
+  ---
+  duration_ms: 2.635145
+  type: 'test'
+  ...
+# Subtest: S2: Drehen entfernt den Winkel zur x-Achse, Voll bemaßen setzt ihn bei einzelnen schrägen Linien
+ok 413 - S2: Drehen entfernt den Winkel zur x-Achse, Voll bemaßen setzt ihn bei einzelnen schrägen Linien
+  ---
+  duration_ms: 2.551317
+  type: 'test'
+  ...
+# Subtest: S5: Skizzenfase mit gleichen und mit zwei Abständen, Maß änderbar, Kontur geschlossen
+ok 414 - S5: Skizzenfase mit gleichen und mit zwei Abständen, Maß änderbar, Kontur geschlossen
+  ---
+  duration_ms: 4.667872
+  type: 'test'
+  ...
+# Subtest: S5: Tangentialer Bogen schließt an die Linie an
+ok 415 - S5: Tangentialer Bogen schließt an die Linie an
+  ---
+  duration_ms: 0.984314
+  type: 'test'
+  ...
+# Subtest: S6: Widerspruch nennt die beteiligten Bedingungen, Freiheitsgrade als Richtungen
+ok 416 - S6: Widerspruch nennt die beteiligten Bedingungen, Freiheitsgrade als Richtungen
+  ---
+  duration_ms: 1.085868
+  type: 'test'
+  ...
+# Subtest: Ecken, Seitenverhältnis, Maßstab über Strecke
+ok 417 - Ecken, Seitenverhältnis, Maßstab über Strecke
+  ---
+  duration_ms: 2.903042
+  type: 'test'
+  ...
+# Subtest: unbenutzte Bilder fallen beim Speichern weg
+ok 418 - unbenutzte Bilder fallen beim Speichern weg
+  ---
+  duration_ms: 0.452538
+  type: 'test'
+  ...
+# Subtest: Mittellinie aus Geraden und Bogen: Länge und verdrehungsfreier Bezug
+ok 419 - Mittellinie aus Geraden und Bogen: Länge und verdrehungsfreier Bezug
+  ---
+  duration_ms: 15.082077
+  type: 'test'
+  ...
+# Subtest: Wendel: Bezug zeigt zur Achse, Bohrung von außen liegt bei 180°
+ok 420 - Wendel: Bezug zeigt zur Achse, Bohrung von außen liegt bei 180°
+  ---
+  duration_ms: 6.411098
+  type: 'test'
+  ...
+# Subtest: CSV mit Länge und Bohrbild
+ok 421 - CSV mit Länge und Bohrbild
+  ---
+  duration_ms: 0.522517
+  type: 'test'
+  ...
+# Subtest: Masse von Hand hat Vorrang, leer oder ungültig = berechnet
+ok 422 - Masse von Hand hat Vorrang, leer oder ungültig = berechnet
+  ---
+  duration_ms: 0.966548
+  type: 'test'
+  ...
+# Subtest: Reihenfolge: genannte zuerst, Rest wie vorher, Normteile am Ende
+ok 423 - Reihenfolge: genannte zuerst, Rest wie vorher, Normteile am Ende
+  ---
+  duration_ms: 1.505369
+  type: 'test'
+  ...
+# Subtest: Eintrag: in sich geschlossen (Bauteil ohne Verknüpfung, eigener Werkstoff), Einfügen als Kopie mit neuer id
+ok 424 - Eintrag: in sich geschlossen (Bauteil ohne Verknüpfung, eigener Werkstoff), Einfügen als Kopie mit neuer id
+  ---
+  duration_ms: 6.395968
+  type: 'test'
+  ...
+# Subtest: Suche über Name, Kategorie, Nummer; Kategorien sortiert
+ok 425 - Suche über Name, Kategorie, Nummer; Kategorien sortiert
+  ---
+  duration_ms: 13.206958
+  type: 'test'
+  ...
+# Subtest: Ablage im Benutzerordner: schreiben, lesen, ersetzen, löschen; ungültige ids und Dateien abgewiesen
+ok 426 - Ablage im Benutzerordner: schreiben, lesen, ersetzen, löschen; ungültige ids und Dateien abgewiesen
+  ---
+  duration_ms: 4.242869
+  type: 'test'
+  ...
+# Subtest: ISO 2768-1: Längenmaße je Klasse und Bereichsgrenzen
+ok 427 - ISO 2768-1: Längenmaße je Klasse und Bereichsgrenzen
+  ---
+  duration_ms: 1.054495
+  type: 'test'
+  ...
+# Subtest: ISO 2768-1: Radien und Fasen
+ok 428 - ISO 2768-1: Radien und Fasen
+  ---
+  duration_ms: 0.154169
+  type: 'test'
+  ...
+# Subtest: Klasse aus dem Schriftfeld
+ok 429 - Klasse aus dem Schriftfeld
+  ---
+  duration_ms: 0.281725
+  type: 'test'
+  ...
+# Subtest: Toleranz am Maß: prüfen und Text
+ok 430 - Toleranz am Maß: prüfen und Text
+  ---
+  duration_ms: 1.847254
+  type: 'test'
+  ...
+# Subtest: Einstellungen: Klasse und Nachkommastellen, Dokument und Kernel ohne geplante Punkte
+ok 431 - Einstellungen: Klasse und Nachkommastellen, Dokument und Kernel ohne geplante Punkte
+  ---
+  duration_ms: 0.545044
+  type: 'test'
+  ...
+# Subtest: DXF (R12): Minus und Mal als ASCII, ± als %%p
+ok 432 - DXF (R12): Minus und Mal als ASCII, ± als %%p
+  ---
+  duration_ms: 1.447473
+  type: 'test'
+  ...
+# Subtest: Stand wiederherstellen ergibt dasselbe Projekt in derselben Schlüsselreihenfolge
+ok 433 - Stand wiederherstellen ergibt dasselbe Projekt in derselben Schlüsselreihenfolge
+  ---
+  duration_ms: 3.457654
+  type: 'test'
+  ...
+# Subtest: unveränderte Dokumente und Bilder zählen über viele Stände nur einmal
+ok 434 - unveränderte Dokumente und Bilder zählen über viele Stände nur einmal
+  ---
+  duration_ms: 8.342301
+  type: 'test'
+  ...
+# Subtest: Budget verwirft die ältesten Stände, der jüngste bleibt
+ok 435 - Budget verwirft die ältesten Stände, der jüngste bleibt
+  ---
+  duration_ms: 1.247341
+  type: 'test'
+  ...
+# Subtest: Zoll: in, zoll und " ergeben exakt 25,4 mm
+ok 436 - Zoll: in, zoll und " ergeben exakt 25,4 mm
+  ---
+  duration_ms: 1.922185
+  type: 'test'
+  ...
+# Subtest: Einheit gilt für den ganzen Term davor (Entscheidung 24.10.2026)
+ok 437 - Einheit gilt für den ganzen Term davor (Entscheidung 24.10.2026)
+  ---
+  duration_ms: 0.504241
+  type: 'test'
+  ...
+# Subtest: Zoll: Umrechnung hin und zurück ohne Rundungsfehler
+ok 438 - Zoll: Umrechnung hin und zurück ohne Rundungsfehler
+  ---
+  duration_ms: 0.241163
+  type: 'test'
+  ...
+# Subtest: Zoll: bestehende Einheiten und Parameter unverändert
+ok 439 - Zoll: bestehende Einheiten und Parameter unverändert
+  ---
+  duration_ms: 1.915732
+  type: 'test'
+  ...
+# Subtest: Einstellung: aus, Standardwerte, Zahlen
+ok 440 - Einstellung: aus, Standardwerte, Zahlen
+  ---
+  duration_ms: 2.041895
+  type: 'test'
+  ...
+# Subtest: Je Körper: Normteil, Naht, klein, Hüllquader
+ok 441 - Je Körper: Normteil, Naht, klein, Hüllquader
+  ---
+  duration_ms: 0.326285
+  type: 'test'
+  ...
+# Subtest: Änderungen zwischen zwei Ständen: neu, geändert, umbenannt, entfernt
+ok 442 - Änderungen zwischen zwei Ständen: neu, geändert, umbenannt, entfernt
+  ---
+  duration_ms: 5.62946
+  type: 'test'
+  ...
+# Subtest: Nummern und Reihenfolge
+ok 443 - Nummern und Reihenfolge
+  ---
+  duration_ms: 0.346145
+  type: 'test'
+  ...
+# Subtest: Browser-Speicher: speichern, Liste neueste zuerst, lesen
+ok 444 - Browser-Speicher: speichern, Liste neueste zuerst, lesen
+  ---
+  duration_ms: 1.661572
+  type: 'test'
+  ...
+# Subtest: Desktop: Ordner neben der Datei, Versionsdateien sind normale Projektdateien
+ok 445 - Desktop: Ordner neben der Datei, Versionsdateien sind normale Projektdateien
+  ---
+  duration_ms: 3.225529
+  type: 'test'
+  ...
+# Subtest: Richtwert-Ø nach Profilgröße (DIN EN ISO 14713-2)
+ok 446 - Richtwert-Ø nach Profilgröße (DIN EN ISO 14713-2)
+  ---
+  duration_ms: 1.048643
+  type: 'test'
+  ...
+# Subtest: Lage: an beiden Enden mit Randabstand, Gehrung schiebt nach innen
+ok 447 - Lage: an beiden Enden mit Randabstand, Gehrung schiebt nach innen
+  ---
+  duration_ms: 1.695881
+  type: 'test'
+  ...
+# Subtest: Kurzer Stab: eine Bohrung in der Mitte, zu großer Ø wird gemeldet
+ok 448 - Kurzer Stab: eine Bohrung in der Mitte, zu großer Ø wird gemeldet
+  ---
+  duration_ms: 0.424281
+  type: 'test'
+  ...
+# Subtest: Beleuchtung: Voreinstellungen, Foto hat Vorrang, Unbekanntes = Standard
+ok 449 - Beleuchtung: Voreinstellungen, Foto hat Vorrang, Unbekanntes = Standard
+  ---
+  duration_ms: 2.934141
+  type: 'test'
+  ...
+# Subtest: Standardordner und Standardebene
+ok 450 - Standardordner und Standardebene
+  ---
+  duration_ms: 0.694002
+  type: 'test'
+  ...
+# Subtest: Kategorien: »aktiv« ohne geplante Punkte, erledigte Punkte nicht mehr geplant
+ok 451 - Kategorien: »aktiv« ohne geplante Punkte, erledigte Punkte nicht mehr geplant
+  ---
+  duration_ms: 0.34942
+  type: 'test'
+  ...
+# Subtest: N2: Bogen an der Ecke tangential an beide Stücke
+ok 452 - N2: Bogen an der Ecke tangential an beide Stücke
+  ---
+  duration_ms: 2.640664
+  type: 'test'
+  ...
+# Subtest: N2: zu kurze Ecke bleibt Gehrung, Stücke werden an der Gehrungsebene geschnitten
+ok 453 - N2: zu kurze Ecke bleibt Gehrung, Stücke werden an der Gehrungsebene geschnitten
+  ---
+  duration_ms: 0.713337
+  type: 'test'
+  ...
+# Subtest: N2: Geländer mit Bögen und Endbogen
+ok 454 - N2: Geländer mit Bögen und Endbogen
+  ---
+  duration_ms: 50.902428
+  type: 'test'
+  ...
+# Subtest: N2: Treppe mit Handlaufbögen am Knick
+ok 455 - N2: Treppe mit Handlaufbögen am Knick
+  ---
+  duration_ms: 666.083904
+  type: 'test'
+  ...
+# Subtest: N3: Glasklemmhalter am Pfosten, Glas ohne Bohrung
+ok 456 - N3: Glasklemmhalter am Pfosten, Glas ohne Bohrung
+  ---
+  duration_ms: 2.638841
+  type: 'test'
+  ...
+# Subtest: N3: Ganzglas im Bodenprofil ohne Pfosten, Felder für Pfosten ausgeblendet
+ok 457 - N3: Ganzglas im Bodenprofil ohne Pfosten, Felder für Pfosten ausgeblendet
+  ---
+  duration_ms: 3.009902
+  type: 'test'
+  ...
+# Subtest: N3: Ganzglas mit Punkthaltern, Glasbohrungen an den Haltern
+ok 458 - N3: Ganzglas mit Punkthaltern, Glasbohrungen an den Haltern
+  ---
+  duration_ms: 1.33243
+  type: 'test'
+  ...
+# Subtest: N3: alte Dateien ohne glassMount bleiben bei der Lasche
+ok 459 - N3: alte Dateien ohne glassMount bleiben bei der Lasche
+  ---
+  duration_ms: 1.488421
+  type: 'test'
+  ...
+# Subtest: N1: viertelgewendelt – gleicher Auftritt auf der Lauflinie, innen ≥ 50 mm, außen ohne Kreuzung
+ok 460 - N1: viertelgewendelt – gleicher Auftritt auf der Lauflinie, innen ≥ 50 mm, außen ohne Kreuzung
+  ---
+  duration_ms: 1.924572
+  type: 'test'
+  ...
+# Subtest: N1: Treppe halbgewendelt nach rechts – Stufen, Wangen, Geländer, gespiegelt
+ok 461 - N1: Treppe halbgewendelt nach rechts – Stufen, Wangen, Geländer, gespiegelt
+  ---
+  duration_ms: 9.198299
+  type: 'test'
+  ...
+# Subtest: N4: Lamellendach – Lamellen, Achsbolzen, Endkappen, Ablauf, Wand ohne hintere Stützen
+ok 462 - N4: Lamellendach – Lamellen, Achsbolzen, Endkappen, Ablauf, Wand ohne hintere Stützen
+  ---
+  duration_ms: 2.499792
+  type: 'test'
+  ...
+# Subtest: N7: Winkelmaß an schräger Kante, je Winkel einmal; doppelte Maße; Winkel von Hand
+ok 463 - N7: Winkelmaß an schräger Kante, je Winkel einmal; doppelte Maße; Winkel von Hand
+  ---
+  duration_ms: 3.042623
+  type: 'test'
+  ...
+# Subtest: N6: Spiegelung folgt der Quelle, wiederverwendet und abgewählt
+ok 464 - N6: Spiegelung folgt der Quelle, wiederverwendet und abgewählt
+  ---
+  duration_ms: 1.738075
+  type: 'test'
+  ...
+# Subtest: N8: Voutenträger – Steg als Vieleck, Untergurt mit Gehrung, Fehler bei zu langer Voute
+ok 465 - N8: Voutenträger – Steg als Vieleck, Untergurt mit Gehrung, Fehler bei zu langer Voute
+  ---
+  duration_ms: 1.449788
+  type: 'test'
+  ...
+# Subtest: N9: Bohrungsangabe-Text für die 3D-Notiz
+ok 466 - N9: Bohrungsangabe-Text für die 3D-Notiz
+  ---
+  duration_ms: 0.193971
+  type: 'test'
+  ...
+# Subtest: O3: Pfostenaufteilung max/anzahl/abstand/liste
+ok 467 - O3: Pfostenaufteilung max/anzahl/abstand/liste
+  ---
+  duration_ms: 1.854161
+  type: 'test'
+  ...
+# Subtest: O2: Handlauf über Stangenlänge geteilt, Stoß hinter Pfosten, Einschiebling
+ok 468 - O2: Handlauf über Stangenlänge geteilt, Stoß hinter Pfosten, Einschiebling
+  ---
+  duration_ms: 9.442654
+  type: 'test'
+  ...
+# Subtest: O1: Wandhandlauf mit Konsolen an der Wandseite
+ok 469 - O1: Wandhandlauf mit Konsolen an der Wandseite
+  ---
+  duration_ms: 363.250199
+  type: 'test'
+  ...
+# Subtest: O4: Auflagerwinkel oben, Wange an der Wand verdübelt
+ok 470 - O4: Auflagerwinkel oben, Wange an der Wand verdübelt
+  ---
+  duration_ms: 94.87725
+  type: 'test'
+  ...
+# Subtest: O5: Kastenschloss, Bodenriegel, Torfeststeller am Tor
+ok 471 - O5: Kastenschloss, Bodenriegel, Torfeststeller am Tor
+  ---
+  duration_ms: 2.97097
+  type: 'test'
+  ...
+# Subtest: O6: äußere Wange läuft ums Podest weiter (Gehrung an den Stößen)
+ok 472 - O6: äußere Wange läuft ums Podest weiter (Gehrung an den Stößen)
+  ---
+  duration_ms: 829.507354
+  type: 'test'
+  ...
+# Subtest: O7: Rahmenecke mit Voute: Gurt, Steg, Stirnplatte bis unter die Voute, vierte Schraubenreihe
+ok 473 - O7: Rahmenecke mit Voute: Gurt, Steg, Stirnplatte bis unter die Voute, vierte Schraubenreihe
+  ---
+  duration_ms: 1.614375
+  type: 'test'
+  ...
+# Subtest: O8: Windverband mit Winkel auf dem Knotenblech, n Schrauben je Anschluss
+ok 474 - O8: Windverband mit Winkel auf dem Knotenblech, n Schrauben je Anschluss
+  ---
+  duration_ms: 2.038364
+  type: 'test'
+  ...
+# Subtest: O9: geschlitzte Futterbleche um jeden Anker statt Justiermuttern
+ok 475 - O9: geschlitzte Futterbleche um jeden Anker statt Justiermuttern
+  ---
+  duration_ms: 1.431825
+  type: 'test'
+  ...
+# Subtest: O10: Langloch-Angabe aus dem Bohrungs-Feature, Hinweis am Halbkreis in der Zeichnung
+ok 476 - O10: Langloch-Angabe aus dem Bohrungs-Feature, Hinweis am Halbkreis in der Zeichnung
+  ---
+  duration_ms: 0.617639
+  type: 'test'
+  ...
+# Subtest: O11: Komponentenmuster an den Punkten einer Skizze
+ok 477 - O11: Komponentenmuster an den Punkten einer Skizze
+  ---
+  duration_ms: 0.916947
+  type: 'test'
+  ...
+# Subtest: O12: Bestellliste je Lieferant (Normteile, Beschläge, Glas, Kaufteile)
+ok 478 - O12: Bestellliste je Lieferant (Normteile, Beschläge, Glas, Kaufteile)
+  ---
+  duration_ms: 15.920259
+  type: 'test'
+  ...
+# Subtest: Arbeitsebene: Versatz, gedreht, drei Punkte, senkrecht zu Achse, auf Fläche
+ok 479 - Arbeitsebene: Versatz, gedreht, drei Punkte, senkrecht zu Achse, auf Fläche
+  ---
+  duration_ms: 5.241986
+  type: 'test'
+  ...
+# Subtest: Arbeitsachse und Arbeitspunkt: Schnitt zweier Ebenen, zwei Punkte, Achse mit Ebene
+ok 480 - Arbeitsachse und Arbeitspunkt: Schnitt zweier Ebenen, zwei Punkte, Achse mit Ebene
+  ---
+  duration_ms: 2.102262
+  type: 'test'
+  ...
+# Subtest: Skizzenebene, Spiegelebene und Musterachse aus Arbeitselementen
+ok 481 - Skizzenebene, Spiegelebene und Musterachse aus Arbeitselementen
+  ---
+  duration_ms: 1.216635
+  type: 'test'
+  ...
+# Subtest: Pfad: Kette aus Linien und Bögen ordnen, Länge, Punkt und Tangente
+ok 482 - Pfad: Kette aus Linien und Bögen ordnen, Länge, Punkt und Tangente
+  ---
+  duration_ms: 2.129653
+  type: 'test'
+  ...
+# Subtest: Muster entlang Pfad: Stationen gleichmäßig oder mit Abstand, Drehung mit der Tangente
+ok 483 - Muster entlang Pfad: Stationen gleichmäßig oder mit Abstand, Drehung mit der Tangente
+  ---
+  duration_ms: 1.145532
+  type: 'test'
+  ...
+# Subtest: Spirale, Schwerpunkt, Erhebung: Prüfungen
+ok 484 - Spirale, Schwerpunkt, Erhebung: Prüfungen
+  ---
+  duration_ms: 0.830096
+  type: 'test'
+  ...
+# Subtest: Bezüge: Skizzen von Sweeping/Erhebung, Arbeitselemente, Löschen mit Abhängigen
+ok 485 - Bezüge: Skizzen von Sweeping/Erhebung, Arbeitselemente, Löschen mit Abhängigen
+  ---
+  duration_ms: 1.103955
+  type: 'test'
+  ...
+# Subtest: Körper-Werkzeuge: Ebene, Achse, Prüfungen
+ok 486 - Körper-Werkzeuge: Ebene, Achse, Prüfungen
+  ---
+  duration_ms: 0.900796
+  type: 'test'
+  ...
+# Subtest: Baugruppe: Winkel, Tangential, Einfügen (Stufe 39)
+ok 487 - Baugruppe: Winkel, Tangential, Einfügen (Stufe 39)
+  ---
+  duration_ms: 5.785608
+  type: 'test'
+  ...
+# Subtest: Komponentenmuster: rechteckig und kreisförmig, folgt der Quelle, räumt auf
+ok 488 - Komponentenmuster: rechteckig und kreisförmig, folgt der Quelle, räumt auf
+  ---
+  duration_ms: 2.606601
+  type: 'test'
+  ...
+# Subtest: Rahmen: Endkappe, Kürzen an Ebene, Gleichteile (Stufe 40)
+ok 489 - Rahmen: Endkappe, Kürzen an Ebene, Gleichteile (Stufe 40)
+  ---
+  duration_ms: 13.97012
+  type: 'test'
+  ...
+# Subtest: Stecksystem: Lage der Zapfen, Wanddicke, Schlitzmaß (Stufe 45)
+ok 490 - Stecksystem: Lage der Zapfen, Wanddicke, Schlitzmaß (Stufe 45)
+  ---
+  duration_ms: 1.738626
+  type: 'test'
+  ...
+# Subtest: Stecksystem zwischen Baugruppen-Teilen: prüfen, schreiben, löschen (Stufe 46)
+ok 491 - Stecksystem zwischen Baugruppen-Teilen: prüfen, schreiben, löschen (Stufe 46)
+  ---
+  duration_ms: 1.191067
+  type: 'test'
+  ...
+# Subtest: Blech: Rücksprung, Abwicklungsumriss, Konturlasche, Durchzug-Vorloch (Stufe 41)
+ok 492 - Blech: Rücksprung, Abwicklungsumriss, Konturlasche, Durchzug-Vorloch (Stufe 41)
+  ---
+  duration_ms: 11.196418
+  type: 'test'
+  ...
+# Subtest: 3D-Skizze, abgeleitetes Bauteil, Komponente spiegeln, Feature kopieren/verschieben (Stufe 42)
+ok 493 - 3D-Skizze, abgeleitetes Bauteil, Komponente spiegeln, Feature kopieren/verschieben (Stufe 42)
+  ---
+  duration_ms: 2.67049
+  type: 'test'
+  ...
+# Subtest: Varianten aus Tabelle, Regeln, Makros, Sprache (Stufe 43)
+ok 494 - Varianten aus Tabelle, Regeln, Makros, Sprache (Stufe 43)
+  ---
+  duration_ms: 9.965558
+  type: 'test'
+  ...
+# Subtest: Abhängigkeiten Stufe 44: Lösung, Grenzen, gerichteter Winkel, Symmetrie, Punkt/Kante, Zylinder an Zylinder, starr, Koordinatensystem
+ok 495 - Abhängigkeiten Stufe 44: Lösung, Grenzen, gerichteter Winkel, Symmetrie, Punkt/Kante, Zylinder an Zylinder, starr, Koordinatensystem
+  ---
+  duration_ms: 4.197361
+  type: 'test'
+  ...
+# Subtest: Bewegung: Drehung und Drehung–Verschiebung koppeln Gelenke (Stufe 44)
+ok 496 - Bewegung: Drehung und Drehung–Verschiebung koppeln Gelenke (Stufe 44)
+  ---
+  duration_ms: 2.23521
+  type: 'test'
+  ...
+# Subtest: Blechregeln: Prüfen, wirksame Werte, Regel lösen, veraltete Kopien (Stufe 44)
+ok 497 - Blechregeln: Prüfen, wirksame Werte, Regel lösen, veraltete Kopien (Stufe 44)
+  ---
+  duration_ms: 2.922439
+  type: 'test'
+  ...
+# Subtest: Messen wie Inventor: Achsabstand, Summen, Zweiteinheit (Stufe 47)
+ok 498 - Messen wie Inventor: Achsabstand, Summen, Zweiteinheit (Stufe 47)
+  ---
+  duration_ms: 2.039325
+  type: 'test'
+  ...
+# Subtest: Blech: Ecke schließen, Stanzwerkzeug, Konturwalzen und Trennfuge (Stufe 48)
+ok 499 - Blech: Ecke schließen, Stanzwerkzeug, Konturwalzen und Trennfuge (Stufe 48)
+  ---
+  duration_ms: 8.249864
+  type: 'test'
+  ...
+# Subtest: IGES: Bögen, Drehflächen, Randketten, Dateiformat (Stufe 49)
+ok 500 - IGES: Bögen, Drehflächen, Randketten, Dateiformat (Stufe 49)
+  ---
+  duration_ms: 9.95113
+  type: 'test'
+  ...
+# Subtest: Schraubenverbindung: Klemmpaket, Länge, Teile, Bohrungen (Stufe 50)
+ok 501 - Schraubenverbindung: Klemmpaket, Länge, Teile, Bohrungen (Stufe 50)
+  ---
+  duration_ms: 10.464215
+  type: 'test'
+  ...
+# Subtest: Kontaktsatz: freier Bereich bis zum Anstoßen, Video-Format
+ok 502 - Kontaktsatz: freier Bereich bis zum Anstoßen, Video-Format
+  ---
+  duration_ms: 1.32162
+  type: 'test'
+  ...
+# Subtest: iFeature: Auswahl mit Skizzen und Parametern, Bezüge nach außen, Datei prüfen
+ok 503 - iFeature: Auswahl mit Skizzen und Parametern, Bezüge nach außen, Datei prüfen
+  ---
+  duration_ms: 4.718853
+  type: 'test'
+  ...
+# Subtest: Schweißbaugruppe: Phasen, Kehlnaht-Querschnitt, Flächenpaar
+ok 504 - Schweißbaugruppe: Phasen, Kehlnaht-Querschnitt, Flächenpaar
+  ---
+  duration_ms: 1.55301
+  type: 'test'
+  ...
+# Subtest: Bereichseigenschaften: Rechteck, Kreisring, gedrehtes Rechteck, Halbkreis
+ok 505 - Bereichseigenschaften: Rechteck, Kreisring, gedrehtes Rechteck, Halbkreis
+  ---
+  duration_ms: 13.956875
+  type: 'test'
+  ...
+# Subtest: Entformungsanalyse: Winkel, Einteilung, Flächenanteile
+ok 506 - Entformungsanalyse: Winkel, Einteilung, Flächenanteile
+  ---
+  duration_ms: 1.428469
+  type: 'test'
+  ...
+# Subtest: Konstruktions-Assistent: Wellenabschnitte, Verzahnung, Lager, Feder
+ok 507 - Konstruktions-Assistent: Wellenabschnitte, Verzahnung, Lager, Feder
+  ---
+  duration_ms: 4.808359
+  type: 'test'
+  ...
+# Subtest: Vorlage prüfen: Felder, Logo, Zusatzfelder, Liniengruppe, Maßzahl
+ok 508 - Vorlage prüfen: Felder, Logo, Zusatzfelder, Liniengruppe, Maßzahl
+  ---
+  duration_ms: 4.060127
+  type: 'test'
+  ...
+# Subtest: Standard oder eigen; Zusatzfelder mit Werten der Zeichnung
+ok 509 - Standard oder eigen; Zusatzfelder mit Werten der Zeichnung
+  ---
+  duration_ms: 0.493027
+  type: 'test'
+  ...
+# Subtest: Einstellung zeichnung.vorlage nimmt nur gültige Vorlagen
+ok 510 - Einstellung zeichnung.vorlage nimmt nur gültige Vorlagen
+  ---
+  duration_ms: 0.538191
+  type: 'test'
+  ...
+1..510
+# tests 510
+# suites 0
+# pass 510
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 29616.585384

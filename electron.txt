@@ -1,0 +1,22 @@
+✔ Brücke zum Hauptprozess 0.3.0
+✔ Einstellungen lesbar {"version":"0.3.0","hasToken":false,"autoCheck":true,"packaged":false}
+✔ Geometrie-Kern über app:// geladen 
+✔ Beispiel in der Desktop-App {"mode":"assembly","bodies":[5,1,1]}
+✔ Fenstertitel Beispiel Schweißrahmen – PBCAD
+✔ Fehlerprotokoll geschrieben /home/runner/.config/WerkCAD/protokoll/werkcad.log
+✔ Benutzereinstellungen gespeichert {"r":{"bad":false,"zoom":1.100000023841858},"stored":{"skizze.fangradius":11,"darstellung.skalierung":110}}
+✔ Speichern atomar mit Sicherung Test.wcad,Test.wcad.bak
+✔ Mehrere Sicherungen, schreibgeschützte Datei erkannt {"files":["Test.wcad","Test.wcad.bak","Test.wcad.bak2"],"readOnly":true,"dir":true,"rw":false,"root":false}
+✔ Beschädigte Datei → Sicherung geöffnet {"docs":5,"path":null,"dirty":true}
+✔ Fehlende Datei → klare Meldung Öffnen fehlgeschlagen: Datei nicht gefunden
+✔ Autosave über 4,5 MB als Datei 5000000
+✔ Keine Fehler in der Konsole 
+--- Hauptprozess ---
+[3771:1029/184557.262136:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[3771:1029/184602.997639:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[3771:1029/184602.997685:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[3771:1029/184602.997735:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[3771:1029/184602.997753:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+Debugger ending on ws://127.0.0.1:38287/c349e606-e396-4639-aa03-d0bfa2e9b198
+For help, see: https://nodejs.org/learn/getting-started/debugging
+
