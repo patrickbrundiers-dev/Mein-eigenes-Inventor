@@ -72,3 +72,23 @@ test("W2 Rohr strecken: Bohrungen am gebogenen Rohr landen am geraden Rohr bei s
   const bent = await K.buildPart(part([br, sk1, cut1, sk2, cut2]));
   near(R.measureVolume(tube.shape), vol(bent), 0.01 * vol(bent), "Volumen");
 });
+
+test("W3 Muster: Abstände einzeln, Exemplare auslassen, Winkel einzeln", async () => {
+  const { rectSketchFeature } = await import("../src/core/examples.js");
+  const base = [rectSketchFeature("s1", "XY", 0, 0, 0, "10", "10"), { id: "e1", type: "extrude", sketch: "s1", distance: "10", op: "new" }];
+  const lin = await K.buildPart(part([...base, { id: "m", type: "pattern", kind: "linear", feature: "e1", dir: "X", count: "9", spacing: "1", spacings: "20; 50; 20" }]));
+  okAll(lin);
+  assert.match(lin.status.m.info, /^4 Exemplare/);
+  near(lin.bodies.reduce((m, b) => Math.max(m, b.shape.boundingBox.bounds[1][0]), 0), 100, 1e-6, "letztes bei 90");
+  const sk = await K.buildPart(part([...base, { id: "m", type: "pattern", kind: "linear", feature: "e1", dir: "X", count: "5", spacing: "20", skip: "2, 4" }]));
+  okAll(sk);
+  assert.match(sk.status.m.info, /3 Exemplare, 2 ausgelassen/);
+  near(vol(sk), 3 * 1000, 1e-6);
+  const two = await K.buildPart(part([...base, { id: "m", type: "pattern", kind: "linear", feature: "e1", dir: "X", count: "3", spacing: "20", dir2: "Y", count2: "2", spacing2: "20", skip: "2/2" }]));
+  okAll(two);
+  near(vol(two), 5 * 1000, 1e-6);
+  const circ = await K.buildPart(part([...base, { id: "m", type: "pattern", kind: "circular", feature: "e1", axis: "Z", center: ["-50", "0", "0"], count: "8", angles: "90; 90" }]));
+  okAll(circ);
+  assert.match(circ.status.m.info, /^3 Exemplare/);
+  await assert.rejects(K.buildPart(part([...base, { id: "m", type: "pattern", kind: "linear", feature: "e1", dir: "X", count: "3", spacing: "20", skip: "1" }])).then((r) => { if (!r.status.m.ok) throw new Error(r.status.m.error); }), /Original/);
+});

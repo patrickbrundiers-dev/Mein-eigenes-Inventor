@@ -13,6 +13,7 @@ import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "..
 import { capPlan, trimPlan } from "../core/rahmen.js";
 import { ventPlan, needsVent } from "../core/verzinkung.js";
 import { centerline, locateHole, STRECKEN_SECTIONS } from "../core/strecken.js";
+import { parseSkip, spacingPositions } from "../core/muster.js";
 import { pathChain, reverseChain, pathLength as chainLength, pathPatternStations, coilParams, loopCentroid, validateLoft } from "../core/formen.js";
 import { sectionGeometry, sectionName, profileId, THREADS, loopLength } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
@@ -1511,8 +1512,12 @@ export function createKernel(R) {
           case "pattern": {
             const src = state.tools.get(f.feature);
             if (!src) throw new Error(missingRef(f.feature, "Bezugs-Feature", f));
-            const transforms = f.kind === "path" ? pathTransforms(f, E, getSketch(f.path, "Pfad-Skizze")) : patternTransforms(f, E, datums.map);
-            if (transforms.length > 500) throw new Error("Zu viele Exemplare (max. 500)");
+            const all = f.kind === "path" ? pathTransforms(f, E, getSketch(f.path, "Pfad-Skizze")) : patternTransforms(f, E, datums.map);
+            if (all.length > 500) throw new Error("Zu viele Exemplare (max. 500)");
+            // Exemplare auslassen (W3): Nummer 1 = Original, Rechteckmuster zählt zuerst in Richtung 2
+            const n2 = f.kind !== "path" && f.kind !== "circular" && f.dir2 ? Math.max(1, Math.round(E(f.count2 || "1", "Anzahl 2"))) : 1;
+            const skip = parseSkip(f.skip, { n1: Math.ceil((all.length + 1) / n2), n2 });
+            const transforms = all.filter((_, k) => !skip.has(k + 2));
             let n = 0;
             for (const tr of transforms) {
               for (const s of src.shapes) {
@@ -1525,7 +1530,9 @@ export function createKernel(R) {
                 n++;
               }
             }
-            st.info = `${transforms.length + 1} Exemplare`;
+            const left = all.length - transforms.length;
+            st.info = `${transforms.length + 1} Exemplare${left ? `, ${left} ausgelassen` : ""}`;
+            if ([...skip].some((k) => k > all.length + 1)) st.warning = `Auslassen: das Muster hat nur ${all.length + 1} Exemplare`;
             break;
           }
           case "sweep": {
@@ -2214,6 +2221,11 @@ export function createKernel(R) {
       const da = patternAxis(f.axis, datums);
       const ax = da ? da.d : f.axis === "custom" ? (f.axisDir || ["0", "0", "1"]).map((x) => E(x, "Achse")) : AXES[f.axis || "Z"];
       const c = da ? da.p : (f.center || ["0", "0", "0"]).map((x) => E(x, "Mittelpunkt"));
+      // Winkel als Liste (W3): je Schritt ein eigener Winkel, sonst gleichmäßig verteilt
+      if (String(f.angles || "").trim()) {
+        for (const a of spacingPositions(f.angles, E).slice(1)) out.push((s) => s.rotate(a, c, ax));
+        return out;
+      }
       const n = Math.round(E(f.count, "Anzahl"));
       const total = E(f.angle || "360", "Winkel");
       const step = Math.abs(total - 360) < 1e-9 ? 360 / n : total / Math.max(1, n - 1);
@@ -2221,15 +2233,17 @@ export function createKernel(R) {
       return out;
     }
     const d1 = patternAxis(f.dir, datums)?.d || (f.dir === "custom" ? v3.norm((f.dirVec || ["1", "0", "0"]).map((x) => E(x, "Richtung"))) : AXES[f.dir || "X"]);
-    const n1 = Math.max(1, Math.round(E(f.count, "Anzahl")));
-    const s1 = E(f.spacing, "Abstand");
+    // Abstände als Liste (W3) ersetzen Anzahl 1 und Abstand 1
+    const pos1 = String(f.spacings || "").trim() ? spacingPositions(f.spacings, E) : null;
+    const n1 = pos1 ? pos1.length : Math.max(1, Math.round(E(f.count, "Anzahl")));
+    const s1 = pos1 ? 0 : E(f.spacing, "Abstand");
     const n2 = f.dir2 ? Math.max(1, Math.round(E(f.count2 || "1", "Anzahl 2"))) : 1;
     const s2 = f.dir2 ? E(f.spacing2 || "0", "Abstand 2") : 0;
     const d2 = f.dir2 ? AXES[f.dir2] : [0, 0, 0];
     for (let a = 0; a < n1; a++)
       for (let b = 0; b < n2; b++) {
         if (!a && !b) continue;
-        const t = v3.add(v3.mul(d1, a * s1), v3.mul(d2, b * s2));
+        const t = v3.add(v3.mul(d1, pos1 ? pos1[a] : a * s1), v3.mul(d2, b * s2));
         out.push((s) => s.translate(t));
       }
     return out;

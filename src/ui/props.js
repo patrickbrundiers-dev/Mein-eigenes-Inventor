@@ -1176,15 +1176,17 @@ export class Props {
           ] : f.kind === "circular" ? [
             axisSeg("Achse", "axis", "Z"),
             String(f.axis || "").startsWith("datum:") ? null : this.vec3("Mittelpunkt", f.center, (v) => this.set(f, "center", v, "Mittelpunkt")),
-            E("Anzahl", "count", { unit: "Stk" }),
-            E("Gesamtwinkel", "angle", { unit: "°" }),
+            String(f.angles || "").trim() ? null : [E("Anzahl", "count", { unit: "Stk" }), E("Gesamtwinkel", "angle", { unit: "°" })],
+            this.text("Winkel einzeln (leer = gleichmäßig)", f.angles, (v) => this.set(f, "angles", v.trim() || undefined, "Winkel einzeln"), { placeholder: "z. B. 30; 30; 60" }),
           ] : [
             axisSeg("Richtung 1", "dir", "X"),
-            E("Anzahl 1", "count", { unit: "Stk" }),
-            E("Abstand 1", "spacing"),
+            String(f.spacings || "").trim() ? null : [E("Anzahl 1", "count", { unit: "Stk" }), E("Abstand 1", "spacing")],
+            this.text("Abstände 1 einzeln (leer = gleichmäßig)", f.spacings, (v) => this.set(f, "spacings", v.trim() || undefined, "Abstände einzeln"), { placeholder: "z. B. 100; 150; 100" }),
             this.check("Zweite Richtung", !!f.dir2, (v) => this.set(f, (x) => { x.dir2 = v ? "Y" : undefined; x.count2 = x.count2 || "2"; x.spacing2 = x.spacing2 || "20"; }, "Richtung 2")),
             f.dir2 ? [axisSeg("Richtung 2", "dir2", "Y"), E("Anzahl 2", "count2", { unit: "Stk" }), E("Abstand 2", "spacing2")] : null,
-          ]));
+          ],
+          this.text("Exemplare auslassen", f.skip, (v) => this.set(f, "skip", v.trim() || undefined, "Auslassen"), { placeholder: f.dir2 ? "z. B. 3, 5-7 oder 2/3" : "z. B. 3, 5-7" }),
+          h("p", { class: "hint" }, `Exemplar 1 ist das Original. Abstände und Winkel einzeln: je Schritt ein Wert, getrennt mit »;«, Ausdrücke erlaubt.${f.dir2 ? " Nummern zählen zuerst in Richtung 2; »2/3« = 2. in Richtung 1, 3. in Richtung 2." : ""}`)));
         break;
       }
       case "mirror":
