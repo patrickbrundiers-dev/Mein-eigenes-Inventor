@@ -21,6 +21,7 @@ import { checkBeforeMappe, openPointsPage } from "./pruefung.js";
 import { partTextVars } from "../core/schrift.js";
 import { releaseText } from "../core/pruefung.js";
 import { angebotPage } from "../core/angebot.js";
+import { LABEL_FORMATS, labelItems, labelPages, shippingPage, boxDims } from "../core/etiketten.js";
 import { bendListCsv } from "../core/biegerohr.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf } from "../core/materials.js";
@@ -553,6 +554,59 @@ export class Files {
    * (fotorealistisch), Hauptmaße, Werkstoff, Oberfläche, Gewicht und der von Hand eingetragene Preis.
    * Die Angaben bleiben am Dokument (d.angebot); Firmenkopf und Hinweis merkt sich PBCAD auch für neue Projekte.
    */
+  /** Zeilen der Stückliste für Etiketten und Versand: Baugruppe = Positionen, Bauteil = eine Zeile */
+  partRows(d) {
+    const app = this.app;
+    if (d.kind === "assembly") return bomRows(app, d);
+    const own = (app.results.get(d.id)?.bodies || []).filter((b) => !b.meta?.norm);
+    return [{ part: d, pos: 1, name: d.name, number: d.number || "", material: d.material ? materialOf(d.material).label : "", finish: finishLabel(d), qty: 1, mass: bodiesMass(own, materialOf(d.material).density) }];
+  }
+  /** Werkstatt-Etiketten mit QR-Code (W4) je Position oder je Zuschnitt, als PDF (Electron) bzw. HTML */
+  async exportEtiketten(d = this.app.activeDoc()) {
+    const app = this.app;
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Etiketten gibt es für Bauteile und Baugruppen");
+    const v = { source: d.kind === "assembly" ? "bom" : "cut", format: "70x37", perPiece: false, order: d.etiketten?.order || "" , ...(d.etiketten || {}) };
+    const sel = (k, opts) => { const el = h("select", { class: "inp" }, ...opts.map(([val, l]) => h("option", { value: val, selected: v[k] === val ? true : undefined }, l))); el.addEventListener("change", () => { v[k] = el.value; }); return el; };
+    const order = h("input", { class: "inp", placeholder: "z. B. 2026-114" }); order.value = v.order; order.addEventListener("input", () => { v.order = order.value; });
+    const per = h("input", { type: "checkbox", checked: v.perPiece ? true : undefined, onchange: (e) => { v.perPiece = e.target.checked; } });
+    const field = (label, el) => h("div", { class: "field" }, h("label", {}, label), el);
+    const ok = await new Promise((res) => modal({
+      title: "Etiketten mit QR-Code", width: "480px", onClose: (r) => res(!!r),
+      body: h("div", {},
+        field("Etiketten für", sel("source", [["bom", "Positionen (Stückliste)"], ["cut", "Zuschnitte (Profile)"]])),
+        field("Format", sel("format", Object.entries(LABEL_FORMATS).map(([k, f]) => [k, f.label]))),
+        field("Auftrag", order),
+        h("label", { class: "chk" }, per, "Je Stück ein Etikett (sonst eines je Zeile mit Stückzahl)"),
+        h("p", { class: "hint" }, "Der QR-Code enthält Auftrag, Projekt, Position, Benennung bzw. Profil und Länge als Text; jedes Handy liest ihn ohne App.")),
+      buttons: [{ label: "Abbrechen" }, { label: "Erstellen", primary: true, value: true }],
+    }));
+    if (!ok) return;
+    app.edit("Etikettenangaben", () => { d.etiketten = { ...v }; }, { rebuild: false });
+    await this.withBusy("Etiketten", async () => {
+      await app.builtParts(d);
+      const rows = v.source === "cut" ? cutListRows(collectCutSources(app, d)) : this.partRows(d);
+      if (!rows.length) return toast(v.source === "cut" ? "Keine Profile für die Zuschnittliste" : "Keine Positionen");
+      const items = labelItems({ source: v.source, rows, perPiece: v.perPiece, order: v.order.trim(), project: d.number || d.name });
+      const html = mappeHtml(labelPages(items, v.format), { title: "Etiketten " + d.name });
+      const base = mappeName("Etiketten_" + (d.number || d.name));
+      if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+      else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+      toast(`${items.length} Etikett${items.length === 1 ? "" : "en"}`, { kind: "ok" });
+    });
+  }
+  /** Versandliste (W4): Packstücke mit Gewicht und Hüllmaß zum Abhaken beim Verladen */
+  async exportVersand(d = this.app.activeDoc()) {
+    const app = this.app;
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Versandliste gibt es für Bauteile und Baugruppen");
+    await this.withBusy("Versandliste", async () => {
+      await app.builtParts(d);
+      const rows = this.partRows(d).map((r) => ({ ...r, dims: r.part ? boxDims((app.results.get(r.part.id)?.bodies || []).map((b) => b.props?.bbox).filter(Boolean)) : null }));
+      const html = mappeHtml([shippingPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", customer: d.angebot?.kunde?.split("\n")[0] || "", rows })], { title: "Versandliste " + d.name });
+      const base = mappeName("Versandliste_" + (d.number || d.name));
+      if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+      else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+    });
+  }
   async exportAngebot() {
     const app = this.app, d = app.activeDoc();
     if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Angebotsblatt gibt es für Bauteile und Baugruppen");
