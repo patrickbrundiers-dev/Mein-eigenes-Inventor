@@ -389,8 +389,8 @@ export class Tree {
       const sel = app.sel?.type === "asmpattern" && app.sel.id === pm.id;
       const n = asm.components.filter((c) => c.pat === pm.id).length;
       ul.append(h("li", {}, this.node({
-        label: pm.name || "Muster", ic: pm.kind === "circular" ? "circpattern" : "pattern", cls: (sel ? "sel" : "") + (err ? " err" : "") + (pm.suppressed ? " suppressed" : ""),
-        meta: `${n} Kopien`, title: err ? "Fehler: " + err : pm.name,
+        label: pm.name || "Muster", ic: pm.kind === "circular" ? "circpattern" : pm.kind === "spiegel" ? "mirror" : "pattern", cls: (sel ? "sel" : "") + (err ? " err" : "") + (pm.suppressed ? " suppressed" : ""),
+        meta: pm.kind === "spiegel" ? `${n} gespiegelt` : `${n} Kopien`, title: err ? "Fehler: " + err : pm.name,
         onClick: () => { app.sel = { type: "asmpattern", id: pm.id }; this.render(); app.props.render(); },
       })));
     }

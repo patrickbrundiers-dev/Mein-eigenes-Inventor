@@ -2,12 +2,15 @@
 // kreisförmig um eine Achse. Die Kopien sind echte Komponenten (Stückliste, Zeichnung, Export zählen sie) und werden
 // bei jeder Berechnung aus Quelle und Muster neu gelegt; sie tragen pat (Muster-ID), src (Quelle) und k (Nummer).
 import { placementMatrix, decomposePlacement, matMul, matApply, rotationAbout, translation, v3 } from "./geom.js";
+import { mirrorPlacement, MIRROR_PLANES } from "./ableiten.js";
+import { mirrorReusePlacement } from "./baugruppe.js";
 
 const DIRS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1], "-X": [-1, 0, 0], "-Y": [0, -1, 0], "-Z": [0, 0, -1] };
 
 /** Neues Muster für Komponenten (IDs) */
 export function defaultAsmPattern(id, comps, kind = "linear", hole = null) {
   if (kind === "lochbild") return { id, kind, comps, hole };
+  if (kind === "spiegel") return { id, kind, comps, plane: "YZ", offset: "0", modes: {} };
   return kind === "circular"
     ? { id, kind, comps, axis: "Z", center: ["0", "0", "0"], count: "4", angle: "360" }
     : { id, kind: "linear", comps, dir: "X", count: "3", spacing: "100" };
@@ -69,10 +72,32 @@ export function patternMatrices(p, ev = Number, ctx = null) {
 }
 
 /**
- * Kopien aller Muster einer Baugruppe neu legen (fehlende anlegen, überzählige entfernen).
- * Ändert asm.components; Rückgabe { changed, errors: {musterId: Text} }.
+ * Assoziatives Spiegeln (N6, wie Inventor 2027 »Spiegeln« mit Verknüpfung): Lage und Bauteil der Spiegelkopie einer
+ * Quelle. p.plane: YZ | XZ | XY oder p.normal [x, y, z]; p.offset Abstand vom Ursprung; p.modes[sid]: "spiegeln"
+ * (gespiegeltes, abgeleitetes Bauteil über mirror.partFor(partId, lokaleNormale)) oder "wieder" (dasselbe Bauteil,
+ * um seine Mitte mirror.center(partId) gespiegelt – für in sich symmetrische Teile). Rückgabe { part, pos, rot }.
  */
-export function applyPatterns(asm, ev = Number, facesOf = null) {
+export function mirrorCopy(p, src, ev = Number, mirror = null) {
+  const n = p.normal ? p.normal.map(Number) : MIRROR_PLANES[p.plane || "YZ"];
+  if (!n || !(v3.len(n) > 1e-12)) throw new Error("Spiegelebene fehlt");
+  const c = ev(p.offset ?? "0");
+  if (!Number.isFinite(c)) throw new Error("Abstand der Spiegelebene ungültig");
+  const pos = src.pos || [0, 0, 0], rot = src.rot || [0, 0, 0];
+  if ((p.modes || {})[src.id] === "wieder") {
+    const m = mirrorReusePlacement(pos, rot, n, c, mirror?.center?.(src.part) || [0, 0, 0]);
+    return { part: src.part, pos: m.pos, rot: m.rot };
+  }
+  const m = mirrorPlacement(pos, rot, n, c);
+  const part = mirror?.partFor?.(src.part, m.normal);
+  if (!part) throw new Error("Gespiegeltes Bauteil lässt sich nicht anlegen");
+  return { part, pos: m.pos, rot: m.rot };
+}
+
+/**
+ * Kopien aller Muster einer Baugruppe neu legen (fehlende anlegen, überzählige entfernen).
+ * Ändert asm.components; Rückgabe { changed, errors: {musterId: Text} }. mirror: { partFor, center } für Spiegelungen.
+ */
+export function applyPatterns(asm, ev = Number, facesOf = null, mirror = null) {
   const errors = {};
   let changed = false;
   const pats = asm.patterns || [];
@@ -80,6 +105,28 @@ export function applyPatterns(asm, ev = Number, facesOf = null) {
   const byId = new Map(asm.components.map((c) => [c.id, c]));
   for (const p of pats) {
     if (p.suppressed) continue;
+    if (p.kind === "spiegel") {
+      for (const sid of p.comps || []) {
+        const src = byId.get(sid);
+        if (!src || src.pat) { errors[p.id] = "Quellkomponente fehlt"; continue; }
+        let m;
+        try { m = mirrorCopy(p, src, ev, mirror); } catch (e) { errors[p.id] = e.message; continue; }
+        const id = `${p.id}_${sid}_1`;
+        keepIds.add(id);
+        let c = byId.get(id);
+        if (!c) {
+          c = { id, part: m.part, name: `${src.name} gespiegelt`, pos: m.pos, rot: m.rot, pat: p.id, src: sid, k: 1 };
+          asm.components.push(c);
+          byId.set(id, c);
+          changed = true;
+        } else if (c.part !== m.part || c.pos.some((x, i) => Math.abs(x - m.pos[i]) > 1e-9) || c.rot.some((x, i) => Math.abs(x - m.rot[i]) > 1e-9)) {
+          Object.assign(c, { part: m.part, pos: m.pos, rot: m.rot });
+          changed = true;
+        }
+        if (!!c.hidden !== !!src.hidden) { c.hidden = src.hidden || undefined; changed = true; }
+      }
+      continue;
+    }
     let mats;
     try { mats = patternMatrices(p, ev, { comps: byId, facesOf }); } catch (e) { errors[p.id] = e.message; continue; }
     for (const sid of p.comps || []) {

@@ -212,7 +212,7 @@ export const COMMANDS = [
   { id: "asm.alignTangent", label: "Tangential (Zylinder an Fläche)", group: "Baugruppe", scope: "assembly", keywords: "abhängigkeit tangente rolle anliegen" },
   { id: "asm.achsraster", label: "Achsraster (Achsen A/B/C, 1/2/3)", group: "Baugruppe", scope: "assembly", keywords: "achsraster raster achsen stützenraster grid stahlbau halle fangpunkt" },
   { id: "asm.pattern", label: "Komponentenmuster", group: "Baugruppe", scope: "assembly", keywords: "muster reihe kreis kopien verteilen" },
-  { id: "asm.mirror", label: "Komponente spiegeln", group: "Baugruppe", scope: "assembly", keywords: "spiegeln gespiegelt links rechts symmetrisch komponente" },
+  { id: "asm.mirror", label: "Komponente spiegeln", group: "Baugruppe", scope: "assembly", keywords: "spiegeln gespiegelt links rechts symmetrisch komponente assoziativ verknüpft" },
   { id: "asm.bom", label: "Stückliste", group: "Baugruppe", scope: "assembly" },
   { id: "asm.cutlist", label: "Zuschnittliste", group: "Baugruppe", scope: "assembly" },
   { id: "asm.collide", label: "Kollision prüfen", group: "Baugruppe", scope: "assembly" },

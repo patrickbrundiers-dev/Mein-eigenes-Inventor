@@ -147,3 +147,39 @@ test("N7: Winkelmaß an schräger Kante, je Winkel einmal; doppelte Maße; Winke
   assert.ok(Math.abs(angleValue({ kind: "ang", ...g }) - 45) < 1e-6);
   assert.ok(Math.hypot(g.c[0] + 10, g.c[1]) < 1e-6, "Scheitel im Schnittpunkt");
 });
+
+// ---------- N6: assoziatives Spiegeln in der Baugruppe ----------
+import { applyPatterns as applyPatternsN6, defaultAsmPattern as defPatN6 } from "../src/core/asmmuster.js";
+
+test("N6: Spiegelung folgt der Quelle, wiederverwendet und abgewählt", () => {
+  const made = [];
+  const mirror = { partFor: (pid, n) => { const k = `${pid}~${n.join(",")}`; if (!made.includes(k)) made.push(k); return k; }, center: () => [0, 0, 0] };
+  const asm = { components: [
+    { id: "a", part: "konsole", name: "Konsole:1", pos: [100, 20, 0], rot: [0, 0, 0] },
+    { id: "b", part: "rohr", name: "Rohr:1", pos: [50, 0, 0], rot: [0, 0, 0] },
+  ], patterns: [] };
+  const pm = defPatN6("s1", ["a", "b"], "spiegel");
+  pm.modes.b = "wieder";
+  asm.patterns.push(pm);
+  let r = applyPatternsN6(asm, Number, null, mirror);
+  assert.deepEqual(r.errors, {});
+  const ca = asm.components.find((c) => c.src === "a"), cb = asm.components.find((c) => c.src === "b");
+  assert.deepEqual(ca.pos, [-100, 20, 0]);
+  assert.equal(ca.part, "konsole~1,0,0");
+  assert.equal(cb.part, "rohr", "wiederverwendet: dasselbe Bauteil");
+  assert.equal(applyPatternsN6(asm, Number, null, mirror).changed, false, "stabil");
+  // Quelle verschoben → Spiegelseite folgt
+  asm.components[0].pos = [150, 20, 0];
+  r = applyPatternsN6(asm, Number, null, mirror);
+  assert.equal(r.changed, true);
+  assert.deepEqual(asm.components.find((c) => c.src === "a").pos, [-150, 20, 0]);
+  // Abstand der Ebene als Ausdruck
+  pm.offset = "10";
+  applyPatternsN6(asm, Number, null, mirror);
+  assert.deepEqual(asm.components.find((c) => c.src === "a").pos, [-130, 20, 0]);
+  // Rohr abwählen → seine Spiegelkopie verschwindet
+  pm.comps = ["a"];
+  applyPatternsN6(asm, Number, null, mirror);
+  assert.equal(asm.components.filter((c) => c.pat === "s1").length, 1);
+  assert.equal(made.length, 1, "gespiegeltes Bauteil nur einmal angelegt");
+});

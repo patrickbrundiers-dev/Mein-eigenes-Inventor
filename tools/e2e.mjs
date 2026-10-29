@@ -3545,7 +3545,11 @@ try {
     await idle(60000);
     const mc = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); const c = asm.components.at(-1), p = a.doc(c.part); return { n: asm.components.length, pos: c.pos, part: p?.name, type: p?.features?.[0]?.type, normal: p?.features?.[0]?.mirrorN }; });
     await shot("42-komponente-gespiegelt");
-    step("Abgeleitet, 3D-Skizze, Feature duplizieren/ziehen, Komponente spiegeln", !!der && s42.ok && /gespiegelt/.test(s42.info || "") && s42.paths === 1 && s42.moved === "skizze3d" && s42.n === 3 && s42b.ok && mc.n === 2 && mc.pos[0] === -100 && mc.type === "abgeleitet" && /gespiegelt/.test(mc.part), JSON.stringify({ s42, s42b, mc }));
+    // N6: assoziativ – Quelle verschieben, gespiegelte Seite folgt
+    await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); a.edit("Verschieben", () => { asm.components.find((c) => c.id === "cm1").pos = [150, 0, 0]; }); });
+    await idle(60000);
+    const mc2 = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.src === "cm1"); return { x: c?.pos?.[0], built: !!a.results.get(c?.part)?.bodies?.length }; });
+    step("Abgeleitet, 3D-Skizze, Feature duplizieren/ziehen, Komponente spiegeln", !!der && s42.ok && /gespiegelt/.test(s42.info || "") && s42.paths === 1 && s42.moved === "skizze3d" && s42.n === 3 && s42b.ok && mc.n === 2 && mc.pos[0] === -100 && mc.type === "abgeleitet" && /gespiegelt/.test(mc.part) && mc2.x === -150 && mc2.built, JSON.stringify({ s42, s42b, mc, mc2 }));
   }
 
   // ---- Stufe 43: Variantentabelle, Regeln, Makros, Sprache ----
