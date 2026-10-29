@@ -143,6 +143,7 @@ export const BEFEHLSHILFE = {
   pergola: "Lamellendach (Pergola) freistehend oder an der Wand: Stützen, Rahmen als Rinne, drehbare Lamellen mit Achsbolzen, Ablauf durch eine Stütze.",
   vordach: "Vordach an der Wand oder freistehenden Carport mit Stützen, Pfetten, Sparren, Dachhaut und Rinne erzeugen.",
   zaun: "Zaunfelder in Reihe mit Pfosten, auch mit Gefälle oder Stufung am Hang.",
+  voute: "Geschweißter I-Träger mit veränderlicher Höhe (Voute an einem oder beiden Enden oder linear): Steg als Zuschnitt, Untergurt mit Gehrung am Knick, Stirnplatten und Steifen.",
   rahmenecke: "Biegesteife Rahmenecke für Stahlbau-Träger mit Stirnplatten und Steifen.",
   pfette: "Pfette mit Pfettenschuhen auf Binder setzen.",
   windverband: "Windverband als Kreuz- oder Diagonalverband zwischen Stützen.",

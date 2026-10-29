@@ -28,3 +28,22 @@ test("N5: Generator neu berechnen – unveränderte Teile aus dem Zwischenspeich
   const d = await K.buildPart({ ...part({ ...f.params, fill: "quer" }), id: "p-frisch" }, { useCache: false, validate: false });
   assert.deepEqual(vol(c), vol(d));
 });
+
+test("N9: Bohrungsangabe und Gewinde fürs 3D-Fenster", async () => {
+  const { rectSketchFeature } = await import("../src/core/examples.js");
+  const pts = { id: "s2", type: "sketch", name: "Punkte", plane: { ref: "XY" }, offset: "10", points: [{ id: "a", x: 20, y: 20 }, { id: "b", x: 60, y: 20 }], entities: [{ id: "pa", type: "point", p: "a" }, { id: "pb", type: "point", p: "b" }], constraints: [] };
+  const part = { id: "p-n9", kind: "part", name: "Platte", params: [], features: [
+    rectSketchFeature("s1", "XY", 0, 0, 0, "80", "40"), { id: "e1", type: "extrude", sketch: "s1", distance: "10" }, pts,
+    { id: "h1", type: "hole", sketch: "s2", thread: "M8", extent: "depth", depth: "8" },
+  ] };
+  const res = await K.buildPart(part, { useCache: false, validate: false });
+  assert.equal(res.holeNotes.length, 1);
+  const n = res.holeNotes[0];
+  assert.equal(n.text, "2× M8, 8 tief");
+  assert.equal(n.points.length, 2);
+  assert.equal(n.threadR, 4);
+  assert.deepEqual(n.dir.map((x) => x + 0), [0, 0, -1], "in den Körper hinein");
+  // unterdrückt → keine Angabe
+  part.features[3].suppressed = true;
+  assert.equal((await K.buildPart({ ...part, id: "p-n9b" }, { useCache: false, validate: false })).holeNotes.length, 0);
+});

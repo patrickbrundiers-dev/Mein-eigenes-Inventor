@@ -81,6 +81,11 @@ try {
   await page.waitForTimeout(300);
   await shot("06-feature-eigenschaften");
   step("Feature-Eigenschaften", (await page.locator("#props .section").count()) > 0);
+  // N9: Bohrungsangabe und Gewinde am 3D-Modell
+  {
+    const hn = await page.locator("#viewport .hole-note, .hole-note").allTextContents();
+    step("Bohrungsangabe im 3D", hn.some((t) => /M10/.test(t)), JSON.stringify(hn));
+  }
 
   // Parameter ändern -> Neuaufbau
   await evalApp(() => { const a = window.__werkcad; const p = a.activeDoc(); a.edit("Test", () => { p.params.find((x) => x.name === "Länge").expr = "400"; }); });

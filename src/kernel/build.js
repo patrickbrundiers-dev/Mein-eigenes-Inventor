@@ -31,6 +31,7 @@ import { clampStack, boltStack, boltHoles } from "../core/schraubverbindung.js";
 import { planSheet, contourLegs, punchOutline, SHEET_FEATURES } from "../core/blechplus.js";
 import { path3d } from "../core/ableiten.js";
 import { applyRules } from "../core/regeln.js";
+import { holeText } from "../core/autodims.js";
 import { bendRule, ruleSummary } from "../core/bendtable.js";
 import { pathAxes, pathPoint, pathLength as tubeLength, pathDistance, bendRadius, splitPath } from "../core/biegeteil.js";
 import { effectiveSheet } from "../core/blechregeln.js";
@@ -500,6 +501,7 @@ export function createKernel(R) {
       sketches: new Map(st.sketches),
       status: { ...st.status },
       welds: [...(st.welds || [])],
+      holeNotes: [...(st.holeNotes || [])],
       paths: new Map(st.paths || []),
     };
   }
@@ -520,7 +522,7 @@ export function createKernel(R) {
     const E = (expr, label) => {
       try { return evaluate(expr, scope); } catch (e) { throw new Error(`${label}: ${e.message}`); }
     };
-    let state = { bodies: [], tools: new Map(), sketches: new Map(), status: {}, welds: [], paths: new Map() };
+    let state = { bodies: [], tools: new Map(), sketches: new Map(), status: {}, welds: [], paths: new Map(), holeNotes: [] };
     // Bauteilende (FU5): nur die Features vor der Markierung werden gerechnet
     const feats = (part.features || []).slice(0, activeCount(part));
     const rolledBack = (part.features || []).slice(feats.length);
@@ -961,6 +963,23 @@ export function createKernel(R) {
             state.tools.set(f.id, { op: "cut", shapes: [{ shape: tool, kind: "tool" }] });
             applyOp("cut", tool, f.id, f.name);
             st.info = `${centers.length} Bohrung(en) Ø${round(dia)}${f.thread ? " (" + f.thread + ")" : ""}` + (kept ? `, ${kept}× Restwand ${round(RESTWAND)} mm stehen gelassen` : "");
+            // N9: Bohrungsangabe am 3D-Modell (eine je Feature, an der ersten Bohrung) und Gewinde an jeder Bohrung
+            {
+              const hole = { d: dia };
+              if (f.thread && THREADS[f.thread]) hole.thread = f.thread;
+              if (!through) hole.depth = depth;
+              try {
+                if (f.sink === "senkung") hole.sink = { kind: "kegel", d: E(f.sinkDiameter, "Senkdurchmesser"), angle: E(f.sinkAngle || "90", "Senkwinkel") };
+                else if (f.sink === "flach") hole.sink = { kind: "flach", d: E(f.sinkDiameter, "Senkdurchmesser"), depth: E(f.sinkDepth, "Senktiefe") };
+              } catch { /* Senkung schon oben geprüft */ }
+              const a = v3.mul(s.frame.normal, f.direction === "normal" ? 1 : -1);
+              const nominal = hole.thread ? Number(String(hole.thread).replace(/^M/, "").split("x")[0]) : 0;
+              state.holeNotes.push({
+                feature: f.id, text: holeText(hole, centers.length), dir: a, depth: through ? 0 : depth,
+                threadR: nominal > 0 ? nominal / 2 : 0, r: dia / 2,
+                points: centers.map((c) => toWorld(s.frame, c[0], c[1])),
+              });
+            }
             break;
           }
           case "emboss": {
@@ -2054,7 +2073,7 @@ export function createKernel(R) {
         if (!prev.warning?.includes(INVALID_BODY)) state.status[key] = { ...prev, warning: prev.warning ? prev.warning + "; " + INVALID_BODY : INVALID_BODY };
       }
     }
-    return { bodies: state.bodies, status: state.status, sketches: state.sketches, values, welds: state.welds || [], datums: [...datums.map].map(([id, g]) => ({ id, ...g })), rules: ruled.messages, ruleOff: ruled.suppressed || [], paths3d: [...state.paths].filter(([id]) => !feats.find((g) => g.id === id)?.suppressed).map(([id, p]) => ({ id, pts: samplePath(p) })) };
+    return { bodies: state.bodies, status: state.status, sketches: state.sketches, values, welds: state.welds || [], holeNotes: (state.holeNotes || []).filter((n) => !feats.find((g) => g.id === n.feature)?.suppressed), datums: [...datums.map].map(([id, g]) => ({ id, ...g })), rules: ruled.messages, ruleOff: ruled.suppressed || [], paths3d: [...state.paths].filter(([id]) => !feats.find((g) => g.id === id)?.suppressed).map(([id, p]) => ({ id, pts: samplePath(p) })) };
   }
 
   /** Normteil als eigener Körper (Stückliste mit Normbezeichnung); n = { kind, size, length, grade, galv, name? } */

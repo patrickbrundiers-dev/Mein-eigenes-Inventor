@@ -183,3 +183,30 @@ test("N6: Spiegelung folgt der Quelle, wiederverwendet und abgewählt", () => {
   assert.equal(asm.components.filter((c) => c.pat === "s1").length, 1);
   assert.equal(made.length, 1, "gespiegeltes Bauteil nur einmal angelegt");
 });
+
+// ---------- N8: gevouteter Träger ----------
+test("N8: Voutenträger – Steg als Vieleck, Untergurt mit Gehrung, Fehler bei zu langer Voute", () => {
+  const p = plan("voute");
+  const web = p.plates.find((x) => x.name === "Steg");
+  assert.ok(web.poly.length === 5, "Steg: Obergurt-Linie + 3 Punkte Untergurt");
+  // Höhe am Anfang: 700 − 2 × 15 Gurt
+  const ys = web.poly.filter((q) => Math.abs(q[0]) < 1e-9).map((q) => q[1]).sort((a, b) => a - b);
+  assert.ok(Math.abs(ys[1] - ys[0] - 670) < 0.5, JSON.stringify(ys));
+  const ug = p.members.filter((m) => m.target === "Untergurt");
+  assert.equal(ug.length, 2);
+  assert.ok(ug[0].cuts.end[0].n[0] > 0 && ug[1].cuts.start[0].n[0] < 0, "Gehrung am Knick");
+  assert.equal(p.plates.filter((x) => /^Steife/.test(x.name)).length, 2);
+  assert.equal(p.plates.filter((x) => /^Stirnplatte/.test(x.name)).length, 2);
+  assert.match(p.info, /Voute/);
+  assert.equal(plan("voute", { form: "voute2" }).members.length, 3);
+  assert.equal(plan("voute", { form: "linear" }).members.length, 1);
+  assert.throws(() => plan("voute", { lv: "7000" }), /Voute länger/);
+  assert.throws(() => plan("voute", { h: "60" }), /Höhe mindestens/);
+});
+
+// ---------- N9: Bohrungsangabe am 3D-Modell ----------
+import { holeText as holeTextN9 } from "../src/core/autodims.js";
+test("N9: Bohrungsangabe-Text für die 3D-Notiz", () => {
+  assert.equal(holeTextN9({ d: 6.8, thread: "M8", depth: 12 }, 4), "4× M8, 12 tief");
+  assert.equal(holeTextN9({ d: 11 }, 2), "2× Ø11 durch");
+});

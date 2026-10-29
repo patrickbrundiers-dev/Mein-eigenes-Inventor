@@ -45,6 +45,7 @@ const P = {
   zaun: '<path d="M2 20l20-4"/><path d="M4 21V6M12 19.5V5M20 18V4"/><path d="M4 9l8-1.2M4 16l8-1.5M12 7.8l8-1.3M12 14.5l8-1.5" stroke-width="1.2"/>',
   schiebetor: '<path d="M2 18h20"/><path d="M4 17V8h16v9"/><path d="M4 17l6-6M10 8v9M13 8v9M16 8v9" stroke-width="1.2"/><path d="M3 5h5M3 5l2-2M3 5l2 2"/>',
   treppe: '<path d="M3 21h4v-4h4v-4h4V9h4V5h2"/><path d="M3 17L19 3" stroke-width="1.2"/>',
+  voute: '<path d="M2 6h20"/><path d="M2 6v12l7-8h13v-4"/><path d="M9 10v-4" stroke-width="1.2"/>',
   rahmenecke: '<path d="M5 21V5h4v16"/><path d="M9 7l12-3v4L9 11"/><path d="M9 4v9"/>',
   pfette: '<path d="M2 9h20v4H2z"/><path d="M6 13v6M18 13v6"/><path d="M4 19h4M16 19h4"/>',
   stuetzenfuss: '<path d="M9 3v12M15 3v12"/><path d="M4 15h16v3H4z"/><path d="M7 18v4M17 18v4"/>',

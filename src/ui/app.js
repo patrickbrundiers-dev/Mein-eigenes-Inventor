@@ -671,6 +671,9 @@ export class App {
   }
   showSketches3D() {
     const part = this.activeDoc();
+    // N9: Bohrungsangaben und Gewinde am 3D-Modell (Ansicht → Bohrungsangaben schaltet sie)
+    const notes = part?.kind === "part" && this.mode === "part" && this.prefs.get("ansicht.bohrungsangaben") !== false ? this.results.get(part.id)?.holeNotes || [] : [];
+    if (notes !== this.shownNotes) { this.shownNotes = notes; this.viewer.showHoleNotes(notes); }
     if (!part || part.kind !== "part") { this.viewer.showDatums([]); this.viewer.showGrids(part?.kind === "assembly" ? gridDisplay(this, part) : []); return this.viewer.showSketches(part?.gestell ? this.skeletonSketches(part) : []); }
     this.viewer.showGrids([]);
     const res = this.results.get(part.id);

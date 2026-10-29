@@ -29,7 +29,7 @@ import { ZAUN } from "./zaun.js";
 import { TREPPE } from "./treppe.js";
 import { SPINDEL } from "./spindel.js";
 import { BALKON } from "./balkon.js";
-import { WINDVERBAND, PFETTE, RAHMENECKE } from "./stahlbau.js";
+import { WINDVERBAND, PFETTE, RAHMENECKE, VOUTE } from "./stahlbau.js";
 import { STUETZENFUSS } from "./stuetzenfuss.js";
 import { TRAEGERSTOSS } from "./traegerstoss.js";
 import { TRAEGERANSCHLUSS } from "./traegeranschluss.js";
@@ -40,7 +40,7 @@ import { VORDACH } from "./vordach.js";
 import { PERGOLA } from "./pergola.js";
 import { FENSTERGITTER } from "./fenstergitter.js";
 
-export const GENERATORS = { gelaender: GELAENDER, tor: TOR, schiebetor: SCHIEBETOR, zaun: ZAUN, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE, stuetzenfuss: STUETZENFUSS, traegerstoss: TRAEGERSTOSS, traegeranschluss: TRAEGERANSCHLUSS, steigleiter: STEIGLEITER, fachwerk: FACHWERK, arbeitsbuehne: ARBEITSBUEHNE, vordach: VORDACH, pergola: PERGOLA, fenstergitter: FENSTERGITTER };
+export const GENERATORS = { gelaender: GELAENDER, tor: TOR, schiebetor: SCHIEBETOR, zaun: ZAUN, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE, voute: VOUTE, stuetzenfuss: STUETZENFUSS, traegerstoss: TRAEGERSTOSS, traegeranschluss: TRAEGERANSCHLUSS, steigleiter: STEIGLEITER, fachwerk: FACHWERK, arbeitsbuehne: ARBEITSBUEHNE, vordach: VORDACH, pergola: PERGOLA, fenstergitter: FENSTERGITTER };
 
 /** Neues Feature mit den Standardwerten des Generators */
 export function defaultGenerator(gen) {

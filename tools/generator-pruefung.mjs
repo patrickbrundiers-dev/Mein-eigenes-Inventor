@@ -76,6 +76,9 @@ export const CASES = [
   ["fenstergitter-durchsteck", "fenstergitter", { fill: "durchsteck", mount: "vorgesetzt", bar: { kind: "vierkantvoll", size: "16" } }],
   ["pergola", "pergola", {}],
   ["pergola-wand-zu", "pergola", { form: "wand", angle: "0" }],
+  ["voute", "voute", {}],
+  ["voute-beidseitig", "voute", { form: "voute2", h0: "800", h: "450", lv: "2000" }],
+  ["voute-linear", "voute", { form: "linear", h0: "300", h: "600", endPlates: false }],
   ["vordach", "vordach", { form: "vordach", depth: "2500", width: "4000", roof: "glas", slope: "8" }],
   ["gestell", "gestell", null],
 ];

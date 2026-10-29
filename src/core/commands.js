@@ -77,6 +77,7 @@ export const COMMANDS = [
   { id: "part.tor", label: "Tor (Generator)", group: "3D-Modell", scope: "part", keywords: "tor hoftor gartentor doppeltor flügel rundbogen stichbogen generator" },
   { id: "part.treppe", label: "Treppe (Generator)", group: "3D-Modell", scope: "part", keywords: "treppe geradläufig l-form u-form podest viertelgewendelt halbgewendelt wange holm stufen gitterrost steigung auftritt din 18065 generator" },
   { id: "part.balkon", label: "Balkon (Generator)", group: "3D-Modell", scope: "part", keywords: "balkon vorstellbalkon anbaubalkon rahmen belag stützen geländer wandanschluss generator" },
+  { id: "part.voute", label: "Gevouteter Träger / Voutenträger (Generator)", group: "3D-Modell", scope: "part", keywords: "voute voutenträger gevoutet veränderliche höhe geschweißt träger kragarm riegel stahlbau halle" },
   { id: "part.rahmenecke", label: "Rahmenecke biegesteif (Generator)", group: "3D-Modell", scope: "part", keywords: "eckstoß rahmenecke stirnplatte riegel stütze hea ipe verschraubung steife stahlbau halle" },
   { id: "part.pfette", label: "Pfette mit Pfettenschuhen (Generator)", group: "3D-Modell", scope: "part", keywords: "pfette pfettenschuh pfettenstoß binder dach carport vordach stahlbau" },
   { id: "part.stuetzenfuss", label: "Stützenfuß mit Ankern (Generator)", group: "3D-Modell", scope: "part", keywords: "stützenfuß fußplatte anker ankerschraube fundament mörtelfuge schubknagge steife stahlbau stütze" },
