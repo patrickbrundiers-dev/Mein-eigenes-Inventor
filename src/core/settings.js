@@ -59,6 +59,7 @@ export const SETTINGS = [
   { key: "allgemein.dezimalstellen", cat: "allgemein", label: "Dezimalstellen für Messwerte", type: "int", default: 3, min: 0, max: 6, help: "Anzeige beim Messen (Abstand, Winkel). Gerechnet wird immer mit voller Genauigkeit." },
   { key: "messen.winkelstellen", cat: "allgemein", label: "Dezimalstellen für Winkel beim Messen", type: "int", default: 2, min: 0, max: 6, help: "Winkelgenauigkeit im Messwerkzeug." },
   { key: "messen.zweiteinheit", cat: "allgemein", label: "Zweiteinheit beim Messen", type: "enum", default: "", options: [{ value: "", label: "Kein(e)" }, { value: "in", label: "Zoll (in)" }, { value: "cm", label: "cm" }, { value: "m", label: "m" }], help: "Messwerte zusätzlich in dieser Einheit anzeigen, z. B. »88,000 mm (3,465 in)«." },
+  { key: "messen.fangradius", cat: "allgemein", label: "Fangradius beim Messen", unit: "px", type: "int", default: 9, min: 3, max: 30, help: "Abstand, ab dem Endpunkte, Mitten, Kreismitten, Quadranten und Flächenmitten beim Messen gefangen werden." },
   { key: "messen.anzeige3d", cat: "allgemein", label: "Maß beim Messen im 3D-Fenster zeigen", type: "bool", default: true },
 
   { key: "ansicht.qualitaet", cat: "ansicht", label: "Darstellungsqualität beim Start", type: "enum", default: "normal", options: QUAL, help: "Feinheit der Dreiecksvernetzung. Wirkt nur auf die Anzeige, nicht auf Export oder Masse." },
@@ -80,7 +81,7 @@ export const SETTINGS = [
   { key: "ansicht.viewcube", cat: "ansicht", label: "ViewCube anzeigen", type: "bool", default: true },
   { key: "ansicht.beleuchtung", cat: "ansicht", label: "Beleuchtung", type: "enum", default: "standard", options: [{ value: "standard", label: "Standard" }, { value: "kontrast", label: "Kontrastreich (Kanten und Rundungen deutlicher)" }, { value: "weich", label: "Weich (wenig Schatten)" }], help: "Gilt für die normale Darstellung; die Fotodarstellung hat ihr eigenes Licht." },
   { key: "ansicht.kantenfarbe", cat: "ansicht", label: "Kantenfarbe", type: "color", default: "#1c2733" },
-  { key: "ansicht.auswahlfarbe", cat: "ansicht", label: "Auswahlfarbe", type: "color", default: "#d9600c" },
+  { key: "ansicht.auswahlfarbe", cat: "ansicht", label: "Auswahlfarbe", type: "color", default: "#1e78e6", help: "Gewählte Flächen, Kanten und Punkte – bewusst anders als die Hervorhebung unter dem Mauszeiger." },
   { key: "ansicht.hoverfarbe", cat: "ansicht", label: "Hervorhebung unter dem Mauszeiger", type: "color", default: "#ef7d1a" },
 
   { key: "skizze.standardebene", cat: "skizze", label: "Erste Skizze in leerem Bauteil auf", type: "enum", default: "waehlen", options: [{ value: "waehlen", label: "Ebene jedes Mal wählen" }, { value: "XY", label: "XY-Ebene" }, { value: "XZ", label: "XZ-Ebene" }, { value: "YZ", label: "YZ-Ebene" }], help: "Hat das Bauteil schon Körper, wählst du die Ebene oder Fläche wie gewohnt." },

@@ -5,7 +5,7 @@ import { RULES } from "../core/bendtable.js";
 import { applySheetRule } from "../core/blechregeln.js";
 import { BOX_SIDES, BOX_THROUGH, wallSet } from "../core/blechkasten.js";
 import { TAB_MODES } from "../core/stecksystem.js";
-import { axisDistance, measureSums, measureFormat, SECOND_UNITS } from "../core/messen.js";
+import { axisDistance, measureSums, measureFormat, SECOND_UNITS, MEASURE_FILTERS } from "../core/messen.js";
 import { placeProps, constraintEditor, motionEditor } from "./abhaengigkeit.js";
 import { steckProps, newSteckverbindung, dropSteckForComponent } from "./steckverbindung.js";
 import { gridProps, gridSnapRow } from "./achsraster.js";
@@ -494,7 +494,7 @@ export class Props {
     const m = app.measure || {};
     const F = measureFormat({ dec: app.prefs.get("allgemein.dezimalstellen"), angleDec: app.prefs.get("messen.winkelstellen") ?? 2, second: app.prefs.get("messen.zweiteinheit") || "" });
     const P = (p) => p.map((v) => F.num(v)).join(" / ");
-    const KIND = { face: "Fläche", edge: "Kante", vertex: "Punkt" };
+    const KIND = { face: "Fläche", edge: "Kante", vertex: "Punkt", axis: "Achse" };
     const T = { PLANE: "Ebene", CYLINDER: "Zylinder", CONE: "Kegel", SPHERE: "Kugel", TORUS: "Torus", BSPLINE: "Freiform", POINT: "Ecke", LINE: "Gerade", CIRCLE: "Kreis", ELLIPSE: "Ellipse", BSPLINE_CURVE: "Freiform" };
     // Zeile: Klick kopiert den Wert; show = Maß im 3D-Fenster umschalten
     const row = (label, value, { cls = "", show = null } = {}) => {
@@ -509,7 +509,8 @@ export class Props {
     };
     const list = (...rows) => h("dl", { class: "measure-list" }, ...rows.flat(2).filter(Boolean));
     const more = (title, ...rows) => h("details", { class: "measure-more" }, h("summary", {}, title), list(...rows));
-    const out = [h("p", { class: "hint" }, "Fläche, Kante oder Ecke anklicken, dann ein zweites Element für Abstand und Winkel. Mit Strg oder Umschalt weitere Elemente dazunehmen (Summen). Werte anklicken kopiert sie. Esc beendet.")];
+    const out = [h("p", { class: "hint" }, "Fläche, Kante, Achse oder Fangpunkt anklicken, dann ein zweites Element für Abstand und Winkel. Fangpunkte (Endpunkt, Mitte, Kreismitte) erscheinen beim Überfahren als kleines Symbol; mit Auswahl »Punkte« auch Quadranten und Flächenmitten. Mit Strg oder Umschalt weitere Elemente dazunehmen (Summen). Werte anklicken kopiert sie. Esc beendet."),
+      h("div", { class: "measure-filter", title: "Was beim Klicken gewählt wird (Auswahlpriorität)" }, this.seg(null, MEASURE_FILTERS, m.filter || "alle", (v) => { m.filter = v; app.measureFilter = v; app.viewer.clearHover(); this.render(); }))];
     if (m.busy) out.push(h("p", { class: "hint" }, "Messe …"));
     if (m.error) out.push(h("div", { class: "msg err" }, m.error));
     const r = m.result;
@@ -542,6 +543,7 @@ export class Props {
       r.items.forEach((it, i) => {
         const rows = [], pts = [];
         if (it.kind === "vertex") rows.push(row("X", F.len(it.point[0])), row("Y", F.len(it.point[1])), row("Z", F.len(it.point[2])));
+        if (it.kind === "axis") rows.push(row("Punkt auf Achse", P(it.start)), row("Achsrichtung", it.dir.map((v) => fmtNum(v, 3)).join(" / ")));
         if (it.kind === "edge") {
           if (it.radius !== undefined) rows.push(row("Radius", F.len(it.radius)), row("Durchmesser", F.len(2 * it.radius)));
           rows.push(row(it.type === "CIRCLE" && it.arc === undefined ? "Umfang" : "Länge", F.len(it.length)));
@@ -559,7 +561,8 @@ export class Props {
           if (it.normal) pts.push(row("Normale", it.normal.map((v) => fmtNum(v, 3)).join(" / "), { cls: "sub" }));
           if (it.axisP) pts.push(row("Punkt auf Achse", P(it.axisP), { cls: "sub" }), row("Achsrichtung", it.axisD.map((v) => fmtNum(v, 3)).join(" / "), { cls: "sub" }));
         }
-        out.push(this.section(`Auswahl ${i + 1} (${KIND[it.kind] || it.kind}${T[it.type] && it.kind !== "vertex" ? ", " + T[it.type] : ""})`, list(...rows), pts.length ? more("Punkt messen", ...pts) : null));
+        const title = it.kind === "vertex" && it.label ? it.label : `${KIND[it.kind] || it.kind}${T[it.type] && it.kind !== "vertex" && it.kind !== "axis" ? ", " + T[it.type] : ""}`;
+        out.push(this.section(`Auswahl ${i + 1} (${title})`, list(...rows), pts.length ? more("Punkt messen", ...pts) : null));
       });
     }
     const pref = (key, v) => { const res = app.prefs.set(key, v); if (res?.ok === false) toast(res.error, { kind: "err" }); app.updateMeasureView(); this.render(); };

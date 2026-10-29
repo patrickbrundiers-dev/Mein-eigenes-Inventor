@@ -31,6 +31,7 @@ import { clampStack, boltStack, boltHoles } from "../core/schraubverbindung.js";
 import { planSheet, contourLegs, punchOutline, SHEET_FEATURES } from "../core/blechplus.js";
 import { path3d } from "../core/ableiten.js";
 import { applyRules } from "../core/regeln.js";
+import { quadrantPoint } from "../core/fangpunkte.js";
 import { holeText } from "../core/autodims.js";
 import { bendRule, ruleSummary } from "../core/bendtable.js";
 import { pathAxes, pathPoint, pathLength as tubeLength, pathDistance, bendRadius, splitPath } from "../core/biegeteil.js";
@@ -2821,6 +2822,27 @@ export function createKernel(R) {
       return { axisP: [l.X(), l.Y(), l.Z()], axisD: [d.X(), d.Y(), d.Z()], radius: c.Radius() };
     } finally { ad.delete(); }
   }
+  /** Kreis einer Kante exakt aus OpenCascade: {center, radius, axisD, xDir} */
+  function circleOf(e) {
+    const c = e.curve.wrapped.Circle();
+    const l = c.Location(), ax = c.Axis().Direction(), xd = c.XAxis().Direction();
+    return { center: [l.X(), l.Y(), l.Z()], radius: c.Radius(), axisD: [ax.X(), ax.Y(), ax.Z()], xDir: [xd.X(), xd.Y(), xd.Z()] };
+  }
+  /**
+   * Fangpunkt exakt am Element (Messen): Kante ref = start|end|mid|center|q0–q3, Fläche ref = center (Schwerpunkt).
+   * Gleiche Rechnung wie die Anzeige (fangpunkte.js), nur aus der exakten Geometrie.
+   */
+  function snapPoint(s, kind, ref) {
+    if (kind === "face") return tuple(R.measureShapeSurfaceProperties(s).centerOfMass);
+    if (ref === "start") return tuple(s.startPoint);
+    if (ref === "end") return tuple(s.endPoint);
+    if (ref === "mid") return tuple(s.pointAt(0.5));
+    const c = circleOf(s);
+    if (ref === "center") return c.center;
+    const q = /^q([0-3])$/.exec(ref || "");
+    if (q) return quadrantPoint(c.center, c.axisD, c.xDir, c.radius, Number(q[1]));
+    throw new Error("Unbekannter Fangpunkt: " + ref);
+  }
   function meshBody(shape, quality = "normal") {
     const tol = quality === "fein" ? 0.02 : quality === "grob" ? 0.3 : 0.08;
     const ang = quality === "fein" ? 0.1 : quality === "grob" ? 0.5 : 0.25;
@@ -2840,7 +2862,12 @@ export function createKernel(R) {
     const em = shape.meshEdges({ tolerance: tol, angularTolerance: ang });
     const edgeInfo = new Map();
     shape.edges.forEach((e, idx) => {
-      try { edgeInfo.set(hashOf(e), { mid: edgeMid(e), type: e.geomType, idx }); } catch { /* ignore */ }
+      try {
+        const info = { mid: edgeMid(e), type: e.geomType, idx };
+        // Kreis/Bogen: Mitte, Radius und Lage für die Fangpunkte (Kreismitte, Quadranten) beim Messen
+        if (info.type === "CIRCLE") { try { Object.assign(info, circleOf(e)); } catch { /* ohne Kreisangaben */ } }
+        edgeInfo.set(hashOf(e), info);
+      } catch { /* ignore */ }
     });
     const edges = em.edgeGroups.map((g) => ({
       positions: Float32Array.from(em.lines.slice(g.start * 3, (g.start + g.count) * 3)),
@@ -2891,8 +2918,8 @@ export function createKernel(R) {
     return { shape: R.makeVertex(point), point };
   }
   function measure(entries) {
-    const items = entries.map(({ shape: s, kind, point }) => {
-      if (kind === "vertex") return { kind, type: "POINT", point };
+    const items = entries.map(({ shape: s, kind, point, label }) => {
+      if (kind === "vertex") return { kind, type: "POINT", point, ...(label ? { label } : {}) };
       if (kind === "face") {
         const type = s.geomType === "CYLINDRE" ? "CYLINDER" : s.geomType;
         const sp = R.measureShapeSurfaceProperties(s);
@@ -2907,6 +2934,7 @@ export function createKernel(R) {
         it.contour = s.edges.filter((e) => !R.getOC().BRep_Tool.IsClosed(e.wrapped, s.wrapped)).reduce((t, e) => t + R.measureLength(e), 0);
         return it;
       }
+      // Achse (Zylinder/Bohrung) kommt als gerades Achsstück und misst wie eine gerade Kante
       const it = { kind, type: s.geomType, length: R.measureLength(s), start: tuple(s.startPoint), end: tuple(s.endPoint), mid: tuple(s.pointAt(0.5)) };
       if (it.type === "LINE") {
         const d = it.end.map((v, k) => v - it.start[k]);
@@ -3232,7 +3260,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, snapPoint, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

@@ -267,7 +267,7 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .sk-pt.open { stroke: var(--err); fill: var(--err); }
 .sk-origin { fill: #c43b2f; stroke: #fff; stroke-width: 1; }
 .sk-preview { stroke: var(--laser); stroke-width: 1.4; stroke-dasharray: 5 3; fill: none; }
-.sk-snap { fill: none; stroke: var(--laser); stroke-width: 1.5; }
+.sk-snap { fill: none; stroke: var(--laser); stroke-width: 1.5; stroke-linejoin: round; paint-order: stroke; }
 .sk-dim { stroke: var(--sk-dim); stroke-width: 1; fill: none; }
 .sk-dim.driven { stroke: #8a97a6; }
 .sk-dim-text { font: 600 var(--fs-m) var(--din); fill: var(--sk-dim-text); paint-order: stroke; stroke: var(--stage-a); stroke-width: 4px; stroke-linejoin: round; cursor: pointer; pointer-events: all; }
@@ -610,6 +610,8 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 /* Messen (Stufe 47): Maß im 3D-Fenster und Ergebnisliste wie Inventor */
 .hole-note { position: absolute; left: 0; top: 0; pointer-events: none; padding: 0 4px; border-bottom: 1px solid var(--dye); color: var(--dye); background: color-mix(in srgb, var(--surface) 70%, transparent); font: 600 var(--fs-s)/1.4 var(--din); white-space: nowrap; z-index: 4; }
 .measure-label { position: absolute; left: 0; top: 0; pointer-events: none; padding: 1px 6px; border-radius: var(--radius-s); background: color-mix(in srgb, var(--surface) 85%, transparent); color: var(--dye); font: 600 var(--fs-s)/1.5 var(--din); white-space: nowrap; z-index: 5; }
+.measure-filter { margin: 2px 0 8px; }
+.pick-tip { position: absolute; left: 0; top: 0; pointer-events: none; padding: 1px 7px; border-radius: var(--radius-s); background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid color-mix(in srgb, var(--laser) 45%, transparent); color: var(--ink); font: 500 var(--fs-s)/1.5 var(--din); white-space: nowrap; z-index: 6; box-shadow: 0 1px 4px rgb(0 0 0 / 0.15); }
 .measure-list { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin: 0; }
 .measure-list dt { color: var(--ink-soft); }
 .measure-list dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; cursor: copy; }
