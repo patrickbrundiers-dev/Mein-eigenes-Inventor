@@ -1169,7 +1169,7 @@ export function createKernel(R) {
               ms.forEach((m, i) => {
                 if (ch.onlySeg != null && i !== ch.onlySeg) return;
                 const ds = segs[i] ? drillsOf(ch.name, segs[i].a, segs[i].b, size) : [];
-                add(drill(m.solid, ds), { ...m.meta, generator: f.gen, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }, ch.segName || (ms.length > 1 ? m.name : ch.name));
+                add(drill(m.solid, ds), { ...m.meta, generator: f.gen, ...(ch.density ? { density: ch.density } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }, ch.segName || (ms.length > 1 ? m.name : ch.name));
               });
             }
             for (const m of plan.members) {
@@ -1189,7 +1189,7 @@ export function createKernel(R) {
               for (const t of m.tabs || []) solid = solid.fuse(R.drawRectangle(t.w, t.h).sketchOnPlane(new R.Plane(t.p, t.xDir, v3.norm(t.dir))).extrude(t.len));
               // einzelner Stab: alle Bohrungen am Umfang (auch Schlitze nahe der Ecken, daher Diagonale)
               const ds = drillsOf(m.target || m.name, m.a, m.b, Math.hypot(m.section.geom.width, m.section.geom.height));
-              add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), miterParts: { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) }, ...(m.copes?.length ? { coped: true } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }), m.name);
+              add(drill(solid, ds), metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), miterParts: { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) }, ...(m.copes?.length ? { coped: true } : {}), ...(m.density ? { density: m.density } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }), m.name);
             }
             // gebogene/gewalzte Profile (Wendel-Handlauf, Ring, Bogen): ein Körper entlang der Mittellinie
             for (const tb of plan.tubes || []) {
@@ -2064,7 +2064,8 @@ export function createKernel(R) {
   function pushNorm(state, f, list, n, pos, dir) {
     const fam = familyOf(n.kind, n.custom);
     if (!fam) throw new Error("Unbekanntes Normteil: " + n.kind);
-    const solid = orientZ(recipeSolid(normRecipe(fam, n.size, n.length || 0)), dir, pos);
+    // xDir: Lage um die Achse (Beschläge mit eigener Form, z. B. Glasklemmhalter)
+    const solid = orientZ(recipeSolid(normRecipe(fam, n.size, n.length || 0)), dir, pos, n.xDir);
     const designation = normDesignation(n);
     const mat = gradeInfo(n.grade);
     const meta = { norm: { kind: n.kind, size: n.size, length: n.length || 0, grade: n.grade || "", designation, norm: fam.norm, material: mat.label, cat: fam.cat }, density: mat.density };
@@ -2351,11 +2352,23 @@ export function createKernel(R) {
   }
 
   /** Körper mit Achse +z an Punkt pos auf Richtung dir drehen */
-  function orientZ(shape, dir, pos) {
+  function orientZ(shape, dir, pos, xDir) {
     const n = v3.norm(dir), z = [0, 0, 1];
     const axis = v3.cross(z, n), s = v3.len(axis), c = v3.dot(z, n);
-    if (s > 1e-12) shape = shape.rotate((Math.atan2(s, c) * 180) / Math.PI, [0, 0, 0], axis);
-    else if (c < 0) shape = shape.rotate(180, [0, 0, 0], [1, 0, 0]);
+    // wohin X nach der ersten Drehung zeigt (Rodrigues), für die Drehung um die Achse auf xDir
+    let x = [1, 0, 0];
+    if (s > 1e-12) {
+      shape = shape.rotate((Math.atan2(s, c) * 180) / Math.PI, [0, 0, 0], axis);
+      const k = v3.mul(axis, 1 / s);
+      x = v3.add(v3.add(v3.mul(x, c), v3.mul(v3.cross(k, x), s)), v3.mul(k, v3.dot(k, x) * (1 - c)));
+    } else if (c < 0) shape = shape.rotate(180, [0, 0, 0], [1, 0, 0]);
+    if (xDir) {
+      const xd = v3.sub(xDir, v3.mul(n, v3.dot(xDir, n)));
+      if (v3.len(xd) > 1e-9) {
+        const a = Math.atan2(v3.dot(v3.cross(x, xd), n), v3.dot(x, v3.norm(xd)) * v3.len(xd)) * 180 / Math.PI;
+        if (Math.abs(a) > 1e-9) shape = shape.rotate(a, [0, 0, 0], n);
+      }
+    }
     return shape.translate(pos);
   }
 
