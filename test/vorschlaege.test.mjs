@@ -3,6 +3,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { roundCorners, bentChain, pathPoint, pathTangent } from "../src/core/biegeteil.js";
 import { defaultGenerator, resolveGenParams, GENERATORS } from "../src/core/generator.js";
+import { holeText, holeSpecs } from "../src/core/autodims.js";
+import { noteSuggestion } from "../src/core/zeichnung.js";
+import { patternMatrices, applyPatterns } from "../src/core/asmmuster.js";
+import { orderRows, orderCsv, orderPages } from "../src/core/bestellliste.js";
 
 const near = (a, b, t = 1e-6) => a.every((v, i) => Math.abs(v - b[i]) < t);
 const E = (x) => Number(x);
@@ -276,4 +280,92 @@ test("O5: Kastenschloss, Bodenriegel, Torfeststeller am Tor", () => {
   const e = plan("tor", { leaves: "1", width: "1200" });
   assert.deepEqual(e.norms.map((x) => x.kind), ["kastenschloss"]);
   assert.equal(plan("tor", { lock: false, bolt: false }).norms.length, 0);
+});
+
+// ---------- O6–O9: Podestwange, Voute, Knotenblech, Futterbleche ----------
+test("O6: äußere Wange läuft ums Podest weiter (Gehrung an den Stößen)", () => {
+  const L = plan("treppe", { form: "L", podestWange: true });
+  const pw = L.members.filter((m) => /^Wange rechts Podest \d$/.test(m.name));
+  assert.equal(pw.length, 2);
+  const w1 = L.members.find((m) => m.name === "Wange rechts Lauf 1"), w2 = L.members.find((m) => m.name === "Wange rechts Lauf 2");
+  assert.ok(near(w1.cuts.end[0].p, pw[0].cuts.start[0].p), "Stoß Lauf 1 – Podest");
+  assert.ok(near(w2.cuts.start[0].p, pw[1].cuts.end[0].p), "Stoß Podest – Lauf 2");
+  assert.ok(near(w1.cuts.end[0].n, pw[0].cuts.start[0].n.map((x) => -x)), "gleiche Gehrungsebene");
+  const U = plan("treppe", { form: "U", podestWange: true, turn: "rechts", gap: "200" });
+  assert.equal(U.members.filter((m) => /^Wange links Podest \d$/.test(m.name)).length, 3);
+  assert.equal(plan("treppe", { form: "L" }).members.filter((m) => / Podest \d$/.test(m.name)).length, 0);
+});
+
+test("O7: Rahmenecke mit Voute: Gurt, Steg, Stirnplatte bis unter die Voute, vierte Schraubenreihe", () => {
+  const a = plan("rahmenecke"), b = plan("rahmenecke", { haunch: true });
+  assert.ok(b.members.some((m) => m.name === "Voute Gurt") && b.plates.some((p) => p.name === "Voute Steg"));
+  const H = (pl) => pl.plates.find((p) => p.name === "Stirnplatte").H;
+  assert.ok(H(b) > H(a) + 200, "Stirnplatte länger");
+  assert.equal(b.norms.length, a.norms.length + 2);
+  assert.equal(plan("rahmenecke", { stiffAt: "oben" }).plates.filter((p) => /^Steife/.test(p.name)).length, 2);
+});
+
+test("O8: Windverband mit Winkel auf dem Knotenblech, n Schrauben je Anschluss", () => {
+  const pl = plan("windverband", { bar: "profil", nBolts: "3", gusset: "250" });
+  assert.equal(pl.members.length, 2);
+  assert.equal(pl.norms.length, 2 * 2 * 3);
+  assert.equal(pl.drills.length, 12);
+  assert.equal(pl.plates.find((p) => p.name === "Knotenblech 1").holes.length, 3);
+  assert.ok(plan("windverband", { bar: "profil", nBolts: "4" }).issues.some((x) => x.key === "gusset"), "Knotenblech zu klein");
+});
+
+test("O9: geschlitzte Futterbleche um jeden Anker statt Justiermuttern", () => {
+  const pl = plan("stuetzenfuss", { shims: true, grout: "18" });
+  const sh = pl.plates.filter((p) => /^Futterblech 1\./.test(p.name));
+  assert.deepEqual(sh.map((p) => p.t), [10, 5, 3]);
+  assert.ok(!pl.norms.some((n) => n.kind === "scheibe"), "keine Justiermuttern");
+  assert.match(pl.info, /Futterbleche 60 × 60/);
+});
+
+// ---------- O10–O12: Langloch, Muster an Skizzenpunkten, Bestellliste ----------
+test("O10: Langloch-Angabe aus dem Bohrungs-Feature, Hinweis am Halbkreis in der Zeichnung", () => {
+  const specs = holeSpecs([{ type: "hole", form: "langloch", diameter: "11", slotLength: "30", extent: "through" }], Number);
+  assert.deepEqual(specs, [{ r: 5.5, hole: { d: 11, slot: 30 } }]);
+  assert.equal(holeText(specs[0].hole, 2), "2× Langloch 30 × 11 durch");
+  assert.equal(holeText({ d: 9, slot: 20, depth: 4 }), "Langloch 20 × 9, 4 tief");
+  const arcs = [{ cx: 0, cy: 0, r: 5.5, full: false }, { cx: 19, cy: 0, r: 5.5, full: false }];
+  assert.deepEqual(noteSuggestion([-5.5, 0], { arcs, specs }), { kind: "bohrung", text: "Langloch 30 × 11 durch" });
+  assert.equal(noteSuggestion([-5.5, 0], { arcs, specs: [] }).kind, "frei");
+});
+
+test("O11: Komponentenmuster an den Punkten einer Skizze", () => {
+  const comps = new Map([["a", { id: "a", part: "anker", pos: [100, 0, 0], rot: [0, 0, 0] }], ["p", { id: "p", part: "platte", pos: [0, 0, 50], rot: [0, 0, 0] }]]);
+  const pts = [[0, 0, 0], [100, 0, 0], [100, 200, 0], [0, 200, 0]];
+  const mats = patternMatrices({ kind: "skizze", comps: ["a"], target: "p", sketch: "s1" }, Number, { comps, sketchPoints: (pid, sid) => (pid === "platte" && sid === "s1" ? pts : []) });
+  assert.equal(mats.length, 3);
+  // Bezug = Punkt (100, 0, 50) am nächsten an der Quelle; Kopien um die Abstände zu (100,200), (0,200), (0,0)
+  const asm = { components: [...comps.values()].map((c) => ({ ...c, name: c.id })), patterns: [{ id: "pm", kind: "skizze", comps: ["a"], target: "p", sketch: "s1" }] };
+  const r = applyPatterns(asm, Number, null, null, (pid) => (pid === "platte" ? pts : []));
+  assert.deepEqual(r.errors, {});
+  const copies = asm.components.filter((c) => c.pat === "pm").map((c) => c.pos.map((x) => Math.round(x)));
+  assert.deepEqual(copies.sort(), [[0, 0, 0], [0, 200, 0], [100, 200, 0]].sort(), "um die Abstände der Punkte verschoben");
+  assert.match(Object.values(applyPatterns({ ...asm, components: asm.components.filter((c) => !c.pat) }, Number, null, null, () => [[0, 0, 0]]).errors)[0], /keine weiteren Punkte/);
+});
+
+test("O12: Bestellliste je Lieferant (Normteile, Beschläge, Glas, Kaufteile)", () => {
+  const bolt = { meta: { norm: { kind: "schraube4017", designation: "ISO 4017 - M12 x 40 - 8.8", norm: "ISO 4017" } } };
+  const lock = { meta: { norm: { kind: "kastenschloss", designation: "Kastenschloss Dorn 60" } } };
+  const glas = { meta: { glass: true, plate: { W: 1000, H: 800, t: 10.76 } } };
+  const src = [
+    { part: { id: "g", name: "Geländer" }, bodies: [bolt, bolt, lock, glas, { meta: {} }], qty: 2 },
+    { part: { id: "k", name: "Torantrieb", kaufteil: true, lieferant: "Antriebe GmbH" }, bodies: [bolt], qty: 1 },
+  ];
+  const rows = orderRows(src, { suppliers: { normteile: "Schrauben AG", glas: "Glas & Co" } });
+  const by = (n) => rows.find((r) => r.name.startsWith(n));
+  assert.equal(by("ISO 4017").qty, 4);
+  assert.equal(by("ISO 4017").supplier, "Schrauben AG");
+  assert.equal(by("Kastenschloss").supplier, "ohne Lieferant");
+  assert.equal(by("Glasscheibe 1000 × 800").qty, 2);
+  assert.ok(Math.abs(by("Glasscheibe").area - 1.6) < 1e-9);
+  assert.equal(by("Torantrieb").supplier, "Antriebe GmbH");
+  assert.equal(rows[rows.length - 1].supplier, "ohne Lieferant", "ohne Lieferant am Ende");
+  const csv = orderCsv(rows, "Projekt");
+  assert.match(csv, /^\ufeffLieferant;Gruppe;Benennung/);
+  assert.equal(csv.trim().split("\r\n").length, rows.length + 1);
+  assert.equal(orderPages(rows).length, 4, "eine Seite je Lieferant");
 });

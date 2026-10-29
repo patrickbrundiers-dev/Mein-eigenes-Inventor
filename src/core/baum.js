@@ -55,7 +55,7 @@ export function featureDetail(f, part) {
   switch (f.type) {
     case "extrude": return f.mode === "through" ? "durch alles" : mm("distance");
     case "revolve": return deg("angle");
-    case "hole": { const d = num(f.diameter, scope); return d === null ? "" : `Ø ${fmt(d)}` + (f.extent === "through" ? " durch" : f.depth ? ` × ${mm("depth")}` : ""); }
+    case "hole": { const d = num(f.diameter, scope); if (f.form === "langloch") { const L = num(f.slotLength, scope); return d === null || L === null ? "" : `Langloch ${fmt(L)} × ${fmt(d)}` + (f.extent === "through" ? " durch" : ""); } return d === null ? "" : `Ø ${fmt(d)}` + (f.extent === "through" ? " durch" : f.depth ? ` × ${mm("depth")}` : ""); }
     case "fillet": { const r = num(f.radius, scope); return r === null ? "" : `R ${fmt(r)}`; }
     case "chamfer": return mm("radius");
     case "shell": case "aufdicken": return mm("thickness");

@@ -47,6 +47,7 @@ export const TREPPE = {
     { key: "podestD", label: "Podesttiefe (0 = Laufbreite)", type: "num", default: "0", group: "Podest", when: (p) => p.form === "U" },
     { key: "gap", label: "Abstand der Läufe (Treppenauge)", type: "num", default: "100", group: "Podest", when: (p) => p.form === "U" || p.form === "Uw" },
     { key: "podestRahmen", label: "Podestrahmen", type: "section", default: { kind: "rechteck", size: "100x50x4" }, group: "Podest", when: podest },
+    { key: "podestWange", label: "Äußere Wange ums Podest in einem Stück (geschweißt)", type: "check", default: false, missing: false, group: "Podest", when: (p) => podest(p) && p.support === "flach" },
     { key: "stuetzen", label: "Podeststützen", type: "select", options: [["aussen", "2 außen"], ["alle", "4 (alle Ecken)"], ["keine", "keine (an der Wand)"]], default: "aussen", group: "Podest", when: podest },
     { key: "anschluss", label: "Anschlüsse", type: "select", options: [["platten", "Fußwinkel bzw. Bodenplatten, Kopfplatten an der Decke, Stufenkonsolen auf Holmen"], ["auflager", "wie Platten, oben mit Auflagerwinkel auf der Decke"], ["keine", "ohne (bisher)"]], default: "platten", missing: "keine", group: "Tragwerk" },
     { key: "wangeWand", label: "Wange an der Wand verdübelt", type: "select", options: [["keine", "nein"], ["rechts", "rechts"], ["links", "links"], ["beide", "beidseitig"]], default: "keine", group: "Tragwerk", when: (p) => p.support === "flach" || p.support === "upn" },
@@ -107,6 +108,7 @@ export const TREPPE = {
     const tanA = s / a, alpha = Math.atan(tanA), cosA = Math.cos(alpha), sinA = Math.sin(alpha);
     const AN = p.anschluss === "platten" || p.anschluss === "auflager", AUF = p.anschluss === "auflager";
     const FT = AN ? 15 : 0, KT = AN && !(p.support === "flach" || p.support === "upn") ? 8 : 0; // Fuß-/Kopfplatten an Boden und Decke, Konsolbleche unter aufgesattelten Stufen
+    const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     const isTop = (nR, z0) => Math.abs(z0 + nR * s - H) < 1e-6;
     const members = [], plates = [], chains = [], drills = [], norms = [], tubes = [];
     // Tragwerk: Querschnitt, Ausdehnung senkrecht zur Achse in der Laufebene (depth), Dicke quer (thick), Drehung je
@@ -283,6 +285,28 @@ export const TREPPE = {
       const { high: fh, wide: fw } = rotExtent(fr, frRot), zf = zP - tt - fh / 2;
       const rx0 = x1 + fw / 2, rx1 = x1 + D - fw / 2, ry0 = yLo + fw / 2, ry1 = yHi - fw / 2;
       chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[rx0, ry0, zf], [rx1, ry0, zf], [rx1, ry1, zf], [rx0, ry1, zf], [rx0, ry0, zf]], name: "Podestrahmen", up: [0, 0, 1], rot: frRot });
+      // Podestwange in einem Stück (O6, wie Tekla S71): die äußere Flachstahlwange läuft waagrecht ums Podest weiter –
+      // Achse in Höhe der Podestrahmen-Mitte, Stöße auf Gehrung geschnitten und verschweißt
+      if (p.podestWange && p.support === "flach") {
+        const o = left ? 0 : 1, yo = ys[o], zh = zf, unit = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); };
+        const xk1 = (zh - c) / tanA, xk2 = (zh - zP - c) / tanA;
+        if (!(xk1 > x1 - D / 2 && -xk2 < (p.form === "L" ? B : D) - 1)) throw fieldError("Podestwange: Wange und Podestrahmen passen in der Höhe nicht zusammen", "podestRahmen");
+        const xC = x1 + D + wt / 2, yS = left ? -wt / 2 : B + wt / 2, yE = left ? yHi + wt / 2 : yLo - wt / 2;
+        const k1 = [xk1, yo, zh], k2 = T2.p([xk2, yo, zh]);
+        const pts = [k1, [xC, yS, zh], ...(p.form === "U" ? [[xC, yE, zh]] : []), k2];
+        const w1 = members.find((m) => m.name === sideNames[o] + " Lauf 1"), w2 = members.find((m) => m.name === sideNames[o] + " Lauf 2");
+        const d1 = unit(sub3(w1.b, w1.a)), d2 = unit(sub3(w2.b, w2.a)), dir = (i) => unit(sub3(pts[i + 1], pts[i]));
+        const miter = (da, db) => unit(da.map((x, i) => x + db[i]));
+        w1.cuts = { start: w1.cuts.start, end: [{ p: k1, n: miter(d1, dir(0)) }] };
+        w2.cuts = { start: [{ p: k2, n: miter(dir(pts.length - 2), d2).map((x) => -x) }], end: w2.cuts.end };
+        for (let i = 0; i < pts.length - 1; i++) {
+          const da = i ? dir(i - 1) : d1, db = dir(i), dc = i < pts.length - 2 ? dir(i + 1) : d2, e = depth * 2;
+          const a = pts[i].map((x, k) => x - db[k] * e), b = pts[i + 1].map((x, k) => x + db[k] * e);
+          members.push({ section: sec, a, b, name: `${sideNames[o]} Podest ${i + 1}`, up: [0, 0, 1], rot: orientRot(sec, db, [0, 0, 1], { tall: [0, 0, 1] }),
+            cuts: { start: [{ p: pts[i], n: miter(da, db).map((x) => -x) }], end: [{ p: pts[i + 1], n: miter(db, dc) }] } });
+        }
+        geo.podestWange = pts.length - 1;
+      }
       if (p.stuetzen !== "keine") {
         const st = p.stuetze, sw = Math.max(st.geom.width, st.geom.height) / 2;
         const zTop = zP - tt - fh;
@@ -407,7 +431,9 @@ function wallRail(p, { flights, s, a, u, B, x1, wt, rotZ, form, alpha }) {
       members.push({ section: { kind: "rund", dims: { D: 16 }, geom: sectionGeometry("rund", { D: 16 }), size: "16" }, a: P(x, yWall + sgn * 8, zArm), b: P(x, yAx + sgn * 8, zArm), name: `Wandkonsole ${nK} Arm`, plain: true });
       const zTop = zA - (D / 2 - tw) / cosA - 0.5;
       members.push({ section: { kind: "rund", dims: { D: 12 }, geom: sectionGeometry("rund", { D: 12 }), size: "12" }, a: P(x, yAx, zArm + 8), b: P(x, yAx, zTop), name: `Wandkonsole ${nK} Stütze`, plain: true });
-      drills.push({ target: name, p: P(x, yAx, zA - D / 2 / cosA - 2), dir: [0, 0, 1], len: (tw + 4) / cosA, d: 12.1 });
+      // senkrechte Bohrung durch die geneigte Wand: um die halbe Bohrung × Neigung tiefer ansetzen und länger bohren
+      const dz = 6.05 * Math.tan(alpha);
+      drills.push({ target: name, p: P(x, yAx, zA - D / 2 / cosA - 2 - dz), dir: [0, 0, 1], len: (tw + 4) / cosA + 2 * dz, d: 12.1 });
     }
   });
   if (p.wandH < 800 || p.wandH > 1000) issues.push({ key: "wandH", level: "Hinweis", message: "Handlaufhöhe üblich 800 … 1000 mm über Stufenvorderkante (DIN 18065)" });

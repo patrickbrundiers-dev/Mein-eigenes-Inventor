@@ -44,7 +44,9 @@ export const STUETZENFUSS = {
     { key: "embed", label: "Verankerungslänge unter OK Fundament", type: "num", default: "300", group: "Anker" },
     { key: "grade", label: "Festigkeit", type: "select", options: [["4.8", "4.8"], ["8.8", "8.8"], ["A4-70", "A4-70"]], default: "4.8", group: "Anker" },
     { key: "grout", label: "Mörtelfuge", type: "num", default: "30", group: "Fundament" },
-    { key: "level", label: "Justiermuttern unter der Platte", type: "check", default: true, group: "Fundament" },
+    { key: "level", label: "Justiermuttern unter der Platte", type: "check", default: true, group: "Fundament", when: (p) => !p.shims },
+    { key: "shims", label: "Futterbleche zum Ausrichten (geschlitzt, um jeden Anker)", type: "check", default: false, missing: false, group: "Fundament" },
+    { key: "shimSet", label: "Futterblech-Dicken (Satz)", type: "list", default: "10; 5; 3; 2; 1", group: "Fundament", when: (p) => p.shims },
     { key: "stiff", label: "Steifen", type: "check", default: true, group: "Steifen" },
     { key: "stiffT", label: "Steifendicke", type: "num", default: "12", group: "Steifen", when: (p) => p.stiff },
     { key: "stiffH", label: "Steifenhöhe", type: "num", default: "150", group: "Steifen", when: (p) => p.stiff },
@@ -102,16 +104,37 @@ export const STUETZENFUSS = {
     // Anker: Gewindestange von unten bis über die Mutter, Unterlegplatte und Mutter oben, Justiermutter + Scheibe unten
     const rodLen = Math.ceil((p.embed + zt + wa.t + th.m + 2 * th.P) / 10) * 10;
     const nutGrade = p.grade === "A4-70" ? "A4-70" : p.grade === "8.8" ? "8" : "5";
+    // Futterbleche (O9, wie Tekla Base plate): geschlitzte Bleche um jeden Anker, Schlitz zum Plattenrand, Stapel aus den
+    // Dicken des Satzes bis zur Unterkante Fußplatte (oben bündig, ein Rest bleibt unten frei); ersetzen die Justiermuttern
+    const level = p.level && !p.shims;
+    let shimInfo = "";
+    if (p.shims) {
+      const set = [...(p.shimSet || [])].filter((x) => x > 0).sort((a, b) => b - a);
+      if (!set.length) throw new Error("Futterblech-Dicken angeben");
+      const stack = [];
+      let rest = g;
+      for (const d of set) while (rest >= d - 1e-6 && stack.length < 12) { stack.push(d); rest -= d; }
+      if (!stack.length) throw new Error(`Mörtelfuge ${fmt(g)} mm dünner als das dünnste Futterblech`);
+      if (rest > 0.5) issues.push({ key: "shimSet", level: "Hinweis", message: `Futterbleche ${stack.map(fmt).join(" + ")} mm, ${fmt(rest)} mm bleiben bis zum Fundament (Mörtel)` });
+      const a = wa.a, h = a / 2, r = (th.d + 2) / 2, arc = Array.from({ length: 7 }, (_, k) => { const t = -Math.PI / 2 - (k * Math.PI) / 6; return [r * Math.cos(t), r * Math.sin(t)]; });
+      const poly = [[-h, -h], [h, -h], [h, -r], ...arc, [h, r], [h, h], [-h, h]];
+      pts.forEach(([x, y], i) => {
+        const xDir = Math.abs(x) >= L / 2 - e - 1 ? [Math.sign(x), 0, 0] : [0, Math.sign(y), 0];
+        let z = g;
+        stack.forEach((d, k) => { z -= d; plates.push({ center: [x, y, z], xDir, normal: [0, 0, 1], W: a, H: a, t: d, poly, name: `Futterblech ${i + 1}.${k + 1}` }); });
+      });
+      shimInfo = `, Futterbleche ${a} × ${a} je Anker (${stack.map(fmt).join(" + ")} mm, geschlitzt)`;
+    }
     pts.forEach(([x, y], i) => {
       norms.push({ kind: "gewindestange", size: p.anchor, length: rodLen, grade: p.grade, pos: [x, y, -p.embed], dir: [0, 0, 1], name: `Anker ${i + 1}` });
       plates.push({ center: [x, y, zt], xDir: [1, 0, 0], normal: [0, 0, 1], W: wa.a, H: wa.a, t: wa.t, holes: [[0, 0]], d: wa.hole, name: `Unterlegplatte ${i + 1}` });
       norms.push({ kind: "mutter", size: p.anchor, grade: nutGrade, pos: [x, y, zt + wa.t], dir: [0, 0, 1] });
-      if (p.level && g >= th.m + th.h) {
+      if (level && g >= th.m + th.h) {
         norms.push({ kind: "scheibe", size: p.anchor, grade: p.grade === "A4-70" ? "A4" : "200 HV", pos: [x, y, zp - th.h], dir: [0, 0, 1] });
         norms.push({ kind: "mutter", size: p.anchor, grade: nutGrade, pos: [x, y, zp - th.h - th.m], dir: [0, 0, 1] });
       }
     });
-    if (p.level && g < th.m + th.h) issues.push({ key: "grout", level: "Hinweis", message: `Mörtelfuge ${fmt(g)} mm zu niedrig für Justiermuttern (mind. ${fmt(th.m + th.h)} mm)` });
+    if (level && g < th.m + th.h) issues.push({ key: "grout", level: "Hinweis", message: `Mörtelfuge ${fmt(g)} mm zu niedrig für Justiermuttern (mind. ${fmt(th.m + th.h)} mm)` });
     if (g < 20 || g > 50) issues.push({ key: "grout", level: "Hinweis", message: "Mörtelfuge üblich 20 … 50 mm" });
     // Schubknagge unter der Platte
     if (p.key) {
@@ -120,7 +143,7 @@ export const STUETZENFUSS = {
       members.push({ section: k, a: [0, 0, zp], b: [0, 0, zp - p.keyLen], name: "Schubknagge", up: [1, 0, 0], rot: 0 });
       if (p.keyLen <= g) issues.push({ key: "keyLen", level: "Warnung", message: "Schubknagge reicht nicht bis ins Fundament (länger als die Mörtelfuge)" });
     }
-    const info = `Fußplatte ${Math.round(L)} × ${Math.round(B)} × ${fmt(t)} mm, ${n} Anker ${p.anchor} × ${rodLen} - ${p.grade} (Loch Ø ${fmt(d0)}), Unterlegplatten ${wa.a} × ${wa.a} × ${wa.t}`
+    const info = `Fußplatte ${Math.round(L)} × ${Math.round(B)} × ${fmt(t)} mm, ${n} Anker ${p.anchor} × ${rodLen} - ${p.grade} (Loch Ø ${fmt(d0)}), Unterlegplatten ${wa.a} × ${wa.a} × ${wa.t}` + shimInfo
       + (nStiff ? `, ${nStiff} Steifen ${fmt(p.stiffT)} mm` : "") + (p.key ? `, Schubknagge ${p.keyProfile.kind.toUpperCase()} ${p.keyProfile.size}` : "") + `; Mörtelfuge ${fmt(g)} mm – statisch nicht nachgewiesen`;
     return { chains, members, plates, norms, info, issues };
   },

@@ -173,7 +173,7 @@ export const TOR = {
     }
     if (p.bolt && n === 2) {
       const D = 26, x = W / 2 - g / 2 - fw - 40;
-      norms.push({ kind: "bodenriegel", size: "Ø16 x 450", pos: [x, -fh / 2 - D / 2, z0 - 40], dir: [0, 0, 1], xDir: [-1, 0, 0], name: "Bodenriegel" });
+      norms.push({ kind: "bodenriegel", size: "Ø16 x 450", pos: [x, -fh / 2 - D / 2, z0 - 40], dir: [0, 0, 1], xDir: [1, 0, 0], name: "Bodenriegel" });
       acc.push("Bodenriegel (Bodenhülse Ø 20 bauseits)");
     }
     if (p.hold && p.hold !== "keine") {

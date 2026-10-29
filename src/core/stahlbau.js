@@ -4,7 +4,7 @@
 
 import { orientRot, rotExtent } from "./orient.js";
 import { NORM_THREADS, boltSet, turnbuckleDims } from "./normteile.js";
-import { sectionGeometry } from "./sections.js";
+import { sectionGeometry, sectionName } from "./sections.js";
 import { v3 } from "./geom.js";
 
 const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
@@ -20,8 +20,11 @@ export const WINDVERBAND = {
     { key: "width", label: "Feldbreite (Achsmaß)", type: "num", default: "5000", group: "Feld" },
     { key: "height", label: "Feldhöhe (Achsmaß)", type: "num", default: "4000", group: "Feld" },
     { key: "type", label: "Art", type: "select", options: [["x", "Kreuz (X)"], ["einfach", "eine Diagonale"]], default: "x", group: "Feld" },
+    { key: "bar", label: "Diagonale", type: "select", options: [["rund", "Rundstahl mit Lasche"], ["profil", "Winkel bzw. Flachstahl, aufs Knotenblech geschraubt"]], default: "rund", missing: "rund", group: "Verband" },
+    { key: "barProfile", label: "Diagonalenprofil", type: "section", kinds: ["winkel", "flach"], default: { kind: "winkel", size: "60x60x6" }, group: "Verband", when: (p) => p.bar === "profil" },
+    { key: "nBolts", label: "Schrauben je Anschluss", type: "num", unit: "Stk", default: "2", group: "Verband", when: (p) => p.bar === "profil" },
     { key: "size", label: "Rundstahl / Gewinde", type: "select", options: THREAD_OPTS, default: "M16", group: "Verband" },
-    { key: "turnbuckle", label: "Spannschloss", type: "check", default: true, group: "Verband" },
+    { key: "turnbuckle", label: "Spannschloss", type: "check", default: true, group: "Verband", when: (p) => p.bar !== "profil" },
     { key: "gusset", label: "Knotenblech Größe", type: "num", default: "160", group: "Verband" },
     { key: "gussetT", label: "Knotenblech Dicke", type: "num", default: "10", group: "Verband" },
     { key: "inset", label: "Anschlusspunkt von der Ecke", type: "num", default: "60", group: "Verband" },
@@ -33,7 +36,7 @@ export const WINDVERBAND = {
     if (!(W > 500 && H > 500)) throw new Error("Feldbreite und -höhe prüfen");
     const g = p.gusset, gt = p.gussetT, e = p.inset;
     if (!(g > 2 * e && gt > 0)) throw new Error("Knotenblech zu klein für den Anschlusspunkt");
-    const members = [], plates = [], chains = [], norms = [];
+    const members = [], plates = [], chains = [], norms = [], drills = [];
     const rod = { kind: "rund", dims: { D: t.d }, geom: sectionGeometry("rund", { D: t.d }) };
     const corners = [[0, 0], [W, 0], [W, H], [0, H]];
     const inward = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
@@ -47,7 +50,43 @@ export const WINDVERBAND = {
     const hole = holeFor(p.size), eL = Math.ceil(1.5 * hole), tl = Math.max(8, Math.ceil(t.d / 2)), bw = Math.max(2 * eL, t.d + 20), weldL = Math.max(60, 4 * t.d), Ll = 2 * eL + weldL;
     const holesIn = corners.map(() => []);
     let rodLen = 0, nTb = 0;
-    ends.forEach(([i0, i1], k) => {
+    // Knotenblech-Anschluss (O8, wie Tekla Bolted gusset): Winkel oder Flachstahl liegt flach auf dem Knotenblech, n Schrauben
+    // in einer Reihe auf der Systemlinie (Randabstand 1,5 · d0, Lochabstand 3 · d0); Diagonalen der Kreuzung auf beiden
+    // Seiten des Knotenblechs, daher keine Ausklinkung nötig
+    const prof = p.bar === "profil" ? p.barProfile : null;
+    let profInfo = "";
+    if (prof) {
+      const nB = Math.round(p.nBolts), d0 = hole, e1 = Math.ceil(1.5 * d0), pitch = Math.ceil(3 * d0);
+      if (!(nB >= 1 && nB <= 6)) throw new Error("1 … 6 Schrauben je Anschluss");
+      const isL = prof.kind === "winkel", Bp = prof.dims.B, tp = prof.dims.t, Hp = isL ? prof.dims.H : tp;
+      // Wurzelmaß: Schraube frei vom stehenden Schenkel (Schraubenkopf), sonst Mitte
+      const w = isL ? Math.max(Math.round(0.55 * Bp), Math.ceil(tp + t.s / 2 + 3)) : Bp / 2;
+      if (isL && Bp - w < 1.2 * d0 - 1e-6) issues.push({ key: "barProfile", level: "Warnung", message: `Schenkel ${fmt(Bp)} mm zu schmal für ${p.size} (Randabstand ${fmt(Bp - w)} < 1,2 · d0)` });
+      if (!isL && Bp < 2.4 * d0 - 1e-6) issues.push({ key: "barProfile", level: "Warnung", message: `Flachstahl ${fmt(Bp)} mm zu schmal für ${p.size} (Randabstand < 1,2 · d0)` });
+      ends.forEach(([i0, i1], k) => {
+        const sy = p.type === "x" && k === 1 ? 1 : -1;
+        const A = [corners[i0][0] + inward[i0][0] * e, 0, corners[i0][1] + inward[i0][1] * e];
+        const B = [corners[i1][0] + inward[i1][0] * e, 0, corners[i1][1] + inward[i1][1] * e];
+        const L0 = Math.hypot(B[0] - A[0], B[2] - A[2]), d = [(B[0] - A[0]) / L0, 0, (B[2] - A[2]) / L0];
+        const v = [0, sy, 0], u = v3.cross(v, d), off = isL ? Bp / 2 - w : 0; // Querschnitt: x entlang u, y entlang v (Schenkel auf dem Blech unten)
+        const ax = (Q) => v3.add(v3.add(Q, v3.mul(v, gt / 2 + Hp / 2)), v3.mul(u, off));
+        const a = ax(v3.sub(A, v3.mul(d, e1))), b = ax(v3.add(B, v3.mul(d, e1)));
+        members.push({ section: prof, a, b, name: `Diagonale ${k + 1}`, up: v, plain: true });
+        [[i0, A, d], [i1, B, d.map((x) => -x)]].forEach(([ci, Q, din]) => {
+          // letzte Schraube noch mit Randabstand im Knotenblech?
+          const far = v3.add(Q, v3.mul(din, (nB - 1) * pitch)), c = corners[ci], inX = Math.abs(far[0] - c[0]), inZ = Math.abs(far[2] - c[1]);
+          if (Math.max(inX, inZ) > g - 1.2 * d0 && !issues.some((x) => x.key === "gusset")) issues.push({ key: "gusset", level: "Warnung", message: `Knotenblech ${fmt(g)} mm zu klein für ${nB} Schrauben (mindestens ${Math.ceil(Math.max(inX, inZ) + 1.2 * d0)} mm)` });
+          for (let j = 0; j < nB; j++) {
+            const P = v3.add(Q, v3.mul(din, j * pitch));
+            norms.push({ bolt: true, size: p.size, clamp: gt + tp, pos: [P[0], sy * (gt / 2 + tp), P[2]], dir: [0, -sy, 0], grade: "8.8", galv: p.grade === "verzinkt" });
+            holesIn[ci].push(P);
+            drills.push({ target: `Diagonale ${k + 1}`, p: [P[0], sy * (gt / 2 - 1), P[2]], dir: [0, sy, 0], len: tp + 2, d: d0 });
+          }
+        });
+      });
+      profInfo = `${ends.length} Diagonale(n) ${sectionName(prof.kind, prof.dims)} auf dem Knotenblech, je Anschluss ${nB} × ${p.size} - 8.8 (Bohrung Ø ${d0}, Lochabstand ${pitch} mm)`;
+    }
+    if (!prof) ends.forEach(([i0, i1], k) => {
       // zweite Diagonale auf der anderen Seite des Knotenblechs (Rundstähle kreuzen sich nicht)
       const sy = p.type === "x" && k === 1 ? 1 : -1, y = sy * (gt / 2 + tl + t.d / 2);
       const A = [corners[i0][0] + inward[i0][0] * e, 0, corners[i0][1] + inward[i0][1] * e];
@@ -85,6 +124,7 @@ export const WINDVERBAND = {
     });
     const alpha = (Math.atan2(H - 2 * e, W - 2 * e) * 180) / Math.PI;
     if (alpha < 30 || alpha > 60) issues.push({ level: "Hinweis", message: `Neigung der Diagonale ${fmt(alpha)}° – günstig sind 30 … 60°` });
+    if (prof) return { chains, members, plates, norms, drills, info: profInfo + `, Neigung ${fmt(alpha)}°, Knotenbleche ${fmt(g)} × ${fmt(g)} × ${fmt(gt)}`, issues };
     const info = `${ends.length} Diagonale(n) Rundstahl Ø ${t.d}, Neigung ${fmt(alpha)}°` + (nTb ? `, ${nTb} × Spannschloss DIN 1480 ${p.size}, längster Stab ${Math.round(rodLen)} mm` : `, Länge ${Math.round(rodLen)} mm`) + `, Anschluss je Ende: Lasche ${Math.round(Ll)} × ${Math.round(bw)} × ${tl} angeschweißt, ${p.size} ins Knotenblech (Bohrung Ø ${hole})`;
     return { chains, members, plates, norms, info, issues };
   },
@@ -177,7 +217,11 @@ export const RAHMENECKE = {
     { key: "bolt", label: "Schrauben", type: "select", options: BOLT_OPTS, default: "M20", group: "Stirnplatte" },
     { key: "grade", label: "Festigkeit", type: "select", options: [["10.9", "10.9 (HV)"], ["8.8", "8.8"]], default: "10.9", group: "Stirnplatte" },
     { key: "stiff", label: "Steifen in der Stütze", type: "check", default: true, group: "Stütze" },
+    { key: "stiffAt", label: "Steifen auf Höhe", type: "select", options: [["beide", "Ober- und Untergurt"], ["oben", "nur Obergurt"], ["unten", "nur Untergurt bzw. Voute"]], default: "beide", missing: "beide", group: "Stütze", when: (p) => p.stiff },
     { key: "stiffT", label: "Steifendicke", type: "num", default: "12", group: "Stütze", when: (p) => p.stiff },
+    { key: "haunch", label: "Voute unter dem Riegel", type: "check", default: false, missing: false, group: "Voute" },
+    { key: "haunchL", label: "Voutenlänge (entlang Riegel)", type: "num", default: "1200", group: "Voute", when: (p) => p.haunch },
+    { key: "haunchH", label: "Voutenhöhe an der Stütze (0 = Riegelhöhe)", type: "num", default: "0", group: "Voute", when: (p) => p.haunch },
     { key: "capT", label: "Kopfplatte Stütze", type: "num", default: "15", group: "Stütze" },
   ],
   plan(p) {
@@ -194,8 +238,11 @@ export const RAHMENECKE = {
     const hv = hr / ca; // senkrechte Riegelhöhe
     const zTop = H, zBot = H - hv; // Riegel-Ober-/Unterkante an x = xp
     const ext = p.extend, ovB = 30;
-    const plateTop = zTop + ext, plateBot = zBot - ovB;
-    if (!(zBot > 500)) throw new Error("Höhe zu klein für den Riegel");
+    // Voute (O7, wie Tekla Haunch): Steg als Dreieck und Gurt aus Flachstahl unter dem Riegel, Stirnplatte bis unter die Voute
+    const hh = p.haunch ? (p.haunchH > 0 ? p.haunchH : hr) : 0, Lh = p.haunchL;
+    if (p.haunch && !(Lh > hr && hh > 50)) throw new Error("Voutenlänge größer als die Riegelhöhe und Voutenhöhe über 50 mm wählen");
+    const plateTop = zTop + ext, plateBot = zBot - hh - ovB;
+    if (!(zBot - hh > 500)) throw new Error("Höhe zu klein für den Riegel");
     const members = [], plates = [], chains = [], norms = [];
     // Stütze bis Oberkante Stirnplatte, Kopfplatte darauf
     const colTop = plateTop;
@@ -213,7 +260,24 @@ export const RAHMENECKE = {
     const t = NORM_THREADS[p.bolt], hole = holeFor(p.bolt);
     const w = Math.min(pw - 2 * Math.max(1.2 * hole, 30), Math.max(twc + 2 * 2.5 * t.d, 90));
     const e1 = 1.5 * hole;
-    const rows = [zTop + ext / 2, zTop - tfr / ca - e1 - 5, zBot + tfr / ca + e1 + 5];
+    let zHf = zBot; // Oberseite Voutengurt an der Stirnplatte
+    if (p.haunch) {
+      const twr = r.dims.s, A = [xp, 0, zBot - hh], E = [xp + Lh * ca, 0, zBot + Lh * sa];
+      const u = v3.norm(v3.sub(E, A)), n = [-u[2], 0, u[0]], nr = [-sa, 0, ca];
+      // Gurt: Flachstahl B × t, Unterkante auf A–E; vorne senkrecht an der Stirnplatte, hinten an der Riegelunterkante geschnitten
+      const fl = { kind: "flach", dims: { B: br, t: tfr }, geom: sectionGeometry("flach", { B: br, t: tfr }), size: `${br}x${tfr}` };
+      const m0 = v3.add(A, v3.mul(n, tfr / 2));
+      members.push({ section: fl, a: v3.add(m0, v3.mul(u, -2 * hr)), b: v3.add(m0, v3.mul(u, v3.dist(A, E) + 2 * hr)), name: "Voute Gurt", up: n, rot: orientRot(fl, u, n, { tall: [0, 1, 0] }),
+        cuts: { start: [{ p: [xp, 0, 0], n: [-1, 0, 0] }], end: [{ p: [xp, 0, zBot], n: nr }] } });
+      // Oberkante Gurt: Linie A + n·t + s·u, Schnitt mit x = xp (Stirnplatte) und mit der Riegelunterkante
+      const At = v3.add(A, v3.mul(n, tfr)), s0 = (xp - At[0]) / u[0];
+      zHf = At[2] + s0 * u[2];
+      const s1 = ((At[2] - zBot) * ca - (At[0] - xp) * sa) / (u[0] * sa - u[2] * ca), T = v3.add(At, v3.mul(u, s1));
+      // Steg: Dreieck in der XZ-Ebene (Plattenebene x = Welt-x, y = −Welt-z), Dicke wie der Riegelsteg
+      const poly = [[xp, -zBot], [xp, -zHf], [T[0], -T[2]]];
+      plates.push({ center: [0, -twr / 2, 0], xDir: [1, 0, 0], normal: [0, 1, 0], W: T[0] - xp, H: T[2] - zHf, t: twr, poly, name: "Voute Steg" });
+    }
+    const rows = [zTop + ext / 2, zTop - tfr / ca - e1 - 5, zBot + tfr / ca + e1 + 5, ...(p.haunch ? [zHf + e1 + 5] : [])];
     if (ext < 2 * e1) issues.push({ level: "Hinweis", message: `Überstand oben ${fmt(ext)} mm knapp für ${p.bolt} (Randabstand 1,2 · d0)` });
     if (rows[1] - rows[2] < 2.2 * hole) issues.push({ level: "Warnung", message: "Riegel zu niedrig für zwei Schraubenreihen innen" });
     const clamp = tp + tfc, drills = [], zc = (plateTop + plateBot) / 2;
@@ -227,7 +291,8 @@ export const RAHMENECKE = {
     // Steifen zwischen den Stützenflanschen auf Höhe der Riegelflansche (beidseits des Stegs)
     if (p.stiff) {
       const sw = (bc - twc) / 2 - 2, sl = hc - 2 * tfc, c0 = c.dims;
-      for (const [z, label] of [[zTop - tfr / ca / 2, "oben"], [zBot + tfr / ca / 2, "unten"]])
+      const at = p.stiffAt || "beide", lo = p.haunch ? zHf - tfr / 2 : zBot + tfr / ca / 2;
+      for (const [z, label] of [[zTop - tfr / ca / 2, "oben"], [lo, "unten"]].filter(([, l]) => at === "beide" || at === l))
         // Ecken am Steg mit Freischnitt (Ausrundung r der Stütze bleibt frei); Plattenebene: x = Welt-x, y = Welt-y
         for (const sgn of [-1, 1]) {
           const y0 = -sgn * sw / 2, y1 = sgn * sw / 2, c = (c0.r || 0) + 5, x = sl / 2;
@@ -236,7 +301,7 @@ export const RAHMENECKE = {
         }
     }
     const bs = boltSet(p.bolt, clamp);
-    const info = `Stirnplatte ${Math.round(pw)} × ${Math.round(plateTop - plateBot)} × ${fmt(tp)} mm, ${rows.length * 2} × ${p.bolt} x ${bs.length} - ${p.grade}, Bohrung Ø ${hole} in Stirnplatte und Stützenflansch, Klemmlänge ${fmt(clamp)} mm, Neigung ${fmt(p.pitch)}°`;
+    const info = `Stirnplatte ${Math.round(pw)} × ${Math.round(plateTop - plateBot)} × ${fmt(tp)} mm, ${rows.length * 2} × ${p.bolt} x ${bs.length} - ${p.grade}, Bohrung Ø ${hole} in Stirnplatte und Stützenflansch, Klemmlänge ${fmt(clamp)} mm, Neigung ${fmt(p.pitch)}°` + (p.haunch ? `, Voute ${fmt(Lh)} × ${fmt(hh)} mm (Steg ${fmt(r.dims.s)}, Gurt ${br} × ${fmt(tfr)})` : "");
     return { chains, members, plates, norms, drills, info, issues };
   },
 };

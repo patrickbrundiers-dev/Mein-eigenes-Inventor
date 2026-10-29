@@ -941,18 +941,25 @@ export function createKernel(R) {
             const s = getSketch(f.sketch);
             const centers = holeCenters(s.sketch);
             if (!centers.length) throw new Error("Skizze enthält keine Bohrungspunkte (Werkzeug »Punkt«)");
-            let dia = f.thread && THREADS[f.thread] ? THREADS[f.thread] : E(f.diameter, "Durchmesser");
-            if (!(dia > 0)) throw new Error("Durchmesser muss > 0 sein");
+            const slot = f.form === "langloch";
+            let dia = !slot && f.thread && THREADS[f.thread] ? THREADS[f.thread] : E(f.diameter, slot ? "Breite" : "Durchmesser");
+            if (!(dia > 0)) throw new Error((slot ? "Breite" : "Durchmesser") + " muss > 0 sein");
             const through = f.extent !== "depth";
             const depth = through ? BIG : E(f.depth, "Tiefe");
             if (!(depth > 0)) throw new Error("Tiefe muss > 0 sein");
             const dirSign = f.direction === "normal" ? 1 : -1;
+            // Langloch (O10): Länge gesamt entlang der um slotAngle gedrehten Skizzen-X-Achse, Enden halbrund
+            const slotL = slot ? E(f.slotLength, "Länge") : 0, slotA = slot ? (E(f.slotAngle || "0", "Winkel") * Math.PI) / 180 : 0;
+            if (slot && !(slotL > dia)) throw new Error("Langloch: Länge muss größer als die Breite sein");
+            const slotX = slot ? v3.norm(v3.sub(toWorld(s.frame, Math.cos(slotA), Math.sin(slotA)), toWorld(s.frame, 0, 0))) : null;
+            const slotTool = (p, a) => R.drawRoundedRectangle(slotL, dia, dia / 2 - 0.01).sketchOnPlane(new R.Plane(v3.sub(p, v3.mul(a, 0.01)), slotX, a)).extrude(depth + 0.01);
             let tool = null, kept = 0;
             for (const c of centers) {
               const p = toWorld(s.frame, c[0], c[1]);
               const axisDirs = f.direction === "both" ? [1, -1] : [dirSign];
               for (const sg of axisDirs) {
                 const a = v3.mul(s.frame.normal, sg);
+                if (slot) { const t = slotTool(p, a); tool = tool ? tool.fuse(t) : t; continue; }
                 let t = holeTool(p, a, dia / 2, depth, f, E, through);
                 // Mindest-Restwand: Bohrgrund genau auf (oder knapp vor) der Rückseite der Wand
                 const sh = keepWall && !through ? restwandShorten(state.bodies, v3.add(p, v3.mul(a, depth)), a, t.boundingBox) : 0;
@@ -962,13 +969,14 @@ export function createKernel(R) {
             }
             state.tools.set(f.id, { op: "cut", shapes: [{ shape: tool, kind: "tool" }] });
             applyOp("cut", tool, f.id, f.name);
-            st.info = `${centers.length} Bohrung(en) Ø${round(dia)}${f.thread ? " (" + f.thread + ")" : ""}` + (kept ? `, ${kept}× Restwand ${round(RESTWAND)} mm stehen gelassen` : "");
+            st.info = slot ? `${centers.length} ${centers.length > 1 ? "Langlöcher" : "Langloch"} ${round(slotL)} × ${round(dia)}` : `${centers.length} Bohrung(en) Ø${round(dia)}${f.thread ? " (" + f.thread + ")" : ""}` + (kept ? `, ${kept}× Restwand ${round(RESTWAND)} mm stehen gelassen` : "");
             // N9: Bohrungsangabe am 3D-Modell (eine je Feature, an der ersten Bohrung) und Gewinde an jeder Bohrung
             {
               const hole = { d: dia };
-              if (f.thread && THREADS[f.thread]) hole.thread = f.thread;
+              if (slot) hole.slot = slotL;
+              else if (f.thread && THREADS[f.thread]) hole.thread = f.thread;
               if (!through) hole.depth = depth;
-              try {
+              if (!slot) try {
                 if (f.sink === "senkung") hole.sink = { kind: "kegel", d: E(f.sinkDiameter, "Senkdurchmesser"), angle: E(f.sinkAngle || "90", "Senkwinkel") };
                 else if (f.sink === "flach") hole.sink = { kind: "flach", d: E(f.sinkDiameter, "Senkdurchmesser"), depth: E(f.sinkDepth, "Senktiefe") };
               } catch { /* Senkung schon oben geprüft */ }

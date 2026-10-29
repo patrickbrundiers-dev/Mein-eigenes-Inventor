@@ -15,6 +15,7 @@ export const BEFEHLSHILFE = {
   emboss: "Skizze oder Text erhaben oder vertieft auf eine Fläche prägen.",
   regelkoerper: "Grundkörper (Quader, Zylinder, Kegel, Kugel …) direkt aus Maßen, ohne Skizze.",
   hole: "Bohrungen an Skizzenpunkten: Durchgang, Gewinde, Senkung oder Ansenkung nach Norm.",
+  langloch: "Langlöcher an Skizzenpunkten: Breite, Länge und Winkel wie bei der Bohrung, mit Langloch-Angabe in 3D und Zeichnung.",
   fillet: "Kanten mit einem Radius abrunden. Vorher Kanten wählen oder danach anklicken.",
   chamfer: "Kanten mit einer Fase brechen, gleichschenklig oder mit zwei Abständen.",
   shell: "Körper aushöhlen und gewählte Flächen offen lassen, mit einheitlicher Wandstärke.",
@@ -251,6 +252,7 @@ export const BEFEHLSHILFE = {
   x_etiketten: "Werkstatt-Etiketten mit QR-Code je Position oder Zuschnitt als PDF, auf A4-Bögen oder für den Etikettendrucker.",
   x_schweissplan: "Schweißplan nach EN 1090: WPS je Naht, Ausführungsklasse, Prüfumfang und Felder für Schweißer und Prüfer.",
   x_versand: "Versandliste mit Packstücken, Gewicht und Hüllmaß zum Abhaken beim Verladen.",
+  x_bestell: "Bestellliste der Kaufteile (Normteile, Beschläge, Glas) je Lieferant als PDF oder CSV.",
   x_pdf: "Zeichnung als PDF speichern.",
   x_svg: "Zeichnung als SVG-Grafik speichern.",
   // Stahlbau und Teilebibliothek

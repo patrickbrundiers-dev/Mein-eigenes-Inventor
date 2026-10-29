@@ -26,9 +26,11 @@ export function holeSpecs(features, ev) {
   for (const f of features || []) {
     if (f.type !== "hole" || f.suppressed) continue;
     try {
-      const d = f.thread && THREADS[f.thread] ? THREADS[f.thread] : ev(f.diameter);
+      const slot = f.form === "langloch";
+      const d = !slot && f.thread && THREADS[f.thread] ? THREADS[f.thread] : ev(f.diameter);
       if (!(d > 0)) continue;
       const hole = { d };
+      if (slot) { hole.slot = ev(f.slotLength); if (f.extent === "depth") hole.depth = ev(f.depth); out.push({ r: d / 2, hole }); continue; }
       if (f.thread && THREADS[f.thread]) hole.thread = f.thread;
       if (f.extent === "depth") hole.depth = ev(f.depth);
       if (f.sink === "senkung") hole.sink = { kind: "kegel", d: ev(f.sinkDiameter), angle: ev(f.sinkAngle || "90") };
@@ -41,6 +43,7 @@ export function holeSpecs(features, ev) {
 
 /** Text einer Bohrungsangabe, z. B. „5× M8“, „2× Ø11 durch“, „Ø6,6 – Senkung Ø12 × 90°“ */
 export function holeText(hole, count = 1) {
+  if (hole.slot > 0) return (count > 1 ? count + "× " : "") + "Langloch " + fmt(hole.slot) + " × " + fmt(hole.d) + (hole.depth > 0 ? ", " + fmt(hole.depth) + " tief" : " durch");
   let t = (count > 1 ? count + "× " : "") + (hole.thread || "Ø" + fmt(hole.d));
   if (hole.depth > 0) t += ", " + fmt(hole.depth) + " tief";
   else if (!hole.thread) t += " durch";

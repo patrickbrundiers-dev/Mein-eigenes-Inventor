@@ -95,12 +95,20 @@ export function auxiliaryCamera(cam, a, b, center) {
  * Textvorschlag für einen Hinweis an der geklickten Stelle (Gewinde-, Bohrungs- oder Fasennotiz wie Inventor »Bohrungs-/Gewindehinweis«, »Fasenhinweis«).
  * q: Klickpunkt (Ansichtskoordinaten); circles: Kreise der Ansicht; lines: sichtbare Kanten; specs: holeSpecs; chamfers: Fasenabstände in mm.
  */
-export function noteSuggestion(q, { circles = [], lines = [], specs = [], chamfers = [], pick = 1.5 } = {}) {
+export function noteSuggestion(q, { circles = [], arcs = [], lines = [], specs = [], chamfers = [], pick = 1.5 } = {}) {
   const c = circles.filter((k) => Math.abs(Math.hypot(q[0] - k.cx, q[1] - k.cy) - k.r) < pick || Math.hypot(q[0] - k.cx, q[1] - k.cy) < Math.min(k.r, pick))
     .sort((x, y) => x.r - y.r)[0];
   if (c) {
     const n = circles.filter((k) => Math.abs(k.r - c.r) < 1e-3).length;
     return { kind: "bohrung", text: specText(specs, c.r, n) || (n > 1 ? n + "× " : "") + "Ø" + fmt(c.r * 2) };
+  }
+  // Langloch (O10): Halbkreis am Ende eines Langlochs, Radius = halbe Breite eines Langloch-Features
+  const slots = specs.filter((s) => s.hole.slot > 0);
+  const a = slots.length && arcs.filter((k) => !k.full && slots.some((s) => Math.abs(s.r - k.r) < 0.05) && Math.abs(Math.hypot(q[0] - k.cx, q[1] - k.cy) - k.r) < pick)[0];
+  if (a) {
+    const n = Math.max(1, Math.round(arcs.filter((k) => !k.full && Math.abs(k.r - a.r) < 1e-3).length / 2));
+    const t = [...new Set(slots.filter((s) => Math.abs(s.r - a.r) < 0.05).map((s) => holeText(s.hole, n)))];
+    return { kind: "bohrung", text: t.length === 1 ? t[0] : `${n > 1 ? n + "× " : ""}Langloch Breite ${fmt(a.r * 2)}` };
   }
   const s = nearestSegment(lines, q, pick);
   if (s && chamfers.length) {

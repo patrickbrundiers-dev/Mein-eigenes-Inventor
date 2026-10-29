@@ -10,6 +10,7 @@ const DIRS = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1], "-X": [-1, 0, 0], "-Y":
 /** Neues Muster für Komponenten (IDs) */
 export function defaultAsmPattern(id, comps, kind = "linear", hole = null) {
   if (kind === "lochbild") return { id, kind, comps, hole };
+  if (kind === "skizze") return { id, kind, comps, target: hole?.target || null, sketch: hole?.sketch || null };
   if (kind === "spiegel") return { id, kind, comps, plane: "YZ", offset: "0", modes: {} };
   return kind === "circular"
     ? { id, kind, comps, axis: "Z", center: ["0", "0", "0"], count: "4", angle: "360" }
@@ -35,9 +36,23 @@ export function holeAxes(hole, faces, tol = 0.01) {
   return out;
 }
 
-/** Bewegungen (4×4) aller Exemplare ohne das Original: [{k, M}]. ctx = { comps: Map, facesOf } für das Lochbild */
+/** Bewegungen (4×4) aller Exemplare ohne das Original: [{k, M}]. ctx = { comps: Map, facesOf, sketchPoints(partId, sketchId) } */
 export function patternMatrices(p, ev = Number, ctx = null) {
   const out = [];
+  if (p.kind === "skizze") {
+    // O11 (wie Inventor 2027 »skizzengesteuertes Muster«): Kopien auf die Punkte einer Skizze im Bauteil einer Komponente;
+    // Bezug ist der Skizzenpunkt am nächsten an der (ersten) Quelle, die übrigen Punkte bekommen je eine Kopie
+    const T = ctx?.comps?.get(p.target);
+    if (!T || !p.sketch) throw new Error("Komponente mit der Skizze fehlt");
+    const pts = ctx.sketchPoints?.(T.part, p.sketch) || [];
+    if (pts.length < 2) throw new Error("Die Skizze hat keine weiteren Punkte (Werkzeug »Punkt«)");
+    const MT = placementMatrix(T.pos, T.rot), w = pts.map((q) => matApply(MT, q));
+    const S = ctx.comps.get((p.comps || [])[0]), ref = S ? S.pos || [0, 0, 0] : w[0];
+    const i0 = w.reduce((b, q, i) => (v3.dist(q, ref) < v3.dist(w[b], ref) ? i : b), 0);
+    w.forEach((q, i) => { if (i !== i0) out.push({ k: out.length + 1, M: translation(v3.sub(q, w[i0])) }); });
+    if (out.length > 500) throw new Error("Zu viele Exemplare (max. 500)");
+    return out;
+  }
   if (p.kind === "lochbild") {
     const T = ctx?.comps?.get(p.hole?.comp);
     if (!p.hole || !T) throw new Error("Zielkomponente mit den Bohrungen fehlt");
@@ -97,7 +112,7 @@ export function mirrorCopy(p, src, ev = Number, mirror = null) {
  * Kopien aller Muster einer Baugruppe neu legen (fehlende anlegen, überzählige entfernen).
  * Ändert asm.components; Rückgabe { changed, errors: {musterId: Text} }. mirror: { partFor, center } für Spiegelungen.
  */
-export function applyPatterns(asm, ev = Number, facesOf = null, mirror = null) {
+export function applyPatterns(asm, ev = Number, facesOf = null, mirror = null, sketchPoints = null) {
   const errors = {};
   let changed = false;
   const pats = asm.patterns || [];
@@ -128,7 +143,7 @@ export function applyPatterns(asm, ev = Number, facesOf = null, mirror = null) {
       continue;
     }
     let mats;
-    try { mats = patternMatrices(p, ev, { comps: byId, facesOf }); } catch (e) { errors[p.id] = e.message; continue; }
+    try { mats = patternMatrices(p, ev, { comps: byId, facesOf, sketchPoints }); } catch (e) { errors[p.id] = e.message; continue; }
     for (const sid of p.comps || []) {
       const src = byId.get(sid);
       if (!src || src.pat) { errors[p.id] = "Quellkomponente fehlt"; continue; }
