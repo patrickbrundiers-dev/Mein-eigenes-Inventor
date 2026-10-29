@@ -145,12 +145,16 @@ function insertIntoAssembly(app, s) {
   const asm = app.activeDoc();
   if (asm?.kind !== "assembly") return false;
   const n = Math.max(1, Math.min(100, Math.round(Number(s.qty) || 1)));
-  let designation = "";
+  let designation = "", part = null;
+  // ein Stück in eine nicht leere Baugruppe: am Mauszeiger absetzen (BG10/BG1), mehrere in einer Reihe
+  const atCursor = n === 1 && asm.components.length > 0;
   app.edit("Normteil einfügen", () => {
-    const p = normPart(app, s);
+    const p = (part = normPart(app, s));
     designation = p.normDesignation;
+    if (atCursor) return;
     for (let i = 0; i < n; i++) asm.components.push({ id: uid("c"), part: p.id, name: nextName(asm, p), pos: [i * 40, 0, 0], rot: [0, 0, 0] });
   });
+  if (atCursor && part) return app.beginPlacing(part.id);
   toast(`${n} × ${designation} eingefügt`, { kind: "ok" });
 }
 

@@ -4,6 +4,8 @@ import { deleteGrid } from "./achsraster.js";
 import { FEATURE_NAMES } from "./app.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { activeCount } from "../core/bauteilende.js";
+import { componentDof, dofLabel } from "../core/asmdof.js";
+import { formSubDialog, dissolveSubComp, moveCompIntoSub, learnFuegepunkte, componentsFromBodies } from "./baugruppe.js";
 import { treeEntries, endPosition, featureDetail } from "../core/baum.js";
 
 const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", blechkasten: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
@@ -63,6 +65,14 @@ export class Tree {
             onDbl: () => this.rename(d),
             onMenu: (e) => this.docMenu(e, d),
           }));
+          // BG10: Bauteile und Baugruppen in die offene Baugruppe ziehen
+          const into = app.activeDoc();
+          if (into?.kind === "assembly" && !active && (d.kind === "part" || d.kind === "assembly")) {
+            const n = dli.firstChild;
+            n.draggable = true;
+            n.title = `${n.title || d.name} – ins 3D-Fenster ziehen, um es in »${into.name}« zu platzieren`;
+            n.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/x-pbcad-doc", d.id); e.dataTransfer.effectAllowed = "copy"; });
+          }
           if (active && d.kind === "part") dli.append(this.featureList(d));
           if (active && d.kind === "assembly") dli.append(this.componentList(d));
           if (active && d.kind === "drawing") dli.append(this.viewList(d));
@@ -221,11 +231,17 @@ export class Tree {
       const p = app.doc(c.part);
       const sel = app.sel?.type === "component" && app.sel.id === c.id;
       const sub = p?.kind === "assembly";
+      // BG5: Abhängigkeiten der Komponente direkt darunter (wie Inventor), standardmäßig zugeklappt
+      const myCons = (asm.constraints || []).filter((x) => x.a?.comp === c.id || x.b?.comp === c.id || x.s?.comp === c.id);
+      const consKey = "ccons:" + c.id, consOpen = this.collapsed.has(consKey); // hier heißt »in der Menge« aufgeklappt
       const li = h("li");
       ul.append(li);
       li.append(this.node({
-        label: c.name || p?.name || "?", ic: sub ? "assembly" : "part", rid: c.id, badge: !p ? "err" : null, cls: (sel ? "sel" : "") + (c.hidden ? " suppressed" : "") + (!p ? " err" : ""),
-        eye: { on: !c.hidden, run: () => app.edit("Sichtbarkeit", () => { c.hidden = !c.hidden; }) }, meta: [sub ? "Unterbaugruppe" : "", c.fixed ? "fixiert" : ""].filter(Boolean).join(" · "),
+        label: c.name || p?.name || "?", ic: sub ? "assembly" : "part", rid: c.id, badge: !p || myCons.some((x) => app.asmErrors?.[x.id]) ? "err" : null,
+        cls: (sel ? "sel" : "") + (c.hidden ? " suppressed" : "") + (!p ? " err" : "") + (myCons.some((x) => app.asmErrors?.[x.id]) ? " err" : ""),
+        eye: { on: !c.hidden, run: () => app.edit("Sichtbarkeit", () => { c.hidden = !c.hidden; }) },
+        meta: [sub ? "Unterbaugruppe" : "", c.skelett ? "Skelett" : "", c.skelett ? "" : dofLabel(componentDof(asm, c.id))].filter(Boolean).join(" · "),
+        twist: myCons.length ? (consOpen ? "▾" : "▸") : "", onTwist: () => this.toggle(consKey),
         onClick: () => { app.sel = { type: "component", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
         onDbl: () => p && app.openDoc(p.id),
         onMenu: (e) => contextMenu(e.clientX, e.clientY, [
@@ -238,10 +254,25 @@ export class Tree {
           { label: "Ersetzen…", icon: "update", run: () => app.props.replaceComponentDialog(c.id) },
           { label: "Spiegeln …", icon: "mirror", run: () => app.props.mirrorComponent(c.id) },
           "-",
+          { label: "Unterbaugruppe bilden …", icon: "assembly", run: () => formSubDialog(app, c.id) },
+          ...(myCons.length && !sub ? [{ label: "Fügepunkte aus Abhängigkeiten merken", icon: "insert", run: () => learnFuegepunkte(app, c.id) }] : []),
+          ...(!sub && (app.results.get(c.part)?.bodies || []).filter((b) => b.kind !== "sketch").length > 1 ? [{ label: "Komponenten aus Körpern erstellen (Skelett)", icon: "part", run: () => componentsFromBodies(app, c.id) }] : []),
+          ...(sub ? [{ label: "Unterbaugruppe auflösen", icon: "assembly", run: () => dissolveSubComp(app, c.id) }] : []),
+          "-",
           { label: "Entfernen", icon: "trash", run: () => app.props.deleteComponent(c.id) },
         ]),
       }));
+      // BG7: Komponente per Ziehen in eine Unterbaugruppe umhängen
+      const cn = li.firstChild;
+      cn.draggable = true;
+      cn.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/x-pbcad-comp", c.id); e.dataTransfer.effectAllowed = "move"; });
+      if (sub) {
+        cn.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("text/x-pbcad-comp")) { e.preventDefault(); cn.classList.add("drop"); } });
+        cn.addEventListener("dragleave", () => cn.classList.remove("drop"));
+        cn.addEventListener("drop", (e) => { cn.classList.remove("drop"); const id = e.dataTransfer.getData("text/x-pbcad-comp"); if (id) { e.preventDefault(); moveCompIntoSub(app, id, c.id); } });
+      }
       if (sub) li.append(this.subComponentList(p, 1));
+      if (myCons.length && consOpen) li.append(h("ul", {}, ...myCons.map((x) => h("li", {}, this.constraintNode(asm, x)))));
     }
     if (!asm.components.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Mit »Platzieren« Bauteile einfügen."));
     for (const pm of asm.patterns || []) {
@@ -305,25 +336,39 @@ export class Tree {
       if (open) {
         const cu = h("ul");
         for (const c of cons) {
-          const err = app.asmErrors?.[c.id];
-          const sel = app.sel?.type === "constraint" && app.sel.id === c.id;
-          cu.append(h("li", {}, this.node({
-            label: c.name || (c.type === "buendig" ? "Bündig" : c.type === "konzentrisch" ? "Konzentrisch" : "Fläche an Fläche"), ic: { konzentrisch: "concentric", einfuegen: "insert", winkel: "angle", tangential: "tangent", symmetrie: "mirror", starr: "fix", koordinaten: "origin", punkt: "point", punktflaeche: "point" }[c.type] || "align",
-            cls: (sel ? "sel" : "") + (err ? " err" : "") + (c.suppressed ? " suppressed" : ""), title: err ? "Fehler: " + err : c.name,
-            meta: c.type === "winkel" ? (c.angle ?? "90") + "°" : c.gap && c.gap !== "0" ? c.gap + " mm" : "",
-            onClick: () => { app.sel = { type: "constraint", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
-            onMenu: (e) => contextMenu(e.clientX, e.clientY, [
-              { label: c.suppressed ? "Aktivieren" : "Unterdrücken", icon: "eyeoff", run: () => app.edit("Abhängigkeit", () => { c.suppressed = !c.suppressed; }) },
-              { label: "Bearbeiten …", icon: "edit", run: () => { app.sel = { type: "constraint", id: c.id }; this.render(); app.props.render(); } },
-              { label: "Löschen", icon: "trash", run: () => app.props.deleteConstraint(c.id) },
-            ]),
-          })));
+          cu.append(h("li", {}, this.constraintNode(asm, c)));
         }
         li.append(cu);
       }
       ul.append(li);
     }
     return ul;
+  }
+  /** Eintrag einer Abhängigkeit (Liste »Abhängigkeiten« und unter der Komponente) */
+  constraintNode(asm, c) {
+    const app = this.app;
+    const err = app.asmErrors?.[c.id];
+    const sel = app.sel?.type === "constraint" && app.sel.id === c.id;
+    return this.node({
+      label: c.name || (c.type === "buendig" ? "Bündig" : c.type === "konzentrisch" ? "Konzentrisch" : "Fläche an Fläche"), ic: { konzentrisch: "concentric", einfuegen: "insert", winkel: "angle", tangential: "tangent", symmetrie: "mirror", starr: "fix", koordinaten: "origin", punkt: "point", punktflaeche: "point" }[c.type] || "align",
+      cls: (sel ? "sel" : "") + (err ? " err" : "") + (c.suppressed ? " suppressed" : ""), title: err ? "Fehler: " + err : c.name,
+      meta: c.type === "winkel" ? (c.angle ?? "90") + "°" : c.gap && c.gap !== "0" ? c.gap + " mm" : "",
+      onClick: () => { app.sel = { type: "constraint", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
+      onDbl: () => this.editConstraintValue(asm, c),
+      onMenu: (e) => contextMenu(e.clientX, e.clientY, [
+        { label: c.suppressed ? "Aktivieren" : "Unterdrücken", icon: "eyeoff", run: () => app.edit("Abhängigkeit", () => { c.suppressed = !c.suppressed; }) },
+        { label: "Bearbeiten …", icon: "edit", run: () => { app.sel = { type: "constraint", id: c.id }; this.render(); app.props.render(); } },
+        { label: "Löschen", icon: "trash", run: () => app.props.deleteConstraint(c.id) },
+      ]),
+    });
+  }
+  /** Doppelklick: Versatz bzw. Winkel direkt ändern (BG5) */
+  async editConstraintValue(asm, c) {
+    const key = c.type === "winkel" ? "angle" : ["gegen", "buendig", "tangential", "einfuegen", "punktflaeche", "kanteflaeche"].includes(c.type) ? "gap" : null;
+    if (!key) { this.app.sel = { type: "constraint", id: c.id }; this.render(); return this.app.props.render(); }
+    const v = await promptDialog(c.name || "Abhängigkeit", key === "angle" ? "Winkel (°)" : "Versatz (mm)", String(c[key] ?? (key === "angle" ? "90" : "0")));
+    if (v === null || v === undefined || String(v).trim() === "") return;
+    this.app.edit(key === "angle" ? "Winkel" : "Versatz", () => { c[key] = String(v).trim(); });
   }
   viewList(drw) {
     const app = this.app;

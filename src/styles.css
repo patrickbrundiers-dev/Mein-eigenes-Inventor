@@ -606,6 +606,15 @@ details.measure-more > summary { cursor: pointer; color: var(--ink-soft); margin
 .explode-pick { max-height: 40vh; overflow: auto; columns: 2; margin-bottom: 8px; }
 .pos-row > .btn.on, .section .btn.on { background: var(--laser-soft); border-color: #f3c08f; }
 
+/* Platzieren mit Vorschau (BG1) */
+.place-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin: 8px 0; }
+.place-item { display: flex; align-items: baseline; gap: 6px; text-align: left; padding: 6px 8px; border: 1px solid transparent; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.place-item:hover, .place-item:focus-visible { background: var(--dye-soft); border-color: var(--steel-2); outline: none; }
+.place-item b { font-weight: 600; }
+.fp-list { list-style: none; margin: 0 0 6px; padding: 0; }
+.fp-list li { display: flex; align-items: center; gap: 4px; padding: 2px 0; }
+.place-head { margin: 8px 0 2px; font-weight: 600; }
+
 /* ---------- Bewegung ---------- */
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes fade-out { to { opacity: 0; transform: translateX(8px); } }

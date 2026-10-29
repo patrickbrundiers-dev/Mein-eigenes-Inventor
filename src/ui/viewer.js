@@ -537,6 +537,72 @@ export class Viewer {
     this.render();
   }
 
+  /**
+   * Freiheitsgrade einer Komponente (BG3): Doppelpfeile je freier Verschiebung, Kreisbogen je freier Drehung.
+   * spec = { center, size, tDirs, rAxes, rPoint } oder null zum Entfernen. Nur Anzeige.
+   */
+  showDofGlyph(spec) {
+    if (this.dofGlyph) { this.helpers.remove(this.dofGlyph); disposeTree(this.dofGlyph); this.dofGlyph = null; }
+    if (spec && (spec.tDirs?.length || spec.rAxes?.length)) {
+      const g = new THREE.Group(), c = new THREE.Vector3(...spec.center), s = spec.size || 50;
+      const mat = (color) => new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true });
+      for (const d of spec.tDirs || []) {
+        for (const sg of [1, -1]) {
+          const a = new THREE.ArrowHelper(new THREE.Vector3(...d).multiplyScalar(sg).normalize(), c, s, 0x1f8f4e, s * 0.18, s * 0.09);
+          a.line.material.depthTest = false; a.cone.material.depthTest = false;
+          a.renderOrder = 11;
+          g.add(a);
+        }
+      }
+      for (const ax of spec.rAxes || []) {
+        const k = new THREE.Vector3(...ax).normalize(), o = spec.rPoint ? new THREE.Vector3(...spec.rPoint) : c;
+        const u = Math.abs(k.x) < 0.9 ? new THREE.Vector3(1, 0, 0).cross(k).normalize() : new THREE.Vector3(0, 1, 0).cross(k).normalize(), w = k.clone().cross(u);
+        const pts = [];
+        for (let i = 0; i <= 48; i++) { const t = (i / 48) * Math.PI * 1.6; pts.push(o.clone().add(u.clone().multiplyScalar(Math.cos(t) * s * 0.8)).add(w.clone().multiplyScalar(Math.sin(t) * s * 0.8))); }
+        const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat(0x2457b8));
+        arc.renderOrder = 11;
+        g.add(arc);
+        const end = pts[pts.length - 1], prev = pts[pts.length - 2];
+        const tip = new THREE.ArrowHelper(end.clone().sub(prev).normalize(), prev, s * 0.2, 0x2457b8, s * 0.2, s * 0.12);
+        tip.line.material.depthTest = false; tip.cone.material.depthTest = false;
+        g.add(tip);
+        const axis = new THREE.Line(new THREE.BufferGeometry().setFromPoints([o.clone().addScaledVector(k, -s), o.clone().addScaledVector(k, s)]), new THREE.LineDashedMaterial({ color: 0x2457b8, dashSize: s * 0.08, gapSize: s * 0.06, depthTest: false }));
+        axis.computeLineDistances();
+        g.add(axis);
+      }
+      g.userData.dof = true;
+      this.dofGlyph = g;
+      this.helpers.add(g);
+    }
+    this.render();
+  }
+  /** Platzier-Vorschau (BG1): halbdurchsichtige Teile am Mauszeiger; items = [{bodies, color, inner}] oder null */
+  setPlaceGhost(items) {
+    if (this.placeGhost) { this.helpers.remove(this.placeGhost); disposeTree(this.placeGhost); this.placeGhost = null; }
+    if (items?.length) {
+      const keep = this.pickables;
+      this.pickables = [];
+      const g = new THREE.Group();
+      for (const it of items) {
+        if (!it.bodies?.length) continue;
+        const pg = this.makePartGroup(it.bodies, it.color, "placeghost", 0.45);
+        pg.matrixAutoUpdate = false;
+        if (it.inner) pg.matrix.fromArray(it.inner);
+        g.add(pg);
+      }
+      this.pickables = keep;
+      g.matrixAutoUpdate = false;
+      this.placeGhost = g;
+      this.helpers.add(g);
+    }
+    this.render();
+  }
+  movePlaceGhost(matrix) {
+    if (!this.placeGhost) return;
+    this.placeGhost.matrix.fromArray(matrix);
+    this.placeGhost.updateMatrixWorld(true);
+    this.render();
+  }
   /** Baugruppe: comps = [{id, bodies, color, pos, rot}] */
   showAssembly(comps) {
     this.clear();
@@ -1181,20 +1247,20 @@ export class Viewer {
    * opts: {edges, faces}
    * -> {kind:'edge', key, body, edge, info} | {kind:'face', key, body, face, info, point, normal}
    */
-  pick(cx, cy, { edges = true, faces = true, vertices = false, ghosts = false } = {}) {
+  pick(cx, cy, { edges = true, faces = true, vertices = false, ghosts = false, exclude = null } = {}) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const x = cx - rect.left, y = cy - rect.top;
     let faceHit = null;
     if (faces || edges) {
       const rc = this.raycaster(cx, cy);
-      const meshes = [...this.pickables, ...(ghosts ? this.ghosts : [])].filter((p) => p.mesh.visible).map((p) => p.mesh);
+      const meshes = [...this.pickables, ...(ghosts ? this.ghosts : [])].filter((p) => p.mesh.visible && (!exclude || p.key !== exclude)).map((p) => p.mesh);
       const hits = rc.intersectObjects(meshes, false).filter((x) => !this.clipped(x.point));
       if (hits.length) faceHit = hits[0];
     }
     if (edges) {
       let best = null, bd = 7, bestV = null, bdV = 9;
       for (const { pk, scr, ranges, ghost } of this.ensureEdgeCache()) {
-        if (!pk.lines.visible || (ghost && !ghosts)) continue;
+        if (!pk.lines.visible || (ghost && !ghosts) || (exclude && pk.key === exclude)) continue;
         for (let ei = 0; ei < ranges.length; ei++) {
           const mid = this.clip && pk.lines.userData.edges[ei]?.mid;
           if (mid && this.clipped(new THREE.Vector3(...mid).applyMatrix4(pk.lines.matrixWorld))) continue;

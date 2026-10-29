@@ -1819,7 +1819,10 @@ export function createKernel(R) {
             if (!(sc > 0)) throw new Error("Maßstab muss > 0 sein");
             const mn = f.mirror === "frei" ? (f.mirrorN || [1, 0, 0]).map((x) => E(String(x), "Spiegelnormale")) : MIRROR_N[f.mirror] || null;
             if (mn && v3.len(mn) < 1e-9) throw new Error("Spiegelnormale ist null");
-            for (const b of sub.bodies) {
+            // BG12 »Komponenten aus Körpern«: nur ein Körper der Quelle (Index ab 0)
+            const pickB = f.body !== undefined && f.body !== null && f.body !== "" ? Number(f.body) : null;
+            if (pickB !== null && !sub.bodies[pickB]) throw new Error(`»${f._src.name}« hat keinen Körper ${pickB + 1} (nur ${sub.bodies.length})`);
+            for (const b of pickB !== null ? [sub.bodies[pickB]] : sub.bodies) {
               let sh = b.shape.clone();
               if (mn) sh = sh.mirror(v3.norm(mn), [0, 0, 0]);
               if (Math.abs(sc - 1) > 1e-12) sh = sh.scale(sc, [0, 0, 0]);
@@ -1828,7 +1831,7 @@ export function createKernel(R) {
               else state.bodies.push(body);
             }
             state.tools.set(f.id, { op: "new", shapes: [] });
-            st.info = `${sub.bodies.length} Körper aus »${f._src.name}«${mn ? ", gespiegelt" : ""}${Math.abs(sc - 1) > 1e-12 ? `, Maßstab ${String(sc).replace(".", ",")}` : ""}`;
+            st.info = `${pickB !== null ? `Körper ${pickB + 1} von ${sub.bodies.length}` : `${sub.bodies.length} Körper`} aus »${f._src.name}«${mn ? ", gespiegelt" : ""}${Math.abs(sc - 1) > 1e-12 ? `, Maßstab ${String(sc).replace(".", ",")}` : ""}`;
             if (bad) st.warning = `Quellbauteil hat ${bad} fehlerhafte(s) Feature(s)`;
             break;
           }
