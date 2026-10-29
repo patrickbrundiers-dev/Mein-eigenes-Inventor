@@ -47,3 +47,21 @@ test("N9: Bohrungsangabe und Gewinde fürs 3D-Fenster", async () => {
   part.features[3].suppressed = true;
   assert.equal((await K.buildPart({ ...part, id: "p-n9b" }, { useCache: false, validate: false })).holeNotes.length, 0);
 });
+
+test("O10: Langloch als Bohrungs-Feature – Volumen, Richtung, Angabe", async () => {
+  const { rectSketchFeature } = await import("../src/core/examples.js");
+  const pts = { id: "s2", type: "sketch", name: "Punkte", plane: { ref: "XY" }, offset: "10", points: [{ id: "a", x: 30, y: 20 }], entities: [{ id: "pa", type: "point", p: "a" }], constraints: [] };
+  const part = (slotAngle) => ({ id: "p-o10-" + slotAngle, kind: "part", name: "Platte", params: [], features: [
+    rectSketchFeature("s1", "XY", 0, 0, 0, "80", "40"), { id: "e1", type: "extrude", sketch: "s1", distance: "10" }, pts,
+    { id: "h1", type: "hole", form: "langloch", sketch: "s2", diameter: "10", slotLength: "30", slotAngle, extent: "through", direction: "reverse", sink: "none" },
+  ] });
+  const res = await K.buildPart(part("0"), { useCache: false, validate: false });
+  const v = R.measureVolume(res.bodies[0].shape), slotArea = 20 * 10 + Math.PI * 25;
+  assert.ok(Math.abs(80 * 40 * 10 - slotArea * 10 - v) < 1, `Volumen ${v}`);
+  assert.equal(res.holeNotes[0].text, "Langloch 30 × 10 durch");
+  const bb = res.bodies[0].shape.boundingBox;
+  assert.ok(bb.width > 79, "Platte bleibt ganz");
+  // 90°: Langloch quer – passt noch in die Platte (40 hoch), gleiches Volumen
+  const r2 = await K.buildPart(part("90"), { useCache: false, validate: false });
+  assert.ok(Math.abs(R.measureVolume(r2.bodies[0].shape) - v) < 1);
+});

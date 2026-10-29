@@ -31,7 +31,7 @@ function defaults(gen, over) {
 /** Bauplan eines Untergenerators mit P (Punkt) und D (Richtung) in die Bühne setzen, Namen mit Vorsilbe */
 function place(g, P, D, prefix, into, keep = () => false) {
   const cut = (c) => c && { start: c.start.map((x) => ({ p: P(x.p), n: D(x.n) })), end: c.end.map((x) => ({ p: P(x.p), n: D(x.n) })) };
-  for (const c of g.chains || []) into.chains.push({ ...c, points: c.points.map(P), up: D(c.up || [0, 0, 1]), name: prefix + c.name });
+  for (const c of g.chains || []) into.chains.push({ ...c, points: c.points.map(P), up: D(c.up || [0, 0, 1]), name: prefix + c.name, ...(c.target ? { target: prefix + c.target } : {}) });
   const path = (pa) => ({ ...pa, c: P(pa.c), axis: D(pa.axis || [0, 0, 1]), x0: D(pa.x0 || [1, 0, 0]) });
   for (const m of g.members || []) into.members.push({ ...m, a: P(m.a), b: P(m.b), up: m.up ? D(m.up) : undefined, name: prefix + m.name, ...(m.target ? { target: prefix + m.target } : {}), cuts: cut(m.cuts),
     ...(m.copes ? { copes: m.copes.map((c) => (c.path ? { ...c, path: path(c.path) } : { ...c, a: P(c.a), b: P(c.b), up: c.up ? D(c.up) : undefined, cuts: cut(c.cuts) })) } : {}) });

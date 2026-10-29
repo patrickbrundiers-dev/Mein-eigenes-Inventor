@@ -27,8 +27,8 @@ import { macroCommands } from "../core/makros.js";
 import { setLanguage, language } from "../core/i18n.js";
 import { classText } from "../core/tolerance.js";
 import { setUserBendTables, adoptProjectBendTables, projectBendTableCopies } from "../core/bendtable.js";
-import { newSketch } from "../core/sketch.js";
-import { v3, planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir } from "../core/geom.js";
+import { newSketch, holeCenters } from "../core/sketch.js";
+import { v3, planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir, toWorld } from "../core/geom.js";
 import { flattenAssembly } from "../core/subasm.js";
 import { contextScene, contextLabel } from "../core/kontext.js";
 import { bodiesMass } from "../core/mass.js";
@@ -1189,6 +1189,12 @@ export class App {
     return r.bodies.flatMap((b) => (b.mesh?.faces || []).filter((f) => f.type === "PLANE" && f.normal && f.point));
   }
   /** Ebene und zylindrische Flächen (mit Achse) für Abhängigkeiten */
+  /** Punkte einer Skizze im Bauteil-System (O11: Komponentenmuster an Skizzenpunkten); Bohrungspunkte, sonst Kreismitten */
+  sketchPoints(partId, sketchId) {
+    const res = this.results.get(partId), s = res?.sketches?.get?.(sketchId) || res?.sketches?.[sketchId];
+    if (!s?.sketch || !s.frame) return [];
+    return holeCenters(s.sketch).map(([u, v]) => toWorld(s.frame, u, v));
+  }
   assemblyFaces(partId) {
     const d = this.doc(partId);
     if (d?.kind === "assembly") return flattenAssembly(d, (id) => this.doc(id)).flatMap((o) => this.assemblyFaces(o.part.id).map((f) => transformFace(f, o.matrix)));
@@ -1199,7 +1205,7 @@ export class App {
   solveAssemblyConstraints(asm) {
     const res = asm.constraints?.length ? solveAssembly(asm, (pid) => this.assemblyFaces(pid), (g) => safeNum(g)) : { changed: false, errors: {} };
     // Komponentenmuster nach den Abhängigkeiten: Kopien folgen der gelösten Lage der Quelle
-    const pat = asm.patterns?.length || asm.components.some((c) => c.pat) ? applyPatterns(asm, (g) => safeNum(g), (pid) => this.assemblyFaces(pid), { partFor: (pid, n) => this.mirroredPart(pid, n), center: (pid) => this.partCenter(pid) }) : { changed: false, errors: {} };
+    const pat = asm.patterns?.length || asm.components.some((c) => c.pat) ? applyPatterns(asm, (g) => safeNum(g), (pid) => this.assemblyFaces(pid), { partFor: (pid, n) => this.mirroredPart(pid, n), center: (pid) => this.partCenter(pid) }, (pid, sid) => this.sketchPoints(pid, sid)) : { changed: false, errors: {} };
     this.asmErrors = { ...res.errors, ...pat.errors };
     if (res.changed || pat.changed) { this.dirty = true; this.updateTitle(); }
   }

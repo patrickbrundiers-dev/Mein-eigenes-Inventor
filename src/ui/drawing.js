@@ -788,7 +788,7 @@ export class DrawingEditor {
       const scope = resolveParams(it.part.params || []).values;
       return it.part.features.filter((f) => f.type === "chamfer" && !f.suppressed).map((f) => { try { return evaluate(String(f.radius), scope); } catch { return null; } }).filter((x) => x > 0);
     }))];
-    const sug = noteSuggestion(xf.from(sx, sy), { circles: holeCircles((p.arcs || []).filter((a) => a.full), this.holeCenters(d, v)), lines: p.visible, specs, chamfers, pick: 1.8 / (v.scale * this.zoom) });
+    const sug = noteSuggestion(xf.from(sx, sy), { circles: holeCircles((p.arcs || []).filter((a) => a.full), this.holeCenters(d, v)), arcs: p.arcs || [], lines: p.visible, specs, chamfers, pick: 1.8 / (v.scale * this.zoom) });
     const text = await promptDialog(sug.kind === "bohrung" ? "Bohrungshinweis" : sug.kind === "fase" ? "Fasenhinweis" : "Hinweis", "Text", sug.text);
     if (!text) return;
     const [ax, ay] = xf.to(...q);

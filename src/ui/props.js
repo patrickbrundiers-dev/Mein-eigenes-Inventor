@@ -433,6 +433,8 @@ export class Props {
         centerOf(r.bodies) ? [h("dt", {}, "Schwerpunkt"), h("dd", {}, centerOf(r.bodies).map((v) => fmtNum(v, 1)).join(" / ") + " mm")] : null,
         bb ? [h("dt", {}, "Abmessungen"), h("dd", {}, `${fmtNum(bb[1][0] - bb[0][0], 1)} × ${fmtNum(bb[1][1] - bb[0][1], 1)} × ${fmtNum(bb[1][2] - bb[0][2], 1)}`)] : null,
         h("dt", {}, "Körper"), h("dd", {}, String(r.bodies.length))),
+        this.check("Kaufteil (kommt in die Bestellliste)", !!part.kaufteil, (v) => app.edit("Kaufteil", () => { part.kaufteil = v || undefined; }, { rebuild: false })),
+        part.kaufteil ? this.text("Lieferant", part.lieferant || "", (v) => app.edit("Lieferant", () => { part.lieferant = v.trim() || undefined; }, { rebuild: false }), { placeholder: "leer = Lieferant der Kaufteile" }) : null,
         this.text("Masse für Stückliste (kg, leer = berechnet)", part.massOverride, (v) => app.edit("Masse von Hand", () => { part.massOverride = v.trim() ? v.trim().replace(",", ".") : undefined; }, { rebuild: false }), { placeholder: "z. B. Kaufteil laut Datenblatt" }),
         this.inertiaBlock(r, dens, vol)));
       const members = r.bodies.filter((b) => b.kind === "member");
@@ -647,15 +649,19 @@ export class Props {
         break;
       }
       case "hole":
-        out.push(this.section("Bohrung",
+        out.push(this.section(f.form === "langloch" ? "Langloch" : "Bohrung",
           this.sketchList(part, f.sketch, (v) => this.set(f, "sketch", v, "Skizze")),
-          this.select("Gewinde", [["", "ohne"], ...Object.keys(THREADS).map((k) => [k, `${k} (Kernloch Ø${String(THREADS[k]).replace(".", ",")})`])], f.thread || "", (v) => this.set(f, "thread", v || undefined, "Gewinde")),
-          f.thread ? null : E("Durchmesser", "diameter", { allowNeg: false, allowZero: false }),
+          this.seg("Form", [["rund", "Bohrung"], ["langloch", "Langloch"]], f.form || "rund", (v) => this.set(f, (x) => { x.form = v; if (v === "langloch") { x.thread = undefined; x.sink = "none"; x.slotLength ??= "30"; x.slotAngle ??= "0"; } }, "Form")),
+          f.form === "langloch" ? E("Breite", "diameter", { allowNeg: false, allowZero: false }) : null,
+          f.form === "langloch" ? E("Länge (gesamt)", "slotLength", { allowNeg: false, allowZero: false }) : null,
+          f.form === "langloch" ? E("Winkel zur Skizzen-X-Achse", "slotAngle", { unit: "°" }) : null,
+          f.form === "langloch" ? null : this.select("Gewinde", [["", "ohne"], ...Object.keys(THREADS).map((k) => [k, `${k} (Kernloch Ø${String(THREADS[k]).replace(".", ",")})`])], f.thread || "", (v) => this.set(f, "thread", v || undefined, "Gewinde")),
+          f.thread || f.form === "langloch" ? null : E("Durchmesser", "diameter", { allowNeg: false, allowZero: false }),
           f.thread ? null : h("div", { class: "hint" }, "Durchgang mittel: ", Object.entries(CLEARANCE).slice(2, 8).map(([k, v]) => `${k} → ${String(v).replace(".", ",")}`).join(", ")),
           this.seg("Ende", [["through", "Durch alles"], ["depth", "Tiefe"]], f.extent || "through", (v) => this.set(f, "extent", v, "Ende")),
           f.extent === "depth" ? E("Tiefe", "depth", { allowNeg: false }) : null,
           this.seg("Richtung", [["reverse", "Ins Material"], ["normal", "Normale"], ["both", "Beidseitig"]], f.direction || "reverse", (v) => this.set(f, "direction", v, "Richtung")),
-          this.seg("Senkung", [["none", "Keine"], ["senkung", "Kegel"], ["flach", "Flach"]], f.sink || "none", (v) => this.set(f, (x) => { x.sink = v; if (v !== "none" && !x.sinkDiameter) { x.sinkDiameter = "2*(" + (x.diameter || "8") + ")"; x.sinkAngle = "90"; x.sinkDepth = "5"; } }, "Senkung")),
+          f.form === "langloch" ? null : this.seg("Senkung", [["none", "Keine"], ["senkung", "Kegel"], ["flach", "Flach"]], f.sink || "none", (v) => this.set(f, (x) => { x.sink = v; if (v !== "none" && !x.sinkDiameter) { x.sinkDiameter = "2*(" + (x.diameter || "8") + ")"; x.sinkAngle = "90"; x.sinkDepth = "5"; } }, "Senkung")),
           f.sink && f.sink !== "none" ? E("Senk-Ø", "sinkDiameter") : null,
           f.sink === "senkung" ? E("Senkwinkel", "sinkAngle", { unit: "°" }) : null,
           f.sink === "flach" ? E("Senktiefe", "sinkDepth") : null));
@@ -2246,6 +2252,9 @@ export class Props {
     const err = app.asmErrors?.[p.id];
     const srcs = asm.components.filter((c) => !c.pat);
     const n = asm.components.filter((c) => c.pat === p.id).length;
+    // Komponenten (nicht die Quellen) mit Skizzen, die mindestens zwei Punkte haben
+    const sketchTargets = () => srcs.filter((c) => !p.comps.includes(c.id)).flatMap((c) => (app.doc(c.part)?.features || []).filter((f) => f.type === "sketch" && !f.suppressed && app.sketchPoints(c.part, f.id).length > 1)
+      .map((f) => ({ target: c.id, sketch: f.id, label: `${c.name} – ${f.name || "Skizze"} (${app.sketchPoints(c.part, f.id).length} Punkte)` })));
     return [
       err ? h("div", { class: "msg err" }, err) : null,
       this.section("Komponentenmuster",
@@ -2255,7 +2264,12 @@ export class Props {
           box.addEventListener("change", () => set("Komponenten", () => { p.comps = box.checked ? [...new Set([...p.comps, c.id])] : p.comps.filter((x) => x !== c.id); }));
           return h("label", { class: "check" }, box, " ", c.name);
         })), true),
-        this.seg("Art", [["linear", "Rechteckig"], ["circular", "Kreisförmig"], ["lochbild", "Lochbild"], ["spiegel", "Spiegeln"]], p.kind, (v) => {
+        this.seg("Art", [["linear", "Rechteckig"], ["circular", "Kreisförmig"], ["lochbild", "Lochbild"], ["skizze", "Skizzenpunkte"], ["spiegel", "Spiegeln"]], p.kind, (v) => {
+          if (v === "skizze") {
+            const c0 = sketchTargets()[0];
+            if (!c0) return toast("Skizzenpunkte: eine andere Komponente braucht eine Skizze mit Punkten (Werkzeug »Punkt«)", { timeout: 6000 });
+            return set("Art", () => { for (const k of Object.keys(p)) if (!["id", "comps", "name", "suppressed"].includes(k)) delete p[k]; Object.assign(p, defaultAsmPattern(p.id, p.comps, v, c0), { name: p.name }); });
+          }
           const hole = v === "lochbild" ? p.comps.map((id) => holeFromConstraints(asm, id)).find(Boolean) : null;
           if (v === "lochbild" && !hole) return toast("Lochbild: die Quelle zuerst mit »Einfügen« oder »Konzentrisch« in eine Bohrung setzen – dann folgen Kopien in alle gleich großen Bohrungen", { timeout: 7000 });
           set("Art", () => { for (const k of Object.keys(p)) if (!["id", "comps", "name", "suppressed"].includes(k)) delete p[k]; Object.assign(p, defaultAsmPattern(p.id, p.comps, v, hole), { name: p.name }); });
@@ -2268,6 +2282,9 @@ export class Props {
             return c ? this.seg(c.name, [["spiegeln", "gespiegelt"], ["wieder", "wiederverwendet"]], (p.modes || {})[id] === "wieder" ? "wieder" : "spiegeln", (v) => set("Spiegelart", () => { p.modes = { ...(p.modes || {}) }; if (v === "wieder") p.modes[id] = v; else delete p.modes[id]; })) : null;
           }),
           h("p", { class: "hint" }, "Verknüpft: die gespiegelte Seite folgt Lage und Form der Quellen. Abgewählte Komponenten werden nicht gespiegelt. »Wiederverwendet« setzt dasselbe Bauteil ein – nur für in sich symmetrische Teile."),
+        ] : p.kind === "skizze" ? [
+          this.select("Skizze", sketchTargets().map((t) => [t.target + "|" + t.sketch, t.label]), `${p.target}|${p.sketch}`, (v) => set("Skizze", () => { [p.target, p.sketch] = v.split("|"); })),
+          h("p", { class: "hint" }, "Eine Kopie auf jeden Punkt der Skizze (sonst Kreismitten). Der Punkt am nächsten an der Quelle ist der Bezug. Folgt Änderungen an der Skizze."),
         ] : p.kind === "lochbild" ? h("p", { class: "hint" }, `Kopien in alle Bohrungen Ø ${fmtNum(2 * (p.hole?.r || 0), 2)} mm von »${asm.components.find((c) => c.id === p.hole?.comp)?.name || "?"}« – folgt Änderungen am Lochbild.`) : p.kind === "circular" ? [
           this.seg("Achse", dirs.slice(0, 3), p.axis || "Z", (v) => set("Achse", () => { p.axis = v; })),
           this.vec3("Mittelpunkt", p.center, (v) => set("Mittelpunkt", () => { p.center = v; })),

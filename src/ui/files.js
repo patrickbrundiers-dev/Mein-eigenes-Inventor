@@ -16,6 +16,7 @@ import { bendSheetPage } from "../core/biegefolge.js";
 import { simplifyOf, simplifyAction, ENVELOPES } from "../core/vereinfachen.js";
 import { EXC_LEVELS, PROCESSES, weldPlanOf, weldPlanRows, weldPlanPage, weldPlanCsv } from "../core/schweissplan.js";
 import { collectNorm } from "../core/normteile.js";
+import { orderRows, orderCsv, orderPages, ORDER_GROUPS } from "../core/bestellliste.js";
 import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
 import { decomposePlacement } from "../core/geom.js";
 import { buildXlsx, zipFiles } from "../core/xlsx.js";
@@ -808,6 +809,38 @@ export class Files {
       await this.saveBinary(zipFiles(files), base + "_Fertigungsmappe.zip", [{ name: "ZIP-Archiv", extensions: ["zip"] }]);
       toast(`Fertigungsmappe: ${sheets.length} Zeichnung${sheets.length === 1 ? "" : "en"}${made.length ? ` (${made.length} neu)` : ""}, ${files.length} Dateien`, { kind: "ok", timeout: 6000 });
     });
+  }
+  /**
+   * Bestellliste (O12): Normteile, Beschläge, Glas und Kaufteile je Lieferant als CSV oder PDF. Die Lieferanten je
+   * Warengruppe merkt sich das Projekt (project.bestellung.lieferanten), ein Kaufteil kann einen eigenen haben.
+   */
+  async exportBestellliste() {
+    const app = this.app, d = app.activeDoc();
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Bestellliste gibt es für Bauteile und Baugruppen");
+    const src = collectCutSources(app, d).map((s) => ({ part: s.part, bodies: s.result.bodies, qty: s.qty }));
+    const conf = app.project.bestellung || {}, sup = { ...(conf.lieferanten || {}) };
+    const rowsNow = () => orderRows(src, { suppliers: sup });
+    if (!rowsNow().length) return toast("Keine Kaufteile: Normteile, Beschläge, Glas oder als Kaufteil markierte Bauteile fehlen");
+    const counts = h("p", { class: "hint" });
+    const refresh = () => { const r = rowsNow(); counts.textContent = `${r.length} Artikel bei ${new Set(r.map((x) => x.supplier)).size} Lieferant(en): ` + ORDER_GROUPS.map(([k, l]) => `${l} ${r.filter((x) => x.group === k).length}`).join(", "); };
+    const inputs = ORDER_GROUPS.map(([k, l]) => {
+      const inp = h("input", { class: "inp", value: sup[k] || "", placeholder: "Lieferant" });
+      inp.addEventListener("input", () => { sup[k] = inp.value; refresh(); });
+      return h("label", { class: "row" }, h("span", { style: { minWidth: "110px", display: "inline-block" } }, l), inp);
+    });
+    refresh();
+    const keep = () => app.edit("Lieferanten", () => { app.project.bestellung = { ...conf, lieferanten: Object.fromEntries(Object.entries(sup).filter(([, v]) => String(v).trim())) }; }, { rebuild: false });
+    const base = safeName(d.number || d.name) + "_Bestellliste";
+    modal({ title: `Bestellliste – ${d.name}`, width: "520px",
+      body: h("div", {}, h("p", {}, "Lieferant je Warengruppe (bleibt im Projekt). Kaufteile mit eigenem Lieferanten im Bauteil unter »Kaufteil«."), ...inputs, counts),
+      buttons: [{ label: "Abbrechen" },
+        { label: "CSV", run: async () => { keep(); await this.saveText(orderCsv(rowsNow(), d.name), base + ".csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]); } },
+        { label: "PDF", primary: true, run: async () => {
+          keep();
+          const html = mappeHtml(orderPages(rowsNow(), { title: d.name, number: d.number, date: new Date().toLocaleDateString("de-DE") }), { title: "Bestellliste " + d.name });
+          if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+          else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+        } }] });
   }
   async exportBom() {
     const app = this.app;
