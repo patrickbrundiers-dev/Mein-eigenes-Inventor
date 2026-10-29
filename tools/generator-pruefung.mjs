@@ -63,6 +63,8 @@ export const CASES = [
   ["pfette", "pfette", { spans: "5000; 5000; 5000" }],
   ["rahmenecke", "rahmenecke", {}],
   ["carport", "vordach", {}],
+  ["fenstergitter", "fenstergitter", {}],
+  ["fenstergitter-durchsteck", "fenstergitter", { fill: "durchsteck", mount: "vorgesetzt", bar: { kind: "vierkantvoll", size: "16" } }],
   ["vordach", "vordach", { form: "vordach", depth: "2500", width: "4000", roof: "glas", slope: "8" }],
   ["gestell", "gestell", null],
 ];

@@ -37,8 +37,9 @@ import { STEIGLEITER } from "./steigleiter.js";
 import { FACHWERK } from "./fachwerk.js";
 import { ARBEITSBUEHNE } from "./arbeitsbuehne.js";
 import { VORDACH } from "./vordach.js";
+import { FENSTERGITTER } from "./fenstergitter.js";
 
-export const GENERATORS = { gelaender: GELAENDER, tor: TOR, schiebetor: SCHIEBETOR, zaun: ZAUN, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE, stuetzenfuss: STUETZENFUSS, traegerstoss: TRAEGERSTOSS, traegeranschluss: TRAEGERANSCHLUSS, steigleiter: STEIGLEITER, fachwerk: FACHWERK, arbeitsbuehne: ARBEITSBUEHNE, vordach: VORDACH };
+export const GENERATORS = { gelaender: GELAENDER, tor: TOR, schiebetor: SCHIEBETOR, zaun: ZAUN, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE, stuetzenfuss: STUETZENFUSS, traegerstoss: TRAEGERSTOSS, traegeranschluss: TRAEGERANSCHLUSS, steigleiter: STEIGLEITER, fachwerk: FACHWERK, arbeitsbuehne: ARBEITSBUEHNE, vordach: VORDACH, fenstergitter: FENSTERGITTER };
 
 /** Neues Feature mit den Standardwerten des Generators */
 export function defaultGenerator(gen) {

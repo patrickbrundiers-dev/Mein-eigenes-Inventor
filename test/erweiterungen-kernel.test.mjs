@@ -152,3 +152,23 @@ test("W8 Variable Rundung: Radius 2 → 10 entlang einer Kante, Volumen zwischen
   okAll(flip);
   near(vol(flip), v, 1, "umgekehrt gleiches Volumen");
 });
+
+test("W12 Fenstergitter: Laibung mit Ankerbohrungen, Durchsteckgitter vor der Fassade ohne Überschneidung", async () => {
+  const { defaultGenerator } = await import("../src/core/generator.js");
+  const build = async (params) => {
+    const f = defaultGenerator("fenstergitter");
+    const res = await K.buildPart(part([{ id: "g", ...f, params: { ...f.params, ...params } }]));
+    assert.ok(res.status.g.ok, JSON.stringify(res.status.g));
+    return res;
+  };
+  const count = (res, re) => res.bodies.filter((b) => re.test(b.name)).length;
+  const overl = (res) => K.collisions(res.bodies.map((b, i) => ({ key: `${i}:${b.name}`, shape: b.shape })), { tol: 1 }).map((c) => `${c.a} × ${c.b}`);
+  const lai = await build({});
+  assert.equal(count(lai, /^Stab \d+$/), 6);
+  assert.match(lai.status.g.info, /6 Ankerbohrungen/);
+  assert.deepEqual(overl(lai), []);
+  const vor = await build({ mount: "vorgesetzt", fill: "durchsteck" });
+  assert.equal(count(vor, /^Querriegel/), 2);
+  assert.equal(count(vor, /^Mauerlasche/), 8);
+  assert.deepEqual(overl(vor), []);
+});
