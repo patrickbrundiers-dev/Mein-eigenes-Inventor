@@ -464,8 +464,9 @@ test("Treppe mit Geländer: beidseitig, ums Podest, Knieleisten/Staketen, Höhe 
   assert.ok(posts.every((b) => bb(b)[1][1] < 0), "rechts außerhalb der Wange (y < 0)");
   assert.ok(by(r, /^Geländer links Pfosten/).every((b) => bb(b)[0][1] > 1000), "links jenseits der Laufbreite");
   assert.equal(by(r, /Knieleiste/).length % 2, 0);
-  // Knieleisten am Stück je Abschnitt durch die Pfosten: jeder Pfosten zweimal durchbrochen (Ø 26,9 + 1)
-  assert.equal(by(r, /Knieleiste/).length, 8);
+  // Knieleisten am Stück je Abschnitt durch die Pfosten (am Auslauf an der Treppenkante gegehrt in zwei Teilen):
+  // jeder Pfosten zweimal durchbrochen (Ø 26,9 + 1)
+  assert.equal(new Set(by(r, /Knieleiste/).map((b) => b.name.replace(/-\d+$/, ""))).size, 8);
   const pr = posts.filter((b) => /Pfosten \d+$/.test(b.name));
   assert.ok(pr.every((b) => b.meta.drills >= 2 && Math.abs(b.meta.drillD - 27.9) < 1e-9), JSON.stringify(pr.map((b) => b.meta.drills)));
   // Stufen nach DIN 24531: Seitenbleche mit Bohrung + Langloch, Wangen je Stufe 2 × Ø 14 auf jeder Seite
