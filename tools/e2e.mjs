@@ -3889,13 +3889,16 @@ try {
   {
     await evalApp(() => { const a = window.__werkcad; a.openDoc("beispiel_platte"); });
     await idle();
-    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    // vorige Schritte: laufende Kamerafahrt (»Normal zur Fläche«) und Auswahl abwarten bzw. leeren
+    await page.waitForFunction(() => !window.__werkcad.viewer.anim, null, { timeout: 10000 });
+    await evalApp(() => { const a = window.__werkcad; a.setSelection([]); a.viewer.setView("iso", { animate: false }); a.viewer.fit(); });
+    await page.waitForTimeout(300);
     const vb = await page.locator("#viewer canvas").first().boundingBox();
     const findFace = (type, nz) => evalApp(([x0, y0, w, hh, type, nz]) => {
       const v = window.__werkcad.viewer;
       for (let fy = 0.3; fy <= 0.7; fy += 0.02) for (let fx = 0.3; fx <= 0.7; fx += 0.02) {
-        const hit = v.pick(x0 + w * fx, y0 + hh * fy, { edges: false, faces: true });
-        if (hit?.info?.type === type && (nz == null || Math.abs((v.faceWorldInfo(hit).normal || [0, 0, 0])[2] - nz) < 1e-6)) return { x: x0 + w * fx, y: y0 + hh * fy };
+        const hit = v.pick(x0 + w * fx, y0 + hh * fy);
+        if (hit?.kind === "face" && hit.info?.type === type && (nz == null || Math.abs((v.faceWorldInfo(hit).normal || [0, 0, 0])[2] - nz) < 1e-6)) return { x: x0 + w * fx, y: y0 + hh * fy };
       }
       return null;
     }, [vb.x, vb.y, vb.width, vb.height, type, nz]);
