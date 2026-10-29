@@ -40,12 +40,15 @@ import { END_CUT_SECTIONS, featureCutSettings, roundTube3D, SWIVEL_DEFAULT } fro
 import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
+import { PUNCHES, bendSequence } from "../core/biegefolge.js";
+import { stretchCsv } from "../core/strecken.js";
 import { PLATE_HOLES, RIB_SIDES } from "../core/anschluss.js";
 import { GENERATORS, applyTemplate, genValues, resolveGenParams } from "../core/generator.js";
 import { sketchViews, VIEW_LABEL, fieldParts } from "../core/genskizze.js";
 import { sketchSvg, linkFieldToSketch } from "./genskizze.js";
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gentemplates.js";
 import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
+import { weldPlanOf } from "../core/schweissplan.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { newPart, newAssembly } from "../core/examples.js";
 import { NORM_KINDS, NORM_SIZES, normDesignation, collectNorm } from "../core/normteile.js";
@@ -53,7 +56,7 @@ import { familyOf, lengthsFor } from "../core/normlib.js";
 import { normLibraryDialog } from "./normlib.js";
 import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
-import { bodiesMass, hasOwnDensity } from "../core/mass.js";
+import { bodiesMass, hasOwnDensity, massOverride, orderBomRows } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
@@ -424,12 +427,13 @@ export class Props {
       const bb = unionBox(r.bodies.map((b) => b.props?.bbox).filter(Boolean));
       out.push(this.section("Masse-Eigenschaften", h("dl", { class: "kv" },
         h("dt", {}, "Volumen"), h("dd", {}, fmtNum(vol / 1000, 2) + " cm³"),
-        h("dt", {}, "Masse"), h("dd", {}, fmtNum(bodiesMass(r.bodies, dens), 3) + " kg"),
+        h("dt", {}, "Masse"), h("dd", {}, fmtNum(bodiesMass(r.bodies, dens), 3) + " kg" + (massOverride(part) != null ? ` (berechnet), Stückliste: ${fmtNum(massOverride(part), 3)} kg` : "")),
         h("dt", {}, "Dichte"), h("dd", {}, fmtNum(dens, 2) + " g/cm³" + (hasOwnDensity(r.bodies) ? " (Glas, Gitterrost, Holz eigene)" : "")),
         h("dt", {}, "Oberfläche"), h("dd", {}, fmtNum(r.bodies.reduce((s, b) => s + (b.props?.area || 0), 0) / 100, 2) + " cm²"),
         centerOf(r.bodies) ? [h("dt", {}, "Schwerpunkt"), h("dd", {}, centerOf(r.bodies).map((v) => fmtNum(v, 1)).join(" / ") + " mm")] : null,
         bb ? [h("dt", {}, "Abmessungen"), h("dd", {}, `${fmtNum(bb[1][0] - bb[0][0], 1)} × ${fmtNum(bb[1][1] - bb[0][1], 1)} × ${fmtNum(bb[1][2] - bb[0][2], 1)}`)] : null,
         h("dt", {}, "Körper"), h("dd", {}, String(r.bodies.length))),
+        this.text("Masse für Stückliste (kg, leer = berechnet)", part.massOverride, (v) => app.edit("Masse von Hand", () => { part.massOverride = v.trim() ? v.trim().replace(",", ".") : undefined; }, { rebuild: false }), { placeholder: "z. B. Kaufteil laut Datenblatt" }),
         this.inertiaBlock(r, dens, vol)));
       const members = r.bodies.filter((b) => b.kind === "member");
       if (members.length) {
@@ -582,7 +586,7 @@ export class Props {
       h("table", { class: "grid" },
         h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Naht"), h("th", {}, "Anz."), h("th", {}, "Länge mm"), h("th", {}, "kg"))),
         h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, weldText(r)), h("td", { class: "num" }, String(r.count)), h("td", { class: "num" }, fmtNum(r.length, 0)), h("td", { class: "num" }, fmtNum(r.mass, 3)))))),
-      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportWeldList() }, "Nahtliste CSV")));
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportWeldList() }, "Nahtliste CSV"), h("button", { class: "btn", onclick: () => this.app.files.weldPlanDialog() }, "Schweißplan…")));
   }
   /** Normteile des Bauteils mit Anzahl */
   normListSection(part) {
@@ -774,6 +778,22 @@ export class Props {
           this.seg("Ansicht", [["gefaltet", "gefaltet"], ["abgewickelt", "abgewickelt"]], f.view || "gefaltet", (v) => this.set(f, "view", v, "Ansicht")),
           sh ? h("dl", { class: "kv" }, h("dt", {}, "Abwicklung"), h("dd", {}, `${fmtNum(sh.flat, 2)} × ${fmtNum(sh.length, 1)} mm`), h("dt", {}, "Biegelinien"), h("dd", {}, sh.bendLines.map((x) => fmtNum(x, 2)).join(" · ") || "–")) : null,
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportKantteilDxf(f) }, "Abwicklung als DXF"))));
+        if (sh?.profile?.angles?.length) {
+          const tool = { punch: f.press?.punch || "gerade", punchH: +f.press?.punchH || 100, V: +f.press?.V || 0 };
+          const setP = (k, v, label) => this.set(f, (x) => { x.press = { ...(x.press || {}), [k]: v }; }, label);
+          let res = null;
+          try { res = bendSequence(sh.profile.legs, sh.profile.angles, sh.t, tool); } catch { res = null; }
+          out.push(this.section("Biegefolge (Abkantpresse)",
+            this.select("Oberwerkzeug", Object.entries(PUNCHES).map(([k, p]) => [k, p.label]), tool.punch, (v) => setP("punch", v, "Oberwerkzeug")),
+            this.text("Werkzeughöhe (mm)", String(tool.punchH), (v) => setP("punchH", v, "Werkzeughöhe"), { placeholder: "100" }),
+            this.text("Matrize V (mm, leer = nach Blechdicke)", tool.V ? String(tool.V) : "", (v) => setP("V", v, "Matrize V"), { placeholder: "automatisch" }),
+            res ? h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Schritt"), h("th", {}, "Biegung"), h("th", {}, "Winkel"), h("th", {}, "Hinweis"))),
+              h("tbody", {}, ...res.steps.map((s, k) => h("tr", {}, h("td", {}, String(k + 1)), h("td", {}, String(s.bend)), h("td", {}, fmtNum(Math.abs(s.angle), 1) + "°"),
+                h("td", {}, [s.turn && "wenden", s.mirror && "umgedreht einlegen", s.hem && "Umschlag", s.hits.length && "stößt an: " + s.hits.join(", ")].filter(Boolean).join(", ") || "–"))))) : null,
+            res ? h("p", { class: "hint" }, (res.ok ? `Folge ohne Anstoßen gefunden (Matrize V ${res.V}).` : "Achtung: ") + (res.issues.length ? " " + res.issues.join(" · ") : "")) : null,
+            h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.app.files.exportBiegeblatt(f, sh, tool, res) }, "Biegeblatt (PDF)")),
+            h("p", { class: "hint" }, "Geprüft im Querschnitt bei 25/50/75/100 % jeder Biegung gegen Stempel, Oberwange, Matrize und Unterwange. Richtwerte – eigene Werkzeugmaße eintragen.")));
+        }
         const extras = part.features.filter((g) => SHEET_FEATURES.includes(g.type) && g.base === f.id);
         if (extras.length) out.push(this.section("Blech-Features", h("ul", { class: "hint" }, ...extras.map((g) => h("li", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); this.app.selectFeature(g.id); } }, g.name))))));
         break;
@@ -1031,6 +1051,10 @@ export class Props {
           this.seg("Seite", Object.entries(WELD_SIDES), f.side || "pfeil", (v) => this.set(f, "side", v, "Seite")),
           this.check("Umlaufend", !!f.around, (v) => this.set(f, "around", v, "Umlaufend")),
           this.check("Montagenaht (auf der Baustelle)", !!f.field, (v) => this.set(f, "field", v, "Montagenaht")),
+          (() => {
+            const plan = weldPlanOf(app.project);
+            return this.select("Schweißanweisung (WPS)", [["", plan.defaultWps ? `Standard (${plan.defaultWps})` : "Standard – noch keine WPS"], ...plan.wps.map((w) => [w.id, `${w.id}${w.process ? " · " + w.process : ""}`])], f.wps || "", (v) => this.set(f, "wps", v || undefined, "WPS"));
+          })(),
           kind === "kehl" ? this.check("Naht als Körper (Volumen und Masse, in der Kehle zwischen zwei Teilen)", !!f.bead, (v) => this.set(f, "bead", v || undefined, "Nahtkörper")) : null,
           h("div", { class: picking ? "picking" : "" },
             h("div", {}, `${(f.edges || []).length} Kante(n) gewählt`),
@@ -1138,7 +1162,11 @@ export class Props {
         const isF = f.type === "fillet";
         const picking = app.pick?.kind === "edges" && app.pick.feature === f.id;
         out.push(this.section(isF ? "Rundung" : "Fase",
-          E(isF ? "Radius" : "Abstand", "radius", { allowNeg: false, allowZero: false }),
+          isF ? this.seg("Radius", [["fest", "fest"], ["variabel", "variabel (Anfang → Ende)"]], f.variable ? "variabel" : "fest", (v) => this.set(f, (x) => { if (v === "variabel") { x.variable = true; x.radius2 = x.radius2 || x.radius; } else delete x.variable; }, "Radius")) : null,
+          E(isF ? (f.variable ? "Radius Anfang" : "Radius") : "Abstand", "radius", { allowNeg: false, allowZero: false }),
+          isF && f.variable ? E("Radius Ende", "radius2", { allowNeg: false, allowZero: false }) : null,
+          isF && f.variable ? this.seg("Anfang", [["", "kleinere Koordinate"], ["1", "größere Koordinate"]], f.flip ? "1" : "", (v) => this.set(f, (x) => { if (v) x.flip = true; else delete x.flip; }, "Anfang")) : null,
+          isF && f.variable ? h("p", { class: "hint" }, "Der Radius ändert sich gleichmäßig entlang jeder Kante. Anfang = Kantenende mit der kleineren Koordinate in der Hauptrichtung der Kante (z. B. links bzw. unten).") : null,
           this.seg("Kanten", [["edges", "Gewählte"], ["dir", "Richtung"], ["all", "Alle"]], f.mode || "edges", (v) => { this.set(f, "mode", v, "Modus"); app.selectFeature(f.id); }),
           f.mode === "dir" ? this.seg("Parallel zu", [["X", "X"], ["Y", "Y"], ["Z", "Z"]], f.dir || "Z", (v) => this.set(f, "dir", v, "Richtung")) : null,
           (f.mode || "edges") === "edges" ? h("div", { class: picking ? "picking" : "" },
@@ -1177,15 +1205,17 @@ export class Props {
           ] : f.kind === "circular" ? [
             axisSeg("Achse", "axis", "Z"),
             String(f.axis || "").startsWith("datum:") ? null : this.vec3("Mittelpunkt", f.center, (v) => this.set(f, "center", v, "Mittelpunkt")),
-            E("Anzahl", "count", { unit: "Stk" }),
-            E("Gesamtwinkel", "angle", { unit: "°" }),
+            String(f.angles || "").trim() ? null : [E("Anzahl", "count", { unit: "Stk" }), E("Gesamtwinkel", "angle", { unit: "°" })],
+            this.text("Winkel einzeln (leer = gleichmäßig)", f.angles, (v) => this.set(f, "angles", v.trim() || undefined, "Winkel einzeln"), { placeholder: "z. B. 30; 30; 60" }),
           ] : [
             axisSeg("Richtung 1", "dir", "X"),
-            E("Anzahl 1", "count", { unit: "Stk" }),
-            E("Abstand 1", "spacing"),
+            String(f.spacings || "").trim() ? null : [E("Anzahl 1", "count", { unit: "Stk" }), E("Abstand 1", "spacing")],
+            this.text("Abstände 1 einzeln (leer = gleichmäßig)", f.spacings, (v) => this.set(f, "spacings", v.trim() || undefined, "Abstände einzeln"), { placeholder: "z. B. 100; 150; 100" }),
             this.check("Zweite Richtung", !!f.dir2, (v) => this.set(f, (x) => { x.dir2 = v ? "Y" : undefined; x.count2 = x.count2 || "2"; x.spacing2 = x.spacing2 || "20"; }, "Richtung 2")),
             f.dir2 ? [axisSeg("Richtung 2", "dir2", "Y"), E("Anzahl 2", "count2", { unit: "Stk" }), E("Abstand 2", "spacing2")] : null,
-          ]));
+          ],
+          this.text("Exemplare auslassen", f.skip, (v) => this.set(f, "skip", v.trim() || undefined, "Auslassen"), { placeholder: f.dir2 ? "z. B. 3, 5-7 oder 2/3" : "z. B. 3, 5-7" }),
+          h("p", { class: "hint" }, `Exemplar 1 ist das Original. Abstände und Winkel einzeln: je Schritt ein Wert, getrennt mit »;«, Ausdrücke erlaubt.${f.dir2 ? " Nummern zählen zuerst in Richtung 2; »2/3« = 2. in Richtung 1, 3. in Richtung 2." : ""}`)));
         break;
       }
       case "mirror":
@@ -1260,6 +1290,41 @@ export class Props {
             this.seg("Ende", [["auto", "Näheres"], ["A", "A"], ["B", "B"]], f.end || "auto", (v) => this.set(f, "end", v, "Ende")),
             h("p", { class: "hint" }, "Das Stabende endet genau an der Ebene: liegt sie innerhalb, wird gekürzt, sonst gerade verlängert und an der Ebene geschnitten (schräge Ebene = Gehrung). Für Flächen eines Bauteils vorher eine Arbeitsebene auf die Fläche legen.")));
         }
+        break;
+      }
+      case "strecken": {
+        const targets = part.features.filter((g) => ["biegerohr", "generator"].includes(g.type));
+        const tubes = (r?.bodies || []).filter((b) => b.meta?.stretched && (!f.target || b.fid === f.target));
+        const n1 = (x) => fmtNum(x, 1);
+        out.push(this.section("Rohr strecken",
+          this.select("Rohr", [["", "alle gebogenen Rohre"], ...targets.map((g) => [g.id, g.name])], f.target || "", (v) => this.set(f, "target", v, "Rohr")),
+          ...tubes.map((b) => h("div", {},
+            h("p", {}, h("b", {}, b.name), ` – gestreckte Länge ${n1(b.meta.stretched.length)} mm, ${b.meta.stretched.holes.length} Bohrung(en)`),
+            b.meta.stretched.holes.length ? h("table", { class: "grid" }, h("tr", {}, ...["Nr", "s mm", "φ °", "Ø", "Art"].map((x) => h("th", {}, x))),
+              ...b.meta.stretched.holes.map((x, i) => h("tr", {}, h("td", {}, String(i + 1)), h("td", {}, n1(x.s)), h("td", {}, n1(x.phi)), h("td", {}, n1(x.d)), h("td", {}, x.through ? "durch" : "eine Wand")))) : null,
+            h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.saveText(stretchCsv(b.name, b.meta.stretched.length, b.meta.stretched.holes), b.name.replace(/[^\w\-äöüÄÖÜß ]+/g, "_") + "_gestreckt.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]) }, "Bohrbild CSV")))),
+          h("p", { class: "hint" }, "Zeigt das Rohr gerade in Abwicklungslänge (Mittellinie) mit allen Bohrungen. So als STEP oder DSTV für den Rohrlaser exportieren und danach biegen. s = Abstand vom Rohranfang, φ = Winkel um die Rohrachse, 0° = Innenseite der ersten Biegung. Unterdrücken zeigt wieder das gebogene Rohr.")));
+        break;
+      }
+      case "zinkloch": {
+        const targets = part.features.filter((g) => ["profile", "frame", "profilzug", "generator"].includes(g.type));
+        const members = f.target ? (r?.bodies || []).filter((b) => b.fid === f.target && b.kind === "member") : [];
+        const cur = f.members || [];
+        const memberChecks = members.length > 1 ? this.field("Stäbe (keiner gewählt = alle)", h("div", { class: "checks" }, ...members.map((b, i) => {
+          const c = h("input", { type: "checkbox", checked: cur.includes(i) ? true : undefined });
+          c.addEventListener("change", () => this.set(f, (x) => { x.members = c.checked ? [...new Set([...cur, i])].sort((a, b2) => a - b2) : cur.filter((y) => y !== i); }, "Stäbe"));
+          return h("label", { class: "check" }, c, " ", b.name);
+        })), true) : null;
+        const fin = part.finish?.kind;
+        out.push(this.section("Verzinkungsbohrungen",
+          this.select("Profile", [["", "alle Hohlprofile im Bauteil"], ...targets.map((g) => [g.id, g.name])], f.target || "", (v) => this.set(f, (x) => { x.target = v; x.members = []; }, "Profile")),
+          memberChecks,
+          this.seg("Enden", [["beide", "Beide"], ["A", "A"], ["B", "B"]], f.ends || "beide", (v) => this.set(f, "ends", v, "Enden")),
+          this.seg("Bohrrichtung", [["v", "durch die Höhe"], ["u", "durch die Breite"]], f.dir || "v", (v) => this.set(f, "dir", v, "Bohrrichtung")),
+          E("Durchmesser (leer = Richtwert)", "d", { allowNeg: false, allowZero: false, allowEmpty: true }),
+          E("Randabstand zum Stabende", "edge", { allowNeg: false }),
+          this.check("Nur wenn die Oberfläche verzinkt ist", f.onlyGalv !== false, (v) => this.set(f, "onlyGalv", v ? undefined : false, "Nur verzinkt")),
+          h("p", { class: "hint" }, `Je Stabende eine Querbohrung durch beide Wände, so nah am Ende wie möglich (bei Gehrung hinter der Spitze). Richtwert-Ø nach DIN EN ISO 14713-2 aus der Profilgröße, z. B. 40er Rohr 12 mm, 80er 16 mm, 100er 20 mm – mit dem Verzinker abstimmen. Oberfläche des Bauteils: ${fin === "verzinkt" || fin === "duplex" ? "verzinkt" : "nicht verzinkt (unter Bauteil-Eigenschaften einstellen)"}.`)));
         break;
       }
       case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "aufdicken": case "flaeche": case "entformung": case "direkt":
@@ -2392,14 +2457,29 @@ export class Props {
   bomDialog() {
     const app = this.app;
     const asm = app.activeDoc();
-    const rows = bomRows(app, asm);
     const docOf = (id) => app.doc(id);
     const nested = asm.components.some((c) => docOf(c.part)?.kind === "assembly");
     const body = h("div", {});
+    // Reihenfolge fest einstellen (W5): gilt für Positionsnummern, Listen und Excel
+    const reorder = (label, fn) => { app.edit(label, () => { asm.bomOrder = fn(bomRows(app, asm).filter((r) => r.part).map((r) => r.part.id)); }, { rebuild: false }); show("menge"); };
+    const sortBy = (key) => reorder("Stückliste sortieren", () => bomRows(app, asm).filter((r) => r.part).sort((a, b) => String(a[key] || "").localeCompare(String(b[key] || ""), "de", { numeric: true })).map((r) => r.part.id));
+    const move = (i, d) => reorder("Stückliste umsortieren", (ids) => { [ids[i], ids[i + d]] = [ids[i + d], ids[i]]; return ids; });
     const show = (form) => {
       if (form === "struktur") body.replaceChildren(structureTable(structureBom(asm, docOf), app));
       else if (form === "baukasten") body.replaceChildren(...modularBom(asm, docOf).map((x) => h("div", {}, h("h4", {}, x.asm.name), modularTable(x.rows, app))));
-      else body.replaceChildren(bomTable(rows));
+      else {
+        const rows = bomRows(app, asm), own = rows.filter((r) => r.part).length;
+        const t = bomTable(rows);
+        t.querySelector("thead tr")?.append(h("th", {}, ""));
+        [...t.querySelectorAll("tbody tr")].forEach((tr, i) => tr.append(h("td", {}, i < own ? [
+          h("button", { class: "btn", title: "nach oben", disabled: i === 0 ? true : undefined, onclick: () => move(i, -1) }, "↑"),
+          h("button", { class: "btn", title: "nach unten", disabled: i === own - 1 ? true : undefined, onclick: () => move(i, 1) }, "↓")] : null)));
+        body.replaceChildren(t, h("div", { class: "btn-row" },
+          h("button", { class: "btn", onclick: () => sortBy("number") }, "Nach Teilenummer"),
+          h("button", { class: "btn", onclick: () => sortBy("name") }, "Nach Benennung"),
+          asm.bomOrder?.length ? h("button", { class: "btn", onclick: () => { app.edit("Stückliste Reihenfolge", () => { delete asm.bomOrder; }, { rebuild: false }); show("menge"); } }, "Wie eingefügt") : null),
+          h("p", { class: "hint" }, "Die Reihenfolge bleibt gespeichert und bestimmt die Positionsnummern in Zeichnung, Listen und Excel. Normteile stehen immer am Ende. Masse von Hand (z. B. Kaufteil) im Bauteil unter Masse-Eigenschaften."));
+      }
     };
     const tabs = h("div", {});
     const setForm = (v) => { tabs.replaceChildren(this.seg("", [["menge", "Mengen"], ["struktur", "Struktur"], ["baukasten", "Baukasten"]], v, setForm)); show(v); };
@@ -2516,13 +2596,13 @@ export function bomRows(app, asm) {
     const own = (r?.bodies || []).filter((b) => !b.meta?.norm);
     if (r && r.bodies.length && !own.length) { norm.push({ bodies: r.bodies, qty: 1 }); continue; }
     if (r && own.length < r.bodies.length) norm.push({ bodies: r.bodies, qty: 1 });
-    const mass = r ? bodiesMass(own, materialOf(p.material).density) : NaN;
-    const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: p.material ? materialOf(p.material).label : "", finish: finishLabel(p), qty: 0, mass };
+    const mass = massOverride(p) ?? (r ? bodiesMass(own, materialOf(p.material).density) : NaN);
+    const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: p.material ? materialOf(p.material).label : "", finish: finishLabel(p), qty: 0, mass, massSet: massOverride(p) != null };
     row.qty++;
     map.set(p.id, row);
   }
   const normRows = collectNorm(norm).map((x) => ({ name: x.name, number: "", material: x.material, qty: x.qty, mass: x.mass, norm: true }));
-  return [...map.values(), ...normRows].map((r, i) => ({ ...r, pos: i + 1 }));
+  return orderBomRows([...map.values(), ...normRows], asm.bomOrder).map((r, i) => ({ ...r, pos: i + 1 }));
 }
 function bomTable(rows, compact = false) {
   return h("table", { class: "grid" },

@@ -13,6 +13,9 @@ import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "..
 import { validateDirekt, moveDir, normalOffset, measureFromShift, validateAngle, direktSummary } from "../core/direkt.js";
 import { direktKernel } from "./direkt.js";
 import { capPlan, trimPlan } from "../core/rahmen.js";
+import { ventPlan, needsVent } from "../core/verzinkung.js";
+import { centerline, locateHole, STRECKEN_SECTIONS } from "../core/strecken.js";
+import { parseSkip, spacingPositions } from "../core/muster.js";
 import { pathChain, reverseChain, pathLength as chainLength, pathPatternStations, coilParams, loopCentroid, validateLoft } from "../core/formen.js";
 import { sectionGeometry, sectionName, profileId, THREADS, loopLength } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
@@ -530,7 +533,9 @@ export function createKernel(R) {
     const usesVars = feats.some((f) => f.type === "sketch" && (f.entities || []).some((e) => e.type === "text" && /\{\w+\}/.test(e.text || "")));
     const keys = [];
     // Werkstoff wählt die Biegetabelle; Schnitt 2D/3D und Restwand am Bauteil gelten für alle Features; Textplatzhalter nur wenn benutzt
-    let acc = JSON.stringify(values) + (part.material || "") + JSON.stringify([part.cutMode, part.swivel, part.restwand]) + (usesVars ? JSON.stringify(textVars) : "");
+    let acc = JSON.stringify(values) + (part.material || "") + JSON.stringify([part.cutMode, part.swivel, part.restwand]) + (usesVars ? JSON.stringify(textVars) : "")
+    // Verzinkungsbohrungen hängen an der Oberfläche des Bauteils
+    if (feats.some((f) => f.type === "zinkloch")) acc += JSON.stringify(part.finish?.kind || "");
     const keepWall = part.restwand !== false;
     for (const f of feats) { acc = hashString(acc + JSON.stringify(f)); keys.push(acc); }
     let startAt = 0;
@@ -716,7 +721,10 @@ export function createKernel(R) {
       const fm = S.flat;
       const nB = fm.bends.length;
       const name = f.name || `${f.src === "skizze" ? "Konturlasche" : "Kantteil"} ${round(t)} mm, Abw. ${round(fm.width)} × ${round(fm.height)}`;
-      const meta = { sheet: { t, flat: fm.width, length: fm.height, bends: fm.bends.map((b) => ({ angle: b.angle, r: b.ri, k: b.k })), bendLines: plan.bendLines, rule: ruleSummary(br), flatModel: fm } };
+      // Querschnitt als Mittellinie mit scharfen Ecken (Biegefolge W7): Schenkel bis zum Schnittpunkt, Winkel mit Vorzeichen
+      const half = (b) => (Math.abs(b.angle) > 179 ? b.rm : b.rm * Math.tan(b.theta / 2));
+      const profile = { legs: plan.center.map((c, i) => c.len + (i > 0 && plan.bends[i - 1] ? half(plan.bends[i - 1]) : 0) + (plan.bends[i] ? half(plan.bends[i]) : 0)), angles: plan.bends.map((b) => b.sgn * Math.abs(b.angle)) };
+      const meta = { sheet: { t, flat: fm.width, length: fm.height, bends: fm.bends.map((b) => ({ angle: b.angle, r: b.ri, k: b.k })), bendLines: plan.bendLines, rule: ruleSummary(br), flatModel: fm, profile } };
       const nClosed = S.ends.reduce((n, e) => n + (e.closed?.length || 0), 0);
       const feats2 = [S.parts.length && `${S.parts.length} Teil-Lasche(n)`, S.ends.length && `${S.ends.length} Stirnlasche(n)`, nClosed && `${nClosed} Ecke(n) geschlossen`, S.pierce.length && `${S.pierce.length} Durchzug/Durchzüge`, S.punch.length && `${S.punch.length} Stanzung(en)`].filter(Boolean);
       const info = `Abwicklung ${round(fm.width)} × ${round(fm.height)} mm, ${nB} Biegung(en)` + (plan.bends.length ? `, Biegezugabe ${plan.flatParts.filter((_, k) => k % 2).map(round).join(" / ")} mm` : "") + (feats2.length ? ` · ${feats2.join(", ")}` : "") + (nB && spec.rule !== "k" ? ` · ${ruleSummary(br)}` : "") + (spec.ruleName ? ` · Blechregel ${spec.ruleName}` : "") + (f.view === "abgewickelt" ? "" : " · Abwicklung als DXF in den Eigenschaften");
@@ -1199,7 +1207,7 @@ export function createKernel(R) {
               });
               const solid = pieces.length > 1 ? R.makeCompound(pieces) : pieces[0];
               const meta = { section: sectionName(tb.section.kind, tb.section.dims), profileId: profileId(tb.section.kind, tb.section.dims), area: g.area, length: tubeLength(tb.path), miterStart: 0, miterEnd: 0, generator: f.gen, sec: { kind: tb.section.kind, dims: tb.section.dims },
-                rolled: { radius: bendRadius(tb.path), angle: Math.abs(tb.path.sweep), rise: tb.path.rise || 0 }, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) };
+                rolled: { radius: bendRadius(tb.path), angle: Math.abs(tb.path.sweep), rise: tb.path.rise || 0 }, center: { path: tb.path }, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) };
               add(solid, meta, tb.name);
             }
             for (const pl of plan.plates) {
@@ -1213,7 +1221,7 @@ export function createKernel(R) {
               const pds = (plan.drills || []).filter((x) => x.target === pl.name);
               const solid = drill(d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t), pds);
               const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length + pds.length, ...(pl.slots?.length ? { slots: pl.slots.length } : {}), d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
-              const dens = pl.glass ? FILL_DENSITY.glas : FILL_DENSITY[pl.tread];
+              const dens = pl.density ?? (pl.glass ? FILL_DENSITY.glas : FILL_DENSITY[pl.tread]);
               if (dens) meta.density = dens;
               state.bodies.push({ shape: solid, kind: "solid", name: pl.name, fid: f.id, meta });
               list.push({ shape: solid, kind: "solid", meta, name: pl.name });
@@ -1252,7 +1260,7 @@ export function createKernel(R) {
               found.push(best);
             }
             if (!p3) throw new Error("Gewählte Kanten nicht mehr gefunden");
-            state.welds.push({ fid: f.id, kind: f.kind || "kehl", a, side: f.side || "pfeil", around: !!f.around, field: !!f.field, length, p3, name: f.name });
+            state.welds.push({ fid: f.id, kind: f.kind || "kehl", a, side: f.side || "pfeil", around: !!f.around, field: !!f.field, length, p3, name: f.name, ...(f.wps ? { wps: f.wps } : {}) });
             st.info = `${WELD_KINDS[f.kind || "kehl"].dim}${round(a)}, ${round(length)} mm an ${refs.length - miss} Kante(n)`;
             const warn = miss ? [`${miss} Kante(n) nicht mehr gefunden`] : [];
             // Schweißbaugruppe (Stufe 53): Kehlnaht als Körper (Dreiecksquerschnitt in der Kehle zwischen zwei Teilen)
@@ -1430,7 +1438,7 @@ export function createKernel(R) {
             const plan = planBends(resolvePathPoints(f.points, E), E(f.radius, "Biegeradius"), geom.width);
             const solid = sweepTube(plan.pieces, geom);
             const name = sectionName(f.section, dims);
-            const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: plan.length, miterStart: 0, miterEnd: 0, bends: plan.bends.map((b) => ({ ...b })), lastStraight: plan.last, bendRadius: E(f.radius, "Biegeradius") };
+            const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: plan.length, miterStart: 0, miterEnd: 0, bends: plan.bends.map((b) => ({ ...b })), lastStraight: plan.last, bendRadius: E(f.radius, "Biegeradius"), sec: { kind: f.section, dims }, center: { pieces: plan.pieces } };
             state.tools.set(f.id, { op: f.op || "member", shapes: [{ shape: solid, kind: "member", meta, name: f.name || name }] });
             pushMember(state, solid, f, meta, f.name || name);
             st.info = `Abwicklung ${round(plan.length)} mm, ${plan.bends.length} Biegung(en)`;
@@ -1449,19 +1457,28 @@ export function createKernel(R) {
           }
           case "fillet":
           case "chamfer": {
-            const r = E(f.radius, f.type === "fillet" ? "Radius" : "Abstand");
-            if (!(r > 0)) throw new Error("Wert muss > 0 sein");
+            const r0 = E(f.radius, f.type === "fillet" ? "Radius" : "Abstand");
+            if (!(r0 > 0)) throw new Error("Wert muss > 0 sein");
+            // Variable Rundung (W8): [Anfang, Ende] je Kante, Anfang = kleinere Koordinate in der Hauptrichtung der Kante
+            const r2 = f.type === "fillet" && f.variable ? E(f.radius2 || f.radius, "Radius Ende") : null;
+            if (r2 != null && !(r2 > 0)) throw new Error("Radius Ende muss > 0 sein");
+            const r = r2 != null && Math.abs(r2 - r0) > 1e-9 ? (e) => {
+              const d = v3.sub(tuple(e.endPoint), tuple(e.startPoint));
+              if (Math.hypot(...d) < 1e-6) return r0; // geschlossene Kante (Kreis): fest
+              const k = [0, 1, 2].reduce((m, i) => (Math.abs(d[i]) > Math.abs(d[m]) ? i : m), 0);
+              return (d[k] >= 0) !== !!f.flip ? [r0, r2] : [r2, r0];
+            } : () => r0;
             let total = 0, miss = 0;
             for (const b of state.bodies) {
               const seams = seamEdges(b.shape);
               let fn;
-              if (f.mode === "all") fn = () => r;
+              if (f.mode === "all") fn = (e) => r(e);
               else if (f.mode === "dir") {
                 const ax = AXES[f.dir || "Z"];
                 fn = (e) => {
                   if (e.geomType !== "LINE") return null;
                   const d = v3.norm(v3.sub(tuple(e.endPoint), tuple(e.startPoint)));
-                  return Math.abs(Math.abs(v3.dot(d, ax)) - 1) < 1e-6 ? r : null;
+                  return Math.abs(Math.abs(v3.dot(d, ax)) - 1) < 1e-6 ? r(e) : null;
                 };
               } else {
                 const bb = b.shape.boundingBox;
@@ -1473,7 +1490,7 @@ export function createKernel(R) {
                 if (!found.length) continue;
                 fn = (e) => {
                   const m = edgeMid(e);
-                  return found.some((p) => v3.dist(p, m) < 1e-5) ? r : null;
+                  return found.some((p) => v3.dist(p, m) < 1e-5) ? r(e) : null;
                 };
               }
               let any = false;
@@ -1510,8 +1527,12 @@ export function createKernel(R) {
           case "pattern": {
             const src = state.tools.get(f.feature);
             if (!src) throw new Error(missingRef(f.feature, "Bezugs-Feature", f));
-            const transforms = f.kind === "path" ? pathTransforms(f, E, getSketch(f.path, "Pfad-Skizze")) : patternTransforms(f, E, datums.map);
-            if (transforms.length > 500) throw new Error("Zu viele Exemplare (max. 500)");
+            const all = f.kind === "path" ? pathTransforms(f, E, getSketch(f.path, "Pfad-Skizze")) : patternTransforms(f, E, datums.map);
+            if (all.length > 500) throw new Error("Zu viele Exemplare (max. 500)");
+            // Exemplare auslassen (W3): Nummer 1 = Original, Rechteckmuster zählt zuerst in Richtung 2
+            const n2 = f.kind !== "path" && f.kind !== "circular" && f.dir2 ? Math.max(1, Math.round(E(f.count2 || "1", "Anzahl 2"))) : 1;
+            const skip = parseSkip(f.skip, { n1: Math.ceil((all.length + 1) / n2), n2 });
+            const transforms = all.filter((_, k) => !skip.has(k + 2));
             let n = 0;
             for (const tr of transforms) {
               for (const s of src.shapes) {
@@ -1524,7 +1545,9 @@ export function createKernel(R) {
                 n++;
               }
             }
-            st.info = `${transforms.length + 1} Exemplare`;
+            const left = all.length - transforms.length;
+            st.info = `${transforms.length + 1} Exemplare${left ? `, ${left} ausgelassen` : ""}`;
+            if ([...skip].some((k) => k > all.length + 1)) st.warning = `Auslassen: das Muster hat nur ${all.length + 1} Exemplare`;
             break;
           }
           case "sweep": {
@@ -1627,6 +1650,75 @@ export function createKernel(R) {
             if (!n) throw new Error("Keine Kappe gesetzt – Enden auf Gehrung");
             state.tools.set(f.id, { op: "new", shapes });
             st.info = `${n} Endkappe(n) ${f.mode === "eingesetzt" ? "eingesetzt" : "aufgesetzt"}, ${String(E(f.thickness || "3", "Dicke")).replace(".", ",")} mm`;
+            break;
+          }
+          case "strecken": {
+            // Gebogenes Rohr strecken (W2): gerades Rohr in Abwicklungslänge mit dem Bohrbild für den Rohrlaser
+            const bodies = state.bodies.filter((b) => b.kind === "member" && b.meta?.center && (!f.target || b.fid === f.target));
+            if (!bodies.length) throw new Error("Kein gebogenes oder gewalztes Rohr gefunden");
+            let n = 0, nh = 0;
+            const notes = [];
+            for (const b of bodies) {
+              const sec = b.meta.sec;
+              if (!sec || !STRECKEN_SECTIONS.includes(sec.kind)) { notes.push(`${b.name}: nur Rundrohr und Rundstahl`); continue; }
+              const g = sectionGeometry(sec.kind, sec.dims), Ro = g.outer.r;
+              const pts = centerline(b.meta.center);
+              const L = b.meta.length || pts[pts.length - 1].s;
+              const holes = [];
+              for (const hx of holeAxes(b.shape)) {
+                const hl = locateHole(pts, hx, Ro);
+                if (!hl || holes.some((o) => Math.abs(o.s - hl.s) < 0.5 && Math.abs(o.phi - hl.phi) < 1 && Math.abs(o.d - hl.d) < 0.05)) continue;
+                holes.push(hl);
+              }
+              holes.sort((a, c) => a.s - c.s || a.phi - c.phi);
+              const fr = { origin: pts[0].p, z: pts[0].t, u: pts[0].r, v: v3.cross(pts[0].t, pts[0].r) };
+              let shape = makeMember({ kind: sec.kind, dims: sec.dims }, L, fr).solid;
+              for (const hl of holes) {
+                const a = (hl.phi * Math.PI) / 180, dir = v3.add(v3.mul(fr.u, Math.cos(a)), v3.mul(fr.v, Math.sin(a)));
+                const c = v3.add(fr.origin, v3.mul(fr.z, hl.s));
+                shape = shape.cut(R.makeCylinder(hl.d / 2, hl.through ? 2 * Ro + 10 : Ro + 5, v3.add(c, v3.mul(dir, Ro + 5)), v3.mul(dir, -1)));
+              }
+              const old = b.shape;
+              b.shape = shape;
+              b.meta = { ...b.meta, stretched: { length: L, holes } };
+              const tm = state.tools.get(b.fid)?.shapes.find((x) => x.shape === old);
+              if (tm) { tm.shape = shape; tm.meta = b.meta; }
+              n++; nh += holes.length;
+            }
+            if (!n) throw new Error(notes.join("; ") || "Kein Rundrohr gefunden");
+            st.info = `${n} Rohr(e) gestreckt, ${nh} Bohrung(en) übertragen`;
+            if (notes.length) st.warning = notes.join("; ");
+            break;
+          }
+          case "zinkloch": {
+            // Verzinkungsbohrungen (W1): je Hohlprofil-Stab eine Querbohrung an den Enden, Ø nach DIN EN ISO 14713-2
+            const galv = needsVent(part.finish?.kind);
+            if (f.onlyGalv !== false && !galv) { st.info = "Oberfläche nicht verzinkt – keine Bohrungen"; break; }
+            const bodies = state.bodies.filter((b) => b.kind === "member" && (!f.target || b.fid === f.target) && b.meta?.axis && b.meta?.sec);
+            const idx = f.target && f.members?.length ? f.members : bodies.map((_, k) => k);
+            const dIn = f.d ? E(f.d, "Durchmesser") : 0, edge = E(f.edge || "10", "Randabstand");
+            if (dIn < 0 || edge < 0) throw new Error("Durchmesser und Randabstand dürfen nicht negativ sein");
+            let n = 0, nb = 0;
+            const ds = new Set(), notes = [];
+            for (const mi of idx) {
+              const b = bodies[mi];
+              if (!b) continue;
+              if (!sectionGeometryOf(b.meta).holes.length) continue; // offene Profile laufen von selbst leer
+              const plan = ventPlan(b.meta.axis, { d: dIn, edge, ends: f.ends || "beide", dir: f.dir || "v", miterA: b.meta.miterStart, miterB: b.meta.miterEnd });
+              const old = b.shape;
+              let shape = old;
+              for (const hl of plan.holes) shape = shape.cut(R.makeCylinder(hl.d / 2, hl.len, hl.p, hl.dir));
+              b.shape = shape;
+              b.meta = { ...b.meta, vent: { n: plan.holes.length, d: plan.d } };
+              const tm = state.tools.get(b.fid)?.shapes.find((x) => x.shape === old);
+              if (tm) { tm.shape = shape; tm.meta = b.meta; }
+              for (const m of plan.issues) notes.push(`${b.name}: ${m}`);
+              ds.add(plan.d);
+              n += plan.holes.length; nb++;
+            }
+            if (!nb) throw new Error("Kein geschlossenes Hohlprofil gefunden");
+            st.info = `${n} Verzinkungsbohrung(en) in ${nb} Stab/Stäben, Ø ${[...ds].sort((a, b) => a - b).join(" / ")} mm${galv ? "" : " (Oberfläche nicht verzinkt)"}`;
+            if (notes.length) st.warning = [...new Set(notes)].join("; ");
             break;
           }
           case "kuerzen": {
@@ -2185,6 +2277,11 @@ export function createKernel(R) {
       const da = patternAxis(f.axis, datums);
       const ax = da ? da.d : f.axis === "custom" ? (f.axisDir || ["0", "0", "1"]).map((x) => E(x, "Achse")) : AXES[f.axis || "Z"];
       const c = da ? da.p : (f.center || ["0", "0", "0"]).map((x) => E(x, "Mittelpunkt"));
+      // Winkel als Liste (W3): je Schritt ein eigener Winkel, sonst gleichmäßig verteilt
+      if (String(f.angles || "").trim()) {
+        for (const a of spacingPositions(f.angles, E).slice(1)) out.push((s) => s.rotate(a, c, ax));
+        return out;
+      }
       const n = Math.round(E(f.count, "Anzahl"));
       const total = E(f.angle || "360", "Winkel");
       const step = Math.abs(total - 360) < 1e-9 ? 360 / n : total / Math.max(1, n - 1);
@@ -2192,15 +2289,17 @@ export function createKernel(R) {
       return out;
     }
     const d1 = patternAxis(f.dir, datums)?.d || (f.dir === "custom" ? v3.norm((f.dirVec || ["1", "0", "0"]).map((x) => E(x, "Richtung"))) : AXES[f.dir || "X"]);
-    const n1 = Math.max(1, Math.round(E(f.count, "Anzahl")));
-    const s1 = E(f.spacing, "Abstand");
+    // Abstände als Liste (W3) ersetzen Anzahl 1 und Abstand 1
+    const pos1 = String(f.spacings || "").trim() ? spacingPositions(f.spacings, E) : null;
+    const n1 = pos1 ? pos1.length : Math.max(1, Math.round(E(f.count, "Anzahl")));
+    const s1 = pos1 ? 0 : E(f.spacing, "Abstand");
     const n2 = f.dir2 ? Math.max(1, Math.round(E(f.count2 || "1", "Anzahl 2"))) : 1;
     const s2 = f.dir2 ? E(f.spacing2 || "0", "Abstand 2") : 0;
     const d2 = f.dir2 ? AXES[f.dir2] : [0, 0, 0];
     for (let a = 0; a < n1; a++)
       for (let b = 0; b < n2; b++) {
         if (!a && !b) continue;
-        const t = v3.add(v3.mul(d1, a * s1), v3.mul(d2, b * s2));
+        const t = v3.add(v3.mul(d1, pos1 ? pos1[a] : a * s1), v3.mul(d2, b * s2));
         out.push((s) => s.translate(t));
       }
     return out;

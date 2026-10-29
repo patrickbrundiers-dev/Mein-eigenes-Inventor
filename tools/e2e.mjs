@@ -527,6 +527,14 @@ try {
   // Exporte über den Kern
   const step3d = await evalApp(async () => { const a = window.__werkcad; const t = await a.kernel.call("exportStep", { items: [{ part: a.doc("beispiel_rahmen") }] }); return t.length; });
   step("STEP-Export", step3d > 1000, String(step3d));
+  const simp = await evalApp(async () => {
+    const a = window.__werkcad, part = a.doc("beispiel_rahmen");
+    const box = await a.kernel.call("exportStep", { items: [{ part }], simplify: { minSize: 0, norm: true, welds: true, envelope: "alle", envSize: 100 } });
+    let none = "";
+    try { await a.kernel.call("exportStep", { items: [{ part }], simplify: { minSize: 1e6, norm: true, welds: true, envelope: "nein", envSize: 100 } }); } catch (e) { none = e.message; }
+    return { box: box.length, none };
+  });
+  step("Vereinfachen: Hüllquader und Weglassen im STEP", simp.box > 500 && simp.box < step3d && /Nichts/.test(simp.none), JSON.stringify(simp));
   const members = await evalApp(async () => { const a = window.__werkcad; const t = await a.kernel.call("bodySteps", { part: a.doc("beispiel_rahmen"), onlyMembers: true }); return t.length; });
   step("Profile einzeln als STEP", members === 5, String(members));
 

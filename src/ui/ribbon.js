@@ -159,6 +159,15 @@ export class Ribbon {
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
         app.addFeature({ type: "endkappe", target: t, end: "beide", mode: "aufgesetzt", thickness: "3", overhang: "0" });
       },
+      strecken: () => {
+        const t = this.lastOf(["biegerohr", "generator"]);
+        if (!t) return toast("Zuerst ein gebogenes Rohr oder einen Generator mit Bogen (z. B. Wendeltreppe) erstellen");
+        app.addFeature({ type: "strecken", target: t });
+      },
+      zinkloch: () => {
+        if (!this.lastOf(["profile", "frame", "profilzug", "generator"])) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
+        app.addFeature({ type: "zinkloch", target: "", ends: "beide", dir: "v", d: "", edge: "10" });
+      },
       kuerzen: () => {
         const t = this.lastOf(["profile", "frame", "profilzug", "generator"]);
         if (!t) return toast("Zuerst ein Profil, einen Rahmen oder Profilzug erstellen");
@@ -176,6 +185,8 @@ export class Ribbon {
       windverband: () => this.addGenerator("windverband"),
       fachwerk: () => this.addGenerator("fachwerk"),
       arbeitsbuehne: () => this.addGenerator("arbeitsbuehne"),
+      vordach: () => this.addGenerator("vordach"),
+      fenstergitter: () => this.addGenerator("fenstergitter"),
       steigleiter: () => this.addGenerator("steigleiter"),
       stuetzenfuss: () => this.addGenerator("stuetzenfuss"),
       traegerstoss: () => this.addGenerator("traegerstoss"),
@@ -386,7 +397,7 @@ export class Ribbon {
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
-          { label: "Profile", buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend")] },
+          { label: "Profile", big: 5, buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend"), B("zinkloch", "Verzinkungsbohrungen", "ventholes"), B("strecken", "Rohr strecken", "stretch")] },
           { label: "Blech", big: 1, buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("blechkasten", "Blechkasten", "kantteil"), B("inBlech", "In Blech umwandeln", "kantteil"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar"), B("eckeschliessen", "Ecke schließen", "cornerseam"), B("stanzung", "Stanzwerkzeug", "punch"), B("konturwalzen", "Konturwalzen", "contourroll"), B("trennfuge", "Trennfuge", "rip")] },
           { label: "Anschluss", buttons: [B("naht", "Schweißnaht", "naht"), B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("normteil", "Normteil", "normteil")] },
         ] },
@@ -458,7 +469,7 @@ export class Ribbon {
           { label: "Prüfen", buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
-          { label: "Generatoren", buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun")] },
+          { label: "Generatoren", big: 6, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("fenstergitter", "Fenstergitter", "fenstergitter")] },
           { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne")] },
           { label: "Gestell", big: 1, buttons: (() => {
             const g = !!app.activeDoc()?.gestell, on = (t) => app.pick?.kind === "gestell" && app.pick.tool === t;
@@ -550,15 +561,15 @@ export class Ribbon {
     const B = (id, label, ic, run) => ({ id, label, icon: ic, run });
     const groups = [];
     if (kind === "part") {
-      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
+      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_vereinfachen", "Vereinfachen", "simplify", () => f.simplifyDialog()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
       groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers()), B("x_cut", "Zuschnittliste (CSV)", "cutlist", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
       groups.push({ label: "2D", buttons: [B("x_plate", "Platte als DXF", "drawing", () => f.exportPlateDxf()), B("x_dxf", "Skizze als DXF", "sketch", () => f.exportSketchDxf())] });
-      groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
+      groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_etiketten", "Etiketten (QR)", "qr", () => f.exportEtiketten()), B("x_versand", "Versandliste", "bom", () => f.exportVersand()), B("x_schweissplan", "Schweißplan", "naht", () => f.weldPlanDialog()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
     } else if (kind === "assembly") {
-      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
+      groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_vereinfachen", "Vereinfachen", "simplify", () => f.simplifyDialog()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
       groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers())] });
       groups.push({ label: "Listen", buttons: [B("x_bom", "Stückliste (CSV)", "bom", () => f.exportBom()), B("x_cut", "Zuschnittliste (CSV)", "cutlist", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
-      groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
+      groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_etiketten", "Etiketten (QR)", "qr", () => f.exportEtiketten()), B("x_versand", "Versandliste", "bom", () => f.exportVersand()), B("x_schweissplan", "Schweißplan", "naht", () => f.weldPlanDialog()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
     } else if (kind === "drawing") {
       groups.push({ label: "Zeichnung", buttons: [B("x_pdf", "PDF", "pdf", () => app.drawing.exportPdf()), B("x_dxf", "DXF", "drawing", () => app.drawing.exportDxf()), B("x_svg", "SVG", "drawing", () => app.drawing.exportSvg())] });
     }
