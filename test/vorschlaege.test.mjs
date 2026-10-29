@@ -266,3 +266,14 @@ test("O4: Auflagerwinkel oben, Wange an der Wand verdübelt", () => {
   assert.match(pl.info, /Auflagerwinkel auf der Decke.*Wange links an der Wand/);
   assert.ok(plan("treppe", { wangeWand: "rechts", gel: "rechts" }).issues.some((x) => x.key === "wangeWand"));
 });
+
+// ---------- O5: Tor-Zubehör ----------
+test("O5: Kastenschloss, Bodenriegel, Torfeststeller am Tor", () => {
+  const pl = plan("tor", { hold: "innen" });
+  const kinds = pl.norms.map((x) => x.kind).sort();
+  assert.deepEqual(kinds, ["bodenriegel", "kastenschloss", "torfeststeller", "torfeststeller"]);
+  assert.match(pl.info, /Kastenschloss Dorn 60, Bodenriegel/);
+  const e = plan("tor", { leaves: "1", width: "1200" });
+  assert.deepEqual(e.norms.map((x) => x.kind), ["kastenschloss"]);
+  assert.equal(plan("tor", { lock: false, bolt: false }).norms.length, 0);
+});

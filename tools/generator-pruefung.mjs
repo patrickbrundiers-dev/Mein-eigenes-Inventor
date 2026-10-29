@@ -82,6 +82,8 @@ export const CASES = [
   ["treppe-U-wand-holm", "treppe", { form: "U", support: "holm2", gel: "keine", wand: "rechts" }],
   ["treppe-auflager-wand", "treppe", { anschluss: "auflager", wangeWand: "links", gel: "rechts" }],
   ["treppe-U-auflager", "treppe", { form: "U", anschluss: "auflager", wangeWand: "rechts", gel: "links" }],
+  ["tor-beschlaege", "tor", { hold: "innen" }],
+  ["tor-einzel-beschlaege", "tor", { leaves: "1", width: "1200", hold: "aussen" }],
   ["gelaender-stoss", "gelaender", { runs: "7000; 3000", railMax: "6000" }],
   ["gelaender-stoss-vierkant", "gelaender", { runs: "8000", rail: { kind: "rechteck", size: "40x20x2" }, railMax: "3000", postMode: "abstand", postStep: "1000" }],
   ["voute-beidseitig", "voute", { form: "voute2", h0: "800", h: "450", lv: "2000" }],

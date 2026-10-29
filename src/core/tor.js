@@ -26,6 +26,11 @@ export const TOR = {
     { key: "gapMax", label: "Öffnung max.", type: "num", default: "110", group: "Rahmen und Füllung" },
     { key: "mid", label: "Querriegel", type: "check", default: true, group: "Rahmen und Füllung" },
     { key: "midZ", label: "Querriegel über Unterkante", type: "num", default: "300", group: "Rahmen und Füllung", when: (p) => p.mid },
+    { key: "lock", label: "Kastenschloss (Gehflügel)", type: "check", default: true, missing: false, group: "Beschläge" },
+    { key: "lockSize", label: "Schloss", type: "select", options: [["Dorn 40", "Dorn 40"], ["Dorn 60", "Dorn 60"], ["Dorn 80", "Dorn 80"]], default: "Dorn 60", group: "Beschläge", when: (p) => p.lock },
+    { key: "lockZ", label: "Drückerhöhe über Boden", type: "num", default: "1050", group: "Beschläge", when: (p) => p.lock },
+    { key: "bolt", label: "Bodenriegel am Standflügel", type: "check", default: true, missing: false, group: "Beschläge", when: (p) => p.leaves === "2" },
+    { key: "hold", label: "Torfeststeller (offen 90°)", type: "select", options: [["keine", "keine"], ["innen", "Flügel öffnen nach innen (−y)"], ["aussen", "Flügel öffnen nach außen (+y)"]], default: "keine", group: "Beschläge" },
     { key: "posts", label: "Torpfosten", type: "check", default: true, group: "Pfosten" },
     { key: "post", label: "Pfostenprofil", type: "section", default: { kind: "vierkant", size: "100x4" }, group: "Pfosten", when: (p) => p.posts },
     { key: "postTop", label: "Pfosten über Flügel", type: "num", default: "100", group: "Pfosten", when: (p) => p.posts },
@@ -153,8 +158,31 @@ export const TOR = {
     if (n === 2) { const xm = W / 2; stop(xm - g / 2 - stopW / 2, xm + g / 2 + stopW / 2, z0 + 2 * fw, top(xm) - 2 * fw, "Flügel links Anschlagleiste"); }
     else if (p.posts) stop(W - g - stopW / 2, W, z0 + 2 * fw, top(W) - 2 * fw, "Anschlagleiste");
     if (gapSeen > 120 + 1e-6) issues.push({ key: "gapMax", level: "Warnung", message: `Öffnung ${Math.round(gapSeen)} mm größer als 120 mm` });
-    const info = `${n === 1 ? "Einzeltor" : "Doppeltor"}, Flügel ${Math.round(leafW)} mm breit, ${nBars} Stäbe` + (p.form !== "gerade" ? `, Scheitel ${Math.round(peak)} mm` : "") + (g >= 8 ? `, ${2 * n} Torbänder Ø ${Math.round(bandD)} × ${2 * bandL}` : "");
-    return { chains, members, plates, tubes, info, issues };
+    // Beschläge (O5): Kastenschloss außen (−y) auf dem Gehflügel am Schließrahmen, Bodenriegel außen am Standflügel neben
+    // der Mitte, Torfeststeller am Boden dort, wo das Flügelende bei 90° offen steht
+    const norms = [], acc = [];
+    if (p.lock) {
+      const xs = n === 2 ? W / 2 + g / 2 : W - g, sgnX = n === 2 ? 1 : -1, m = { "Dorn 40": [100, 140], "Dorn 60": [120, 160], "Dorn 80": [140, 170] }[p.lockSize] || [120, 160];
+      const zc = Math.min(Math.max(p.lockZ, z0 + 2 * fw + m[1] / 2), top(xs) - 2 * fw - m[1] / 2);
+      if (zc < z0 + m[1] / 2) issues.push({ key: "lock", level: "Warnung", message: "Flügel zu niedrig für das Schloss" });
+      else {
+        norms.push({ kind: "kastenschloss", size: p.lockSize, pos: [xs + sgnX * (m[0] / 2 + 5), -fh / 2, zc], dir: [0, -1, 0], xDir: [-sgnX, 0, 0], name: "Kastenschloss" });
+        if (Math.abs(zc - p.lockZ) > 1) issues.push({ key: "lockZ", level: "Hinweis", message: `Schloss auf ${Math.round(zc)} mm gesetzt (passt sonst nicht in den Flügel)` });
+        acc.push(`Kastenschloss ${p.lockSize}`);
+      }
+    }
+    if (p.bolt && n === 2) {
+      const D = 26, x = W / 2 - g / 2 - fw - 40;
+      norms.push({ kind: "bodenriegel", size: "Ø16 x 450", pos: [x, -fh / 2 - D / 2, z0 - 40], dir: [0, 0, 1], xDir: [-1, 0, 0], name: "Bodenriegel" });
+      acc.push("Bodenriegel (Bodenhülse Ø 20 bauseits)");
+    }
+    if (p.hold && p.hold !== "keine") {
+      const sy = p.hold === "innen" ? -1 : 1, ends = n === 2 ? [[g, 1], [W - g, -1]] : [[g, 1]];
+      ends.forEach(([xh, dir], k) => norms.push({ kind: "torfeststeller", size: "Standard", pos: [xh + dir * fh / 2, sy * (leafW - 60), 0], dir: [0, 0, 1], xDir: [0, 1, 0], name: `Torfeststeller ${k + 1}` }));
+      acc.push(`${ends.length} Torfeststeller`);
+    }
+    const info = `${n === 1 ? "Einzeltor" : "Doppeltor"}, Flügel ${Math.round(leafW)} mm breit, ${nBars} Stäbe` + (p.form !== "gerade" ? `, Scheitel ${Math.round(peak)} mm` : "") + (g >= 8 ? `, ${2 * n} Torbänder Ø ${Math.round(bandD)} × ${2 * bandL}` : "") + (acc.length ? `, ${acc.join(", ")}` : "");
+    return { chains, members, plates, tubes, norms, info, issues };
   },
 
   views: ["front"],

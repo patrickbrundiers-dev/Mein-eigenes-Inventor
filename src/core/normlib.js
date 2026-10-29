@@ -333,6 +333,19 @@ F.glasklemme = beschlag({ label: "Glasklemmhalter für Pfosten", noun: "Glasklem
 F.glaspunkthalter = beschlag({ label: "Glas-Punkthalter mit Abstand (Rosette Ø 50)", noun: "Glas-Punkthalter", alias: ["Punkthalter", "Rosette"], grades: ["A2", "A4"], def: { size: "VSG 16,76" }, sizes: VSG,
   build: (m) => { const a = 40; return [cyl(30, a - 8), cyl(50, 8, a - 8), cyl(16, m.tg, a), cyl(50, 8, a + m.tg)]; } });
 
+// Tor-Zubehör (O5): Kastenschloss zum Aufschweißen (Kasten vor der Flügelfläche ab z = 0, Drücker außen),
+// Bodenriegel (Stange ab z = 0 nach oben, Führungshülsen mit Lasche zur Flügelfläche in +y),
+// Torfeststeller (Bodenteil mit Fanggabel ab Boden z = 0)
+F.kastenschloss = beschlag({ label: "Kastenschloss zum Aufschweißen (Tor)", noun: "Kastenschloss", alias: ["Torschloss", "Schlosskasten"], grades: ["verzinkt", "A2"], def: { size: "Dorn 60" },
+  sizes: { "Dorn 40": { w: 100, h: 140, t: 25 }, "Dorn 60": { w: 120, h: 160, t: 25 }, "Dorn 80": { w: 140, h: 170, t: 28 } },
+  build: (m) => [box(m.w, m.h, m.t), cyl(18, 60, m.t, { x: -m.w / 2 + 30, y: 25 }), box(110, 18, 16, m.t + 44, { x: -m.w / 2 + 30 + 55, y: 25 })] });
+F.bodenriegel = beschlag({ label: "Bodenriegel für Torflügel", noun: "Bodenriegel", alias: ["Stangenriegel", "Fallriegel"], grades: ["verzinkt", "A2"], def: { size: "Ø16 x 450" },
+  sizes: { "Ø16 x 450": { d: 16, L: 450 }, "Ø20 x 600": { d: 20, L: 600 } },
+  build: (m) => { const D = m.d + 10, y = D / 2, sl = (z) => [cyl(D, 30, z), box(D, 2, 30, z, { y: y - 1 })]; return [cyl(m.d, m.L), ...sl(m.L * 0.35), ...sl(m.L * 0.85), cyl(12, 70, m.L - 20, { axis: "x" })]; } });
+F.torfeststeller = beschlag({ label: "Torfeststeller (Bodenteil)", noun: "Torfeststeller", alias: ["Feststeller", "Torhalter"], grades: ["verzinkt", "A2"], def: { size: "Standard" },
+  sizes: { Standard: { w: 100, d: 70, t: 6, h: 45 }, "schwer": { w: 120, d: 80, t: 8, h: 60 } },
+  build: (m) => [box(m.w, m.d, m.t), box(8, m.d, m.h, m.t, { x: -16 }), box(8, m.d, m.h, m.t, { x: 16 }), ...[-m.w / 2 + 15, m.w / 2 - 15].map((x) => cut(cyl(9, m.t + 2, -1, { x, vol: (Math.PI / 4) * 81 * m.t })))] });
+
 /** Kategorien in der Reihenfolge des Dialogs */
 export const NORM_CATEGORIES = [["schrauben", "Schrauben"], ["muttern", "Muttern"], ["scheiben", "Scheiben & Federringe"], ["gewinde", "Gewindestangen & Spannschlösser"], ["anker", "Dübel & Anker"], ["nieten", "Nieten"], ["stifte", "Stifte & Bolzen"], ["beschlaege", "Beschläge"]];
 
