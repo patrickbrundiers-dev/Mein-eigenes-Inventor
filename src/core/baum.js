@@ -65,3 +65,49 @@ export function featureDetail(f, part) {
     default: return "";
   }
 }
+
+/** Suchtext passt? Groß-/Kleinschreibung egal, mehrere Wörter müssen alle vorkommen */
+export function matchesQuery(texts, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return true;
+  const hay = texts.filter(Boolean).join(" ").toLowerCase();
+  return q.split(/\s+/).every((w) => hay.includes(w));
+}
+
+/**
+ * Einträge nach Suche filtern: Eintrag bleibt, wenn er selbst passt (dann mit allen Unterpunkten)
+ * oder ein Unterpunkt passt (dann nur die passenden, aufgeklappt: open = true).
+ */
+export function filterEntries(entries, test) {
+  const out = [];
+  for (const e of entries) {
+    if (test(e.f)) { out.push(e); continue; }
+    const kids = e.children.filter((c) => test(c.f));
+    if (kids.length) out.push({ ...e, children: kids, open: true });
+  }
+  return out;
+}
+
+/**
+ * Ordner (B3, wie Inventor/SolidWorks): aufeinanderfolgende Einträge mit gleichem f.folder kommen in einen Ordner.
+ * Rückgabe: Einträge und { folder, first, entries } in Baum-Reihenfolge (first = Index des ersten Features).
+ */
+export function groupFolders(entries) {
+  const out = [];
+  for (const e of entries) {
+    const name = typeof e.f.folder === "string" && e.f.folder.trim() ? e.f.folder.trim() : null;
+    const last = out[out.length - 1];
+    if (name && last?.folder === name) last.entries.push(e);
+    else if (name) out.push({ folder: name, first: e.i, entries: [e] });
+    else out.push(e);
+  }
+  return out;
+}
+
+/** Ordnername eines Nachbarn in der obersten Ebene (zum »Zum Ordner hinzufügen«) */
+export function neighbourFolders(entries, id) {
+  const k = entries.findIndex((e) => e.f.id === id || e.children.some((c) => c.f.id === id));
+  if (k < 0) return [];
+  const names = [entries[k - 1]?.f.folder, entries[k + 1]?.f.folder].filter((x) => typeof x === "string" && x.trim() && x !== entries[k].f.folder);
+  return [...new Set(names)];
+}

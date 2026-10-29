@@ -6,7 +6,7 @@ import { sketchRefs } from "../core/featurerefs.js";
 import { activeCount } from "../core/bauteilende.js";
 import { componentDof, dofLabel } from "../core/asmdof.js";
 import { formSubDialog, dissolveSubComp, moveCompIntoSub, learnFuegepunkte, componentsFromBodies } from "./baugruppe.js";
-import { treeEntries, endPosition, featureDetail } from "../core/baum.js";
+import { treeEntries, endPosition, featureDetail, matchesQuery, filterEntries, groupFolders, neighbourFolders } from "../core/baum.js";
 
 const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", blechkasten: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
 
@@ -16,6 +16,71 @@ export class Tree {
     this.el = document.getElementById("browser");
     this.collapsed = new Set();
     this.expanded = new Set(); // aufgeklappte Features mit eingerückten Skizzen
+    this.query = ""; // Suche im Kopf (filtert Features, Komponenten, Dokumente)
+    this.hot = null; // Zeile, deren Geometrie im 3D unter dem Mauszeiger liegt
+    this.el.addEventListener("keydown", (e) => this.onKey(e));
+  }
+  /** Passt ein Name zur Suche? */
+  hit(...texts) { return matchesQuery(texts, this.query); }
+  /** Suchfeld (bleibt beim Neuzeichnen fokussiert) */
+  searchBar() {
+    if (!this.search) {
+      const inp = h("input", { type: "search", class: "tree-search-input", placeholder: "Im Baum suchen …", "aria-label": "Im Modellbrowser suchen" });
+      inp.addEventListener("input", () => { this.query = inp.value; this.render(); });
+      inp.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Escape") { inp.value = ""; this.query = ""; this.render(); inp.blur(); }
+        if (e.key === "ArrowDown") { e.preventDefault(); this.el.querySelector(".tree .node[tabindex]")?.focus(); }
+      });
+      this.search = h("div", { class: "tree-search" }, icon("search"), inp);
+      this.searchInput = inp;
+    }
+    return this.search;
+  }
+  /** Tastatur im Baum (Explorer-artig): ↑ ↓ wandern, → aufklappen, ← zuklappen, Pos1/Ende */
+  onKey(e) {
+    const n = e.target.closest?.(".node");
+    if (!n || e.target.tagName === "INPUT") return;
+    const all = [...this.el.querySelectorAll(".tree .node[tabindex]")];
+    const i = all.indexOf(n);
+    const go = (k) => { const t = all[Math.max(0, Math.min(all.length - 1, k))]; if (t) { t.focus(); t.scrollIntoView({ block: "nearest" }); } };
+    const twist = n.querySelector(":scope > .twist");
+    if (e.key === "ArrowDown") go(i + 1);
+    else if (e.key === "ArrowUp") go(i - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(all.length - 1);
+    else if (e.key === "ArrowRight" && twist?.textContent === "▸") twist.click();
+    else if (e.key === "ArrowLeft" && twist?.textContent === "▾") twist.click();
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") this.focusRid(n.dataset.rid);
+  }
+  focusRid(rid) { if (rid) this.el.querySelector(`.node[data-rid="${CSS.escape(rid)}"]`)?.focus(); }
+  /** Hover aus dem 3D: Zeile hervorheben (id = Feature oder Komponente; null = keine) */
+  setHot(id) {
+    if (this.hot === id) return;
+    this.el.querySelector(".node.hot")?.classList.remove("hot");
+    this.hot = id;
+    if (id) this.el.querySelector(`.node[data-rid="${CSS.escape(id)}"]`)?.classList.add("hot");
+  }
+  /** Hover im Baum: Körper des Features bzw. die Komponente im 3D hervorheben */
+  hover3D(kind, id) {
+    const app = this.app, v = app.viewer;
+    if (!id) return v.clearHover();
+    if (kind === "component") return v.highlight([{ kind: "group", key: "comp:" + id }]);
+    const bodies = app.results.get(app.activeId)?.bodies || [];
+    const hits = bodies.flatMap((b, i) => (b.fid === id ? [{ kind: "body", key: "part", body: i }] : []));
+    if (hits.length) v.highlight(hits); else v.clearHover();
+  }
+  /** Alles auf- oder zuklappen */
+  expandAll(open) {
+    const d = this.app.activeDoc();
+    const keys = [];
+    if (d?.kind === "part") for (const en of treeEntries(d, { nest: this.options().nest })) if (en.children.length) keys.push("kids:" + en.f.id);
+    if (open) { keys.forEach((k) => this.expanded.add(k)); for (const k of [...this.collapsed]) if (!k.endsWith(":open")) this.collapsed.delete(k); if (d?.kind === "part") this.collapsed.add("origin:" + d.id + ":open"); }
+    else { this.expanded.clear(); if (d) { this.collapsed.delete("origin:" + d.id + ":open"); this.collapsed.add("mots:" + d.id); this.collapsed.add("cons:" + d.id); } }
+    this.render();
   }
   /** Baum-Optionen aus den Einstellungen */
   options() {
@@ -41,11 +106,12 @@ export class Tree {
     const head = h("div", { class: "pane-head" }, h("span", { class: "grow", title: prj.name }, prj.name),
       h("button", { class: "icon-btn", title: "Neues Bauteil", onclick: () => app.newPart() }, icon("plus")),
       h("button", { class: "icon-btn", title: "Baum-Optionen", onclick: (e) => this.optionsMenu(e) }, icon("list")));
-    head.addEventListener("dblclick", () => this.renameProject());
+    head.addEventListener("dblclick", (e) => { if (e.target.closest("button")) return; this.renameProject(); });
+    const searching = document.activeElement === this.searchInput;
     const root = h("ul", { class: "tree" });
     const groups = [["part", "Bauteile", "part"], ["assembly", "Baugruppen", "assembly"], ["drawing", "Zeichnungen", "drawing"]];
     for (const [kind, label, ic] of groups) {
-      const docs = prj.docs.filter((d) => d.kind === kind);
+      const docs = prj.docs.filter((d) => d.kind === kind && (d.id === app.activeId || this.hit(d.name, d.number)));
       if (!docs.length) continue;
       const key = "g:" + kind;
       const open = !this.collapsed.has(key);
@@ -83,7 +149,12 @@ export class Tree {
       root.append(li);
     }
     if (!prj.docs.length) root.append(h("li", { class: "hint", style: { padding: "8px 12px" } }, "Noch keine Dokumente. Über »Datei« ein Bauteil anlegen."));
-    this.el.replaceChildren(head, root);
+    this.el.replaceChildren(h("div", { class: "tree-top" }, head, this.searchBar()), root);
+    if (searching) this.searchInput.focus();
+    if (this.hot) this.el.querySelector(`.node[data-rid="${CSS.escape(this.hot)}"]`)?.classList.add("hot");
+    // gewählte Zeile in Sicht holen, wenn die Auswahl gewechselt hat (Klick im 3D)
+    const selKey = app.sel ? app.sel.type + ":" + app.sel.id : "";
+    if (selKey !== this.lastSel) { this.lastSel = selKey; if (selKey) this.el.querySelector(".tree ul ul .node.sel")?.scrollIntoView({ block: "nearest" }); }
   }
   node({ label, ic, cls = "", twist = "", onTwist, onClick, onDbl, onMenu, meta, title, rid, badge, eye, detail }) {
     // Plakette am Symbol (Inventor/SolidWorks): Fehler, Warnung, unterbestimmte Skizze
@@ -109,6 +180,7 @@ export class Tree {
     const app = this.app;
     const r = app.results.get(part.id);
     const ul = h("ul");
+    const q = !!this.query.trim();
     // Ursprung
     const ok = "origin:" + part.id;
     const oOpen = !this.collapsed.has(ok) && false;
@@ -122,9 +194,9 @@ export class Tree {
       }
       oli.append(ou);
     }
-    ul.append(oli);
+    if (!q) ul.append(oli);
     // Parameter
-    if (part.params.length) ul.append(h("li", {}, this.node({ label: `Parameter (${part.params.length})`, ic: "params", onClick: () => app.props.paramsDialog() })));
+    if (part.params.length && !q) ul.append(h("li", {}, this.node({ label: `Parameter (${part.params.length})`, ic: "params", onClick: () => app.props.paramsDialog() })));
     // Bauteilende (FU5): Markierung zum Ziehen; Features dahinter grau und nicht gerechnet
     const endAt = activeCount(part);
     const endNode = () => {
@@ -144,8 +216,9 @@ export class Tree {
       return li;
     };
     const opts = this.options();
-    const entries = treeEntries(part, { nest: opts.nest, endAt });
-    const endPos = endPosition(entries, endAt);
+    let entries = treeEntries(part, { nest: opts.nest, endAt });
+    if (q) entries = filterEntries(entries, (f) => this.hit(f.name, FEATURE_NAMES[f.type]));
+    const endPos = q ? -1 : endPosition(entries, endAt);
     const featureNode = (f, i, extra = {}) => {
       const st = r?.status?.[f.id];
       const cls = [];
@@ -166,6 +239,8 @@ export class Tree {
         eye: this.featureEye(part, f, consumedBy),
         ...extra,
       });
+      nd.addEventListener("mouseenter", () => this.hover3D("feature", f.id));
+      nd.addEventListener("mouseleave", () => this.hover3D(null));
       // Ziehen im Baum: Feature an eine andere Stelle (Bezüge werden geprüft)
       nd.draggable = true;
       nd.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/x-pbcad-feature", f.id); e.dataTransfer.effectAllowed = "move"; });
@@ -174,22 +249,53 @@ export class Tree {
       nd.addEventListener("drop", (e) => { nd.classList.remove("drop"); const id = e.dataTransfer.getData("text/x-pbcad-feature"); if (!id) return; e.preventDefault(); e.stopPropagation(); if (id !== f.id) app.moveFeatureTo(id, part.features.findIndex((g) => g.id === f.id)); });
       return dropTarget(h("li", {}, nd), f.id);
     };
-    entries.forEach((en, k) => {
-      if (k === endPos) ul.append(endNode());
-      if (!en.children.length) return ul.append(featureNode(en.f, en.i));
+    const entryNode = (en) => {
+      if (!en.children.length) return featureNode(en.f, en.i);
       // genutzte Skizzen eingerückt unter dem Feature; aufgeklappt, wenn eine davon gewählt ist
       const key = "kids:" + en.f.id;
       const childSel = en.children.some((c) => app.sel?.type === "feature" && app.sel.id === c.f.id);
-      const open = this.expanded.has(key) || childSel;
+      const open = this.expanded.has(key) || childSel || !!en.open;
       const li = featureNode(en.f, en.i, { twist: open ? "▾" : "▸", onTwist: () => { if (open) { this.expanded.delete(key); if (childSel) app.selectFeature(en.f.id); } else this.expanded.add(key); this.render(); } });
       if (open) {
         const cu = h("ul", { class: "kids" });
         for (const c of en.children) cu.append(featureNode(c.f, c.i));
         li.append(cu);
       }
-      ul.append(li);
-    });
+      return li;
+    };
+    let k = 0;
+    for (const g of groupFolders(entries)) {
+      if (!g.folder) { if (k === endPos) ul.append(endNode()); ul.append(entryNode(g)); k++; continue; }
+      // Ordner (wie Inventor/SolidWorks): aufeinanderfolgende Features mit gleichem Ordnernamen
+      const key = "fold:" + part.id + ":" + g.entries[0].f.id;
+      const ids = g.entries.flatMap((en) => [en.f.id, ...en.children.map((c) => c.f.id)]);
+      const inside = app.sel?.type === "feature" && ids.includes(app.sel.id);
+      const open = !this.collapsed.has(key) || inside || q;
+      const bad = g.entries.some((en) => [en, ...en.children].some((x) => r?.status?.[x.f.id] && !r.status[x.f.id].ok));
+      const fli = h("li");
+      fli.append(this.node({
+        label: g.folder, ic: "folder", cls: "folder", twist: open ? "▾" : "▸", badge: bad ? "err" : null, meta: String(g.entries.length), rid: key,
+        title: `Ordner »${g.folder}« – ${g.entries.length} Feature(s)`,
+        onClick: () => this.toggle(key), onTwist: () => this.toggle(key),
+        onDbl: () => this.renameFolder(g),
+        onMenu: (e) => contextMenu(e.clientX, e.clientY, [
+          { label: "Ordner umbenennen", icon: "edit", run: () => this.renameFolder(g) },
+          { label: "Ordner auflösen", icon: "cut", run: () => app.edit("Ordner auflösen", () => { for (const en of g.entries) delete en.f.folder; }, { rebuild: false }) },
+        ]),
+      }));
+      const fu = h("ul", { class: "folder-kids" });
+      let endInside = false;
+      for (const en of g.entries) {
+        if (k === endPos) { if (open) fu.append(endNode()); else endInside = true; }
+        if (open) fu.append(entryNode(en));
+        k++;
+      }
+      if (endInside) ul.append(endNode());
+      if (open) fli.append(fu);
+      ul.append(fli);
+    }
     if (endPos === entries.length && part.features.length) ul.append(endNode());
+    if (q && !entries.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Nichts gefunden."));
     if (!part.features.length) ul.append(h("li", { class: "hint", style: { padding: "4px 10px" } }, "Mit »Skizze erstellen« oder »Rohr / Profil« beginnen."));
     return ul;
   }
@@ -229,6 +335,7 @@ export class Tree {
     for (const c of asm.components) {
       if (c.pat) continue; // Musterkopien stehen unter ihrem Muster
       const p = app.doc(c.part);
+      if (!this.hit(c.name, p?.name, p?.number)) continue;
       const sel = app.sel?.type === "component" && app.sel.id === c.id;
       const sub = p?.kind === "assembly";
       // BG5: Abhängigkeiten der Komponente direkt darunter (wie Inventor), standardmäßig zugeklappt
@@ -271,6 +378,8 @@ export class Tree {
         cn.addEventListener("dragleave", () => cn.classList.remove("drop"));
         cn.addEventListener("drop", (e) => { cn.classList.remove("drop"); const id = e.dataTransfer.getData("text/x-pbcad-comp"); if (id) { e.preventDefault(); moveCompIntoSub(app, id, c.id); } });
       }
+      cn.addEventListener("mouseenter", () => this.hover3D("component", c.id));
+      cn.addEventListener("mouseleave", () => this.hover3D(null));
       if (sub) li.append(this.subComponentList(p, 1));
       if (myCons.length && consOpen) li.append(h("ul", {}, ...myCons.map((x) => h("li", {}, this.constraintNode(asm, x)))));
     }
@@ -400,6 +509,7 @@ export class Tree {
       { label: "Nach oben", icon: "up", run: () => app.moveFeature(f.id, -1) },
       { label: "Nach unten", icon: "down", run: () => app.moveFeature(f.id, 1) },
       { label: "Bauteilende hierher", icon: "finish", run: () => app.setPartEnd(f.id) },
+      ...this.folderItems(part, f),
       "-",
       { label: "Duplizieren", icon: "copy", run: () => app.duplicateFeature(f.id) },
       { label: "Kopieren", icon: "copy", run: () => app.copyFeature(f.id) },
@@ -459,10 +569,33 @@ export class Tree {
     this.rename(obj, true);
     return true;
   }
+  /** Kontextmenü-Einträge für Ordner; Skizzen unter einem Feature folgen diesem */
+  folderItems(part, f) {
+    const app = this.app;
+    const top = treeEntries(part, { nest: this.options().nest, endAt: activeCount(part) });
+    const en = top.find((e) => e.f.id === f.id);
+    if (!en) return [];
+    const near = neighbourFolders(top, f.id);
+    return [
+      { label: "In neuen Ordner …", icon: "folder", run: async () => {
+        const name = await promptDialog("Neuer Ordner", "Ordnername", "Ordner", { validate: (v) => (v.trim() ? null : "Name darf nicht leer sein") });
+        if (name) app.edit("Ordner", () => { f.folder = name.trim(); }, { rebuild: false });
+      } },
+      ...near.map((n) => ({ label: `Zum Ordner »${n}«`, icon: "folder", run: () => app.edit("Ordner", () => { f.folder = n; }, { rebuild: false }) })),
+      f.folder ? { label: "Aus dem Ordner nehmen", icon: "up", run: () => app.edit("Ordner", () => { delete f.folder; }, { rebuild: false }) } : null,
+    ];
+  }
+  async renameFolder(g) {
+    const name = await promptDialog("Ordner umbenennen", "Ordnername", g.folder, { validate: (v) => (v.trim() ? null : "Name darf nicht leer sein") });
+    if (name) this.app.edit("Ordner umbenennen", () => { for (const en of g.entries) en.f.folder = name.trim(); }, { rebuild: false });
+  }
   optionsMenu(e) {
     const app = this.app, o = this.options();
     const r = e.currentTarget.getBoundingClientRect();
     contextMenu(r.left, r.bottom + 2, [
+      { label: "Alles aufklappen", icon: "down", run: () => this.expandAll(true) },
+      { label: "Alles zuklappen", icon: "up", run: () => this.expandAll(false) },
+      "-",
       { label: "Genutzte Skizzen unter dem Feature", icon: o.nest ? "finish" : null, run: () => app.prefs.set("baum.skizzenEinordnen", !o.nest) },
       { label: "Erweiterte Namen (Maße)", icon: o.details ? "finish" : null, run: () => app.prefs.set("baum.erweiterteNamen", !o.details) },
     ]);

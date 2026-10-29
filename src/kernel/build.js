@@ -2206,6 +2206,7 @@ export function createKernel(R) {
     }
     return s;
   }
+
   /** Körper mit Achse +z an Punkt pos auf Richtung dir drehen */
   function orientZ(shape, dir, pos) {
     const n = v3.norm(dir), z = [0, 0, 1];
