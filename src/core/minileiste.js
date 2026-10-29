@@ -8,7 +8,7 @@ export function miniBarItems(hits) {
   const items = [];
   if (edges) items.push({ id: "fillet", label: "Rundung", icon: "fillet" }, { id: "chamfer", label: "Fase", icon: "chamfer" }, { id: "naht", label: "Schweißnaht", icon: "naht" });
   if (plane) items.push({ id: "faceSketch", label: "Skizze auf Fläche", icon: "sketch" }, { id: "normal", label: "Normal zur Fläche", icon: "plane" });
-  if (faces) items.push({ id: "shell", label: "Wandung", icon: "shell" });
+  if (faces) items.push({ id: "direkt", label: "Direkt bearbeiten (verschieben, Größe, drehen)", icon: "direct" }, { id: "direktLoeschen", label: "Fläche löschen", icon: "facedel" }, { id: "shell", label: "Wandung", icon: "shell" });
   items.push({ id: "measure", label: "Messen", icon: "dimension" }, { id: "fitSel", label: "Auswahl zeigen", icon: "fit" });
   return items;
 }

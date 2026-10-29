@@ -197,6 +197,7 @@ export class Viewer {
       // Triad-Größe konstant halten
       const s = 60 / this.pixelsPerUnit();
       this.triad.scale.setScalar(s);
+      if (this.directGlyph) this.directGlyph.scale.setScalar(70 / this.pixelsPerUnit());
       r.render(this.scene, this.camera);
       this.placeMeasureLabel();
       // ViewCube
@@ -603,6 +604,64 @@ export class Viewer {
       this.helpers.add(g);
     }
     this.render();
+  }
+  /**
+   * Triade der Direktbearbeitung: Pfeile (ziehbar) und Ringe (Drehachse wählen) in fester Bildschirmgröße.
+   * spec = { center, arrows: [{id, d, color, on, small}], rings: [{id, k, on}] } oder null.
+   */
+  showDirectGlyph(spec) {
+    if (this.directGlyph) { this.helpers.remove(this.directGlyph); disposeTree(this.directGlyph); this.directGlyph = null; }
+    if (spec && (spec.arrows?.length || spec.rings?.length)) {
+      const g = new THREE.Group();
+      g.position.set(...spec.center);
+      const noDepth = (o) => { o.traverse((x) => { if (x.material) { x.material.depthTest = false; x.material.transparent = true; } x.renderOrder = 12; }); return o; };
+      for (const a of spec.arrows || []) {
+        const len = a.small ? 0.7 : 1;
+        const ar = new THREE.ArrowHelper(new THREE.Vector3(...a.d).normalize(), new THREE.Vector3(), len, a.color, len * 0.3, len * 0.14);
+        if (!a.on) ar.traverse((x) => { if (x.material) x.material.opacity = 0.55; });
+        g.add(noDepth(ar));
+      }
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 12), new THREE.MeshBasicMaterial({ color: 0x5b6570 }));
+      g.add(noDepth(ball));
+      for (const r of spec.rings || []) {
+        const k = new THREE.Vector3(...r.k).normalize();
+        const u = Math.abs(k.x) < 0.9 ? new THREE.Vector3(1, 0, 0).cross(k).normalize() : new THREE.Vector3(0, 1, 0).cross(k).normalize(), w = k.clone().cross(u);
+        const pts = [];
+        for (let i = 0; i <= 64; i++) { const t = (i / 64) * Math.PI * 2; pts.push(u.clone().multiplyScalar(Math.cos(t) * 0.75).add(w.clone().multiplyScalar(Math.sin(t) * 0.75))); }
+        g.add(noDepth(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: r.on ? 0xe08a00 : 0x9aa3ad }))));
+        if (r.on) g.add(noDepth(new THREE.Line(new THREE.BufferGeometry().setFromPoints([k.clone().multiplyScalar(-1.1), k.clone().multiplyScalar(1.1)]), new THREE.LineBasicMaterial({ color: 0xe08a00 }))));
+      }
+      g.userData.spec = spec;
+      g.scale.setScalar(70 / this.pixelsPerUnit());
+      this.directGlyph = g;
+      this.helpers.add(g);
+    }
+    this.render();
+  }
+  /** Griff der Direkt-Triade unter dem Mauszeiger: {id, d, base} (Pfeil) bzw. {id, ring: true} oder null */
+  pickDirectHandle(cx, cy) {
+    const g = this.directGlyph;
+    if (!g) return null;
+    const spec = g.userData.spec, s = 70 / this.pixelsPerUnit(), c = spec.center;
+    const rect = this.renderer.domElement.getBoundingClientRect(), x = cx - rect.left, y = cy - rect.top;
+    let best = null, bd = 9;
+    for (const a of spec.arrows || []) {
+      const d = new THREE.Vector3(...a.d).normalize().toArray(), tip = c.map((v, i) => v + d[i] * s * (a.small ? 0.7 : 1));
+      const [p, q] = [this.worldToScreen(c.map((v, i) => v + d[i] * s * 0.25)), this.worldToScreen(tip)];
+      const dist = segDist(x, y, p[0], p[1], q[0], q[1]);
+      if (dist < bd) { bd = dist; best = { id: a.id, d, base: c }; }
+    }
+    if (best) return best;
+    for (const r of spec.rings || []) {
+      const k = new THREE.Vector3(...r.k).normalize();
+      const u = Math.abs(k.x) < 0.9 ? new THREE.Vector3(1, 0, 0).cross(k).normalize() : new THREE.Vector3(0, 1, 0).cross(k).normalize(), w = k.clone().cross(u);
+      for (let i = 0; i < 48; i++) {
+        const t = (i / 48) * Math.PI * 2, P = u.clone().multiplyScalar(Math.cos(t) * 0.75 * s).add(w.clone().multiplyScalar(Math.sin(t) * 0.75 * s)).toArray();
+        const sp = this.worldToScreen(c.map((v, j) => v + P[j]));
+        if (Math.hypot(sp[0] - x, sp[1] - y) < 8) return { id: r.id, ring: true };
+      }
+    }
+    return null;
   }
   /** Platzier-Vorschau (BG1): halbdurchsichtige Teile am Mauszeiger; items = [{bodies, color, inner}] oder null */
   setPlaceGhost(items) {

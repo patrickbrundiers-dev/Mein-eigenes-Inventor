@@ -19,6 +19,7 @@ import { BASE_PLANES, planeFromFace } from "../core/geom.js";
 import { datumPropsPanel, datumCreatePanel } from "./arbeitselemente.js";
 import { sketchRefs } from "../core/featurerefs.js";
 import { COMBINE_OPS, SPLIT_KEEP, THICKEN_SIDES } from "../core/koerper.js";
+import { DIREKT_OPS, DIREKT_RICHTUNGEN, DIREKT_ACHSEN, DIREKT_GROESSE } from "../core/direkt.js";
 import { CONSTRAINT_TYPES } from "../core/asmsolve.js";
 import { holeFromConstraints, defaultAsmPattern } from "../core/asmmuster.js";
 import { CAP_MODES, equalParts } from "../core/rahmen.js";
@@ -315,6 +316,7 @@ export class Props {
   render() {
     const app = this.app;
     const d = app.activeDoc();
+    app.direct?.sync(); // Leiste der Direktbearbeitung folgt dem gewählten Feature
     if (app.viewer.fieldGroup?.children.length) app.viewer.highlightBodies([]); // Feld-Hervorhebung gehört zum alten Feld
     const body = h("div", { class: "props-body" });
     let title = "Eigenschaften";
@@ -1325,7 +1327,7 @@ export class Props {
           h("p", { class: "hint" }, `Je Stabende eine Querbohrung durch beide Wände, so nah am Ende wie möglich (bei Gehrung hinter der Spitze). Richtwert-Ø nach DIN EN ISO 14713-2 aus der Profilgröße, z. B. 40er Rohr 12 mm, 80er 16 mm, 100er 20 mm – mit dem Verzinker abstimmen. Oberfläche des Bauteils: ${fin === "verzinkt" || fin === "duplex" ? "verzinkt" : "nicht verzinkt (unter Bauteil-Eigenschaften einstellen)"}.`)));
         break;
       }
-      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "aufdicken": case "flaeche": case "entformung":
+      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "aufdicken": case "flaeche": case "entformung": case "direkt":
         out.push(...this.bodyToolProps(part, f, E));
         break;
       case "steckzapfen": case "steckschlitz":
@@ -1417,6 +1419,18 @@ export class Props {
           E("Dicke", "thickness", { allowNeg: false, allowZero: false }),
           this.seg("Richtung", THICKEN_SIDES, f.side || "aussen", (v) => this.set(f, "side", v, "Richtung")),
           this.seg("Vorgang", [["new", "Neuer Körper"], ["join", "Vereinigen"]], f.op || "new", (v) => this.set(f, "op", v, "Vorgang")))];
+      case "direkt": {
+        const op = f.op || "verschieben";
+        const parts = [this.seg("Vorgang", DIREKT_OPS, op, (v) => this.set(f, "op", v, "Vorgang")),
+          facePick(op === "loeschen" ? "Flächen anklicken, die wegfallen (z. B. Bohrung, Rundung, Fase, Zapfen); die Lücke wird geschlossen." : op === "groesse" ? "Bohrung/Bolzen (Zylinder) oder ebene Fläche anklicken." : "Ebene Flächen anklicken; die Nachbarflächen wachsen bzw. schrumpfen mit.")];
+        if (op === "verschieben") parts.push(this.seg("Richtung", DIREKT_RICHTUNGEN, f.richtung || "normal", (v) => this.set(f, "richtung", v, "Richtung")),
+          E(f.from?.p ? "Abstand ab Bezug" : "Abstand", "distance"),
+          f.from?.p ? h("p", { class: "hint" }, "Gemessen ab dem gewählten Bezug (»Messen ab« in der Leiste am Modell).") : null);
+        if (op === "groesse") parts.push(this.seg("Maß", DIREKT_GROESSE, f.sizeMode || "durchmesser", (v) => this.set(f, "sizeMode", v, "Maß")), E((f.sizeMode || "durchmesser") === "durchmesser" ? "Durchmesser" : f.sizeMode === "radius" ? "Radius" : "Versatz", "size"));
+        if (op === "drehen") parts.push(this.seg("Drehachse", DIREKT_ACHSEN, f.achse || "U", (v) => (v === "kante" ? this.app.direct.pickEdge(f) : this.set(f, "achse", v, "Drehachse"))), E("Winkel", "angle", { unit: "°", allowZero: false }));
+        parts.push(h("p", { class: "hint" }, "Am Modell: Leiste mit Triade – Pfeil ziehen oder Wert eintippen, Eingabe bestätigt."));
+        return [this.section("Direktbearbeitung", ...parts)];
+      }
       case "flaeche":
         return [this.section("Fläche verschieben",
           facePick("Ebene Flächen anklicken; positiver Abstand zieht heraus, negativer setzt zurück."),

@@ -24,6 +24,7 @@ export const BEFEHLSHILFE = {
   verschieben: "Körper verschieben oder drehen, ohne die Skizzen zu ändern.",
   aufdicken: "Gewählte Flächen zu einem Körper mit Dicke aufdicken, nach außen oder innen.",
   flaeche: "Einzelne Fläche des Körpers um einen Abstand verschieben (Direktbearbeitung).",
+  direkt: "Direktbearbeitung am fertigen Modell: Flächen verschieben, Größe ändern, drehen oder löschen, mit Triade, Maßeingabe und »Messen ab«.",
   entformung: "Flächen um einen Winkel neigen, z. B. als Entformungsschräge.",
   patternLin: "Feature oder Körper in Reihen und Spalten vervielfältigen.",
   patternCirc: "Feature oder Körper gleichmäßig um eine Achse vervielfältigen.",
