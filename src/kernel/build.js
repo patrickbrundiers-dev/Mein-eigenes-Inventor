@@ -12,6 +12,7 @@ import { resolveDatums, resolvePlane, mirrorPlane, patternAxis, datumSummary } f
 import { planeOf, axisOf, validateCombine, thickenSpan, validateDraft } from "../core/koerper.js";
 import { capPlan, trimPlan } from "../core/rahmen.js";
 import { ventPlan, needsVent } from "../core/verzinkung.js";
+import { centerline, locateHole, STRECKEN_SECTIONS } from "../core/strecken.js";
 import { pathChain, reverseChain, pathLength as chainLength, pathPatternStations, coilParams, loopCentroid, validateLoft } from "../core/formen.js";
 import { sectionGeometry, sectionName, profileId, THREADS, loopLength } from "../core/sections.js";
 import { parseSvgPath, flattenPaths } from "../core/svgpath.js";
@@ -1199,7 +1200,7 @@ export function createKernel(R) {
               });
               const solid = pieces.length > 1 ? R.makeCompound(pieces) : pieces[0];
               const meta = { section: sectionName(tb.section.kind, tb.section.dims), profileId: profileId(tb.section.kind, tb.section.dims), area: g.area, length: tubeLength(tb.path), miterStart: 0, miterEnd: 0, generator: f.gen, sec: { kind: tb.section.kind, dims: tb.section.dims },
-                rolled: { radius: bendRadius(tb.path), angle: Math.abs(tb.path.sweep), rise: tb.path.rise || 0 }, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) };
+                rolled: { radius: bendRadius(tb.path), angle: Math.abs(tb.path.sweep), rise: tb.path.rise || 0 }, center: { path: tb.path }, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) };
               add(solid, meta, tb.name);
             }
             for (const pl of plan.plates) {
@@ -1430,7 +1431,7 @@ export function createKernel(R) {
             const plan = planBends(resolvePathPoints(f.points, E), E(f.radius, "Biegeradius"), geom.width);
             const solid = sweepTube(plan.pieces, geom);
             const name = sectionName(f.section, dims);
-            const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: plan.length, miterStart: 0, miterEnd: 0, bends: plan.bends.map((b) => ({ ...b })), lastStraight: plan.last, bendRadius: E(f.radius, "Biegeradius") };
+            const meta = { section: name, profileId: profileId(f.section, dims), area: geom.area, length: plan.length, miterStart: 0, miterEnd: 0, bends: plan.bends.map((b) => ({ ...b })), lastStraight: plan.last, bendRadius: E(f.radius, "Biegeradius"), sec: { kind: f.section, dims }, center: { pieces: plan.pieces } };
             state.tools.set(f.id, { op: f.op || "member", shapes: [{ shape: solid, kind: "member", meta, name: f.name || name }] });
             pushMember(state, solid, f, meta, f.name || name);
             st.info = `Abwicklung ${round(plan.length)} mm, ${plan.bends.length} Biegung(en)`;
@@ -1627,6 +1628,44 @@ export function createKernel(R) {
             if (!n) throw new Error("Keine Kappe gesetzt – Enden auf Gehrung");
             state.tools.set(f.id, { op: "new", shapes });
             st.info = `${n} Endkappe(n) ${f.mode === "eingesetzt" ? "eingesetzt" : "aufgesetzt"}, ${String(E(f.thickness || "3", "Dicke")).replace(".", ",")} mm`;
+            break;
+          }
+          case "strecken": {
+            // Gebogenes Rohr strecken (W2): gerades Rohr in Abwicklungslänge mit dem Bohrbild für den Rohrlaser
+            const bodies = state.bodies.filter((b) => b.kind === "member" && b.meta?.center && (!f.target || b.fid === f.target));
+            if (!bodies.length) throw new Error("Kein gebogenes oder gewalztes Rohr gefunden");
+            let n = 0, nh = 0;
+            const notes = [];
+            for (const b of bodies) {
+              const sec = b.meta.sec;
+              if (!sec || !STRECKEN_SECTIONS.includes(sec.kind)) { notes.push(`${b.name}: nur Rundrohr und Rundstahl`); continue; }
+              const g = sectionGeometry(sec.kind, sec.dims), Ro = g.outer.r;
+              const pts = centerline(b.meta.center);
+              const L = b.meta.length || pts[pts.length - 1].s;
+              const holes = [];
+              for (const hx of holeAxes(b.shape)) {
+                const hl = locateHole(pts, hx, Ro);
+                if (!hl || holes.some((o) => Math.abs(o.s - hl.s) < 0.5 && Math.abs(o.phi - hl.phi) < 1 && Math.abs(o.d - hl.d) < 0.05)) continue;
+                holes.push(hl);
+              }
+              holes.sort((a, c) => a.s - c.s || a.phi - c.phi);
+              const fr = { origin: pts[0].p, z: pts[0].t, u: pts[0].r, v: v3.cross(pts[0].t, pts[0].r) };
+              let shape = makeMember({ kind: sec.kind, dims: sec.dims }, L, fr).solid;
+              for (const hl of holes) {
+                const a = (hl.phi * Math.PI) / 180, dir = v3.add(v3.mul(fr.u, Math.cos(a)), v3.mul(fr.v, Math.sin(a)));
+                const c = v3.add(fr.origin, v3.mul(fr.z, hl.s));
+                shape = shape.cut(R.makeCylinder(hl.d / 2, hl.through ? 2 * Ro + 10 : Ro + 5, v3.add(c, v3.mul(dir, Ro + 5)), v3.mul(dir, -1)));
+              }
+              const old = b.shape;
+              b.shape = shape;
+              b.meta = { ...b.meta, stretched: { length: L, holes } };
+              const tm = state.tools.get(b.fid)?.shapes.find((x) => x.shape === old);
+              if (tm) { tm.shape = shape; tm.meta = b.meta; }
+              n++; nh += holes.length;
+            }
+            if (!n) throw new Error(notes.join("; ") || "Kein Rundrohr gefunden");
+            st.info = `${n} Rohr(e) gestreckt, ${nh} Bohrung(en) übertragen`;
+            if (notes.length) st.warning = notes.join("; ");
             break;
           }
           case "zinkloch": {

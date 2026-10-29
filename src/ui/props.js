@@ -39,6 +39,7 @@ import { END_CUT_SECTIONS, featureCutSettings, roundTube3D, SWIVEL_DEFAULT } fro
 import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
+import { stretchCsv } from "../core/strecken.js";
 import { PLATE_HOLES, RIB_SIDES } from "../core/anschluss.js";
 import { GENERATORS, applyTemplate, genValues, resolveGenParams } from "../core/generator.js";
 import { sketchViews, VIEW_LABEL, fieldParts } from "../core/genskizze.js";
@@ -1258,6 +1259,20 @@ export class Props {
             this.seg("Ende", [["auto", "Näheres"], ["A", "A"], ["B", "B"]], f.end || "auto", (v) => this.set(f, "end", v, "Ende")),
             h("p", { class: "hint" }, "Das Stabende endet genau an der Ebene: liegt sie innerhalb, wird gekürzt, sonst gerade verlängert und an der Ebene geschnitten (schräge Ebene = Gehrung). Für Flächen eines Bauteils vorher eine Arbeitsebene auf die Fläche legen.")));
         }
+        break;
+      }
+      case "strecken": {
+        const targets = part.features.filter((g) => ["biegerohr", "generator"].includes(g.type));
+        const tubes = (r?.bodies || []).filter((b) => b.meta?.stretched && (!f.target || b.fid === f.target));
+        const n1 = (x) => fmtNum(x, 1);
+        out.push(this.section("Rohr strecken",
+          this.select("Rohr", [["", "alle gebogenen Rohre"], ...targets.map((g) => [g.id, g.name])], f.target || "", (v) => this.set(f, "target", v, "Rohr")),
+          ...tubes.map((b) => h("div", {},
+            h("p", {}, h("b", {}, b.name), ` – gestreckte Länge ${n1(b.meta.stretched.length)} mm, ${b.meta.stretched.holes.length} Bohrung(en)`),
+            b.meta.stretched.holes.length ? h("table", { class: "grid" }, h("tr", {}, ...["Nr", "s mm", "φ °", "Ø", "Art"].map((x) => h("th", {}, x))),
+              ...b.meta.stretched.holes.map((x, i) => h("tr", {}, h("td", {}, String(i + 1)), h("td", {}, n1(x.s)), h("td", {}, n1(x.phi)), h("td", {}, n1(x.d)), h("td", {}, x.through ? "durch" : "eine Wand")))) : null,
+            h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.saveText(stretchCsv(b.name, b.meta.stretched.length, b.meta.stretched.holes), b.name.replace(/[^\w\-äöüÄÖÜß ]+/g, "_") + "_gestreckt.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]) }, "Bohrbild CSV")))),
+          h("p", { class: "hint" }, "Zeigt das Rohr gerade in Abwicklungslänge (Mittellinie) mit allen Bohrungen. So als STEP oder DSTV für den Rohrlaser exportieren und danach biegen. s = Abstand vom Rohranfang, φ = Winkel um die Rohrachse, 0° = Innenseite der ersten Biegung. Unterdrücken zeigt wieder das gebogene Rohr.")));
         break;
       }
       case "zinkloch": {

@@ -47,6 +47,7 @@ export const BEFEHLSHILFE = {
   knickrahmen: "Rahmen aus einem Rohr: V-Ausklinkungen werden gelasert, danach wird das Rohr zum Rahmen gefaltet.",
   gestellInsert: "Gestell aus Linien einer Skizze oder Kanten einfügen, Ecken und T-Stöße per Auswahlliste.",
   endkappe: "Rohr- oder Profilende mit einer Kappe oder Platte verschließen.",
+  strecken: "Gebogenes oder gewalztes Rundrohr gerade darstellen, mit allen Bohrungen an der richtigen Stelle für den Rohrlaser.",
   zinkloch: "Entlüftungs- und Ablaufbohrungen für das Feuerverzinken in alle Hohlprofile setzen, Ø nach DIN EN ISO 14713-2.",
   kuerzen: "Profil an einer Fläche stutzen oder um ein Maß verlängern bzw. kürzen.",
   kantteil: "Abgekantetes Blechteil aus einem Querschnitt mit Radien und Abwicklung.",

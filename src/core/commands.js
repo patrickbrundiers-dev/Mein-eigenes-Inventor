@@ -130,6 +130,7 @@ export const COMMANDS = [
   { id: "part.loft", label: "Erhebung (Loft zwischen Querschnitten)", group: "3D-Modell", scope: "part", keywords: "loft übergang trichter querschnitte erhebung" },
   { id: "part.spirale", label: "Spirale (Feder, Wendel)", group: "3D-Modell", scope: "part", keywords: "coil feder schraubenlinie helix wendel gewinde spirale" },
   { id: "part.endkappe", label: "Endkappe (Profilende)", group: "3D-Modell", scope: "part", keywords: "kappe stopfen verschluss rohrende abdeckung gestell" },
+  { id: "part.strecken", label: "Gebogenes Rohr strecken (Bohrbild für den Rohrlaser)", group: "3D-Modell", scope: "part", keywords: "strecken abwickeln gerade biegen rohrlaser bohrungen handlauf bogen wendel unbend" },
   { id: "part.zinkloch", label: "Verzinkungsbohrungen (Hohlprofile)", group: "3D-Modell", scope: "part", keywords: "verzinken feuerverzinkt entlüftung ablauf loch bohrung hohlprofil zink 14713" },
   { id: "part.kuerzen", label: "Profil kürzen/verlängern an Ebene", group: "3D-Modell", scope: "part", keywords: "kürzen verlängern stutzen trimmen rahmen bis fläche" },
   { id: "part.stecksystem", label: "Stecksystem (Zapfen und Schlitze)", group: "3D-Modell", scope: "part", keywords: "zapfen schlitz stecken tab slot laser rippe platte rohr steckverbindung" },

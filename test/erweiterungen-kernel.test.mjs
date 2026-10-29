@@ -41,3 +41,34 @@ test("W1 Verzinkungsbohrungen: Quadratrohr 40×3, Ø 12 an beiden Enden, nur wen
   const off = await K.buildPart(part([prof, { ...zl, onlyGalv: false }]));
   assert.match(off.status.z.info, /2 Verzinkungsbohrung/);
 });
+
+test("W2 Rohr strecken: Bohrungen am gebogenen Rohr landen am geraden Rohr bei s und φ", async () => {
+  // Bügel: 400 gerade (X), Bogen R 100 nach +Y, 400 gerade (Y)
+  const br = { id: "b", type: "biegerohr", section: "rohr", dims: { D: "40", t: "2" }, radius: "100",
+    points: [{ x: "0", y: "0", z: "0" }, { x: "500", y: "0", z: "0" }, { x: "500", y: "500", z: "0" }] };
+  // Bohrung Ø 10 von oben (−Z) in die obere Wand bei x = 200, und Ø 8 quer (Y) durch beide Wände im zweiten Schenkel bei y = 300
+  const circ = (id, plane, offset, x, y, r) => ({ id, type: "sketch", name: id, plane: { ref: plane }, offset, points: [{ id: id + "c", x, y }], entities: [{ id: id + "k", type: "circle", c: id + "c", r }], constraints: [] });
+  const sk1 = circ("s1", "XY", "30", 200, 0, 5);
+  const cut1 = { id: "c1f", type: "extrude", sketch: "s1", op: "cut", distance: "20", mode: "reverse" };
+  const sk2 = circ("s2", "YZ", "0", 300, 0, 4);
+  const cut2 = { id: "c2f", type: "extrude", sketch: "s2", op: "cut", distance: "600" };
+  const st = { id: "st", type: "strecken", target: "b" };
+  const res = await K.buildPart(part([br, sk1, cut1, sk2, cut2, st]));
+  okAll(res);
+  const tube = res.bodies.find((b) => b.fid === "b");
+  const L = 400 + 400 + (Math.PI / 2) * 100;
+  near(tube.meta.stretched.length, L, 0.01, "gestreckte Länge");
+  const bb = tube.shape.boundingBox.bounds;
+  near(bb[1][0] - bb[0][0], L, 0.5, "gerade in X");
+  const hs = tube.meta.stretched.holes;
+  assert.equal(hs.length, 3, JSON.stringify(hs)); // Querbohrung durch beide Wände = zwei Öffnungen
+  near(hs[0].s, 200, 0.3, "s Bohrung 1"); near(hs[0].d, 10, 0.01); assert.equal(hs[0].through, false);
+  // φ = 0 ist Innenseite der Biegung (+Y am Anfang), b = t × r = X × Y = +Z → obere Wand bei 90°
+  near(hs[0].phi, 90, 0.5, "φ Bohrung 1");
+  near(hs[1].s, 400 + 157.08 + 200, 0.5, "s Bohrung 2"); near(hs[1].d, 8, 0.01);
+  // im zweiten Schenkel zeigt die Innenseite nach −X: Bohrung entlang X trifft 0° und 180°
+  assert.deepEqual([hs[1].phi, hs[2].phi], [0, 180]);
+  // Volumen: gerades Rohr minus Löcher ≈ gebogenes Rohr mit Löchern
+  const bent = await K.buildPart(part([br, sk1, cut1, sk2, cut2]));
+  near(R.measureVolume(tube.shape), vol(bent), 0.01 * vol(bent), "Volumen");
+});
