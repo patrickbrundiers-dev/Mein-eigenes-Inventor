@@ -210,3 +210,19 @@ test("N9: Bohrungsangabe-Text für die 3D-Notiz", () => {
   assert.equal(holeTextN9({ d: 6.8, thread: "M8", depth: 12 }, 4), "4× M8, 12 tief");
   assert.equal(holeTextN9({ d: 11 }, 2), "2× Ø11 durch");
 });
+
+// ---------- O3: Pfostenaufteilung von Hand ----------
+import { postStations } from "../src/core/gelaender.js";
+test("O3: Pfostenaufteilung max/anzahl/abstand/liste", () => {
+  const base = { postMax: 1200, post: { geom: { width: 40 } } };
+  assert.deepEqual(postStations({ ...base }, 3000), [0, 1000, 2000, 3000]);
+  assert.deepEqual(postStations({ ...base, postMode: "anzahl", postCount: 2 }, 3000), [0, 1500, 3000]);
+  assert.deepEqual(postStations({ ...base, postMode: "abstand", postStep: 1000 }, 3500), [0, 1000, 2000, 3000, 3500]);
+  assert.deepEqual(postStations({ ...base, postMode: "abstand", postStep: 1000 }, 3100), [0, 1000, 2000, 3100], "kleiner Rest ins letzte Feld");
+  const list = [800, 1000];
+  assert.deepEqual(postStations({ ...base, postMode: "liste" }, 3000, 0, list), [0, 800, 1800, 3000]);
+  assert.throws(() => postStations({ ...base, postMode: "liste" }, 1000, 0, [800, 800]), /passt nicht/);
+  const pl = plan("gelaender", { postMode: "liste", postList: "500; 1000", runs: "3000" });
+  const posts = pl.members.filter((m) => /^Pfosten \d+$/.test(m.name)).map((m) => Math.round(m.a[0]));
+  assert.deepEqual(posts.slice(0, 3), [0, 500, 1500]);
+});

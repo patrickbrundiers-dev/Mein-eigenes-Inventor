@@ -16,12 +16,51 @@ import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
 import { sectionGeometry } from "./sections.js";
 import { bentChain } from "./biegeteil.js";
 import { mountSchema, mountConfig, topMount, sideMount, sideOffset, planeFace, slabFace, findMemberFace, findSideFace, findPlateFace, faceCoords, holesBelow, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
+const fmt = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
 
 const GLASS_T = [8.76, 10.76, 12.76, 16.76, 20.76];
 /** Ganzglas: Glasscheiben tragen selbst, keine Pfosten, Gurte und Pfostenbefestigung */
 const allGlass = (p) => p.fill === "glas" && (p.glassMount === "boden" || p.glassMount === "punkt");
 const mountKind = (p) => (p.base === "oben" || p.base === "seitlich" ? p.base : null);
 const SEC = { rohr: "Rundrohr", vierkant: "Quadratrohr", rechteck: "Rechteckrohr", flach: "Flachstahl", rund: "Rundstahl", vierkantvoll: "Vierkantstahl" };
+
+/**
+ * Pfostenstellen eines Laufs (O3, wie HiCAD Pfostenaufteilung): Abstände ab Laufbeginn [0, …, L].
+ * max: gleichmäßig mit Abstand ≤ postMax; anzahl: postCount gleiche Felder; abstand: postStep, Rest am Ende
+ * (Rest unter 1/4 Abstand wird mit dem letzten Feld zusammengelegt); liste: Feldlängen aus list (wird verbraucht),
+ * was im Lauf übrig bleibt, gleichmäßig nach postMax.
+ */
+export function postStations(p, L, run = 0, list = null) {
+  const even = (from, len, max) => { const n = Math.max(1, Math.ceil(len / max - 1e-9)); return Array.from({ length: n }, (_, k) => from + (len * (k + 1)) / n); };
+  const mode = p.postMode || "max";
+  if (mode === "anzahl") {
+    const n = Math.round(p.postCount);
+    if (!(n >= 1)) throw fieldError("Felder je Lauf: mindestens 1", "postCount");
+    return [0, ...Array.from({ length: n }, (_, k) => (L * (k + 1)) / n)];
+  }
+  if (mode === "abstand") {
+    const a = p.postStep;
+    if (!(a > (p.post?.geom?.width || 0))) throw fieldError("Pfostenabstand zu klein", "postStep");
+    const out = [0];
+    while (L - out.at(-1) > a + 1e-6) out.push(out.at(-1) + a);
+    if (out.length > 1 && L - out.at(-1) < a / 4) out.pop(); // kleiner Rest: letztes Feld länger
+    out.push(L);
+    return out;
+  }
+  if (mode === "liste" && list) {
+    const out = [0];
+    while (list.length && L - out.at(-1) > 1e-6) {
+      const f = list[0];
+      if (!(f > 0)) throw fieldError("Feldlängen > 0 angeben", "postList");
+      if (out.at(-1) + f > L + 1e-6) throw fieldError(`Feld ${fmt(f)} mm passt nicht mehr in Lauf ${run + 1} (Rest ${fmt(L - out.at(-1))} mm) – Feldlängen enden an jeder Ecke`, "postList");
+      list.shift();
+      out.push(Math.min(L, out.at(-1) + f));
+    }
+    if (L - out.at(-1) > 1e-6) out.push(...even(out.at(-1), L - out.at(-1), p.postMax));
+    return out;
+  }
+  return [0, ...even(0, L, p.postMax)];
+}
 
 export const GELAENDER = {
   label: "Geländer",
@@ -31,7 +70,11 @@ export const GELAENDER = {
     { key: "height", label: "Höhe (OK Handlauf)", type: "num", default: "1000", group: "Lauflinie" },
     ...normSchema(undefined, "Lauflinie"),
     { key: "post", label: "Pfosten", type: "section", default: { kind: "rohr", size: "42.4x2.6" }, group: "Pfosten" },
-    { key: "postMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Pfosten" },
+    { key: "postMode", label: "Pfostenaufteilung", type: "select", options: [["max", "gleichmäßig, Abstand höchstens"], ["anzahl", "feste Anzahl Felder je Lauf"], ["abstand", "fester Abstand, Rest am Ende"], ["liste", "Feldlängen von Hand"]], default: "max", missing: "max", group: "Pfosten" },
+    { key: "postMax", label: "Pfostenabstand max.", type: "num", default: "1200", group: "Pfosten", when: (p) => !p.postMode || p.postMode === "max" || p.postMode === "liste" },
+    { key: "postCount", label: "Felder je Lauf", type: "num", default: "3", group: "Pfosten", when: (p) => p.postMode === "anzahl" },
+    { key: "postStep", label: "Pfostenabstand", type: "num", default: "1000", group: "Pfosten", when: (p) => p.postMode === "abstand" },
+    { key: "postList", label: "Feldlängen (über alle Läufe, Rest nach Abstand max.)", type: "list", default: "1000; 1000", group: "Pfosten", when: (p) => p.postMode === "liste" },
     { key: "base", label: "Befestigung", type: "select", options: [["oben", "oben mit Fußplatte, Bohrbild ins Anschlussbauteil"], ["seitlich", "seitlich mit Befestigungsblech (Deckenstirn bzw. Randprofil links)"], ["fussplatte", "einfache Fußplatte (bisher)"], ["keine", "ohne (eingespannt)"]], default: "oben", group: "Pfosten" },
     { key: "baseSize", label: "Fußplatte Größe", type: "num", default: "120", group: "Pfosten", when: (p) => p.base === "fussplatte" },
     { key: "baseT", label: "Fußplatte Dicke", type: "num", default: "10", group: "Pfosten", when: (p) => p.base === "fussplatte" },
@@ -88,14 +131,16 @@ export const GELAENDER = {
     const posts = [];
     const fields = [];
     const stations = []; // je Lauf: Pfosten an der Stelle s (Index in posts)
+    const list = p.postMode === "liste" ? [...(p.postList || [])] : null; // O3: Feldlängen von Hand, über die Läufe verbraucht
     runs.forEach((L, i) => {
       const a = pts[i], b = pts[i + 1];
       const d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
-      const n = Math.max(1, Math.ceil(L / p.postMax - 1e-9));
-      for (let k = i === 0 ? 0 : 1; k <= n; k++) posts.push({ at: [a[0] + d[0] * (L * k) / n, a[1] + d[1] * (L * k) / n], d });
-      stations.push(Array.from({ length: n + 1 }, (_, k) => ({ s: (L * k) / n, post: posts.length - 1 - n + k })));
-      for (let k = 0; k < n; k++) fields.push({ a: [a[0] + d[0] * (L * k) / n, a[1] + d[1] * (L * k) / n], d, len: L / n, run: i, pa: posts.length - 1 - n + k });
+      const ss = postStations(p, L, i, list), n = ss.length - 1;
+      for (let k = i === 0 ? 0 : 1; k <= n; k++) posts.push({ at: [a[0] + d[0] * ss[k], a[1] + d[1] * ss[k]], d });
+      stations.push(ss.map((s, k) => ({ s, post: posts.length - 1 - n + k })));
+      for (let k = 0; k < n; k++) fields.push({ a: [a[0] + d[0] * ss[k], a[1] + d[1] * ss[k]], d, len: ss[k + 1] - ss[k], run: i, pa: posts.length - 1 - n + k });
     });
+    if (list?.length) issues.push({ level: "Hinweis", message: `${list.length} Feldlänge(n) übrig – die Läufe sind schon voll` });
     const railH = rail.geom.height, railW = rail.geom.width;
     const zBase = p.base === "fussplatte" ? p.baseT : p.base === "oben" ? p.oT : 0;
     const kind = mountKind(p);
