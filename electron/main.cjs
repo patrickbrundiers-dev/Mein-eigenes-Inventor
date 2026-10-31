@@ -38,7 +38,8 @@ function readSettings() {
 }
 function writeSettings(s) {
   fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
-  fs.writeFileSync(settingsFile(), JSON.stringify(s, null, 2));
+  // wie Projektdateien: Absturz beim Schreiben darf Token und »Zuletzt geöffnet« nicht löschen
+  atomicWrite(settingsFile(), JSON.stringify(s, null, 2), { backup: false });
 }
 function getToken() {
   const s = readSettings();
@@ -78,10 +79,53 @@ function createWindow() {
     e.preventDefault();
     win.webContents.send("app:close-request");
   });
-  win.webContents.on("render-process-gone", (_e, d) => log.write("error", "oberflaeche", `Prozess beendet: ${d.reason} (Code ${d.exitCode})`));
-  win.on("unresponsive", () => log.write("warn", "oberflaeche", "Fenster reagiert nicht"));
+  win.webContents.on("render-process-gone", (_e, d) => {
+    log.write("error", "oberflaeche", `Prozess beendet: ${d.reason} (Code ${d.exitCode})`);
+    if (d.reason !== "clean-exit") recoverWindow(d.reason);
+  });
+  win.on("unresponsive", () => { log.write("warn", "oberflaeche", "Fenster reagiert nicht"); askUnresponsive(); });
+  win.on("responsive", () => { if (hangAsk) { hangAsk.abort(); hangAsk = null; log.write("info", "oberflaeche", "Fenster reagiert wieder"); } });
   updater.init(win, getToken, readSettings);
 }
+// Oberfläche abgestürzt (z. B. zu wenig Speicher): ohne Neuladen bliebe ein leeres Fenster, das sich nicht schließen lässt
+// (Schließen fragt die Oberfläche nach ungespeicherten Änderungen). Neu laden; der Start bietet die automatische Sicherung an.
+let crashTimes = [], expectGone = false;
+function recoverWindow(reason) {
+  if (!win || win.isDestroyed()) return;
+  if (expectGone) { expectGone = false; return; }
+  const now = Date.now();
+  crashTimes = [...crashTimes.filter((t) => now - t < 60000), now];
+  if (crashTimes.length > 2) {
+    // Absturzschleife: nicht endlos neu laden
+    allowClose = true;
+    dialog.showMessageBox(win, { type: "error", title: "PBCAD", message: "Die Oberfläche ist wiederholt abgestürzt.", detail: `Grund: ${reason}. PBCAD wird beendet. Beim nächsten Start wird die automatische Sicherung angeboten. Das Fehlerprotokoll liegt in ${log.dir()}.`, buttons: ["Beenden"] })
+      .finally(() => app.quit());
+    return;
+  }
+  dialog.showMessageBox(win, { type: "warning", title: "PBCAD", message: "Die Oberfläche ist abgestürzt und wird neu geladen.", detail: `Grund: ${reason}. Die letzte automatische Sicherung wird beim Neustart angeboten.`, buttons: ["Neu laden"] })
+    .finally(() => { if (win && !win.isDestroyed()) win.webContents.reload(); });
+}
+// Fenster hängt (lange Rechnung im Oberflächen-Thread): Warten, neu laden oder beenden anbieten – sonst ließe es sich nicht schließen
+let hangAsk = null;
+function askUnresponsive() {
+  if (!win || win.isDestroyed() || hangAsk) return;
+  hangAsk = new AbortController();
+  dialog.showMessageBox(win, { type: "warning", title: "PBCAD", message: "PBCAD reagiert gerade nicht.", detail: "Eine Berechnung dauert lange. Warten, oder neu laden (die letzte automatische Sicherung wird angeboten).", buttons: ["Warten", "Neu laden", "Beenden"], defaultId: 0, cancelId: 0, signal: hangAsk.signal })
+    .then(({ response }) => {
+      hangAsk = null;
+      if (!win || win.isDestroyed()) return;
+      log.write("info", "oberflaeche", `Hänger: ${["gewartet", "neu geladen", "beendet"][response]}`);
+      if (response === 1) {
+        // hängender Prozess lädt nicht von selbst neu: erst beenden (ohne Absturz-Rückfrage), dann neu laden
+        expectGone = true;
+        win.webContents.forcefullyCrashRenderer();
+        win.webContents.reload();
+      }
+      if (response === 2) { allowClose = true; app.quit(); }
+    })
+    .catch(() => { hangAsk = null; });
+}
+app.on("child-process-gone", (_e, d) => { if (d.reason !== "clean-exit") log.write("warn", "prozess", `${d.type}${d.name ? " (" + d.name + ")" : ""} beendet: ${d.reason} (Code ${d.exitCode})`); });
 // nur mitschreiben, das Standardverhalten bei Ausnahmen bleibt unverändert
 process.on("uncaughtExceptionMonitor", (e) => log.write("error", "hauptprozess", e?.stack || e));
 

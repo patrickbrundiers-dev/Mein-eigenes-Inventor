@@ -42,6 +42,8 @@ export class KernelClient {
       if (fatal) this.restart("Geometrie-Kern wurde nach einem Fehler neu gestartet");
       else this.maybeRecycle();
     };
+    // Antwort ließ sich nicht übertragen: welcher Auftrag, ist unbekannt – ohne Neustart warteten alle Aufträge ewig
+    this.w.onmessageerror = () => this.restart("Antwort des Geometrie-Kerns nicht lesbar");
     this.w.onerror = (e) => {
       e.preventDefault?.();
       this.restart("Geometrie-Kern abgestürzt: " + (e.message || "unbekannt"));
