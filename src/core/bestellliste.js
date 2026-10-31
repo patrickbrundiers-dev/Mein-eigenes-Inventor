@@ -4,7 +4,7 @@ import { NORM_FAMILIES } from "./normlib.js";
 import { fmt as fmtNum } from "./expr.js";
 
 /** Warengruppen der Bestellliste: [Schlüssel, Bezeichnung] */
-export const ORDER_GROUPS = [["normteile", "Normteile"], ["beschlaege", "Beschläge"], ["glas", "Glas"], ["kaufteile", "Kaufteile"]];
+export const ORDER_GROUPS = [["normteile", "Normteile"], ["beschlaege", "Beschläge"], ["gitterroste", "Gitterroste"], ["glas", "Glas"], ["kaufteile", "Kaufteile"]];
 const GROUP_LABEL = Object.fromEntries(ORDER_GROUPS);
 const r1 = (x) => Math.round(x * 10) / 10;
 const mm = (x) => String(r1(x)).replace(".", ","); // ohne Tausenderpunkt (Abmessungen)
@@ -13,6 +13,7 @@ const mm = (x) => String(r1(x)).replace(".", ","); // ohne Tausenderpunkt (Abmes
 export function orderGroup(meta) {
   if (meta?.norm) return NORM_FAMILIES[meta.norm.kind]?.cat === "beschlaege" ? "beschlaege" : "normteile";
   if (meta?.glass) return "glas";
+  if (meta?.tread === "gitterrost" && meta?.plate) return "gitterroste";
   return null;
 }
 
@@ -46,6 +47,15 @@ export function orderRows(sources, { suppliers = {} } = {}) {
         const pl = b.meta.plate || {}, W = r1(Math.max(pl.W || 0, pl.H || 0)), H = r1(Math.min(pl.W || 0, pl.H || 0)), t = pl.t || 0;
         const name = `Glasscheibe ${mm(W)} × ${mm(H)} mm`;
         add(`g|${supplier}|${name}|${t}`, { supplier, group: g, name, norm: t ? `VSG ${fmtNum(t, 2)} mm` : "", material: "Glas", unit: "Stk", area: (W * H) / 1e6 }, qty);
+        continue;
+      }
+      if (g === "gitterroste") {
+        // P3: Gitterroste und Gitterroststufen als Bestellartikel (Pressrost, Maße auf mm), Roste mit 4 Klemmhaltern
+        const pl = b.meta.plate, W = r1(Math.max(pl.W, pl.H)), H = r1(Math.min(pl.W, pl.H)), t = pl.t || 30;
+        const stufe = /^Stufe\b|Stufe \d/.test(b.name || "");
+        const name = `${stufe ? "Gitterroststufe" : "Gitterrost"} ${mm(W)} × ${mm(H)} × ${mm(t)}`;
+        add(`r|${supplier}|${name}`, { supplier, group: g, name, norm: stufe ? "DIN 24531, rutschhemmende Antrittskante" : "DIN 24537-1 Pressrost MW 30/30", material: "S235 feuerverzinkt", unit: "Stk", area: (W * H) / 1e6 }, qty);
+        if (!stufe) add(`r|${supplier}|klemme`, { supplier, group: g, name: "Gitterrost-Klemmhalter Satz M8", norm: `Klemmhalter für Tragstab ${mm(t)}/3`, material: "verzinkt", unit: "Stk" }, 4 * qty);
         continue;
       }
       const n = b.meta.norm;

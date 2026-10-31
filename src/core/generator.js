@@ -39,8 +39,11 @@ import { ARBEITSBUEHNE } from "./arbeitsbuehne.js";
 import { VORDACH } from "./vordach.js";
 import { PERGOLA } from "./pergola.js";
 import { FENSTERGITTER } from "./fenstergitter.js";
+import { RAMPE } from "./rampe.js";
+import { ZARGE } from "./zarge.js";
+import { KLEMMGELAENDER } from "./klemmgelaender.js";
 
-export const GENERATORS = { gelaender: GELAENDER, tor: TOR, schiebetor: SCHIEBETOR, zaun: ZAUN, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE, voute: VOUTE, stuetzenfuss: STUETZENFUSS, traegerstoss: TRAEGERSTOSS, traegeranschluss: TRAEGERANSCHLUSS, steigleiter: STEIGLEITER, fachwerk: FACHWERK, arbeitsbuehne: ARBEITSBUEHNE, vordach: VORDACH, pergola: PERGOLA, fenstergitter: FENSTERGITTER };
+export const GENERATORS = { gelaender: GELAENDER, tor: TOR, schiebetor: SCHIEBETOR, zaun: ZAUN, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE, voute: VOUTE, stuetzenfuss: STUETZENFUSS, traegerstoss: TRAEGERSTOSS, traegeranschluss: TRAEGERANSCHLUSS, steigleiter: STEIGLEITER, fachwerk: FACHWERK, arbeitsbuehne: ARBEITSBUEHNE, vordach: VORDACH, pergola: PERGOLA, fenstergitter: FENSTERGITTER, rampe: RAMPE, zarge: ZARGE, klemmgelaender: KLEMMGELAENDER };
 
 /** Neues Feature mit den Standardwerten des Generators */
 export function defaultGenerator(gen) {

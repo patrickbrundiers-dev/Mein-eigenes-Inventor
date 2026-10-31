@@ -10,7 +10,7 @@ const r6 = (x) => Math.round(x * 1e6) / 1e6;
 const isNum = (s) => /^\s*-?\d+([.,]\d+)?\s*$/.test(String(s ?? ""));
 const num = (s) => Number(String(s).replace(",", "."));
 const fmt = (x) => String(Math.round(x * 1000) / 1000).replace(".", ",");
-const OPS = [["verschieben", "Verschieben", "direct"], ["groesse", "Größe", "facesize"], ["drehen", "Drehen", "facerot"], ["loeschen", "Löschen", "facedel"]];
+const OPS = [["verschieben", "Verschieben", "direct"], ["groesse", "Größe", "facesize"], ["drehen", "Drehen", "facerot"], ["loeschen", "Löschen", "facedel"], ["ersetzen", "Ersetzen", "facerep"]];
 /** Feld des Werts je Vorgang */
 const FIELD = { verschieben: "distance", groesse: "size", drehen: "angle" };
 
@@ -88,9 +88,10 @@ export class DirectBar {
         btn(`Flächen (${(f.faces || []).length})`, "facepick", picking, () => (picking ? app.cancelPick() : this.pickFaces(f)), "Flächen wählen oder abwählen"),
         op === "verschieben" ? seg(DIREKT_RICHTUNGEN, f.richtung || "normal", (k) => this.set(f, "Richtung", (x) => { x.richtung = k; })) : null,
         op === "drehen" ? seg(DIREKT_ACHSEN, f.achse || "U", (k) => (k === "kante" ? this.pickEdge(f) : this.set(f, "Drehachse", (x) => { x.achse = k; }))) : null,
+        op === "ersetzen" ? btn(f.target?.p ? "Zielfläche ✓" : "Zielfläche", "facepick", !!f.target?.p, () => this.pickTarget(f), "Ebene Zielfläche anklicken (auch an einem anderen Körper)") : null,
         op === "groesse" ? seg(DIREKT_GROESSE, f.sizeMode || "durchmesser", (k) => this.set(f, "Größe", (x) => { x.sizeMode = k; })) : null),
     ];
-    if (op !== "loeschen") {
+    if (op !== "loeschen" && op !== "ersetzen") {
       const field = FIELD[op];
       const inp = h("input", { class: "inp dbar-inp", value: String(f[field] ?? "").replace(".", ","), "aria-label": "Wert", spellcheck: "false" });
       const commit = () => {
@@ -159,6 +160,18 @@ export class DirectBar {
     } };
     app.setHint("Messen ab: Bezugsfläche, -kante oder -ecke anklicken – Esc bricht ab");
   }
+  /** Ersetzen: ebene Zielfläche anklicken */
+  pickTarget(f) {
+    const app = this.app;
+    app.pick = { kind: "custom", onPick: (hit) => {
+      const info = hit?.kind === "face" ? app.viewer.faceWorldInfo(hit) : {};
+      const n = info.normal || hit?.normal;
+      if (hit?.kind !== "face" || info.type !== "PLANE" || !n) return toast("Bitte eine ebene Fläche anklicken");
+      app.cancelPick();
+      this.set(f, "Zielfläche", (x) => { x.target = { p: hit.point.map(r6), n: v3.norm(n).map(r6) }; });
+    } };
+    app.setHint("Ersetzen: ebene Zielfläche anklicken – Esc bricht ab");
+  }
   /** Drehen um eine Kante: Kante anklicken */
   pickEdge(f) {
     const app = this.app;
@@ -195,7 +208,7 @@ export class DirectBar {
     const fr = f.faces?.[0];
     if (!fr) return null;
     const op = f.op || "verschieben";
-    if (op === "loeschen") return null;
+    if (op === "loeschen" || op === "ersetzen") return null;
     const n = fr.n || null;
     let c = fr.p;
     if (op === "verschieben" && n && !f.from?.p && isNum(f.distance)) c = v3.add(fr.p, v3.mul(moveDir(f.richtung, n), num(f.distance)));

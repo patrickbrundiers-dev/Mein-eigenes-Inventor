@@ -9,7 +9,7 @@ import { parseDxf, dxfToSketch, primsBounds } from "../core/dxfread.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, chamferCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
 import { inferLine, inferCircle } from "../core/autoconstraints.js";
-import { buildSlot, buildPolygon, buildTangentArc, tangentArcCenter, constraintLabel, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
+import { buildSlot, buildPolygon, buildTangentArc, buildRect3, tangentCircles3, pickTangentCircle, tangentArcCenter, constraintLabel, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
 import { splineSamples, splineNearest } from "../core/spline.js";
 import { specialSnap, alignSnap } from "../core/sketchsnap.js";
 import { glyphPath, sketchSnapKind } from "../core/fangpunkte.js";
@@ -53,6 +53,8 @@ export const SKETCH_TOOLS = {
   split: "Teilen: Linie oder Bogen an der Stelle anklicken, an der geteilt wird (nahe einem Schnittpunkt wird dort geteilt)",
   sfillet: "Rundung: Ecke anklicken, an der zwei Linien enden, dann Radius eingeben",
   schamfer: "Fase: Ecke anklicken, an der zwei Linien enden, dann Abstand eingeben (zwei Abstände mit Semikolon, z. B. 5;10)",
+  rect3: "Rechteck über 3 Punkte: zwei Ecken der ersten Kante klicken, dann die Breite – das Rechteck darf schräg liegen",
+  circlet3: "Kreis tangential an 3 Linien: drei Linien anklicken – der Kreis berührt alle drei (Inkreis, bei Bedarf Ankreis nahe der Klickstelle)",
   circle3: "Kreis durch 3 Punkte: drei Punkte auf dem Umfang klicken – getroffene Punkte werden an den Kreis gebunden",
   arct: "Tangentialer Bogen: Ende einer Linie klicken, dann den Endpunkt des Bogens – der Bogen schließt tangential an",
   horizontal: "Horizontal: Linie oder zwei Punkte wählen",
@@ -701,6 +703,20 @@ export class Sketcher {
       this.pushChecked(sk, cons);
     });
   }
+  /** Kreis tangential an drei Linien (P9), mit Tangential-Bedingungen, damit er den Linien folgt */
+  addCircleTangent3(lineIds, clicks) {
+    const P = this.pts();
+    const lines = lineIds.map((id) => { const e = this.entity(id); return { a: P.get(e.p1), b: P.get(e.p2) }; });
+    const near = { x: clicks.reduce((s, c) => s + c.x, 0) / clicks.length, y: clicks.reduce((s, c) => s + c.y, 0) / clicks.length };
+    const c = pickTangentCircle(tangentCircles3(lines), near);
+    if (!c) { toast("Die drei Linien lassen keinen berührenden Kreis zu (zwei parallel und die dritte auch?)"); return; }
+    this.commit("Kreis", (sk) => {
+      const cid = uid("p"), id = uid("k");
+      sk.points.push({ id: cid, x: c.x, y: c.y });
+      sk.entities.push({ id, type: "circle", c: cid, r: c.r, construction: !!this.construction });
+      this.pushChecked(sk, lineIds.map((e1) => ({ id: uid("k"), type: "tangent", e1, e2: id })));
+    });
+  }
   addArc(center, start, end, radius = null) {
     this.commit("Bogen", (sk) => {
       const cons = [];
@@ -1342,6 +1358,18 @@ export class Sketcher {
       this.transformDialog(t, ids, this.snap(sx, sy));
       return;
     }
+    if (t === "circlet3") {
+      const hit = this.hitTest(sx, sy, { points: false, dims: false });
+      const line = hit?.kind === "entity" && this.entity(hit.id)?.type === "line" ? hit.id : null;
+      if (!line) return toast("Eine Linie anklicken – der Kreis wird an drei Linien tangential");
+      const st = this.state?.lines ? this.state : (this.state = { lines: [], clicks: [] });
+      if (!st.lines.includes(line)) { st.lines.push(line); st.clicks.push({ x: lx, y: ly }); }
+      if (st.lines.length < 3) { this.render(); return; }
+      this.state = null;
+      this.addCircleTangent3(st.lines, st.clicks);
+      this.render();
+      return;
+    }
     if (t === "mirror") {
       const hit = this.hitTest(sx, sy, { points: false, dims: false });
       const line = hit?.kind === "entity" && this.entity(hit.id)?.type === "line" ? hit.id : null;
@@ -1403,6 +1431,15 @@ export class Sketcher {
         break;
       case "point":
         this.addPoint(sn);
+        break;
+      case "rect3":
+        if (!this.state) this.state = { pts: [sn] };
+        else if (this.state.pts.length === 1) { if (Math.hypot(sn.x - this.state.pts[0].x, sn.y - this.state.pts[0].y) * this.M.scale > 2) this.state.pts.push(sn); }
+        else {
+          const [a, b] = this.state.pts;
+          this.state = null;
+          this.commitShape("Rechteck", (sk) => buildRect3(sk, a, b, sn, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }));
+        }
         break;
       case "circle3":
         if (!this.state) this.state = { pts: [sn] };
@@ -2087,6 +2124,14 @@ export class Sketcher {
       const C = S(c.x, c.y), tm = t1 + ((sw * Math.PI) / 360), M = S(c.x + R * 0.6 * Math.cos(tm), c.y + R * 0.6 * Math.sin(tm));
       g.append(svgEl("path", { d: `M${pts[0][0]},${pts[0][1]}L${C[0]},${C[1]}L${pts[n][0]},${pts[n][1]}`, class: "sk-dyn-line" }));
       if (st.dyn) this.dynBox(g, 0, M[0], M[1], "", "°", sw);
+    } else if (this.tool === "rect3" && st.pts) {
+      const [a, b] = st.pts;
+      if (!b) path(`M${S(a.x, a.y).join(",")}L${S(cur.x, cur.y).join(",")}`);
+      else {
+        const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, w = (cur.x - a.x) * nx + (cur.y - a.y) * ny;
+        const q = [a, b, { x: b.x + w * nx, y: b.y + w * ny }, { x: a.x + w * nx, y: a.y + w * ny }];
+        path("M" + q.map((p) => S(p.x, p.y).join(",")).join("L") + "Z");
+      }
     } else if (this.tool === "circle3" && st.pts) {
       const pts = [...st.pts, cur];
       if (pts.length === 3) {

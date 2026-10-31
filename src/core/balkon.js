@@ -34,7 +34,7 @@ export const BALKON = {
     { key: "joistMax", label: "Querträgerabstand max.", type: "num", default: "600", group: "Tragwerk" },
     { key: "support", label: "Stützen", type: "select", options: [["2", "2 vorne"], ["auto", "vorne nach Abstand"], ["keine", "keine (Kragarm an der Wand)"]], default: "2", group: "Tragwerk" },
     { key: "supportMax", label: "Stützenabstand max.", type: "num", default: "2500", group: "Tragwerk", when: (p) => p.support === "auto" },
-    { key: "column", label: "Stützenprofil", type: "section", default: { kind: "vierkant", size: "100x5" }, group: "Tragwerk", when: (p) => p.support !== "keine" },
+    { key: "column", label: "Stützenprofil", type: "section", default: { kind: "vierkant", size: "80x5" }, group: "Tragwerk", when: (p) => p.support !== "keine" },
     { key: "wallPlate", label: "Wandanschlussplatte (Dicke)", type: "num", default: "15", group: "Tragwerk" },
     { key: "deck", label: "Belag", type: "select", options: [["gitterrost", "Gitterrost"], ["holz", "Holz (Dielen)"], ["blech", "Blech (Riffelblech)"], ["keiner", "kein Belag"]], default: "gitterrost", group: "Belag" },
     { key: "deckT", label: "Belagdicke", type: "num", default: "30", group: "Belag", when: (p) => p.deck !== "keiner" },
@@ -92,6 +92,8 @@ export const BALKON = {
       const n = p.support === "auto" ? Math.max(2, Math.ceil(W / p.supportMax - 1e-9) + 1) : 2;
       const zTop = Hb - tt - fh, baseT = 15;
       if (!(zTop > baseT + 100)) throw fieldError("Zu niedrig für Stützen", "height");
+      // P11: Stütze breiter als der Rahmen steht unter dem Belag bzw. über den Rahmen vor
+      if (cw > fw + 0.5) issues.push({ key: "column", level: "Warnung", message: `Stütze ${Math.round(cw)} mm ist breiter als der Rahmen ${Math.round(fw)} mm – Kopfplatte vorsehen oder größeres Rahmenprofil wählen` });
       for (let k = 0; k < n; k++) {
         const x = cw / 2 + ((W - cw) * k) / (n - 1), y = T - cw / 2;
         members.push({ section: col, a: [x, y, baseT], b: [x, y, zTop], name: `Stütze ${k + 1}`, up: [1, 0, 0] });

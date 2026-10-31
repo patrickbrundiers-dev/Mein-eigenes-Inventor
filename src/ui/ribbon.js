@@ -37,6 +37,7 @@ import { bindTooltips } from "./tooltip.js";
 import { KeyTips } from "./keytips.js";
 import { startDatumPick } from "./arbeitselemente.js";
 import { startDirekt } from "./direkt.js";
+import * as plaene from "./plaene.js";
 
 export class Ribbon {
   constructor(app) {
@@ -193,6 +194,9 @@ export class Ribbon {
       vordach: () => this.addGenerator("vordach"),
       pergola: () => this.addGenerator("pergola"),
       fenstergitter: () => this.addGenerator("fenstergitter"),
+      rampe: () => this.addGenerator("rampe"),
+      zarge: () => this.addGenerator("zarge"),
+      klemmgelaender: () => this.addGenerator("klemmgelaender"),
       steigleiter: () => this.addGenerator("steigleiter"),
       stuetzenfuss: () => this.addGenerator("stuetzenfuss"),
       traegerstoss: () => this.addGenerator("traegerstoss"),
@@ -335,6 +339,8 @@ export class Ribbon {
     const app = this.app;
     const sk = app.sketcher;
     const B = (id, label, ic, extra = {}) => ({ id, label, icon: ic, run: extra.run || (() => this.run(id)), ...extra });
+    // Aufklappknopf (P12, wie Inventor-Dropdown): seltene Befehle einer Gruppe hinter »Weitere«
+    const M = (id, label, ic, items) => ({ id, label: label + " ▾", icon: ic, menu: items, run: (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu(r.left, r.bottom, items.map((b) => ({ label: b.label, icon: b.icon, run: b.run }))); } });
     const T = (tool, label, ic, extra = {}) => ({ id: "t_" + tool, label, icon: ic, on: sk.tool === tool, run: () => sk.setTool(tool), ...extra });
     const view = {
       id: "ansicht", label: "Ansicht", groups: [
@@ -433,15 +439,16 @@ export class Ribbon {
             T("rectc", "Rechteck Mitte", "rectc"), T("arcc", "Bogen Mitte", "arcc"), T("spline", "Spline", "spline"),
             T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"),
             T("sfillet", "Rundung", "fillet"), T("point", "Punkt", "point"),
-            C("schamfer", "Fase", "chamfer"), C("circle3", "Kreis durch 3 Punkte", "circle3"), C("arct", "Tangentialer Bogen", "arct"),
+            C("schamfer", "Fase", "chamfer"), C("circle3", "Kreis durch 3 Punkte", "circle3"), C("rect3", "Rechteck über 3 Punkte", "rect3"), C("circlet3", "Kreis tangential an 3 Linien", "circlet3"), C("arct", "Tangentialer Bogen", "arct"),
           ] },
           { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() }), T("image", "Bild", "import")] },
           { label: "Ändern", small: true, buttons: [
             T("smove", "Verschieben", "move"), T("scopy", "Kopieren", "copy"), T("srotate", "Drehen", "rotate"),
             T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"),
             T("sscale", "Skalieren", "scale"), T("offset", "Versatz", "offset"), B("sclean", "Säubern", "clean", { run: () => sk.cleanDialog() }),
+            // Muster als Symbolspalte im selben Abschnitt (spart eine Gruppe, damit die Skizze in 1600 px passt)
+            C("pattern", "Rechteckmuster", "pattern"), C("cpattern", "Kreismuster", "circpattern"), C("mirror", "Spiegeln", "mirror"),
           ] },
-          { label: "Muster", small: true, buttons: [C("pattern", "Rechteckmuster", "pattern"), C("cpattern", "Kreismuster", "circpattern"), C("mirror", "Spiegeln", "mirror")] },
           { label: "Bemaßung", big: 1, buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() }), B("params", "Parameter", "params"), T("text", "Text", "text")] },
           { label: "Abhängigkeiten", small: true, buttons: [
             C("coincident", "Koinzident", "coincident"), C("collinear", "Kollinear", "collinear"), C("concentric", "Konzentrisch", "concentric"),
@@ -453,8 +460,9 @@ export class Ribbon {
             B("constr", "Konstruktion", "construct", { iconOnly: true, on: !!sk.construction, run: () => sk.toggleConstruction() }),
             B("glyphs", "Symbole", "eye", { iconOnly: true, on: sk.showGlyphs, run: () => { sk.showGlyphs = !sk.showGlyphs; sk.render(); this.render(); } }),
             B("gridsnap", "Rasterfang", "grid", { iconOnly: true, on: sk.gridSnap, run: () => { sk.gridSnap = !sk.gridSnap; sk.render(); this.render(); } }),
+            // Prüfen in derselben Gruppe (eine Gruppe weniger, damit die Skizze auch mit breiterer Schrift in 1600 px passt)
+            B("regionProps", "Bereichseigenschaften", "area", { iconOnly: true, run: () => regionDialog(app) }), B("sdof", "Freiheitsgrade anzeigen", "dof", { iconOnly: true, on: !!sk.showDof, run: () => app.commands.exec("sketch.dof") }),
           ] },
-          { label: "Prüfen", small: true, buttons: [B("regionProps", "Bereichseigenschaften", "area", { iconOnly: true, run: () => regionDialog(app) }), B("sdof", "Freiheitsgrade anzeigen", "dof", { iconOnly: true, on: !!sk.showDof, run: () => app.commands.exec("sketch.dof") })] },
           { label: "Beenden", buttons: [B("finishSketch", "Skizze fertig", "finish", { finish: true })] },
         ] },
         view,
@@ -475,8 +483,10 @@ export class Ribbon {
           { label: "Prüfen", buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
-          { label: "Generatoren", big: 4, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("pergola", "Pergola", "pergola"), B("fenstergitter", "Fenstergitter", "fenstergitter")] },
-          { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("voute", "Voutenträger", "voute"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne")] },
+          { label: "Generatoren", big: 4, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("spindel", "Spindeltreppe", "spindel"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("fenstergitter", "Fenstergitter", "fenstergitter"),
+            M("genMore", "Weitere", "plus", [B("klemmgelaender", "Klemmgeländer", "klemmgelaender"), B("rampe", "Rampe / Laufsteg", "rampe"), B("zarge", "Stahlzarge", "zarge"), B("pergola", "Pergola", "pergola")])] },
+          { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne"),
+            M("stahlMore", "Weitere", "plus", [B("voute", "Voutenträger", "voute"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk")])] },
           { label: "Gestell", big: 1, buttons: (() => {
             const g = !!app.activeDoc()?.gestell, on = (t) => app.pick?.kind === "gestell" && app.pick.tool === t;
             return [
@@ -565,17 +575,19 @@ export class Ribbon {
   }
   exportTab(kind) {
     const app = this.app;
-    const f = app.files;
+    const f = app.files, P = plaene;
     const B = (id, label, ic, run) => ({ id, label, icon: ic, run });
     const groups = [];
     if (kind === "part") {
       groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_vereinfachen", "Vereinfachen", "simplify", () => f.simplifyDialog()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
       groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers()), B("x_cut", "Zuschnittliste (CSV)", "cutlist", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
       groups.push({ label: "2D", buttons: [B("x_plate", "Platte als DXF", "drawing", () => f.exportPlateDxf()), B("x_dxf", "Skizze als DXF", "sketch", () => f.exportSketchDxf())] });
+      groups.push({ label: "Montage", buttons: [B("x_anker", "Ankerplan", "anchorplan", () => P.exportAnkerplan(app)), B("x_anschlag", "Anschlagpunkte", "hook", () => P.anschlagDialog(app))] });
       groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_etiketten", "Etiketten (QR)", "qr", () => f.exportEtiketten()), B("x_versand", "Versandliste", "bom", () => f.exportVersand()), B("x_bestell", "Bestellliste", "bom", () => f.exportBestellliste()), B("x_schweissplan", "Schweißplan", "naht", () => f.weldPlanDialog()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
     } else if (kind === "assembly") {
       groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_vereinfachen", "Vereinfachen", "simplify", () => f.simplifyDialog()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
       groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers())] });
+      groups.push({ label: "Montage", buttons: [B("x_anker", "Ankerplan", "anchorplan", () => P.exportAnkerplan(app)), B("x_montage", "Montageplan", "pdf", () => P.exportMontageplan(app)), B("x_anschlag", "Anschlagpunkte", "hook", () => P.anschlagDialog(app))] });
       groups.push({ label: "Listen", buttons: [B("x_bom", "Stückliste (CSV)", "bom", () => f.exportBom()), B("x_cut", "Zuschnittliste (CSV)", "cutlist", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
       groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_etiketten", "Etiketten (QR)", "qr", () => f.exportEtiketten()), B("x_versand", "Versandliste", "bom", () => f.exportVersand()), B("x_bestell", "Bestellliste", "bom", () => f.exportBestellliste()), B("x_schweissplan", "Schweißplan", "naht", () => f.weldPlanDialog()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
     } else if (kind === "drawing") {

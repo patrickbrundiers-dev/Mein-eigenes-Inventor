@@ -5,7 +5,7 @@
 // Die Naht (Feature »Schweißnaht«) trägt optional wps = id; alle anderen Nähte (Platten, Rippen, Endkappen) bekommen
 // die Standard-WPS.
 
-import { WELD_KINDS, WELD_SIDES, weldMass } from "./weld.js";
+import { WELD_KINDS, WELD_SIDES, weldMass, prepText } from "./weld.js";
 import { fmt as fmtNum } from "./expr.js";
 
 export const EXC_LEVELS = ["EXC1", "EXC2", "EXC3", "EXC4"];
@@ -51,9 +51,9 @@ export function weldPlanRows(welds, plan) {
   const map = new Map();
   for (const w of welds) {
     const id = plan.wps.some((x) => x.id === w.wps) ? w.wps : plan.defaultWps;
-    const key = [id, w.kind, Math.round(w.a * 10), w.side || "pfeil", !!w.around, !!w.field].join("|");
+    const key = [id, w.kind, Math.round(w.a * 10), w.side || "pfeil", !!w.around, !!w.field, w.prep ? prepText(w.kind, w.prep) : ""].join("|");
     const q = w.qty || 1;
-    if (!map.has(key)) map.set(key, { wps: id, kind: w.kind, a: w.a, side: w.side || "pfeil", around: !!w.around, field: !!w.field, count: 0, length: 0, mass: 0, parts: new Set() });
+    if (!map.has(key)) map.set(key, { wps: id, kind: w.kind, a: w.a, side: w.side || "pfeil", around: !!w.around, field: !!w.field, ...(w.prep ? { prep: w.prep } : {}), count: 0, length: 0, mass: 0, parts: new Set() });
     const r = map.get(key);
     r.count += q;
     r.length += (w.length || 0) * q;
@@ -70,7 +70,7 @@ export function weldPlanRows(welds, plan) {
 }
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const nahtText = (r) => `${WELD_KINDS[r.kind].dim}${fmtNum(r.a, 1)} ${WELD_KINDS[r.kind].label}${r.side !== "pfeil" ? " " + WELD_SIDES[r.side] : ""}${r.around ? ", umlaufend" : ""}${r.field ? ", Montage" : ""}`;
+const nahtText = (r) => `${WELD_KINDS[r.kind].dim}${fmtNum(r.a, 1)} ${WELD_KINDS[r.kind].label}${r.side !== "pfeil" ? " " + WELD_SIDES[r.side] : ""}${r.around ? ", umlaufend" : ""}${r.field ? ", Montage" : ""}${r.prep ? ", " + prepText(r.kind, r.prep) : ""}`;
 
 /** Schweißplan als Seite (A4 quer) für mappeHtml */
 export function weldPlanPage({ title = "", number = "", order = "", plan, rows }) {

@@ -47,7 +47,7 @@ import { GENERATORS, applyTemplate, genValues, resolveGenParams } from "../core/
 import { sketchViews, VIEW_LABEL, fieldParts } from "../core/genskizze.js";
 import { sketchSvg, linkFieldToSketch } from "./genskizze.js";
 import { listTemplates, getTemplate, saveTemplate, deleteTemplate } from "./gentemplates.js";
-import { WELD_KINDS, WELD_SIDES, weldRows, collectWelds, weldText } from "../core/weld.js";
+import { WELD_KINDS, WELD_SIDES, PREP_DEFAULTS, isPrepKind, weldRows, collectWelds, weldText } from "../core/weld.js";
 import { weldPlanOf } from "../core/schweissplan.js";
 import { REGEL_KINDS, REGEL_DEFAULTS, regelLabel, regelVolume } from "../core/regelkoerper.js";
 import { newPart, newAssembly } from "../core/examples.js";
@@ -86,9 +86,9 @@ export class Props {
   // ---------- Feld-Bausteine ----------
   section(title, ...children) { return h("div", { class: "section" }, title ? h("h3", {}, title) : null, ...children); }
   field(label, input, wide = false) { return h("div", { class: "field" + (wide ? " wide" : "") }, h("label", {}, label), input); }
-  expr(label, value, onCommit, { unit = "mm", allowZero = true, allowNeg = true, allowEmpty = false } = {}) {
+  expr(label, value, onCommit, { unit = "mm", allowZero = true, allowNeg = true, allowEmpty = false, placeholder = "" } = {}) {
     const scope = this.scope();
-    const inp = h("input", { class: "inp", value: value ?? "", spellcheck: "false" });
+    const inp = h("input", { class: "inp", value: value ?? "", spellcheck: "false", placeholder });
     const badge = h("span", { class: "val" });
     const check = () => {
       if (allowEmpty && !inp.value.trim()) { inp.classList.remove("bad"); inp.title = ""; badge.textContent = ""; return true; }
@@ -1064,6 +1064,12 @@ export class Props {
             const plan = weldPlanOf(app.project);
             return this.select("Schweißanweisung (WPS)", [["", plan.defaultWps ? `Standard (${plan.defaultWps})` : "Standard – noch keine WPS"], ...plan.wps.map((w) => [w.id, `${w.id}${w.process ? " · " + w.process : ""}`])], f.wps || "", (v) => this.set(f, "wps", v || undefined, "WPS"));
           })(),
+          kind !== "kehl" ? this.check("Nahtvorbereitung nach ISO 9692-1" + (isPrepKind(kind) ? " (Fugenflanke an der gewählten Blechkante anarbeiten)" : ""), !!f.prep, (v) => this.set(f, "prep", v || undefined, "Nahtvorbereitung")) : null,
+          kind !== "kehl" && f.prep ? h("div", {},
+            isPrepKind(kind) ? E(kind === "hv" || kind === "k" ? "Flankenwinkel β (°)" : "Öffnungswinkel α (°)", "angle", { allowNeg: false, allowZero: false, allowEmpty: true, unit: "°", placeholder: String(PREP_DEFAULTS[kind].angle) }) : null,
+            isPrepKind(kind) ? E("Steghöhe c", "root", { allowNeg: false, allowEmpty: true, placeholder: String(PREP_DEFAULTS[kind].root) }) : null,
+            E("Spalt b", "gap", { allowNeg: false, allowEmpty: true, placeholder: String(PREP_DEFAULTS[kind].gap) }),
+            h("p", { class: "hint" }, `ISO 9692-1: ${PREP_DEFAULTS[kind].range}. ` + (kind === "v" || kind === "y" ? "Jedes Blech bekommt den halben Öffnungswinkel – die Kanten beider Bleche wählen." : kind === "k" ? "Beide Flanken (oben und unten) entstehen an der gewählten Kante." : kind === "hv" ? "Nur das gewählte Blech wird angefast." : "Ohne Flanke; nur Spalt in Nahtliste und Zeichnung."))) : null,
           kind === "kehl" ? this.check("Naht als Körper (Volumen und Masse, in der Kehle zwischen zwei Teilen)", !!f.bead, (v) => this.set(f, "bead", v || undefined, "Nahtkörper")) : null,
           h("div", { class: picking ? "picking" : "" },
             h("div", {}, `${(f.edges || []).length} Kante(n) gewählt`),
@@ -1436,6 +1442,8 @@ export class Props {
           E(f.from?.p ? "Abstand ab Bezug" : "Abstand", "distance"),
           f.from?.p ? h("p", { class: "hint" }, "Gemessen ab dem gewählten Bezug (»Messen ab« in der Leiste am Modell).") : null);
         if (op === "groesse") parts.push(this.seg("Maß", DIREKT_GROESSE, f.sizeMode || "durchmesser", (v) => this.set(f, "sizeMode", v, "Maß")), E((f.sizeMode || "durchmesser") === "durchmesser" ? "Durchmesser" : f.sizeMode === "radius" ? "Radius" : "Versatz", "size"));
+        if (op === "ersetzen") parts.push(h("button", { class: "btn", onclick: () => this.app.direct.pickTarget(f) }, f.target?.p ? "Zielfläche neu wählen" : "Zielfläche wählen"),
+          h("p", { class: "hint" }, "Die gewählten ebenen Flächen wandern in die Ebene der Zielfläche; die Nachbarflächen wachsen bzw. schrumpfen mit."));
         if (op === "drehen") parts.push(this.seg("Drehachse", DIREKT_ACHSEN, f.achse || "U", (v) => (v === "kante" ? this.app.direct.pickEdge(f) : this.set(f, "achse", v, "Drehachse"))), E("Winkel", "angle", { unit: "°", allowZero: false }));
         parts.push(h("p", { class: "hint" }, "Am Modell: Leiste mit Triade – Pfeil ziehen oder Wert eintippen, Eingabe bestätigt."));
         return [this.section("Direktbearbeitung", ...parts)];

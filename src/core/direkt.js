@@ -2,7 +2,7 @@
 // Reine Rechnung (Richtungen, Ebenen, Messen ab, Prüfungen); die Geometrie macht der Kernel (src/kernel/direkt.js).
 import { v3 } from "./geom.js";
 
-export const DIREKT_OPS = Object.freeze([["verschieben", "Verschieben"], ["groesse", "Größe"], ["drehen", "Drehen"], ["loeschen", "Löschen"]]);
+export const DIREKT_OPS = Object.freeze([["verschieben", "Verschieben"], ["groesse", "Größe"], ["drehen", "Drehen"], ["loeschen", "Löschen"], ["ersetzen", "Ersetzen"]]);
 export const DIREKT_GROESSE = Object.freeze([["durchmesser", "Durchmesser"], ["radius", "Radius"], ["offset", "Versatz"]]);
 export const DIREKT_RICHTUNGEN = Object.freeze([["normal", "Normale"], ["X", "X"], ["Y", "Y"], ["Z", "Z"]]);
 export const DIREKT_ACHSEN = Object.freeze([["U", "Achse U"], ["V", "Achse V"], ["kante", "Kante"]]);
@@ -18,6 +18,7 @@ export function validateDirekt(f) {
   if (!DIREKT_OPS.some(([k]) => k === (f.op || "verschieben"))) throw new Error("Unbekannte Direktbearbeitung");
   if (!(f.faces || []).length) throw new Error("Fläche wählen");
   if (f.op === "drehen" && (f.achse || "U") === "kante" && !f.edge) throw new Error("Drehkante wählen");
+  if (f.op === "ersetzen" && !(f.target?.p && f.target?.n)) throw new Error("Zielfläche (eben) wählen, auf die die Flächen gebracht werden");
   return f.op || "verschieben";
 }
 
@@ -109,5 +110,6 @@ export function direktSummary(op, n, wert) {
   const z = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
   if (op === "loeschen") return `${n} Fläche(n) gelöscht, Lücke geschlossen`;
   if (op === "drehen") return `${n} Fläche(n) um ${z(wert)}° gedreht`;
+  if (op === "ersetzen") return `${n} Fläche(n) durch die Zielfläche ersetzt`;
   return `${n} Fläche(n) um ${z(wert)} mm verschoben`;
 }

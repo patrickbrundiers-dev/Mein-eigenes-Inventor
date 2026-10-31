@@ -518,3 +518,60 @@ export function transformEntities(sk, entityIds, op, { uid }) {
   });
   return { entities: [...ids] };
 }
+
+/**
+ * Rechteck über 3 Punkte (gedreht, P9): a–b ist die erste Kante, c legt die Breite senkrecht dazu fest.
+ * Vier Linien, drei Senkrecht-Bedingungen (die vierte folgt), Freiheitsgrade: 5 (Lage, Drehung, Länge, Breite).
+ */
+export function buildRect3(sk, a, b, c, { uid, usePoint, construction = false }) {
+  const [dx, dy] = sub(b, a), L = Math.hypot(dx, dy);
+  if (!(L > 1e-9)) throw new Error("Rechteck braucht zwei verschiedene Punkte für die erste Kante");
+  const n = [-dy / L, dx / L], w = (c.x - a.x) * n[0] + (c.y - a.y) * n[1];
+  if (!(Math.abs(w) > 1e-9)) throw new Error("Der dritte Punkt liegt auf der ersten Kante – keine Breite");
+  const cons = [];
+  const p1 = usePoint(sk, a, cons), p2 = usePoint(sk, b, cons);
+  const pt = (q) => { const id = uid("p"); sk.points.push({ id, x: q.x + w * n[0], y: q.y + w * n[1] }); return id; };
+  const p3 = pt(b), p4 = pt(a);
+  const ids = [p1, p2, p3, p4];
+  const lines = [0, 1, 2, 3].map((i) => { const id = uid("l"); sk.entities.push({ id, type: "line", p1: ids[i], p2: ids[(i + 1) % 4], construction }); return id; });
+  for (let i = 0; i < 3; i++) cons.push({ id: uid("k"), type: "perpendicular", e1: lines[i], e2: lines[i + 1] });
+  sk.constraints.push(...cons);
+  return { points: ids, lines, width: Math.abs(w), length: L };
+}
+
+/**
+ * Kreise tangential an drei Geraden (P9): alle Lösungen von n_i·m − d_i = ±r (Inkreis und Ankreise).
+ * lines: [{ a:{x,y}, b:{x,y} }]. Rückgabe [{ x, y, r, onSegments }] – onSegments: Berührpunkte liegen auf allen drei Strecken.
+ */
+export function tangentCircles3(lines) {
+  const L = lines.map(({ a, b }) => {
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+    const n = [-dy / len, dx / len];
+    return { a, b, n, d: n[0] * a.x + n[1] * a.y, len };
+  });
+  if (L.some((l) => !(l.len > 1e-9))) return [];
+  const out = [];
+  for (const s of [[1, 1, 1], [1, 1, -1], [1, -1, 1], [-1, 1, 1], [-1, -1, -1], [-1, -1, 1], [-1, 1, -1], [1, -1, -1]]) {
+    // n_i·m − s_i·r = d_i  →  3×3 lineares System in (mx, my, r)
+    const M = L.map((l, i) => [l.n[0], l.n[1], -s[i], l.d]);
+    const det = (m) => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    const D = det(M);
+    if (Math.abs(D) < 1e-12) continue;
+    const col = (k) => det(M.map((row) => row.map((v, j) => (j === k ? row[3] : v))));
+    const x = col(0) / D, y = col(1) / D, r = col(2) / D;
+    if (!(r > 1e-9) || out.some((c) => Math.hypot(c.x - x, c.y - y) < 1e-6 && Math.abs(c.r - r) < 1e-6)) continue;
+    const onSegments = L.every((l) => {
+      const t = ((x - l.a.x) * (l.b.x - l.a.x) + (y - l.a.y) * (l.b.y - l.a.y)) / (l.len * l.len);
+      return t >= -1e-6 && t <= 1 + 1e-6;
+    });
+    out.push({ x, y, r, onSegments });
+  }
+  return out;
+}
+
+/** Bester Tangentialkreis an drei Linien: bevorzugt mit Berührpunkten auf den Strecken, dann Mitte nahe am Bezugspunkt */
+export function pickTangentCircle(cands, near) {
+  if (!cands.length) return null;
+  const dist = (c) => (near ? Math.hypot(c.x - near.x, c.y - near.y) : c.r);
+  return [...cands].sort((p, q) => (q.onSegments - p.onSegments) || dist(p) - dist(q))[0];
+}

@@ -113,3 +113,19 @@ test("Größe: Bohrung und Bolzen auf neuen Durchmesser, ebene Fläche mit Versa
   okAll(pl);
   near(vol(pl), 100 * 40 * 12, 1e-3, "ebene Fläche Versatz");
 });
+
+test("Fläche ersetzen (P10): Oberseite in die Ebene einer Zielfläche, höher, tiefer und schräg", async () => {
+  const up = await K.buildPart(part([...block, D({ op: "ersetzen", faces: [top], target: { p: [0, 0, 25], n: [0, 0, 1] } })]));
+  okAll(up);
+  near(vol(up), 100 * 40 * 25, 1e-2, "auf z = 25");
+  const down = await K.buildPart(part([...block, D({ op: "ersetzen", faces: [top], target: { p: [500, 0, 4], n: [0, 0, -1] } })]));
+  okAll(down);
+  near(vol(down), 100 * 40 * 4, 1e-2, "auf z = 4 (Zielnormale entgegen)");
+  // schräge Zielebene durch (0, 0, 10) mit 5° um X: Keil wie beim Drehen um die Kante
+  const a = (5 * Math.PI) / 180;
+  const sl = await K.buildPart(part([...block, D({ op: "ersetzen", faces: [top], target: { p: [0, 0, 10], n: [0, -Math.sin(a), Math.cos(a)] } })]));
+  okAll(sl);
+  near(vol(sl) - 40000, (100 * 40 * 40 * Math.tan(a)) / 2, 1, "schräg");
+  const bad = await K.buildPart(part([...block, D({ op: "ersetzen", faces: [top] })]));
+  assert.equal(bad.status.d.ok, false);
+});

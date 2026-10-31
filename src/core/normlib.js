@@ -13,7 +13,7 @@ const r2 = (x) => Math.round(x * 100) / 100;
 export const fmtDe = (x) => String(r2(x)).replace(".", ",");
 
 // ---------- Grundkörper eines Rezepts ----------
-// cyl: Zylinder Ø d, Höhe h ab z0 (axis "x": quer liegend, Mitte bei z0, Länge h); hex: Sechskant Schlüsselweite s;
+// cyl: Zylinder Ø d, Höhe h ab z0 (axis "x"/"y": quer liegend, Achse in Höhe z0, Länge h mittig um x bzw. y); hex: Sechskant Schlüsselweite s;
 // sq: Vierkant Kante a; box: Quader w × dy × h (Mitte x, y); rev: geschlossener Umriss [[r, z], …] um die z-Achse;
 // wedge: Keil a × b, Dicke h1 bei x = −a/2 bis h2 bei x = +a/2. cut: true zieht ab (in der Reihenfolge).
 export const cyl = (d, h, z0 = 0, o = {}) => ({ op: "cyl", d, h, z0, ...o });
@@ -60,7 +60,7 @@ export function recipeOutline(ops) {
   const rect = (x0, x1, z0, z1) => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
   return ops.map((o) => {
     let pts;
-    if (o.op === "cyl") pts = o.axis === "x" ? rect(-o.h / 2, o.h / 2, o.z0 - o.d / 2, o.z0 + o.d / 2) : rect((o.x || 0) - o.d / 2, (o.x || 0) + o.d / 2, o.z0, o.z0 + o.h);
+    if (o.op === "cyl") pts = o.axis === "x" ? rect((o.x || 0) - o.h / 2, (o.x || 0) + o.h / 2, o.z0 - o.d / 2, o.z0 + o.d / 2) : o.axis === "y" ? rect((o.x || 0) - o.d / 2, (o.x || 0) + o.d / 2, o.z0 - o.d / 2, o.z0 + o.d / 2) : rect((o.x || 0) - o.d / 2, (o.x || 0) + o.d / 2, o.z0, o.z0 + o.h);
     else if (o.op === "hex") pts = rect(-o.s / Math.sqrt(3), o.s / Math.sqrt(3), o.z0, o.z0 + o.h);
     else if (o.op === "sq") pts = rect(-o.a / 2, o.a / 2, o.z0, o.z0 + o.h);
     else if (o.op === "box") pts = rect(o.x - o.w / 2, o.x + o.w / 2, o.z0, o.z0 + o.h);
@@ -346,6 +346,62 @@ F.bodenriegel = beschlag({ label: "Bodenriegel für Torflügel", noun: "Bodenrie
 F.torfeststeller = beschlag({ label: "Torfeststeller (Bodenteil)", noun: "Torfeststeller", alias: ["Feststeller", "Torhalter"], grades: ["verzinkt", "A2"], def: { size: "Standard" },
   sizes: { Standard: { w: 100, d: 70, t: 6, h: 45 }, "schwer": { w: 120, d: 80, t: 8, h: 60 } },
   build: (m) => [box(m.w, m.d, m.t), box(8, m.d, m.h, m.t, { x: -16 }), box(8, m.d, m.h, m.t, { x: 16 }), ...[-m.w / 2 + 15, m.w / 2 - 15].map((x) => cut(cyl(9, m.t + 2, -1, { x, vol: (Math.PI / 4) * 81 * m.t })))] });
+
+// Rohrklemmverbinder (P4, wie Kee Klamp): Temperguss verzinkt, Knoten im Ursprung, Pfosten längs z, Handlauf längs x
+// (Eckstück: zweiter Lauf längs y). Bohrung Ø Rohr + 0,6 (Spiel), Steckmuffen enden 3 mm vor der Querbohrung (Anschlag).
+const KLEMM = Object.fromEntries([26.9, 33.7, 42.4, 48.3].map((D) => [`Ø${String(D).replace(".", ",")}`, { D }]));
+const klemmParts = (D, spec) => {
+  const w = Math.max(4, Math.round(D * 0.15)), B = D + 0.6, c = B + 2 * w, a = D, web = 3, A = (Math.PI / 4) * B * B;
+  const ps = [box(c, c, c, -c / 2)];
+  const L = c / 2 + a - B / 2 - web, m = (B / 2 + web + c / 2 + a) / 2; // Steckmuffe: Länge und Mitte
+  for (const s of spec.arms) {
+    if (s === "+x" || s === "-x") ps.push(box(a, c, c, -c / 2, { x: (s[0] === "+" ? 1 : -1) * (c / 2 + a / 2) }));
+    if (s === "+y") ps.push(box(c, a, c, -c / 2, { y: c / 2 + a / 2 }));
+    if (s === "-z") ps.push(box(c, c, a, -c / 2 - a));
+    if (s === "+z") ps.push(box(c, c, a, c / 2));
+  }
+  if (spec.throughX) ps.push(cut(cyl(B, c + 2 * a, 0, { axis: "x", vol: A * (c + 2 * a) })));
+  if (spec.throughZ) ps.push(cut(cyl(B, c + 2 * a, -c / 2 - a, { vol: A * (c + 2 * a) })));
+  for (const s of spec.sockets) {
+    if (s === "+x" || s === "-x") ps.push(cut(cyl(B, L, 0, { axis: "x", x: (s[0] === "+" ? 1 : -1) * m, vol: A * L })));
+    if (s === "+y") ps.push(cut(cyl(B, L, 0, { axis: "y", y: m, vol: A * L })));
+    if (s === "-z") ps.push(cut(cyl(B, L, -c / 2 - a, { vol: A * L })));
+  }
+  return ps;
+};
+const klemm = (label, noun, spec) => beschlag({ label, noun, alias: ["Kee Klamp", "Rohrverbinder", "Klemmverbinder"], grades: ["verzinkt", "A4"], def: { size: "Ø42,4" }, sizes: KLEMM, build: (m) => klemmParts(m.D, spec) });
+F.klemm_t = klemm("Rohrklemmverbinder T-Stück (Handlauf durch, Pfosten von unten)", "Klemmverbinder T-Stück", { arms: ["+x", "-x", "-z"], throughX: true, sockets: ["-z"] });
+F.klemm_bogen = klemm("Rohrklemmverbinder Endstück 90° (Handlauf seitlich, Pfosten von unten)", "Klemmverbinder Endstück 90°", { arms: ["+x", "-z"], sockets: ["+x", "-z"] });
+F.klemm_ecke = klemm("Rohrklemmverbinder Eckstück (zwei Handläufe 90°, Pfosten von unten)", "Klemmverbinder Eckstück", { arms: ["+x", "+y", "-z"], sockets: ["+x", "+y", "-z"] });
+F.klemm_kreuz = klemm("Rohrklemmverbinder Kreuzstück (Pfosten durch, Knieleiste beidseitig)", "Klemmverbinder Kreuzstück", { arms: ["+x", "-x", "-z", "+z"], throughZ: true, sockets: ["+x", "-x"] });
+F.klemm_kreuz_ende = klemm("Rohrklemmverbinder T-Stück lang (Pfosten durch, Knieleiste einseitig)", "Klemmverbinder T-Stück lang", { arms: ["+x", "-z", "+z"], throughZ: true, sockets: ["+x"] });
+F.klemm_kreuz_ecke = klemm("Rohrklemmverbinder Eckkreuz (Pfosten durch, Knieleisten 90°)", "Klemmverbinder Eckkreuz", { arms: ["+x", "+y", "-z", "+z"], throughZ: true, sockets: ["+x", "+y"] });
+F.klemm_fuss = beschlag({ label: "Rohrklemmverbinder Fußflansch", noun: "Klemmverbinder Fußflansch", alias: ["Kee Klamp", "Bodenflansch"], grades: ["verzinkt", "A4"], def: { size: "Ø42,4" }, sizes: KLEMM,
+  // Platte 4·D × 4·D × 8 ab z = 0, Muffe darauf, Pfosten steht 3 mm über der Platte auf dem Muffenboden
+  build: (m) => {
+    const D = m.D, w = Math.max(4, Math.round(D * 0.15)), B = D + 0.6, c = B + 2 * w, P = Math.round(3.2 * D), e = P / 2 - 14, A = (Math.PI / 4) * B * B;
+    return [box(P, P, 8), box(c, c, D, 8), cut(cyl(B, D - 3, 11, { vol: A * (D - 3) })), ...[[-e, -e], [e, -e], [e, e], [-e, e]].map(([x, y]) => cut(cyl(11, 8, 0, { x, y, vol: (Math.PI / 4) * 121 * 8 })))];
+  } });
+
+// --- Anschlagpunkte (P8): Ringschraube DIN 580 (C15E) – Bund auf der Auflage, Gewindezapfen nach −z, Ring nach +z.
+// d1 Ring außen, d2 Ringdicke, d3 Ring innen, d4 Bund, k Bundhöhe, l Gewindelänge; wll Tragfähigkeit in kg
+// (1 Strang senkrecht), wll45 Gesamt-Tragfähigkeit 2-Strang unter 45° (DIN 580 Tabelle).
+export const DIN580 = {
+  M8: { d: 8, d1: 36, d2: 8, d3: 20, d4: 20, k: 6, l: 13, wll: 140, wll45: 95 },
+  M10: { d: 10, d1: 45, d2: 10, d3: 25, d4: 25, k: 8, l: 17, wll: 230, wll45: 170 },
+  M12: { d: 12, d1: 54, d2: 12, d3: 30, d4: 30, k: 10, l: 20.5, wll: 340, wll45: 240 },
+  M16: { d: 16, d1: 63, d2: 14, d3: 35, d4: 35, k: 12, l: 27, wll: 700, wll45: 500 },
+  M20: { d: 20, d1: 72, d2: 16, d3: 40, d4: 40, k: 14, l: 30, wll: 1200, wll45: 830 },
+  M24: { d: 24, d1: 90, d2: 20, d3: 50, d4: 50, k: 17, l: 36, wll: 1800, wll45: 1270 },
+  M30: { d: 30, d1: 108, d2: 24, d3: 60, d4: 65, k: 26, l: 45, wll: 3200, wll45: 2150 },
+  M36: { d: 36, d1: 126, d2: 28, d3: 70, d4: 75, k: 30, l: 54, wll: 4600, wll45: 3100 },
+};
+F.din580 = { ...beschlag({ label: "Ringschraube (Anschlagpunkt)", noun: "Ringschraube", alias: ["Hebeöse", "Anschlagpunkt", "Transportöse"], grades: ["C15E", "A2"], def: { size: "M16" },
+  sizes: Object.fromEntries(Object.entries(DIN580).map(([k, t]) => [k, { ...t, hd: t.d }])),
+  build: (m) => {
+    const zc = m.k + m.d1 / 2; // Ring steht tangential auf dem Bund
+    return [cyl(m.d, m.l, -m.l), cyl(m.d4, m.k), cyl(m.d1, m.d2, zc, { axis: "y" }), cut(cyl(m.d3, m.d2 + 2, zc, { axis: "y", vol: (Math.PI / 4) * m.d3 * m.d3 * m.d2 }))];
+  } }), cat: "schrauben", norm: "DIN 580", beschlag: false };
 
 /** Kategorien in der Reihenfolge des Dialogs */
 export const NORM_CATEGORIES = [["schrauben", "Schrauben"], ["muttern", "Muttern"], ["scheiben", "Scheiben & Federringe"], ["gewinde", "Gewindestangen & Spannschlösser"], ["anker", "Dübel & Anker"], ["nieten", "Nieten"], ["stifte", "Stifte & Bolzen"], ["beschlaege", "Beschläge"]];
