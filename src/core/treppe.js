@@ -17,7 +17,7 @@ import { windingPlan } from "./verzogen.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { holderSchema } from "./handlaufhalter.js";
-import { mountSchema, mountConfig, topMount, sideMount, sideOffset, findSideFace, planeFace, findMemberFace, findPlateFace, faceCoords, applyTargetHoles, overrideFor, mountCollisions, mountInfo } from "./pfostenbefestigung.js";
+import { mountSchema, mountConfig, topMount, sideMount, sideOffset, findSideFace, planeFace, findMemberFace, findPlateFace, faceCoords, applyTargetHoles, overrideFor, mountCollisions, mountInfo, collisions, plateBox } from "./pfostenbefestigung.js";
 
 const podest = (p) => p.form === "L" || p.form === "U";
 const wendel = (p) => p.form === "Lw" || p.form === "Uw"; // gewendelt mit verzogenen Stufen (verzogen.js)
@@ -642,6 +642,18 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
         }
         if (!r && !t) return fail("kein Anschlussbauteil unter oder neben dem Pfosten (Wange, Podestrahmen oder Stufe)");
         if (!r) ({ face, r } = t);
+      }
+      // Platte stößt an ein Bauteil, das neben dem Pfosten vorbeiläuft (U-Treppe: Pfosten am Treppenauge, die Wange des
+      // einen Laufs reicht bis unter das Podest, die des anderen liegt im Auge daneben): stattdessen seitlich an diesem Bauteil
+      const hitBy = (rr, f) => (rr?.plate ? collisions(plateBox(rr.plate), supports, (n) => n === f?.target || n === name || n.startsWith(name + " ")) : []);
+      const alt = r && hitBy(r, face).map((h) => (onBeam ? [...beams, ...segs] : segs).find((m) => m.name === h)).find(Boolean);
+      if (alt && ov !== "oben") {
+        try {
+          const ax = norm3([alt.b[0] - alt.a[0], alt.b[1] - alt.a[1], 0]), al = dot3(ax, along) < 0 ? mul3(ax, -1) : ax;
+          const f2 = findSideFace([alt], base, al, 600, 100 + cfg.gap);
+          const r2 = f2 ? (rhythm && onBeam ? placeSide({ name, top, base, along: al }, f2) : sideMount(cfgSide, { name, post: o.post, top, base, along: al, face: f2, plateName: `${name} Befestigungsblech` })) : null;
+          if (r2?.ok && !hitBy(r2, f2).length) { face = f2; r = r2; r.fallback = kindP === "seitlich" ? r.fallback : "seitlich"; }
+        } catch { /* bleibt bei der ersten Lage, die Kollision meldet mountCollisions */ }
       }
       if (!record) return r;
       applyTargetHoles(supports.plates, face, r.targetHoles);
