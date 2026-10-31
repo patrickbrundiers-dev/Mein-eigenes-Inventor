@@ -1275,8 +1275,14 @@ export function createKernel(R) {
               for (const [x, y, len] of pl.slots || []) d = d.cut(R.drawRoundedRectangle(len, pl.d, pl.d / 2 - 0.01).translate(x, y)); // Langloch entlang xDir
               for (const [x, y, w, hh] of pl.rects || []) d = d.cut(R.drawRectangle(w, hh).translate(x, y)); // Rechteckausschnitt (Steckschlitz)
               // Bohrungen quer zur Plattenebene (z. B. im Schenkel eines Pfettenschuhs): drills mit dem Plattennamen
-              const solid = drill(d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t), pds);
-              const meta = { plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length + pds.length, ...(pl.slots?.length ? { slots: pl.slots.length } : {}), d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
+              let body = d.sketchOnPlane(new R.Plane(pl.center, pl.xDir, pl.normal)).extrude(pl.t);
+              // Gehrung/Schrägschnitt (Zarge P2): Halbräume {(x − p)·n > 0} abziehen
+              for (const c of pl.cutPlanes || []) {
+                const N = v3.norm(c.n), A = Math.abs(N[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0], S = 2 * (pl.t + pl.W + pl.H) + 100;
+                body = body.cut(R.drawRectangle(2 * S, 2 * S).sketchOnPlane(new R.Plane(c.p, v3.norm(v3.cross(A, N)), N)).extrude(S));
+              }
+              const solid = drill(body, pds);
+              const meta = { ...(pl.meta || {}), plate: { W: pl.W, H: pl.H, t: pl.t, holes: (pl.holes || []).length + pds.length, ...(pl.slots?.length ? { slots: pl.slots.length } : {}), d: pl.d }, glass: !!pl.glass, tread: pl.tread, generator: f.gen };
               const dens = pl.density ?? (pl.glass ? FILL_DENSITY.glas : FILL_DENSITY[pl.tread]);
               if (dens) meta.density = dens;
               return [{ solid, meta }];

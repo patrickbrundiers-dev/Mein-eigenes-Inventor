@@ -193,6 +193,8 @@ export class Ribbon {
       vordach: () => this.addGenerator("vordach"),
       pergola: () => this.addGenerator("pergola"),
       fenstergitter: () => this.addGenerator("fenstergitter"),
+      rampe: () => this.addGenerator("rampe"),
+      zarge: () => this.addGenerator("zarge"),
       steigleiter: () => this.addGenerator("steigleiter"),
       stuetzenfuss: () => this.addGenerator("stuetzenfuss"),
       traegerstoss: () => this.addGenerator("traegerstoss"),
@@ -478,7 +480,7 @@ export class Ribbon {
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
           { label: "Generatoren", big: 4, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("spindel", "Spindeltreppe", "spindel"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("fenstergitter", "Fenstergitter", "fenstergitter"),
-            M("genMore", "Weitere", "plus", [B("pergola", "Pergola", "pergola")])] },
+            M("genMore", "Weitere", "plus", [B("rampe", "Rampe / Laufsteg", "rampe"), B("zarge", "Stahlzarge", "zarge"), B("pergola", "Pergola", "pergola")])] },
           { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne"),
             M("stahlMore", "Weitere", "plus", [B("voute", "Voutenträger", "voute"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk")])] },
           { label: "Gestell", big: 1, buttons: (() => {

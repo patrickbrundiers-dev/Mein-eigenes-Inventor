@@ -58,3 +58,57 @@ test("P11: Balkon warnt, wenn die Stütze breiter als der Rahmen ist (Standard o
   const w = wide.issues.find((i) => i.key === "column");
   assert.ok(w && w.level === "Warnung" && /breiter als der Rahmen/.test(w.message));
 });
+
+import { rampPath, offsetPath, zAt } from "../src/core/rampe.js";
+import { zargeProfile, polyArea } from "../src/core/zarge.js";
+import { orderRows } from "../src/core/bestellliste.js";
+
+test("P1: Rampe – Läufe höchstens 6 m mit Podest, DIN-18040-Warnungen, Teile", () => {
+  const r = rampPath({ height: 600, slope: 6, runMax: 6000, landing: 1500, topLanding: 0 });
+  assert.equal(r.runs, 2);
+  nearly(r.runLength, 5000);
+  assert.deepEqual(r.pts.map((q) => q.map(Math.round)), [[0, 0], [5000, 300], [6500, 300], [11500, 600]]);
+  // Versatz senkrecht zu jedem Abschnitt, Ecke als Schnittpunkt
+  const o = offsetPath([[0, 0], [100, 0], [200, 100]], 10);
+  nearly(o[0][1], -10); nearly(zAt(o, 50), -10);
+  nearly(o[1][0], 100 + 10 * Math.tan(Math.PI / 8), 1e-6, "Ecke");
+  const p = plan("rampe");
+  assert.ok(p.chains.some((c) => c.name === "Wange links") && p.chains.some((c) => c.name === "Handlauf rechts"));
+  assert.ok(p.plates.some((x) => /^Gitterrost Podest/.test(x.name)) && p.plates.some((x) => /^Radabweiser links/.test(x.name)));
+  assert.ok(p.members.some((m) => /^Pfosten links/.test(m.name)) && p.members.some((m) => /^Knieleiste/.test(m.name)));
+  assert.ok(!p.issues.some((i) => i.level === "Warnung"), JSON.stringify(p.issues));
+  const steep = plan("rampe", { slope: "8", landing: "1200" });
+  assert.ok(steep.issues.some((i) => i.key === "slope" && i.level === "Warnung"));
+  assert.ok(steep.issues.some((i) => i.key === "landing"));
+  // Handlauf mit 300 mm waagerecht über Anfang und Ende
+  const h = p.chains.find((c) => c.name === "Handlauf links").points;
+  nearly(h[0][0], -300); nearly(h[0][2], h[1][2]); nearly(h.at(-1)[2], h.at(-2)[2]);
+});
+
+test("P2: Stahlzarge – Profil ohne Selbstüberschneidung, Gehrung, Bandseite, Zuschnittbreite", () => {
+  const prof = zargeProfile({ S: 50, A: 15, R: 27, D: 60, t: 1.5 });
+  // einfache Kontur: keine zwei nicht benachbarten Kanten schneiden sich
+  const segs = prof.map((a, i) => [a, prof[(i + 1) % prof.length]]);
+  const cross = ([a, b], [c, d]) => {
+    const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+    return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
+  };
+  for (let i = 0; i < segs.length; i++) for (let j = i + 2; j < segs.length; j++) if (!(i === 0 && j === segs.length - 1)) assert.ok(!cross(segs[i], segs[j]), `Kanten ${i}/${j}`);
+  nearly(polyArea(prof) / 1.5, 50 + 15 + 27 + (15 - 1.5) + (60 - 27), 3, "Abwicklung ≈ Mittellinie: Spiegel, Falz, Anschlag, Laibung");
+  const p = plan("zarge");
+  assert.deepEqual(p.plates.filter((x) => /^Zarge/.test(x.name)).map((x) => x.cutPlanes.length), [1, 1, 2]);
+  assert.ok(p.plates.filter((x) => /^Bandtasche/.test(x.name)).every((x) => x.center[0] < 100), "Bandtaschen links");
+  const r = plan("zarge", { hinge: "rechts", form: "umfassung", wall: "175" });
+  assert.ok(r.plates.filter((x) => /^Bandtasche/.test(x.name)).every((x) => x.center[0] > 800), "Bandtaschen rechts");
+  assert.match(r.info, /Umfassungszarge/);
+  assert.throws(() => plan("zarge", { t: "8" }), /Blechdicke/);
+});
+
+test("P3: Bestellliste – Gitterroste, Gitterroststufen und Klemmhalter", () => {
+  const plate = (W, H, t) => ({ tread: "gitterrost", plate: { W, H, t } });
+  const rows = orderRows([{ part: { id: "a" }, qty: 2, bodies: [{ name: "Gitterrost 1", meta: plate(1000, 800, 30) }, { name: "Stufe 3", meta: plate(800, 240, 30) }, { name: "Riffelblech", meta: { tread: "blech", plate: { W: 1, H: 1, t: 5 } } }] }], { suppliers: { gitterroste: "Rostwerk" } });
+  const g = rows.filter((r) => r.group === "gitterroste");
+  assert.deepEqual(g.map((r) => [r.name, r.qty]), [["Gitterrost 1000 × 800 × 30", 2], ["Gitterrost-Klemmhalter Satz M8", 8], ["Gitterroststufe 800 × 240 × 30", 2]]);
+  assert.ok(g.every((r) => r.supplier === "Rostwerk"));
+  nearly(g[0].area, 1.6, 1e-9);
+});
