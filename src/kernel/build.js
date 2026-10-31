@@ -2413,7 +2413,9 @@ export function createKernel(R) {
     for (const o of ops) {
       let p;
       switch (o.op) {
-        case "cyl": p = o.axis === "x" ? R.makeCylinder(o.d / 2, o.h, [-o.h / 2, o.y || 0, o.z0], [1, 0, 0]) : R.makeCylinder(o.d / 2, o.h, [o.x || 0, o.y || 0, o.z0], [0, 0, 1]); break;
+        case "cyl": p = o.axis === "x" ? R.makeCylinder(o.d / 2, o.h, [-o.h / 2 + (o.x || 0), o.y || 0, o.z0], [1, 0, 0])
+          : o.axis === "y" ? R.makeCylinder(o.d / 2, o.h, [o.x || 0, -o.h / 2 + (o.y || 0), o.z0], [0, 1, 0])
+          : R.makeCylinder(o.d / 2, o.h, [o.x || 0, o.y || 0, o.z0], [0, 0, 1]); break;
         case "hex": p = R.drawPolysides(o.s / Math.sqrt(3), 6).sketchOnPlane("XY", o.z0).extrude(o.h); break;
         case "sq": p = R.drawRectangle(o.a, o.a).sketchOnPlane("XY", o.z0).extrude(o.h); break;
         case "box": p = R.makeBaseBox(o.w, o.dy, o.h).translate([o.x || 0, o.y || 0, o.z0]); break;

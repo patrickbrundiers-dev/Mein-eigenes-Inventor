@@ -41,6 +41,7 @@ const P = {
   tor: '<path d="M3 21V5M21 21V5"/><path d="M5 20V9q3.5-3 7-3t7 3v11z"/><path d="M12 6v14M8.5 8v12M15.5 8v12" stroke-width="1.2"/>',
   rampe: '<path d="M2 19h20M2 19 14 11h8"/><path d="M5 17v2M10 13.7V19M16 11v8M21 11v8"/><path d="M2 13l12-8h8" stroke-width="1.2"/>',
   zarge: '<path d="M5 21V4h14v17"/><path d="M8 21V7h8v14" stroke-width="1.2"/><path d="M3 21h4M17 21h4"/>',
+  klemmgelaender: '<path d="M3 6h18M3 13h18M6 6v15M18 6v15M3 21h6M15 21h6"/><rect x="4.5" y="4.5" width="3" height="3"/><rect x="16.5" y="4.5" width="3" height="3"/><rect x="4.5" y="11.5" width="3" height="3"/><rect x="16.5" y="11.5" width="3" height="3"/>',
   fenstergitter: '<path d="M4 3h16v18H4z"/><path d="M8 3v18M12 3v18M16 3v18"/><path d="M4 9h16M4 15h16" stroke-width="1.2"/>',
   pergola: '<path d="M3 7h18v3H3z"/><path d="M6 7l1.5 3M10 7l1.5 3M14 7l1.5 3M18 7l1.5 3" stroke-width="1.2"/><path d="M4 10v11M20 10v11M2 21h20"/>',
   vordach: '<path d="M2 7l20-3v2L2 9z"/><path d="M5 9v12M19 6v15M2 21h20"/><path d="M5 12l3-3M19 10l-3-3" stroke-width="1.2"/>',

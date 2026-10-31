@@ -77,6 +77,8 @@ export const CASES = [
   ["pergola", "pergola", {}],
   ["pergola-wand-zu", "pergola", { form: "wand", angle: "0" }],
   ["rampe", "rampe", {}],
+  ["klemmgelaender", "klemmgelaender", {}],
+  ["klemmgelaender-rechts-3", "klemmgelaender", { runs: "2000; 1500; 2000", turn: "rechts", tube: "33.7", wall: "2.6", knee: false }],
   ["zarge", "zarge", {}],
   ["zarge-umfassung-rechts", "zarge", { form: "umfassung", hinge: "rechts", bands: "3", t: "2" }],
   ["rampe-steil-blech", "rampe", { height: "900", slope: "8", deck: "blech", knee: false, topLanding: "0" }],

@@ -142,6 +142,7 @@ export const BEFEHLSHILFE = {
   schiebetor: "Freitragendes Schiebetor mit Laufschiene, Rollenböcken und Gegengewichtsteil.",
   rampe: "Rampe oder Laufsteg mit Steigung, Zwischenpodesten, Wangen, Belag, Stützen, Radabweiser und Handlauf beidseitig (DIN 18040 wird geprüft).",
   zarge: "Stahlzarge als Eck- oder Umfassungszarge aus Kantblech: Pfosten und Sturz auf Gehrung, Bandtaschen, Schließblechkasten, Maueranker, Zuschnittbreite.",
+  klemmgelaender: "Rohrgeländer ohne Schweißnähte: Pfosten in Fußflanschen, Handlauf und Knieleiste in Rohrklemmverbindern (T-Stück, Eckstück, Endstück, Kreuzstück).",
   fenstergitter: "Fenstergitter für die Laibung oder vor der Fassade: Rahmen, Stäbe oder Durchsteckgitter, Ankerbohrungen bzw. Mauerlaschen.",
   pergola: "Lamellendach (Pergola) freistehend oder an der Wand: Stützen, Rahmen als Rinne, drehbare Lamellen mit Achsbolzen, Ablauf durch eine Stütze.",
   vordach: "Vordach an der Wand oder freistehenden Carport mit Stützen, Pfetten, Sparren, Dachhaut und Rinne erzeugen.",

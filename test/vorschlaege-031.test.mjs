@@ -112,3 +112,29 @@ test("P3: Bestellliste – Gitterroste, Gitterroststufen und Klemmhalter", () =>
   assert.ok(g.every((r) => r.supplier === "Rostwerk"));
   nearly(g[0].area, 1.6, 1e-9);
 });
+
+import { NORM_FAMILIES, recipeVolume } from "../src/core/normlib.js";
+import { klemmGeom } from "../src/core/klemmgelaender.js";
+
+test("P4: Rohrklemmverbinder als Normteile und Klemmgeländer ohne Schweißnähte", () => {
+  for (const k of ["klemm_t", "klemm_bogen", "klemm_ecke", "klemm_kreuz", "klemm_kreuz_ende", "klemm_kreuz_ecke", "klemm_fuss"]) {
+    const f = NORM_FAMILIES[k];
+    assert.ok(f && f.cat === "beschlaege" && f.sizeList.includes("Ø42,4"), k);
+    assert.ok(recipeVolume(f.build(f.sizes["Ø42,4"])) > 0, k);
+  }
+  const p = plan("klemmgelaender");
+  const kinds = (re) => p.norms.filter((n) => re.test(n.kind)).length;
+  assert.equal(kinds(/^klemm_fuss$/), 5);
+  assert.equal(kinds(/^klemm_t$/), 2);
+  assert.equal(kinds(/^klemm_ecke$/), 1);
+  assert.equal(kinds(/^klemm_bogen$/), 2);
+  // Eckstück: x zum einen Lauf, z × x zum anderen (beide Läufe stecken in Muffen)
+  const e = p.norms.find((n) => n.kind === "klemm_ecke"), zx = [-e.xDir[1], e.xDir[0], 0];
+  const toRails = [[-1, 0, 0], [0, 1, 0]].map((v) => v.join());
+  assert.ok(toRails.includes(e.xDir.map((x) => x + 0).join()) && toRails.includes(zx.map((x) => x + 0).join()), JSON.stringify(e.xDir));
+  // Handlauf endet am Muffenanschlag (Bohrung/2 + 3 mm vor dem Knoten)
+  const g = klemmGeom(42.4), h1 = p.members.find((m) => m.name === "Handlauf 1");
+  assert.ok(Math.abs(h1.a[0] - g.stop) < 1e-9 && Math.abs(h1.b[0] - (3000 - g.stop)) < 1e-9);
+  assert.match(p.info, /ohne Schweißnähte/);
+  assert.throws(() => plan("klemmgelaender", { runs: "100" }), /Lauf mindestens/);
+});
