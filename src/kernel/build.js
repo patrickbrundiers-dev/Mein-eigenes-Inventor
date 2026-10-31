@@ -42,6 +42,7 @@ import { familyOf, normRecipe, gradeInfo } from "../core/normlib.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
 import { WELD_KINDS } from "../core/weld.js";
 import { GENERATORS, resolveGenParams } from "../core/generator.js";
+import { isFatal } from "./fatal.js";
 import { gestellPlan } from "../core/gestell.js";
 import { planBodies, localPlan } from "../core/genteil.js";
 import { FILL_DENSITY } from "../core/mass.js";
@@ -1565,6 +1566,7 @@ export function createKernel(R) {
                 b.shape = f.type === "fillet" ? b.shape.fillet(counted) : b.shape.chamfer(counted);
                 if (any) total++;
               } catch (e) {
+                if (isFatal(e)) throw e;
                 if (String(e?.message || "").includes("no edge was selected")) continue;
                 throw new Error((f.type === "fillet" ? "Rundung" : "Fase") + " nicht möglich – Radius zu groß? (" + errorText(e, R) + ")");
               }
@@ -2056,6 +2058,9 @@ export function createKernel(R) {
             throw new Error("Unbekanntes Feature: " + f.type);
         }
       } catch (e) {
+        // Absturz in OpenCascade (Speicher voll, Speicherzugriff): nicht als Feature-Fehler weiterrechnen, der Kern ist
+        // danach unzuverlässig – der Worker meldet ihn als schwer, die Oberfläche startet den Kern neu (SY5)
+        if (isFatal(e)) throw e;
         st.ok = false;
         st.error = errorText(e, R);
       }
@@ -2843,9 +2848,13 @@ export function createKernel(R) {
     if (q) return quadrantPoint(c.center, c.axisD, c.xDir, c.radius, Number(q[1]));
     throw new Error("Unbekannter Fangpunkt: " + ref);
   }
-  function meshBody(shape, quality = "normal") {
-    const tol = quality === "fein" ? 0.02 : quality === "grob" ? 0.3 : 0.08;
-    const ang = quality === "fein" ? 0.1 : quality === "grob" ? 0.5 : 0.25;
+  /**
+   * Netz eines Körpers. swept = gezogener Körper entlang einer Wendel/eines Bogens (Wendel-Handlauf): OpenCascade
+   * vernetzt diese Freiformflächen entlang der Bahn sehr dicht (ein 27°-Stück Rohr 42,4 bei 0,08 mm: 47 000 Dreiecke,
+   * ein gerades Rohr gleicher Länge 400), daher dort eine Stufe gröber – sieht gleich aus, rechnet 3× schneller.
+   */
+  function meshBody(shape, quality = "normal", { swept = false } = {}) {
+    const [tol, ang] = (swept ? { fein: [0.08, 0.25], grob: [0.4, 0.5] } : { fein: [0.02, 0.1], grob: [0.3, 0.5] })[quality] || (swept ? [0.2, 0.35] : [0.08, 0.25]);
     const m = shape.mesh({ tolerance: tol, angularTolerance: ang });
     const faceInfo = new Map();
     shape.faces.forEach((fc, idx) => {

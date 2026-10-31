@@ -2,6 +2,7 @@
 import * as R from "replicad";
 import ocInit from "replicad-opencascadejs";
 import { createKernel, hashString, errorText } from "./build.js";
+import { isFatal } from "./fatal.js";
 import { materialOf, setUserMaterials, setProjectMaterials } from "../core/materials.js";
 import { setUserBendTables, setProjectBendTables } from "../core/bendtable.js";
 import { svgPathSegments } from "../core/svgpath.js";
@@ -110,7 +111,7 @@ const handlers = {
     if (!bodies) {
       bodies = res.bodies.map((b, i) => {
         let mesh = null, props = null, error = null;
-        try { mesh = K.meshBody(b.shape, quality); props = K.bodyProps(b.shape); } catch (e) { error = errorText(e, R); }
+        try { mesh = K.meshBody(b.shape, quality, { swept: !!b.meta?.rolled }); props = K.bodyProps(b.shape); } catch (e) { error = errorText(e, R); }
         return { index: i, name: b.name, kind: b.kind, fid: b.fid, meta: b.meta ? { ...b.meta } : null, mesh, props, error };
       });
       remember(meshCache, mkey, { bodies }, 64, part.id);
@@ -385,7 +386,8 @@ self.onmessage = async (ev) => {
     const result = await h(args || {});
     self.postMessage({ id, ok: true, result, heapMB: heapMB() });
   } catch (e) {
-    const fatal = e instanceof WebAssembly.RuntimeError;
+    // Speicher voll bzw. Stapelüberlauf mitten in OpenCascade: der Kern kann danach in einem halben Zustand sein → neu starten
+    const fatal = isFatal(e);
     self.postMessage({ id, ok: false, error: errorText(e, R), fatal, heapMB: heapMB() });
   }
 };

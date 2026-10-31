@@ -79,3 +79,23 @@ test("dreimal abgestürzt in einer Minute: Hinweis zur Abhilfe", () => {
   for (let i = 0; i < 3; i++) k.restart("Geometrie-Kern abgestürzt");
   assert.ok(/wiederholt/.test(msgs[2]) && !/wiederholt/.test(msgs[1]));
 });
+
+test("unlesbare Antwort des Kerns: Neustart, offene Aufträge abgelehnt statt ewig zu warten", async () => {
+  workers.length = 0;
+  const k = new KernelClient();
+  await k.ready;
+  workers[0].postMessage = function (msg) { this.sent.push(msg.cmd); setTimeout(() => this.onmessageerror?.({}), 1); };
+  await assert.rejects(k.build({ id: "p1", features: [] }), /nicht lesbar/);
+  assert.equal(workers.length, 2, "neuer Kern");
+  await k.ready;
+  assert.equal(k.busy, 0, "nichts hängt mehr");
+});
+
+test("schwerer Fehler (fatal) aus dem Kern: Neustart", async () => {
+  workers.length = 0;
+  const k = new KernelClient();
+  await k.ready;
+  workers[0].postMessage = function (msg) { setTimeout(() => this.onmessage?.({ data: { id: msg.id, ok: false, error: "memory access out of bounds", fatal: true } }), 1); };
+  await assert.rejects(k.build({ id: "p1", features: [] }), /out of bounds/);
+  assert.equal(workers.length, 2);
+});

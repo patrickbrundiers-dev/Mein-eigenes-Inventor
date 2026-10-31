@@ -46,3 +46,19 @@ Die 3D-Ansicht zeichnet nur, wenn sie sichtbar ist. Beim Start liegt die Startse
 | Geometrie-Kern bereit | 1,3–1,8 s | 0,85–1,1 s |
 
 Auf einem Windows-PC mit Grafikkarte sind die Zeiten anders (hier SwiftShader ohne GPU), die Reihenfolge bleibt.
+
+## Spindeltreppe (31.10.2026)
+
+Messung mit `node --stack-size=8000 tools/generator-zeit.mjs spindel` (Vorgaben, ohne Zwischenspeicher, Container ohne GPU).
+
+| | vorher | nachher |
+|---|---|---|
+| Bau | 29 s (davon 21 s Bohrungen im Wendel-Handlauf, 3 s Ziehen) | unverändert |
+| Netz | 15 s (Handlauf 12 s, 750 000 Dreiecke) | Handlauf etwa ein Drittel der Dreiecke |
+
+Befund: OpenCascade braucht je Bohrung Ø 12,1 in den gezogenen Wendel-Handlauf etwa 0,3 s – unabhängig von der Länge
+des Abschnitts, von Toleranzen der Zieh-Operation, von einem gemeinsamen Schnitt aller Bohrungen und von der
+Reihenfolge (erst bohren, dann innen ausschneiden). Ein Loft durch Kreise statt des Ziehens ist langsamer und
+ungenau. Die Bohrungen bleiben daher so; der Generator-Zwischenspeicher hält den Handlauf, solange sich nur andere
+Maße ändern. Das Netz gezogener Körper (`meta.rolled`) ist eine Stufe gröber (0,2 mm statt 0,08 mm), weil OpenCascade
+diese Freiformflächen entlang der Bahn sehr dicht teilt (27°-Stück: 47 000 statt 400 Dreiecke bei einem geraden Rohr).
