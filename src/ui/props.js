@@ -1436,6 +1436,8 @@ export class Props {
           E(f.from?.p ? "Abstand ab Bezug" : "Abstand", "distance"),
           f.from?.p ? h("p", { class: "hint" }, "Gemessen ab dem gewählten Bezug (»Messen ab« in der Leiste am Modell).") : null);
         if (op === "groesse") parts.push(this.seg("Maß", DIREKT_GROESSE, f.sizeMode || "durchmesser", (v) => this.set(f, "sizeMode", v, "Maß")), E((f.sizeMode || "durchmesser") === "durchmesser" ? "Durchmesser" : f.sizeMode === "radius" ? "Radius" : "Versatz", "size"));
+        if (op === "ersetzen") parts.push(h("button", { class: "btn", onclick: () => this.app.direct.pickTarget(f) }, f.target?.p ? "Zielfläche neu wählen" : "Zielfläche wählen"),
+          h("p", { class: "hint" }, "Die gewählten ebenen Flächen wandern in die Ebene der Zielfläche; die Nachbarflächen wachsen bzw. schrumpfen mit."));
         if (op === "drehen") parts.push(this.seg("Drehachse", DIREKT_ACHSEN, f.achse || "U", (v) => (v === "kante" ? this.app.direct.pickEdge(f) : this.set(f, "achse", v, "Drehachse"))), E("Winkel", "angle", { unit: "°", allowZero: false }));
         parts.push(h("p", { class: "hint" }, "Am Modell: Leiste mit Triade – Pfeil ziehen oder Wert eintippen, Eingabe bestätigt."));
         return [this.section("Direktbearbeitung", ...parts)];

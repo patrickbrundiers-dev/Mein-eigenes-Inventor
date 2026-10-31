@@ -1928,6 +1928,12 @@ export function createKernel(R) {
             let wert = 0;
             if (op === "loeschen") {
               for (const body of [...new Set(hits.map((x) => x.body))]) body.shape = DK.deleteFaces(body.shape, hits.filter((x) => x.body === body).map((x) => x.face));
+            } else if (op === "ersetzen") {
+              for (const { body, p } of hits) {
+                const face = facesAt([p])[0]?.face;
+                if (!face) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+                body.shape = DK.replaceFace(body.shape, face, f.target);
+              }
             } else if (op === "drehen") {
               wert = validateAngle(E(f.angle || "0", "Winkel"));
               for (const { body, p } of hits) {

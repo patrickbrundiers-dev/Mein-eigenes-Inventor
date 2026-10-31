@@ -182,6 +182,8 @@ export const COMMANDS = [
   { id: "sketch.split", label: "Skizze: Teilen", group: "Skizze", scope: "sketch", keywords: "split trennen brechen" },
   { id: "sketch.sfillet", label: "Skizze: Rundung", group: "Skizze", scope: "sketch", key: "F" },
   { id: "sketch.schamfer", label: "Skizze: Fase", group: "Skizze", scope: "sketch", keywords: "abschrägen ecke schräge kante" },
+  { id: "sketch.rect3", label: "Skizze: Rechteck über 3 Punkte", group: "Skizze", scope: "sketch", keywords: "gedreht schräg dreipunkt" },
+  { id: "sketch.circlet3", label: "Skizze: Kreis tangential an 3 Linien", group: "Skizze", scope: "sketch", keywords: "inkreis berührend tangentialkreis" },
   { id: "sketch.circle3", label: "Skizze: Kreis durch 3 Punkte", group: "Skizze", scope: "sketch", keywords: "dreipunktkreis umkreis" },
   { id: "sketch.arct", label: "Skizze: Tangentialer Bogen", group: "Skizze", scope: "sketch", keywords: "anschluss bogen linie übergang" },
   { id: "sketch.project", label: "Skizze: Kante projizieren", group: "Skizze", scope: "sketch" },

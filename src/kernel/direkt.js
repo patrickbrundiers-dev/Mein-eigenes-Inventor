@@ -108,6 +108,23 @@ export function direktKernel(R) {
     return toPlane(shape, face, P1, r * Math.abs(Math.tan(a)) * 1.5 + 1);
   }
 
+  /** Fläche ersetzen (P10, Inventor »Fläche ersetzen«): ebene Fläche in die Ebene der Zielfläche {p, n} bringen */
+  function replaceFace(shape, face, target) {
+    if (!isPlane(face)) throw new Error("Ersetzen: nur ebene Flächen");
+    const P1 = { o: target.p, n: v3.norm(target.n) };
+    const [lo, hi] = face.boundingBox.bounds;
+    let H = 0;
+    for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) H = Math.max(H, Math.abs(v3.dot(v3.sub([x, y, z], P1.o), P1.n)));
+    if (H < 1e-6) return shape;
+    // Zielnormale gegen die Flächennormale ausrichten: Halbraum »innen« liegt hinter der neuen Fläche
+    if (v3.dot(P1.n, normalOf(face)) < 0) P1.n = v3.mul(P1.n, -1);
+    if (Math.abs(v3.dot(P1.n, normalOf(face))) < 0.05) throw new Error("Zielfläche steht fast senkrecht zur Fläche – das ergibt keinen Körper");
+    // Bezugspunkt der Ebene nahe an den Körper holen (der Halbraum ist ein endlicher Quader um diesen Punkt)
+    const c = T(face.center);
+    P1.o = v3.sub(c, v3.mul(P1.n, v3.dot(v3.sub(c, P1.o), P1.n)));
+    return toPlane(shape, face, P1, H * 1.5 + 1);
+  }
+
   /** Ebene Achsen U/V durch die Flächenmitte */
   function faceAxis(face, which) {
     const ax = faceAxes(normalOf(face));
@@ -216,5 +233,5 @@ export function direktKernel(R) {
     return { shape: tidy(out), c };
   }
 
-  return { moveFace, rotateFace, faceAxis, deleteFaces, resizeCylinder, cylinderOf, normalOf, isPlane };
+  return { moveFace, rotateFace, replaceFace, faceAxis, deleteFaces, resizeCylinder, cylinderOf, normalOf, isPlane };
 }

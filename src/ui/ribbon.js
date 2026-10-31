@@ -335,6 +335,8 @@ export class Ribbon {
     const app = this.app;
     const sk = app.sketcher;
     const B = (id, label, ic, extra = {}) => ({ id, label, icon: ic, run: extra.run || (() => this.run(id)), ...extra });
+    // Aufklappknopf (P12, wie Inventor-Dropdown): seltene Befehle einer Gruppe hinter »Weitere«
+    const M = (id, label, ic, items) => ({ id, label: label + " ▾", icon: ic, menu: items, run: (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu(r.left, r.bottom, items.map((b) => ({ label: b.label, icon: b.icon, run: b.run }))); } });
     const T = (tool, label, ic, extra = {}) => ({ id: "t_" + tool, label, icon: ic, on: sk.tool === tool, run: () => sk.setTool(tool), ...extra });
     const view = {
       id: "ansicht", label: "Ansicht", groups: [
@@ -433,7 +435,7 @@ export class Ribbon {
             T("rectc", "Rechteck Mitte", "rectc"), T("arcc", "Bogen Mitte", "arcc"), T("spline", "Spline", "spline"),
             T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"),
             T("sfillet", "Rundung", "fillet"), T("point", "Punkt", "point"),
-            C("schamfer", "Fase", "chamfer"), C("circle3", "Kreis durch 3 Punkte", "circle3"), C("arct", "Tangentialer Bogen", "arct"),
+            C("schamfer", "Fase", "chamfer"), C("circle3", "Kreis durch 3 Punkte", "circle3"), C("rect3", "Rechteck über 3 Punkte", "rect3"), C("circlet3", "Kreis tangential an 3 Linien", "circlet3"), C("arct", "Tangentialer Bogen", "arct"),
           ] },
           { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() }), T("image", "Bild", "import")] },
           { label: "Ändern", small: true, buttons: [
@@ -475,8 +477,10 @@ export class Ribbon {
           { label: "Prüfen", buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("collide", "Kollision prüfen", "info", { run: () => app.props.collisionDialog() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
-          { label: "Generatoren", big: 4, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("spindel", "Spindeltreppe", "spindel"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("pergola", "Pergola", "pergola"), B("fenstergitter", "Fenstergitter", "fenstergitter")] },
-          { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("voute", "Voutenträger", "voute"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne")] },
+          { label: "Generatoren", big: 4, buttons: [B("gelaender", "Geländer", "gelaender"), B("treppe", "Treppe", "treppe"), B("balkon", "Balkon", "balkon"), B("tor", "Tor", "tor"), B("spindel", "Spindeltreppe", "spindel"), B("schiebetor", "Schiebetor", "schiebetor"), B("zaun", "Zaun", "zaun"), B("vordach", "Vordach / Carport", "vordach"), B("fenstergitter", "Fenstergitter", "fenstergitter"),
+            M("genMore", "Weitere", "plus", [B("pergola", "Pergola", "pergola")])] },
+          { label: "Stahlbau", small: true, buttons: [B("achsraster", "Achsraster", "achsraster"), B("rahmenecke", "Rahmenecke", "rahmenecke"), B("stuetzenfuss", "Stützenfuß", "stuetzenfuss"), B("pfette", "Pfette", "pfette"), B("windverband", "Windverband", "windverband"), B("arbeitsbuehne", "Arbeitsbühne", "arbeitsbuehne"),
+            M("stahlMore", "Weitere", "plus", [B("voute", "Voutenträger", "voute"), B("traegerstoss", "Trägerstoß", "traegerstoss"), B("traegeranschluss", "Trägeranschluss", "traegeranschluss"), B("steigleiter", "Steigleiter", "steigleiter"), B("fachwerk", "Fachwerkträger", "fachwerk")])] },
           { label: "Gestell", big: 1, buttons: (() => {
             const g = !!app.activeDoc()?.gestell, on = (t) => app.pick?.kind === "gestell" && app.pick.tool === t;
             return [
