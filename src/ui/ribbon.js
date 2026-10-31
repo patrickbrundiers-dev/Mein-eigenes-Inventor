@@ -446,8 +446,9 @@ export class Ribbon {
             T("smove", "Verschieben", "move"), T("scopy", "Kopieren", "copy"), T("srotate", "Drehen", "rotate"),
             T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"),
             T("sscale", "Skalieren", "scale"), T("offset", "Versatz", "offset"), B("sclean", "Säubern", "clean", { run: () => sk.cleanDialog() }),
+            // Muster als Symbolspalte im selben Abschnitt (spart eine Gruppe, damit die Skizze in 1600 px passt)
+            C("pattern", "Rechteckmuster", "pattern"), C("cpattern", "Kreismuster", "circpattern"), C("mirror", "Spiegeln", "mirror"),
           ] },
-          { label: "Muster", small: true, buttons: [C("pattern", "Rechteckmuster", "pattern"), C("cpattern", "Kreismuster", "circpattern"), C("mirror", "Spiegeln", "mirror")] },
           { label: "Bemaßung", big: 1, buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() }), B("params", "Parameter", "params"), T("text", "Text", "text")] },
           { label: "Abhängigkeiten", small: true, buttons: [
             C("coincident", "Koinzident", "coincident"), C("collinear", "Kollinear", "collinear"), C("concentric", "Konzentrisch", "concentric"),
@@ -459,8 +460,9 @@ export class Ribbon {
             B("constr", "Konstruktion", "construct", { iconOnly: true, on: !!sk.construction, run: () => sk.toggleConstruction() }),
             B("glyphs", "Symbole", "eye", { iconOnly: true, on: sk.showGlyphs, run: () => { sk.showGlyphs = !sk.showGlyphs; sk.render(); this.render(); } }),
             B("gridsnap", "Rasterfang", "grid", { iconOnly: true, on: sk.gridSnap, run: () => { sk.gridSnap = !sk.gridSnap; sk.render(); this.render(); } }),
+            // Prüfen in derselben Gruppe (eine Gruppe weniger, damit die Skizze auch mit breiterer Schrift in 1600 px passt)
+            B("regionProps", "Bereichseigenschaften", "area", { iconOnly: true, run: () => regionDialog(app) }), B("sdof", "Freiheitsgrade anzeigen", "dof", { iconOnly: true, on: !!sk.showDof, run: () => app.commands.exec("sketch.dof") }),
           ] },
-          { label: "Prüfen", small: true, buttons: [B("regionProps", "Bereichseigenschaften", "area", { iconOnly: true, run: () => regionDialog(app) }), B("sdof", "Freiheitsgrade anzeigen", "dof", { iconOnly: true, on: !!sk.showDof, run: () => app.commands.exec("sketch.dof") })] },
           { label: "Beenden", buttons: [B("finishSketch", "Skizze fertig", "finish", { finish: true })] },
         ] },
         view,
