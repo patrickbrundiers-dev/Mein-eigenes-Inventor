@@ -108,6 +108,8 @@ const P = {
   angle: '<path d="M4 20h16M4 20L16 6"/><path d="M10 20a6 6 0 0 0-2-4.5"/>',
   endcap: '<path d="M3 9h12v6H3z"/><path d="M15 7h4v10h-4z"/>',
   stretch: '<path d="M3 18c0-6 3-9 9-9"/><path d="M14 9h7"/><path d="M3 21h18"/><circle cx="8" cy="21" r=".8"/><circle cx="15" cy="21" r=".8"/>',
+  hook: '<circle cx="12" cy="6" r="3"/><path d="M12 9v5a4 4 0 1 1-4-4"/><path d="M4 21h16"/>',
+  anchorplan: '<path d="M3 3v18h18"/><rect x="7" y="7" width="5" height="5"/><rect x="15" y="13" width="5" height="5"/><circle cx="9.5" cy="9.5" r=".8"/><circle cx="17.5" cy="15.5" r=".8"/>',
   qr: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3z"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
   ventholes: '<path d="M2 8h20v8H2z"/><circle cx="6" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/>',
   simplify: '<path d="M3 7h8v10H3z"/><path d="M14 9l3 3-3 3"/><path d="M17 12h4"/><circle cx="7" cy="12" r="1.5"/>',

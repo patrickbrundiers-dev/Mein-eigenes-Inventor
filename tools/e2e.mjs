@@ -4061,6 +4061,36 @@ try {
       JSON.stringify({ asked, kept, tabs0, act1, after, home, back }));
   }
 
+  // Paket H: Anschlagpunkte (Ringschrauben DIN 580 einfügen), Montageplan und Ankerplan aus dem Export-Reiter
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rahmen"));
+    await idle();
+    const n0 = await evalApp(() => window.__werkcad.activeDoc().features.length);
+    await evalApp(() => { window.__werkcad.ribbon.tab = "export"; window.__werkcad.ribbon.render(); });
+    await page.locator("#ribbon .rb-btn", { hasText: "Anschlagpunkte" }).click();
+    await page.locator(".dialog", { hasText: "Ringschraube DIN 580" }).waitFor({ timeout: 15000 });
+    const text = await page.locator(".dialog").last().innerText();
+    await page.locator(".dialog footer .btn", { hasText: "Ösen einfügen" }).click();
+    await idle();
+    const eyes = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(d.id);
+      const f = d.features.filter((x) => x.type === "normteil" && x.kind === "din580");
+      return { n: d.features.length, eyes: f.length, ok: f.every((x) => r.status[x.id]?.ok), norm: r.bodies.filter((b) => b.meta?.norm?.kind === "din580").length };
+    });
+    await evalApp(() => window.__werkcad.openDoc("beispiel_bg"));
+    await idle();
+    await evalApp(() => { window.__werkcad.ribbon.tab = "export"; window.__werkcad.ribbon.render(); });
+    await page.locator("#ribbon .rb-btn", { hasText: "Montageplan" }).click();
+    await page.locator(".dialog", { hasText: "Teile, zusammen" }).waitFor({ timeout: 15000 });
+    const mtext = await page.locator(".dialog").last().innerText();
+    await page.locator(".dialog footer .btn", { hasText: "Abbrechen" }).click();
+    await page.locator("#ribbon .rb-btn", { hasText: "Ankerplan" }).click();
+    await page.waitForTimeout(400);
+    const toastText = await page.locator(".toast").last().innerText().catch(() => "");
+    step("Paket H: Anschlagpunkte, Montageplan, Ankerplan", /Gewicht/.test(text) && eyes.eyes === 2 && eyes.n === n0 + 2 && eyes.ok && eyes.norm === 2 && /Teile, zusammen/.test(mtext) && /Anker/.test(toastText),
+      JSON.stringify({ text: text.slice(0, 200), eyes, n0, mtext: mtext.slice(0, 160), toastText }));
+  }
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

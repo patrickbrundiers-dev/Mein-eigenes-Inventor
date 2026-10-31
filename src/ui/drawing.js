@@ -1406,7 +1406,7 @@ export class DrawingEditor {
     const [W, H] = this.sheetSize(d);
     for (const [k, [x, y]] of pos) pos.set(k, [Math.min(W - 40, Math.max(45, x)), Math.min(H - 60, Math.max(20, y))]);
     this.app.edit("Schweißnähte", () => {
-      d.welds = anchors.map((a) => ({ id: uid("w"), view: v.id, p3: a.p3, at: pos.get(a.key), w: { kind: a.w.kind, a: a.w.a, side: a.w.side, around: a.w.around, field: a.w.field } }));
+      d.welds = anchors.map((a) => ({ id: uid("w"), view: v.id, p3: a.p3, at: pos.get(a.key), w: { kind: a.w.kind, a: a.w.a, side: a.w.side, around: a.w.around, field: a.w.field, ...(a.w.prep ? { prep: a.w.prep } : {}) } }));
     }, { rebuild: false });
     this.render();
     toast(`${anchors.length} Nahtsymbol(e) gesetzt – ziehen zum Verschieben, Entf löscht`);

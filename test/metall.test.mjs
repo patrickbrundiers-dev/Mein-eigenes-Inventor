@@ -174,7 +174,7 @@ test("Schweißnähte: Querschnitt, Text, Nahtliste, Symbol ISO 2553 (MegaCAD-Abg
   assert.equal(rows.length, 3);
   assert.deepEqual(rows.map((r) => [r.kind, r.a, r.count, r.length]), [["kehl", 3, 1, 140], ["kehl", 4, 3, 1440], ["v", 5, 1, 200]]);
   const csv = weldCsv(rows).replace(/^﻿/, "").split("\r\n");
-  assert.equal(csv[0].split(";").length, 10);
+  assert.equal(csv[0].split(";").length, 11, "mit Spalte Nahtvorbereitung");
   assert.match(csv[2], /^2;Kehlnaht;a4;Pfeilseite;ja;;3;1440;/);
   // Symbol: Knick rechts vom Anker → Bezugslinie nach rechts, Kehlnaht unter der Linie, Strichlinie darüber
   const s = weldSymbol({ kind: "kehl", a: 4, around: true }, [0, 0], [10, -10]);

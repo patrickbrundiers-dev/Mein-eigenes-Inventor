@@ -37,6 +37,7 @@ import { bindTooltips } from "./tooltip.js";
 import { KeyTips } from "./keytips.js";
 import { startDatumPick } from "./arbeitselemente.js";
 import { startDirekt } from "./direkt.js";
+import * as plaene from "./plaene.js";
 
 export class Ribbon {
   constructor(app) {
@@ -572,17 +573,19 @@ export class Ribbon {
   }
   exportTab(kind) {
     const app = this.app;
-    const f = app.files;
+    const f = app.files, P = plaene;
     const B = (id, label, ic, run) => ({ id, label, icon: ic, run });
     const groups = [];
     if (kind === "part") {
       groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_vereinfachen", "Vereinfachen", "simplify", () => f.simplifyDialog()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
       groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers()), B("x_cut", "Zuschnittliste (CSV)", "cutlist", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
       groups.push({ label: "2D", buttons: [B("x_plate", "Platte als DXF", "drawing", () => f.exportPlateDxf()), B("x_dxf", "Skizze als DXF", "sketch", () => f.exportSketchDxf())] });
+      groups.push({ label: "Montage", buttons: [B("x_anker", "Ankerplan", "anchorplan", () => P.exportAnkerplan(app)), B("x_anschlag", "Anschlagpunkte", "hook", () => P.anschlagDialog(app))] });
       groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_etiketten", "Etiketten (QR)", "qr", () => f.exportEtiketten()), B("x_versand", "Versandliste", "bom", () => f.exportVersand()), B("x_bestell", "Bestellliste", "bom", () => f.exportBestellliste()), B("x_schweissplan", "Schweißplan", "naht", () => f.weldPlanDialog()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
     } else if (kind === "assembly") {
       groups.push({ label: "3D", buttons: [B("x_step", "STEP", "export", () => f.exportStep()), B("x_steplist", "STEP + Zuschnittliste", "export", () => f.exportStepWithList()), B("x_iges", "IGES", "export", () => f.exportIges()), B("x_ifc", "IFC (BIM)", "export", () => f.exportIfc()), B("x_stl", "STL", "export", () => f.exportStl()), B("x_glb", "GLB", "export", () => f.exportGlb()), B("x_vereinfachen", "Vereinfachen", "simplify", () => f.simplifyDialog()), B("x_png", "Bild (PNG)", "camera", () => f.exportPng()), B("x_render", "Rendern", "camera", () => f.exportPng({ photo: true }))] });
       groups.push({ label: "Profile", buttons: [B("x_members", "Profile einzeln (STEP)", "profile", () => f.exportMembers())] });
+      groups.push({ label: "Montage", buttons: [B("x_anker", "Ankerplan", "anchorplan", () => P.exportAnkerplan(app)), B("x_montage", "Montageplan", "pdf", () => P.exportMontageplan(app)), B("x_anschlag", "Anschlagpunkte", "hook", () => P.anschlagDialog(app))] });
       groups.push({ label: "Listen", buttons: [B("x_bom", "Stückliste (CSV)", "bom", () => f.exportBom()), B("x_cut", "Zuschnittliste (CSV)", "cutlist", () => f.exportCutList()), B("x_weld", "Nahtliste (CSV)", "naht", () => f.exportWeldList()), B("x_xlsx", "Listen (Excel)", "bom", () => f.exportListsXlsx())] });
       groups.push({ label: "Werkstatt", buttons: [B("x_mappe", "Fertigungsmappe", "pdf", () => f.exportMappe()), B("x_angebot", "Angebotsblatt", "pdf", () => f.exportAngebot()), B("x_etiketten", "Etiketten (QR)", "qr", () => f.exportEtiketten()), B("x_versand", "Versandliste", "bom", () => f.exportVersand()), B("x_bestell", "Bestellliste", "bom", () => f.exportBestellliste()), B("x_schweissplan", "Schweißplan", "naht", () => f.weldPlanDialog()), B("x_dstv", "DSTV-NC (Stahlbau)", "profile", () => f.exportDstv()), B("x_einzelteile", "Einzelteile", "bom", () => f.piecesDialog())] });
     } else if (kind === "drawing") {

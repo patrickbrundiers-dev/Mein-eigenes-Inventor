@@ -40,7 +40,7 @@ import { planBlechkasten, boxFromBody, boxSideFrame } from "../core/blechkasten.
 import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, boltSizeForHole, boltSet } from "../core/normteile.js";
 import { familyOf, normRecipe, gradeInfo } from "../core/normlib.js";
 import { platePlan, ribPlan, RIB_SIDES } from "../core/anschluss.js";
-import { WELD_KINDS } from "../core/weld.js";
+import { WELD_KINDS, PREP_DEFAULTS, isPrepKind, prepBevels, bevelPolygon } from "../core/weld.js";
 import { GENERATORS, resolveGenParams } from "../core/generator.js";
 import { isFatal } from "./fatal.js";
 import { gestellPlan } from "../core/gestell.js";
@@ -430,6 +430,42 @@ export function createKernel(R) {
   function edgeMid(e) { return tuple(e.pointAt(0.5)); }
 
   /** Kehlnaht-Körper an einer geraden Kante: Flächen anderer Teile an der Kante suchen, Dreieck entlang ziehen */
+  /**
+   * Fugenflanke (ISO 9692-1) an einer geraden Blechkante: die beiden ebenen Nachbarflächen bestimmen Stirn (schmalere)
+   * und Blechfläche; Blechdicke = Breite der Stirn. Schneidet den Keil aus dem Körper. Rückgabe true/false.
+   */
+  function bevelEdge(body, e, kind, prep) {
+    if (!body || e.geomType !== "LINE") return false;
+    const S = tuple(e.startPoint), T = tuple(e.endPoint), L = v3.dist(S, T);
+    if (!(L > 1e-6)) return false;
+    const d = v3.norm(v3.sub(T, S)), mid = v3.mul(v3.add(S, T), 0.5), tol = 0.05;
+    const faces = [];
+    for (const fc of body.shape.faces) {
+      if (fc.geomType !== "PLANE") continue;
+      const n = v3.norm(tuple(fc.normalAt(mid)));
+      if (Math.abs(v3.dot(n, d)) > 1e-3 || Math.abs(v3.dot(n, v3.sub(mid, tuple(fc.center)))) > tol) continue;
+      if (!pointInBox(mid, fc.boundingBox, tol)) continue;
+      // Breite quer zur Kante aus der Hülle der Fläche
+      const bb = fc.boundingBox, q = v3.norm(v3.cross(n, d));
+      const corners = [];
+      for (const x of [bb.bounds[0][0], bb.bounds[1][0]]) for (const y of [bb.bounds[0][1], bb.bounds[1][1]]) for (const z of [bb.bounds[0][2], bb.bounds[1][2]]) corners.push(v3.dot([x, y, z], q));
+      faces.push({ n, width: Math.min(Math.max(...corners) - Math.min(...corners), R.measureArea(fc) / L) });
+    }
+    if (faces.length !== 2 || Math.abs(v3.dot(faces[0].n, faces[1].n)) > 1e-3) return false;
+    faces.sort((a, b) => a.width - b.width);
+    const [stirn, flaeche] = faces, t = stirn.width;
+    const wDir = v3.mul(stirn.n, -1);
+    for (const bev of prepBevels(kind, t, prep)) {
+      const uDir = v3.mul(flaeche.n, -bev.side), origin = bev.side > 0 ? S : v3.add(S, v3.mul(flaeche.n, -t));
+      const y = v3.cross(d, uDir), sg = v3.dot(wDir, y) >= 0 ? 1 : -1;
+      const poly = bevelPolygon(bev.depth, bev.width).map(([u, w]) => [u, sg * w]);
+      let dr = R.draw(poly[0]);
+      for (const p of poly.slice(1)) dr = dr.lineTo(p);
+      const wedge = dr.close().sketchOnPlane(makePlane({ origin: v3.add(origin, v3.mul(d, -1)), xDir: uDir, normal: d })).extrude(L + 2);
+      body.shape = body.shape.cut(wedge);
+    }
+    return true;
+  }
   function beadSolid(e, a, bodies) {
     if (e.geomType !== "LINE") return null;
     const S = tuple(e.startPoint), T = tuple(e.endPoint), L = v3.dist(S, T);
@@ -1311,26 +1347,45 @@ export function createKernel(R) {
             if (!refs.length) throw new Error("Keine Kanten gewählt – Kanten im 3D-Fenster anklicken");
             let length = 0, miss = 0, p3 = null;
             const found = [];
+            const owner = [];
             for (const ref of refs) {
-              let best = null, bd = Infinity;
+              let best = null, bd = Infinity, bb0 = null;
               for (const b of state.bodies) {
                 const bb = b.shape.boundingBox;
                 if (!pointInBox(ref.p, bb, 1)) continue;
                 for (const e of b.shape.edges) {
                   if (ref.type && e.geomType !== ref.type) continue;
                   const d = v3.dist(edgeMid(e), ref.p);
-                  if (d < bd) { bd = d; best = e; }
+                  if (d < bd) { bd = d; best = e; bb0 = b; }
                 }
               }
               if (!best || bd > 0.5) { miss++; continue; }
               length += R.measureLength(best);
               p3 = p3 || edgeMid(best);
               found.push(best);
+              owner.push(bb0);
             }
             if (!p3) throw new Error("Gewählte Kanten nicht mehr gefunden");
-            state.welds.push({ fid: f.id, kind: f.kind || "kehl", a, side: f.side || "pfeil", around: !!f.around, field: !!f.field, length, p3, name: f.name, ...(f.wps ? { wps: f.wps } : {}) });
-            st.info = `${WELD_KINDS[f.kind || "kehl"].dim}${round(a)}, ${round(length)} mm an ${refs.length - miss} Kante(n)`;
+            const kind = f.kind || "kehl";
+            // Nahtvorbereitung nach ISO 9692-1 (P5): Fugenflanken als Keilschnitt an der gewählten Blechkante
+            let prep = null;
             const warn = miss ? [`${miss} Kante(n) nicht mehr gefunden`] : [];
+            if (f.prep && kind !== "kehl") {
+              const d0 = PREP_DEFAULTS[kind];
+              prep = { angle: f.angle != null && f.angle !== "" ? E(f.angle, "Winkel") : d0.angle, root: f.root != null && f.root !== "" ? E(f.root, "Steghöhe c") : d0.root, gap: f.gap != null && f.gap !== "" ? E(f.gap, "Spalt b") : d0.gap };
+              if (isPrepKind(kind)) {
+                let done = 0, skip = 0;
+                found.forEach((e, k) => {
+                  const r = bevelEdge(owner[k], e, kind, prep);
+                  if (r) done++; else skip++;
+                });
+                if (skip) warn.push(`${skip} Kante(n) ohne Blechstirn (gerade Kante zwischen zwei ebenen Flächen) – dort keine Fugenflanke`);
+                st.prepDone = done;
+              }
+            }
+            state.welds.push({ fid: f.id, kind, a, side: f.side || "pfeil", around: !!f.around, field: !!f.field, length, p3, name: f.name, ...(f.wps ? { wps: f.wps } : {}), ...(prep ? { prep } : {}) });
+            st.info = `${WELD_KINDS[kind].dim}${round(a)}, ${round(length)} mm an ${refs.length - miss} Kante(n)` + (st.prepDone ? `, Fugenflanke an ${st.prepDone} Kante(n)` : "");
+            delete st.prepDone;
             // Schweißbaugruppe (Stufe 53): Kehlnaht als Körper (Dreiecksquerschnitt in der Kehle zwischen zwei Teilen)
             if (f.bead) {
               if ((f.kind || "kehl") !== "kehl") throw new Error("Naht als Körper gibt es nur für Kehlnähte");

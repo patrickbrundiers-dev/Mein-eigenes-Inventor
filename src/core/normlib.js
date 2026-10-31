@@ -383,6 +383,26 @@ F.klemm_fuss = beschlag({ label: "Rohrklemmverbinder Fußflansch", noun: "Klemmv
     return [box(P, P, 8), box(c, c, D, 8), cut(cyl(B, D - 3, 11, { vol: A * (D - 3) })), ...[[-e, -e], [e, -e], [e, e], [-e, e]].map(([x, y]) => cut(cyl(11, 8, 0, { x, y, vol: (Math.PI / 4) * 121 * 8 })))];
   } });
 
+// --- Anschlagpunkte (P8): Ringschraube DIN 580 (C15E) – Bund auf der Auflage, Gewindezapfen nach −z, Ring nach +z.
+// d1 Ring außen, d2 Ringdicke, d3 Ring innen, d4 Bund, k Bundhöhe, l Gewindelänge; wll Tragfähigkeit in kg
+// (1 Strang senkrecht), wll45 Gesamt-Tragfähigkeit 2-Strang unter 45° (DIN 580 Tabelle).
+export const DIN580 = {
+  M8: { d: 8, d1: 36, d2: 8, d3: 20, d4: 20, k: 6, l: 13, wll: 140, wll45: 95 },
+  M10: { d: 10, d1: 45, d2: 10, d3: 25, d4: 25, k: 8, l: 17, wll: 230, wll45: 170 },
+  M12: { d: 12, d1: 54, d2: 12, d3: 30, d4: 30, k: 10, l: 20.5, wll: 340, wll45: 240 },
+  M16: { d: 16, d1: 63, d2: 14, d3: 35, d4: 35, k: 12, l: 27, wll: 700, wll45: 500 },
+  M20: { d: 20, d1: 72, d2: 16, d3: 40, d4: 40, k: 14, l: 30, wll: 1200, wll45: 830 },
+  M24: { d: 24, d1: 90, d2: 20, d3: 50, d4: 50, k: 17, l: 36, wll: 1800, wll45: 1270 },
+  M30: { d: 30, d1: 108, d2: 24, d3: 60, d4: 65, k: 26, l: 45, wll: 3200, wll45: 2150 },
+  M36: { d: 36, d1: 126, d2: 28, d3: 70, d4: 75, k: 30, l: 54, wll: 4600, wll45: 3100 },
+};
+F.din580 = { ...beschlag({ label: "Ringschraube (Anschlagpunkt)", noun: "Ringschraube", alias: ["Hebeöse", "Anschlagpunkt", "Transportöse"], grades: ["C15E", "A2"], def: { size: "M16" },
+  sizes: Object.fromEntries(Object.entries(DIN580).map(([k, t]) => [k, { ...t, hd: t.d }])),
+  build: (m) => {
+    const zc = m.k + m.d1 / 2; // Ring steht tangential auf dem Bund
+    return [cyl(m.d, m.l, -m.l), cyl(m.d4, m.k), cyl(m.d1, m.d2, zc, { axis: "y" }), cut(cyl(m.d3, m.d2 + 2, zc, { axis: "y", vol: (Math.PI / 4) * m.d3 * m.d3 * m.d2 }))];
+  } }), cat: "schrauben", norm: "DIN 580", beschlag: false };
+
 /** Kategorien in der Reihenfolge des Dialogs */
 export const NORM_CATEGORIES = [["schrauben", "Schrauben"], ["muttern", "Muttern"], ["scheiben", "Scheiben & Federringe"], ["gewinde", "Gewindestangen & Spannschlösser"], ["anker", "Dübel & Anker"], ["nieten", "Nieten"], ["stifte", "Stifte & Bolzen"], ["beschlaege", "Beschläge"]];
 

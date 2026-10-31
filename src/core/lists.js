@@ -2,7 +2,7 @@
 // Gleiche Spalten wie die CSV-Dateien, aber Zahlen als Zahlen (gerundet), damit Excel weiterrechnen kann.
 
 import { cutListTotals, partsText, endsText } from "./cutlist.js";
-import { WELD_KINDS, WELD_SIDES } from "./weld.js";
+import { WELD_KINDS, WELD_SIDES, prepText } from "./weld.js";
 
 const r = (x, d) => (Number.isFinite(x) ? Math.round(x * 10 ** d) / 10 ** d : null);
 
@@ -40,8 +40,8 @@ export function listSheets({ cut = [], welds = [], bom = [], structure = [], mod
       [], ["Summe", null, t.qty, r(t.length / 1000, 3), null, r(t.mass, 3)]] });
   }
   if (welds.length) {
-    sheets.push({ name: "Nahtliste", rows: [["Pos", "Nahtart", "Maß", "Seite", "Umlaufend", "Montage", "Anzahl", "Länge gesamt mm", "Schweißgut kg", "Bauteil"],
-      ...welds.map((w) => [w.pos, WELD_KINDS[w.kind].label, `${WELD_KINDS[w.kind].dim}${String(w.a).replace(".", ",")}`, WELD_SIDES[w.side], w.around ? "ja" : null, w.field ? "ja" : null, w.count, r(w.length, 1), r(w.mass, 3), w.parts || null])] });
+    sheets.push({ name: "Nahtliste", rows: [["Pos", "Nahtart", "Maß", "Seite", "Umlaufend", "Montage", "Anzahl", "Länge gesamt mm", "Schweißgut kg", "Bauteil", "Nahtvorbereitung"],
+      ...welds.map((w) => [w.pos, WELD_KINDS[w.kind].label, `${WELD_KINDS[w.kind].dim}${String(w.a).replace(".", ",")}`, WELD_SIDES[w.side], w.around ? "ja" : null, w.field ? "ja" : null, w.count, r(w.length, 1), r(w.mass, 3), w.parts || null, w.prep ? prepText(w.kind, w.prep) : null])] });
   }
   return sheets;
 }

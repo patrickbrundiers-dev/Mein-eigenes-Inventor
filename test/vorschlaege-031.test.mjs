@@ -138,3 +138,108 @@ test("P4: Rohrklemmverbinder als Normteile und Klemmgeländer ohne Schweißnäht
   assert.match(p.info, /ohne Schweißnähte/);
   assert.throws(() => plan("klemmgelaender", { runs: "100" }), /Lauf mindestens/);
 });
+
+test("P5 Nahtvorbereitung ISO 9692-1: Flanken, Querschnitt, Text, Symbol mit Winkel", async () => {
+  const W = await import("../src/core/weld.js");
+  assert.deepEqual(W.prepBevels("v", 10, { angle: 60, root: 1 }).map((b) => b.depth), [9]);
+  assert.equal(W.prepBevels("k", 20, { angle: 45, root: 2 }).length, 2);
+  assert.throws(() => W.prepBevels("y", 6, { angle: 60, root: 6 }), /Steghöhe/);
+  assert.deepEqual(W.prepBevels("i", 6, W.PREP_DEFAULTS.i), []);
+  // Standard ohne Vorbereitung wie bisher (V 60°, Spalt 1)
+  assert.ok(Math.abs(W.weldArea("v", 10) - (100 * Math.tan(Math.PI / 6) + 10)) < 1e-9);
+  assert.ok(W.weldArea("y", 10, { angle: 60, root: 2, gap: 2 }) < W.weldArea("v", 10, { angle: 60, root: 0, gap: 2 }));
+  assert.match(W.weldText({ kind: "k", a: 20, prep: { angle: 45, root: 2, gap: 2 } }), /K-Naht, β 45°, c 2, b 2 \(ISO 9692-1\)/);
+  const s = W.weldSymbol({ kind: "k", a: 20, side: "pfeil", prep: { angle: 45, root: 2, gap: 2 } }, [0, 0], [10, -10]);
+  assert.ok(!s.lines.some((l) => l.dashed), "K-Naht beidseitig ohne Strichlinie");
+  assert.ok(s.texts.some((t) => t.text === "45°") && s.texts.some((t) => t.text === "c2 b2"));
+  assert.equal(W.weldRows([{ kind: "v", a: 10, length: 1, prep: { angle: 60, root: 1, gap: 2 } }, { kind: "v", a: 10, length: 1 }]).length, 2);
+});
+
+// Körper mit Hülle (und Volumen/Schwerpunkt) für die Plan-Tests
+const body = (name, lo, hi, meta = null, volume = null) => ({ name, meta, props: { bbox: [lo, hi], volume: volume ?? (hi[0] - lo[0]) * (hi[1] - lo[1]) * (hi[2] - lo[2]), center: lo.map((v, k) => (v + hi[k]) / 2) } });
+const anchor = (x, y) => body("Anker 1", [x - 10, y - 10, -300], [x + 10, y + 10, 60], { norm: { kind: "gewindestange", designation: "Gewindestange DIN 976 - M20 x 360 - 4.8" } });
+const shift = (x, y) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, 0, 1];
+
+test("P6 Ankerplan: Stützenfüße mit Achsbezug, Ankerlagen, Höhen, Seiten und CSV", async () => {
+  const A = await import("../src/core/ankerplan.js");
+  // Stützenfuß-Bauteil: Fußplatte 300 × 300 × 20 auf z 0 … 20, vier Anker bei ±105
+  const fuss = [body("Fußplatte", [-150, -150, 0], [150, 150, 20]), ...[[-105, -105], [105, -105], [105, 105], [-105, 105]].map(([x, y]) => anchor(x, y))];
+  const occ = [{ name: "Stütze A1", matrix: shift(0, 0), bodies: fuss }, { name: "Stütze A2", matrix: shift(6000, 0), bodies: fuss }, { name: "Stütze B1", matrix: shift(0, 5000), bodies: fuss }];
+  const grids = [{ id: "g", x: "6000", y: "5000", lx: "1", ly: "A", x0: 0, y0: 0 }];
+  const plan = A.collectFootings(occ, { grids });
+  assert.equal(plan.feet.length, 3);
+  assert.equal(plan.loose, 0);
+  const [f1, f2, f3] = plan.feet;
+  assert.equal(f1.axis, "A/1"); assert.equal(f2.axis, "A/2"); assert.equal(f3.axis, "B/1");
+  assert.equal(f1.anchors.length, 4);
+  assert.deepEqual([f1.plate.L, f1.plate.B, f1.plate.t], [300, 300, 20]);
+  assert.equal(f1.uk, 0);
+  assert.equal(f1.anchors[0].embed, 300);
+  assert.equal(f1.pattern, "±105 × ±105");
+  assert.equal(f2.anchors[0].x, 6000 - 105);
+  // außerhalb der Achse: Abstand in der Beschriftung
+  assert.equal(A.axisRef([6120, -35], grids).label, "A−35/2+120");
+  const pages = A.anchorPages(plan, { title: "Halle", grids });
+  assert.ok(pages[0].svg.includes("Ankerplan") && pages[0].svg.includes("Maßstab 1:"));
+  assert.match(pages[1].html, /Ankerliste/);
+  const csv = A.anchorCsv(plan, "Halle");
+  assert.equal(csv.trim().split("\r\n").length, 2 + 12);
+  // Anker ohne Fußplatte (Dübel) bilden eine eigene Gruppe
+  const p2 = A.collectFootings([{ name: "Konsole", matrix: null, bodies: [body("Bolzenanker", [0, 0, -100], [12, 12, 10], { norm: { kind: "bolzenanker", designation: "Bolzenanker M12" } })] }]);
+  assert.equal(p2.feet.length, 1); assert.equal(p2.feet[0].plate, null);
+});
+
+test("P7 Montageplan: Positionen, Gewicht, Schraubknoten mit verbundenen Teilen", async () => {
+  const M = await import("../src/core/montageplan.js");
+  const st = { id: "st", name: "Stütze" }, tr = { id: "tr", name: "Träger" };
+  const rows = [{ part: st, pos: 1, name: "Stütze", qty: 2, mass: 120 }, { part: tr, pos: 2, name: "Träger", qty: 1, mass: 300 }];
+  const bolt = (x, z) => body("Schraube", [x - 8, -8, z - 30], [x + 8, 8, z + 30], { norm: { kind: "hv14399", designation: "HV-Schraube M16 x 60" } });
+  const nut = (x, z) => body("Mutter", [x - 12, -12, z + 30], [x + 12, 12, z + 45], { norm: { kind: "hvmutter", designation: "HV-Mutter M16" } });
+  const occ = [
+    { part: st, name: "Stütze:1", matrix: null, bodies: [body("Stütze", [-100, -100, 0], [100, 100, 3000])] },
+    { part: st, name: "Stütze:2", matrix: shift(6000, 0), bodies: [body("Stütze", [-100, -100, 0], [100, 100, 3000])] },
+    { part: tr, name: "Träger:1", matrix: null, bodies: [body("Träger", [-100, -100, 3000], [6100, 100, 3300]),
+      ...[[-50, 3010], [50, 3010]].flatMap(([x, z]) => [bolt(x, z), nut(x, z)]), ...[[5950, 3010], [6050, 3010]].flatMap(([x, z]) => [bolt(x, z), nut(x, z)])] },
+  ];
+  const plan = M.montagePlan(rows, occ);
+  assert.equal(plan.items.length, 3);
+  assert.equal(plan.total, 540);
+  assert.equal(plan.heaviest.pos, 2);
+  assert.equal(plan.nodes.length, 2, "zwei Knoten (links und rechts)");
+  assert.deepEqual(plan.nodes[0].positions, [1, 2]);
+  assert.equal(plan.nodes[0].screws, 2);
+  assert.deepEqual(plan.nodes[0].parts.map((p) => p.qty), [2, 2]);
+  const pages = M.montagePages(plan, { title: "Halle" });
+  assert.equal(pages.length, 3);
+  assert.ok(pages[0].svg.includes("Grundriss") && pages[0].svg.includes("Vorderansicht"));
+  assert.match(M.montageCsv(plan), /K1;.*;1, 2;2;/);
+});
+
+test("P8 Anschlagpunkte: Größe nach DIN 580, Lage zum Schwerpunkt, Prüfung, Ringschraube in der Bibliothek", async () => {
+  const S = await import("../src/core/anschlagpunkte.js");
+  const N = await import("../src/core/normlib.js");
+  // 600 kg an 2 Ösen bei 45°: je Öse 300 kg → M20 (830/2 = 415 kg); senkrecht: M16 (700 kg)
+  assert.equal(S.eyeSize(600, 2, "45").size, "M20");
+  assert.equal(S.eyeSize(600, 2, "0").size, "M12");
+  assert.equal(S.eyeSize(600, 4, "45").size, "M16", "3 tragende Stränge à 250 kg");
+  assert.equal(S.eyeSize(1e6, 2), null);
+  const box = { min: [0, 0, 0], max: [4000, 400, 300] }, cog = [2000, 200, 150];
+  const e2 = S.proposeEyes(box, cog, 2);
+  assert.deepEqual(e2, [[800, 200, 300], [3200, 200, 300]]);
+  assert.equal(S.proposeEyes(box, cog, 4).length, 4);
+  let c = S.liftCheck(e2, cog, 600, { size: "M20" });
+  assert.deepEqual(c.loads, [300, 300]);
+  assert.ok(!c.issues.some((x) => x.level === "Fehler"));
+  // Schwerpunkt außerhalb, zu kleine Öse, schief
+  c = S.liftCheck([[0, 200, 300], [1000, 200, 300]], cog, 600, { size: "M8" });
+  assert.ok(c.issues.some((x) => /außerhalb/.test(x.message)));
+  assert.ok(c.issues.some((x) => /Tragfähigkeit/.test(x.message)));
+  c = S.liftCheck([[800, 0, 300], [3200, 0, 300]], [2000, 200, 150], 600, { size: "M20" });
+  assert.ok(c.tilt > 5 && c.issues.some((x) => /schief/.test(x.message)));
+  c = S.liftCheck([[0, 0, 300], [100, 0, 300], [200, 0, 300]], cog, 600, { size: "M20" });
+  assert.ok(c.issues.some((x) => /einer Linie/.test(x.message)));
+  assert.equal(S.tapHole("M16").core, 14);
+  const fam = N.NORM_FAMILIES.din580;
+  assert.equal(fam.cat, "schrauben");
+  assert.equal(N.familyDesignation(fam, { size: "M16", grade: "C15E" }), "Ringschraube DIN 580 - M16 - C15E");
+});
