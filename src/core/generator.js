@@ -42,8 +42,18 @@ import { FENSTERGITTER } from "./fenstergitter.js";
 import { RAMPE } from "./rampe.js";
 import { ZARGE } from "./zarge.js";
 import { KLEMMGELAENDER } from "./klemmgelaender.js";
+import { capRails, railCapField } from "./handlaufkappe.js";
 
 export const GENERATORS = { gelaender: GELAENDER, tor: TOR, schiebetor: SCHIEBETOR, zaun: ZAUN, treppe: TREPPE, spindel: SPINDEL, balkon: BALKON, windverband: WINDVERBAND, pfette: PFETTE, rahmenecke: RAHMENECKE, voute: VOUTE, stuetzenfuss: STUETZENFUSS, traegerstoss: TRAEGERSTOSS, traegeranschluss: TRAEGERANSCHLUSS, steigleiter: STEIGLEITER, fachwerk: FACHWERK, arbeitsbuehne: ARBEITSBUEHNE, vordach: VORDACH, pergola: PERGOLA, fenstergitter: FENSTERGITTER, rampe: RAMPE, zarge: ZARGE, klemmgelaender: KLEMMGELAENDER };
+
+// Handlauf-Endkappen (Generator-Prüfung 01.11.2026): Feld hinter dem Handlauf-Profil bzw. der Gruppe, Plan nachbearbeitet
+for (const [gen, after] of [["gelaender", "rail"], ["treppe", "gelRail"], ["spindel", "rail"], ["balkon", "railHolder"], ["arbeitsbuehne", "railFill"], ["rampe", "railTube"], ["klemmgelaender", "tube"]]) {
+  const g = GENERATORS[gen], i = g.schema.findIndex((f) => f.key === after);
+  const ref = g.schema[i];
+  g.schema.splice(i + 1, 0, railCapField(ref.group, ref.when));
+  const plan = g.plan;
+  g.plan = (p) => { const r = plan.call(g, p); return p.railCaps ? capRails(r) : r; };
+}
 
 /** Neues Feature mit den Standardwerten des Generators */
 export function defaultGenerator(gen) {

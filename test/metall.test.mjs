@@ -675,7 +675,7 @@ test("Handlaufhalter: Pfosten endet unter dem Handlauf, Endkappe, Stift, Bohrung
   assert.equal(g.genValues("gelaender", { runs: "2000" }).holder, "keine");
   // massiver Pfosten (Flachstahl): ohne Endkappe
   const fl = plan("gelaender", { runs: "2500", post: { kind: "flach", size: "40x10" }, beltMode: "zwischen" });
-  assert.ok(!fl.plates.some((x) => /Endkappe/.test(x.name)) && Math.abs(fl.members.find((m) => m.name === "Pfosten 1").b[2] - (1000 - 42.4 - 60)) < 1e-9);
+  assert.ok(!fl.plates.some((x) => /Pfosten.*Endkappe/.test(x.name)) && Math.abs(fl.members.find((m) => m.name === "Pfosten 1").b[2] - (1000 - 42.4 - 60)) < 1e-9);
   // Treppe: Halter an jedem Pfosten, Bohrung im Handlauf desselben Zugs; Balkon reicht durch
   const t = plan("treppe", {});
   const tp = t.members.filter((m) => /Pfosten \d+$/.test(m.name)).length;

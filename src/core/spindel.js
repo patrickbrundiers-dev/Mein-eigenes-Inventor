@@ -17,6 +17,16 @@ import { mountSchema, mountConfig, topMount, plateFace, applyTargetHoles, mountC
 
 // Befestigung der Geländerstäbe auf der Stufe: Felder mit Vorsilbe »stab« (stabOW …)
 const sk = (k) => "stab" + k[0].toUpperCase() + k.slice(1);
+/** zwei waagrechte Rechteckplatten (Bauplan-Format) überlappen sich im Grundriss (Trennachsen-Test, 1 mm Luft) */
+function overlap2d(a, b) {
+  const box = (pl) => { const x = [pl.xDir[0], pl.xDir[1]], l = Math.hypot(...x) || 1, u = [x[0] / l, x[1] / l], v = [-u[1], u[0]]; return { c: [pl.center[0], pl.center[1]], u, v, hw: pl.W / 2, hh: pl.H / 2 }; };
+  const A = box(a), B = box(b), d = [B.c[0] - A.c[0], B.c[1] - A.c[1]];
+  for (const ax of [A.u, A.v, B.u, B.v]) {
+    const r = (o) => o.hw * Math.abs(o.u[0] * ax[0] + o.u[1] * ax[1]) + o.hh * Math.abs(o.v[0] * ax[0] + o.v[1] * ax[1]);
+    if (Math.abs(d[0] * ax[0] + d[1] * ax[1]) >= r(A) + r(B) + 1) return false;
+  }
+  return true;
+}
 const stabMount = (p) => (p.railing && p.stabMount === "oben" ? "oben" : null);
 export const SPINDEL = {
   label: "Spindeltreppe",
@@ -94,6 +104,7 @@ export const SPINDEL = {
       if (p.railing) {
         const pa = a0 + sg * theta / 2;
         const top = z + p.railH;
+        const feet = [];
         for (let j = 0; j < perStep; j++) {
           // Handlauf steigt gleichmäßig mit der Drehung; Handlaufpunkt über jedem Stab, Stab endet darunter
           const f = (j + 0.5) / perStep - 0.5, aj = pa + sg * theta * f, zt = top + f * s, nm = `Geländerstab ${i}${perStep > 1 ? "." + (j + 1) : ""}`;
@@ -107,8 +118,16 @@ export const SPINDEL = {
             const mount = (cfg) => topMount(cfg, { name: nm, post: p.post, top: q, along: [tg[0], tg[1], 0], face, plateName: `${nm} Fußplatte` });
             // Mutter unter der Stufe darf nicht am Stufenträger sitzen: sonst Platte länger und so versetzt, dass die Bohrung über den Träger hinweg springt
             const nearArm = (r) => (r.holes || []).some((h) => Math.abs(h[0] * Math.sin(mid * DEG) - h[1] * Math.cos(mid * DEG)) < Math.min(p.arm.geom.width, p.arm.geom.height) / 2 + 12);
+            // … und nicht auf der Fußplatte des Nachbarstabs liegen (vorher überlappten sich die Platten bei 3 Stäben je Stufe)
+            const clash = (r) => r.plate && feet.some((f) => overlap2d(f, r.plate));
             let r = mount(mcfg);
-            if (nearArm(r)) for (const dx of [20, -20, 30, -30, 40, -40]) { const r2 = mount({ ...mcfg, dx: mcfg.dx + dx, L: mcfg.L + 2 * Math.abs(dx) }); if (!nearArm(r2) && r2.ok) { r = r2; break; } }
+            if (nearArm(r) || clash(r)) {
+              // kürzeste Platte zuerst, dann kleinster Versatz (Bohrungen dürfen beidseits des Trägers liegen)
+              const tries = [];
+              for (let L = mcfg.L; L <= mcfg.L + 80; L += 5) for (let k = 1; k <= 12; k++) for (const sg of [1, -1]) tries.push({ dx: sg * 5 * k, L });
+              for (const t of tries) { const r2 = mount({ ...mcfg, dx: mcfg.dx + t.dx, L: t.L }); if (!nearArm(r2) && !clash(r2) && r2.ok && !r2.issues.some((x) => x.level !== "Hinweis")) { r = r2; break; } }
+            }
+            if (r.plate) feet.push(r.plate);
             members.push({ section: p.post, a: r.a, b: q, name: nm, up: [tg[0], tg[1], 0] }); // Lage wie bei der Prüfung der Fußplatte
             plates.push(r.plate); applyTargetHoles(plates, face, r.targetHoles); issues.push(...r.issues); mounted.push(r);
           } else members.push({ section: p.post, a: at(R - postOff, aj, z), b: q, name: nm, up: [1, 0, 0] });

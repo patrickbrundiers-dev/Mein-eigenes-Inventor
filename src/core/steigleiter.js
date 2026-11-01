@@ -16,11 +16,14 @@ export function rungLayout(H, target = 280) {
 }
 
 /** Mittellinie eines Rückenschutzbügels in der Ebene (x quer, y von der Wand weg): Anschluss am Holm, Schenkel, Halbkreis */
-export function hoopLine(xh, yR, W, depth, n = 36) {
+export function hoopLine(xh, yR, W, depth, n = 36, lap = 0) {
   const R = W / 2, yc = yR + depth - R; // Mitte des Halbkreises
-  const pts = [[-xh, yR], [-R, yR + Math.min(100, yc - yR)], [-R, yc]];
+  // lap > 0: gerades Stück am Holm entlang (± lap um die Holmmitte), damit der Bügel flächig anliegt und angeschweißt
+  // bzw. verschraubt werden kann – vorher berührte das schräg abgehende Ende den Holm nur an einer Kante
+  const y0 = lap > 0 ? yR + lap : yR, start = lap > 0 ? [[-xh, yR - lap], [-xh, y0]] : [[-xh, yR]], end = lap > 0 ? [[xh, y0], [xh, yR - lap]] : [[xh, yR]];
+  const pts = [...start, [-R, y0 + Math.min(100, yc - y0)], [-R, yc]];
   for (let i = 1; i < n; i++) { const t = Math.PI - (i * Math.PI) / n; pts.push([R * Math.cos(t), yc + R * Math.sin(t)]); }
-  pts.push([R, yc], [R, yR + Math.min(100, yc - yR)], [xh, yR]);
+  pts.push([R, yc], [R, y0 + Math.min(100, yc - y0)], ...end);
   return pts;
 }
 /** Offene Linie mit Dicke t als geschlossener Umriss (Gehrung an den Knicken) */
@@ -97,8 +100,10 @@ export const STEIGLEITER = {
     for (let k = 0; k < nb; k++) {
       const z = 300 + (k * span) / (nb - 1);
       for (const [sx, label] of [[-1, "links"], [1, "rechts"]]) {
-        const x = sx * (xs + tS / 2 + bt / 2);
-        members.push({ section: br, a: [x, 0, z], b: [x, yR + bS / 2, z], name: `Wandhalter ${label} ${k + 1}`, up: [1, 0, 0] });
+        const x = sx * (xs + tS / 2 + bt / 2), wpT = 10, bh = br.geom.width;
+        // Wandplatte mit 2 Dübellöchern Ø 14 über und unter dem Halter (vorher endete der Flachstahl ohne Befestigung an der Wand)
+        plates.push({ center: [x, 0, z], xDir: [1, 0, 0], normal: [0, 1, 0], W: 100, H: bh + 100, t: wpT, holes: [[0, -(bh / 2 + 25)], [0, bh / 2 + 25]], d: 14, name: `Wandhalter ${label} ${k + 1} Wandplatte` });
+        members.push({ section: br, a: [x, wpT, z], b: [x, yR + bS / 2, z], name: `Wandhalter ${label} ${k + 1}`, up: [1, 0, 0] });
       }
     }
     if (yBack < 60) issues.push({ key: "wall", level: "Hinweis", message: "Wandhalter sehr kurz" });
@@ -112,7 +117,7 @@ export const STEIGLEITER = {
       if (p.cageDepth < 650 || p.cageDepth > 800) issues.push({ key: "cageDepth", level: "Warnung", message: `Tiefe ${fmt(p.cageDepth)} mm – zulässig 650 … 800 mm` });
       if (!(zTop > z0 + 500)) throw new Error("Rückenschutz: Beginn liegt zu hoch für die Leiter");
       const W = p.cageWidth + p.hoopT; // Mittellinie
-      const line = hoopLine(xs + tS / 2 + p.hoopT / 2, yR, W, p.cageDepth + p.hoopT / 2);
+      const line = hoopLine(xs + tS / 2 + p.hoopT / 2, yR, W, p.cageDepth + p.hoopT / 2, 36, bS / 2 - 5);
       const poly = thickPolyline(line, p.hoopT);
       const nh = Math.max(2, Math.ceil((zTop - z0) / p.hoopPitch) + 1);
       for (let k = 0; k < nh; k++) {

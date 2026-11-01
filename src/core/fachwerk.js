@@ -125,8 +125,9 @@ export const FACHWERK = {
     if (minAng < 30 || maxAng > 60) issues.push({ key: "panels", level: "Hinweis", message: `Diagonalenneigung ${fmt(minAng)} … ${fmt(maxAng)}° – günstig 30 … 60°` });
     // Auflagerplatten unter dem Untergurt an den Enden
     if (p.plates) {
-      const w = p.bottom.geom.width + 40, lp = Math.max(hpz + 60, 150);
-      for (const [x, label] of [[0, "links"], [L, "rechts"]]) plates.push({ center: [x, 0, -hb / 2 - 15], xDir: [1, 0, 0], normal: [0, 0, 1], W: lp, H: w, t: 15, holes: [[-lp / 2 + 30, 0], [lp / 2 - 30, 0]], d: 18, name: `Auflagerplatte ${label}` });
+      // Bohrungen neben dem Gurt (frei zugänglich für Anker/Schrauben), Rand- und Gurtabstand je 35 mm
+      const bw = p.bottom.geom.width, w = bw + 140, lp = Math.max(hpz + 60, 150), hy = bw / 2 + 35;
+      for (const [x, label] of [[0, "links"], [L, "rechts"]]) plates.push({ center: [x, 0, -hb / 2 - 15], xDir: [1, 0, 0], normal: [0, 0, 1], W: lp, H: w, t: 15, holes: [[-lp / 2 + 30, -hy], [lp / 2 - 30, -hy], [-lp / 2 + 30, hy], [lp / 2 - 30, hy]], d: 18, name: `Auflagerplatte ${label}` });
     }
     const info = `${p.shape === "parallel" ? "Parallelträger" : p.shape === "pult" ? "Pultdachträger" : "Satteldachträger"} ${Math.round(L)} mm, ${n} Felder à ${fmt(L / n)}, Füllung ${p.fill}: ${nd} Diagonalen, ${np} Pfosten, Neigung ${fmt(minAng)} … ${fmt(maxAng)}° – statisch nicht nachgewiesen`;
     return { chains, members, plates, norms, drills, info, issues };

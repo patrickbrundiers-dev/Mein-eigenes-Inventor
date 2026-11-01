@@ -1,7 +1,7 @@
 // Bilder zur Generator-Prüfung: rendert die Netze aus tools/generator-pruefung.mjs mit three.js in Chromium.
 // Farben: grau = in Ordnung, rot = Kollision, orange = loses Teil, violett = verdeckt eine Bohrung, blau = Normteile.
 // Aufruf: node tools/generator-bilder.mjs <Ordner mit *.mesh.json> [Filter] [Ansicht-JSON]
-// Ansicht je Fall optional: { "<name>": { dir: [x, y, z], zoom: 1, focus: "<Teilname-Regex>" } }
+// Ansicht je Fall optional: { "<name>": { dir: [x, y, z], zoom: 1, focus: "<Teilname-Regex>" } } oder { center: [x, y, z], size: <halbe Bildhöhe mm> }
 
 import fs from "node:fs";
 import path from "node:path";
@@ -35,7 +35,7 @@ window.draw = (meshes, view) => {
     scene.add(new THREE.LineSegments(e, new THREE.LineBasicMaterial({ color: 0x30343a })));
     if (!focus || focus.test(m.name)) { g.computeBoundingBox(); box.union(g.boundingBox); }
   }
-  const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3()).length() / 2 / (view.zoom || 1);
+  const c = view.center ? new THREE.Vector3(...view.center) : box.getCenter(new THREE.Vector3()), s = view.size || box.getSize(new THREE.Vector3()).length() / 2 / (view.zoom || 1);
   const d = new THREE.Vector3(...(view.dir || [1, -1.4, 0.8])).normalize();
   const cam = new THREE.OrthographicCamera(-s * 1.4, s * 1.4, s, -s, -1e6, 1e6);
   cam.up.set(0, 0, 1); cam.position.copy(c.clone().add(d.multiplyScalar(s * 4))); cam.lookAt(c);

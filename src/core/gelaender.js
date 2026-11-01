@@ -307,7 +307,15 @@ export const GELAENDER = {
       const postCope = (j) => { const m = members.find((x) => x.name === `Pfosten ${fd.pa + j + 1}`); return m && { section: m.section, a: m.a, b: m.b, up: m.up, rot: m.rot }; };
       const posts2 = [postCope(0), postCope(1)];
       const beltCope = (top) => (top ? p.top : p.bottom) ? { section: belt, a: P3(at(s0 - 60), top ? zTop : zBot), b: P3(at(s1 + 60), top ? zTop : zBot), up: [0, 0, 1], rot: beltRot(fd.d, top ? [0, 0, -1] : [0, 0, 1]) } : null;
-      if (toeOn) members.push({ section: toeSec, a: P3(at(0), toeZ + toeH / 2), b: P3(at(fd.len), toeZ + toeH / 2), name: `Fußleiste ${i + 1}`, up: nrm, copes: posts2.filter(Boolean) });
+      // über den Fußplatten ausgeklinkt (Platz für Schraubenköpfe bzw. Muttern, 35 mm über der Platte) – vorher lag die
+      // Fußleiste auf den Schrauben der Fußplatten
+      const footCope = (j) => {
+        const pl = plates.find((x) => x.name === `Fußplatte ${fd.pa + j + 1}`);
+        if (!pl) return null;
+        const xd = pl.xDir, hl = pl.W / 2 + 5;
+        return { section: { kind: "flach", dims: { B: pl.H + 10, t: 2 * (pl.t + 35) } }, a: pl.center.map((v, k) => v - xd[k] * hl), b: pl.center.map((v, k) => v + xd[k] * hl), up: [0, 0, 1] };
+      };
+      if (toeOn) members.push({ section: toeSec, a: P3(at(0), toeZ + toeH / 2), b: P3(at(fd.len), toeZ + toeH / 2), name: `Fußleiste ${i + 1}`, up: nrm, copes: [...posts2, footCope(0), footCope(1)].filter(Boolean) });
       // Gurte zwischen den Pfosten: U/UPN offen zur Füllung (Obergurt nach unten, Untergurt nach oben), Flachstahl liegend
       if (!through && p.top) members.push({ section: belt, a: P3(at(s0), zTop), b: P3(at(s1), zTop), name: `Obergurt ${i + 1}`, rot: beltRot(fd.d, [0, 0, -1]) });
       if (!through && p.bottom) members.push({ section: belt, a: P3(at(s0), zBot), b: P3(at(s1), zBot), name: `Untergurt ${i + 1}`, rot: beltRot(fd.d, [0, 0, 1]) });

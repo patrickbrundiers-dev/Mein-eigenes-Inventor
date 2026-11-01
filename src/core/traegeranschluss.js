@@ -35,6 +35,8 @@ export const TRAEGERANSCHLUSS = {
     const face = onBeam ? sup.s / 2 : sup.H / 2; // Anschlussfläche
     const tSup = onBeam ? sup.s : sup.tf; // Dicke des Auflagers an der Schraube
     const d0 = holeFor(p.bolt), sp = boltSpacing(d0), th = NORM_THREADS[p.bolt];
+    // an der Stütze sitzen Mutter und Scheibe innen am Flansch: Abstand zum Stützensteg samt Ausrundung freihalten
+    const clearWeb = onBeam ? 0 : sup.s / 2 + sup.r + th.d2 / 2 + 2;
     const n = Math.round(p.rows);
     if (!(n >= 1 && n <= 8)) throw new Error("Schrauben übereinander: 1 … 8");
     if (!(p.gap >= 0 && p.beamLen > 300)) throw new Error("Spalt ≥ 0, Nebenträger > 300 mm");
@@ -101,7 +103,7 @@ export const TRAEGERANSCHLUSS = {
         drills.push({ target: "Nebenträger", p: [xb, -sb.s / 2 - 2, z], dir: [0, 1, 0], d: d0, len: sb.s + 4 });
         for (const sgn of [1, -1]) drills.push({ target: `Winkel ${sgn > 0 ? "hinten" : "vorne"}`, p: [xb, sgn * (sb.s / 2 - 1), z], dir: [0, sgn, 0], d: d0, len: ta + 2 });
       }
-      const yb = sb.s / 2 + Math.max(ta + th.d2 / 2 + 2, B - sp.e2); // Schrauben im Auflagerschenkel
+      const yb = Math.max(sb.s / 2 + Math.max(ta + th.d2 / 2 + 2, B - sp.e2), clearWeb); // Schrauben im Auflagerschenkel
       for (const sgn of [1, -1]) for (const z of zs) {
         supBolt(sgn * yb, z, ta + tSup, face + ta);
         drills.push({ target: `Winkel ${sgn > 0 ? "hinten" : "vorne"}`, p: [face - 1, sgn * yb, z], dir: [1, 0, 0], d: d0, len: ta + 2 });
@@ -110,7 +112,7 @@ export const TRAEGERANSCHLUSS = {
       info = `Doppelwinkel L ${a.size} × ${Math.round(hp)}, ${3 * n} × ${p.bolt} - ${p.grade} (Steg ${n}, Auflager ${2 * n})`;
     } else {
       // kurze Stirnplatte am Trägerende, mit dem Auflager verschraubt (2 Reihen quer)
-      const w = Math.max(sb.s + 2 * (th.d2 / 2 + 5), Math.min(sb.B - 2 * sp.e2, 140));
+      const w = Math.max(sb.s + 2 * (th.d2 / 2 + 5), Math.min(sb.B - 2 * sp.e2, 140), 2 * clearWeb);
       const W = Math.max(sb.B, w + 2 * sp.e2);
       if (W > sb.B + 1e-6) issues.push({ key: "bolt", level: "Hinweis", message: `Stirnplatte ${Math.round(W)} mm breiter als der Trägerflansch (${Math.round(sb.B)} mm) – Platz für ${p.bolt}` });
       plates.push({ center: [face, 0, zc], xDir: [0, 1, 0], normal: [1, 0, 0], W, H: hp, t: tp, holes: zs.flatMap((z) => [[-w / 2, z - zc], [w / 2, z - zc]]), d: d0, name: "Stirnplatte" });
