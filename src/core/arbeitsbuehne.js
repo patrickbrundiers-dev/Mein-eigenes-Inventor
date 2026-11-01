@@ -216,6 +216,8 @@ export const ARBEITSBUEHNE = {
               if (Math.abs(u) < dk.W / 2 - 10 && Math.abs(w) < dk.H / 2 - 10) { (dk.holes = dk.holes || []).push([u, w, hd || fp.d]); return true; }
               return false; });
             if (!deck) issues.push({ key: "railMount", level: "Hinweis", message: `${fp.name}: Bohrung liegt nicht auf dem Belag` });
+            // über dem Randträger: Bohrung auch durch dessen Obergurt (Mutter unten in der offenen Seite)
+            else if (q[0] < fw || q[0] > W - fw || q[1] < fw || q[1] > T - fw) drills.push({ target: "Randträger", p: [q[0], q[1], Hp - tt + 0.5], dir: [0, 0, -1], d: hd || fp.d, len: (Number(fr.dims?.t) || 12) + 3 });
           }
         }
       }

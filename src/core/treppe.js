@@ -315,21 +315,20 @@ export const TREPPE = {
           }
         }
       }
-      // Holme von Lauf 1 enden unter dem Podest tiefer als der Podestrahmen (vorher frei, ohne Verbindung): Holm bis unter
-      // den Rahmen verlängert, darauf eine Knagge (10 mm, im Holm) mit Kopfblech, das mit 2 × M12 durch den Rahmen verschraubt ist
+      // Holme von Lauf 1 enden unter dem Podest tiefer als der Podestrahmen (vorher frei, ohne Verbindung): Holm läuft unter
+      // dem vorderen Rahmenstab durch bis an dessen Innenseite, dort Kopfplatte (10 mm) bis Oberkante Rahmen, mit 2 × M12
+      // waagrecht durch Kopfplatte und Rahmen verschraubt (Muttern vorn am Rahmen über der letzten Stufe)
       if (!side && AN && !PW_ON) {
-        const zfb = zf - fh / 2, xa = x1, xb = x1 + fw, topAt = (x) => tanA * x + c + depth / 2 / cosA, kt = 10;
+        const zfb = zf - fh / 2, zft = zf + fh / 2, xb = x1 + fw, topAt = (x) => tanA * x + c + depth / 2 / cosA, kt = 10;
         ys.forEach((y, i) => {
           const w = members.find((m) => m.name === sideNames[i] + " Lauf 1");
-          if (!w || !(topAt(xb) < zfb - kt - 15)) return;
+          if (!w || !(topAt(xb) < zfb - 2)) return;
           w.cuts = { start: w.cuts.start, end: [{ p: [xb, 0, 0], n: [1, 0, 0] }] };
-          const nm = `${sideNames[i]} Lauf 1 Podestknagge`;
-          plates.push({ center: [0, y - kt / 2, 0], xDir: [1, 0, 0], normal: [0, 1, 0], W: fw, H: zfb - topAt(xa), t: kt, poly: [[xa, -topAt(xa)], [xb, -topAt(xb)], [xb, -(zfb - kt)], [xa, -(zfb - kt)]], name: nm }); // Plattenebene: x = Lauf, y = −z
-          const kw = thick + 60, hy = thick / 2 + 18;
-          plates.push({ center: [(xa + xb) / 2, y, zfb - kt], xDir: [0, 1, 0], normal: [0, 0, 1], W: kw, H: fw, t: kt, holes: [[-hy, 0], [hy, 0]], d: 14, name: nm + " Kopfblech" });
-          for (const dy of [-hy, hy]) {
-            drills.push({ target: "Podestrahmen", p: [(xa + xb) / 2, y + dy, zfb - 1], dir: [0, 0, 1], d: 14, len: fh + 2 });
-            norms.push({ bolt: true, size: "M12", clamp: kt + fh, pos: [(xa + xb) / 2, y + dy, zfb - kt], dir: [0, 0, 1], galv: true });
+          const nm = `${sideNames[i]} Lauf 1 Kopfplatte Podest`, zLo = topAt(xb) - depth / cosA, kw = thick + 60, hy = thick / 2 + 18;
+          plates.push({ center: [xb, y, (zLo + zft) / 2], xDir: [0, 1, 0], normal: [1, 0, 0], W: kw, H: zft - zLo, t: kt, holes: [-fh / 4, fh / 4].flatMap((dz) => [[-hy, zf + dz - (zLo + zft) / 2], [hy, zf + dz - (zLo + zft) / 2]]), d: 14, name: nm });
+          for (const dz of [-fh / 4, fh / 4]) for (const dy of [-hy, hy]) {
+            drills.push({ target: "Podestrahmen", p: [xb + 1, y + dy, zf + dz], dir: [-1, 0, 0], d: 14, len: fw + 2 });
+            norms.push({ bolt: true, size: "M12", clamp: kt + fw, pos: [xb + kt, y + dy, zf + dz], dir: [-1, 0, 0], galv: true });
           }
         });
       }
