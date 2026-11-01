@@ -1,10 +1,7 @@
-**Neu in 0.32.1**
+**Neu in 0.33.0**
 
-Die Generatoren sind jetzt fertigungsgerecht: Über alle 88 Prüfmodelle gibt es keine Kollisionen und keine verdeckten Bohrungen mehr.
+PBCAD ist spürbar schneller geworden.
 
-- **Treppe L/U:** Wange und Holm sind am Podest verschraubt.
-- **Geländer:** Knieleisten mit Gehrung am Knickpfosten, Handlauf-Endkappen (neu standardmäßig an, bestehende Projekte bleiben ohne Kappe).
-- **Wendeltreppe:** Die Fußplatten überlappen nicht mehr.
-- **Arbeitsbühne:** Fußplatten und Bohrungen sitzen richtig, die Leiterhalter reichen bis zum Steg.
-- **Steigleiter:** Die Bügel liegen am Holm an, die Wandplatte an den Wandhaltern.
-- **Stahlbau:** Kleinere Korrekturen an Fachwerk, Trägeranschluss und Windverband.
+- **Generatoren:** bauen etwa 2,4-mal so schnell (Spindeltreppe 27 → 11 s, Geländer mit Staketen 11 → 4 s).
+- **Maßänderungen:** Nur die geänderten Teile werden neu berechnet (Treppe 2,8 → 0,3 s).
+- **Programmstart:** Das Programm startet schneller, weil der Programmcode zwischengespeichert wird.
