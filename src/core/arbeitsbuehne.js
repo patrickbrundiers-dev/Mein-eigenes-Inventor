@@ -135,10 +135,13 @@ export const ARBEITSBUEHNE = {
       // Wandhalter nur am Randträger (darunter steht die Leiter frei), Leiter-Lage um 180° gedreht
       const halter = g.members.filter((m) => /^Wandhalter/.test(m.name));
       g.members = g.members.filter((m) => !/^Wandhalter/.test(m.name));
+      g.plates = g.plates.filter((x) => !/^Wandhalter/.test(x.name));
       const zb = Hp - tt - fh / 2;
+      // U-Randträger ist nach außen offen: Halter reicht bis an den Steg (vorher endete er frei in der Öffnung)
+      const into = /^u/.test(fr.kind) && fr.dims?.s > 0 ? fw - fr.dims.s : 0;
       for (const side of ["links", "rechts"]) {
         const m = halter.find((x) => x.name.startsWith(`Wandhalter ${side}`));
-        if (m) g.members.push({ ...m, a: [m.a[0], 0, zb], b: [m.b[0], m.b[1], zb], name: `Halter ${side} am Randträger` });
+        if (m) g.members.push({ ...m, a: [m.a[0], -into, zb], b: [m.b[0], m.b[1], zb], name: `Halter ${side} am Randträger` });
       }
       const P = (v) => [xc - v[0], -v[1], v[2]], D = (v) => [-v[0], -v[1], v[2]];
       const n0 = members.length;
@@ -166,7 +169,9 @@ export const ARBEITSBUEHNE = {
     // Geländer: im Uhrzeigersinn ab der linken Kante des Aufgangs um die Bühne bis zur rechten Kante (außen links)
     let railInfo = "";
     if (p.railing) {
-      const i = p.inset;
+      // einfache Fußplatte (120 mm): Pfosten so weit vom Rand, dass die Platte ganz auf dem Belag liegt (vorher stand sie
+      // über den Rand und lief ins Bordblech)
+      const i = railMount(p) ? p.inset : Math.max(p.inset, 65);
       let pts = xa === null
         ? [[W / 2, i], [i, i], [i, T - i], [W - i, T - i], [W - i, i], [W / 2 + 1, i]]
         : [[xa, i], [i, i], [i, T - i], [W - i, T - i], [W - i, i], [xb, i]];
@@ -176,7 +181,8 @@ export const ARBEITSBUEHNE = {
       if (Math.hypot(pts.at(-1)[0] - pts.at(-2)[0], pts.at(-1)[1] - pts.at(-2)[1]) < 150) pts = pts.slice(0, -1);
       const runs = pts.slice(1).map((q, k) => Math.hypot(q[0] - pts[k][0], q[1] - pts[k][1]));
       const knie = p.railFill === "knie";
-      const gp = defaults(GELAENDER, { runs, angle: -90, height: p.railH, use: "industrie", fall: Hp, post: sec({ kind: "vierkant", size: "40x3" }), postMax: 1500,
+      // mit Bordblech am Randträger keine zweite Fußleiste am Geländer (vorher doppelt, auf den Fußplattenschrauben)
+      const gp = defaults(GELAENDER, { runs, angle: -90, height: p.railH, use: "industrie", fall: Hp, ...(p.toe ? { toe: "nein" } : {}), post: sec({ kind: "vierkant", size: "40x3" }), postMax: 1500,
         ...(knie ? { fill: "keine", top: true, topGap: Math.round(p.railH / 2), bottom: false } : { fill: "staketen", bar: sec({ kind: "vierkantvoll", size: "12" }), bottomZ: p.toe ? p.toeH + 20 : 100 }) });
       const o = pts[0], dx = [(pts[1][0] - o[0]) / runs[0], (pts[1][1] - o[1]) / runs[0]], dy = [-dx[1], dx[0]];
       const P = (v) => [o[0] + v[0] * dx[0] + v[1] * dy[0], o[1] + v[0] * dx[1] + v[1] * dy[1], Hp + v[2]];
@@ -198,6 +204,23 @@ export const ARBEITSBUEHNE = {
       try { g = GELAENDER.plan(gp); } catch (e) { throw fieldError("Geländer: " + e.message, KEY[e.key] || "railing"); }
       local.forEach((l, k) => { if (l.holes) decks[k].holes = l.holes; });
       place(g, P, D, "Geländer ", out, (t) => t === "Randträger" || /^Querträger \d+$/.test(t));
+      if (!railMount(p)) {
+        // einfache Fußplatten: Bohrungen auch im Belag darunter (vorher verschraubt ins Leere)
+        const n3 = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
+        for (const fp of out.plates.filter((x) => /^Geländer Fußplatte \d+$/.test(x.name))) {
+          const fx = n3(fp.xDir), fn = n3(fp.normal), fy = [fn[1] * fx[2] - fn[2] * fx[1], fn[2] * fx[0] - fn[0] * fx[2], fn[0] * fx[1] - fn[1] * fx[0]];
+          for (const [hx, hy, hd] of fp.holes || []) {
+            const q = fp.center.map((v, k) => v + fx[k] * hx + fy[k] * hy);
+            const deck = decks.find((dk) => { const dx2 = n3(dk.xDir), dn = n3(dk.normal), dy2 = [dn[1] * dx2[2] - dn[2] * dx2[1], dn[2] * dx2[0] - dn[0] * dx2[2], dn[0] * dx2[1] - dn[1] * dx2[0]], r = q.map((v, k) => v - dk.center[k]);
+              const u = r[0] * dx2[0] + r[1] * dx2[1] + r[2] * dx2[2], w = r[0] * dy2[0] + r[1] * dy2[1] + r[2] * dy2[2];
+              if (Math.abs(u) < dk.W / 2 - 10 && Math.abs(w) < dk.H / 2 - 10) { (dk.holes = dk.holes || []).push([u, w, hd || fp.d]); return true; }
+              return false; });
+            if (!deck) issues.push({ key: "railMount", level: "Hinweis", message: `${fp.name}: Bohrung liegt nicht auf dem Belag` });
+            // über dem Randträger: Bohrung auch durch dessen Obergurt (Mutter unten in der offenen Seite)
+            else if (q[0] < fw || q[0] > W - fw || q[1] < fw || q[1] > T - fw) drills.push({ target: "Randträger", p: [q[0], q[1], Hp - tt + 0.5], dir: [0, 0, -1], d: hd || fp.d, len: (Number(fr.dims?.t) || 12) + 3 });
+          }
+        }
+      }
       issues.push(...g.issues.filter((x) => !(p.toe && /Fußleiste/.test(x.message))).map(({ key, ...x }) => ({ ...x, key: KEY[key] || "railing" })));
       railInfo = `, Geländer: ${g.info}`;
     }

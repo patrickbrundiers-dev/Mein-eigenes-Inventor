@@ -170,6 +170,9 @@ export function windingPlan(p, { n, s, a, issues }) {
   // Wangen: Ober- und Unterkante stückweise linear über den Stufenkanten der jeweiligen Wange (abgewickelt), Höhe aus
   // der Wangenhöhe senkrecht zur mittleren Neigung; unten waagrecht am Boden, oben senkrecht an der Deckenstirn
   const cosA = Math.cos(Math.atan(s / a)), extra = Math.max(40, (p.wangeH / cosA - s - tt) / 2);
+  const right = p.turn === "rechts";
+  const want = { links: [right ? "aussen" : "innen"], rechts: [right ? "innen" : "aussen"], beide: ["aussen", "innen"], keine: [] }[p.gel] || [];
+  const cornerPost = want.includes("aussen") && p.gelPost?.geom ? p.gelPost.geom.width : 0;
   const wange = (pl, ts, side, label) => {
     const top = pl1(ts.map((t, k) => [t, (k + 1) * s + extra]));
     const bot = pl1(ts.slice(1).map((t, k) => [t, (k + 1) * s - tt - extra]));
@@ -180,8 +183,11 @@ export function windingPlan(p, { n, s, a, issues }) {
       let ta = pl.cum[i], tb = Math.min(pl.cum[i + 1], tEnd);
       if (tb <= ta + 1e-6) continue;
       const last = i + 2 >= pl.pts.length || pl.cum[i + 1] >= tEnd - 1e-6;
-      if (!last) tb += side === "innen" ? -T : T;
-      segs.push({ i, ta, tb, ext: !last && side === "aussen" ? T : 0 });
+      // außen mit Geländer: um die Pfostenbreite weiter, damit der Eckpfosten mit der Seite an der Wange anliegt (vorher
+      // stand er schräg in der Außenecke und berührte beide Wangen nur an einer Kante – nicht anschweißbar)
+      const over = side === "aussen" ? T + cornerPost : 0;
+      if (!last) tb += side === "innen" ? -T : over;
+      segs.push({ i, ta, tb, ext: !last ? over : 0 });
     }
     segs.forEach((sg, j) => {
       const A = pl.pts[sg.i], d = nrm(sub(pl.pts[sg.i + 1], A));
@@ -214,8 +220,6 @@ export function windingPlan(p, { n, s, a, issues }) {
   wange(inner, ed.ti, "innen", "innen");
   wange(outer, ed.to, "aussen", "außen");
   // Geländer: entlang der Wangen, Pfosten außen neben der Wange (anliegend), Lauflinie auf Höhe der Stufenvorderkanten
-  const right = p.turn === "rechts";
-  const want = { links: [right ? "aussen" : "innen"], rechts: [right ? "innen" : "aussen"], beide: ["aussen", "innen"], keine: [] }[p.gel] || [];
   let rail = null;
   if (want.length) {
     const post = p.gelPost, off = T + post.geom.width / 2;

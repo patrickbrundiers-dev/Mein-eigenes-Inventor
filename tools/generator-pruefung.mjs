@@ -4,6 +4,8 @@
 //  – Verschraubungen: Schraube braucht in jedem geklemmten Teil eine Bohrung (zeigt sich als Kollision)
 //  – verdeckte Bohrungen: Achse jeder Schraubenbohrung (Ø 8 … 30) samt 30 mm Platz für Kopf/Mutter je Seite darf kein
 //    anderes Teil treffen (außer Teilen mit passender Bohrung und dem Stab, der in der Bohrung steckt)
+//  – Spalte an Stabenden: Achsende eines Stabs liegt 0,5 … 12 mm vor einem anderen Teil (Rohr endet kurz vor
+//    Platte/Gurt, Lücke statt Anlage; bewusste Fugen wie Gehrungsspalt vorher klären)
 // Aufruf: node --stack-size=8000 tools/generator-pruefung.mjs [Ausgabeordner] [Filter]
 // Ergebnis: <Ausgabe>/bericht.json und je Fall <name>.mesh.json (für tools/generator-bilder.mjs).
 
@@ -102,6 +104,23 @@ export const CASES = [
   ["windverband-winkel", "windverband", { bar: "profil" }],
   ["windverband-flach", "windverband", { bar: "profil", barProfile: { kind: "flach", size: "60x8" }, nBolts: "3", type: "einfach", gusset: "250" }],
   ["vordach", "vordach", { form: "vordach", depth: "2500", width: "4000", roof: "glas", slope: "8" }],
+  ["stuetzenfuss", "stuetzenfuss", {}],
+  ["stuetzenfuss-schubdorn", "stuetzenfuss", { key: true, stiff: false }],
+  ["traegerstoss", "traegerstoss", {}],
+  ["traegerstoss-innen", "traegerstoss", { inner: true, webCols: "2" }],
+  ["traegeranschluss", "traegeranschluss", {}],
+  ["traegeranschluss-winkel", "traegeranschluss", { type: "winkel" }],
+  ["traegeranschluss-stirnplatte", "traegeranschluss", { type: "stirnplatte" }],
+  ["traegeranschluss-stuetze", "traegeranschluss", { support: "stuetze", type: "stirnplatte" }],
+  ["traegeranschluss-stuetze-fahne", "traegeranschluss", { support: "stuetze" }],
+  ["steigleiter", "steigleiter", {}],
+  ["steigleiter-ohne-korb", "steigleiter", { cage: "nein", height: "3000" }],
+  ["fachwerk", "fachwerk", {}],
+  ["fachwerk-sattel-w", "fachwerk", { shape: "sattel", fill: "W" }],
+  ["fachwerk-pult-v", "fachwerk", { shape: "pult", fill: "V", plates: false }],
+  ["arbeitsbuehne", "arbeitsbuehne", {}],
+  ["arbeitsbuehne-leiter", "arbeitsbuehne", { access: "leiter", railFill: "staketen" }],
+  ["arbeitsbuehne-blech-fussplatte", "arbeitsbuehne", { deck: "blech", railMount: "fussplatte", access: "offen" }],
   ["gestell", "gestell", null],
 ];
 
@@ -197,12 +216,66 @@ export async function checkCase([name, gen, over]) {
     const skip = insertedNames(plan, h);
     if (skip.size) continue; // Durchgang für einen Stab (Knieleiste, Gurt), keine Schraube
     const cyl = R.makeCylinder((h.d / 2) * 0.85, L, h.a, h.u), cb = bbox(cyl);
+    // Platten mit eigener Bohrung auf derselben Achse (Unterlegplatte über einem Langloch/Übermaßloch) verdecken nicht
+    const coaxial = new Set((plan.plates || []).filter((pl) => {
+      const n = norm(pl.normal), x = norm(pl.xDir), y = cross(n, x);
+      return (pl.holes || []).some(([hx, hy]) => { const q = add(add(pl.center, mul(x, hx)), mul(y, hy)), w = sub(q, h.a); return len(sub(w, mul(h.u, dot(w, h.u)))) < h.d / 2; });
+    }).map((pl) => pl.name));
     for (const b of bodies) {
       // Gitterrost/Glas sind vereinfacht als Vollkörper gebaut (Schrauben sitzen real zwischen den Tragstäben); Teilstücke des Zielkörpers zählen mit ihm
-      if (b.norm || b.grid || b.name === h.target || b.name.startsWith(h.target + " ") || skip.has(b.name) || boxGap(cb, b.box) > 1e-3) continue;
+      if (b.norm || b.grid || b.name === h.target || coaxial.has(b.name) || b.name.startsWith(h.target + " ") || skip.has(b.name) || boxGap(cb, b.box) > 1e-3) continue;
       let v = 0;
       try { v = R.measureVolume(cyl.clone().intersect(b.shape.clone())); } catch { v = 0; }
       if (v > 1) covered.push({ hole: h.target, by: b.name, at: h.a.map((x) => Math.round(x)), volume: Math.round(v) });
+    }
+  }
+  // Spalte an Stabenden: Endbereich (15 mm vor der Schnittebene bzw. dem Stabende) muss an etwas anliegen,
+  // sonst Luft 0,5 … 12 mm = Spalt (freie Enden wie Pfostenköpfe haben mehr Abstand und zählen nicht)
+  const gaps = [];
+  if (plan) {
+    const ends = [...(plan.members || []).map((m) => [m.name, m.a, m.b, null, null, false, m.cuts]), ...(plan.chains || []).map((c) => [c.name, c.points[0], c.points[c.points.length - 1], c.points[1], c.points[c.points.length - 2], c.points.length > 2, null])];
+    for (const [nm, a, b, a2, b2, multi, cuts] of ends) {
+      for (const [p, q, segName, cl] of [[a, a2 || b, multi ? `${nm} 1` : nm, cuts?.start], [b, b2 || a, multi ? `${nm} ${(plan.chains.find((c) => c.name === nm)?.points.length || 2) - 1}` : nm, cuts?.end]]) {
+        const body = bodies.find((bd) => bd.name === segName) || bodies.find((bd) => bd.name === nm);
+        if (!body) continue;
+        const u = norm(sub(p, q));
+        if (!(len(sub(p, q)) > 40)) continue;
+        // Endebene: Schnittebenen des Stabs (Gehrung, Ausklinkung), sonst senkrecht zur Achse am äußersten Punkt
+        let planes = (cl || []).map((c) => ({ p: c.p, n: norm(c.n) }));
+        if (!planes.length) {
+          let ext = -Infinity;
+          try { const mm = body.shape.mesh({ tolerance: 2, angularTolerance: 0.5 }); for (let k = 0; k < mm.vertices.length; k += 3) ext = Math.max(ext, dot([mm.vertices[k], mm.vertices[k + 1], mm.vertices[k + 2]], u)); } catch { continue; }
+          planes = [{ p: add(p, mul(u, ext - dot(p, u))), n: u }];
+        }
+        // Endbereich = Körper innerhalb 15 mm vor der Endebene
+        const regions = [];
+        for (const pl of planes) { try { const r = body.shape.clone().intersect(R.makeCylinder(20000, 40, sub(pl.p, mul(pl.n, 15)), pl.n)); if (R.measureVolume(r) > 1) regions.push(r); } catch { /* */ } }
+        if (!regions.length) continue;
+        let best = Infinity, by = "", byBody = null;
+        for (const region of regions) {
+          const rb = bbox(region);
+          for (const bd of bodies) {
+            if (bd === body || boxGap(rb, bd.box) > 12) continue;
+            let d = Infinity;
+            try { d = R.measureDistanceBetween(region, bd.shape); } catch { continue; }
+            if (d < best) { best = d; by = bd.name; byBody = bd; }
+          }
+        }
+        // greift der Stab an anderer Stelle in den Nachbarn (Stift in der Bohrung, Lasche auf Blech), ist das Ende frei, kein Spalt
+        let engaged = false;
+        // (auch an einem anderen Stück desselben Zugs, z. B. Halterstift am Gehrungsstoß des Handlaufs)
+        if (best > 0.5 && best <= 12) {
+          const root = by.replace(/ \d+$/, "");
+          for (const nb of bodies.filter((x) => x === byBody || (root !== by && x.name.startsWith(root + " ")))) {
+            if (engaged || boxGap(body.box, nb.box) > 0.5) continue;
+            try { engaged = R.measureDistanceBetween(body.shape, nb.shape) <= 0.5; } catch { /* */ }
+          }
+        }
+        // Ende steckt im Hohlraum des Nachbarn (Achsbolzen in der Lamelle, Stift im Rohr): Steckverbindung, kein Spalt
+        const inside = (rb, ob) => [0, 1, 2].every((k) => rb.lo[k] >= ob.lo[k] - 0.5 && rb.hi[k] <= ob.hi[k] + 0.5);
+        if (best > 0.5 && best <= 12 && !engaged && regions.some((rg) => inside(bbox(rg), byBody.box))) engaged = true;
+        if (best > 0.5 && best <= 12 && !engaged) gaps.push({ part: segName, to: by, at: p.map((x) => Math.round(x)), gap: Math.round(best * 10) / 10 });
+      }
     }
   }
   // zusammenhängende Gruppen
@@ -224,7 +297,7 @@ export async function checkCase([name, gen, over]) {
   const bad = new Set([...coll.flatMap((c) => [c.ia, c.ib])]), lose = new Set(loose.map((l) => l.i)), cov = new Set(covered.map((c) => c.by));
   meshes.forEach((m, i) => { m.flag = bad.has(i) ? "kollision" : lose.has(i) ? "lose" : cov.has(m.name) ? "verdeckt" : ""; });
   fs.writeFileSync(path.join(out, name + ".mesh.json"), JSON.stringify(meshes));
-  return { name, gen, bodies: bodies.length, info: st.info, warning: st.warning || "", collisions: coll.map(({ ia, ib, ...c }) => c), covered, loose: loose.map((l) => l.name), groups: groups.length > 1 ? groups.map((g) => (g.length > 6 ? [...g.slice(0, 6), `… (${g.length})`] : g)) : [], ms: Date.now() - t0 };
+  return { name, gen, bodies: bodies.length, info: st.info, warning: st.warning || "", collisions: coll.map(({ ia, ib, ...c }) => c), covered, gaps, loose: loose.map((l) => l.name), groups: groups.length > 1 ? groups.map((g) => (g.length > 6 ? [...g.slice(0, 6), `… (${g.length})`] : g)) : [], ms: Date.now() - t0 };
 }
 
 const report = [];
@@ -233,6 +306,6 @@ for (const c of CASES) {
   let r;
   try { r = await checkCase(c); } catch (e) { r = { name: c[0], gen: c[1], error: e.message }; }
   report.push(r);
-  console.log(`${r.name}: ${r.error ? "FEHLER " + r.error : `${r.bodies} Körper, ${r.collisions.length} Kollisionen, ${r.covered.length} verdeckte Bohrungen, ${r.loose.length} lose, ${r.groups.length || 1} Gruppe(n)`}`);
+  console.log(`${r.name}: ${r.error ? "FEHLER " + r.error : `${r.bodies} Körper, ${r.collisions.length} Kollisionen, ${r.covered.length} verdeckte Bohrungen, ${r.gaps.length} Spalte, ${r.loose.length} lose, ${r.groups.length || 1} Gruppe(n)`}`);
   fs.writeFileSync(path.join(out, "bericht.json"), JSON.stringify(report, null, 1)); // nach jedem Fall (Zwischenstand lesbar)
 }

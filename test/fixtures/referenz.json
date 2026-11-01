@@ -235,7 +235,7 @@
  },
  "Geländer über Eck": {
   "errors": [],
-  "count": 61,
+  "count": 63,
   "bodies": [
    {
     "name": "Fußplatte 1",
@@ -354,6 +354,32 @@
      0
     ],
     "drills": 3
+   },
+   {
+    "name": "Handlauf Endkappe Anfang",
+    "kind": "solid",
+    "volume": 3239.685,
+    "box": [
+     -50,
+     -18.6,
+     960.2,
+     -47,
+     18.6,
+     997.4
+    ]
+   },
+   {
+    "name": "Handlauf Endkappe Ende",
+    "kind": "solid",
+    "volume": 3239.685,
+    "box": [
+     2981.4,
+     1547,
+     960.2,
+     3018.6,
+     1550,
+     997.4
+    ]
    },
    {
     "name": "Obergurt 1",
@@ -1338,7 +1364,7 @@
    }
   ],
   "notes": [
-   "6 Pfosten, 5 Feld(er) à 1000 / 750 mm, 31 Stäbe, Lauflänge 4500 mm, 6 Handlaufhalter (Bohrung Ø 12,1), Gurte durchgesteckt (4 Stück, Aufmaß 1 mm); Befestigung: 6 Fußplatten, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen"
+   "6 Pfosten, 5 Feld(er) à 1000 / 750 mm, 31 Stäbe, Lauflänge 4500 mm, 6 Handlaufhalter (Bohrung Ø 12,1), Gurte durchgesteckt (4 Stück, Aufmaß 1 mm); Befestigung: 6 Fußplatten, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen, 2 Handlauf-Endkappen 3 mm"
   ]
  },
  "Tor": {
@@ -2633,7 +2659,7 @@
  },
  "Treppe": {
   "errors": [],
-  "count": 125,
+  "count": 129,
   "bodies": [
    {
     "name": "Geländer links Handlauf 1",
@@ -2674,6 +2700,32 @@
      0
     ],
     "drills": 1
+   },
+   {
+    "name": "Geländer links Handlauf Endkappe Anfang",
+    "kind": "solid",
+    "volume": 3239.685,
+    "box": [
+     -72.258,
+     1023.4,
+     1111.527,
+     -49.998,
+     1060.6,
+     1144.663
+    ]
+   },
+   {
+    "name": "Geländer links Handlauf Endkappe Ende",
+    "kind": "solid",
+    "volume": 3239.685,
+    "box": [
+     4547,
+     1023.4,
+     3760.2,
+     4550,
+     1060.6,
+     3797.4
+    ]
    },
    {
     "name": "Geländer links Knieleiste 1.1",
@@ -3283,6 +3335,32 @@
      0
     ],
     "drills": 1
+   },
+   {
+    "name": "Geländer rechts Handlauf Endkappe Anfang",
+    "kind": "solid",
+    "volume": 3239.685,
+    "box": [
+     -72.258,
+     -60.6,
+     1111.527,
+     -49.998,
+     -23.4,
+     1144.663
+    ]
+   },
+   {
+    "name": "Geländer rechts Handlauf Endkappe Ende",
+    "kind": "solid",
+    "volume": 3239.685,
+    "box": [
+     4547,
+     -60.6,
+     3760.2,
+     4550,
+     -23.4,
+     3797.4
+    ]
    },
    {
     "name": "Geländer rechts Knieleiste 1.1",
@@ -4558,7 +4636,7 @@
    }
   ],
   "notes": [
-   "16 Steigungen à 175 mm, Auftritt 280 mm, 2s + a = 630 mm, Neigung 32°, Lauflänge 4200 mm, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø 14, Lochabstand 180 mm), Geländer: rechts und links, 14 Pfosten, 8 Knieleisten, Handlaufhalter mit Bohrung Ø 12,1, Knieleisten durch die Pfosten (4 Stück, Aufmaß 1 mm); Befestigung: 14 Befestigungsbleche (2 davon oben mit Fußplatte, wo kein Bauteil daneben liegt), 2 Pfosten gerückt, damit die Platte ganz auf dem Bauteil liegt, 24 Gegenbohrungen übertragen, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen, Fußwinkel am Boden, Kopfplatten 15 mm an der Decke"
+   "16 Steigungen à 175 mm, Auftritt 280 mm, 2s + a = 630 mm, Neigung 32°, Lauflänge 4200 mm, Stufen verschraubt nach DIN 24531 (Seitenbleche, Bohrung + Langloch Ø 14, Lochabstand 180 mm), Geländer: rechts und links, 14 Pfosten, 8 Knieleisten, Handlaufhalter mit Bohrung Ø 12,1, Knieleisten durch die Pfosten (4 Stück, Aufmaß 1 mm); Befestigung: 14 Befestigungsbleche (2 davon oben mit Fußplatte, wo kein Bauteil daneben liegt), 2 Pfosten gerückt, damit die Platte ganz auf dem Bauteil liegt, 24 Gegenbohrungen übertragen, geometrisch geprüft, Randabstände plausibilisiert, statisch nicht nachgewiesen, Fußwinkel am Boden, Kopfplatten 15 mm an der Decke, 4 Handlauf-Endkappen 3 mm"
   ]
  },
  "Zaun": {

@@ -232,7 +232,10 @@ function through(segs, o, label, { top, half, railAxis, postName }) {
         const name = o.fill === "quer" ? `${label} Knieleiste ${pieces}.${j + 1}` : `${label} Untergurt ${pieces}`;
         const ps = parts(ts[from], ts[to], h);
         ps.forEach((q, i) => {
-          const a = at(q.s0, h), b = at(q.s1, h);
+          // Gehrung am Knick: Stückende genau auf den Knick legen (Knickpfosten steht bis half daneben; sonst treffen sich die
+          // beiden Stücke versetzt und überlappen in der Gehrung)
+          const mS = !q.start && i === 0 && from === 0 && miterStart, mE = !q.end && i === ps.length - 1 && to === ts.length - 1 && miterEnd;
+          const a = at(mS ? 0 : q.s0, h), b = at(mE ? sg.L : q.s1, h);
           const cuts = { start: q.start ? [q.start] : i === 0 && from === 0 && miterStart ? [{ p: a, n: miterStart }] : [], end: q.end ? [q.end] : i === ps.length - 1 && to === ts.length - 1 && miterEnd ? [{ p: b, n: miterEnd }] : [] };
           members.push({ section: rail, a, b, name: ps.length > 1 ? `${name}-${i + 1}` : name, ...(ps.length > 1 ? { target: name } : {}), ...(ROUND.has(rail.kind) ? {} : { up: [0, 0, 1] }), ...(cuts.start.length || cuts.end.length ? { cuts } : {}) });
         });

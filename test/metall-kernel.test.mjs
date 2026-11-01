@@ -124,8 +124,9 @@ test("Geländer-Generator: Pfostenaufteilung, Staketen, Handlauf über Eck, Fuß
   const by = (re) => res.bodies.filter((b) => re.test(b.name));
   assert.equal(by(/^Pfosten \d+$/).length, 3 + 1 + 2, "3 Felder à 1000 + 2 Felder à 750 → 6 Pfosten");
   assert.equal(by(/^Fußplatte/).length, 6);
-  assert.equal(by(/^Handlauf/).length, 2, "zwei Handlaufstäbe, an der Ecke gegehrt");
-  assert.ok(Math.abs(by(/^Handlauf/)[0].meta.miterEnd) > 40, "Gehrung 45° an der Ecke");
+  assert.equal(by(/^Handlauf \d+$/).length, 2, "zwei Handlaufstäbe, an der Ecke gegehrt");
+  assert.ok(Math.abs(by(/^Handlauf \d+$/)[0].meta.miterEnd) > 40, "Gehrung 45° an der Ecke");
+  assert.equal(by(/^Handlauf Endkappe/).length, 2, "offene Handlaufenden mit Endkappe");
   assert.equal(by(/^Obergurt/).length, 2, "je Lauf ein durchgesteckter Gurt (≤ 5800 mm)");
   // Durchbrüche: Pfosten 2 (zwischen) für Ober- und Untergurt; Gurte mit je einer Bohrung pro Stab
   assert.equal(by(/^Pfosten 2$/)[0].meta.drills, 2);

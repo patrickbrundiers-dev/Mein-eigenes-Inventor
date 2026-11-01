@@ -295,6 +295,43 @@ export const TREPPE = {
         const yIn = left ? ry1 : ry0, yOut = left ? yLo : yHi;
         chains.push({ section: { kind: fr.kind, dims: fr.dims }, points: [[x1 + D, yIn, zf], [rx0, yIn, zf], [rx0, yOut, zf]], name: "Podestrahmen", up: [0, 0, 1], rot: frRot });
       }
+      // Außenwangen am Podest: die Wange läuft 100 mm über die Rahmenecke hinaus am Podestrahmen entlang (Lauf 1 hinter
+      // die Podestkante, oben bündig mit dem Podestbelag abgeschnitten; Lauf 2 davor) und ist dort neben der Ecke mit 2 × M12
+      // durch Wange und Rahmen verschraubt – vorher stieß sie nur mit der Kante an die Rahmenecke (keine Anlage, nicht
+      // schweiß- oder schraubbar). Innen stoßen die Wangen stumpf an den Rahmen bzw. an die Wange von Lauf 2.
+      if (!PW_ON && side && AN) {
+        const o = left ? 0 : 1, out = o === 0 ? -1 : 1, yo = ys[o], wx = fw;
+        for (const [label, T, xc, end] of [[" Lauf 1", rotZ(0, [0, 0, 0]), x1 + wx + 50, true], [" Lauf 2", T2, -wx - 50, false]]) {
+          const w = members.find((m) => m.name === sideNames[o] + label);
+          if (!w) continue;
+          const lim = end ? x1 + wx + 100 : -wx - 100;
+          w.cuts = end ? { start: w.cuts.start, end: [{ p: T.p([lim, 0, 0]), n: T.d([1, 0, 0]) }, { p: [0, 0, zP], n: [0, 0, 1] }] } : { start: [{ p: T.p([lim, 0, 0]), n: T.d([-1, 0, 0]) }], end: w.cuts.end };
+          const face = yo - out * (thick / 2); // Rahmenseite der Wange = Außenfläche des Rahmens
+          for (const dz of [-fh / 4, fh / 4]) {
+            const z = zf + dz;
+            drills.push({ target: sideNames[o] + label, p: T.p([xc, yo + out * (thick / 2 + 1), z]), dir: T.d([0, -out, 0]), d: 14, len: thick + 2 });
+            drills.push({ target: "Podestrahmen", p: T.p([xc, face + out, z]), dir: T.d([0, -out, 0]), d: 14, len: fw + 2 });
+            norms.push({ bolt: true, size: "M12", clamp: thick + fw, pos: T.p([xc, yo + out * (thick / 2), z]), dir: T.d([0, -out, 0]), galv: true });
+          }
+        }
+      }
+      // Holme von Lauf 1 enden unter dem Podest tiefer als der Podestrahmen (vorher frei, ohne Verbindung): Holm läuft unter
+      // dem vorderen Rahmenstab durch bis an dessen Innenseite, dort Kopfplatte (10 mm) bis Oberkante Rahmen, mit 2 × M12
+      // waagrecht durch Kopfplatte und Rahmen verschraubt (Muttern vorn am Rahmen über der letzten Stufe)
+      if (!side && AN && !PW_ON) {
+        const zfb = zf - fh / 2, zft = zf + fh / 2, xb = x1 + fw, topAt = (x) => tanA * x + c + depth / 2 / cosA, kt = 10;
+        ys.forEach((y, i) => {
+          const w = members.find((m) => m.name === sideNames[i] + " Lauf 1");
+          if (!w || !(topAt(xb) < zfb - 2)) return;
+          w.cuts = { start: w.cuts.start, end: [{ p: [xb, 0, 0], n: [1, 0, 0] }] };
+          const nm = `${sideNames[i]} Lauf 1 Kopfplatte Podest`, zLo = topAt(xb) - depth / cosA, kw = thick + 60, hy = thick / 2 + 18;
+          plates.push({ center: [xb, y, (zLo + zft) / 2], xDir: [0, 1, 0], normal: [1, 0, 0], W: kw, H: zft - zLo, t: kt, holes: [-fh / 4, fh / 4].flatMap((dz) => [[-hy, zf + dz - (zLo + zft) / 2], [hy, zf + dz - (zLo + zft) / 2]]), d: 14, name: nm });
+          for (const dz of [-fh / 4, fh / 4]) for (const dy of [-hy, hy]) {
+            drills.push({ target: "Podestrahmen", p: [xb + 1, y + dy, zf + dz], dir: [-1, 0, 0], d: 14, len: fw + 2 });
+            norms.push({ bolt: true, size: "M12", clamp: kt + fw, pos: [xb + kt, y + dy, zf + dz], dir: [-1, 0, 0], galv: true });
+          }
+        });
+      }
       if (PW_ON) {
         const o = left ? 0 : 1, yo = ys[o], zh = zf, unit = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); };
         const xk1 = (zh - c) / tanA, xk2 = (zh - zP - c) / tanA;
@@ -476,6 +513,9 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
   const end = (f, y) => f.T.p([(f.nR - 1) * a - u, y, f.z0 + f.nR * s]);
   const aus = (f, y) => (p.gelAuslauf > 0 ? [f.T.p([(f.nR - 1) * a + p.gelAuslauf, y, f.z0 + f.nR * s])] : []);
   const yo = -off, yi = B + off, post = p.gelPost.geom.width;
+  // L innen: der Handlauf von Lauf 1 steht mit Haltern 50 mm über den Endpfosten hinaus – der Endpfosten rückt so weit
+  // zurück, dass das Handlaufende frei vor dem ersten Pfosten von Lauf 2 endet (vorher 4 mm daneben, nicht montierbar)
+  const innerClear = p.gelHolder !== "keine" ? 30 : 0;
   let outer, inner;
   if (form === "gerade") {
     outer = [[start(f1, yo), end(f1, yo), ...aus(f1, yo)]];
@@ -485,14 +525,14 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
     outer = sep(yo);
     inner = sep(yi);
     if (form === "L") {
-      // innen: Lauf 1 endet vor dem Geländer von Lauf 2, Lauf 2 beginnt hinter dem von Lauf 1
-      inner[0][1] = at(f1, yi, Math.min((f1.nR - 1) * a - u, x1 - off - post));
+      // innen: Lauf 1 endet vor dem Geländer von Lauf 2, Lauf 2 beginnt hinter dem von Lauf 1 (innerClear: siehe oben)
+      inner[0][1] = at(f1, yi, Math.min((f1.nR - 1) * a - u, x1 - off - post - innerClear));
       inner[1][0] = at(f2, yi, Math.max(-u, off + post));
     }
   } else if (form === "L") {
     if (B - u - a < -off + post) throw fieldError("Podest zu klein für das Geländer – Laufbreite prüfen", "width");
     outer = [[start(f1, yo), end(f1, yo), [x1 + B + off, -off, zP], start(f2, yo), end(f2, yo), ...aus(f2, yo)]];
-    inner = [[start(f1, yi), at(f1, yi, Math.min((f1.nR - 1) * a - u, x1 - off - post))], [at(f2, yi, Math.max(-u, off + post)), end(f2, yi), ...aus(f2, yi)]];
+    inner = [[start(f1, yi), at(f1, yi, Math.min((f1.nR - 1) * a - u, x1 - off - post - innerClear))], [at(f2, yi, Math.max(-u, off + post)), end(f2, yi), ...aus(f2, yi)]];
   } else {
     const g = p.gap || 0, X = x1 + u + a;
     if (X > x1 + D + off - post) throw fieldError("Podest zu schmal für das Geländer – Podesttiefe prüfen", "podestD");
@@ -546,7 +586,7 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
   if (gelMount(p)) {
     const kind = gelMount(p), cfg = mountConfig(p, gk, kind), cfgTop = mountConfig(p, gk, "oben"), cfgSide = mountConfig(p, gk, "seitlich");
     const segs = supports.chains.filter((c) => /^Podestrahmen/.test(c.name)).flatMap((c) => c.points.slice(1).map((b, k) => ({ name: c.name, a: c.points[k], b, section: c.section.geom ? c.section : { ...c.section, geom: p.podestRahmen.geom }, up: c.up, rot: c.rot })));
-    const beams = supports.members.filter((m) => /^Wange|^Holm|^Mittelholm/.test(m.name));
+    const beams = supports.members.filter((m) => /^Wange|^Holm|^Mittelholm|^Podestwange/.test(m.name)); // Podestwange (O6) trägt die Pfosten am Podest
     const onBeam = p.support === "flach" || p.support === "upn";
     // Blech an der Wange: Höhe so wählen, dass es keine Stufenbohrung verdeckt, die Muttern innen frei von Seitenblechen,
     // Stufen und Fußwinkel sind und es ganz auf der Wange liegt (nächste passende Lage zur eingestellten Blechmitte)

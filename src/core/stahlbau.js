@@ -40,11 +40,14 @@ export const WINDVERBAND = {
     const rod = { kind: "rund", dims: { D: t.d }, geom: sectionGeometry("rund", { D: t.d }) };
     const corners = [[0, 0], [W, 0], [W, H], [0, H]];
     const inward = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+    const ends = [[0, 2], ...(p.type === "x" ? [[1, 3]] : [])];
+    // Knotenbleche nur an Ecken mit Diagonale (eine Diagonale: vorher hingen zwei Bleche ohne Anschluss im Feld)
+    const used = new Set(ends.flat());
     corners.forEach(([x, z], i) => {
+      if (!used.has(i)) return;
       const [sx, sz] = inward[i];
       plates.push({ center: [x + (sx * g) / 2, -gt / 2, z + (sz * g) / 2], xDir: [1, 0, 0], normal: [0, 1, 0], W: g, H: g, t: gt, name: `Knotenblech ${i + 1}` });
     });
-    const ends = [[0, 2], ...(p.type === "x" ? [[1, 3]] : [])];
     // Anschluss je Stabende: Lasche (Flachstahl) außen am Knotenblech, mit ihm verschraubt (Bohrung in Lasche und
     // Knotenblech); der Rundstahl liegt auf der Lasche und ist mit ihr verschweißt (Flankennähte über weldL)
     const hole = holeFor(p.size), eL = Math.ceil(1.5 * hole), tl = Math.max(8, Math.ceil(t.d / 2)), bw = Math.max(2 * eL, t.d + 20), weldL = Math.max(60, 4 * t.d), Ll = 2 * eL + weldL;
@@ -117,8 +120,9 @@ export const WINDVERBAND = {
       }
     });
     // Bohrungen in den Knotenblechen (Plattenebene: x = Welt-x, y = −Welt-z)
-    plates.forEach((pl, i) => {
-      if (i >= corners.length || !holesIn[i].length) return;
+    plates.forEach((pl) => {
+      const m = /^Knotenblech (\d)$/.exec(pl.name), i = m ? Number(m[1]) - 1 : -1;
+      if (i < 0 || !holesIn[i]?.length) return;
       pl.holes = holesIn[i].map((Q) => [Q[0] - pl.center[0], -(Q[2] - pl.center[2])]);
       pl.d = hole;
     });
