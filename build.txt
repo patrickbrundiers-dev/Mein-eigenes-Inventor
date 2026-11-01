@@ -1,0 +1,25 @@
+▲ [WARNING] Duplicate key "Konstruktion" in object literal [duplicate-object-key]
+
+    src/core/i18n.js:29:130:
+      29 │ ...�ser": "Contact solver", "Konstruktion": "Design accelerator", ...
+         ╵                             ~~~~~~~~~~~~~~
+
+  The original key "Konstruktion" is here:
+
+    src/core/i18n.js:25:127:
+      25 │ ..., "DXF importieren": "Import DXF", "Konstruktion": "Construction",
+         ╵                                       ~~~~~~~~~~~~~~
+
+1 warning
+
+  dist/app.js            2.3mb ⚠️
+  dist/app.js.LEGAL.txt  188b 
+  dist/app.js.map        8.2mb
+
+⚡ Done in 264ms
+
+  dist/worker.js      1.1mb ⚠️
+  dist/worker.js.map  4.1mb
+
+⚡ Done in 136ms
+dist/ fertig: app.js 2.3 MB, worker.js 1.1 MB, wasm 21.9 MB
