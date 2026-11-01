@@ -476,7 +476,7 @@
    {
     "name": "Pfosten 2",
     "kind": "member",
-    "volume": 280398.24,
+    "volume": 280396.92,
     "box": [
      978.8,
      -21.2,
@@ -528,7 +528,7 @@
    {
     "name": "Pfosten 3",
     "kind": "member",
-    "volume": 280398.24,
+    "volume": 280396.92,
     "box": [
      1978.8,
      -21.2,
@@ -632,7 +632,7 @@
    {
     "name": "Pfosten 5",
     "kind": "member",
-    "volume": 280398.24,
+    "volume": 280396.92,
     "box": [
      2978.8,
      728.8,

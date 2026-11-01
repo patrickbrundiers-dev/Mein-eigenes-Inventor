@@ -1,6 +1,7 @@
 // Feature-basierter Modellaufbau auf Basis von replicad (OpenCascade).
 // Wird im Web-Worker (App) und in Node (Tests) verwendet: createKernel(replicadModul)
 
+import { installFastBooleans, cutMany } from "./bool.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { solveSketch } from "../core/solver.js";
 import { extractProfiles, holeCenters, sketchLines } from "../core/sketch.js";
@@ -81,6 +82,7 @@ export function hashString(str) {
 }
 
 export function createKernel(R) {
+  installFastBooleans(R);
   const DK = direktKernel(R);
   // ---------- 2D -> replicad ----------
   function loopToDrawing(loop) {
@@ -393,16 +395,51 @@ export function createKernel(R) {
     const sp = memberSpan(shape, frame);
     return sp.hi - sp.lo;
   }
-  /** Ausdehnung eines Stabs entlang seiner Achse: { lo, hi } in mm ab frame.origin */
+  /**
+   * Ausdehnung eines Stabs entlang seiner Achse: { lo, hi } in mm ab frame.origin.
+   * Ein Stab ist ein gezogenes Profil mit ebenen oder geradlinigen Endschnitten: die Extremwerte einer linearen
+   * Funktion liegen dann auf Kanten. Geraden: Endpunkte; Kurven: Stichproben, dann Eingrenzung auf 1e-9 des
+   * Parameterbereichs. Früher über ein Feinnetz (0,01 mm) – das kostete bei großen Generatoren Sekunden und hängte
+   * das Feinnetz an die Form (die 3D-Ansicht bekam dann unnötig viele Dreiecke).
+   */
   function memberSpan(shape, frame) {
-    const m = shape.mesh({ tolerance: 0.01, angularTolerance: 0.1 });
+    const oc = R.getOC();
+    const z = frame.z, o = frame.origin;
     let lo = Infinity, hi = -Infinity;
-    const vs = m.vertices;
-    for (let i = 0; i < vs.length; i += 3) {
-      const t = (vs[i] - frame.origin[0]) * frame.z[0] + (vs[i + 1] - frame.origin[1]) * frame.z[1] + (vs[i + 2] - frame.origin[2]) * frame.z[2];
-      if (t < lo) lo = t;
-      if (t > hi) hi = t;
-    }
+    const ex = new oc.TopExp_Explorer(shape.wrapped, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    try {
+      for (; ex.More(); ex.Next()) {
+        const ed = oc.TopoDS.Edge(ex.Current());
+        if (oc.BRep_Tool.Degenerated(ed)) { ed.delete(); continue; }
+        const ad = new oc.BRepAdaptor_Curve(ed);
+        try {
+          const u0 = ad.FirstParameter(), u1 = ad.LastParameter();
+          const f = (u) => { const p = ad.Value(u); const t = (p.X() - o[0]) * z[0] + (p.Y() - o[1]) * z[1] + (p.Z() - o[2]) * z[2]; p.delete(); return t; };
+          if (ad.GetType() === oc.GeomAbs_CurveType.GeomAbs_Line) {
+            for (const t of [f(u0), f(u1)]) { if (t < lo) lo = t; if (t > hi) hi = t; }
+            continue;
+          }
+          const n = 24, ts = [];
+          for (let i = 0; i <= n; i++) ts.push(f(u0 + ((u1 - u0) * i) / n));
+          // Extremwerte eingrenzen (Goldener Schnitt im Nachbarbereich der besten Stichprobe)
+          const refine = (sign) => {
+            let bi = 0;
+            for (let i = 1; i <= n; i++) if (sign * ts[i] > sign * ts[bi]) bi = i;
+            let a = u0 + ((u1 - u0) * Math.max(0, bi - 1)) / n, b = u0 + ((u1 - u0) * Math.min(n, bi + 1)) / n;
+            const g = (Math.sqrt(5) - 1) / 2;
+            let c = b - g * (b - a), d = a + g * (b - a), fc = sign * f(c), fd = sign * f(d);
+            for (let k = 0; k < 40 && b - a > 1e-9 * (u1 - u0 || 1); k++) {
+              if (fc > fd) { b = d; d = c; fd = fc; c = b - g * (b - a); fc = sign * f(c); }
+              else { a = c; c = d; fc = fd; d = a + g * (b - a); fd = sign * f(d); }
+            }
+            return Math.max(sign * ts[bi], fc, fd) * sign;
+          };
+          const tmax = refine(1), tmin = refine(-1);
+          if (tmin < lo) lo = tmin;
+          if (tmax > hi) hi = tmax;
+        } finally { ad.delete(); ed.delete(); }
+      }
+    } finally { ex.delete(); }
     return { lo, hi };
   }
   /** Stabachse für Anschlussbleche (M8): Rahmen, tatsächliche Enden, Profilgröße quer (Breite u, Höhe v) */
@@ -1228,9 +1265,9 @@ export function createKernel(R) {
               let e = newC.get(key) || oldC.get(key);
               if (!e) e = build();
               newC.set(key, e);
-              return e.map((x) => ({ ...x, solid: x.solid.clone(), meta: JSON.parse(JSON.stringify(x.meta)) }));
+              return e.map((x) => { const c = { ...x, solid: x.solid.clone(), meta: JSON.parse(JSON.stringify(x.meta)) }; meshSrc.set(c.solid, x); return c; });
             };
-            const metaOf = (sec, solid, fr, extra = {}) => ({ section: sectionName(sec.kind, sec.dims), profileId: profileId(sec.kind, sec.dims), area: sec.geom.area, length: memberLength(solid, fr), miterStart: 0, miterEnd: 0, frameZ: fr.z, axis: memberAxis(solid, fr, sec.geom), generator: f.gen, sec: { kind: sec.kind, dims: sec.dims }, ...extra });
+            const metaOf = (sec, solid, fr, extra = {}) => { const ax = memberAxis(solid, fr, sec.geom); return { section: sectionName(sec.kind, sec.dims), profileId: profileId(sec.kind, sec.dims), area: sec.geom.area, length: ax.hi - ax.lo, miterStart: 0, miterEnd: 0, frameZ: fr.z, axis: ax, generator: f.gen, sec: { kind: sec.kind, dims: sec.dims }, ...extra }; };
             // Bohrungen (z. B. Handlaufhalter): Zylinder ab p in Richtung dir, nur am Stab, durch dessen Achse p geht
             const drillsOf = (name, A, B, size) => (plan.drills || []).filter((d) => {
               if (d.target !== name) return false;
@@ -1239,7 +1276,7 @@ export function createKernel(R) {
             });
             // rund (d) oder rechteckig (w quer entlang xDir × h), z. B. Durchbruch für einen Gurt im Pfosten
             const drillTool = (d) => (d.w ? R.drawRectangle(d.w, d.h).sketchOnPlane(new R.Plane(d.p, d.xDir, v3.norm(d.dir))).extrude(d.len) : R.makeCylinder(d.d / 2, d.len, d.p, v3.norm(d.dir)));
-            const drill = (solid, list) => list.reduce((sh, d) => sh.cut(drillTool(d)), solid);
+            const drill = (solid, list) => cutMany(R, solid, list.map(drillTool));
             for (const ch of plan.chains) {
               const segs = ch.points.slice(1).map((b, i) => ({ id: "s" + (i + 1), a: ch.points[i], b }));
               const g = ch.section.geom || sectionGeometry(ch.section.kind, ch.section.dims); // Kette oft nur mit kind/dims
@@ -1875,7 +1912,7 @@ export function createKernel(R) {
               const hs = halfSpace(fr0.origin, nOut, BIG);
               shape = shape.cut(hs);
               b.shape = shape;
-              b.meta = { ...b.meta, length: memberLength(shape, ax), axis: { ...ax, ...memberSpan(shape, ax) } };
+              const sp = memberSpan(shape, ax); b.meta = { ...b.meta, length: sp.hi - sp.lo, axis: { ...ax, ...sp } };
               const tm = toolMembers[mi];
               if (tm) { tm.shape = shape; tm.meta = b.meta; }
               if (tp.end === "A") b.meta.miterStart = Math.round(Math.acos(Math.min(1, Math.abs(v3.dot(v3.norm(fr0.normal), ax.z)))) * 1800 / Math.PI) / 10;
@@ -2201,6 +2238,12 @@ export function createKernel(R) {
     const rk = `${n.kind}|${n.size}|${n.length || 0}|${n.custom ? JSON.stringify(n.custom) : ""}`;
     if (!recipeCache.has(rk)) { if (recipeCache.size > 300) { for (const v of recipeCache.values()) v.delete?.(); recipeCache.clear(); } recipeCache.set(rk, recipeSolid(normRecipe(fam, n.size, n.length || 0))); }
     const solid = orientZ(recipeCache.get(rk).clone(), dir, pos, n.xDir);
+    // gleiches Normteil an gleicher Stelle wie beim letzten Bau: Netz und Körperwerte wiederverwenden
+    const pk = rk + "@" + JSON.stringify([pos, dir, n.xDir || null]);
+    let src = normMeshSrc.get(pk);
+    if (!src) { src = {}; if (normMeshSrc.size > 20000) normMeshSrc.clear(); }
+    normMeshSrc.delete(pk); normMeshSrc.set(pk, src);
+    meshSrc.set(solid, src);
     const designation = normDesignation(n);
     const mat = gradeInfo(n.grade);
     const meta = { norm: { kind: n.kind, size: n.size, length: n.length || 0, grade: n.grade || "", designation, norm: fam.norm, material: mat.label, cat: fam.cat }, density: mat.density };
@@ -2889,6 +2932,19 @@ export function createKernel(R) {
 
   // ---------- Ausgabe für die Anzeige ----------
   /** Achse und Radius einer Zylinderfläche: {axisP, axisD, radius} */
+  /**
+   * Flächenschwerpunkt mit Gauß-Integration fester Ordnung. replicad (`face.center`) integriert adaptiv auf 1e-7 –
+   * etwa sechsmal langsamer und bei großen Modellen ein Drittel der Netzzeit; Abweichung hier ~1e-4 mm.
+   */
+  function faceCentroid(face) {
+    const oc = R.getOC(), p = new oc.GProp_GProps();
+    try {
+      oc.BRepGProp.SurfaceProperties(face.wrapped, p);
+      const c = p.CentreOfMass(), out = [c.X(), c.Y(), c.Z()];
+      c.delete();
+      return out;
+    } finally { p.delete(); }
+  }
   function cylinderAxis(face) {
     const ad = new (R.getOC().BRepAdaptor_Surface)(face.wrapped, true);
     try {
@@ -2922,6 +2978,25 @@ export function createKernel(R) {
    * vernetzt diese Freiformflächen entlang der Bahn sehr dicht (ein 27°-Stück Rohr 42,4 bei 0,08 mm: 47 000 Dreiecke,
    * ein gerades Rohr gleicher Länge 400), daher dort eine Stufe gröber – sieht gleich aus, rechnet 3× schneller.
    */
+  /**
+   * Netz und Körperwerte je Körper merken, solange der Körper unverändert aus dem Generator-Zwischenspeicher kommt
+   * (meshSrc: Kopie → Speichereintrag). Ändert man an einer Treppe ein Maß, wurden bisher alle Körper neu vernetzt,
+   * auch die unveränderten (bei 400 Körpern ~3 s); jetzt nur die neu gebauten.
+   */
+  const meshSrc = new WeakMap();
+  const normMeshSrc = new Map(); // Normteil + Lage → Speichereintrag (Schraubensätze werden bei jedem Bau neu gesetzt)
+  function meshBodyCached(shape, quality = "normal", opts = {}) {
+    const src = meshSrc.get(shape);
+    if (!src) return meshBody(shape, quality, opts);
+    const k = quality + (opts.swept ? "/s" : "");
+    src.meshes ||= {};
+    return (src.meshes[k] ||= meshBody(shape, quality, opts));
+  }
+  function bodyPropsCached(shape) {
+    const src = meshSrc.get(shape);
+    if (!src) return bodyProps(shape);
+    return (src.props ||= bodyProps(shape));
+  }
   function meshBody(shape, quality = "normal", { swept = false } = {}) {
     const [tol, ang] = (swept ? { fein: [0.08, 0.25], grob: [0.4, 0.5] } : { fein: [0.02, 0.1], grob: [0.3, 0.5] })[quality] || (swept ? [0.2, 0.35] : [0.08, 0.25]);
     const m = shape.mesh({ tolerance: tol, angularTolerance: ang });
@@ -2931,9 +3006,10 @@ export function createKernel(R) {
         // replicad meldet Zylinder als "CYLINDRE"; einheitlich "CYLINDER" mit Achse und Radius (für Konzentrisch)
         // idx = Lage in shape.faces, damit das Messen die exakte Fläche im Kern findet
         const info = { type: fc.geomType === "CYLINDRE" ? "CYLINDER" : fc.geomType, idx };
-        if (info.type === "PLANE") { info.normal = tuple(fc.normalAt()); info.point = tuple(fc.center); }
-        else if (info.type === "CYLINDER") { info.point = tuple(fc.center); Object.assign(info, cylinderAxis(fc)); }
-        faceInfo.set(hashOf(fc), info);
+        const h = hashOf(fc), center = () => faceCentroid(fc);
+        if (info.type === "PLANE") { info.normal = tuple(fc.normalAt()); info.point = center(); }
+        else if (info.type === "CYLINDER") { info.point = center(); Object.assign(info, cylinderAxis(fc)); }
+        faceInfo.set(h, info);
       } catch { /* ignore */ }
     });
     const faces = m.faceGroups.map((g) => ({ start: g.start, count: g.count, ...(faceInfo.get(g.faceId) || {}) }));
@@ -3338,7 +3414,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, measure, vertexOf, snapPoint, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, meshBodyCached, bodyPropsCached, measure, vertexOf, snapPoint, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

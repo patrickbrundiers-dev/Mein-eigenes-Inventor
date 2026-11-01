@@ -111,7 +111,7 @@ const handlers = {
     if (!bodies) {
       bodies = res.bodies.map((b, i) => {
         let mesh = null, props = null, error = null;
-        try { mesh = K.meshBody(b.shape, quality, { swept: !!b.meta?.rolled }); props = K.bodyProps(b.shape); } catch (e) { error = errorText(e, R); }
+        try { mesh = K.meshBodyCached(b.shape, quality, { swept: !!b.meta?.rolled }); props = K.bodyPropsCached(b.shape); } catch (e) { error = errorText(e, R); }
         return { index: i, name: b.name, kind: b.kind, fid: b.fid, meta: b.meta ? { ...b.meta } : null, mesh, props, error };
       });
       remember(meshCache, mkey, { bodies }, 64, part.id);
