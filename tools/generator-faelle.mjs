@@ -1,0 +1,110 @@
+// Testfälle der Generator-Prüfung und der Leistungsmessung (gemeinsame Liste).
+import { defaultGenerator } from "../src/core/generator.js";
+import { defaultGestell } from "../src/core/gestell.js";
+
+const up = [0, 0, 1];
+const rect = [[0, 0, 0], [1200, 0, 0], [1200, 800, 0], [0, 800, 0]];
+const gestellSegs = [...rect.map((a, i) => ({ id: "s" + i, a, b: rect[(i + 1) % 4], up, label: "Linie " + (i + 1) })), { id: "m", a: [600, 0, 0], b: [600, 800, 0], up, label: "Mitte" },
+  ...rect.map((a, i) => ({ id: "v" + i, a, b: [a[0], a[1], 700], up: [1, 0, 0], label: "Bein " + (i + 1) }))];
+
+/** Testfälle: Name, Generator, geänderte Parameter */
+export const CASES = [
+  ["gelaender-staketen", "gelaender", { runs: "3000; 1500" }],
+  ["gelaender-boegen", "gelaender", { runs: "3000; 1500", railBend: "bogen", railEnd: "bogen" }],
+  ["gelaender-endbogen", "gelaender", { runs: "3000; 1500", railEnd: "bogen" }],
+  ["glas-klemme", "gelaender", { runs: "3000; 1500", fill: "glas", glassMount: "klemme" }],
+  ["glas-boden", "gelaender", { runs: "3000; 1500", fill: "glas", glassMount: "boden", glassT: "16.76" }],
+  ["glas-punkt", "gelaender", { runs: "3000; 1500", fill: "glas", glassMount: "punkt", glassT: "16.76" }],
+  ["gelaender-kreuz", "gelaender", { fill: "kreuz" }],
+  ["gelaender-kreuz-ohne-ring", "gelaender", { fill: "kreuz", ring: false }],
+  ["gelaender-rahmen", "gelaender", { fill: "rahmen" }],
+  ["gelaender-blech", "gelaender", { fill: "blech" }],
+  ["gelaender-glas", "gelaender", { fill: "glas" }],
+  ["gelaender-quer", "gelaender", { fill: "quer" }],
+  ["gelaender-industrie", "gelaender", { use: "industrie", height: "1100" }],
+  ["gelaender-seitlich-profil", "gelaender", { base: "seitlich", mTarget: "profil" }],
+  ["gelaender-fussplatte", "gelaender", { base: "fussplatte", beltMode: "zwischen" }],
+  ["treppe-gerade", "treppe", {}],
+  ["treppe-gerade-staketen", "treppe", { gelFill: "staketen" }],
+  ["treppe-upn", "treppe", { support: "upn" }],
+  ["treppe-holm2", "treppe", { support: "holm2", gelMount: "oben" }],
+  ["treppe-holm1", "treppe", { support: "holm1", gel: "keine" }],
+  ["treppe-L", "treppe", { form: "L" }],
+  ["treppe-U", "treppe", { form: "U", gap: "200" }],
+  ["treppe-viertelgewendelt", "treppe", { form: "Lw" }],
+  ["treppe-halbgewendelt-rechts", "treppe", { form: "Uw", gap: "200", turn: "rechts" }],
+  ["treppe-U-boegen", "treppe", { form: "U", gap: "200", gelRailBend: "bogen" }],
+  ["treppe-gerade-boegen-staketen", "treppe", { gelFill: "staketen", gelRailBend: "bogen" }],
+  ["spindel", "spindel", {}],
+  ["spindel-fussplatte", "spindel", { stabMount: "oben" }],
+  ["balkon", "balkon", {}],
+  ["balkon-seitlich", "balkon", { railMount: "seitlich" }],
+  ["tor-stich", "tor", {}],
+  ["tor-gerade", "tor", { form: "gerade", leaves: "1" }],
+  ["schiebetor", "schiebetor", {}],
+  ["schiebetor-gerade", "schiebetor", { tailForm: "gerade", fill: "quer" }],
+  ["zaun", "zaun", { length: "5000" }],
+  ["zaun-fussplatte-blech", "zaun", { length: "5000", base: "fussplatte", fill: "blech", terrain: "gefaelle" }],
+  ["windverband", "windverband", {}],
+  ["pfette", "pfette", { spans: "5000; 5000; 5000" }],
+  ["rahmenecke", "rahmenecke", {}],
+  ["carport", "vordach", {}],
+  ["fenstergitter", "fenstergitter", {}],
+  ["fenstergitter-durchsteck", "fenstergitter", { fill: "durchsteck", mount: "vorgesetzt", bar: { kind: "vierkantvoll", size: "16" } }],
+  ["pergola", "pergola", {}],
+  ["pergola-wand-zu", "pergola", { form: "wand", angle: "0" }],
+  ["rampe", "rampe", {}],
+  ["klemmgelaender", "klemmgelaender", {}],
+  ["klemmgelaender-rechts-3", "klemmgelaender", { runs: "2000; 1500; 2000", turn: "rechts", tube: "33.7", wall: "2.6", knee: false }],
+  ["zarge", "zarge", {}],
+  ["zarge-umfassung-rechts", "zarge", { form: "umfassung", hinge: "rechts", bands: "3", t: "2" }],
+  ["rampe-steil-blech", "rampe", { height: "900", slope: "8", deck: "blech", knee: false, topLanding: "0" }],
+  ["voute", "voute", {}],
+  ["treppe-wandhandlauf", "treppe", { gel: "rechts", wand: "links" }],
+  ["treppe-L-wandhandlauf", "treppe", { form: "L", gel: "links", wand: "rechts", turn: "rechts" }],
+  ["treppe-U-wand-holm", "treppe", { form: "U", support: "holm2", gel: "keine", wand: "rechts" }],
+  ["treppe-auflager-wand", "treppe", { anschluss: "auflager", wangeWand: "links", gel: "rechts" }],
+  ["treppe-U-auflager", "treppe", { form: "U", gap: "200", anschluss: "auflager", wangeWand: "rechts", gel: "links" }],
+  ["treppe-L-podestwange", "treppe", { form: "L", podestWange: true }],
+  ["treppe-U-podestwange", "treppe", { form: "U", gap: "200", podestWange: true, turn: "rechts" }],
+  ["tor-beschlaege", "tor", { hold: "innen" }],
+  ["tor-einzel-beschlaege", "tor", { leaves: "1", width: "1200", hold: "aussen" }],
+  ["gelaender-stoss", "gelaender", { runs: "7000; 3000", railMax: "6000" }],
+  ["gelaender-stoss-vierkant", "gelaender", { runs: "8000", rail: { kind: "rechteck", size: "40x20x2" }, railMax: "3000", postMode: "abstand", postStep: "1000" }],
+  ["voute-beidseitig", "voute", { form: "voute2", h0: "800", h: "450", lv: "2000" }],
+  ["voute-linear", "voute", { form: "linear", h0: "300", h: "600", endPlates: false }],
+  ["rahmenecke-voute", "rahmenecke", { haunch: true }],
+  ["rahmenecke-voute-flach", "rahmenecke", { haunch: true, pitch: "0", haunchH: "300", haunchL: "1500", stiffAt: "unten", column: { kind: "heb", size: "240" } }],
+  ["stuetzenfuss-futter", "stuetzenfuss", { shims: true, grout: "35" }],
+  ["windverband-winkel", "windverband", { bar: "profil" }],
+  ["windverband-flach", "windverband", { bar: "profil", barProfile: { kind: "flach", size: "60x8" }, nBolts: "3", type: "einfach", gusset: "250" }],
+  ["vordach", "vordach", { form: "vordach", depth: "2500", width: "4000", roof: "glas", slope: "8" }],
+  ["stuetzenfuss", "stuetzenfuss", {}],
+  ["stuetzenfuss-schubdorn", "stuetzenfuss", { key: true, stiff: false }],
+  ["traegerstoss", "traegerstoss", {}],
+  ["traegerstoss-innen", "traegerstoss", { inner: true, webCols: "2" }],
+  ["traegeranschluss", "traegeranschluss", {}],
+  ["traegeranschluss-winkel", "traegeranschluss", { type: "winkel" }],
+  ["traegeranschluss-stirnplatte", "traegeranschluss", { type: "stirnplatte" }],
+  ["traegeranschluss-stuetze", "traegeranschluss", { support: "stuetze", type: "stirnplatte" }],
+  ["traegeranschluss-stuetze-fahne", "traegeranschluss", { support: "stuetze" }],
+  ["steigleiter", "steigleiter", {}],
+  ["steigleiter-ohne-korb", "steigleiter", { cage: "nein", height: "3000" }],
+  ["fachwerk", "fachwerk", {}],
+  ["fachwerk-sattel-w", "fachwerk", { shape: "sattel", fill: "W" }],
+  ["fachwerk-pult-v", "fachwerk", { shape: "pult", fill: "V", plates: false }],
+  ["arbeitsbuehne", "arbeitsbuehne", {}],
+  ["arbeitsbuehne-leiter", "arbeitsbuehne", { access: "leiter", railFill: "staketen" }],
+  ["arbeitsbuehne-blech-fussplatte", "arbeitsbuehne", { deck: "blech", railMount: "fussplatte", access: "offen" }],
+  ["gestell", "gestell", null],
+];
+
+export function feature(gen, over) {
+  if (gen === "gestell") {
+    const g = defaultGestell("sk", gestellSegs);
+    return { id: "f", type: "generator", gen: "gestell", params: { input: { ...g, segments: gestellSegs } } };
+  }
+  const f = defaultGenerator(gen);
+  Object.assign(f.params, over);
+  return { id: "f", ...f };
+}

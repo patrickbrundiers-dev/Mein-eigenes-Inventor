@@ -18,7 +18,7 @@ app.setPath("userData", path.join(app.getPath("appData"), "WerkCAD"));
 app.commandLine.appendSwitch("enable-unsafe-swiftshader");
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
+  { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } },
 ]);
 
 const DIST = path.join(__dirname, "..", "dist");
