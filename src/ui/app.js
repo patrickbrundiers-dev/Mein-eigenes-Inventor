@@ -24,7 +24,7 @@ import { moveProblem, copyFeatures } from "../core/ableiten.js";
 import { syncVariants } from "../core/varianten.js";
 import { setDynamicCommands } from "../core/commands.js";
 import { macroCommands } from "../core/makros.js";
-import { setLanguage, language } from "../core/i18n.js";
+import { setLanguage, language, t as t_ } from "../core/i18n.js";
 import { classText } from "../core/tolerance.js";
 import { setUserBendTables, adoptProjectBendTables, projectBendTableCopies } from "../core/bendtable.js";
 import { newSketch, holeCenters } from "../core/sketch.js";
@@ -1125,11 +1125,12 @@ export class App {
       undo: this.undoStack.length ? { label: "Rückgängig", icon: "undo", kbd: "Strg+Z", run: () => this.undo() } : null,
       redo: this.redoStack.length ? { label: "Wiederholen", icon: "redo", kbd: "Strg+Y", run: () => this.redo() } : null,
       search: { label: "Befehl suchen …", icon: "search", kbd: kbd("app.search"), run: () => this.commands.exec("app.search") },
+      repeat: this.ribbon.last?.mode === this.mode ? { label: "Nochmal: " + t_(this.ribbon.last.b.label), icon: this.ribbon.last.b.icon, run: () => this.ribbon.press(this.ribbon.last.b) } : null,
       datums: part && this.activeDoc()?.features.some((f) => ["arbeitsebene", "arbeitsachse", "arbeitspunkt"].includes(f.type)) ? { label: this.activeDoc().hideDatums ? "Arbeitselemente einblenden" : "Arbeitselemente ausblenden", icon: this.activeDoc().hideDatums ? "eye" : "eyeoff", run: () => toggleAllDatums(this) } : null,
     };
     if (this.prefs.get("ansicht.markierungsmenue") === false) {
       // klassische Liste
-      const items = part ? [I.sketch, I.faceSketch] : asm ? [I.place] : [];
+      const items = [I.repeat, I.repeat && "-", ...(part ? [I.sketch, I.faceSketch] : asm ? [I.place] : [])].filter(Boolean);
       items.push("-", I.hide, I.isolate, I.showAll, I.datums, "-", I.fit, I.fitSel, I.normal, I.iso);
       if (I.undo) items.push("-", { ...I.undo, label: "Rückgängig: " + this.undoStack[this.undoStack.length - 1].label });
       return contextMenu(e.clientX, e.clientY, items);
@@ -1139,7 +1140,7 @@ export class App {
       : asm ? [I.place, I.constraint, I.measure, I.normal || I.iso, I.fit, I.isolate, I.hide, I.undo]
       : [null, null, null, I.iso, I.fit, null, null, I.undo];
     const used = new Set(ring.filter(Boolean));
-    const list = [part && I.faceSketch ? I.sketch : null, I.showAll, I.datums, I.fitSel, I.normal, I.iso, I.redo, "-", I.search].filter((x) => x && !used.has(x));
+    const list = [I.repeat, part && I.faceSketch ? I.sketch : null, I.showAll, I.datums, I.fitSel, I.normal, I.iso, I.redo, "-", I.search].filter((x) => x && !used.has(x));
     markingMenu(e.clientX, e.clientY, ring, list);
   }
   toggleFeatureEdge(fid, hit) {

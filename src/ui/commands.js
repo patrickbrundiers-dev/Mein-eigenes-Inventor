@@ -5,6 +5,7 @@ import { h, toast } from "./dom.js";
 import { t } from "../core/i18n.js";
 import { recordable } from "../core/makros.js";
 import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
+import { pushRecent, orderWithRecent } from "../core/zuletzt.js";
 import { problemsDialog } from "./pruefung.js";
 import { saveToLibrary, libraryDialog } from "./teilebibliothek.js";
 import { saveVersion, versionsDialog } from "./versionen.js";
@@ -38,6 +39,7 @@ export function commandRunners(app) {
     "file.savePartFile": () => { const d = app.activeDoc(); if (d?.kind === "part") app.files.savePartAsFile(d); },
     "file.refreshLinks": () => app.files.refreshLinks(),
     "file.render": () => app.files.exportPng({ photo: true }),
+    "file.glb": () => app.files.exportGlb(),
     "file.newAssembly": () => app.newAssembly(),
     "file.importStep": () => app.files.importStepAsPart(),
     "app.settings": () => app.props.settingsDialog(),
@@ -194,6 +196,15 @@ export class CommandKeys {
 }
 
 /** Befehlssuche: Tippen filtert, Pfeile wählen, Eingabe führt aus */
+const RECENT = "pbcad.befehle.zuletzt";
+export function recentCommands() {
+  try { return JSON.parse(localStorage.getItem(RECENT) || "[]"); } catch { return []; }
+}
+/** Befehl als zuletzt benutzt merken (Befehlssuche zeigt ihn bei leerer Eingabe oben) */
+export function rememberCommand(id) {
+  try { localStorage.setItem(RECENT, JSON.stringify(pushRecent(recentCommands(), id))); } catch { /* */ }
+}
+
 export function commandPalette(app) {
   if (document.querySelector(".cmd-palette")) return;
   const keys = app.commands;
@@ -201,7 +212,7 @@ export function commandPalette(app) {
   const list = h("div", { class: "cmd-list", role: "listbox" });
   let items = [], idx = 0;
   const close = () => { bd.remove(); document.removeEventListener("keydown", onKey, true); };
-  const exec = (c) => { close(); keys.exec(c.id); };
+  const exec = (c) => { close(); rememberCommand(c.id); keys.exec(c.id); };
   const pinned = () => app.prefs.get("werkzeuge.schnellzugriff") || [];
   const togglePin = (id) => {
     const cur = pinned();
@@ -210,13 +221,18 @@ export function commandPalette(app) {
     render();
   };
   const render = () => {
-    items = searchCommands(input.value, app.mode).filter((c) => c.id !== "app.search").slice(0, 40);
+    const found = searchCommands(input.value, app.mode).filter((c) => c.id !== "app.search");
+    const o = input.value.trim() ? { recent: [], rest: found } : orderWithRecent(found, recentCommands());
+    items = [...o.recent, ...o.rest].slice(0, 40);
     idx = Math.min(idx, Math.max(0, items.length - 1));
-    list.replaceChildren(...(items.length ? items.map((c, i) => h("button", { class: "cmd-item" + (i === idx ? " on" : ""), role: "option", "aria-selected": i === idx ? "true" : "false", onmousemove: () => { if (idx !== i) { idx = i; render(); } }, onclick: () => exec(c) },
+    const head = (txt) => h("div", { class: "cmd-head", role: "presentation" }, txt);
+    const rows = items.map((c, i) => h("button", { class: "cmd-item" + (i === idx ? " on" : ""), role: "option", "aria-selected": i === idx ? "true" : "false", onmousemove: () => { if (idx !== i) { idx = i; render(); } }, onclick: () => exec(c) },
       h("span", { class: "cmd-label" }, t(c.label)), h("span", { class: "cmd-group" }, t(c.group)), keys.label(c.id) ? h("span", { class: "kbd" }, keys.label(c.id)) : h("span"),
-      h("span", { class: "cmd-pin" + (pinned().includes(c.id) ? " on" : ""), role: "button", title: pinned().includes(c.id) ? "Vom Schnellzugriff lösen" : "An den Schnellzugriff heften", onclick: (e) => { e.stopPropagation(); togglePin(c.id); } }, "📌")))
-      : [h("div", { class: "hint", style: { padding: "8px" } }, "Kein passender Befehl in diesem Arbeitsbereich")]));
-    list.children[idx]?.scrollIntoView?.({ block: "nearest" });
+      h("span", { class: "cmd-pin" + (pinned().includes(c.id) ? " on" : ""), role: "button", title: pinned().includes(c.id) ? "Vom Schnellzugriff lösen" : "An den Schnellzugriff heften", onclick: (e) => { e.stopPropagation(); togglePin(c.id); } }, "📌")));
+    const n = o.recent.length;
+    list.replaceChildren(...(!items.length ? [h("div", { class: "hint", style: { padding: "8px" } }, "Kein passender Befehl in diesem Arbeitsbereich")]
+      : n ? [head("Zuletzt benutzt"), ...rows.slice(0, n), head("Alle Befehle"), ...rows.slice(n)] : rows));
+    rows[idx]?.scrollIntoView?.({ block: "nearest" });
   };
   const onKey = (e) => {
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }

@@ -115,6 +115,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .rb-group:last-child { border-right: 0; }
 .rb-buttons { display: flex; gap: 2px; flex: 1; align-items: flex-start; }
 .rb-group-label { text-align: center; font-size: var(--fs-xs); color: var(--text-faint); padding: 2px 0 3px; white-space: nowrap; }
+/* schmales Fenster: Gruppe zu einem Knopf eingeklappt, Befehle im Ausklappfeld */
+.rb-group.zu > .rb-buttons, .rb-group.zu > .rb-group-label { display: none; }
+.rb-group.zu { justify-content: flex-start; }
+.rb-collapse { min-width: 64px; }
+.rb-collapse[aria-expanded="true"] { background: var(--steel-2); }
+.rb-flyout { position: absolute; z-index: 60; display: flex; padding: 6px 8px; background: var(--steel-0); border: 1px solid var(--steel-3); border-radius: var(--radius-m, 6px); box-shadow: var(--shadow-2); animation: drop-in var(--t-fast) var(--ease-out); }
+.rb-flyout > .rb-buttons { display: flex; }
+.rb-undo-list { width: 16px; padding: 0; font-size: 10px; margin-left: -4px; }
 .rb-hidden { align-self: center; margin: 0 6px; padding: 2px 6px; font: 600 var(--fs-xs) var(--din); color: var(--text-faint); background: none; border: 1px dashed var(--steel-3); border-radius: var(--radius-s); cursor: pointer; }
 .rb-hidden:hover { color: var(--dye); border-color: var(--dye); }
 .rb-list .chk { display: flex; align-items: center; gap: 6px; }
@@ -461,6 +469,7 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .cmd-list { max-height: 50vh; overflow: auto; display: flex; flex-direction: column; }
 .cmd-item { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center; text-align: left; border: 0; background: none; padding: 5px 8px; border-radius: var(--radius-s); cursor: pointer; }
 .cmd-item.on { background: var(--dye); color: #fff; }
+.cmd-head { font-size: var(--fs-xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; padding: 8px 8px 2px; }
 .cmd-item.on .cmd-group, .cmd-item.on .kbd { color: #dfe7f5; border-color: #dfe7f5; }
 .cmd-group { font-size: var(--fs-xs); color: var(--text-faint); }
 .cmd-pin { font-size: var(--fs-s); opacity: 0.25; filter: grayscale(1); padding: 0 2px; }

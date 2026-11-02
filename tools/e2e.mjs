@@ -20,12 +20,20 @@ catch { browser = await chromium.launch({ ...launchOpts, executablePath: process
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
 // Menüband-Knopf nach Namen klicken (Text oder aria-label bei Symbolknöpfen); steht er nicht im aktiven Reiter, die Reiter durchgehen
 const rbClick = async (name) => {
-  const btn = () => page.locator("#ribbon .rb-panel").getByRole("button", { name, exact: true });
+  const btn = () => page.locator("#ribbon .rb-panel, #ribbon .rb-flyout").getByRole("button", { name, exact: true });
+  // im schmalen Fenster eingeklappte Gruppe: deren Ausklappfeld öffnen
+  const unfold = () => page.evaluate((name) => {
+    for (const g of document.querySelectorAll("#ribbon .rb-group.zu")) {
+      const hit = [...g.querySelectorAll(".rb-buttons button")].some((b) => (b.getAttribute("aria-label") || b.textContent.trim()) === name);
+      if (hit) { g.querySelector(".rb-collapse").click(); return true; }
+    }
+    return false;
+  }, name);
   if (!(await btn().first().isVisible().catch(() => false))) {
     const tabs = page.locator("#ribbon .rb-tab");
     for (let i = 0, n = await tabs.count(); i < n; i++) {
       await tabs.nth(i).click();
-      if (await btn().first().isVisible().catch(() => false)) break;
+      if (await btn().first().isVisible().catch(() => false) || await unfold()) break;
     }
   }
   await btn().first().click();
@@ -2400,7 +2408,7 @@ try {
 
   // Menüband aufgeräumt (Inventor-Vorbild): Bauteil und Baugruppe passen ohne Scrollen in 1600 px, Hauptbefehle groß, Rest klein
   {
-    const fit = async () => evalApp(() => { const p = document.querySelector("#ribbon .rb-panel"); return { over: p.scrollWidth - p.clientWidth, big: p.querySelectorAll(".rb-btn").length, small: p.querySelectorAll(".rb-small").length }; });
+    const fit = async () => evalApp(() => { const p = document.querySelector("#ribbon .rb-panel"); return { over: p.scrollWidth - p.clientWidth, zu: p.querySelectorAll(".rb-group.zu").length, big: p.querySelectorAll(".rb-btn:not(.rb-collapse)").length, small: p.querySelectorAll(".rb-small").length }; });
     const tab = async (t) => { await page.locator("#ribbon .rb-tab", { hasText: t }).click(); return fit(); };
     const fPart = await tab("3D-Modell"), fPartM = await tab("Metallbau");
     await shot("26e2-menueband-metallbau");
@@ -2413,7 +2421,24 @@ try {
     const fAsmM = await tab("Metallbau");
     await shot("26e4-menueband-baugruppe-metallbau");
     const all = [fPart, fPartM, fAsm, fAsmM];
-    step("Menüband aufgeräumt", all.every((f) => f.over <= 0) && fPart.small >= 8 && fAsm.small >= 8, JSON.stringify({ fPart, fPartM, fAsm, fAsmM }));
+    step("Menüband aufgeräumt", all.every((f) => f.over <= 0 && f.zu === 0) && fPart.small >= 8 && fAsm.small >= 8, JSON.stringify({ fPart, fPartM, fAsm, fAsmM }));
+  }
+
+  // Schmales Fenster: Gruppen klappen von rechts zu einem Knopf ein, das Ausklappfeld zeigt ihre Befehle
+  {
+    await page.setViewportSize({ width: 1024, height: 1000 });
+    await page.waitForTimeout(400);
+    const n0 = await evalApp(() => { const p = document.querySelector("#ribbon .rb-panel"); return { zu: [...p.querySelectorAll(".rb-group.zu")].map((g) => g.dataset.group), over: p.scrollWidth - p.clientWidth }; });
+    await page.locator("#ribbon .rb-collapse").last().click();
+    await page.waitForTimeout(200);
+    const fly = await evalApp(() => ({ n: document.querySelectorAll("#ribbon .rb-flyout .rb-btn, #ribbon .rb-flyout .rb-small").length }));
+    await shot("26e5-menueband-schmal");
+    await page.keyboard.press("Escape");
+    const back = await evalApp(() => ({ open: !!document.querySelector("#ribbon .rb-flyout"), inGroup: [...document.querySelectorAll("#ribbon .rb-group.zu")].every((g) => g.querySelector(":scope > .rb-buttons")) }));
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.waitForTimeout(400);
+    const n1 = await evalApp(() => document.querySelectorAll("#ribbon .rb-group.zu").length);
+    step("Menüband im schmalen Fenster", n0.zu.length > 0 && n0.over <= 0 && fly.n > 0 && !back.open && back.inGroup && n1 === 0, JSON.stringify({ n0, fly, back, n1 }));
   }
 
   // Dokument-Vorgaben (Werkzeuge Stufe 26): Namensregel, Sachnummer, Standardwerkstoff, Inhalt neuer Projekte
