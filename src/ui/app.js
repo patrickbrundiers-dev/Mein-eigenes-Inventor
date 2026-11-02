@@ -5,6 +5,7 @@ import { invertSelection } from "../core/boxselect.js";
 import { Sketcher } from "./sketcher.js";
 import { MiniBar } from "./minibar.js";
 import { DirectBar, directFaceRef } from "./direkt.js";
+import { NextStep } from "./naechster.js";
 import { DocTabs } from "./doctabs.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
@@ -107,6 +108,7 @@ export class App {
     this.prefs.onChange((keys) => this.applyPrefs(keys));
     if (this.prefs.warnings.length) setTimeout(() => toast("Einstellungen: " + this.prefs.warnings[0] + (this.prefs.warnings.length > 1 ? ` (+${this.prefs.warnings.length - 1} weitere)` : ""), { kind: "err", timeout: 8000 }), 300);
     this.buildViewTools();
+    this.nextStep = new NextStep(this);
     this.bindViewerEvents();
     this.bindKeys();
     this.setMode("start");
@@ -1420,6 +1422,7 @@ export class App {
     if (this.selFilter !== "alles" && this.mode === "part") parts.push(h("span", {}, "Filter: " + (this.selFilter === "flaechen" ? "nur Flächen" : "nur Kanten")));
     parts.push(h("span", {}, "mm · Grad"));
     this.statusEl.replaceChildren(...parts);
+    this.nextStep?.update();
   }
   buildViewTools() {
     const mk = (label, run, title) => h("button", { onclick: run, title }, label);

@@ -35,4 +35,6 @@ Empfehlung: Q6, Q7 und Q8 zusammen (klein, sofort spürbar). Danach Q5 und Q9.
 
 ## Stand
 
-- 02.11.2026: Q1–Q4 umgesetzt (PR folgt im Thread).
+- 02.11.2026: Q1–Q4 umgesetzt, PR #187 gemergt (in 0.34.1).
+- 02.11.2026: Patrick wählt „alles der Reihe nach“: Q6–Q8, dann Q5, dann Q9/Q10, dann Q11.
+- 02.11.2026: Q6–Q8 umgesetzt. „Nächster Schritt“-Kachel (core/naechster.js, ui/naechster.js, abschaltbar unter Ansicht). Werte per Mausrad im Feld oder Ziehen am Feldnamen (core/wertschritt.js, Props.scrubbable). Schnellstart-Kacheln auf der Startseite.
