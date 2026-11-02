@@ -222,6 +222,7 @@ export const BEFEHLSHILFE = {
   w_props: "Eigenschaftenfeld ein- oder ausblenden.",
   w_reset: "Seitenleisten auf die Standardanordnung zurücksetzen.",
   w_bside: "Modellbrowser auf die rechte Seite legen.",
+  w_side: "Modell links, seine Zeichnung rechts nebeneinander. Das Blatt rechnet nach jeder Änderung neu, Doppelklick öffnet es.",
   w_pside: "Eigenschaftenfeld auf die linke Seite legen.",
   q_grob: "Grobe Darstellung, schnell bei großen Baugruppen.",
   q_normal: "Normale Darstellungsqualität.",

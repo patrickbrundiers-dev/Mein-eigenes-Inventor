@@ -6,6 +6,7 @@ import { Sketcher } from "./sketcher.js";
 import { MiniBar } from "./minibar.js";
 import { DirectBar, directFaceRef } from "./direkt.js";
 import { NextStep } from "./naechster.js";
+import { SideBySide } from "./nebeneinander.js";
 import { DocTabs } from "./doctabs.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
@@ -109,6 +110,7 @@ export class App {
     if (this.prefs.warnings.length) setTimeout(() => toast("Einstellungen: " + this.prefs.warnings[0] + (this.prefs.warnings.length > 1 ? ` (+${this.prefs.warnings.length - 1} weitere)` : ""), { kind: "err", timeout: 8000 }), 300);
     this.buildViewTools();
     this.nextStep = new NextStep(this);
+    this.side = new SideBySide(this);
     this.bindViewerEvents();
     this.bindKeys();
     this.setMode("start");
@@ -283,7 +285,7 @@ export class App {
     asm.components = [...groups.flatMap((gr, i) => gr.bodies.map((b) => ({ id: prev.get(b.key)?.id || uid("c"), part: parts[i].id, name: b.name, pos: b.pos, rot: b.rot, fixed: true, genKey: b.key, ...(prev.get(b.key)?.hidden ? { hidden: true } : {}) }))), ...own];
     asm.constraints = (asm.constraints || []).filter((c) => asm.components.some((x) => x.id === c.a?.comp) && asm.components.some((x) => x.id === c.b?.comp));
   }
-  newDrawing(source) {
+  newDrawing(source, { open = true } = {}) {
     const src = source || (this.activeDoc() && this.activeDoc().kind !== "drawing" ? { kind: this.activeDoc().kind, id: this.activeId } : null);
     const name = this.docName("drawing", { quelle: src ? this.doc(src.id).name : "" });
     const d = this.withDrawingDefaults(newDrawing(name, src));
@@ -294,7 +296,7 @@ export class App {
       // Werkstoff bleibt leer: das Schriftfeld zeigt dann den aktuellen Werkstoff des Modells
       d.pendingAutoViews = true;
     }
-    return this.addDoc(d);
+    return this.addDoc(d, { open });
   }
   /** Bauteile einer Baugruppe (ohne doppelte, auch ausgeblendete), fertig berechnet */
   async builtParts(asm) {
@@ -533,6 +535,7 @@ export class App {
     const t0 = performance.now();
     const res = await this.kernel.build(part, this.quality);
     this.results.set(part.id, { ...res, hash: JSON.stringify(part).length });
+    this.buildRev = (this.buildRev || 0) + 1; // »Nebeneinander« rechnet das Blatt danach neu
     if (this.prefs.get("kernel.protokoll")) this.buildLog.add(buildEntry(part, res, performance.now() - t0));
     return res;
   }
@@ -1423,6 +1426,7 @@ export class App {
     parts.push(h("span", {}, "mm · Grad"));
     this.statusEl.replaceChildren(...parts);
     this.nextStep?.update();
+    this.side?.update();
   }
   buildViewTools() {
     const mk = (label, run, title) => h("button", { onclick: run, title }, label);

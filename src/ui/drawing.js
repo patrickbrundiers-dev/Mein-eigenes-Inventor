@@ -70,6 +70,24 @@ export class DrawingEditor {
       this.proj = keep;
     }
   }
+  /**
+   * Nur das Blatt als SVG-Element für die Ansicht »Nebeneinander« (Q5). Läuft ohne die Zeichnung zu öffnen; wurde währenddessen
+   * eine Zeichnung geöffnet, rechnet der Editor ihre Ansichten danach neu (sonst bliebe sein Blatt leer).
+   */
+  async sheetSvg(d) {
+    if (this.offscreen) return null;
+    const keep = this.proj;
+    this.offscreen = d;
+    this.proj = new Map();
+    try {
+      await this.update();
+      return { svg: this.renderSheet(d, { interactive: false }), size: this.sheetSize(d) };
+    } finally {
+      this.offscreen = null;
+      this.proj = keep;
+      if (this.app.mode === "drawing") { this.proj = new Map(); this.update(); }
+    }
+  }
   sheetSize(d = this.doc) {
     const [a, b] = SHEETS[d.sheet.format] || SHEETS.A3;
     return d.sheet.orientation === "hoch" ? [b, a] : [a, b];

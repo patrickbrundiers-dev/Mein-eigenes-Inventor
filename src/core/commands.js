@@ -30,6 +30,7 @@ export const COMMANDS = [
   { id: "model.buildLog", label: "Berechnungsprotokoll", group: "Modell", scope: "global", keywords: "debug kernel dauer fehler protokoll" },
 
   { id: "view.fit", label: "Alles zeigen", group: "Ansicht", scope: "3d", key: "F6", keywords: "zoom einpassen" },
+  { id: "view.side", label: "Zeichnung daneben (Modell und Zeichnung nebeneinander)", group: "Ansicht", scope: "3d", keywords: "nebeneinander geteilt split zeichnung blatt zwei fenster" },
   { id: "view.fitSel", label: "Auswahl zeigen", group: "Ansicht", scope: "3d", key: "Umschalt+F6", keywords: "zoom" },
   { id: "view.saveNamed", label: "Ansicht speichern", group: "Ansicht", scope: "3d", keywords: "benannte ansicht merken kamera" },
   { id: "view.named", label: "Gespeicherte Ansichten", group: "Ansicht", scope: "3d", keywords: "benannte ansicht kamera" },

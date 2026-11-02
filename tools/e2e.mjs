@@ -151,6 +151,27 @@ try {
   const bb = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return r.bodies[0].props.bbox; });
   step("Parameteränderung", Math.abs(bb[1][0] - bb[0][0] - 400) < 1e-3, JSON.stringify(bb));
   await shot("07-parameter-400");
+  // Q5: Zeichnung daneben – Blatt rechnet nach einer Modelländerung neu, Doppelklick öffnet die Zeichnung
+  {
+    await evalApp(() => window.__werkcad.side.toggle(true));
+    const svgSel = "#side-sheet:not([hidden]) .ss-svg";
+    await page.waitForSelector(svgSel, { timeout: 60000 });
+    await idle();
+    const lines0 = await page.locator(svgSel + " line, " + svgSel + " path, " + svgSel + " polyline").count();
+    const vw = await evalApp(() => document.getElementById("viewer").getBoundingClientRect().width / document.getElementById("stage").getBoundingClientRect().width);
+    await shot("07b-nebeneinander");
+    await evalApp(() => { const svg = document.querySelector("#side-sheet .ss-svg"); svg.dataset.alt = "1"; });
+    await evalApp(() => { const a = window.__werkcad; const p = a.activeDoc(); a.edit("Test", () => { p.params.find((x) => x.name === "Länge").expr = "300"; }); });
+    await idle();
+    await page.waitForFunction(() => { const s = document.querySelector("#side-sheet .ss-svg"); return s && !s.dataset.alt; }, null, { timeout: 60000 });
+    await page.locator("#side-sheet .ss-sheet").dblclick();
+    await idle();
+    const mode = await evalApp(() => window.__werkcad.mode);
+    const hiddenInDrawing = await evalApp(() => document.getElementById("side-sheet").hidden);
+    await evalApp(() => { const a = window.__werkcad; a.side.toggle(false); a.openDoc("beispiel_platte"); const p = a.activeDoc(); a.edit("Test", () => { p.params.find((x) => x.name === "Länge").expr = "400"; }); });
+    await idle();
+    step("Zeichnung daneben", lines0 > 20 && vw > 0.3 && vw < 0.7 && mode === "drawing" && hiddenInDrawing, JSON.stringify({ lines0, vw, mode, hiddenInDrawing }));
+  }
 
   // Dynamische Maßeingabe: Rechteck anfangen, 50 tippen, Tab, 25, Enter → bemaßtes Rechteck 50×25
   {
