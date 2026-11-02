@@ -473,6 +473,7 @@ export class App {
    * vor der Änderung wiederhergestellt (kein halb geändertes Modell). Rückgabe: true bei Erfolg.
    */
   edit(label, fn, opts) {
+    if (this.workshop) { toast("Werkstattmodus: nur ansehen und messen. Zum Ändern den Werkstattmodus beenden."); return false; }
     const redo = this.redoStack;
     this.checkpoint(label);
     // Verknüpfte Bauteile (M24) sind schreibgeschützt – geändert wird in ihrer Datei
@@ -941,7 +942,21 @@ export class App {
     let down = null;
     // Griff eines Arbeitselements ziehen (vor der Kamerasteuerung, die sonst dreht)
     cv.addEventListener("pointerdown", (e) => { if (datumHandleDown(this, e)) down = null; }, { capture: true });
-    cv.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, b: e.button, t: performance.now() }; cv.focus(); });
+    // Tablet (Q10): ein Finger dreht (OrbitControls), langes Tippen öffnet das Rechtsklick-Menü
+    let longTimer = 0, longFired = false;
+    cv.addEventListener("pointerdown", (e) => {
+      down = { x: e.clientX, y: e.clientY, b: e.button, t: performance.now(), touch: e.pointerType === "touch" };
+      cv.focus();
+      clearTimeout(longTimer);
+      longFired = false;
+      if (down.touch && e.isPrimary) {
+        const at = { clientX: e.clientX, clientY: e.clientY, preventDefault() {}, stopPropagation() {} };
+        longTimer = setTimeout(() => { if (!down || this.mode === "sketch") return; longFired = true; down = null; this.viewerContextMenu(at); }, LONG_PRESS_MS);
+      }
+    });
+    cv.addEventListener("pointermove", (e) => { if (down?.touch && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) clearTimeout(longTimer); });
+    cv.addEventListener("pointercancel", () => { clearTimeout(longTimer); down = null; });
+    cv.addEventListener("pointerup", (e) => { clearTimeout(longTimer); if (longFired) { longFired = false; e.stopImmediatePropagation(); } }, { capture: true });
     cv.addEventListener("contextmenu", (e) => e.preventDefault());
     // Doppelklick auf eine Fläche wählt das Feature, das sie erzeugt hat – mit Ziehgriff (Extrusion rein/raus)
     cv.addEventListener("dblclick", (e) => {
@@ -957,7 +972,7 @@ export class App {
     const boxEl = h("div", { class: "view-box", hidden: true });
     document.getElementById("stage").append(boxEl);
     const boxRect = (e) => { const r = cv.getBoundingClientRect(); return { x0: down.x - r.left, y0: down.y - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, ox: r.left - boxEl.parentElement.getBoundingClientRect().left, oy: r.top - boxEl.parentElement.getBoundingClientRect().top }; };
-    const boxAllowed = () => this.mode === "part" && !this.pick && down?.b === 0;
+    const boxAllowed = () => this.mode === "part" && !this.pick && down?.b === 0 && !down.touch; // Finger ziehen dreht
     cv.addEventListener("pointermove", (e) => {
       if (!down || !boxAllowed() || Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) return;
       const b = boxRect(e);
@@ -967,7 +982,7 @@ export class App {
     });
     cv.addEventListener("pointerup", (e) => {
       if (!down) return;
-      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > (down.touch ? 10 : 4);
       if (moved && !boxEl.hidden) {
         const b = boxRect(e);
         boxEl.hidden = true;
@@ -1364,6 +1379,18 @@ export class App {
   }
 
   // ---------- Oberfläche ----------
+  /**
+   * Werkstattmodus (Q9): große Schrift und Knöpfe, hoher Kontrast, ein eigenes Menüband nur zum Ansehen, Messen und für
+   * Listen. Ändern ist gesperrt (edit), bis der Modus endet. Gedacht für Monitor oder Tablet an der Maschine.
+   */
+  setWorkshop(on = !this.workshop) {
+    this.workshop = !!on;
+    document.body.classList.toggle("werkstatt", this.workshop);
+    if (this.workshop) { if (this.pick && this.pick.kind !== "measure") this.cancelPick(); if (this.mode === "sketch") this.finishSketch?.(); }
+    this.refreshAll();
+    requestAnimationFrame(() => this.viewer.resize());
+    toast(this.workshop ? "Werkstattmodus: ansehen, messen, Listen. Ändern ist gesperrt." : "Werkstattmodus beendet", { timeout: 2500 });
+  }
   refreshAll() {
     this.ribbon.render();
     this.tree.render();
@@ -1612,6 +1639,7 @@ function defaultHint(mode, mouse) {
     default: return "";
   }
 }
+const LONG_PRESS_MS = 550; // Tablet: langes Tippen = Rechtsklick
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
 function safeNum(g) { try { return evaluate(String(g ?? "0"), {}); } catch { return 0; } }
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);

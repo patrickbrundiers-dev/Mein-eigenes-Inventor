@@ -347,6 +347,25 @@ export class Ribbon {
     // Aufklappknopf (P12, wie Inventor-Dropdown): seltene Befehle einer Gruppe hinter »Weitere«
     const M = (id, label, ic, items) => ({ id, label: label + " ▾", icon: ic, menu: items, run: (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu(r.left, r.bottom, items.map((b) => ({ label: b.label, icon: b.icon, run: b.run }))); } });
     const T = (tool, label, ic, extra = {}) => ({ id: "t_" + tool, label, icon: ic, on: sk.tool === tool, run: () => sk.setTool(tool), ...extra });
+    // Werkstattmodus (Q9): nur ein Reiter mit großen Knöpfen zum Ansehen, Messen und für Listen
+    if (app.workshop && (mode === "part" || mode === "assembly" || mode === "drawing")) {
+      const end = { label: "Ende", buttons: [B("ws_end", "Werkstattmodus beenden", "cancel", { run: () => app.setWorkshop(false) })] };
+      if (mode === "drawing") return [{ id: "werkstatt", label: "Werkstatt", groups: [
+        { label: "Blatt", buttons: [B("ws_fitSheet", "Ganzes Blatt", "fit", { run: () => app.drawing.fitSheet() }), B("ws_model", "Zum Modell", "part", { disabled: !app.drawing.doc?.source, run: () => app.openDoc(app.drawing.doc.source.id) })] }, end] }];
+      return [{ id: "werkstatt", label: "Werkstatt", groups: [
+        { label: "Ansicht", buttons: [
+          B("v_iso", "Iso", "viewIso", { run: () => app.viewer.setView("iso") }),
+          B("v_front", "Vorne", "viewFront", { run: () => app.viewer.setView("front") }),
+          B("v_top", "Oben", "viewTop", { run: () => app.viewer.setView("top") }),
+          B("v_right", "Rechts", "viewRight", { run: () => app.viewer.setView("right") }),
+          B("v_fit", "Alles zeigen", "fit", { run: () => app.viewer.fit() })] },
+        { label: "Prüfen", buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }),
+          ...["X", "Y", "Z"].map((a) => B("clip_" + a, "Schnitt " + a, "cut", { on: app.viewer.clip?.axis === a, run: () => app.toggleClip(a) }))] },
+        { label: "Listen", buttons: [B("cutlist", "Zuschnittliste", "cutlist", { run: () => app.props.cutListDialog() }),
+          ...(mode === "assembly" ? [B("bom", "Stückliste", "bom", { run: () => app.props.bomDialog() })] : [])] },
+        { label: "Zeichnung", buttons: [B("w_side", "Zeichnung daneben", "drawing", { on: !!app.side?.on, run: () => app.side.toggle() })] },
+        end] }];
+    }
     const view = {
       id: "ansicht", label: "Ansicht", groups: [
         { label: "Ausrichtung", small: true, buttons: [
@@ -389,6 +408,7 @@ export class Ribbon {
             B("w_bside", "Browser rechts", "layout", { on: L.browser === "right", run: () => set(movePanel(L, "browser", L.browser === "right" ? "left" : "right")) }),
             B("w_pside", "Eigenschaften links", "layout", { on: L.props === "left", run: () => set(movePanel(L, "props", L.props === "left" ? "right" : "left")) }),
             B("w_side", "Zeichnung daneben", "drawing", { on: !!app.side?.on, disabled: app.mode !== "part" && app.mode !== "assembly", run: () => app.side.toggle() }),
+            B("w_werkstatt", "Werkstattmodus", "eye", { on: !!app.workshop, run: () => app.setWorkshop() }),
           ];
         })() },
         { label: "Sichtbarkeit", buttons: [B("v_showall", "Alle einblenden", "eye", { disabled: !app.viewer.hidden.size, run: () => app.showAllBodies() })] },
@@ -784,7 +804,7 @@ export class Ribbon {
     return k ? `${b.label} (${k})` : b.label;
   }
   tipId(b) {
-    const special = { w_side: "view.side", x_glb: "file.glb", x_render: "file.render", rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", replaceComp: "asm.replace", positions: "asm.positionSave", asmParams: "asm.params", compColors: "view.compColors", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", sdof: "sketch.dof", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
+    const special = { w_side: "view.side", w_werkstatt: "view.werkstatt", ws_end: "view.werkstatt", x_glb: "file.glb", x_render: "file.render", rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", replaceComp: "asm.replace", positions: "asm.positionSave", asmParams: "asm.params", compColors: "view.compColors", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", sdof: "sketch.dof", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
     return special[b.id] || (b.id.startsWith("t_") ? "sketch." + b.id.slice(2) : b.id.startsWith("v_") ? "view." + b.id.slice(2) : b.id.startsWith("dm_") ? "view.mode." + b.id.slice(3) : "part." + b.id);
   }
   /** Daten für die Tooltip-Karte (src/ui/tooltip.js); die Beschreibung auch für Bildschirmleser */

@@ -15,7 +15,7 @@ export class NextStep {
   update() {
     const app = this.app;
     const d = app.activeDoc?.();
-    const s = app.prefs.get("ansicht.naechsterSchritt") === false || app.pick || app.readOnly || app.versionView ? null : nextSteps({ mode: app.mode, doc: d });
+    const s = app.prefs.get("ansicht.naechsterSchritt") === false || app.pick || app.readOnly || app.workshop || app.versionView ? null : nextSteps({ mode: app.mode, doc: d });
     const key = s ? `${d.id}|${app.mode}|${s.key}` : "";
     if (!s || this.dismissed.has(key)) { this.el.hidden = true; this.shown = ""; return; }
     if (key === this.shown && !this.el.hidden) return;

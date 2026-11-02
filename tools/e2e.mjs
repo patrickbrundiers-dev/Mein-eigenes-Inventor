@@ -171,7 +171,34 @@ try {
     await evalApp(() => { const a = window.__werkcad; a.side.toggle(false); a.openDoc("beispiel_platte"); const p = a.activeDoc(); a.edit("Test", () => { p.params.find((x) => x.name === "Länge").expr = "400"; }); });
     await idle();
     step("Zeichnung daneben", lines0 > 20 && vw > 0.3 && vw < 0.7 && mode === "drawing" && hiddenInDrawing, JSON.stringify({ lines0, vw, mode, hiddenInDrawing }));
+  }  // Q9/Q10: Werkstattmodus (nur ansehen/messen, Ändern gesperrt) und langes Tippen = Rechtsklick-Menü
+  {
+    await evalApp(() => { window.__werkcad.openDoc("beispiel_platte"); window.__werkcad.setWorkshop(true); });
+    await idle();
+    const tabs = await page.locator("#ribbon .rb-tab").allTextContents();
+    const big = await page.locator("#ribbon .rb-btn").count();
+    const blocked = await evalApp(() => { const a = window.__werkcad, p = a.activeDoc(); const ok = a.edit("Test", () => { p.params.find((x) => x.name === "Länge").expr = "123"; }); return { ok, expr: p.params.find((x) => x.name === "Länge").expr }; });
+    await shot("07c-werkstattmodus");
+    await page.locator("#ribbon .rb-btn", { hasText: "Werkstattmodus beenden" }).click();
+    await idle();
+    const back = await evalApp(() => !window.__werkcad.workshop && !document.body.classList.contains("werkstatt"));
+    step("Werkstattmodus", tabs.length === 1 && /Werkstatt/.test(tabs[0]) && big >= 8 && blocked.ok === false && blocked.expr === "400" && back, JSON.stringify({ tabs, big, blocked, back }));
+
+    const box = await page.locator("#viewer canvas").boundingBox();
+    const x = box.x + 60, y = box.y + box.height - 60;
+    // echte Fingereingabe über das DevTools-Protokoll (Zeigerereignisse vom Typ »touch«)
+    const cdp = await page.context().newCDPSession(page);
+    const menu0 = await page.locator(".marking, .menu").count();
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    await page.waitForTimeout(800);
+    const menu = (await page.locator(".marking, .menu").count()) - menu0;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await page.waitForTimeout(200);
+    const stillOpen = await page.locator(".marking, .menu").count();
+    await page.keyboard.press("Escape");
+    step("Tablet: langes Tippen öffnet das Menü", menu > 0 && stillOpen > 0, JSON.stringify({ menu, stillOpen }));
   }
+
 
   // Dynamische Maßeingabe: Rechteck anfangen, 50 tippen, Tab, 25, Enter → bemaßtes Rechteck 50×25
   {

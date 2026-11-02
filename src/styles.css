@@ -859,3 +859,26 @@ body.is-scrubbing, body.is-scrubbing * { cursor: ew-resize !important; user-sele
 #side-sheet .ss-empty svg { width: 48px; height: 48px; color: var(--steel-3); }
 #side-sheet .ss-state { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 4px 10px; border-radius: var(--radius-m); background: var(--surface); border: 1px solid var(--steel-3); font-size: var(--fs-s); color: var(--ink-soft); }
 #side-sheet .ss-state[hidden] { display: none; }
+
+/* Werkstattmodus (Q9): große Schrift und Knöpfe, hoher Kontrast, Ändern gesperrt */
+body.werkstatt { --fs-s: 15px; --fs-m: 17px; --fs-l: 20px; --ink: #000; --ink-soft: #1d2731; }
+body.werkstatt #ribbon .rb-btn { min-width: 92px; min-height: 84px; font-size: 15px; }
+body.werkstatt #ribbon .rb-btn svg { width: 36px; height: 36px; }
+body.werkstatt #ribbon .rb-tab { font-size: 16px; padding-inline: 16px; }
+body.werkstatt #ribbon .rb-group-label { font-size: 13px; }
+body.werkstatt #browser .node { min-height: 34px; font-size: 16px; }
+body.werkstatt #props :is(input, select, textarea) { pointer-events: none; background: transparent; border-color: transparent; }
+body.werkstatt .view-tools button { font-size: 16px; padding: 10px 14px; }
+body.werkstatt #status { font-size: 15px; }
+html[data-theme="dark"] body.werkstatt { --ink: #fff; --ink-soft: #e4ebf2; }
+
+/* Tablet (Q10): größere Ziele bei Fingerbedienung, Gesten im 3D-Fenster nicht vom Browser abfangen */
+#viewer canvas { touch-action: none; }
+@media (pointer: coarse) {
+  #ribbon .rb-btn { min-height: 72px; min-width: 64px; }
+  #ribbon .rb-small { min-height: 36px; }
+  #ribbon .rb-tab { padding-block: 8px; }
+  #browser .node { min-height: 36px; }
+  .view-tools button { padding: 10px 12px; }
+  .icon-btn { min-width: 36px; min-height: 36px; }
+}

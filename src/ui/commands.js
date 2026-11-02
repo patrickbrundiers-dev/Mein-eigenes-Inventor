@@ -41,6 +41,7 @@ export function commandRunners(app) {
     "file.render": () => app.files.exportPng({ photo: true }),
     "file.glb": () => app.files.exportGlb(),
     "view.side": () => app.side.toggle(),
+    "view.werkstatt": () => app.setWorkshop(),
     "file.newAssembly": () => app.newAssembly(),
     "file.importStep": () => app.files.importStepAsPart(),
     "app.settings": () => app.props.settingsDialog(),
