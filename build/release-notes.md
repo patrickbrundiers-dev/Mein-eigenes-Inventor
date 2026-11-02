@@ -1,8 +1,7 @@
-**Neu in 0.34.1**
+**Neu in 0.35.0**
 
-Das Menüband und die Befehle sind besser zu bedienen.
+PBCAD führt dich jetzt besser durch die Arbeit.
 
-- **Menüband:** passt sich der Fensterbreite an. In schmalen Fenstern klappen Gruppen zu einem Knopf ein.
-- **Rückgängig-Verlauf:** zeigt die letzten Arbeitsschritte.
-- **Rechtsklick:** »Nochmal: …« wiederholt den letzten Befehl.
-- **Befehlssuche:** Die zuletzt benutzten Befehle stehen oben.
+- **Nächster Schritt:** Bei leerem Bauteil, fertiger Skizze, leerer Baugruppe und leerem Blatt schlägt eine Kachel den nächsten Schritt vor.
+- **Maßwerte ändern:** per Mausrad oder durch Ziehen am Feldnamen (mit Umschalt feiner, mit Strg gröber).
+- **Startseite:** Schnellstart-Kacheln für Bauteil, Rahmen, Blechteil, Baugruppe und Generatoren.
