@@ -951,12 +951,23 @@ export class App {
       longFired = false;
       if (down.touch && e.isPrimary) {
         const at = { clientX: e.clientX, clientY: e.clientY, preventDefault() {}, stopPropagation() {} };
-        longTimer = setTimeout(() => { if (!down || this.mode === "sketch") return; longFired = true; down = null; this.viewerContextMenu(at); }, LONG_PRESS_MS);
+        longTimer = setTimeout(() => {
+          if (!down || this.mode === "sketch") return;
+          longFired = true;
+          down = null;
+          // die Maus-Ersatzereignisse nach dem Loslassen würden das Menü sofort wieder schließen
+          window.addEventListener("mousedown", swallow, true);
+          window.addEventListener("click", swallow, true);
+          this.viewerContextMenu(at);
+        }, LONG_PRESS_MS);
       }
     });
     cv.addEventListener("pointermove", (e) => { if (down?.touch && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) clearTimeout(longTimer); });
     cv.addEventListener("pointercancel", () => { clearTimeout(longTimer); down = null; });
-    cv.addEventListener("pointerup", (e) => { clearTimeout(longTimer); if (longFired) { longFired = false; e.stopImmediatePropagation(); } }, { capture: true });
+    // auch auf dem Menü selbst: das Loslassen des Fingers ist keine Auswahl (das Menü liegt dann unter dem Finger)
+    const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+    const unswallow = () => { window.removeEventListener("mousedown", swallow, true); window.removeEventListener("click", swallow, true); };
+    cv.addEventListener("pointerup", (e) => { clearTimeout(longTimer); if (longFired) { longFired = false; e.stopImmediatePropagation(); setTimeout(unswallow, 500); } }, { capture: true });
     cv.addEventListener("contextmenu", (e) => e.preventDefault());
     // Doppelklick auf eine Fläche wählt das Feature, das sie erzeugt hat – mit Ziehgriff (Extrusion rein/raus)
     cv.addEventListener("dblclick", (e) => {

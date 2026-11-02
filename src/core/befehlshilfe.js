@@ -227,6 +227,7 @@ export const BEFEHLSHILFE = {
   ws_end: "Werkstattmodus beenden und zum normalen Menüband zurückkehren.",
   ws_fitSheet: "Ganzes Blatt in das Fenster einpassen.",
   ws_model: "Bauteil oder Baugruppe zu dieser Zeichnung öffnen.",
+  w_space: "Arbeitsbereich umschalten: Konstruktion, Zeichnung prüfen, Präsentation oder eine eigene gespeicherte Anordnung.",
   w_pside: "Eigenschaftenfeld auf die linke Seite legen.",
   q_grob: "Grobe Darstellung, schnell bei großen Baugruppen.",
   q_normal: "Normale Darstellungsqualität.",

@@ -197,7 +197,22 @@ try {
     const stillOpen = await page.locator(".marking, .menu").count();
     await page.keyboard.press("Escape");
     step("Tablet: langes Tippen öffnet das Menü", menu > 0 && stillOpen > 0, JSON.stringify({ menu, stillOpen }));
+  }  // Q11: Arbeitsbereich »Präsentation« blendet Panels und Raster aus, »Konstruktion« holt sie zurück
+  {
+    await rbClick("Arbeitsbereich ▾");
+    await page.locator(".menu button", { hasText: "Präsentation" }).click();
+    await page.waitForTimeout(400);
+    const pres = await evalApp(() => { const a = window.__werkcad; return { hide: a.prefs.get("oberflaeche.layout").hide, grid: a.prefs.get("ansicht.raster") }; });
+    await shot("07d-arbeitsbereich-praesentation");
+    await rbClick("Arbeitsbereich ▾");
+    const tick = await page.locator(".menu button", { hasText: "✓" }).allTextContents();
+    await page.locator(".menu button", { hasText: "Konstruktion" }).click();
+    await page.waitForTimeout(400);
+    const kon = await evalApp(() => { const a = window.__werkcad; return { hide: a.prefs.get("oberflaeche.layout").hide, grid: a.prefs.get("ansicht.raster") }; });
+    step("Arbeitsbereiche umschalten", pres.hide.length === 2 && pres.grid === false && tick.some((t) => /Präsentation/.test(t)) && kon.hide.length === 0 && kon.grid === true, JSON.stringify({ pres, tick, kon }));
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
   }
+
 
 
   // Dynamische Maßeingabe: Rechteck anfangen, 50 tippen, Tab, 25, Enter → bemaßtes Rechteck 50×25

@@ -28,6 +28,7 @@ import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generato
 import { insertGestellDialog, startGestellTool, changeMemberDialog, lengthenDialog, gestellInfoDialog } from "./gestell.js";
 import { evaluate } from "../core/expr.js";
 import { commandDef, inScope } from "../core/commands.js";
+import { workspaceMenu } from "./arbeitsbereiche.js";
 import { undoHistory } from "../core/zuletzt.js";
 import { rememberCommand } from "./commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
@@ -409,6 +410,7 @@ export class Ribbon {
             B("w_pside", "Eigenschaften links", "layout", { on: L.props === "left", run: () => set(movePanel(L, "props", L.props === "left" ? "right" : "left")) }),
             B("w_side", "Zeichnung daneben", "drawing", { on: !!app.side?.on, disabled: app.mode !== "part" && app.mode !== "assembly", run: () => app.side.toggle() }),
             B("w_werkstatt", "Werkstattmodus", "eye", { on: !!app.workshop, run: () => app.setWorkshop() }),
+            B("w_space", "Arbeitsbereich ▾", "layout", { run: (e) => workspaceMenu(app, e) }),
           ];
         })() },
         { label: "Sichtbarkeit", buttons: [B("v_showall", "Alle einblenden", "eye", { disabled: !app.viewer.hidden.size, run: () => app.showAllBodies() })] },
@@ -689,7 +691,8 @@ export class Ribbon {
     return null;
   }
   press(b, e) {
-    if (!/^(v_|dm_|clip_)/.test(b.id) && !b.finish && !b.items) {
+    // Aufklappknöpfe (▾) brauchen den Knopf als Anker – nicht für »Nochmal« merken
+    if (!/^(v_|dm_|clip_)/.test(b.id) && !b.finish && !b.items && !b.menu && !/▾$/.test(b.label)) {
       this.last = { b, mode: this.app.mode };
       const id = this.tipId(b);
       if (commandDef(id)) rememberCommand(id);
