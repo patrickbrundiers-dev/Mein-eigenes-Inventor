@@ -2,11 +2,14 @@
 // bleibt bedienbar) mit den Reitern Baugruppe, Bewegung, Übergang und Abhängigkeitssatz. »Passend« erkennt aus der
 // Auswahl, was gemeint ist: Fläche/Fläche, Achse oder Kante/Achse oder Kante, Punkt/Punkt, Punkt/Fläche, Kante/Fläche.
 // Erste Auswahl = Bauteil, das bewegt wird; zweite = Ziel. Vorhandene Abhängigkeiten werden im selben Stil bearbeitet.
+// Weniger Klicks (wie Inventor »Anwenden«): Aus dem Menüband gestartet bleibt der Befehl nach jeder Abhängigkeit aktiv,
+// die Lösung Passend/Fluchtend wird aus der Lage vorhergesagt, eine fixierte erste Auswahl tauscht mit dem Ziel, und die
+// zuletzt gesetzte Abhängigkeit lässt sich direkt umkehren, im Versatz ändern oder zurücknehmen.
 import { h, toast } from "./dom.js";
 import { uid } from "../core/examples.js";
 import { faceRef, axisRef, insertRef, endFaceFor, worldToLocal, solveAssembly, pointRef, edgeRef, frameRef, rigidRelation, CONSTRAINT_TYPES, AXIS_SOLUTIONS, valueKey } from "../core/asmsolve.js";
 import { MOTION_KINDS, motionProblem } from "../core/kinematik.js";
-import { matApply, matApplyDir, v3 } from "../core/geom.js";
+import { matApply, matApplyDir, v3, placementMatrix } from "../core/geom.js";
 
 export const PLACE_TYPES = [["passend", "Passend"], ["winkel", "Winkel"], ["tangential", "Tangential"], ["einfuegen", "Einfügen"], ["symmetrie", "Symmetrie"], ["starr", "Starr"]];
 const TABS = [["baugruppe", "Baugruppe"], ["bewegung", "Bewegung"], ["uebergang", "Übergang"], ["satz", "Abhängigkeitssatz"]];
@@ -15,7 +18,7 @@ const LEGACY = { gegen: ["passend", "passend"], buendig: ["passend", "fluchtend"
 
 /** Zustand der Platzierung (app.align) – alte Aufrufe mit mode werden übersetzt */
 export function placeState(a = {}) {
-  const st = { tab: "baugruppe", type: "passend", solution: "passend", axisSol: "unbestimmt", gap: "0", angle: "90", picks: [], persist: true, ratio: "1", motion: "drehung", sense: "gleich", ...a };
+  const st = { tab: "baugruppe", type: "passend", solution: "auto", axisSol: "unbestimmt", gap: "0", angle: "90", picks: [], persist: true, ratio: "1", motion: "drehung", sense: "gleich", ...a };
   if (a.mode && !a.type) {
     const [type, sol] = LEGACY[a.mode] || [a.mode, null];
     st.type = type;
@@ -94,6 +97,16 @@ function pickProblem(st, sel, i, picks) {
   return null;
 }
 
+/** Richtung im Weltsystem (Auswahl im System ihrer Komponente) */
+function worldDir(asm, cid, d) {
+  const comp = asm.components.find((c) => c.id === cid);
+  return comp ? v3.norm(matApplyDir(placementMatrix(comp.pos, comp.rot), d)) : v3.norm(d);
+}
+/** Vorhersage wie Inventor: zeigen die Flächen schon in dieselbe Richtung, ist »fluchtend« gemeint, sonst »passend« */
+export function predictPlaneSolution(asm, A, B) {
+  return v3.dot(worldDir(asm, A.cid, A.info.normal), worldDir(asm, B.cid, B.info.normal)) > 0.2 ? "fluchtend" : "passend";
+}
+
 /** Abhängigkeit aus den Auswahlen bauen. picks[0] = bewegt (b), picks[1] = Ziel (a) */
 export function buildConstraint(asm, st, picks) {
   const [B, A, C] = picks;
@@ -106,7 +119,10 @@ export function buildConstraint(asm, st, picks) {
     extra.rel = rigidRelation(CA, CB);
   } else if (type === "passend") {
     const k1 = B.kind, k2 = A.kind;
-    if (k1 === "plane" && k2 === "plane") { type = st.solution === "fluchtend" ? "buendig" : "gegen"; a = refOf(A, "plane"); b = refOf(B, "plane"); }
+    if (k1 === "plane" && k2 === "plane") {
+      const sol = st.solution === "auto" ? predictPlaneSolution(asm, A, B) : st.solution;
+      type = sol === "fluchtend" ? "buendig" : "gegen"; a = refOf(A, "plane"); b = refOf(B, "plane");
+    }
     else if ((k1 === "point" || k2 === "point") && isPointLike(k1) && isPointLike(k2)) { type = "punkt"; a = refOf(A, "point"); b = refOf(B, "point"); }
     else if (isAxisLike(k1) && isAxisLike(k2)) { type = "konzentrisch"; a = refOf(A); b = refOf(B); extra.solution = st.axisSol || "unbestimmt"; }
     else if ((k1 === "plane") !== (k2 === "plane")) {
@@ -167,10 +183,12 @@ export function placePick(app, hit) {
 function finishPlace(app) {
   const st = app.align, asm = app.activeDoc();
   const picks = st.picks;
+  // aus dem Menüband gestartet: Befehl bleibt aktiv (wie Inventor »Anwenden«), Esc oder »Fertig« beendet
+  const again = st.repeat && !st.edit && app.prefs?.get?.("baugruppe.abhaengigkeitFortsetzen") !== false;
   const done = (sel) => {
-    app.align = { ...placeState(st), picks: [], first: null, edit: null };
-    app.pick = null;
-    app.setHint("");
+    app.align = { ...placeState(st), picks: [], first: null, edit: null, last: again && sel.type !== "component" ? sel : null };
+    if (again) { app.pick = { kind: "align" }; app.setHint(`Gesetzt. Nächste: ${stepText(app.align)} · Esc beendet`); }
+    else { app.pick = null; app.setHint(""); }
     app.sel = sel;
     app.refreshSelectionHits();
     app.tree.render();
@@ -186,8 +204,10 @@ function finishPlace(app) {
     app.edit("Bewegung", () => { asm.motions = [...(asm.motions || []), m]; });
     return done({ type: "motion", id: m.id });
   }
-  const A = asm.components.find((c) => c.id === picks[1].cid), B = asm.components.find((c) => c.id === picks[0].cid);
+  let A = asm.components.find((c) => c.id === picks[1].cid), B = asm.components.find((c) => c.id === picks[0].cid);
   if (st.type !== "starr" && st.tab !== "satz" && A.fixed && B.fixed) { toast("Beide Bauteile sind fixiert"); return app.cancelPick(); }
+  // fixierte erste Auswahl: die andere Komponente bewegt sich (keine Fehlermeldung, kein Neuwählen)
+  if (B.fixed && !A.fixed && st.type !== "starr" && st.type !== "symmetrie") { [picks[0], picks[1]] = [picks[1], picks[0]]; [A, B] = [B, A]; }
   const r = buildConstraint(asm, st, picks);
   if (r.error) { st.picks = []; app.align.first = null; app.refreshSelectionHits(); app.props.render(); return toast(r.error, { kind: "err" }); }
   const con = r.con;
@@ -243,8 +263,8 @@ export function placeProps(P) {
   }));
   const body = [];
   if (st.tab === "baugruppe") {
-    body.push(P.seg("Typ", PLACE_TYPES, st.type, (v) => { st.type = v; st.solution = { passend: "passend", winkel: "ohne", tangential: "aussen", einfuegen: "entgegengesetzt" }[v] || ""; reset(); rerender(); }));
-    if (st.type === "passend") body.push(P.seg("Lösung Flächen", [["passend", "Passend (entgegengesetzt)"], ["fluchtend", "Fluchtend (ausgerichtet)"]], st.solution, (v) => { st.solution = v; rerender(); }),
+    body.push(P.seg("Typ", PLACE_TYPES, st.type, (v) => { st.type = v; st.solution = { passend: "auto", winkel: "ohne", tangential: "aussen", einfuegen: "entgegengesetzt" }[v] || ""; reset(); rerender(); }));
+    if (st.type === "passend") body.push(P.seg("Lösung Flächen", [["auto", "Automatisch (nach Lage)"], ["passend", "Passend (entgegengesetzt)"], ["fluchtend", "Fluchtend (ausgerichtet)"]], ["passend", "fluchtend"].includes(st.solution) ? st.solution : "auto", (v) => { st.solution = v; rerender(); }),
       P.seg("Lösung Achsen", AXIS_SOLUTIONS, st.axisSol || "unbestimmt", (v) => { st.axisSol = v; rerender(); }));
     if (st.type === "winkel") body.push(P.seg("Lösung", [["ohne", "Ungerichtet (0–180°)"], ["referenz", "Mit Referenzvektor (0–360°)"]], st.solution === "referenz" ? "referenz" : "ohne", (v) => { st.solution = v; if (st.picks.length > 2) st.picks.length = 2; rerender(); }));
     if (st.type === "tangential") body.push(P.seg("Lösung (Zylinder an Zylinder)", [["aussen", "Außen"], ["innen", "Innen"]], st.solution === "innen" ? "innen" : "aussen", (v) => { st.solution = v; rerender(); }));
@@ -271,16 +291,52 @@ export function placeProps(P) {
   } else {
     body.push(h("p", { class: "hint" }, "Abhängigkeitssatz: Die Koordinatensysteme der beiden Komponenten fallen zusammen – Ursprung und Achsen. Eine beliebige Fläche je Komponente anklicken."));
   }
-  return [P.section(st.edit ? "Abhängigkeit neu wählen" : "Abhängigkeit platzieren", tabs, st.tab === "uebergang" ? null : picksList, ...body,
+  return [P.section(st.edit ? "Abhängigkeit neu wählen" : "Abhängigkeit platzieren", tabs, lastPlaced(P, st), st.tab === "uebergang" ? null : picksList, ...body,
     h("div", { class: "btn-row" },
       st.picks.length ? h("button", { class: "btn", onclick: () => { reset(); rerender(); } }, "Auswahl zurücksetzen") : null,
-      h("button", { class: "btn", onclick: () => app.cancelPick() }, "Abbrechen")))];
+      h("button", { class: st.last ? "btn primary" : "btn", onclick: () => app.cancelPick() }, st.repeat && !st.edit ? "Fertig" : "Abbrechen")))];
 }
 
-/** Platzierung starten; opts {type, tab, solution, edit} */
+/** Lässt sich die Lösung mit einem Klick umkehren? Rückgabe Änderung oder null */
+export function flipOf(asm, c) {
+  if (c.type === "gegen" || c.type === "buendig") { const t = c.type === "gegen" ? "buendig" : "gegen"; return { type: t, name: c.name?.replace(/^[^:]+/, CONSTRAINT_TYPES[t]) }; }
+  if (c.type === "einfuegen") return { solution: c.solution === "ausgerichtet" ? "entgegengesetzt" : "ausgerichtet" };
+  if (c.type === "tangential" && c.a.axis && c.b.axis) return { solution: c.solution === "innen" ? "aussen" : "innen" };
+  if (c.type === "konzentrisch") {
+    let cur = c.solution;
+    if (cur !== "ausgerichtet" && cur !== "entgegengesetzt") cur = v3.dot(worldDir(asm, c.a.comp, c.a.d), worldDir(asm, c.b.comp, c.b.d)) >= 0 ? "ausgerichtet" : "entgegengesetzt";
+    return { solution: cur === "ausgerichtet" ? "entgegengesetzt" : "ausgerichtet" };
+  }
+  return null;
+}
+
+/** Zuletzt gesetzte Abhängigkeit im Platzieren-Bereich: umkehren, Versatz, zurücknehmen – ohne den Befehl zu verlassen */
+function lastPlaced(P, st) {
+  const app = P.app, asm = app.activeDoc();
+  if (!st.last || st.picks.length) return null;
+  const isMotion = st.last.type === "motion";
+  const c = isMotion ? (asm.motions || []).find((m) => m.id === st.last.id) : (asm.constraints || []).find((x) => x.id === st.last.id);
+  if (!c) return null;
+  const set = (label, fn) => app.edit(label, () => fn(c));
+  const err = !isMotion && app.asmErrors?.[c.id];
+  const flip = !isMotion && flipOf(asm, c);
+  const vk = !isMotion && valueKey(c.type);
+  return h("div", { class: "place-last" },
+    h("div", { class: "hint" }, "Zuletzt gesetzt: ", h("b", {}, c.name || "Abhängigkeit")),
+    err ? h("div", { class: "msg err" }, err) : null,
+    vk === "gap" ? P.expr("Versatz", c.gap || "0", (v) => set("Versatz", (x) => { x.gap = v; })) : vk === "angle" ? P.expr("Winkel", c.angle ?? "90", (v) => set("Winkel", (x) => { x.angle = v; }), { unit: "°", allowNeg: false }) : null,
+    h("div", { class: "btn-row" },
+      flip ? h("button", { class: "btn", title: "Lösung umkehren (passend ↔ fluchtend, Achsrichtung, außen ↔ innen)", onclick: () => set("Umkehren", (x) => Object.assign(x, flipOf(asm, x))) }, "Umkehren") : null,
+      h("button", { class: "btn", title: "Diese Abhängigkeit wieder entfernen", onclick: () => {
+        app.edit("Abhängigkeit zurücknehmen", () => { if (isMotion) asm.motions = asm.motions.filter((m) => m.id !== c.id); else asm.constraints = asm.constraints.filter((x) => x.id !== c.id); });
+        st.last = null; app.sel = null; app.refreshSelectionHits(); P.render();
+      } }, "Zurücknehmen")));
+}
+
+/** Platzierung starten; opts {type, tab, solution, edit, repeat} – repeat: Befehl bleibt nach jeder Abhängigkeit aktiv */
 export function beginPlace(app, opts = {}) {
   const prev = placeState(app.align || {});
-  app.align = { ...prev, picks: [], first: null, edit: null, ...opts };
+  app.align = { ...prev, picks: [], first: null, edit: null, last: null, repeat: false, ...opts };
   if (opts.mode) Object.assign(app.align, placeState({ mode: opts.mode }), { picks: [], gap: prev.gap, angle: prev.angle, persist: prev.persist });
   app.pick = { kind: "align" };
   app.setHint(stepText(app.align));

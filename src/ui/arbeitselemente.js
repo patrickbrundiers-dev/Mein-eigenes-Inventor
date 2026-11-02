@@ -3,7 +3,8 @@
 // Auswahl im 3D-Fenster und Sichtbarkeit. Die Rechnung steht in src/core/datums.js und src/core/datumpick.js.
 import { h, toast } from "./dom.js";
 import { resolveParams, evaluate } from "../core/expr.js";
-import { planeFrame, planeFromFace, v3 } from "../core/geom.js";
+import { planeFrame, planeFromFace, v3, toWorld } from "../core/geom.js";
+import { featureHandles, dragResult, sketchCenter } from "../core/griffe.js";
 import { resolveDatums, refResolver, MODES_OF, DEFAULT_MODE, isPlaneSnap, isAxisSnap, isPointSnap, isCurveSnap, polylineParam } from "../core/datums.js";
 import { inferDatum, circleFrom3, datumRefsOf, tangentSide, PICK_HINT } from "../core/datumpick.js";
 
@@ -70,6 +71,9 @@ export function datumDisplay(app, part) {
     const hd = handleOf(part, sel, map, ev);
     if (hd) out.push({ kind: "handle", p: hd.p, d: hd.d, size, key: "handle:" + sel.id, hover: hover === "handle:" + sel.id });
   }
+  // Gewähltes Feature mit Ziehgriff (Extrusion rein/raus, Bohrungstiefe, Profillänge)
+  const fsel = selId && !picking && part.features.find((f) => f.id === selId);
+  if (fsel) for (const g of gripsOf(app, part, fsel)) out.push({ kind: "handle", big: true, p: g.p, d: g.d, size, key: `fgriff:${fsel.id}:${g.which}`, hover: hover === `fgriff:${fsel.id}:${g.which}` });
   if (picking) {
     // Ursprungselemente zum Anklicken
     for (const [k, o] of Object.entries(ORIGIN)) {
@@ -98,6 +102,90 @@ function handleOf(part, f, map, ev) {
   if (!g) return null;
   const d = f.flip ? v3.mul(g.frame.normal, -1) : g.frame.normal;
   return { p: g.frame.origin, d, key: "distance" };
+}
+
+/** Ziehgriffe eines Features im Weltsystem (Skizzen-Rahmen aus dem letzten Rechenergebnis) */
+export function gripsOf(app, part, f) {
+  if (app.prefs?.get?.("ansicht.griffe") === false || !["extrude", "hole", "profile"].includes(f.type)) return [];
+  const ctx = { ev: evOf(part) };
+  if (f.sketch) {
+    const frame = app.results.get(part.id)?.sketches?.[f.sketch]?.frame;
+    const c = sketchCenter(part.features.find((x) => x.id === f.sketch), f.type === "hole");
+    if (!frame || !c) return [];
+    ctx.frame = frame;
+    ctx.center = toWorld(frame, c[0], c[1]);
+  }
+  return featureHandles(f, ctx);
+}
+
+/**
+ * Doppelklick auf eine Fläche: welches Feature hat sie erzeugt? Zuerst Features mit Griff, deren Endfläche hier liegt
+ * (Deckfläche einer Extrusion, Boden einer Sackbohrung), sonst das Feature des Körpers.
+ */
+export function featureAtFace(app, part, hit) {
+  if (!hit || hit.key !== "part") return null;
+  const n = hit.info?.normal, pt = hit.info?.point || hit.point;
+  if (n && pt) {
+    for (const f of [...part.features].reverse()) {
+      if (f.suppressed) continue;
+      for (const g of gripsOf(app, part, f)) {
+        if (Math.abs(Math.abs(v3.dot(v3.norm(n), g.d)) - 1) > 1e-4) continue;
+        if (Math.abs(v3.dot(v3.sub(pt, g.p), g.d)) < 1e-3) return f.id;
+      }
+    }
+  }
+  return app.results.get(part.id)?.bodies?.[hit.body]?.fid || null;
+}
+
+/** Feature-Griff ziehen: Vorschau rechnet laufend mit (eine Rechnung zugleich), Loslassen = ein Rückgängig-Schritt */
+function featureGripDrag(app, e, key) {
+  const [, fid, which] = key.split(":");
+  const part = app.activeDoc(), f = part.features.find((x) => x.id === fid);
+  const g = f && gripsOf(app, part, f).find((x) => x.which === which);
+  if (!g) return false;
+  const t0 = app.viewer.rayLineParam(e.clientX, e.clientY, g.p, g.d);
+  if (t0 == null) return true;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const cv = app.viewer.renderer.domElement;
+  app.viewer.controls.enabled = false;
+  cv.setPointerCapture?.(e.pointerId);
+  const old = JSON.stringify(f);
+  const orig = JSON.parse(old);
+  let changes = null, busy = false, again = false;
+  const preview = async () => {
+    if (busy) { again = true; return; }
+    busy = true;
+    try { const res = await app.buildPart(part); if (app.activeId === part.id) app.showPart(part, res); } catch { /* Vorschau darf scheitern */ }
+    busy = false;
+    if (again) { again = false; preview(); }
+  };
+  const label = { distance: "Abstand", distance2: "Abstand 2", depth: "Tiefe", length: "Länge" }[g.field];
+  const move = (m) => {
+    const t = app.viewer.rayLineParam(m.clientX, m.clientY, g.p, g.d);
+    if (t == null) return;
+    const next = dragResult(orig, which, g.value, t - t0, m.shiftKey ? 0.1 : 1);
+    if (JSON.stringify(next) === JSON.stringify(changes)) return;
+    changes = next;
+    Object.assign(f, orig, next);
+    const flip = next.mode && next.mode !== (orig.mode || "normal") ? " – Richtung umgekehrt" : "";
+    app.setHint(`${label} ${String(f[g.field]).replace(".", ",")} mm${flip} · Umschalt: 0,1-mm-Schritte`);
+    app.viewer.showDatums(datumDisplay(app, part));
+    preview();
+  };
+  const up = () => {
+    cv.removeEventListener("pointermove", move, true);
+    cv.removeEventListener("pointerup", up, true);
+    app.viewer.controls.enabled = true;
+    app.setHint("");
+    for (const k of Object.keys(f)) delete f[k];
+    Object.assign(f, JSON.parse(old));
+    if (changes && Object.entries(changes).some(([k, v]) => orig[k] !== v)) app.edit(`${label} ziehen`, () => Object.assign(f, changes));
+    else app.rebuild();
+  };
+  cv.addEventListener("pointermove", move, true);
+  cv.addEventListener("pointerup", up, true);
+  return true;
 }
 
 // ---------- Anklicken ----------
@@ -289,6 +377,7 @@ export function datumHandleDown(app, e) {
   if (app.mode !== "part" || app.pick || e.button !== 0) return false;
   const dh = app.viewer.pickDatum(e.clientX, e.clientY);
   if (!dh?.handle) return false;
+  if (dh.key?.startsWith("fgriff:")) return featureGripDrag(app, e, dh.key);
   const part = app.activeDoc(), f = part.features.find((x) => x.id === dh.key.slice(7));
   if (!f) return false;
   const ev = evOf(part);

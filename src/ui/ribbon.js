@@ -113,7 +113,7 @@ export class Ribbon {
         app.addFeature({ ...rest, src: "skizze", sketch: sk, side: "links", extent: "normal", length: "200", name: `Konturlasche ${n}` });
       },
       lasche: () => this.addSheetFeature(defaultLasche),
-      constraint: () => app.beginPlace(),
+      constraint: () => app.beginPlace({ repeat: true }),
       variants: () => app.props.variantDialog(),
       rules: () => app.props.rulesDialog(),
       macros: () => app.props.macroDialog(),

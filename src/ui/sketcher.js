@@ -20,6 +20,7 @@ import { defaultText, textBox, textPolylines, partTextVars, TEXT_STYLES } from "
 import { imageCorners, newImageEntity, rescaleImage } from "../core/skizzenbild.js";
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
+import { constraintOptions, SELECTION_CONSTRAINT_TOOLS } from "../core/bedingungsauswahl.js";
 
 const PT_R = 7, CURVE_R = 6;
 
@@ -57,18 +58,18 @@ export const SKETCH_TOOLS = {
   circlet3: "Kreis tangential an 3 Linien: drei Linien anklicken – der Kreis berührt alle drei (Inkreis, bei Bedarf Ankreis nahe der Klickstelle)",
   circle3: "Kreis durch 3 Punkte: drei Punkte auf dem Umfang klicken – getroffene Punkte werden an den Kreis gebunden",
   arct: "Tangentialer Bogen: Ende einer Linie klicken, dann den Endpunkt des Bogens – der Bogen schließt tangential an",
-  horizontal: "Horizontal: Linie oder zwei Punkte wählen",
-  vertical: "Vertikal: Linie oder zwei Punkte wählen",
-  coincident: "Koinzident: Punkt und Punkt/Linie/Kreis wählen",
-  parallel: "Parallel: zwei Linien wählen",
-  perpendicular: "Senkrecht: zwei Linien wählen",
-  equal: "Gleich: zwei Linien oder zwei Kreise wählen",
-  tangent: "Tangential: Linie/Bogen und Kreis/Bogen wählen",
-  fix: "Fixieren: Punkt wählen",
-  midpoint: "Mittelpunkt: Punkt, dann Linie wählen",
-  concentric: "Konzentrisch: zwei Kreise/Bögen wählen",
-  collinear: "Kollinear: zwei Linien wählen",
-  symmetric: "Symmetrisch: zwei Punkte, dann Symmetrielinie wählen",
+  horizontal: "Horizontal: Linie oder zwei Punkte wählen – oder erst wählen, dann Bedingung",
+  vertical: "Vertikal: Linie oder zwei Punkte wählen – oder erst wählen, dann Bedingung",
+  coincident: "Koinzident: Punkt und Punkt/Linie/Kreis wählen – oder erst wählen, dann Bedingung",
+  parallel: "Parallel: zwei Linien wählen – oder erst wählen, dann Bedingung",
+  perpendicular: "Senkrecht: zwei Linien wählen – oder erst wählen, dann Bedingung",
+  equal: "Gleich: zwei Linien oder zwei Kreise wählen – oder erst wählen, dann Bedingung",
+  tangent: "Tangential: Linie/Bogen und Kreis/Bogen wählen – oder erst wählen, dann Bedingung",
+  fix: "Fixieren: Punkt wählen – oder erst wählen, dann Bedingung",
+  midpoint: "Mittelpunkt: Punkt, dann Linie wählen – oder erst wählen, dann Bedingung",
+  concentric: "Konzentrisch: zwei Kreise/Bögen wählen – oder erst wählen, dann Bedingung",
+  collinear: "Kollinear: zwei Linien wählen – oder erst wählen, dann Bedingung",
+  symmetric: "Symmetrisch: zwei Punkte, dann Symmetrielinie wählen – oder erst wählen, dann Bedingung",
 };
 
 const GLYPH = { horizontal: "H", vertical: "V", parallel: "∥", perpendicular: "⊥", equal: "=", tangent: "T", tangentAt: "T", fix: "Fix", coincident: "•", pointOnLine: "∈", pointOnCircle: "∈", midpoint: "M", concentric: "◎", collinear: "K", symmetric: "S" };
@@ -156,6 +157,8 @@ export class Sketcher {
     sk.constraints.unshift({ id: "Of", type: "fix", p: "O", x: 0, y: 0 });
   }
   setTool(t) {
+    // erst wählen, dann Bedingung: passt die Auswahl, wird die Bedingung sofort gesetzt und die Auswahl bleibt bestehen
+    if (this.sel.size && SELECTION_CONSTRAINT_TOOLS.includes(t) && this.applySelectionConstraint(t)) return;
     this.cancelInput();
     this.tool = t;
     this.state = null;
@@ -1612,7 +1615,40 @@ export class Sketcher {
         this.app.changed({ rebuild: false });
       }
       this.render();
+      // Bedingungsleiste: passende Bedingungen zur Auswahl neben dem Mauszeiger
+      if (!d.moved && this.tool === "select" && d.hit.kind !== "dim") this.app.minibar?.showSketch?.(e.clientX, e.clientY);
     }
+  }
+
+  /** Passende Bedingungen zur aktuellen Auswahl; bei großen Skizzen ohne Vorprüfung (Rechenzeit) */
+  selectionOptions() {
+    const sk = this.sk;
+    if (!sk || !this.sel.size) return [];
+    const scope = this.scope();
+    const check = sk.points.length <= 150 ? (c) => checkNewConstraint(sk, { ...c, id: "__probe" }, scope) : null;
+    return constraintOptions(sk, [...this.sel], check);
+  }
+  /** Bedingung aus der Auswahl setzen (ein Rückgängig-Schritt, auch bei mehreren Elementen) */
+  applySelectionConstraint(type) {
+    const opt = constraintOptions(this.sk, [...this.sel]).find((o) => o.type === type);
+    if (!opt) return false;
+    return this.addConstraints(opt.list, opt.label) !== null;
+  }
+  /** Mehrere Bedingungen auf einmal: überzählige oder widersprüchliche fallen weg (mit Hinweis). Rückgabe Anzahl oder null */
+  addConstraints(list, label = "Abhängigkeit") {
+    if (list.length === 1) return this.addConstraint({ ...list[0] }) ? 1 : 0;
+    const work = JSON.parse(JSON.stringify(this.sk)), scope = this.scope(), ok = [];
+    let skipped = 0;
+    for (const c0 of list) {
+      const c = { ...c0, id: uid("k") };
+      let res = "ok";
+      try { res = checkNewConstraint(work, c, scope); } catch { /* ohne Vorprüfung */ }
+      if (res === "ok") { work.constraints.push(c); ok.push(c); } else skipped++;
+    }
+    if (!ok.length) { toast("Bedingung ist schon erfüllt oder widerspricht vorhandenen Bedingungen"); return 0; }
+    this.commit(label, (sk) => sk.constraints.push(...ok));
+    if (skipped) toast(`${label}: ${ok.length} gesetzt, ${skipped} übersprungen (schon erfüllt oder widersprüchlich)`);
+    return ok.length;
   }
   dblClick(e) {
     if (!this.active) return;

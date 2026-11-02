@@ -681,6 +681,14 @@ details.measure-more > summary { cursor: pointer; color: var(--ink-soft); margin
 .mini-btn { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid transparent; border-radius: var(--radius-s); background: none; color: var(--ink); cursor: pointer; }
 .mini-btn svg { width: 18px; height: 18px; }
 .mini-btn:hover { background: var(--dye-soft); border-color: color-mix(in srgb, var(--dye) 35%, transparent); color: var(--dye); }
+/* Skizze: Bedingungen zur Auswahl (Leiste am Mauszeiger und Abschnitt im Eigenschaftenfeld) */
+.sketch-bar { opacity: .85; }
+.con-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 4px; }
+.con-quick-btn { display: flex; align-items: center; gap: 6px; justify-content: flex-start; }
+.con-quick-btn svg { width: 16px; height: 16px; flex: none; }
+/* Baugruppe: zuletzt gesetzte Abhängigkeit im Platzieren-Bereich */
+.place-last { border: 1px solid var(--steel-3); border-radius: var(--radius-s); padding: 6px 8px; margin: 6px 0; background: var(--steel-1); }
+.place-last .btn-row { margin-top: 4px; }
 
 /* ---------- Eigenschaftenfeld: einklappbare Abschnitte, gekürzte Erklärungen ---------- */
 .section > h3.fold { cursor: pointer; user-select: none; border-radius: var(--radius-s); margin-left: -4px; padding-left: 4px; }
