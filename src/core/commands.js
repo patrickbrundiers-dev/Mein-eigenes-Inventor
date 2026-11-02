@@ -101,6 +101,7 @@ export const COMMANDS = [
   { id: "file.iges", label: "IGES exportieren (Flächen, NURBS)", group: "Export", scope: "3d", keywords: "iges igs export nurbs flächen austausch cad" },
   { id: "file.png", label: "Bild der Ansicht (PNG)", group: "Export", scope: "3d", keywords: "png bild screenshot foto ansicht export" },
   { id: "file.render", label: "Fotorealistisches Bild (PNG, hoch aufgelöst)", group: "Export", scope: "3d", keywords: "rendern render foto bild png hochauflösend" },
+  { id: "file.glb", label: "Als GLB exportieren (3D für Web, AR, Präsentation)", group: "Export", scope: "3d", keywords: "glb gltf web ar präsentation 3d modell" },
   { id: "file.listsXlsx", label: "Listen als Excel (.xlsx)", group: "Export", scope: "3d", keywords: "excel xlsx zuschnittliste stückliste nahtliste tabelle export" },
   { id: "file.angebot", label: "Angebotsblatt (PDF)", group: "Export", scope: "3d", keywords: "angebot kunde preis pdf bild" },
   { id: "file.ifc", label: "IFC exportieren (BIM, Stahlbau)", group: "Export", scope: "3d", keywords: "ifc bim ifc4 export stahlbau planer architekt tekla revit" },

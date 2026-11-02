@@ -28,6 +28,8 @@ import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generato
 import { insertGestellDialog, startGestellTool, changeMemberDialog, lengthenDialog, gestellInfoDialog } from "./gestell.js";
 import { evaluate } from "../core/expr.js";
 import { commandDef, inScope } from "../core/commands.js";
+import { undoHistory } from "../core/zuletzt.js";
+import { rememberCommand } from "./commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
 import { applyRibbonLayout, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
 import { formSubDialog, jointPick } from "./baugruppe.js";
@@ -47,6 +49,9 @@ export class Ribbon {
     this.actions = this.defineActions();
     this.tips = bindTooltips(this.el);
     this.keytips = new KeyTips(this);
+    this.last = null; // zuletzt benutzter Knopf (»Wiederholen« im Rechtsklick-Menü)
+    // Menüband an die Fensterbreite anpassen: Gruppen von rechts zu einem Knopf einklappen
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => this.fitGroups()).observe(this.el);
   }
 
   defineActions() {
@@ -622,6 +627,7 @@ export class Ribbon {
       h("div", { class: "rb-spacer" }),
       h("button", { class: "rb-search", title: `Befehl suchen (${this.kbd("app.search") || "Strg+K"})`, onclick: () => app.commands.exec("app.search") }, icon("search"), h("span", {}, "Befehl suchen"), this.kbd("app.search") ? h("span", { class: "kbd" }, this.kbd("app.search")) : null),
       h("button", { class: "icon-btn", title: "Rückgängig (Strg+Z)", disabled: !app.undoStack.length, onclick: () => app.undo() }, icon("undo")),
+      h("button", { class: "icon-btn rb-undo-list", title: "Rückgängig-Verlauf", "aria-label": "Rückgängig-Verlauf", disabled: !app.undoStack.length, onclick: (e) => this.undoMenu(e) }, "▾"),
       h("button", { class: "icon-btn", title: "Wiederholen (Strg+Y)", disabled: !app.redoStack.length, onclick: () => app.redo() }, icon("redo")),
       this.quickAccess(),
       this.docLabel = h("div", { class: "rb-doc" }));
@@ -634,11 +640,11 @@ export class Ribbon {
         const btns = h("div", { class: "rb-buttons" });
         // groß: alle (Standard), keine (small) oder die ersten g.big; der Rest klein in Spalten zu je 3
         const nBig = g.small ? 0 : g.big ?? g.buttons.length;
-        for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: b.run, disabled: b.disabled, ...this.tipAttrs(b) }, icon(b.icon), h("span", {}, ...breakable(t_(b.label)))));
+        for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: (e) => this.press(b, e), disabled: b.disabled, ...this.tipAttrs(b) }, icon(b.icon), h("span", {}, ...breakable(t_(b.label)))));
         const rest = g.buttons.slice(nBig);
         for (let i = 0; i < rest.length; i += 3) {
           btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + 3).map((b) =>
-            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), ...this.tipAttrs(b), "aria-label": t_(b.label), onclick: b.run, disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : t_(b.label)))));
+            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), ...this.tipAttrs(b), "aria-label": t_(b.label), onclick: (e) => this.press(b, e), disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : t_(b.label)))));
         }
         panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns, h("div", { class: "rb-group-label" }, t_(g.label))));
       }
@@ -649,6 +655,64 @@ export class Ribbon {
     this.tips.hide();
     this.app.minibar?.hide();
     this.el.replaceChildren(tabBar, panel);
+    this.fitGroups();
+  }
+  /** Knopf gedrückt: merken (Wiederholen, Befehlssuche »Zuletzt«), dann ausführen */
+  press(b, e) {
+    if (!/^(v_|dm_|clip_)/.test(b.id) && !b.finish && !b.items) {
+      this.last = { b, mode: this.app.mode };
+      const id = this.tipId(b);
+      if (commandDef(id)) rememberCommand(id);
+    }
+    return b.run?.(e);
+  }
+  /** Passt das Menüband nicht in die Breite, klappen Gruppen von rechts zu je einem Knopf ein (wie Inventor) */
+  fitGroups() {
+    const panel = this.el.querySelector(".rb-panel");
+    if (!panel || !panel.clientWidth) return;
+    this.closeFlyout();
+    const groups = [...panel.querySelectorAll(":scope > .rb-group")];
+    for (const g of groups) if (g.classList.contains("zu")) { g.classList.remove("zu"); g.querySelector(".rb-collapse")?.remove(); }
+    for (let i = groups.length - 1; i >= 0 && panel.scrollWidth > panel.clientWidth + 1; i--) this.collapseGroup(groups[i]);
+  }
+  collapseGroup(g) {
+    const btns = g.querySelector(".rb-buttons");
+    const first = btns?.querySelector("svg");
+    const label = g.dataset.group;
+    g.classList.add("zu");
+    g.prepend(h("button", { class: "rb-btn rb-collapse", "data-tip": label, "data-desc": "Gruppe eingeklappt, weil das Fenster schmal ist. Klick zeigt ihre Befehle.", "aria-haspopup": "true", "aria-expanded": "false", onclick: (e) => this.openFlyout(g, e.currentTarget) },
+      first ? first.cloneNode(true) : icon("plus"), h("span", {}, t_(label), " ▾")));
+  }
+  openFlyout(g, btn) {
+    if (this.flyout?.group === g) return this.closeFlyout();
+    this.closeFlyout();
+    const btns = g.querySelector(".rb-buttons");
+    const r = btn.getBoundingClientRect(), root = this.el.getBoundingClientRect();
+    const box = h("div", { class: "rb-flyout", role: "group", "aria-label": g.dataset.group, onclick: (e) => { if (e.target.closest("button")) setTimeout(() => this.closeFlyout(), 0); } }, btns);
+    box.style.top = r.bottom - root.top + 2 + "px";
+    this.el.append(box);
+    box.style.left = Math.max(4, Math.min(r.left - root.left, root.width - box.offsetWidth - 4)) + "px";
+    btn.setAttribute("aria-expanded", "true");
+    const away = (e) => { if (!box.contains(e.target) && e.target !== btn && !btn.contains(e.target)) this.closeFlyout(); };
+    const esc = (e) => { if (e.key === "Escape") { e.stopPropagation(); this.closeFlyout(); btn.focus(); } };
+    document.addEventListener("mousedown", away, true);
+    document.addEventListener("keydown", esc, true);
+    this.flyout = { group: g, box, btns, btn, off: () => { document.removeEventListener("mousedown", away, true); document.removeEventListener("keydown", esc, true); } };
+  }
+  closeFlyout() {
+    const f = this.flyout;
+    if (!f) return;
+    this.flyout = null;
+    f.off();
+    f.btn.setAttribute("aria-expanded", "false");
+    f.group.insertBefore(f.btns, f.group.querySelector(".rb-group-label"));
+    f.box.remove();
+  }
+  /** Rückgängig-Verlauf: Klick auf einen Eintrag nimmt bis einschließlich diesen Schritt zurück */
+  undoMenu(e) {
+    const app = this.app;
+    const r = e.currentTarget.getBoundingClientRect();
+    contextMenu(r.left, r.bottom, undoHistory(app.undoStack).map((x) => ({ label: x.steps === 1 ? x.label : `${x.label}  (${x.steps} Schritte)`, icon: "undo", run: () => { for (let i = 0; i < x.steps; i++) app.undo(); } })));
   }
   /** Pfeiltasten wechseln den Reiter (Tablisten-Muster), Pos1/Ende springen an den Rand */
   tabKey(e, tabs) {
@@ -710,7 +774,7 @@ export class Ribbon {
     return k ? `${b.label} (${k})` : b.label;
   }
   tipId(b) {
-    const special = { rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", replaceComp: "asm.replace", positions: "asm.positionSave", asmParams: "asm.params", compColors: "view.compColors", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", sdof: "sketch.dof", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
+    const special = { x_glb: "file.glb", x_render: "file.render", rebuildNow: "model.rebuild", measure: "tools.measure", collide: "asm.collide", problems: "model.problems", replaceComp: "asm.replace", positions: "asm.positionSave", asmParams: "asm.params", compColors: "view.compColors", finishSketch: "sketch.finish", constr: "sketch.construction", sclean: "sketch.clean", sdxf: "sketch.importDxf", gridsnap: "sketch.gridsnap", sdof: "sketch.dof", v_fitsel: "view.fitSel", v_persp: "view.perspective", clip_X: "view.clipX", clip_Y: "view.clipY", clip_Z: "view.clipZ" };
     return special[b.id] || (b.id.startsWith("t_") ? "sketch." + b.id.slice(2) : b.id.startsWith("v_") ? "view." + b.id.slice(2) : b.id.startsWith("dm_") ? "view.mode." + b.id.slice(3) : "part." + b.id);
   }
   /** Daten für die Tooltip-Karte (src/ui/tooltip.js); die Beschreibung auch für Bildschirmleser */
