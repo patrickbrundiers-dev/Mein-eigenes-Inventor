@@ -658,6 +658,15 @@ export class Ribbon {
     this.fitGroups();
   }
   /** Knopf gedrückt: merken (Wiederholen, Befehlssuche »Zuletzt«), dann ausführen */
+  /** Knopf des aktuellen Modus nach id (auch in »Weitere«-Menüs), z. B. für die Kachel »Nächster Schritt« */
+  findButton(id) {
+    for (const t of this.tabsFor(this.app.mode) || []) for (const g of t.groups || []) for (const b of g.buttons || []) {
+      if (b.id === id) return b;
+      const sub = (b.menu || []).find((x) => x.id === id);
+      if (sub) return sub;
+    }
+    return null;
+  }
   press(b, e) {
     if (!/^(v_|dm_|clip_)/.test(b.id) && !b.finish && !b.items) {
       this.last = { b, mode: this.app.mode };

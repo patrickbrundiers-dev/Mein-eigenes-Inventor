@@ -73,7 +73,7 @@ export class StartScreen {
     this.renderHead();
     this.renderRecent();
     offerTour(app);
-    this.el.replaceChildren(h("div", { class: "st" }, side, h("main", { class: "st-main" }, this.head, this.listEl)));
+    this.el.replaceChildren(h("div", { class: "st" }, side, h("main", { class: "st-main" }, this.quickStart(), this.head, this.listEl)));
   }
 
   renderRecent() {
@@ -103,6 +103,27 @@ export class StartScreen {
         h("div", { class: "st-thumb" }, e.preview ? h("img", { src: e.preview, alt: "" }) : h("div", { class: "st-nothumb" }, icon("part"), h("span", {}, "keine Vorschau"))),
         h("b", {}, e.name),
         h("small", {}, recentDate(e.mtime))))));
+  }
+
+  /** Q8: Schnellstart-Kacheln – Metallbau-Aufträge in zwei Klicks als neues Projekt */
+  quickStart() {
+    const app = this.app;
+    const fresh = async (fill) => { if (!(await app.files.confirmDiscard())) return; app.setProject(freshProject()); fill(); };
+    const tile = (ic, label, sub, run) => h("button", { class: "st-qtile", title: sub, onclick: () => fresh(run) }, icon(ic), h("b", {}, label), h("small", {}, sub));
+    const gen = (g, label, sub) => tile(g, label, sub, () => app.generatorAssembly(g));
+    return h("section", { class: "st-quick", "aria-label": "Neu beginnen" },
+      h("h2", {}, "Neu beginnen"),
+      h("div", { class: "st-qtiles" },
+        tile("part", "Bauteil", "Skizze und Körper", () => app.newPart()),
+        tile("frame", "Rahmen", "Profile nach Skizze", () => { app.newPart("Rahmen"); app.beginSketchCreation(); }),
+        tile("kantteil", "Blechteil", "Kantteil zum Abkanten", () => { app.newPart("Blechteil"); app.ribbon.run("kantteil"); }),
+        tile("assembly", "Baugruppe", "mit erstem Bauteil", () => app.startContent("baugruppe")),
+        gen("gelaender", "Geländer", "Pfosten, Handlauf"),
+        gen("treppe", "Treppe", "Wangen und Stufen"),
+        gen("tor", "Tor", "Drehtor mit Füllung"),
+        gen("balkon", "Balkon", "Konsole und Belag"),
+        gen("zaun", "Zaun", "Felder, Pfosten"),
+        gen("vordach", "Vordach", "auch als Carport")));
   }
 
   firstSteps() { firstSteps(this.app); }

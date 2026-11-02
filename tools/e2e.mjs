@@ -54,6 +54,56 @@ try {
   await page.waitForFunction(() => !!window.__werkcad, null, { timeout: 20000 });
   await shot("01-start");
   step("Startbildschirm", true);
+  // Q8: Schnellstart-Kacheln auf der Startseite – Geländer in zwei Klicks
+  {
+    const n = await page.locator("#start .st-qtile").count();
+    await evalApp(() => { window.__werkcad.dirty = false; });
+    await page.locator("#start .st-qtile", { has: page.locator("b", { hasText: /^Geländer$/ }) }).click();
+    await idle(120000);
+    const r = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(); return { mode: a.mode, gen: d?.generator?.gen, comps: d?.components?.length }; });
+    step("Startseite: Schnellstart Geländer", n === 10 && r.mode === "assembly" && r.gen === "gelaender" && r.comps > 0, JSON.stringify({ n, ...r }));
+  }
+  // Q6: »Nächster Schritt« im leeren Bauteil, Klick startet die Skizze; Q7: Wert per Mausrad und Ziehen
+  {
+    await evalApp(() => window.__werkcad.newPart("Nächster Schritt"));
+    await idle();
+    const ns = page.locator(".next-step:not([hidden])");
+    const vis = await ns.isVisible().catch(() => false);
+    const btns = await ns.locator(".ns-btn").allTextContents();
+    await shot("01b-naechster-schritt");
+    await ns.locator(".ns-btn", { hasText: "Skizze starten" }).click();
+    await page.waitForTimeout(200);
+    const pick = await evalApp(() => window.__werkcad.pick?.kind);
+    const hidden = !(await ns.isVisible().catch(() => false));
+    await evalApp(() => window.__werkcad.cancelPick());
+    step("Nächster Schritt: leeres Bauteil", vis && btns.length === 4 && pick === "sketchPlane" && hidden, JSON.stringify({ vis, btns, pick, hidden }));
+
+    await evalApp(() => window.__werkcad.ribbon.run("profile"));
+    await idle();
+    const tag = (v) => evalApp((val) => { document.querySelectorAll("[data-e2e-wert]").forEach((x) => x.removeAttribute("data-e2e-wert")); const i = [...document.querySelectorAll("#props input[data-expr]")].find((x) => x.value === val); i?.setAttribute("data-e2e-wert", "1"); i?.closest(".field")?.setAttribute("data-e2e-wert", "1"); return !!i; }, v);
+    await tag("1000");
+    const inp = page.locator("#props input[data-e2e-wert]");
+    const lenOf = () => evalApp(() => { const a = window.__werkcad; return a.activeDoc().features.find((f) => f.type === "profile")?.length; });
+    await inp.focus();
+    await inp.dispatchEvent("wheel", { deltaY: -100 });
+    await inp.dispatchEvent("wheel", { deltaY: -100 });
+    await page.waitForTimeout(700);
+    await idle();
+    const afterWheel = await lenOf();
+    const focused = await evalApp(() => document.activeElement?.dataset?.expr || null);
+    await tag("1002");
+    const lab = page.locator("#props .field[data-e2e-wert] > label.scrub");
+    const box = await lab.boundingBox();
+    await page.mouse.move(box.x + 5, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 20, box.y + box.height / 2, { steps: 3 });
+    await page.mouse.move(box.x + 36, box.y + box.height / 2, { steps: 3 });
+    await page.mouse.up();
+    await idle();
+    const afterDrag = await lenOf();
+    step("Wert per Mausrad und Ziehen", afterWheel === "1002" && !!focused && afterDrag === "1007", JSON.stringify({ afterWheel, focused, afterDrag }));
+    await evalApp(() => { window.__werkcad.dirty = false; });
+  }
   // Mini-Werkzeugleiste stört Klickfolgen im 3D-Fenster; eigener Schritt am Ende prüft sie
   await evalApp(() => window.__werkcad.prefs.set("ansicht.miniLeiste", false));
 

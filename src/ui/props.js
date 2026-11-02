@@ -39,6 +39,7 @@ import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, 
 import { END_CUT_SECTIONS, featureCutSettings, roundTube3D, SWIVEL_DEFAULT } from "../core/endcut.js";
 import { contourSketch } from "../core/massbild.js";
 import { resolvePathPoints, nextPointDefault } from "../core/profilzug.js";
+import { stepValue, isPlainNumber, dragSteps } from "../core/wertschritt.js";
 import { BIEGEROHR_SECTIONS, bendListCsv } from "../core/biegerohr.js";
 import { PUNCHES, bendSequence } from "../core/biegefolge.js";
 import { stretchCsv } from "../core/strecken.js";
@@ -110,7 +111,61 @@ export class Props {
     inp.addEventListener("input", check);
     inp.addEventListener("change", () => { if (check() && inp.value !== value) onCommit(inp.value.trim()); });
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
-    return this.field(label, h("div", { class: "expr-wrap" }, inp, badge));
+    const fld = this.field(label, h("div", { class: "expr-wrap" }, inp, badge));
+    this.scrubbable(fld, inp, check, (v) => { if (v !== value) { value = v; onCommit(v); } }, { allowNeg, allowZero });
+    return fld;
+  }
+  /**
+   * Q7: einfache Zahlen per Mausrad (Feld hat den Fokus) oder Ziehen am Feldnamen ändern; Umschalt = 0,1, Strg = 10.
+   * Rad: Übernahme nach kurzer Pause, der Fokus bleibt nach dem Neuzeichnen im Feld. Ziehen: Übernahme beim Loslassen.
+   */
+  scrubbable(fld, inp, check, commit, lim) {
+    inp.dataset.expr = fld.querySelector("label")?.textContent || "";
+    const lab = fld.querySelector("label");
+    let timer = null;
+    const apply = (n, e) => {
+      const next = stepValue(inp.value, n, { fine: e.shiftKey, coarse: e.ctrlKey || e.metaKey, ...lim });
+      if (next == null || next === inp.value.trim()) return false;
+      inp.value = next;
+      check();
+      return true;
+    };
+    inp.addEventListener("wheel", (e) => {
+      if (document.activeElement !== inp || !isPlainNumber(inp.value)) return;
+      e.preventDefault();
+      if (!apply(e.deltaY < 0 ? 1 : -1, e)) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => { if (check()) { this.keepFocus = inp.dataset.expr; commit(inp.value.trim()); } }, 350);
+    }, { passive: false });
+    if (!lab) return;
+    lab.classList.add("scrub");
+    lab.title = "Ziehen ändert den Wert (Umschalt fein, Strg grob); im Feld auch per Mausrad";
+    lab.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !isPlainNumber(inp.value) || inp.disabled || inp.readOnly) return;
+      e.preventDefault();
+      const start = inp.value.trim(), x0 = e.clientX, y0 = e.clientY;
+      let done = 0;
+      lab.setPointerCapture?.(e.pointerId);
+      document.body.classList.add("is-scrubbing");
+      const move = (m) => {
+        const n = dragSteps(m.clientX - x0, m.clientY - y0);
+        if (n === done) return;
+        inp.value = start;
+        if (n) apply(n, m); else check();
+        done = n;
+      };
+      const up = () => {
+        lab.removeEventListener("pointermove", move);
+        lab.removeEventListener("pointerup", up);
+        lab.removeEventListener("pointercancel", up);
+        document.body.classList.remove("is-scrubbing");
+        if (inp.value.trim() !== start && check()) commit(inp.value.trim());
+        else if (!done) inp.focus();
+      };
+      lab.addEventListener("pointermove", move);
+      lab.addEventListener("pointerup", up);
+      lab.addEventListener("pointercancel", up);
+    });
   }
   text(label, value, onCommit, { area = false, placeholder = "" } = {}) {
     const inp = h(area ? "textarea" : "input", { class: "inp", value: value ?? "", placeholder, rows: area ? 3 : undefined });
@@ -378,7 +433,23 @@ export class Props {
       } else { title = "Baugruppe"; body.append(...this.assemblyProps(d)); }
     }
     tidyPanel(body);
+    // Q7: nach Übernahme per Mausrad bleibt das Feld im Fokus und die Liste an ihrer Stelle
+    // (auch beim Neuzeichnen nach der fertigen Berechnung, solange das Feld noch den Fokus hat)
+    const ae = document.activeElement;
+    const sameLabel = (root, lab) => [...root.querySelectorAll("input[data-expr]")].filter((i) => i.dataset.expr === lab);
+    const keep = this.keepFocus || (ae?.dataset?.expr && this.el.contains(ae) ? ae.dataset.expr : null);
+    const idx = keep && ae?.dataset?.expr === keep && this.el.contains(ae) ? Math.max(0, sameLabel(this.el, keep).indexOf(ae)) : 0;
+    const oldBody = this.el.querySelector(".props-body"), top = [this.el.scrollTop, oldBody?.scrollTop || 0];
+    this.keepFocus = null;
     this.el.replaceChildren(h("div", { class: "pane-head" }, h("span", { class: "grow" }, title)), body);
+    if (keep) {
+      const again = sameLabel(body, keep)[idx];
+      if (again) {
+        this.el.scrollTop = top[0];
+        body.scrollTop = top[1];
+        again.focus({ preventScroll: true });
+      }
+    }
   }
 
   /** Bauteil als eigene Datei (M24): Verknüpfung anzeigen, aktualisieren, lösen – oder Datei anlegen */
