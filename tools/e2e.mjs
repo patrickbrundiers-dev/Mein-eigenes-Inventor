@@ -151,6 +151,69 @@ try {
   const bb = await evalApp(() => { const a = window.__werkcad; const r = a.results.get(a.activeId); return r.bodies[0].props.bbox; });
   step("Parameteränderung", Math.abs(bb[1][0] - bb[0][0] - 400) < 1e-3, JSON.stringify(bb));
   await shot("07-parameter-400");
+  // Q5: Zeichnung daneben – Blatt rechnet nach einer Modelländerung neu, Doppelklick öffnet die Zeichnung
+  {
+    await evalApp(() => window.__werkcad.side.toggle(true));
+    const svgSel = "#side-sheet:not([hidden]) .ss-svg";
+    await page.waitForSelector(svgSel, { timeout: 60000 });
+    await idle();
+    const lines0 = await page.locator(svgSel + " line, " + svgSel + " path, " + svgSel + " polyline").count();
+    const vw = await evalApp(() => document.getElementById("viewer").getBoundingClientRect().width / document.getElementById("stage").getBoundingClientRect().width);
+    await shot("07b-nebeneinander");
+    await evalApp(() => { const svg = document.querySelector("#side-sheet .ss-svg"); svg.dataset.alt = "1"; });
+    await evalApp(() => { const a = window.__werkcad; const p = a.activeDoc(); a.edit("Test", () => { p.params.find((x) => x.name === "Länge").expr = "300"; }); });
+    await idle();
+    await page.waitForFunction(() => { const s = document.querySelector("#side-sheet .ss-svg"); return s && !s.dataset.alt; }, null, { timeout: 60000 });
+    await page.locator("#side-sheet .ss-sheet").dblclick();
+    await idle();
+    const mode = await evalApp(() => window.__werkcad.mode);
+    const hiddenInDrawing = await evalApp(() => document.getElementById("side-sheet").hidden);
+    await evalApp(() => { const a = window.__werkcad; a.side.toggle(false); a.openDoc("beispiel_platte"); const p = a.activeDoc(); a.edit("Test", () => { p.params.find((x) => x.name === "Länge").expr = "400"; }); });
+    await idle();
+    step("Zeichnung daneben", lines0 > 20 && vw > 0.3 && vw < 0.7 && mode === "drawing" && hiddenInDrawing, JSON.stringify({ lines0, vw, mode, hiddenInDrawing }));
+  }  // Q9/Q10: Werkstattmodus (nur ansehen/messen, Ändern gesperrt) und langes Tippen = Rechtsklick-Menü
+  {
+    await evalApp(() => { window.__werkcad.openDoc("beispiel_platte"); window.__werkcad.setWorkshop(true); });
+    await idle();
+    const tabs = await page.locator("#ribbon .rb-tab").allTextContents();
+    const big = await page.locator("#ribbon .rb-btn").count();
+    const blocked = await evalApp(() => { const a = window.__werkcad, p = a.activeDoc(); const ok = a.edit("Test", () => { p.params.find((x) => x.name === "Länge").expr = "123"; }); return { ok, expr: p.params.find((x) => x.name === "Länge").expr }; });
+    await shot("07c-werkstattmodus");
+    await page.locator("#ribbon .rb-btn", { hasText: "Werkstattmodus beenden" }).click();
+    await idle();
+    const back = await evalApp(() => !window.__werkcad.workshop && !document.body.classList.contains("werkstatt"));
+    step("Werkstattmodus", tabs.length === 1 && /Werkstatt/.test(tabs[0]) && big >= 8 && blocked.ok === false && blocked.expr === "400" && back, JSON.stringify({ tabs, big, blocked, back }));
+
+    const box = await page.locator("#viewer canvas").boundingBox();
+    const x = box.x + 60, y = box.y + box.height - 60;
+    // echte Fingereingabe über das DevTools-Protokoll (Zeigerereignisse vom Typ »touch«)
+    const cdp = await page.context().newCDPSession(page);
+    const menu0 = await page.locator(".marking, .menu").count();
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    await page.waitForTimeout(800);
+    const menu = (await page.locator(".marking, .menu").count()) - menu0;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await page.waitForTimeout(200);
+    const stillOpen = await page.locator(".marking, .menu").count();
+    await page.keyboard.press("Escape");
+    step("Tablet: langes Tippen öffnet das Menü", menu > 0 && stillOpen > 0, JSON.stringify({ menu, stillOpen }));
+  }  // Q11: Arbeitsbereich »Präsentation« blendet Panels und Raster aus, »Konstruktion« holt sie zurück
+  {
+    await rbClick("Arbeitsbereich ▾");
+    await page.locator(".menu button", { hasText: "Präsentation" }).click();
+    await page.waitForTimeout(400);
+    const pres = await evalApp(() => { const a = window.__werkcad; return { hide: a.prefs.get("oberflaeche.layout").hide, grid: a.prefs.get("ansicht.raster") }; });
+    await shot("07d-arbeitsbereich-praesentation");
+    await rbClick("Arbeitsbereich ▾");
+    const tick = await page.locator(".menu button", { hasText: "✓" }).allTextContents();
+    await page.locator(".menu button", { hasText: "Konstruktion" }).click();
+    await page.waitForTimeout(400);
+    const kon = await evalApp(() => { const a = window.__werkcad; return { hide: a.prefs.get("oberflaeche.layout").hide, grid: a.prefs.get("ansicht.raster") }; });
+    step("Arbeitsbereiche umschalten", pres.hide.length === 2 && pres.grid === false && tick.some((t) => /Präsentation/.test(t)) && kon.hide.length === 0 && kon.grid === true, JSON.stringify({ pres, tick, kon }));
+    await page.locator("#ribbon .rb-tab", { hasText: "3D-Modell" }).click();
+  }
+
+
 
   // Dynamische Maßeingabe: Rechteck anfangen, 50 tippen, Tab, 25, Enter → bemaßtes Rechteck 50×25
   {

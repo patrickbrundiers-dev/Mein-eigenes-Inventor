@@ -6,6 +6,7 @@ import { Sketcher } from "./sketcher.js";
 import { MiniBar } from "./minibar.js";
 import { DirectBar, directFaceRef } from "./direkt.js";
 import { NextStep } from "./naechster.js";
+import { SideBySide } from "./nebeneinander.js";
 import { DocTabs } from "./doctabs.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
@@ -109,6 +110,7 @@ export class App {
     if (this.prefs.warnings.length) setTimeout(() => toast("Einstellungen: " + this.prefs.warnings[0] + (this.prefs.warnings.length > 1 ? ` (+${this.prefs.warnings.length - 1} weitere)` : ""), { kind: "err", timeout: 8000 }), 300);
     this.buildViewTools();
     this.nextStep = new NextStep(this);
+    this.side = new SideBySide(this);
     this.bindViewerEvents();
     this.bindKeys();
     this.setMode("start");
@@ -283,7 +285,7 @@ export class App {
     asm.components = [...groups.flatMap((gr, i) => gr.bodies.map((b) => ({ id: prev.get(b.key)?.id || uid("c"), part: parts[i].id, name: b.name, pos: b.pos, rot: b.rot, fixed: true, genKey: b.key, ...(prev.get(b.key)?.hidden ? { hidden: true } : {}) }))), ...own];
     asm.constraints = (asm.constraints || []).filter((c) => asm.components.some((x) => x.id === c.a?.comp) && asm.components.some((x) => x.id === c.b?.comp));
   }
-  newDrawing(source) {
+  newDrawing(source, { open = true } = {}) {
     const src = source || (this.activeDoc() && this.activeDoc().kind !== "drawing" ? { kind: this.activeDoc().kind, id: this.activeId } : null);
     const name = this.docName("drawing", { quelle: src ? this.doc(src.id).name : "" });
     const d = this.withDrawingDefaults(newDrawing(name, src));
@@ -294,7 +296,7 @@ export class App {
       // Werkstoff bleibt leer: das Schriftfeld zeigt dann den aktuellen Werkstoff des Modells
       d.pendingAutoViews = true;
     }
-    return this.addDoc(d);
+    return this.addDoc(d, { open });
   }
   /** Bauteile einer Baugruppe (ohne doppelte, auch ausgeblendete), fertig berechnet */
   async builtParts(asm) {
@@ -471,6 +473,7 @@ export class App {
    * vor der Änderung wiederhergestellt (kein halb geändertes Modell). Rückgabe: true bei Erfolg.
    */
   edit(label, fn, opts) {
+    if (this.workshop) { toast("Werkstattmodus: nur ansehen und messen. Zum Ändern den Werkstattmodus beenden."); return false; }
     const redo = this.redoStack;
     this.checkpoint(label);
     // Verknüpfte Bauteile (M24) sind schreibgeschützt – geändert wird in ihrer Datei
@@ -533,6 +536,7 @@ export class App {
     const t0 = performance.now();
     const res = await this.kernel.build(part, this.quality);
     this.results.set(part.id, { ...res, hash: JSON.stringify(part).length });
+    this.buildRev = (this.buildRev || 0) + 1; // »Nebeneinander« rechnet das Blatt danach neu
     if (this.prefs.get("kernel.protokoll")) this.buildLog.add(buildEntry(part, res, performance.now() - t0));
     return res;
   }
@@ -938,7 +942,32 @@ export class App {
     let down = null;
     // Griff eines Arbeitselements ziehen (vor der Kamerasteuerung, die sonst dreht)
     cv.addEventListener("pointerdown", (e) => { if (datumHandleDown(this, e)) down = null; }, { capture: true });
-    cv.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, b: e.button, t: performance.now() }; cv.focus(); });
+    // Tablet (Q10): ein Finger dreht (OrbitControls), langes Tippen öffnet das Rechtsklick-Menü
+    let longTimer = 0, longFired = false;
+    cv.addEventListener("pointerdown", (e) => {
+      down = { x: e.clientX, y: e.clientY, b: e.button, t: performance.now(), touch: e.pointerType === "touch" };
+      cv.focus();
+      clearTimeout(longTimer);
+      longFired = false;
+      if (down.touch && e.isPrimary) {
+        const at = { clientX: e.clientX, clientY: e.clientY, preventDefault() {}, stopPropagation() {} };
+        longTimer = setTimeout(() => {
+          if (!down || this.mode === "sketch") return;
+          longFired = true;
+          down = null;
+          // die Maus-Ersatzereignisse nach dem Loslassen würden das Menü sofort wieder schließen
+          window.addEventListener("mousedown", swallow, true);
+          window.addEventListener("click", swallow, true);
+          this.viewerContextMenu(at);
+        }, LONG_PRESS_MS);
+      }
+    });
+    cv.addEventListener("pointermove", (e) => { if (down?.touch && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) clearTimeout(longTimer); });
+    cv.addEventListener("pointercancel", () => { clearTimeout(longTimer); down = null; });
+    // auch auf dem Menü selbst: das Loslassen des Fingers ist keine Auswahl (das Menü liegt dann unter dem Finger)
+    const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+    const unswallow = () => { window.removeEventListener("mousedown", swallow, true); window.removeEventListener("click", swallow, true); };
+    cv.addEventListener("pointerup", (e) => { clearTimeout(longTimer); if (longFired) { longFired = false; e.stopImmediatePropagation(); setTimeout(unswallow, 500); } }, { capture: true });
     cv.addEventListener("contextmenu", (e) => e.preventDefault());
     // Doppelklick auf eine Fläche wählt das Feature, das sie erzeugt hat – mit Ziehgriff (Extrusion rein/raus)
     cv.addEventListener("dblclick", (e) => {
@@ -954,7 +983,7 @@ export class App {
     const boxEl = h("div", { class: "view-box", hidden: true });
     document.getElementById("stage").append(boxEl);
     const boxRect = (e) => { const r = cv.getBoundingClientRect(); return { x0: down.x - r.left, y0: down.y - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, ox: r.left - boxEl.parentElement.getBoundingClientRect().left, oy: r.top - boxEl.parentElement.getBoundingClientRect().top }; };
-    const boxAllowed = () => this.mode === "part" && !this.pick && down?.b === 0;
+    const boxAllowed = () => this.mode === "part" && !this.pick && down?.b === 0 && !down.touch; // Finger ziehen dreht
     cv.addEventListener("pointermove", (e) => {
       if (!down || !boxAllowed() || Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) return;
       const b = boxRect(e);
@@ -964,7 +993,7 @@ export class App {
     });
     cv.addEventListener("pointerup", (e) => {
       if (!down) return;
-      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > (down.touch ? 10 : 4);
       if (moved && !boxEl.hidden) {
         const b = boxRect(e);
         boxEl.hidden = true;
@@ -1361,6 +1390,18 @@ export class App {
   }
 
   // ---------- Oberfläche ----------
+  /**
+   * Werkstattmodus (Q9): große Schrift und Knöpfe, hoher Kontrast, ein eigenes Menüband nur zum Ansehen, Messen und für
+   * Listen. Ändern ist gesperrt (edit), bis der Modus endet. Gedacht für Monitor oder Tablet an der Maschine.
+   */
+  setWorkshop(on = !this.workshop) {
+    this.workshop = !!on;
+    document.body.classList.toggle("werkstatt", this.workshop);
+    if (this.workshop) { if (this.pick && this.pick.kind !== "measure") this.cancelPick(); if (this.mode === "sketch") this.finishSketch?.(); }
+    this.refreshAll();
+    requestAnimationFrame(() => this.viewer.resize());
+    toast(this.workshop ? "Werkstattmodus: ansehen, messen, Listen. Ändern ist gesperrt." : "Werkstattmodus beendet", { timeout: 2500 });
+  }
   refreshAll() {
     this.ribbon.render();
     this.tree.render();
@@ -1423,6 +1464,7 @@ export class App {
     parts.push(h("span", {}, "mm · Grad"));
     this.statusEl.replaceChildren(...parts);
     this.nextStep?.update();
+    this.side?.update();
   }
   buildViewTools() {
     const mk = (label, run, title) => h("button", { onclick: run, title }, label);
@@ -1608,6 +1650,7 @@ function defaultHint(mode, mouse) {
     default: return "";
   }
 }
+const LONG_PRESS_MS = 550; // Tablet: langes Tippen = Rechtsklick
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
 function safeNum(g) { try { return evaluate(String(g ?? "0"), {}); } catch { return 0; } }
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);

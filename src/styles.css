@@ -839,3 +839,46 @@ body.is-scrubbing, body.is-scrubbing * { cursor: ew-resize !important; user-sele
 .st-qtile small { font: var(--fs-s) var(--ui); color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .st-qtile:hover, .st-qtile:focus-visible { border-color: var(--dye); box-shadow: 0 2px 10px rgb(0 0 0 / .08); }
 .st-quick + .st-head { padding-top: 14px; }
+
+/* Nebeneinander (Q5): Modell links, Zeichnung rechts */
+#stage { --split-w: 45%; }
+#stage.split #viewer { right: var(--split-w); }
+#stage.split .view-tools { right: calc(var(--split-w) + 10px); }
+#stage.split .next-step { left: calc((100% - var(--split-w)) / 2); }
+#side-sheet { position: absolute; top: 0; right: 0; bottom: 0; width: var(--split-w); display: flex; flex-direction: column; background: var(--steel-1, #eef1f5); border-left: 1px solid var(--steel-3); z-index: 5; }
+#side-sheet[hidden] { display: none; }
+#side-sheet .ss-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 1; }
+#side-sheet .ss-grip:hover { background: color-mix(in srgb, var(--dye) 25%, transparent); }
+#side-sheet .ss-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--steel-3); background: var(--surface); font-size: var(--fs-s); }
+#side-sheet .ss-head svg { width: 16px; height: 16px; color: var(--dye); }
+#side-sheet .ss-head .ss-pick { max-width: 60%; }
+#side-sheet .ss-body { position: relative; flex: 1; min-height: 0; padding: 14px; }
+#side-sheet .ss-sheet { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; cursor: zoom-in; }
+#side-sheet .ss-svg { width: 100%; height: 100%; filter: drop-shadow(0 2px 8px rgb(0 0 0 / .15)); }
+#side-sheet .ss-empty { text-align: center; color: var(--ink-soft); cursor: default; }
+#side-sheet .ss-empty svg { width: 48px; height: 48px; color: var(--steel-3); }
+#side-sheet .ss-state { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 4px 10px; border-radius: var(--radius-m); background: var(--surface); border: 1px solid var(--steel-3); font-size: var(--fs-s); color: var(--ink-soft); }
+#side-sheet .ss-state[hidden] { display: none; }
+
+/* Werkstattmodus (Q9): große Schrift und Knöpfe, hoher Kontrast, Ändern gesperrt */
+body.werkstatt { --fs-s: 15px; --fs-m: 17px; --fs-l: 20px; --ink: #000; --ink-soft: #1d2731; }
+body.werkstatt #ribbon .rb-btn { min-width: 92px; min-height: 84px; font-size: 15px; }
+body.werkstatt #ribbon .rb-btn svg { width: 36px; height: 36px; }
+body.werkstatt #ribbon .rb-tab { font-size: 16px; padding-inline: 16px; }
+body.werkstatt #ribbon .rb-group-label { font-size: 13px; }
+body.werkstatt #browser .node { min-height: 34px; font-size: 16px; }
+body.werkstatt #props :is(input, select, textarea) { pointer-events: none; background: transparent; border-color: transparent; }
+body.werkstatt .view-tools button { font-size: 16px; padding: 10px 14px; }
+body.werkstatt #status { font-size: 15px; }
+html[data-theme="dark"] body.werkstatt { --ink: #fff; --ink-soft: #e4ebf2; }
+
+/* Tablet (Q10): größere Ziele bei Fingerbedienung, Gesten im 3D-Fenster nicht vom Browser abfangen */
+#viewer canvas { touch-action: none; }
+@media (pointer: coarse) {
+  #ribbon .rb-btn { min-height: 72px; min-width: 64px; }
+  #ribbon .rb-small { min-height: 36px; }
+  #ribbon .rb-tab { padding-block: 8px; }
+  #browser .node { min-height: 36px; }
+  .view-tools button { padding: 10px 12px; }
+  .icon-btn { min-width: 36px; min-height: 36px; }
+}

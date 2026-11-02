@@ -417,7 +417,9 @@ export class Viewer {
     const size = box.getSize(new THREE.Vector3()).length() || 100;
     const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target).normalize();
     this.controls.target.copy(c);
-    this.viewHalf = size * 0.62;
+    // schmales Fenster (z. B. »Zeichnung daneben«): nach der Breite einpassen, sonst ragt das Modell seitlich hinaus
+    const aspect = (this.container.clientWidth || 1) / (this.container.clientHeight || 1);
+    this.viewHalf = size * 0.62 * Math.max(1, 1 / aspect);
     const dist = this.camera.isPerspectiveCamera ? this.viewHalf / Math.tan((this.persp.fov * Math.PI) / 360) : 5000;
     this.camera.position.copy(c.clone().add(dir.multiplyScalar(dist)));
     this.ortho.zoom = 1;
