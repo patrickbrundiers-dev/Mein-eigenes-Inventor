@@ -1,7 +1,8 @@
-**Neu in 0.33.0**
+**Neu in 0.34.0**
 
-PBCAD ist spürbar schneller geworden.
+Viele Arbeitsschritte brauchen jetzt weniger Klicks.
 
-- **Generatoren:** bauen etwa 2,4-mal so schnell (Spindeltreppe 27 → 11 s, Geländer mit Staketen 11 → 4 s).
-- **Maßänderungen:** Nur die geänderten Teile werden neu berechnet (Treppe 2,8 → 0,3 s).
-- **Programmstart:** Das Programm startet schneller, weil der Programmcode zwischengespeichert wird.
+- **Skizze:** Bedingungen setzt du direkt aus der Auswahl, über eine Leiste am Mauszeiger.
+- **Baugruppe:** Der Befehl Abhängigkeit bleibt aktiv, wählt Passend oder Fluchtend selbst und hat »Umkehren«.
+- **Ziehgriffe:** Den Pfeil an der Extrusion ziehst du rein oder raus (über null kippt die Richtung). Bohrungstiefe und Profillänge haben eigene Griffe.
+- **Auswahl:** Ein Doppelklick auf eine Fläche wählt ihr Feature.
