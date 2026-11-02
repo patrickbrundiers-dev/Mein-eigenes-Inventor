@@ -3960,6 +3960,65 @@ try {
       && pre.h === 1 && pre.tool === "select" && pre.ok && !quick2.includes("horizontal") && after.h === 1 && after.fix >= 3 && after.dy2 < 1e-6, JSON.stringify({ bar, quick, par, pre, quick2, after }));
   }
 
+  // Ziehgriff an der Extrusion: Pfeil raus/rein ziehen (mit Vorschau), über null kippt die Richtung; Doppelklick auf Deckfläche
+  {
+    await evalApp(() => {
+      const a = window.__werkcad;
+      a.newPart("Griffe");
+      const sk = a.createSketch({ ref: "XY" });
+      a.sketcher.commit("Rechteck", (s) => {
+        s.points.push({ id: "g1", x: 0, y: 0 }, { id: "g2", x: 80, y: 0 }, { id: "g3", x: 80, y: 50 }, { id: "g4", x: 0, y: 50 });
+        s.entities.push({ id: "gl1", type: "line", p1: "g1", p2: "g2" }, { id: "gl2", type: "line", p1: "g2", p2: "g3" }, { id: "gl3", type: "line", p1: "g3", p2: "g4" }, { id: "gl4", type: "line", p1: "g4", p2: "g1" });
+      });
+      a.finishSketch();
+      a.addFeature({ type: "extrude", sketch: sk.id, distance: "20", mode: "normal", op: "join" });
+    });
+    await idle();
+    await page.waitForTimeout(800);
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await page.waitForTimeout(400);
+    const grip = () => evalApp(() => {
+      const v = window.__werkcad.viewer, r = v.renderer.domElement.getBoundingClientRect();
+      v.showDatums(window.__werkcad.datumList(window.__werkcad.activeDoc()));
+      const o = v.datumGroup?.children.find((x) => x.userData.handleSeg && /^fgriff:/.test(x.userData.datumKey || ""));
+      if (!o) return null;
+      const [a, b] = o.userData.handleSeg.map((p) => v.worldToScreen(p));
+      const [A, B] = o.userData.handleSeg, mm = Math.hypot(B[0] - A[0], B[1] - A[1], B[2] - A[2]);
+      return { x: r.left + (a[0] + b[0]) / 2, y: r.top + (a[1] + b[1]) / 2, dx: b[0] - a[0], dy: b[1] - a[1], pxmm: Math.hypot(b[0] - a[0], b[1] - a[1]) / mm };
+    });
+    const g0 = await grip();
+    const drag = async (g, mm) => {
+      const L = Math.hypot(g.dx, g.dy), ux = g.dx / L, uy = g.dy / L, px = mm * g.pxmm;
+      await page.mouse.move(g.x, g.y); await page.mouse.down();
+      for (let i = 1; i <= 6; i++) await page.mouse.move(g.x + (ux * px * i) / 6, g.y + (uy * px * i) / 6);
+      await page.mouse.up();
+      await idle();
+    };
+    await drag(g0, 15);
+    const out1 = await evalApp(() => { const f = window.__werkcad.activeDoc().features.at(-1); return { d: f.distance, mode: f.mode }; });
+    await shot("50-extrusion-griff");
+    const g1 = await grip();
+    await drag(g1, -60);
+    const out2 = await evalApp(() => { const a = window.__werkcad, f = a.activeDoc().features.at(-1), r = a.results.get(a.activeId); return { d: f.distance, mode: f.mode, ok: r?.status?.[f.id]?.ok, undo: a.undoStack.at(-1)?.label || a.undoStack.at(-1)?.[0] || null }; });
+    // Doppelklick auf die Fläche wählt die Extrusion
+    await evalApp(() => { const a = window.__werkcad; a.selectFeature(null); a.viewer.setView("iso", { animate: false }); a.viewer.fit(); });
+    await page.waitForTimeout(300);
+    const vb = await page.locator("#viewer canvas").first().boundingBox();
+    const fp = await evalApp(([x0, y0, w, hh]) => {
+      const v = window.__werkcad.viewer;
+      for (const fy of [0.5, 0.45, 0.55, 0.4, 0.6]) for (const fx of [0.5, 0.45, 0.55, 0.4, 0.6]) {
+        const hit = v.pick(x0 + w * fx, y0 + hh * fy, { edges: false, faces: true });
+        if (hit?.info?.type === "PLANE") return { x: x0 + w * fx, y: y0 + hh * fy };
+      }
+      return null;
+    }, [vb.x, vb.y, vb.width, vb.height]);
+    if (fp) await page.mouse.dblclick(fp.x, fp.y);
+    await page.waitForTimeout(300);
+    const dbl = await evalApp(() => { const a = window.__werkcad; return { sel: a.sel?.type, ft: a.sel && a.feature(a.sel.id)?.type }; });
+    step("Ziehgriff an der Extrusion (raus, rein über null), Doppelklick wählt Feature", !!g0 && Math.abs(Number(out1.d) - 35) <= 1 && out1.mode === "normal"
+      && out2.mode === "reverse" && Number(out2.d) > 20 && Number(out2.d) < 30 && out2.ok && dbl.sel === "feature" && ["extrude", "sketch"].includes(dbl.ft), JSON.stringify({ g0, out1, out2, dbl }));
+  }
+
   // Bedienung: Tooltip-Karte im Menüband, Markierungsmenü (Rechtsklick), Mini-Werkzeugleiste an der Auswahl
   {
     await evalApp(() => { const a = window.__werkcad; a.openDoc("beispiel_platte"); });

@@ -880,14 +880,24 @@ export class Viewer {
         l.computeLineDistances();
       } else if (d.kind === "handle") {
         // Griff: Pfeil längs d, Spitze als Kegel (bleibt bei jedem Zoom etwa gleich groß)
-        const len = 40 / ppu, o = new THREE.Vector3(...d.p), dir = new THREE.Vector3(...d.d).normalize();
+        // Feature-Griffe (Extrusion …) etwas größer und mit Schaft als Zylinder, damit man sie im Modell gut sieht und trifft
+        const big = !!d.big, len = (big ? 56 : 40) / ppu, o = new THREE.Vector3(...d.p), dir = new THREE.Vector3(...d.d).normalize();
         tag(new THREE.Line(new THREE.BufferGeometry().setFromPoints([o, o.clone().addScaledVector(dir, len)]), new THREE.LineBasicMaterial({ color: 0xef7d1a, depthTest: false })));
-        const cone = tag(new THREE.Mesh(new THREE.ConeGeometry(5 / ppu, 14 / ppu, 16), new THREE.MeshBasicMaterial({ color: d.hover ? 0xffb35c : 0xef7d1a, depthTest: false })));
+        if (big) {
+          const shaft = tag(new THREE.Mesh(new THREE.CylinderGeometry(1.6 / ppu, 1.6 / ppu, len, 8), new THREE.MeshBasicMaterial({ color: d.hover ? 0xffb35c : 0xef7d1a, depthTest: false })));
+          shaft.position.copy(o.clone().addScaledVector(dir, len / 2));
+          shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+          shaft.renderOrder = 10;
+          const foot = tag(new THREE.Mesh(new THREE.SphereGeometry(3.5 / ppu, 12, 8), new THREE.MeshBasicMaterial({ color: 0xef7d1a, depthTest: false })));
+          foot.position.copy(o);
+          foot.renderOrder = 10;
+        }
+        const cone = tag(new THREE.Mesh(new THREE.ConeGeometry((big ? 7 : 5) / ppu, (big ? 18 : 14) / ppu, 16), new THREE.MeshBasicMaterial({ color: d.hover ? 0xffb35c : 0xef7d1a, depthTest: false })));
         cone.position.copy(o.clone().addScaledVector(dir, len));
         cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
         cone.renderOrder = 10;
         cone.userData.handle = true;
-        cone.userData.handleSeg = [o.toArray(), o.clone().addScaledVector(dir, len + 7 / ppu).toArray()];
+        cone.userData.handleSeg = [o.toArray(), o.clone().addScaledVector(dir, len + (big ? 9 : 7) / ppu).toArray()];
       } else {
         const r = 5 / ppu, p = d.p;
         const segs = [[r, 0, 0], [0, r, 0], [0, 0, r]].flatMap((o) => [new THREE.Vector3(p[0] - o[0], p[1] - o[1], p[2] - o[2]), new THREE.Vector3(p[0] + o[0], p[1] + o[1], p[2] + o[2])]);

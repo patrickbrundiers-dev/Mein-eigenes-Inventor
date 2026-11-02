@@ -36,7 +36,7 @@ import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCop
 import { resolveParams, evaluate } from "../core/expr.js";
 import { axisDistance, measureFormat, MAX_MEASURE_ITEMS, measurePickOptions, measureHitLabel, sameMeasureHit } from "../core/messen.js";
 import { resolveDatums, resolvePlane } from "../core/datums.js";
-import { datumDisplay, datumPickClick, datumHover, datumSelectClick, datumHandleDown, finishDatumPick, toggleAllDatums, datumPicking } from "./arbeitselemente.js";
+import { datumDisplay, datumPickClick, datumHover, datumSelectClick, datumHandleDown, finishDatumPick, toggleAllDatums, datumPicking, featureAtFace } from "./arbeitselemente.js";
 import { sketchRefs, dependents } from "../core/featurerefs.js";
 import { applyPatterns } from "../core/asmmuster.js";
 import { worldToLocal, solveAssembly, CONSTRAINT_TYPES } from "../core/asmsolve.js";
@@ -938,6 +938,16 @@ export class App {
     cv.addEventListener("pointerdown", (e) => { if (datumHandleDown(this, e)) down = null; }, { capture: true });
     cv.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, b: e.button, t: performance.now() }; cv.focus(); });
     cv.addEventListener("contextmenu", (e) => e.preventDefault());
+    // Doppelklick auf eine Fläche wählt das Feature, das sie erzeugt hat – mit Ziehgriff (Extrusion rein/raus)
+    cv.addEventListener("dblclick", (e) => {
+      if (this.mode !== "part" || this.pick) return;
+      const part = this.activeDoc(), hit = this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true });
+      const fid = part && featureAtFace(this, part, hit);
+      if (!fid) return;
+      this.selHits = [];
+      this.minibar.hide();
+      this.selectFeature(fid);
+    });
     // Fensterauswahl im Bauteil: linke Maustaste ziehen (nach rechts ganz innen, nach links berührend)
     const boxEl = h("div", { class: "view-box", hidden: true });
     document.getElementById("stage").append(boxEl);

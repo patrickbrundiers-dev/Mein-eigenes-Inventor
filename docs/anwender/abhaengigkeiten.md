@@ -23,3 +23,13 @@
 - Ist die zuerst gewählte Komponente fixiert, bewegt sich die andere – kein Fehler, kein Neuwählen.
 - Die zuletzt gesetzte Abhängigkeit steht oben im Bereich: »Umkehren« (passend ↔ fluchtend, Achsrichtung, außen ↔ innen),
   Versatz bzw. Winkel ändern oder »Zurücknehmen«, ohne den Befehl zu verlassen.
+
+## 3D-Modell: ziehen statt tippen
+
+- Ist eine Extrusion gewählt, steht an ihrer Deckfläche ein oranger Pfeil. Ziehen ändert den Abstand mit laufender
+  Vorschau; zieht man über null hinaus, kippt die Extrusion auf die andere Seite (Normal ↔ Umgekehrt). Symmetrisch und
+  Beidseitig haben eigene Pfeile. Umschalt: 0,1-mm-Schritte. Loslassen ist ein Rückgängig-Schritt.
+- Dieselben Pfeile gibt es für die Tiefe einer Sackbohrung und die Länge eines Profils.
+- Doppelklick auf eine Fläche wählt das Feature, das sie erzeugt hat (Deckfläche → Extrusion), samt Pfeil.
+- Steht im Wert ein Ausdruck oder Parameter, gibt es keinen Pfeil; der Wert wird dann im Eigenschaftenfeld geändert.
+- Abschaltbar: Einstellungen → Ansicht → »Ziehgriffe an gewählten Features«.

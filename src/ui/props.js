@@ -636,7 +636,8 @@ export class Props {
           this.seg("Richtung", [["normal", "Normal"], ["reverse", "Umgekehrt"], ["symmetric", "Symmetrisch"], ["twoSided", "Beidseitig"], ["through", "Durch alles"]], f.mode || "normal", (v) => this.set(f, "mode", v, "Richtung")),
           f.mode !== "through" ? E("Abstand", "distance", { allowNeg: false, allowZero: false }) : null,
           f.mode === "twoSided" ? E("Abstand 2", "distance2") : null,
-          this.opSeg(f)));
+          this.opSeg(f),
+          f.mode !== "through" ? h("p", { class: "hint" }, "Oder den orangen Pfeil im 3D-Fenster ziehen – über null hinaus kippt die Extrusion auf die andere Seite. Doppelklick auf eine Fläche wählt ihr Feature.") : null));
         break;
       case "revolve": {
         const sk = part.features.find((s) => s.id === f.sketch);

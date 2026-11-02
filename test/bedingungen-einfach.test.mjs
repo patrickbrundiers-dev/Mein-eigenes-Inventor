@@ -126,3 +126,44 @@ test("Umkehren mit einem Klick", () => {
   assert.equal(flipOf(A, { ...k, b: { ...k.b, comp: "t" } }).solution, "entgegengesetzt");
   assert.equal(flipOf(A, { type: "winkel" }), null);
 });
+
+// ---- Ziehgriffe ----
+import { featureHandles, dragResult, sketchCenter, isPlainNumber } from "../src/core/griffe.js";
+
+const frame = { origin: [0, 0, 0], normal: [0, 0, 1] };
+test("Griff an der Extrusion: Lage je Richtung", () => {
+  const c = [10, 20, 0];
+  assert.deepEqual(featureHandles({ type: "extrude", distance: "30" }, { frame, center: c })[0].p, [10, 20, 30]);
+  const rev = featureHandles({ type: "extrude", mode: "reverse", distance: "30" }, { frame, center: c })[0];
+  assert.deepEqual([rev.p, rev.d], [[10, 20, -30], [-0, -0, -1]]);
+  assert.deepEqual(featureHandles({ type: "extrude", mode: "symmetric", distance: "30" }, { frame, center: c })[0].p, [10, 20, 15]);
+  assert.equal(featureHandles({ type: "extrude", mode: "twoSided", distance: "30", distance2: "5" }, { frame, center: c }).length, 2);
+  assert.deepEqual(featureHandles({ type: "extrude", mode: "through", distance: "30" }, { frame, center: c }), []);
+  assert.deepEqual(featureHandles({ type: "extrude", distance: "Dicke*2" }, { frame, center: c }), []);
+  assert.ok(isPlainNumber("12,5") && !isPlainNumber("a+1"));
+});
+
+test("Ziehen: länger, kürzer und über null hinaus auf die andere Seite", () => {
+  const f = { type: "extrude", mode: "normal", distance: "30" };
+  assert.deepEqual(dragResult(f, "a", 30, 12.4), { mode: "normal", distance: "42" });
+  assert.deepEqual(dragResult(f, "a", 30, -12.46, 0.1), { mode: "normal", distance: "17.5" });
+  assert.deepEqual(dragResult(f, "a", 30, -45), { mode: "reverse", distance: "15" });
+  assert.deepEqual(dragResult({ ...f, mode: "reverse" }, "a", 30, -40), { mode: "normal", distance: "10" });
+  assert.deepEqual(dragResult(f, "a", 30, -30), { mode: "normal", distance: "1" });
+  assert.deepEqual(dragResult({ ...f, mode: "symmetric" }, "a", 30, 5), { distance: "40" });
+  assert.deepEqual(dragResult({ type: "extrude", mode: "twoSided", distance: "30", distance2: "5" }, "b", 5, -50), { distance2: "-29" });
+  assert.deepEqual(dragResult({ type: "hole", depth: "20" }, "a", 20, 5), { depth: "25" });
+  assert.deepEqual(dragResult({ type: "profile", length: "1000" }, "a", 1000, -250), { length: "750" });
+});
+
+test("Bohrungstiefe und Profillänge haben Griffe, Skizzenmitte", () => {
+  const h = featureHandles({ type: "hole", extent: "depth", depth: "12", direction: "reverse" }, { frame, center: [0, 0, 0] })[0];
+  assert.deepEqual(h.p, [0, 0, -12]);
+  assert.deepEqual(featureHandles({ type: "hole", extent: "through", depth: "12" }, { frame, center: [0, 0, 0] }), []);
+  const p = featureHandles({ type: "profile", axis: "-Y", start: ["0", "100", "0"], length: "500" }, { ev: Number })[0];
+  assert.deepEqual(p.p, [0, -400, 0]);
+  const sk = { points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 100, y: 0 }, { id: "c", x: 100, y: 40 }, { id: "z", x: 500, y: 500 }],
+    entities: [{ id: "l1", type: "line", p1: "a", p2: "b" }, { id: "l2", type: "line", p1: "b", p2: "c" }, { id: "k", type: "line", p1: "c", p2: "z", construction: true }] };
+  assert.deepEqual(sketchCenter(sk), [50, 20]);
+  assert.equal(sketchCenter(sk, true), null);
+});
