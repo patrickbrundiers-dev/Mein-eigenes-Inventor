@@ -38,3 +38,5 @@ Empfehlung: Q6, Q7 und Q8 zusammen (klein, sofort spürbar). Danach Q5 und Q9.
 - 02.11.2026: Q1–Q4 umgesetzt, PR #187 gemergt (in 0.34.1).
 - 02.11.2026: Patrick wählt „alles der Reihe nach“: Q6–Q8, dann Q5, dann Q9/Q10, dann Q11.
 - 02.11.2026: Q6–Q8 umgesetzt. „Nächster Schritt“-Kachel (core/naechster.js, ui/naechster.js, abschaltbar unter Ansicht). Werte per Mausrad im Feld oder Ziehen am Feldnamen (core/wertschritt.js, Props.scrubbable). Schnellstart-Kacheln auf der Startseite.
+- 02.11.2026: Q6–Q8 gemergt (#190).
+- 02.11.2026: Q5 Zeichnung daneben (ui/nebeneinander.js, DrawingEditor.sheetSvg), Q9 Werkstattmodus (app.setWorkshop, eigener Reiter, edit gesperrt), Q10 Tablet (langes Tippen = Rechtsklick, Finger dreht, größere Ziele), Q11 Arbeitsbereiche (core/arbeitsbereiche.js) umgesetzt. Damit sind alle Vorschläge Q1–Q11 erledigt.
