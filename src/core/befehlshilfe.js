@@ -109,7 +109,7 @@ export const BEFEHLSHILFE = {
   cmove: "Komponente frei verschieben.",
   crotate: "Komponente frei drehen.",
   ccopy: "Komponente kopieren und versetzt einfügen.",
-  constraint: "Abhängigkeit zwischen zwei Komponenten wählen und setzen.",
+  constraint: "Abhängigkeit zwischen zwei Komponenten wählen und setzen. Der Befehl bleibt aktiv, Passend/Fluchtend wird aus der Lage erkannt, Esc beendet.",
   joint: "Drehgelenk: Komponenten über eine Achse verbinden, eine Drehung bleibt frei.",
   align: "Zwei Flächen gegeneinander legen (Passend).",
   alignFlush: "Zwei Flächen bündig in eine Ebene legen.",

@@ -3682,9 +3682,19 @@ try {
       a.alignPick({ kind: "face", key: "comp:q2", info: top });
       a.alignPick({ kind: "face", key: "comp:q1", info: top });
       const c = asm.constraints.at(-1);
-      return { type: c?.type, z: asm.components.find((x) => x.id === "q2").pos[2], sel: a.sel?.type, err: a.asmErrors?.[c?.id] || null };
+      return { type: c?.type, z: asm.components.find((x) => x.id === "q2").pos[2], sel: a.sel?.type, err: a.asmErrors?.[c?.id] || null, still: a.pick?.kind === "align" };
     });
     await idle(60000);
+    // Befehl bleibt aktiv (wie Inventor »Anwenden«): zuletzt gesetzte umkehren und wieder zurück, dann »Fertig«
+    const lastBox = await page.locator("#props .place-last").textContent().catch(() => "");
+    await page.locator("#props .place-last button", { hasText: "Umkehren" }).click();
+    await idle(60000);
+    const flipped = await evalApp(() => window.__werkcad.activeDoc().constraints.at(-1).type);
+    await evalApp(() => window.__werkcad.undo());
+    await idle(60000);
+    p44.repeat = { still: p44.still, last: /Zuletzt gesetzt/.test(lastBox), flipped, back: await evalApp(() => window.__werkcad.activeDoc().constraints.at(-1).type) };
+    await page.locator("#props .btn", { hasText: /^Fertig$/ }).click();
+    await evalApp(() => { const a = window.__werkcad; a.props.render(); });
     const editor = await page.locator("#props").textContent();
     await shot("44-abhaengigkeit");
     // Bewegung: Rad 1 treibt Rad 2 mit Übersetzung 2
@@ -3709,7 +3719,7 @@ try {
     await ruleSel.selectOption(alu);
     await idle(60000);
     const b44 = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(), f = d.features.find((x) => x.type === "kantteil"); return { rule: f.sheetRule?.name, mat: d.material, info: a.results.get(d.id)?.status?.[f.id]?.info || "" }; });
-    step("Abhängigkeit platzieren, Bewegung, Blechregel", /Abhängigkeit platzieren/.test(panel) && /Passend/.test(panel) && p44.type === "buendig" && Math.abs(p44.z - 20) < 1e-6 && p44.sel === "constraint" && p44.err === null && /Auswahl neu/.test(editor) && /Grenzen verwenden/.test(editor)
+    step("Abhängigkeit platzieren, Bewegung, Blechregel", /Abhängigkeit platzieren/.test(panel) && /Passend/.test(panel) && p44.type === "buendig" && Math.abs(p44.z - 20) < 1e-6 && p44.sel === "constraint" && p44.err === null && p44.repeat.still && p44.repeat.last && p44.repeat.flipped === "gegen" && p44.repeat.back === "buendig" && /Auswahl neu/.test(editor) && /Grenzen verwenden/.test(editor)
       && m44.motions === 1 && m44.tree && j44[0] === 45 && j44[1] === 90 && b44.rule === "Alu 2 mm" && b44.mat === "AlMg3" && /Blechregel Alu 2 mm/.test(b44.info), JSON.stringify({ p44, m44, j44, b44 }));
   }
 
@@ -3900,6 +3910,54 @@ try {
     step("Baugruppe: Lochbild-Muster, Fügepunkte, Unterbaugruppe, Spiegeln", lb === "konzentrisch" && pat.kind === "lochbild" && pat.copies === 3 && !pat.err && fp[0] >= 1 && fp[1] >= 1
       && am.fp && am.a === "lq" && sub.inner === 2 && sub.innerCons === 1 && dis.subs === 0 && dis.top === sub.top + 1 && mir.part === "beispiel_rohr",
       JSON.stringify({ lb, pat, fp, am, sub, dis, mir }));
+  }
+
+  // Skizze: erst wählen, dann Bedingung – Leiste an der Auswahl, Abschnitt im Eigenschaftenfeld, Menüband mit Vorauswahl
+  {
+    await evalApp(() => { const a = window.__werkcad; a.newPart("Bedingungen"); a.createSketch({ ref: "XY" }); });
+    await page.waitForTimeout(500);
+    await evalApp(() => {
+      const s = window.__werkcad.sketcher;
+      s.commit("Linien", (sk) => {
+        sk.points.push({ id: "qa", x: 0, y: 0.5 }, { id: "qb", x: 60, y: 4 }, { id: "qc", x: 0, y: 30 }, { id: "qd", x: 55, y: 41 });
+        sk.entities.push({ id: "qL1", type: "line", p1: "qa", p2: "qb" }, { id: "qL2", type: "line", p1: "qc", p2: "qd" });
+      });
+      window.__werkcad.viewer.fit?.();
+      s.setTool("select");
+    });
+    await page.waitForTimeout(400);
+    await evalApp(() => window.__werkcad.prefs.set("ansicht.miniLeiste", true));
+    const mid = (id) => evalApp((eid) => {
+      const s = window.__werkcad.sketcher, sk = s.sk, e = sk.entities.find((x) => x.id === eid), P = new Map(sk.points.map((p) => [p.id, p]));
+      s.mapping();
+      const r = s.canvas.getBoundingClientRect(), a = P.get(e.p1), b = P.get(e.p2);
+      const [x, y] = s.S(a.x * 0.6 + b.x * 0.4, a.y * 0.6 + b.y * 0.4);
+      return [r.left + x, r.top + y];
+    }, id);
+    const m1 = await mid("qL1"), m2 = await mid("qL2");
+    await page.mouse.click(m1[0], m1[1]);
+    await page.keyboard.down("Shift"); await page.mouse.click(m2[0], m2[1]); await page.keyboard.up("Shift");
+    await page.waitForTimeout(300);
+    const bar = await page.locator(".sketch-bar button").evaluateAll((b) => b.map((x) => x.dataset.id));
+    const quick = await page.locator("#props .con-quick-btn").evaluateAll((b) => b.map((x) => x.dataset.id));
+    await shot("49-skizze-bedingungsleiste");
+    await page.locator(".sketch-bar button[data-id='parallel']").click();
+    await page.waitForTimeout(300);
+    const par = await evalApp(() => window.__werkcad.sketcher.sk.constraints.filter((c) => c.type === "parallel").length);
+    // Vorauswahl + Menüband: eine Linie gewählt, »Horizontal« setzt sofort, Werkzeug bleibt »Auswahl«
+    await evalApp(() => { const s = window.__werkcad.sketcher; s.sel = new Set(["e:qL1"]); window.__werkcad.selectSketchItems(["e:qL1"]); });
+    await rbClick("Horizontal");
+    await page.waitForTimeout(300);
+    const pre = await evalApp(() => { const s = window.__werkcad.sketcher; return { h: s.sk.constraints.filter((c) => c.type === "horizontal").length, tool: s.tool, ok: s.lastSolve?.ok !== false }; });
+    // Eigenschaftenfeld: Linie 2 ist über Parallel schon waagrecht → Horizontal wird nicht mehr angeboten; Fixieren per Knopf
+    await evalApp(() => { const s = window.__werkcad.sketcher; s.sel = new Set(["e:qL2"]); window.__werkcad.selectSketchItems(["e:qL2"]); });
+    const quick2 = await page.locator("#props .con-quick-btn").evaluateAll((b) => b.map((x) => x.dataset.id));
+    await page.locator("#props .con-quick-btn[data-id='fix']").click();
+    await page.waitForTimeout(300);
+    const after = await evalApp(() => { const s = window.__werkcad.sketcher, sk = s.sk, P = new Map(sk.points.map((p) => [p.id, p])); return { h: sk.constraints.filter((c) => c.type === "horizontal").length, fix: sk.constraints.filter((c) => c.type === "fix").length, dy2: Math.abs(P.get("qd").y - P.get("qc").y) }; });
+    await evalApp(() => { const a = window.__werkcad; a.prefs.set("ansicht.miniLeiste", false); a.sketcher.sel.clear(); a.selectSketchItems([]); a.finishSketch(); });
+    step("Skizze: Bedingung aus der Auswahl (Leiste, Eigenschaften, Menüband)", bar.includes("parallel") && bar.includes("perpendicular") && quick.includes("parallel") && par === 1
+      && pre.h === 1 && pre.tool === "select" && pre.ok && !quick2.includes("horizontal") && after.h === 1 && after.fix >= 3 && after.dy2 < 1e-6, JSON.stringify({ bar, quick, par, pre, quick2, after }));
   }
 
   // Bedienung: Tooltip-Karte im Menüband, Markierungsmenü (Rechtsklick), Mini-Werkzeugleiste an der Auswahl

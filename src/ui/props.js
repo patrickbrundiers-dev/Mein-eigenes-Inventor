@@ -1826,6 +1826,11 @@ export class Props {
         h("button", { class: "btn", onclick: () => app.sketcher.toggleConstruction() }, "Konstruktion umschalten"),
         h("button", { class: "btn danger", onclick: () => app.sketcher.deleteSelection() }, "Löschen"))));
     }
+    // Bedingungen zur Auswahl: ein Klick, ohne Werkzeug und zweite Auswahl
+    const opts = sel.length ? app.sketcher.selectionOptions() : [];
+    if (opts.length) out.splice(0, 0, this.section("Bedingung hinzufügen", h("div", { class: "con-quick" },
+      ...opts.map((o) => h("button", { class: "btn con-quick-btn", "data-id": o.type, title: o.list.length > 1 ? `${o.label} für ${o.list.length} Paare/Elemente` : o.label, onclick: () => app.sketcher.addConstraints(o.list, o.label) }, icon(o.type), h("span", {}, o.label)))),
+      h("p", { class: "hint" }, "Passend zur Auswahl. Umschalt+Klick wählt weitere Elemente; Esc hebt die Auswahl auf.")));
     out.push(this.section(sk.name,
       h("dl", { class: "kv" }, h("dt", {}, "Ebene"), h("dd", {}, sk.plane.ref === "face" ? "auf Fläche" : BASE_PLANES[sk.plane.ref]?.label || sk.plane.ref)),
       h("p", { class: "hint" }, "Tasten: L Linie · R Rechteck · C Kreis · A Bogen · P Punkt · D Bemaßung · T Stutzen · F Rundung · X Konstruktion · Entf löschen · Esc beenden"),
