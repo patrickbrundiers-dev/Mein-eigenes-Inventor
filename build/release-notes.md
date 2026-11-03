@@ -1,8 +1,9 @@
-**Neu in 0.36.0**
+**Neu in 0.37.0**
 
-Neue Ansichten für Werkstatt, Tablet und eigene Arbeitsweisen.
+Bewährte Arbeitsabläufe aus Inventor und SolidWorks sind jetzt auch in PBCAD.
 
-- **Zeichnung daneben:** Modell und Zeichnung stehen nebeneinander, Änderungen siehst du sofort in beiden.
-- **Werkstattmodus:** große Knöpfe, nur zum Ansehen und Messen.
-- **Tablet:** Langes Tippen wirkt wie ein Rechtsklick.
-- **Arbeitsbereiche:** Konstruktion, Zeichnung prüfen, Präsentation oder eigene Arbeitsbereiche.
+- **Kopie konstruieren:** Eine Baugruppe samt Teilen und Zeichnungen in einem Schritt kopieren und mit Präfix oder Suffix umbenennen. Kauf- und Normteile werden weiterverwendet.
+- **Unabhängig machen:** Eine Komponente bekommt ihr eigenes Bauteil, die anderen bleiben gleich.
+- **Wo verwendet:** Bei jedem Bauteil steht, in welchen Baugruppen und Zeichnungen es steckt. »Zeichnung öffnen« springt direkt hin.
+- **Eigenschaften:** Konstrukteur, Projekt und eigene Felder wie Kunde. Im Schriftfeld als {Kunde} nutzbar, beim Umbenennen zieht die Zeichnung mit.
+- **Stückliste:** Komponenten als »Referenz« (nicht in der Stückliste), Baugruppen als »Phantom« (Teile eine Ebene höher).
