@@ -7,6 +7,7 @@ import { recordable } from "../core/makros.js";
 import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
 import { pushRecent, orderWithRecent } from "../core/zuletzt.js";
 import { problemsDialog } from "./pruefung.js";
+import { copyDesignDialog, makeIndependent, whereUsedDialog, openDrawingOf } from "./arbeitsablauf.js";
 import { saveToLibrary, libraryDialog } from "./teilebibliothek.js";
 import { saveVersion, versionsDialog } from "./versionen.js";
 import { savePosition } from "./darstellungen.js";
@@ -85,6 +86,10 @@ export function commandRunners(app) {
     "sketch.importDxf": () => app.sketcher.importDxfDialog(),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
+    "asm.copyDesign": () => copyDesignDialog(app, app.activeId),
+    "asm.independent": () => (app.sel?.type === "component" ? makeIndependent(app, app.sel.id) : toast("Erst eine Komponente im Baum wählen")),
+    "doc.whereUsed": () => app.activeId && whereUsedDialog(app, app.activeId),
+    "doc.openDrawing": () => app.activeId && openDrawingOf(app, app.activeId),
     "asm.replace": () => (app.sel?.type === "component" ? app.props.replaceComponentDialog(app.sel.id) : toast("Erst eine Komponente im Baum wählen")),
     "asm.normteil": r("normteilAsm"),
     "asm.constraint": r("constraint"),

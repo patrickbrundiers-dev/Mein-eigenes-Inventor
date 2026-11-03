@@ -6,6 +6,8 @@ import { sketchRefs } from "../core/featurerefs.js";
 import { activeCount } from "../core/bauteilende.js";
 import { componentDof, dofLabel } from "../core/asmdof.js";
 import { formSubDialog, dissolveSubComp, moveCompIntoSub, learnFuegepunkte, componentsFromBodies } from "./baugruppe.js";
+import { syncDrawingTitles } from "../core/eigenschaften.js";
+import { copyDesignDialog, makeIndependent, openDrawingOf, whereUsedDialog } from "./arbeitsablauf.js";
 import { treeEntries, endPosition, featureDetail, matchesQuery, filterEntries, groupFolders, neighbourFolders } from "../core/baum.js";
 
 const FICON = { sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", blechkasten: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", strecken: "stretch", zinkloch: "ventholes", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", direkt: "direct", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
@@ -359,6 +361,7 @@ export class Tree {
           { label: c.fixed ? "Fixierung lösen" : "Fixieren", icon: "fix", run: () => app.edit("Fixieren", () => { c.fixed = !c.fixed; }) },
           { label: "Duplizieren", icon: "copy", run: () => app.props.duplicateComponent(c.id) },
           { label: "Ersetzen…", icon: "update", run: () => app.props.replaceComponentDialog(c.id) },
+          ...(p && !p.genAsm ? [{ label: "Unabhängig machen (eigene Kopie)", icon: "copy", run: () => makeIndependent(app, c.id) }] : []),
           { label: "Spiegeln …", icon: "mirror", run: () => app.props.mirrorComponent(c.id) },
           "-",
           { label: "Unterbaugruppe bilden …", icon: "assembly", run: () => formSubDialog(app, c.id) },
@@ -525,6 +528,9 @@ export class Tree {
       { label: "Umbenennen", icon: "edit", kbd: "F2", run: () => this.rename(d) },
       { label: "Duplizieren", icon: "copy", run: () => app.duplicateDoc(d.id) },
       d.kind !== "drawing" ? { label: "Zeichnung ableiten", icon: "drawing", run: () => app.newDrawing({ kind: d.kind, id: d.id }) } : null,
+      d.kind !== "drawing" && app.project.docs.some((x) => x.kind === "drawing" && x.source?.id === d.id) ? { label: "Zeichnung öffnen", icon: "drawing", run: () => openDrawingOf(app, d.id) } : null,
+      d.kind !== "drawing" ? { label: "Wo verwendet …", icon: "search", run: () => whereUsedDialog(app, d.id) } : null,
+      d.kind === "assembly" ? { label: "Kopie konstruieren …", icon: "copy", run: () => copyDesignDialog(app, d.id) } : null,
       d.kind === "assembly" ? { label: "Einzelteilzeichnungen", icon: "drawing", run: () => app.partDrawings(d.id) } : null,
       d.kind !== "drawing" ? { label: "Fertigungsmappe", icon: "pdf", run: () => app.files.exportMappe(d) } : null,
       // Bauteile als eigene Dateien (M24, V3)
@@ -542,7 +548,13 @@ export class Tree {
     const lbl = obj.id && this.el.querySelector(`.node[data-rid="${CSS.escape(obj.id)}"] > .label`);
     const commit = (name) => {
       if (!name || name === obj.name) return this.render();
-      this.app.edit("Umbenennen", () => { obj.name = name; if (!isFeature && obj.kind === "drawing" && obj.title && !obj.title.benennung) obj.title.benennung = name; }, { rebuild: false });
+      this.app.edit("Umbenennen", () => {
+        const old = { name: obj.name };
+        obj.name = name;
+        if (!isFeature && obj.kind === "drawing" && obj.title && !obj.title.benennung) obj.title.benennung = name;
+        // AW4: Schriftfelder der Zeichnungen ziehen mit, solange dort noch der alte Name steht
+        if (!isFeature && (obj.kind === "part" || obj.kind === "assembly")) syncDrawingTitles(this.app.project, obj, old);
+      }, { rebuild: false });
     };
     if (!lbl) return this.renameDialog(obj, commit);
     lbl.closest(".node").scrollIntoView({ block: "nearest" });
