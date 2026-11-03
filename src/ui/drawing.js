@@ -6,6 +6,8 @@ import { classOf, toleranceText, validateTolerance, TOL_KINDS } from "../core/to
 import { partMass } from "../core/mass.js";
 import { DxfWriter } from "../core/dxf.js";
 import { materialOf, materialList } from "../core/materials.js";
+import { docProperties, fillPlaceholders } from "../core/eigenschaften.js";
+import { releaseState, releaseLabel } from "../core/pruefung.js";
 import { finishLabel } from "../core/oberflaeche.js";
 import { uid } from "../core/examples.js";
 import { scaleLabel } from "./tree.js";
@@ -1387,7 +1389,7 @@ export class DrawingEditor {
     if (!v || !this.proj.get(v.id)) return toast("Zuerst Ansichten erzeugen");
     // Positionsnummern je Bauteil der Mengenstückliste, auch aus Unterbaugruppen
     const st = this.viewState(d, v);
-    const flat = { components: flattenAssembly(st ? assemblyForView(src, { state: st }) : src, (id) => this.app.doc(id)).map((o) => ({ part: o.part.id, ...decomposePlacement(o.matrix) })) };
+    const flat = { components: flattenAssembly(st ? assemblyForView(src, { state: st }) : src, (id) => this.app.doc(id), { bom: true }).map((o) => ({ part: o.part.id, ...decomposePlacement(o.matrix) })) };
     const anchors = balloonAnchors(flat, (pid) => this.app.results.get(pid));
     if (!anchors.length) return toast("Die Bauteile sind noch nicht berechnet – bitte kurz warten");
     const cam = this.viewCam(d, v);
@@ -1509,8 +1511,10 @@ export class DrawingEditor {
     line(x0 + 150, y0 + 36, x0 + 150, y0 + 46);
     line(x0 + 120, y0 + 28, x0 + 180, y0 + 28);
     const label = (x, y, s) => { const e = svgEl("text", { x: x + 1.2, y: y + 2.6, "font-size": 1.8, fill: "#4a5866", stroke: "none" }); e.textContent = s; g.append(e); };
-    const value = (x, y, s, size = 3.5) => { const e = svgEl("text", { x: x + 1.5, y, "font-size": size, fill: "#111a24", stroke: "none" }); e.textContent = s || ""; g.append(e); };
     const src = d.source && this.app.doc(d.source.id);
+    // AW4: Platzhalter wie {Projekt} oder eigene Eigenschaften des Modells im Schriftfeld
+    const props = this.titleProps(d, src);
+    const value = (x, y, s, size = 3.5) => { const e = svgEl("text", { x: x + 1.5, y, "font-size": size, fill: "#111a24", stroke: "none" }); e.textContent = fillPlaceholders(s || "", props); g.append(e); };
     // Werkstoff und Masse folgen dem Modell, solange im Schriftfeld nichts eingetragen ist
     // (ältere Zeichnungen haben die Werkstoff-Bezeichnung beim Anlegen kopiert: die gilt ebenfalls als automatisch)
     const autoLabels = new Set(materialList().map((m) => m.label));
@@ -1546,10 +1550,10 @@ export class DrawingEditor {
     label(x0 + 60, y0 + 10, "Maßstab"); value(x0 + 60, y0 + 18.4, t.massstab);
     label(x0 + 90, y0 + 10, "Masse"); value(x0 + 90, y0 + 18.4, t.masse || mass, 3);
     label(x0 + 130, y0 + 10, "Format"); value(x0 + 130, y0 + 18.4, `${d.sheet.format} ${d.sheet.orientation === "hoch" ? "hoch" : "quer"}`, 3);
-    label(x0, y0 + 20, "Benennung"); value(x0, y0 + 32, t.benennung, 5.5);
+    label(x0, y0 + 20, "Benennung"); value(x0, y0 + 32, t.benennung || src?.name || "", 5.5);
     label(x0 + 120, y0 + 20, "Datum"); value(x0 + 120, y0 + 26.8, t.datum, 2.8);
     label(x0 + 120, y0 + 28, "Gezeichnet"); value(x0 + 120, y0 + 34.8, t.ersteller, 2.8);
-    label(x0, y0 + 36, "Zeichnungsnummer"); value(x0, y0 + 44.3, t.nummer, 4.2);
+    label(x0, y0 + 36, "Zeichnungsnummer"); value(x0, y0 + 44.3, t.nummer || src?.number || "", 4.2);
     label(x0 + 120, y0 + 36, "Rev."); value(x0 + 120, y0 + 44.3, currentRevision(d), 3.5);
     label(x0 + 150, y0 + 36, "Blatt"); value(x0 + 150, y0 + 44.3, t.blatt || "1/1", 3.5);
     // Projektionssymbol Methode 1
@@ -1559,6 +1563,14 @@ export class DrawingEditor {
     sym.append(svgEl("circle", { cx: sx + 2, cy: sy, r: 1.8 }), svgEl("circle", { cx: sx + 2, cy: sy, r: 0.9 }));
     g.append(sym);
     return g;
+  }
+
+  /** Eigenschaften für Platzhalter im Schriftfeld: die des gezeichneten Modells, dazu Datum und Blatt der Zeichnung */
+  titleProps(d, src = d?.source && this.app.doc(d.source.id)) {
+    const app = this.app;
+    const base = src ? docProperties(src, { materialLabel: src.kind === "part" && src.material ? materialOf(src.material).label : "", status: releaseLabel(releaseState(src, (id) => app.doc(id))), projectName: app.project?.name || "" })
+      : [{ name: "Projekt", value: app.project?.name || "" }];
+    return [...base, { name: "Zeichnung", value: d?.name || "" }, { name: "Datum", value: d?.title?.datum || "" }, { name: "Revision", value: d?.title?.revision || "" }];
   }
 
   // ---------- Fangpunkte ----------
@@ -2312,7 +2324,7 @@ export class DrawingEditor {
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.chooseSource() }, "Quelle wählen"), h("button", { class: "btn", onclick: () => this.autoViews() }, "Grundansichten neu"))));
     const t = d.title;
     const T = (label, key, area) => P.text(label, t[key], (v) => app.edit(label, () => { t[key] = v; }, { rebuild: false }), { area });
-    out.push(P.section("Schriftfeld", T("Benennung", "benennung"), T("Zeichnungsnr.", "nummer"), T("Halbzeug", "halbzeug"), T("Werkstoff", "werkstoff"), T("Masse", "masse"), h("p", { class: "hint" }, "Halbzeug, Werkstoff und Masse leer lassen: sie kommen dann automatisch aus dem Modell."), T("Maßstab", "massstab"), T("Allgemeintol.", "toleranz"), T("Firma", "firma"), T("Gezeichnet", "ersteller"), T("Datum", "datum"), T("Revision", "revision"), T("Blatt", "blatt"),
+    out.push(P.section("Schriftfeld", T("Benennung", "benennung"), T("Zeichnungsnr.", "nummer"), T("Halbzeug", "halbzeug"), T("Werkstoff", "werkstoff"), T("Masse", "masse"), h("p", { class: "hint" }, "Halbzeug, Werkstoff und Masse leer lassen: sie kommen dann automatisch aus dem Modell. Platzhalter wie {Projekt}, {Konstrukteur}, {Beschreibung} oder eigene Eigenschaften des Modells werden eingesetzt."), T("Maßstab", "massstab"), T("Allgemeintol.", "toleranz"), T("Firma", "firma"), T("Gezeichnet", "ersteller"), T("Datum", "datum"), T("Revision", "revision"), T("Blatt", "blatt"),
       ...extraFields(this.template(), t).map((f) => P.text(f.label, f.value, (v) => app.edit(f.label, () => { t.extra = { ...(t.extra || {}), [f.label]: v }; }, { rebuild: false }))),
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.templateDialog() }, "Zeichnungsvorlage…"))));
     const revs = d.revisions || [];
@@ -2333,7 +2345,7 @@ export class DrawingEditor {
   }
   fileBase() {
     const d = this.doc;
-    return (d.title.nummer || d.title.benennung || d.name || "Zeichnung").replace(/[\\/:*?"<>|]+/g, "_");
+    return (fillPlaceholders(d.title.nummer || d.title.benennung || "", this.titleProps(d)).replace(/[{}]/g, "") || d.name || "Zeichnung").replace(/[\\/:*?"<>|]+/g, "_");
   }
   async exportSvg() {
     await this.app.files.saveText(this.exportSvgString(), this.fileBase() + ".svg", "image/svg+xml", [{ name: "SVG", extensions: ["svg"] }]);

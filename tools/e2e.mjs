@@ -4346,6 +4346,65 @@ try {
       JSON.stringify({ text: text.slice(0, 200), eyes, n0, mtext: mtext.slice(0, 160), toastText }));
   }
 
+  // AW1–AW5 Arbeitsabläufe nach Inventor/SolidWorks: Wo verwendet, Eigenschaften im Schriftfeld, Stücklistenstruktur,
+  // Kopie konstruieren, Unabhängig machen
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    const used = await page.locator("#props .where-used").innerText().catch(() => "");
+    // eigene Eigenschaft über das Eigenschaftenfeld anlegen und füllen
+    await page.locator("#props input[aria-label='Name der neuen Eigenschaft']").fill("Kunde");
+    await page.locator("#props input[aria-label='Name der neuen Eigenschaft']").press("Enter");
+    await page.locator("#props input[aria-label='Kunde']").fill("Schlosserei Muster");
+    await page.locator("#props input[aria-label='Kunde']").dispatchEvent("change");
+    const prop = await evalApp(() => window.__werkcad.doc("beispiel_platte").props);
+    // Schriftfeld: Platzhalter {Kunde}, Umbenennen zieht die Benennung nach
+    await evalApp(() => { const a = window.__werkcad, d = a.doc("beispiel_zeichnung"); a.edit("Test", () => { d.title.firma = "{Kunde}"; d.title.benennung = a.doc("beispiel_platte").name; }, { rebuild: false }); });
+    await page.locator("#props .field", { hasText: "Name" }).first().locator("input").fill("Grundplatte 20");
+    await page.locator("#props .field", { hasText: "Name" }).first().locator("input").dispatchEvent("change");
+    await evalApp(() => window.__werkcad.openDoc("beispiel_zeichnung"));
+    await idle();
+    await page.waitForTimeout(800);
+    const sheet = await page.locator("svg").evaluateAll((els) => els.map((e) => e.textContent).join(" "));
+    const title = await evalApp(() => window.__werkcad.doc("beispiel_zeichnung").title.benennung);
+    // Stücklistenstruktur: Rohr als Referenz → nicht in der Stückliste
+    await evalApp(() => window.__werkcad.openDoc("beispiel_bg"));
+    await idle();
+    const bom0 = await evalApp(() => window.__werkcad.project.docs.length);
+    await evalApp(() => { const a = window.__werkcad; a.sel = { type: "component", id: "c4" }; a.tree.render(); a.props.render(); });
+    await page.locator("#props .field", { hasText: "Stückliste" }).first().locator("select").selectOption("referenz");
+    await idle();
+    const ref = await evalApp(() => { const a = window.__werkcad; return { bom: a.doc("beispiel_bg").components.find((c) => c.id === "c4").bom, rows: document.querySelector("#props")?.innerText.includes("Rohr") }; });
+    await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); });
+    const bomText = await page.locator("#props .section", { hasText: "Gesamtmasse" }).innerText();
+    // Kopie konstruieren aus der Befehlsliste
+    await evalApp(() => { window.__werkcad.commands.exec("asm.copyDesign"); }); // nicht auf den Dialog warten
+    await page.locator(".dialog", { hasText: "Kopie konstruieren" }).waitFor({ timeout: 10000 });
+    const rows = await page.locator(".dialog table.copy-design tbody tr").count();
+    await page.locator(".dialog .field", { hasText: "Präfix" }).locator("input").fill("P2-");
+    await page.locator(".dialog .field", { hasText: "Suffix" }).locator("input").fill("");
+    await page.locator(".dialog footer .btn", { hasText: "Kopieren" }).click();
+    await idle();
+    const cd = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc();
+      return { id: d.id, name: d.name, number: d.number, parts: d.components.map((c) => a.doc(c.part)?.name), n: a.project.docs.length };
+    });
+    // Unabhängig machen: rechte Grundplatte bekommt ein eigenes Bauteil
+    const ind = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc(), c = d.components.find((x) => x.name === "Grundplatte rechts");
+      const before = c.part;
+      a.sel = { type: "component", id: c.id };
+      a.commands.exec("asm.independent");
+      const left = d.components.find((x) => x.name === "Grundplatte links");
+      return { changed: c.part !== before, other: left.part === before, name: a.doc(c.part)?.name };
+    });
+    await shot("aw-kopie-konstruieren");
+    step("Arbeitsabläufe: Wo verwendet, Eigenschaften im Schriftfeld, Referenz, Kopie konstruieren, Unabhängig",
+      /Gestell/.test(used) && prop?.[0]?.value === "Schlosserei Muster" && sheet.includes("Schlosserei Muster") && title === "Grundplatte 20" && ref.bom === "referenz" && !/Rohr/.test(bomText)
+        && rows >= 4 && cd.id !== "beispiel_bg" && cd.name === "P2-Gestell" && cd.number === "P2-BG-100" && cd.parts.filter((x) => x?.startsWith("P2-")).length >= 3 && cd.n > bom0 && ind.changed && ind.other && /-2$/.test(ind.name || ""),
+      JSON.stringify({ used, prop, title, ref, bomText: bomText.slice(0, 200), rows, cd, ind, sheetHit: sheet.includes("Schlosserei Muster") }));
+  }
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

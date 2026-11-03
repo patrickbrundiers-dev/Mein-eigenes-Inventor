@@ -104,6 +104,7 @@ export const BEFEHLSHILFE = {
   asmPattern: "Komponente in Reihe oder im Kreis vervielfältigen.",
   steckAsm: "Zapfen und Schlitze zwischen zwei Komponenten der Baugruppe.",
   asmMirror: "Komponenten an einer Ebene spiegeln, auf Wunsch als neue gespiegelte Bauteile.",
+  copyDesign: "Baugruppe mit gewählten Teilen und Zeichnungen als neue Dokumente kopieren, mit Präfix/Suffix umbenennen (wie »Pack and Go«).",
   replaceComp: "Komponente durch ein anderes Bauteil ersetzen, Abhängigkeiten bleiben soweit möglich erhalten.",
   formSub: "Gewählte Komponenten zu einer Unterbaugruppe zusammenfassen; Lage und innere Abhängigkeiten bleiben.",
   cmove: "Komponente frei verschieben.",

@@ -34,6 +34,7 @@ import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { releaseSection } from "./pruefung.js";
+import { whereUsedSection, propertiesSection, renameDoc, componentBomField, assemblyBomField, makeIndependent } from "./arbeitsablauf.js";
 import { paramsCsv, parseParamsCsv, mergeParams } from "../core/parameterdatei.js";
 import { TUBE_CUT_KINDS, TUBE_CUT_FIELDS, TUBE_CUT_SECTIONS, SIDES, TILT_QUICK, defaultTubeCut, parsePattern, parsePolygon, atEnd } from "../core/tubecuts.js";
 import { END_CUT_SECTIONS, featureCutSettings, roundTube3D, SWIVEL_DEFAULT } from "../core/endcut.js";
@@ -482,8 +483,8 @@ export class Props {
     const r = app.results.get(part.id);
     const out = [...[this.contextSection(part)].filter(Boolean), this.linkSection(part), ...[variantSection(this, part), rulesSection(this, part)].filter(Boolean)];
     out.push(this.section("Allgemein",
-      this.text("Name", part.name, (v) => app.edit("Name", () => { part.name = v; }, { rebuild: false })),
-      this.text("Teilenummer", part.number, (v) => app.edit("Nummer", () => { part.number = v; }, { rebuild: false })),
+      this.text("Name", part.name, (v) => renameDoc(app, part, "name", v)),
+      this.text("Teilenummer", part.number, (v) => renameDoc(app, part, "number", v)),
       this.text("Beschreibung", part.description, (v) => app.edit("Beschreibung", () => { part.description = v; }, { rebuild: false }), { area: true }),
       this.materialSelect(part),
       this.finishSelect(part),
@@ -492,6 +493,7 @@ export class Props {
         part.color ? h("button", { class: "btn", onclick: () => app.edit("Farbe", () => { part.color = null; }) }, "Wie Werkstoff") : null))));
     out.push(this.partCutSection(part));
     out.push(releaseSection(this, part));
+    out.push(propertiesSection(this, part), whereUsedSection(this, part));
     if (r) {
       const vol = r.bodies.reduce((s, b) => s + (b.props?.volume || 0), 0);
       const dens = materialOf(part.material).density;
@@ -1916,10 +1918,12 @@ export class Props {
     const app = this.app;
     const out = [];
     out.push(this.section("Allgemein",
-      this.text("Name", asm.name, (v) => app.edit("Name", () => { asm.name = v; }, { rebuild: false })),
-      this.text("Nummer", asm.number, (v) => app.edit("Nummer", () => { asm.number = v; }, { rebuild: false })),
-      this.text("Beschreibung", asm.description, (v) => app.edit("Beschreibung", () => { asm.description = v; }, { rebuild: false }), { area: true })));
+      this.text("Name", asm.name, (v) => renameDoc(app, asm, "name", v)),
+      this.text("Nummer", asm.number, (v) => renameDoc(app, asm, "number", v)),
+      this.text("Beschreibung", asm.description, (v) => app.edit("Beschreibung", () => { asm.description = v; }, { rebuild: false }), { area: true }),
+      assemblyBomField(this, asm)));
     out.push(releaseSection(this, asm));
+    out.push(propertiesSection(this, asm), whereUsedSection(this, asm));
     // Generator-Baugruppe: Einstellungen hier, Einzelteile folgen (syncGenAssembly)
     if (asm.generator && GENERATORS[asm.generator.gen]) {
       out.push(this.section(GENERATORS[asm.generator.gen].label, h("p", { class: "hint" }, "Jedes Rohr, jeder Stab und jedes Blech ist ein eigenes Bauteil (gleiche Teile einmal, mehrfach eingesetzt). Änderungen hier passen alle Einzelteile an; Features, die in einem Bauteil angehängt wurden, bleiben erhalten.")));
@@ -1945,7 +1949,8 @@ export class Props {
         this.select("Bauteil", app.parts().map((x) => [x.id, x.name]), c.part, (v) => upd("Bauteil", () => { c.part = v; })),
         this.check("Fixiert", c.fixed, (v) => upd("Fixieren", () => { c.fixed = v; })),
         this.check("Ausgeblendet", c.hidden, (v) => upd("Sichtbarkeit", () => { c.hidden = v; })),
-        this.check("Im Kontaktsatz (hält an, wo es anstößt)", !!c.contact, (v) => upd("Kontaktsatz", () => { if (v) c.contact = true; else delete c.contact; }))),
+        this.check("Im Kontaktsatz (hält an, wo es anstößt)", !!c.contact, (v) => upd("Kontaktsatz", () => { if (v) c.contact = true; else delete c.contact; })),
+        componentBomField(this, c)),
       this.section("Lage",
         this.vec3("Position", c.pos, (v) => upd("Position", () => { c.pos = v; }), { numeric: true }),
         c.fixed ? null : gridSnapRow(this, asm, c),
@@ -1960,6 +1965,7 @@ export class Props {
         p?.kind === "part" ? h("button", { class: "btn", "data-act": "in-context", title: "Bauteil öffnen, die übrigen Teile der Baugruppe halbdurchsichtig daneben; ihre Kanten lassen sich in Skizzen projizieren", onclick: () => app.editInContext(asm.id, c.id) }, "Im Kontext bearbeiten") : null,
         h("button", { class: "btn", onclick: () => this.duplicateComponent(c.id) }, "Duplizieren"),
         h("button", { class: "btn", onclick: () => this.replaceComponentDialog(c.id) }, "Ersetzen…"),
+        p && !p.genAsm ? h("button", { class: "btn", title: "Eigene Kopie des Bauteils nur für diese Komponente (SolidWorks »Unabhängig machen«)", onclick: () => makeIndependent(app, c.id) }, "Unabhängig machen") : null,
         h("button", { class: "btn danger", onclick: () => this.deleteComponent(c.id) }, "Entfernen")),
       this.jointSection(asm, c),
       fuegepunkteSection(this, asm, c),
@@ -2702,7 +2708,7 @@ const resolvedOrNull = (fn) => { try { return fn(); } catch { return null; } };
 
 export function bomRows(app, asm) {
   const map = new Map(), norm = [];
-  for (const o of flattenAssembly(asm, (id) => app.doc(id))) {
+  for (const o of flattenAssembly(asm, (id) => app.doc(id), { bom: true })) {
     const p = o.part;
     const r = app.results.get(p.id);
     // Normteile (M20) zählen als eigene Zeilen mit Normbezeichnung; ein Bauteil nur aus Normteilen entfällt selbst

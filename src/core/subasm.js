@@ -12,12 +12,13 @@ export const MAX_DEPTH = 8;
  * Rückgabe [{ part, matrix (Welt), inner (Bauteil im System der obersten Komponente), top (Komponente der
  * obersten Ebene), path: [Komponentennamen] }]
  */
-export function flattenAssembly(asm, docOf, { includeHidden = false } = {}) {
+export function flattenAssembly(asm, docOf, { includeHidden = false, bom = false } = {}) {
   const out = [];
   const walk = (a, M, top, inner, path, stack) => {
     if (stack.length > MAX_DEPTH) return;
     for (const c of a.components || []) {
       if (c.hidden && !includeHidden) continue;
+      if (bom && isReference(c)) continue;
       const d = docOf(c.part);
       if (!d) continue;
       const P = placementMatrix(c.pos, c.rot);
@@ -32,6 +33,20 @@ export function flattenAssembly(asm, docOf, { includeHidden = false } = {}) {
   return out;
 }
 const IDENT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+// Stücklistenstruktur (Arbeitsabläufe AW5, wie Inventor »Stücklistenstruktur« / SolidWorks »von Stückliste ausschließen«):
+// Komponente c.bom = "referenz" → sichtbar, rechnet mit, aber nicht in Stückliste, Zuschnitt- und Bestellliste.
+// Baugruppe asm.bomStructure = "phantom" → in Struktur- und Baukastenstückliste aufgelöst: ihre Teile stehen eine Ebene höher.
+export const COMPONENT_BOM = [
+  { value: "normal", label: "Normal" },
+  { value: "referenz", label: "Referenz (nicht in der Stückliste)" },
+];
+export const ASSEMBLY_BOM = [
+  { value: "normal", label: "Normal" },
+  { value: "phantom", label: "Phantom (Teile eine Ebene höher)" },
+];
+export const isReference = (c) => c?.bom === "referenz";
+export const isPhantom = (d) => d?.kind === "assembly" && d.bomStructure === "phantom";
 
 /** Enthält Baugruppe a (direkt oder tiefer) das Dokument id? – verhindert Zyklen beim Einfügen */
 export function containsDoc(a, id, docOf, depth = 0) {
@@ -49,19 +64,24 @@ export function canInsert(asm, doc, docOf) {
 /** Mengen der Bauteile (für Zuschnittliste, Mengenstückliste): Map partId → Anzahl */
 export function partCounts(asm, docOf) {
   const m = new Map();
-  for (const o of flattenAssembly(asm, docOf)) m.set(o.part.id, (m.get(o.part.id) || 0) + 1);
+  for (const o of flattenAssembly(asm, docOf, { bom: true })) m.set(o.part.id, (m.get(o.part.id) || 0) + 1);
   return m;
 }
 
-/** Direkte Bestandteile einer Baugruppe, gleiche Dokumente zusammengefasst (Reihenfolge des ersten Auftretens) */
-function directChildren(a, docOf) {
+/**
+ * Direkte Bestandteile einer Baugruppe, gleiche Dokumente zusammengefasst (Reihenfolge des ersten Auftretens).
+ * Referenz-Komponenten entfallen, Phantom-Baugruppen werden durch ihre Bestandteile ersetzt (mal ihrer Anzahl).
+ */
+function directChildren(a, docOf, stack = [a.id]) {
   const m = new Map();
+  const add = (d, n) => { if (!m.has(d.id)) m.set(d.id, { doc: d, qty: 0 }); m.get(d.id).qty += n; };
   for (const c of a.components || []) {
-    if (c.hidden) continue;
+    if (c.hidden || isReference(c)) continue;
     const d = docOf(c.part);
     if (!d) continue;
-    if (!m.has(d.id)) m.set(d.id, { doc: d, qty: 0 });
-    m.get(d.id).qty++;
+    if (isPhantom(d) && stack.length <= MAX_DEPTH && !stack.includes(d.id)) {
+      for (const ch of directChildren(d, docOf, [...stack, d.id])) add(ch.doc, ch.qty);
+    } else add(d, 1);
   }
   return [...m.values()];
 }
