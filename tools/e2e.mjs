@@ -4378,7 +4378,7 @@ try {
     await evalApp(() => { const a = window.__werkcad; a.sel = null; a.props.render(); });
     const bomText = await page.locator("#props .section", { hasText: "Gesamtmasse" }).innerText();
     // Kopie konstruieren aus der Befehlsliste
-    await evalApp(() => window.__werkcad.commands.exec("asm.copyDesign"));
+    await evalApp(() => { window.__werkcad.commands.exec("asm.copyDesign"); }); // nicht auf den Dialog warten
     await page.locator(".dialog", { hasText: "Kopie konstruieren" }).waitFor({ timeout: 10000 });
     const rows = await page.locator(".dialog table.copy-design tbody tr").count();
     await page.locator(".dialog .field", { hasText: "Präfix" }).locator("input").fill("P2-");
