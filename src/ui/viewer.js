@@ -273,6 +273,20 @@ export class Viewer {
     this.lights.ambient.intensity = L.ambient;
     this.lights.hemi.intensity = L.hemi;
   }
+  /**
+   * Navigationswerkzeug der Navigationsleiste (SolidCraft): linke Maustaste dreht, verschiebt oder zoomt, bis Esc
+   * oder erneuter Klick. kind = "orbit" | "pan" | "zoom" | null
+   */
+  setNavTool(kind) {
+    const M = { orbit: THREE.MOUSE.ROTATE, pan: THREE.MOUSE.PAN, zoom: THREE.MOUSE.DOLLY };
+    this.navTool = M[kind] !== undefined ? kind : null;
+    this.controls.mouseButtons = { ...this.controls.mouseButtons, LEFT: this.navTool ? M[kind] : null };
+    this.renderer.domElement.style.cursor = this.navTool ? (kind === "pan" ? "move" : kind === "zoom" ? "ns-resize" : "grab") : "";
+    if (this.navTool && !this.navEsc) {
+      this.navEsc = (e) => { if (e.key === "Escape") { this.setNavTool(null); this.onNavTool?.(null); } };
+      window.addEventListener("keydown", this.navEsc, true);
+    } else if (!this.navTool && this.navEsc) { window.removeEventListener("keydown", this.navEsc, true); this.navEsc = null; }
+  }
   applyPrefs(v) {
     const c = this.controls;
     if (v["ansicht.beleuchtung"] !== this.lightPreset) { this.lightPreset = v["ansicht.beleuchtung"]; this.applyLighting(); this.render(); }
@@ -283,6 +297,7 @@ export class Viewer {
     c.mouseButtons = v["ansicht.maus"] === "mitte-drehen"
       ? { LEFT: null, MIDDLE: rot, RIGHT: THREE.MOUSE.PAN }
       : { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: rot };
+    if (this.navTool) c.mouseButtons.LEFT = { orbit: THREE.MOUSE.ROTATE, pan: THREE.MOUSE.PAN, zoom: THREE.MOUSE.DOLLY }[this.navTool];
     c.zoomToCursor = v["ansicht.zoomZumCursor"];
     c.zoomSpeed = v["ansicht.zoomGeschwindigkeit"];
     c.rotateSpeed = v["ansicht.drehGeschwindigkeit"];

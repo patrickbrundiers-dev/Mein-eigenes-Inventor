@@ -965,8 +965,8 @@ html[data-theme="dark"] body.werkstatt { --ink: #fff; --ink-soft: #e4ebf2; }
 .dock.empty { border: 0 !important; box-shadow: none; background: none; }
 .dock > aside:not([hidden]) ~ aside:not([hidden]) { border-top: 1px solid var(--steel-2); }
 .dock-grip { width: 8px; }
-.dock-left .dock-grip { right: -6px; }
-.dock-right .dock-grip { left: -6px; }
+.dock-left .dock-grip { right: 0; }
+.dock-right .dock-grip { left: 0; }
 .dock-grip:hover { background: color-mix(in srgb, var(--dye) 30%, transparent); border-radius: 4px; }
 .pane-head { padding: 10px 12px 8px; background: var(--steel-0); border-bottom: 1px solid var(--steel-2); font-family: var(--ui); font-size: var(--fs-l); }
 .tree-search { background: var(--steel-0); }
@@ -1059,3 +1059,43 @@ body.werkstatt .view-tools > button { width: 44px; height: 44px; }
 .quick-measure .qm-l { color: var(--ink-soft); }
 .quick-measure .qm-v { font-variant-numeric: tabular-nums; font-weight: 600; }
 #stage.split .quick-measure { right: calc(var(--split-w) + 12px); }
+
+/* ---- SolidCraft-Aufbau L1–L6 (Patrick 04.11.: »Design, Layout, Oberfläche auch übernehmen«) ---- */
+/* L1 Menüband als schwebende Karte, links die Kachel des Arbeitsbereichs */
+:root { --ribbon-h: 134px; }
+#ribbon { flex-direction: row; gap: var(--card-gap); padding: var(--card-gap) var(--card-gap) 0; background: var(--stage-a); border-bottom: 0; }
+#ribbon .rb-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--steel-0); border: 1px solid var(--steel-2); border-radius: var(--radius-l); box-shadow: var(--shadow-1); overflow: hidden; }
+.rb-ws { flex: none; width: 104px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 1px solid var(--steel-2); border-radius: var(--radius-l); background: var(--steel-0); box-shadow: var(--shadow-1); color: var(--dye); cursor: pointer; padding: 6px 4px; position: relative; font: inherit; }
+.rb-ws::before { content: ""; position: absolute; left: 14px; right: 14px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--dye); }
+.rb-ws svg { width: 30px; height: 30px; }
+.rb-ws svg :is(rect, circle, polygon), .rb-ws svg path[d$="z"], .rb-ws svg path[d$="Z"] { fill: var(--icon-fill); }
+.rb-ws-name { font-weight: 600; font-size: var(--fs-m); color: var(--ink); }
+.rb-ws-sub { font-size: var(--fs-xs); color: var(--ink-soft); }
+.rb-ws:hover { border-color: var(--dye); }
+body.werkstatt .rb-ws { display: none; }
+.rb-ws.schmal { width: 52px; }
+.rb-ws.weg { display: none; }
+.rb-ws.schmal :is(.rb-ws-name, .rb-ws-sub) { display: none; }
+/* L2 Gruppenname öffnet die Gruppenliste */
+button.rb-group-label { border: 0; background: transparent; font: inherit; font-size: var(--fs-s); cursor: pointer; border-radius: 6px; margin: 0 auto 2px; padding: 1px 8px; }
+button.rb-group-label:hover, button.rb-group-label.open { background: var(--dye-soft); color: var(--dye); }
+.rb-glist { position: fixed; z-index: 300; min-width: 280px; max-width: 360px; max-height: calc(100vh - 220px); overflow-y: auto; background: var(--steel-0); border: 1px solid var(--steel-2); border-radius: var(--radius-l); box-shadow: var(--shadow-2); padding: 6px 0; }
+.rb-gl-title, .rb-gl-head { font: 600 var(--fs-xs) var(--ui); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); padding: 8px 16px 4px; }
+.rb-gl-row { display: grid; grid-template-columns: 22px 1fr auto 22px; align-items: center; gap: 10px; padding: 6px 12px 6px 16px; cursor: pointer; color: var(--ink); font-size: var(--fs-m); outline: none; }
+.rb-gl-row svg { width: 20px; height: 20px; color: var(--dye); }
+.rb-gl-row svg :is(rect, circle, polygon), .rb-gl-row svg path[d$="z"], .rb-gl-row svg path[d$="Z"] { fill: var(--icon-fill); }
+.rb-gl-row:hover, .rb-gl-row:focus { background: var(--dye-soft); }
+.rb-gl-row.off { opacity: .45; cursor: default; }
+.rb-gl-kbd { font-size: var(--fs-xs); color: var(--ink-soft); }
+.rb-gl-pin { border: 0; background: transparent; padding: 0; width: 22px; height: 22px; display: grid; place-items: center; color: var(--steel-4); cursor: pointer; opacity: 0; }
+.rb-gl-pin svg { width: 15px; height: 15px; color: currentColor; }
+.rb-gl-row:hover .rb-gl-pin, .rb-gl-row:focus .rb-gl-pin, .rb-gl-pin.on { opacity: 1; }
+.rb-gl-pin.on { color: var(--dye); }
+.rb-gl-foot { border-top: 1px solid var(--steel-2); margin-top: 6px; padding: 8px 16px 4px; font-size: var(--fs-xs); color: var(--ink-soft); }
+/* L4 Navigationswerkzeuge aktiv */
+.view-tools > button.on { background: var(--dye); color: #fff; }
+/* L5 Karten nur so hoch wie ihr Inhalt, Kopf mit Titel */
+/* (rechte Karte bleibt volle Höhe: Inhalt scrollt darin) */
+/* L6 Schild über dem gewählten Feature in der Verlaufsleiste */
+#verlauf { position: relative; overflow: visible; }
+.vl-editing { position: absolute; bottom: calc(100% + 6px); padding: 4px 10px; border-radius: 6px; background: #1c2129; color: #fff; font-size: var(--fs-s); white-space: nowrap; pointer-events: none; box-shadow: var(--shadow-1); z-index: 5; }

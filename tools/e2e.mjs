@@ -2173,7 +2173,8 @@ try {
     const vb = await page.locator("#viewer canvas").boundingBox();
     const total = await evalApp(() => window.__werkcad.viewer.boxHits({ edges: false, faces: true }).length);
     const drag = async (x0, y0, x1, y1) => { await page.mouse.move(x0, y0); await page.mouse.down(); await page.mouse.move(x1, y1, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(150); return evalApp(() => window.__werkcad.selHits.length); };
-    const win = await drag(vb.x + 2, vb.y + 2, vb.x + vb.width - 2, vb.y + vb.height - 2);
+    // 8 px Abstand: das 3D-Fenster hat runde Ecken (schwebende Karten), in der Ecke liegt der Arbeitsbereich
+    const win = await drag(vb.x + 8, vb.y + 8, vb.x + vb.width - 8, vb.y + vb.height - 8);
     const cross = await drag(vb.x + vb.width / 2 + 20, vb.y + vb.height / 2 + 20, vb.x + vb.width / 2 - 20, vb.y + vb.height / 2 - 20);
     const small = await drag(vb.x + vb.width / 2 - 20, vb.y + vb.height / 2 - 20, vb.x + vb.width / 2 + 20, vb.y + vb.height / 2 + 20);
     await page.mouse.click(vb.x + 10, vb.y + vb.height - 10);
@@ -2236,7 +2237,7 @@ try {
     await page.locator(".cmd-item").first().locator(".cmd-pin").click();
     await page.keyboard.press("Escape");
     await page.waitForTimeout(150);
-    const qaBtn = page.locator("#ribbon .rb-qa-btn[data-cmd='view.top']");
+    const qaBtn = page.locator("#ab-cmds .rb-qa-btn[data-cmd='view.top']");
     const shown = await qaBtn.count();
     await evalApp(() => window.__werkcad.viewer.setView("iso", { animate: false }));
     await qaBtn.click();
@@ -3076,7 +3077,7 @@ try {
     const lum = (c) => { const [r, g, b] = rgb(c); return (r + g + b) / 3; };
     const look = () => evalApp(() => {
       const cs = (sel) => getComputedStyle(document.querySelector(sel));
-      return { theme: document.documentElement.dataset.theme, body: cs("body").backgroundColor, props: cs("#props").backgroundColor, ribbon: cs("#ribbon").backgroundColor, stage: cs("#stage").backgroundImage, ink: cs("body").color };
+      return { theme: document.documentElement.dataset.theme, body: cs("body").backgroundColor, props: cs("#props").backgroundColor, ribbon: cs("#ribbon").backgroundColor, stage: cs("#workspace").backgroundImage, ink: cs("body").color };
     });
     const light = await look();
     await evalApp(() => window.__werkcad.prefs.set("darstellung.schema", "dunkel"));

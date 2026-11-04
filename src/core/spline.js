@@ -2,8 +2,29 @@
 // Anfang und Ende liegen auf dem ersten bzw. letzten Kontrollpunkt. Für Kernel und Anzeige wird
 // die Kurve exakt in kubische Bézier-Abschnitte zerlegt (Knoteneinfügen nach Boehm).
 
-/** Grad für m Kontrollpunkte */
-export const splineDegree = (m) => Math.max(1, Math.min(3, m - 1));
+/** Grad für m Kontrollpunkte; maxDeg 3 (Standard) oder 5 (ctrl.deg) */
+export const splineDegree = (m, maxDeg = 3) => Math.max(1, Math.min(maxDeg, m - 1));
+
+/** Punkt und Ableitung einer Bézierkurve beliebigen Grades (de Casteljau) */
+function bezierAt(b, t) {
+  let q = b.map((x) => [x[0], x[1]]);
+  let d = null;
+  while (q.length > 1) {
+    if (q.length === 2) d = [(q[1][0] - q[0][0]) * (b.length - 1), (q[1][1] - q[0][1]) * (b.length - 1)];
+    q = q.slice(1).map((x, i) => lerp(q[i], x, t));
+  }
+  return { p: q[0], d: d || [0, 0] };
+}
+/** Bézierabschnitt Grad > 3 in kubische Stücke (Hermite mit exakten Ableitungen, Fehler ≪ 0,01 mm) */
+function toCubics(b, pieces = 4) {
+  const out = [];
+  for (let k = 0; k < pieces; k++) {
+    const t0 = k / pieces, t1 = (k + 1) / pieces, h = (t1 - t0) / 3;
+    const A = bezierAt(b, t0), B = bezierAt(b, t1);
+    out.push([[A.p[0] + A.d[0] * h, A.p[1] + A.d[1] * h], [B.p[0] - B.d[0] * h, B.p[1] - B.d[1] * h], B.p]);
+  }
+  return out;
+}
 
 function clampedKnots(m, p) {
   const L = m - p, U = [];
@@ -37,14 +58,15 @@ const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 export function splineBeziers(ctrl) {
   const m = ctrl.length;
   if (m < 2) return null;
-  const p = splineDegree(m);
+  const p = splineDegree(m, ctrl.deg === 5 ? 5 : 3);
   let P = ctrl.map((q) => [q[0], q[1]]), U = clampedKnots(m, p);
   const L = m - p;
   for (let u = 1; u < L; u++) for (let r = 1; r < p; r++) ({ P, U } = insertKnot(P, U, p, u));
   const segs = [];
   for (let j = 0; j < L; j++) {
     const b = P.slice(j * p, j * p + p + 1);
-    if (p === 3) segs.push([b[1], b[2], b[3]]);
+    if (p > 3) segs.push(...toCubics(b));
+    else if (p === 3) segs.push([b[1], b[2], b[3]]);
     else if (p === 2) segs.push([lerp(b[0], b[1], 2 / 3), lerp(b[2], b[1], 2 / 3), b[2]]);
     else segs.push([lerp(b[0], b[1], 1 / 3), lerp(b[0], b[1], 2 / 3), b[1]]);
   }

@@ -4,6 +4,7 @@ import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
 import { defaultStecksystem } from "../core/stecksystem.js";
 import { h, icon, toast, closeMenu, contextMenu } from "./dom.js";
+import { workspaceMenu } from "./arbeitsbereiche.js";
 import { problemsDialog } from "./pruefung.js";
 import { newGrid } from "./achsraster.js";
 import { saveToLibrary, libraryDialog } from "./teilebibliothek.js";
@@ -28,7 +29,6 @@ import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generato
 import { insertGestellDialog, startGestellTool, changeMemberDialog, lengthenDialog, gestellInfoDialog } from "./gestell.js";
 import { evaluate } from "../core/expr.js";
 import { commandDef, inScope } from "../core/commands.js";
-import { workspaceMenu } from "./arbeitsbereiche.js";
 import { undoHistory } from "../core/zuletzt.js";
 import { rememberCommand } from "./commands.js";
 import { DEFAULT_LAYOUT, movePanel, togglePanel } from "../core/layout.js";
@@ -472,14 +472,15 @@ export class Ribbon {
             T("sfillet", "Rundung", "fillet"), T("point", "Punkt", "point"),
             C("schamfer", "Fase", "chamfer"), C("circle3", "Kreis durch 3 Punkte", "circle3"), C("rect3", "Rechteck über 3 Punkte", "rect3"), C("circlet3", "Kreis tangential an 3 Linien", "circlet3"), C("arct", "Tangentialer Bogen", "arct"),
             // SolidCraft-Abgleich: weitere Formen und Hilfslinien als Aufklappmenüs (Skizzen-Band bleibt so breit wie vorher)
-            { ...M("skMore", "Weitere Formen", "rect", [T("rectr", "Abgerundetes Rechteck", "rect"), T("linem", "Linie aus Mitte", "line"), T("circle2", "Kreis über 2 Punkte", "circle"), T("slota", "Bogenlangloch", "slot"), T("conic", "Kegelschnitt", "spline"), B("skEquation", "Gleichungskurve …", "spline", { run: () => sk.equationDialog() }), B("skSvg", "SVG importieren …", "import", { run: () => sk.importSvgDialog() })]), iconOnly: true },
-            { ...M("skHelp", "Hilfslinien", "construct", [T("clh", "Hilfslinie waagrecht", "horizontal"), T("clv", "Hilfslinie senkrecht", "vertical"), T("cla", "Hilfslinie unter Winkel", "angle"), T("clpar", "Hilfslinie parallel", "parallel"), T("clperp", "Hilfslinie senkrecht zu Linie", "perpendicular"), T("clbis", "Winkelhalbierende", "angle"), T("cltan", "Tangente durch Punkt", "tangent"), T("ctan2", "Gemeinsame Tangente", "tangent")]), iconOnly: true },
+            { ...M("skMore", "Weitere Formen", "rect", [T("rectr", "Abgerundetes Rechteck", "rect"), T("linem", "Linie aus Mitte", "line"), T("circle2", "Kreis über 2 Punkte", "circle"), T("slota", "Bogenlangloch", "slot"), T("slota3", "Bogenlangloch über 3 Punkte", "slot"), T("circlet2", "Kreis an zwei Linien", "circle"), T("polyedge", "Polygon über Kante", "polygon"), T("polyc", "Polygon umschrieben", "polygon"), T("blend", "Übergangskurve", "spline"), T("splinefit", "Spline durch Punkte", "spline"), T("spline5", "Spline Grad 5", "spline"), T("spins", "Splinepunkt einfügen", "spline"), T("sprem", "Splinepunkt entfernen", "spline"), B("skSplRev", "Spline umkehren", "spline", { run: () => sk.reverseSelectedSplines() }), B("skBounds", "Zeichnungsrahmen …", "rect", { run: () => sk.drawingBoundsDialog() }), T("conic", "Kegelschnitt", "spline"), B("skEquation", "Gleichungskurve …", "spline", { run: () => sk.equationDialog() }), B("skSvg", "SVG importieren …", "import", { run: () => sk.importSvgDialog() })]), iconOnly: true },
+            { ...M("skHelp", "Hilfslinien", "construct", [T("clh", "Hilfslinie waagrecht", "horizontal"), T("clv", "Hilfslinie senkrecht", "vertical"), T("cla", "Hilfslinie unter Winkel", "angle"), T("clpar", "Hilfslinie parallel", "parallel"), T("clperp", "Hilfslinie senkrecht zu Linie", "perpendicular"), T("clbis", "Winkelhalbierende", "angle"), T("cltan", "Tangente durch Punkt", "tangent"), T("tanat", "Tangente an Kurvenpunkt", "tangent"), T("ctan2", "Gemeinsame Tangente", "tangent")]), iconOnly: true },
           ] },
-          { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() }), T("image", "Bild", "import")] },
+          // Symbolspalte: spart Breite, damit die Skizze neben der Arbeitsbereich-Kachel in 1600 px passt
+          { label: "Übernehmen", small: true, buttons: [C("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { iconOnly: true, run: () => sk.importDxfDialog() }), C("image", "Bild", "import")] },
           { label: "Ändern", small: true, buttons: [
             T("smove", "Verschieben", "move"), T("scopy", "Kopieren", "copy"), T("srotate", "Drehen", "rotate"),
             T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"),
-            T("sscale", "Skalieren", "scale"), T("offset", "Versatz", "offset"), B("sclean", "Säubern", "clean", { run: () => sk.cleanDialog() }),
+            C("sscale", "Skalieren", "scale"), C("offset", "Versatz", "offset"), B("sclean", "Säubern", "clean", { iconOnly: true, run: () => sk.cleanDialog() }), B("skOffBreak", "Versatz lösen", "offset", { iconOnly: true, run: () => sk.breakSelectedOffset() }),
             // Muster als Symbolspalte im selben Abschnitt (spart eine Gruppe, damit die Skizze in 1600 px passt)
             C("pattern", "Rechteckmuster", "pattern"), C("cpattern", "Kreismuster", "circpattern"), C("mirror", "Spiegeln", "mirror"),
             C("scorner", "Ecke (zwei Linien verbinden)", "extend"),
@@ -691,7 +692,9 @@ export class Ribbon {
           btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + 3).map((b) =>
             h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), ...this.tipAttrs(b), "aria-label": t_(b.label), onclick: (e) => this.press(b, e), disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : t_(b.label)))));
         }
-        panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns, h("div", { class: "rb-group-label" }, t_(g.label))));
+        // Gruppenname öffnet die Gruppenliste (SolidCraft): alle Befehle mit Kürzel, Nadel heftet an den Schnellzugriff
+        panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns,
+          h("button", { class: "rb-group-label", "aria-haspopup": "true", title: "Alle Befehle der Gruppe", onclick: (e) => this.groupList(e, g) }, t_(g.label))));
       }
       if (L.hidden.length) panel.append(h("button", { class: "rb-hidden", title: "Ausgeblendete Gruppen: " + L.hidden.join(", "), onclick: (e) => this.hiddenMenu(e, tab, L.hidden) }, "+" + L.hidden.length));
     } else if (mode === "start") {
@@ -699,8 +702,65 @@ export class Ribbon {
     }
     this.tips.hide();
     this.app.minibar?.hide();
-    this.el.replaceChildren(tabBar, panel);
+    this.el.replaceChildren(this.workspaceTile(mode), h("div", { class: "rb-main" }, tabBar, panel));
     this.fitGroups();
+  }
+  /** Kachel links vom Menüband (SolidCraft »Design · Workspace«): Arbeitsumgebung und Menü der Arbeitsbereiche */
+  workspaceTile(mode) {
+    const M = { part: ["part", "Bauteil"], assembly: ["assembly", "Baugruppe"], sketch: ["sketch", "Skizze"], drawing: ["drawing", "Zeichnung"], start: ["home", "Start"] };
+    const [ic, label] = M[mode] || ["part", "PBCAD"];
+    return h("button", { class: "rb-ws", title: "Arbeitsbereich wechseln oder speichern", "aria-haspopup": "true", onclick: (e) => workspaceMenu(this.app, e) },
+      icon(ic), h("span", { class: "rb-ws-name" }, label), h("span", { class: "rb-ws-sub" }, "Arbeitsbereich ⌄"));
+  }
+  /** Gruppenliste unter dem Gruppennamen: alle Befehle (auch aus Untermenüs) mit Symbol, Kürzel und Nadel */
+  groupList(e, g) {
+    e.stopPropagation();
+    this.closeGroupList();
+    const app = this.app;
+    const btn = e.currentTarget;
+    const items = [];
+    for (const b of g.buttons) {
+      if (b.menu?.length) { items.push({ head: b.label.replace(/\s*▾$/, "") }); for (const x of b.menu) items.push({ b: x }); }
+      else items.push({ b });
+    }
+    const pinned = () => app.prefs.get("werkzeuge.schnellzugriff") || [];
+    const row = ({ b, head }) => {
+      if (head) return h("div", { class: "rb-gl-head" }, head);
+      const id = this.tipId(b), cmd = commandDef(id), k = this.kbd(id), on = pinned().includes(id);
+      return h("div", { class: "rb-gl-row" + (b.disabled ? " off" : ""), role: "menuitem", tabindex: "-1", "data-id": b.id,
+        onclick: () => { if (b.disabled) return; this.closeGroupList(); this.press(b, { currentTarget: btn, clientX: 0, clientY: 0 }); } },
+        icon(b.icon || "part"), h("span", { class: "rb-gl-label" }, t_(b.label).replace(/\u00ad/g, "")),
+        k ? h("span", { class: "rb-gl-kbd" }, k) : null,
+        cmd ? h("button", { class: "rb-gl-pin" + (on ? " on" : ""), title: on ? "Vom Schnellzugriff lösen" : "An den Schnellzugriff in der Kopfleiste heften", "aria-pressed": String(on),
+          onclick: (ev) => { ev.stopPropagation(); const cur = pinned(); const r = app.prefs.set("werkzeuge.schnellzugriff", on ? cur.filter((x) => x !== id) : [...cur, id]); if (!r.ok) toast(r.error, { kind: "err" }); this.closeGroupList(); this.renderAppBar(); } }, icon("pin")) : h("span", { class: "rb-gl-pin none" }));
+    };
+    const box = h("div", { class: "rb-glist", role: "menu", "aria-label": g.label }, h("div", { class: "rb-gl-title" }, t_(g.label)), ...items.map(row),
+      h("div", { class: "rb-gl-foot" }, "Angeheftete Befehle stehen im Schnellzugriff oben. Nadel klicken heftet an oder löst."));
+    document.body.append(box);
+    const r = btn.getBoundingClientRect();
+    box.style.top = r.bottom + 4 + "px";
+    box.style.left = Math.max(8, Math.min(r.left + r.width / 2 - box.offsetWidth / 2, innerWidth - box.offsetWidth - 8)) + "px";
+    btn.classList.add("open");
+    const away = (ev) => { if (!box.contains(ev.target) && !btn.contains(ev.target)) this.closeGroupList(); };
+    const key = (ev) => {
+      if (ev.key === "Escape") { ev.stopPropagation(); this.closeGroupList(); btn.focus(); return; }
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        const rows = [...box.querySelectorAll(".rb-gl-row")], i = rows.indexOf(document.activeElement);
+        rows[(i + (ev.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length]?.focus();
+      }
+      if (ev.key === "Enter" && document.activeElement?.classList.contains("rb-gl-row")) { ev.preventDefault(); document.activeElement.click(); }
+    };
+    document.addEventListener("mousedown", away, true);
+    document.addEventListener("keydown", key, true);
+    this.glist = { box, btn, off: () => { document.removeEventListener("mousedown", away, true); document.removeEventListener("keydown", key, true); } };
+    box.querySelector(".rb-gl-row")?.focus();
+  }
+  closeGroupList() {
+    const g = this.glist;
+    if (!g) return;
+    this.glist = null;
+    g.off(); g.btn.classList.remove("open"); g.box.remove();
   }
   /** Knopf gedrückt: merken (Wiederholen, Befehlssuche »Zuletzt«), dann ausführen */
   /** Knopf des aktuellen Modus nach id (auch in »Weitere«-Menüs), z. B. für die Kachel »Nächster Schritt« */
@@ -728,7 +788,14 @@ export class Ribbon {
     this.closeFlyout();
     const groups = [...panel.querySelectorAll(":scope > .rb-group")];
     for (const g of groups) if (g.classList.contains("zu")) { g.classList.remove("zu"); g.querySelector(".rb-collapse")?.remove(); }
-    for (let i = groups.length - 1; i >= 0 && panel.scrollWidth > panel.clientWidth + 1; i--) this.collapseGroup(groups[i]);
+    // erst die Arbeitsbereich-Kachel schmal machen (nur Symbol), dann Gruppen einklappen
+    const ws = this.el.querySelector(".rb-ws");
+    ws?.classList.remove("schmal", "weg");
+    if (ws && panel.scrollWidth > panel.clientWidth + 1) ws.classList.add("schmal");
+    if (ws && panel.scrollWidth > panel.clientWidth + 1) ws.classList.add("weg"); // Arbeitsbereich bleibt über Ansicht erreichbar
+    // »Skizze fertig« und Gruppen mit nur einem Knopf bleiben stehen (Einklappen spart dort nichts)
+    const keep = (g) => g.querySelector(".rb-finish") || g.querySelectorAll("button").length <= 1;
+    for (let i = groups.length - 1; i >= 0 && panel.scrollWidth > panel.clientWidth + 1; i--) if (!keep(groups[i])) this.collapseGroup(groups[i]);
   }
   collapseGroup(g) {
     const btns = g.querySelector(".rb-buttons");

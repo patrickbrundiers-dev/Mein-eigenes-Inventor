@@ -986,7 +986,7 @@ export class App {
     const boxEl = h("div", { class: "view-box", hidden: true });
     document.getElementById("stage").append(boxEl);
     const boxRect = (e) => { const r = cv.getBoundingClientRect(); return { x0: down.x - r.left, y0: down.y - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, ox: r.left - boxEl.parentElement.getBoundingClientRect().left, oy: r.top - boxEl.parentElement.getBoundingClientRect().top }; };
-    const boxAllowed = () => this.mode === "part" && !this.pick && down?.b === 0 && !down.touch; // Finger ziehen dreht
+    const boxAllowed = () => this.mode === "part" && !this.pick && down?.b === 0 && !down.touch && !this.viewer.navTool; // Finger ziehen dreht
     cv.addEventListener("pointermove", (e) => {
       if (!down || !boxAllowed() || Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) return;
       const b = boxRect(e);
@@ -1010,7 +1010,7 @@ export class App {
       if (b === 2 && this.mode === "sketch") { this.sketcher.state = null; this.sketcher.render(); return; }
       if (b === 2 && this.pick?.kind === "place") return this.cancelPick();
       if (b === 2) return this.viewerContextMenu(e);
-      if (b !== 0 || this.mode === "sketch") return;
+      if (b !== 0 || this.mode === "sketch" || this.viewer.navTool) return;
       if (this.viewer.handleCubeClick(e.clientX, e.clientY)) return;
       this.viewerClick(e);
     });
@@ -1499,11 +1499,19 @@ export class App {
   buildViewTools() {
     // Navigationsleiste als schwebende Pille unten in der Mitte (SolidCraft-Aufbau), Symbole mit Tooltip
     const mk = (ic, label, run, title) => h("button", { onclick: run, title: title || label, "aria-label": label, "data-view": label }, icon(ic));
+    // Navigationswerkzeuge wie SolidCraft: linke Maustaste dreht/verschiebt/zoomt, bis Esc oder erneuter Klick
+    const nav = (ic, kind, label) => { const b = mk(ic, label, () => { const k = this.viewer.navTool === kind ? null : kind; this.viewer.setNavTool(k); syncNav(); }, label + " (linke Maustaste, Esc beendet)"); b.dataset.nav = kind; return b; };
+    const syncNav = () => { for (const b of this.viewTools.querySelectorAll("[data-nav]")) b.classList.toggle("on", b.dataset.nav === this.viewer.navTool); };
+    this.viewer.onNavTool = syncNav;
+    const views = (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu(r.left, r.top - 4, [["iso", "Isometrisch", "viewIso"], ["front", "Vorne", "viewFront"], ["back", "Hinten", "viewFront"], ["left", "Links", "viewRight"], ["right", "Rechts", "viewRight"], ["top", "Oben", "viewTop"], ["bottom", "Unten", "viewTop"]].map(([v, label, ic]) => ({ label, icon: ic, run: () => this.viewer.setView(v) }))); };
     this.viewTools = h("div", { class: "view-tools", role: "toolbar", "aria-label": "Ansicht" },
+      nav("orbit", "orbit", "Drehen"), nav("pan", "pan", "Verschieben"), nav("zoom", "zoom", "Zoomen"),
+      h("span", { class: "vt-sep" }),
       mk("viewIso", "Iso", () => this.viewer.setView("iso"), "Isometrische Ansicht"),
       mk("viewFront", "Vorne", () => this.viewer.setView("front"), "Ansicht vorne"),
       mk("viewTop", "Oben", () => this.viewer.setView("top"), "Ansicht oben"),
       mk("viewRight", "Rechts", () => this.viewer.setView("right"), "Ansicht rechts"),
+      mk("home", "Ansichten", views, "Alle Standardansichten"),
       h("span", { class: "vt-sep" }),
       mk("fit", "Alles", () => this.viewer.fit(), "Alles zeigen (F6)"),
       mk("search", "Auswahl", () => this.zoomToSelection(), "Auswahl zeigen (Umschalt+F6)"),

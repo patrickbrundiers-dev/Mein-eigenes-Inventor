@@ -53,7 +53,17 @@ export class Verlauf {
       h("div", { class: "vl-ctls" }, ctl("⏮", "Zum Anfang (vor alle Features)", 0, n === 0), ctl("◀", "Ein Feature zurück", n - 1, n === 0), ctl("▶", "Ein Feature vor", n + 1, n >= fs.length), ctl("⏭", "Ans Ende", fs.length, n >= fs.length)),
       track,
       h("span", { class: "vl-info" }, fs.length ? `${n < fs.length ? `${n} von ${fs.length}` : fs.length} Features · Marke ziehen zum Zurückrollen` : "Noch keine Features"));
-    track.querySelector(".vl-item.sel")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const selEl = track.querySelector(".vl-item.sel");
+    selEl?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // Schild über dem gewählten Feature (SolidCraft »Fillet 1 · editing«)
+    if (selEl) {
+      const f = fs[Number(selEl.dataset.i)];
+      const editing = app.pick?.feature === f.id || app._editingFeature === f.id;
+      const tag = h("div", { class: "vl-editing", role: "status" }, `${f.name || FEATURE_NAMES[f.type] || f.type} · ${editing ? "bearbeiten" : "gewählt"}`);
+      el.append(tag);
+      const er = el.getBoundingClientRect(), sr = selEl.getBoundingClientRect();
+      tag.style.left = Math.max(4, sr.left - er.left + sr.width / 2 - tag.offsetWidth / 2) + "px";
+    }
     this.track = track;
     this.part = part;
   }

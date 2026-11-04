@@ -16,6 +16,8 @@ import { glyphPath, sketchSnapKind } from "../core/fangpunkte.js";
 import { autoDimension } from "../core/autodim.js";
 import { cleanSketch, cleanReportText, CLEAN_KINDS, CLEAN_DEFAULTS } from "../core/sketchclean.js";
 import { splineCtrl } from "../core/sketch.js";
+const SPLINE_TOOLS = ["spline", "spline5", "splinefit"];
+import { buildBlendCurve, nearestEnd, buildTangentAt, buildCircleTangent2, arcSlotFrom3, polygonFromEdge, circumscribedVertex, insertSplinePoint, removeSplinePoint, reverseSpline, breakOffset, buildDrawingBounds, simplifyPolyline, addPolylines } from "../core/sketchtools2.js";
 import { defaultText, textBox, textPolylines, partTextVars, TEXT_STYLES } from "../core/schrift.js";
 import { imageCorners, newImageEntity, rescaleImage } from "../core/skizzenbild.js";
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
@@ -74,6 +76,16 @@ export const SKETCH_TOOLS = {
   clbis: "Winkelhalbierende: zwei Linien anklicken – nahe der gewünschten Halbierenden",
   cltan: "Tangente durch Punkt: Kreis oder Bogen auf der Seite anklicken, wo die Tangente berühren soll, dann den Punkt außerhalb",
   ctan2: "Gemeinsame Tangente: ersten Kreis/Bogen nahe dem Berührpunkt anklicken, dann den zweiten",
+  blend: "Übergangskurve: erste Kurve nahe dem Ende anklicken, dann die zweite – ein Spline schließt an beiden tangential an",
+  tanat: "Tangente an Kurvenpunkt: Kreis oder Bogen an der Stelle anklicken, wo die Tangente berühren soll",
+  circlet2: "Kreis an zwei Linien: zwei Linien anklicken (Klickstelle wählt die Ecke), dann Radius eingeben",
+  slota3: "Bogenlangloch über 3 Punkte: Anfang, Punkt auf der Bahn, Ende klicken, dann Breite eingeben",
+  polyedge: "Polygon über Kante: zwei Ecken einer Seite klicken, dann die Seite, auf der das Polygon liegt",
+  polyc: "Polygon umschrieben: Mitte klicken, dann eine Seitenmitte (Inkreis)",
+  spline5: "Spline Grad 5: Kontrollpunkte klicken, Enter oder Doppelklick beendet – glatter als Grad 3",
+  splinefit: "Spline durch Punkte: Punkte klicken, durch die die Kurve läuft – Enter beendet",
+  spins: "Splinepunkt einfügen: Spline an der Stelle anklicken, wo ein Kontrollpunkt dazukommt",
+  sprem: "Splinepunkt entfernen: Kontrollpunkt eines Splines anklicken",
   scorner: "Ecke: zwei Linien anklicken – beide werden bis zu ihrem Schnittpunkt verlängert oder gekürzt und dort verbunden",
   arct: "Tangentialer Bogen: Ende einer Linie klicken, dann den Endpunkt des Bogens – der Bogen schließt tangential an",
   horizontal: "Horizontal: Linie oder zwei Punkte wählen – oder erst wählen, dann Bedingung",
@@ -679,7 +691,12 @@ export class Sketcher {
       const cons = [];
       const ids = pts.map((p) => this.usePoint(sk, p, cons));
       if (closed) ids.push(ids[0]);
-      sk.entities.push({ id: uid("sp"), type: "spline", pts: ids, p1: ids[0], p2: ids[ids.length - 1], construction: !!this.construction });
+      if (this.tool === "splinefit" && !closed && pts.length >= 3) {
+        // Spline durch Punkte: Kontrollpunkte so gesetzt, dass die Kurve durch die Klickpunkte läuft
+        const ctrl = fitSplineCtrl(pts.map((q) => [q.x, q.y]));
+        ctrl.forEach(([x, y], i) => { if (i > 0 && i < ctrl.length - 1) { const q = sk.points.find((pp) => pp.id === ids[i]); if (q && !pts[i].pointId) { q.x = x; q.y = y; } } });
+      }
+      sk.entities.push({ id: uid("sp"), type: "spline", pts: ids, p1: ids[0], p2: ids[ids.length - 1], construction: !!this.construction, ...(this.tool === "spline5" ? { deg: 5 } : {}) });
       sk.constraints.push(...cons);
     });
     this.render();
@@ -1436,7 +1453,7 @@ export class Sketcher {
           this.state = null;
         }
         break;
-      case "spline": {
+      case "spline": case "spline5": case "splinefit": {
         if (!this.state) { this.state = { pts: [sn] }; break; }
         const first = this.state.pts[0], last = this.state.pts.at(-1);
         const [fx, fy] = this.S(first.x, first.y), [lx, ly] = this.S(last.x, last.y);
@@ -1649,6 +1666,80 @@ export class Sketcher {
         });
         return true;
       }
+      case "blend": {
+        // Übergangskurve: Ende der ersten Kurve, dann Ende der zweiten anklicken
+        const en = hitEnt(["line", "arc", "spline"]);
+        if (!en) { toast("Linie, Bogen oder Spline nahe am Ende anklicken"); return true; }
+        const end = nearestEnd(this.sk, en, lx, ly);
+        if (!this.state?.blend) { this.state = { blend: { e: en.id, end } }; return true; }
+        const a = this.state.blend;
+        this.state = null;
+        this.commitShape("Übergangskurve", (sk) => buildBlendCurve(sk, a, { e: en.id, end }, { uid, construction: !!this.construction }));
+        return true;
+      }
+      case "tanat": {
+        const en = hitEnt(["circle", "arc"]);
+        if (!en) { toast("Kreis oder Bogen an der Stelle der Tangente anklicken"); return true; }
+        this.commitShape("Tangente an Kurvenpunkt", (sk) => buildTangentAt(sk, sk.entities.find((x) => x.id === en.id), lx, ly, { uid }));
+        return true;
+      }
+      case "circlet2": {
+        const ln = hitEnt(["line"]);
+        if (!ln) { toast("Linie anklicken"); return true; }
+        if (!this.state?.l1) { this.state = { l1: ln.id }; return true; }
+        const l1 = this.state.l1;
+        this.state = null;
+        if (l1 === ln.id) return true;
+        const click = { x: lx, y: ly };
+        this.askValue(sx, sy, this.lastValue("tangentenkreis") || "10", (val) => {
+          let r; try { r = evaluate(val, this.scope()); } catch (err) { return toast(err.message, { kind: "err" }); }
+          this.rememberValue("tangentenkreis", val);
+          this.commitShape("Kreis an zwei Linien", (sk) => buildCircleTangent2(sk, l1, ln.id, r, click, { uid, rExpr: val, construction: !!this.construction }));
+          this.render();
+        });
+        return true;
+      }
+      case "slota3": {
+        const sn = this.snap(sx, sy);
+        if (!this.state) { this.state = { pts: [sn] }; return true; }
+        if (this.state.pts.length < 2) { this.state.pts.push(sn); return true; }
+        const [a, m] = this.state.pts;
+        this.state = null;
+        let g; try { g = arcSlotFrom3(a, m, sn); } catch (err) { toast(err.message, { kind: "err" }); return true; }
+        this.askValue(sx, sy, this.lastValue("bogenlangloch") || "10", (val) => {
+          let w; try { w = evaluate(val, this.scope()); } catch (err) { return toast(err.message, { kind: "err" }); }
+          this.rememberValue("bogenlangloch", val);
+          this.commitShape("Bogenlangloch (3 Punkte)", (sk) => buildArcSlot(sk, g.c, g.s, g.e, w, { ...opts, wExpr: val }));
+          this.render();
+        });
+        return true;
+      }
+      case "polyedge": case "polyc": {
+        // Polygon über Kante: Ecke, Ecke, Seite; umschrieben: Mitte, Seitenmitte
+        const sn = this.snap(sx, sy);
+        if (!this.state) { this.state = { pts: [sn] }; return true; }
+        if (t === "polyedge" && this.state.pts.length < 2) { this.state.pts.push(sn); return true; }
+        const [a, b] = this.state.pts;
+        this.state = null;
+        const n = this.polygonN();
+        let g;
+        try { g = t === "polyedge" ? polygonFromEdge(a, b, n, sn) : { c: a, v: circumscribedVertex(a, sn, n) }; } catch (err) { toast(err.message, { kind: "err" }); return true; }
+        this.commitShape(t === "polyedge" ? "Polygon über Kante" : "Polygon umschrieben", (sk) => buildPolygon(sk, g.c, g.v, n, { uid, usePoint: (s2, q, cons) => this.usePoint(s2, q, cons), construction: !!this.construction }));
+        return true;
+      }
+      case "spins": {
+        const en = hitEnt(["spline"]);
+        if (!en) { toast("Spline an der Stelle des neuen Punkts anklicken"); return true; }
+        this.commitShape("Splinepunkt einfügen", (sk) => insertSplinePoint(sk, sk.entities.find((x) => x.id === en.id), lx, ly, { uid }));
+        return true;
+      }
+      case "sprem": {
+        const hit = this.hitTest(sx, sy, { curves: false, dims: false });
+        const sp = hit?.kind === "point" ? this.sk.entities.find((x) => x.type === "spline" && x.pts.includes(hit.id)) : null;
+        if (!sp) { toast("Kontrollpunkt eines Splines anklicken"); return true; }
+        this.commitShape("Splinepunkt entfernen", (sk) => removeSplinePoint(sk, sk.entities.find((x) => x.id === sp.id), hit.id));
+        return true;
+      }
       case "scorner": {
         const ln = hitEnt(["line"]);
         if (!ln) { toast("Linie anklicken"); return true; }
@@ -1663,6 +1754,34 @@ export class Sketcher {
     return false;
   }
   /** Gleichungskurve (SolidCraft »Equation Curve«): Formeln mit Skizzenparametern, als Spline durch die Punkte */
+  /** SolidCraft-Abgleich E1: gewählte Splines umkehren */
+  reverseSelectedSplines() {
+    const ids = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => k.slice(2)).filter((id) => this.entity(id)?.type === "spline");
+    if (!ids.length) return toast("Spline wählen, dann Richtung umkehren");
+    this.commit("Spline umkehren", (sk) => { for (const id of ids) reverseSpline(sk.entities.find((e) => e.id === id)); });
+    this.render();
+  }
+  /** Versatzverknüpfung der gewählten Elemente lösen (Kopie wird frei beweglich) */
+  breakSelectedOffset() {
+    const ids = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => k.slice(2));
+    if (!ids.length) return toast("Versetzte Elemente wählen");
+    let n = 0;
+    this.commit("Versatz lösen", (sk) => { n = breakOffset(sk, ids); });
+    toast(n ? `${n} Versatz-Verknüpfung(en) gelöst` : "Keine Versatz-Verknüpfung in der Auswahl");
+    this.render();
+  }
+  /** Zeichnungsrahmen B × H (Konstruktion, fixiert) um den Ursprung */
+  drawingBoundsDialog() {
+    if (!this.sk) return;
+    const r = this.svg?.getBoundingClientRect?.() || { left: 200, top: 200, width: 0, height: 0 };
+    this.askValue(r.left + r.width / 2, r.top + r.height / 2, this.lastValue("rahmen") || "297;210", (val) => {
+      const [w, hgt] = String(val).split(/[;x×]/).map((v) => { try { return evaluate(v.trim(), this.scope()); } catch { return NaN; } });
+      if (!(w > 0 && hgt > 0)) return toast("Breite;Höhe in mm eingeben, z. B. 297;210", { kind: "err" });
+      this.commit("Zeichnungsrahmen", (sk) => buildDrawingBounds(sk, w, hgt, { uid }));
+      this.rememberValue("rahmen", val);
+      this.render();
+    });
+  }
   equationDialog() {
     if (!this.sk) return;
     const last = (() => { try { return JSON.parse(this.lastValue("gleichung") || "null"); } catch { return null; } })();
@@ -1936,7 +2055,7 @@ export class Sketcher {
     if (!this.active) return;
     this.mapping();
     const [sx, sy] = this.eventPos(e);
-    if (this.tool === "spline" && this.state?.pts) { this.finishSpline(false); return; }
+    if (SPLINE_TOOLS.includes(this.tool) && this.state?.pts) { this.finishSpline(false); return; }
     const hit = this.hitTest(sx, sy);
     if (hit?.kind === "dim") this.editDimension(hit.id, sx, sy);
     else if (hit?.kind === "entity" && this.entity(hit.id)?.type === "text") this.editText(hit.id);
@@ -1961,7 +2080,7 @@ export class Sketcher {
       }
       if (r) { this.render(); return true; }
     }
-    if (this.tool === "spline" && this.state?.pts && (k === "Enter" || k === "Escape")) { this.finishSpline(false); return true; }
+    if (SPLINE_TOOLS.includes(this.tool) && this.state?.pts && (k === "Enter" || k === "Escape")) { this.finishSpline(false); return true; }
     if (k === "Escape") {
       if (this.state) { this.state = null; this.render(); return true; }
       // wie Inventor: erst die Auswahl aufheben, erst bei leerer Auswahl die Skizze beenden
@@ -2416,7 +2535,7 @@ export class Sketcher {
         g.append(svgEl("path", { d: `M${c[0]},${c[1]}L${c[0] + r * k},${c[1] - r * k}`, class: "sk-dyn-line" }));
         this.dynBox(g, 0, c[0] + r * k + 30, c[1] - r * k - 14, "Ø", "", vals.d);
       }
-    } else if (this.tool === "spline" && st.pts) {
+    } else if (SPLINE_TOOLS.includes(this.tool) && st.pts) {
       const ctrl = [...st.pts, cur].map((p) => [p.x, p.y]);
       path("M" + splineSamples(ctrl, 16).map((q) => S(q[0], q[1]).join(",")).join("L"));
       g.append(svgEl("path", { d: "M" + ctrl.map((q) => S(q[0], q[1]).join(",")).join("L"), class: "sk-ctrl" }));

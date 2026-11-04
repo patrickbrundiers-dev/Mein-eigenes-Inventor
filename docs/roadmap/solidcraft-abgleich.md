@@ -641,3 +641,26 @@ Ergebnis: **289 vorhanden**, **25 teilweise**, **27 neu nachgebaut** (dieser PR)
 | Save Render Ground <sub>`render_stage_ground`</sub> | weggelassen | Render-Studio (Lichter, HDR, Aufnahmen); PBCAD rendert mit festem Studio |
 | Bild rendern <sub>`render_start`</sub> | vorhanden | Rendern (fotorealistisches PNG) |
 | Renderfortschritt <sub>`render_status`</sub> | vorhanden | Rendern (fotorealistisches PNG) |
+
+## Nachtrag 04.11.2026 20:28: Patrick »Alle Befehle Funktionen einbauen, rendern erst komplett weglassen«
+
+Rendern (Render-Studio, Looks, Dekal, Render-Panels und -Bildhilfen) bleibt ganz weg. Alles andere wird in Etappen nachgebaut, auch die »teilweise«-Befehle:
+
+| Etappe | Inhalt |
+|---|---|
+| E1 Skizze | Übergangskurve, Schnittkurve, isoparametrische Kurve, auf Fläche projizieren, 3D-Spline, Spline Grad 5, Spline umkehren, Splinepunkt einfügen/entfernen, Spline durch Punkte, gedrehtes Profil, Netzquerschnitt, Versatz lösen, mit Auto-Bedingung fertig, Zeichnungsgröße, Kettenwahl, Tangente an Kurvenpunkt, 2-Tangenten-Kreis, 3-Punkt-Bogenlangloch, Polygon über Kante, Fase Abstand/Winkel, Ausschneiden, Gleichungskurve bearbeiten |
+| E2 Flächen und Körper | Flächen-Extrusion/-Rotation/-Sweep/-Loft, Regelfläche, Offsetfläche, Patch, Nähen/Verbund aufheben, Normale umkehren, Trimmen aufheben, Flächenverrundung, Verbindungs-/Begrenzungsfläche, Begrenzungsfüllung, Fläche teilen, Auflagefläche |
+| E3 Baugruppe und Bewegung | Komponenten aus Körpern, Körper/Features/Skizzen in Komponente verschieben, Kopplungen Zahnrad/Zahnstange/Schraube/Nocken/Bewegungsverknüpfung, Gelenkursprung, Punkt anfahren, Bewegungsbahn, Weg-Zeit-Diagramm |
+| E4 Prüfen | Zebra, Krümmungskamm/-karte, Isokurven, Silhouette, Umgebungskarte, Kontinuität, Mindestradius, Zugänglichkeit, Körper vergleichen |
+| E5 Datei und Daten | Einheiten, URDF, an Slicer senden, Netz in Körper, Kanten/Flächen auflisten, Kunststoffteile (Ansatz, Lippe, Auflage, Rastverbindung, Regeln), Punktwolken, Bild nachzeichnen, richtungsabhängiger E-Modul |
+| E6 Oberfläche | Einstellungsprofile, Absturzberichte, Leistungsprofil, Panel in eigenes Fenster, Ansichtswinkel, Dauerdrehen, Parametergraph, Parameter verschieben |
+
+### Stand E1 (04.11.2026, PR #198)
+
+Umgesetzt: Übergangskurve, Tangente an Kurvenpunkt, Kreis an zwei Linien, Bogenlangloch über 3 Punkte, Polygon über Kante, Polygon umschrieben, Spline Grad 5, Spline durch Punkte, Spline umkehren, Splinepunkt einfügen/entfernen, Versatz lösen, Zeichnungsrahmen. Kettenwahl war schon da (Doppelklick wählt die verbundene Kette). Test: test/skizze-e1.test.mjs.
+
+Folgt im nächsten PR: Schnittkurve, isoparametrische Kurve, auf Fläche projizieren, 3D-Spline, gedrehtes Profil, Netzquerschnitt, mit Auto-Bedingung fertig, Fase Abstand/Winkel, Ausschneiden, Gleichungskurve bearbeiten.
+
+### Oberfläche L1–L6 (04.11.2026, PR #198)
+
+Arbeitsbereich-Kachel links neben dem Menüband, Menüband als Karte, Gruppenname öffnet Befehlsliste mit Anheften an den Schnellzugriff, Navigationswerkzeuge Drehen/Schieben/Zoomen und Ansichten-Menü in der Leiste unten rechts, Schild »bearbeiten« über dem gewählten Feature in der Verlaufsleiste. Vorher/nachher-Bilder: optik/solidcraft/.
