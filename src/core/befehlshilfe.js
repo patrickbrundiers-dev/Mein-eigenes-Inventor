@@ -2,7 +2,11 @@
 // Schlüssel = Knopf-ID aus src/ui/ribbon.js. Ein Satz, was der Befehl tut, optional ein zweiter, wie man ihn benutzt.
 // Skizzenwerkzeuge (t_…) kommen aus SKETCH_TOOLS in src/ui/sketcher.js und stehen hier nicht.
 
+import { FF_ARTEN } from "./freiflaeche.js";
+
 export const BEFEHLSHILFE = {
+  ffMenu: "Flächenmodellierung: offene Flächen erzeugen, nähen, teilen, verrunden und aufdicken.",
+  ...Object.fromEntries(FF_ARTEN.map((a) => ["ff_" + a.art, a.help])),
   // ---------- 3D-Modell ----------
   sketch: "Neue 2D-Skizze auf einer Ursprungsebene, Arbeitsebene oder ebenen Fläche anlegen.",
   skizze3d: "Skizze im Raum: Linien und Bögen zwischen 3D-Punkten, z. B. als Pfad für Rohre und Profile.",

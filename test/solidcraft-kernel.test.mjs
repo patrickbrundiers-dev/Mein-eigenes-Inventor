@@ -93,3 +93,78 @@ test("Kurve auf Fläche: Isokurve auf Zylinder, Linie auf Zylinder projiziert (E
   for (const q of P) { near(Math.hypot(q[0], q[1]), 20, 0.05, "auf dem Mantel"); near(q[2], 30, 1e-6, "Höhe bleibt"); }
   assert.match(pr.status.f.info, /Projiziert/);
 });
+
+test("Flächen (E2): Extrusion, Rotation, Loft, Füllung, Offset, Verbund aufheben und nähen", async () => {
+  const area = (res, kind = "flaeche") => res.bodies.filter((b) => b.kind === kind).reduce((s, b) => s + R.measureArea(b.shape), 0);
+  // offene Linie 100 mm auf XY, 30 mm hoch extrudiert → 3000 mm²
+  const ln = { id: "s1", type: "sketch", plane: { ref: "XY" }, offset: "0", points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 100, y: 0 }], entities: [{ id: "l", type: "line", p1: "a", p2: "b" }], constraints: [] };
+  const ex = await K.buildPart(part([ln, { id: "f", type: "freiflaeche", art: "extrusion", sketch: "s1", distance: "30" }]));
+  okAll(ex);
+  near(area(ex), 3000, 1e-6, "Extrusion");
+  assert.equal(ex.bodies[0].meta.density, 0);
+  // Linie parallel zur Y-Achse im Abstand 20 (XZ-Ebene), um Z gedreht → Zylindermantel 2π·20·50
+  const lz = { id: "s2", type: "sketch", plane: { ref: "XZ" }, offset: "0", points: [{ id: "a", x: 20, y: 0 }, { id: "b", x: 20, y: 50 }], entities: [{ id: "l", type: "line", p1: "a", p2: "b" }], constraints: [] };
+  const rot = await K.buildPart(part([lz, { id: "f", type: "freiflaeche", art: "rotation", sketch: "s2", axis: "y", angle: "360" }]));
+  okAll(rot);
+  near(area(rot), 2 * Math.PI * 20 * 50, 0.5, "Rotation");
+  // Regelfläche zwischen zwei parallelen Linien im Abstand 40 → 100 × 40
+  const ln2 = { ...ln, id: "s3", offset: "40" };
+  const lo = await K.buildPart(part([ln, ln2, { id: "f", type: "freiflaeche", art: "regel", sections: ["s1", "s3"] }]));
+  okAll(lo);
+  near(area(lo), 4000, 1e-3, "Regelfläche");
+  // Füllung eines Quadrats 50 × 50 → 2500
+  const sq = rectSketchFeature("q", "XY", 0, 0, 0, "50", "50");
+  const fu = await K.buildPart(part([sq, { id: "f", type: "freiflaeche", art: "fuellung", sketch: "q" }]));
+  okAll(fu);
+  near(area(fu), 2500, 0.5, "Füllung");
+  // Quader zerlegen, Flächen wieder nähen → Volumen wie vorher
+  const box = [rectSketchFeature("b", "XY", 0, 0, 0, "10", "20"), { id: "e", type: "extrude", sketch: "b", distance: "30", op: "new" }];
+  const zer = await K.buildPart(part([...box, { id: "a", type: "freiflaeche", art: "aufheben" }]));
+  okAll(zer);
+  assert.equal(zer.bodies.filter((b) => b.kind === "flaeche").length, 6);
+  const ne = await K.buildPart(part([...box, { id: "a", type: "freiflaeche", art: "aufheben" }, { id: "n", type: "freiflaeche", art: "naehen" }]));
+  okAll(ne);
+  assert.equal(ne.bodies.length, 1);
+  assert.equal(ne.bodies[0].kind, "solid");
+  near(Math.abs(R.measureVolume(ne.bodies[0].shape)), 6000, 1e-3, "genäht = Quader");
+  // Offset der Deckfläche um 5 → gleiche Fläche 10 × 20 in z = 35
+  const of = await K.buildPart(part([...box, { id: "o", type: "freiflaeche", art: "offset", faces: [{ p: [5, 10, 30] }], distance: "5" }]));
+  okAll(of);
+  near(area(of), 200, 1e-3, "Offset");
+  const um = await K.buildPart(part([ln, { id: "f", type: "freiflaeche", art: "extrusion", sketch: "s1", distance: "30" }, { id: "u", type: "freiflaeche", art: "umkehren" }]));
+  okAll(um);
+});
+
+test("Flächen (E2): Begrenzung, Verbindung, Trimmen aufheben, Teilen, Dicke, Verrundung", async () => {
+  const area = (res, kind = "flaeche") => res.bodies.filter((b) => b.kind === kind).reduce((s, b) => s + R.measureArea(b.shape), 0);
+  const L = (id, plane, off, a, b) => ({ id, type: "sketch", plane: { ref: plane }, offset: off, points: [{ id: "a", x: a[0], y: a[1] }, { id: "b", x: b[0], y: b[1] }], entities: [{ id: "l", type: "line", p1: "a", p2: "b" }], constraints: [] });
+  // Rand aus 4 Linien eines 30 × 20-Rechtecks auf XY → Begrenzungsfläche 600
+  const r4 = [L("k1", "XY", "0", [0, 0], [30, 0]), L("k2", "XY", "0", [30, 0], [30, 20]), L("k3", "XY", "0", [30, 20], [0, 20]), L("k4", "XY", "0", [0, 20], [0, 0])];
+  const be = await K.buildPart(part([...r4, { id: "f", type: "freiflaeche", art: "begrenzung", sections: ["k1", "k2", "k3", "k4"] }]));
+  okAll(be);
+  near(area(be), 600, 0.5, "Begrenzung");
+  const ve = await K.buildPart(part([L("a1", "XY", "0", [0, 0], [100, 0]), L("a2", "XY", "40", [0, 0], [100, 0]), { id: "f", type: "freiflaeche", art: "verbindung", sections: ["a1", "a2"] }]));
+  okAll(ve);
+  near(area(ve), 4000, 1e-3, "Verbindung");
+  // Platte 100 × 50 mit Bohrung: Deckfläche ohne Trimmung = volles Rechteck 5000
+  const pl = [rectSketchFeature("p", "XY", 0, 0, 0, "100", "50"), { id: "e", type: "extrude", sketch: "p", distance: "5", op: "new" },
+    { id: "c", type: "sketch", plane: { ref: "XY" }, offset: "5", points: [{ id: "m", x: 50, y: 25 }], entities: [{ id: "k", type: "circle", c: "m", r: 10 }], constraints: [] }, { id: "x", type: "extrude", sketch: "c", distance: "10", op: "cut", direction: "reverse" }];
+  const un = await K.buildPart(part([...pl, { id: "u", type: "freiflaeche", art: "untrim", faces: [{ p: [10, 10, 5] }] }]));
+  okAll(un);
+  near(area(un), 5000, 1e-3, "untrim");
+  // Fläche 100 × 30 mit Linie quer bei x = 40 teilen → zwei Teilflächen
+  const ex = [L("s1", "XY", "0", [0, 0], [100, 0]), { id: "f", type: "freiflaeche", art: "extrusion", sketch: "s1", distance: "30" }];
+  const te = await K.buildPart(part([...ex, L("t", "XY", "0", [40, -10], [40, 10]), { id: "g", type: "freiflaeche", art: "teilen", sketch: "t" }]));
+  okAll(te);
+  assert.equal(te.bodies[0].shape.faces.length, 2);
+  near(area(te), 3000, 1e-3);
+  const di = await K.buildPart(part([...ex, { id: "d", type: "freiflaeche", art: "dicke", distance: "2" }]));
+  okAll(di);
+  assert.equal(di.bodies[0].kind, "solid");
+  near(R.measureVolume(di.bodies[0].shape), 6000, 1, "Dicke");
+  // zwei Flächen in L-Form (Boden + Wand) verrunden
+  const vr = await K.buildPart(part([...ex, { id: "w", type: "sketch", plane: { ref: "XZ" }, offset: "0", points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 100, y: 0 }], entities: [{ id: "l", type: "line", p1: "a", p2: "b" }], constraints: [] },
+    { id: "f2", type: "freiflaeche", art: "extrusion", sketch: "w", distance: "-30" }, { id: "r", type: "freiflaeche", art: "verrundung", radius: "5" }]));
+  okAll(vr);
+  assert.ok(vr.bodies[0].shape.faces.length >= 3, "Rundungsfläche dazu");
+});

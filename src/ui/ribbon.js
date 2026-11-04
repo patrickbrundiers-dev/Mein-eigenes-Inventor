@@ -1,5 +1,6 @@
 // Menüband mit kontextabhängigen Registerkarten
 import { defaultWelle, defaultZahnrad, defaultLager, defaultFeder } from "../core/assistent.js";
+import { FF_ARTEN } from "../core/freiflaeche.js";
 import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
 import { defaultStecksystem } from "../core/stecksystem.js";
@@ -262,6 +263,7 @@ export class Ribbon {
         app.addFeature({ type: "kombinieren", target: fids[0], tools: fids.slice(1), op: "cut" });
       },
       trennen: () => app.addFeature({ type: "trennen", plane: "YZ", offset: "0", keep: "beide" }),
+      ...Object.fromEntries(FF_ARTEN.map((a) => ["ff_" + a.art, () => app.addFeature({ type: "freiflaeche", art: a.art, ...JSON.parse(JSON.stringify(a.def)) })])),
       flaechenkurve: () => app.addFeature({ type: "flaechenkurve", faces: [], art: "iso", richtung: "u", wert: "0.5" }),
       lochblech: () => app.addFeature({ type: "lochblech", faces: [], muster: "Rv", d: "5", teilung: "8", rand: "10" }),
       huelle: () => app.addFeature({ type: "huelle", bodies: [], zugabe: "0" }),
@@ -350,6 +352,7 @@ export class Ribbon {
     const sk = app.sketcher;
     const B = (id, label, ic, extra = {}) => ({ id, label, icon: ic, run: extra.run || (() => this.run(id)), ...extra });
     // Aufklappknopf (P12, wie Inventor-Dropdown): seltene Befehle einer Gruppe hinter »Weitere«
+    const FFB = (id, label) => B(id, label, "surface"); // Flächenmodellierung: Einträge aus FF_ARTEN
     const M = (id, label, ic, items) => ({ id, label: label + " ▾", icon: ic, menu: items, run: (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu(r.left, r.bottom, items.map((b) => ({ label: b.label, icon: b.icon, run: b.run }))); } });
     const T = (tool, label, ic, extra = {}) => ({ id: "t_" + tool, label, icon: ic, on: sk.tool === tool, run: () => sk.setTool(tool), ...extra });
     // Werkstattmodus (Q9): nur ein Reiter mit großen Knöpfen zum Ansehen, Messen und für Listen
@@ -431,13 +434,13 @@ export class Ribbon {
     if (mode === "part") {
       return [
         { id: "modell", label: "3D-Modell", groups: [
-          { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch"), B("skizze3d", "3D-Skizze", "path3d"), B("flaechenkurve", "Kurve auf Fläche", "path3d")], big: 1 },
+          { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch"), B("skizze3d", "3D-Skizze", "path3d")], big: 1 },
           { label: "Erstellen", big: 2, buttons: [B("extrude", "Extrusion", "extrude"), B("revolve", "Drehung", "revolve"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil"), B("cutExtrude", "Ausschnitt", "cut"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper")] },
           { label: "Ändern", big: 2, buttons: [B("hole", "Bohrung", "hole"), B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell"), B("langloch", "Langloch", "slot")] },
-          { label: "Körper", small: true, buttons: [B("kombinieren", "Kombinieren", "combine", { iconOnly: true }), B("stecksystem", "Stecksystem", "tabslot", { iconOnly: true }), B("trennen", "Trennen", "split", { iconOnly: true }), B("verschieben", "Verschieben", "move", { iconOnly: true }), B("huelle", "Hüllkörper", "hull", { iconOnly: true }), B("aufdicken", "Aufdicken", "thicken", { iconOnly: true }), B("flaeche", "Fläche verschieben", "pushpull", { iconOnly: true }), B("entformung", "Entformung", "draft", { iconOnly: true }), B("direkt", "Direkt", "direct", { iconOnly: true })] },
+          { label: "Körper", small: true, buttons: [B("kombinieren", "Kombinieren", "combine", { iconOnly: true }), B("stecksystem", "Stecksystem", "tabslot", { iconOnly: true }), B("trennen", "Trennen", "split", { iconOnly: true }), B("verschieben", "Verschieben", "move", { iconOnly: true }), B("huelle", "Hüllkörper", "hull", { iconOnly: true }), B("aufdicken", "Aufdicken", "thicken", { iconOnly: true }), B("flaeche", "Fläche verschieben", "pushpull", { iconOnly: true }), B("entformung", "Entformung", "draft", { iconOnly: true }), B("direkt", "Direkt", "direct", { iconOnly: true }), { ...M("ffMenu", "Flächen", "surface", [...FF_ARTEN.map((a) => FFB("ff_" + a.art, a.label)), B("flaechenkurve", "Kurve auf Fläche", "path3d")]), iconOnly: true }] },
           { label: "Muster", small: true, buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Arbeitselemente", small: true, buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
-          { label: "Prüfen", big: 1, buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) }), B("draftAnalysis", "Entformungsanalyse", "draftan", { on: !!app.viewer.draftOn, run: () => draftDialog(app) }), B("regionPropsPart", "Bereichseigenschaften", "area", { run: () => regionDialog(app) })] },
+          { label: "Prüfen", big: 1, buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("problems", "Problemliste", "warn", { iconOnly: true, run: () => problemsDialog(app) }), B("draftAnalysis", "Entformungsanalyse", "draftan", { iconOnly: true, on: !!app.viewer.draftOn, run: () => draftDialog(app) }), B("regionPropsPart", "Bereichseigenschaften", "area", { iconOnly: true, run: () => regionDialog(app) })] },
           { label: "Zeichnung", buttons: [B("newDrawing", "Zeichnung ableiten", "drawing")] },
         ] },
         { id: "metallbau", label: "Metallbau", groups: [

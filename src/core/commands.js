@@ -4,6 +4,8 @@
 // scope: global (überall) · part · sketch · assembly · drawing · 3d (Bauteil + Baugruppe).
 // Kürzel ohne Strg/Alt wirken nur, wenn kein Eingabefeld den Fokus hat.
 
+import { FF_ARTEN } from "./freiflaeche.js";
+
 export const COMMANDS = [
   { id: "file.new", label: "Neues Projekt", group: "Datei", scope: "global", key: "Strg+N", typing: true },
   { id: "file.open", label: "Projekt öffnen", group: "Datei", scope: "global", key: "Strg+O", typing: true },
@@ -289,6 +291,7 @@ export const COMMANDS = [
   { id: "asm.positionSave", label: "Positionsdarstellung speichern", group: "Baugruppe", scope: "assembly", keywords: "position stellung tor offen zu gelenk darstellung" },
   { id: "asm.params", label: "Parameter der Baugruppe", group: "Baugruppe", scope: "assembly", keywords: "parameter top-down weitergeben verknüpfen maß" },
   { id: "asm.inContext", label: "Bauteil im Kontext bearbeiten", group: "Baugruppe", scope: "assembly", keywords: "kontext top-down nachbar projizieren durchsichtig bearbeiten" },
+  ...FF_ARTEN.map((a) => ({ id: "part.ff_" + a.art, label: a.label, group: "Flächen", scope: "part", keywords: "fläche flächenmodell surface " + a.art })),
 ];
 
 const BY_ID = new Map(COMMANDS.map((c) => [c.id, c]));

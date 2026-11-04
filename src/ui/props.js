@@ -1,5 +1,6 @@
 // Eigenschaften-Fenster und Dialoge (Parameter, Stückliste, Zuschnittliste, Einstellungen)
 import { gearData, centerDistance, BEARINGS, BEARING_SEALS } from "../core/assistent.js";
+import { FF_ARTEN, ffArt } from "../core/freiflaeche.js";
 import { defaultSchweissbaugruppe, phaseCounts, WELD_PHASES } from "../core/schweissbaugruppe.js";
 import { RULES } from "../core/bendtable.js";
 import { LOCH_MUSTER } from "../core/lochblech.js";
@@ -1432,7 +1433,7 @@ export class Props {
           h("p", { class: "hint" }, `Je Stabende eine Querbohrung durch beide Wände, so nah am Ende wie möglich (bei Gehrung hinter der Spitze). Richtwert-Ø nach DIN EN ISO 14713-2 aus der Profilgröße, z. B. 40er Rohr 12 mm, 80er 16 mm, 100er 20 mm – mit dem Verzinker abstimmen. Oberfläche des Bauteils: ${fin === "verzinkt" || fin === "duplex" ? "verzinkt" : "nicht verzinkt (unter Bauteil-Eigenschaften einstellen)"}.`)));
         break;
       }
-      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "huelle": case "lochblech": case "flaechenkurve": case "aufdicken": case "flaeche": case "entformung": case "direkt":
+      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "huelle": case "lochblech": case "flaechenkurve": case "freiflaeche": case "aufdicken": case "flaeche": case "entformung": case "direkt":
         out.push(...this.bodyToolProps(part, f, E));
         break;
       case "steckzapfen": case "steckschlitz":
@@ -1521,6 +1522,28 @@ export class Props {
           E("Freier Rand", "rand", { allowNeg: false, allowZero: true }),
           this.check("Reihen quer zur langen Kante", !!f.quer, (v) => this.set(f, "quer", v || undefined, "Richtung")),
           h("p", { class: "hint" }, "Bezeichnung nach DIN 24041, z. B. Rv 5-8: Rundloch Ø 5 versetzt, Teilung 8. Nur ganze Löcher, mit freiem Rand zu Außenkante und Ausschnitten. Der freie Querschnitt steht in der Feature-Meldung."))];
+      case "freiflaeche": {
+        const a = ffArt(f.art);
+        const sks = part.features.filter((x) => x.type === "sketch");
+        const curves = [...sks.map((x) => [x.id, x.name]), ...part.features.filter((x) => x.type === "skizze3d" || x.type === "flaechenkurve").map((x) => [x.id, x.name + " (3D)"])];
+        const name = (id) => curves.find((c) => c[0] === id)?.[1] || "fehlt";
+        const ids = f.sections || [];
+        const need = new Set(a.need);
+        return [this.section(a.label,
+          this.select("Art", FF_ARTEN.map((x) => [x.art, x.label]), a.art, (v) => this.set(f, (x) => { const na = ffArt(v); for (const k of Object.keys(na.def)) if (x[k] == null) x[k] = JSON.parse(JSON.stringify(na.def[k])); x.art = v; }, "Art")),
+          need.has("sketch") ? this.select(a.art === "sweep" ? "Profil" : a.art === "teilen" ? "Trennskizze" : "Skizze / Kurve", [["", "– wählen –"], ...(a.art === "extrusion" || a.art === "rotation" || a.art === "teilen" ? sks.map((x) => [x.id, x.name]) : curves)], f.sketch || "", (v) => this.set(f, "sketch", v, "Skizze")) : null,
+          need.has("path") ? this.select("Pfad", [["", "– wählen –"], ...curves.filter((c) => c[0] !== f.sketch)], f.path || "", (v) => this.set(f, "path", v, "Pfad")) : null,
+          need.has("sections") ? h("ol", { class: "loft-list" }, ...ids.map((id, i) => h("li", {}, name(id), h("button", { class: "btn", title: "entfernen", onclick: () => this.set(f, (x) => { x.sections = ids.filter((_, k) => k !== i); }, "Kurve entfernen") }, "×")))) : null,
+          need.has("sections") ? this.select("Kurve hinzufügen", [["", "– Skizze oder 3D-Pfad –"], ...curves.filter((c) => !ids.includes(c[0]))], "", (v) => v && this.set(f, (x) => { x.sections = [...ids, v]; }, "Kurve")) : null,
+          need.has("faces") ? facePick("Fläche(n) im 3D-Fenster anklicken.") : null,
+          need.has("axis") ? this.seg("Achse", [["x", "X der Skizze"], ["y", "Y der Skizze"]], f.axis || "y", (v) => this.set(f, "axis", v, "Achse")) : null,
+          need.has("angle") ? E("Winkel", "angle") : null,
+          need.has("distance") ? E(a.art === "dicke" ? "Dicke" : "Abstand", "distance", { allowNeg: true }) : null,
+          a.art === "extrusion" ? this.check("Symmetrisch zur Skizze", !!f.symmetric, (v) => this.set(f, "symmetric", v || undefined, "Symmetrisch")) : null,
+          need.has("radius") ? E("Radius", "radius", { allowNeg: false, allowZero: false }) : null,
+          need.has("solid") ? this.check("Geschlossen → Volumenkörper", f.solid !== false, (v) => this.set(f, "solid", v ? undefined : false, "Volumenkörper")) : null,
+          h("p", { class: "hint" }, a.help + " Flächenkörper haben keine Masse und erscheinen in Stückliste und Gewicht nicht."))];
+      }
       case "flaechenkurve": {
         const sks = part.features.filter((x) => x.type === "sketch");
         return [this.section("Kurve auf Fläche",
