@@ -192,3 +192,34 @@ test("Flächen prüfen (E4): Isokurven, Kantenstetigkeit, Radien, Körper vergle
   near(c.common, c.volB, 0.5);
   assert.ok(c.meshA?.positions.length > 0); assert.equal(c.meshB, null);
 });
+
+test("Netz konvertieren (E5): STL-Würfel → Volumenkörper mit 6 Flächen", async () => {
+  const V = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0], [0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]];
+  const T = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
+  const stl = "solid w\n" + T.map((t) => `facet normal 0 0 0\nouter loop\n${t.map((i) => `vertex ${V[i].join(" ")}`).join("\n")}\nendloop\nendfacet`).join("\n") + "\nendsolid w\n";
+  const data = Buffer.from(stl).toString("base64");
+  const res = await K.buildPart(part([{ id: "i", type: "import", format: "stl", data, op: "new", convert: true }]));
+  okAll(res);
+  assert.match(res.status.i.info, /Volumenkörper, 6 Flächen \(aus 12 Dreiecken\)/);
+  near(vol(res), 1000, 1e-3);
+  // Kanten und Flächen auflisten
+  const t = K.listTopology(res.bodies[0].shape);
+  assert.equal(t.faces.length, 6); assert.equal(t.edges.length, 12);
+  for (const f of t.faces) { assert.equal(f.type, "PLANE"); near(f.area, 100, 1e-6); }
+  for (const e of t.edges) { assert.equal(e.type, "LINE"); near(e.length, 10, 1e-6); }
+});
+
+test("Auflagefläche (E5): Seitenfläche nach unten, Teil liegt auf z = 0", async () => {
+  const box = [rectSketchFeature("s1", "XY", 0, 0, 0, "200", "100"), { id: "e1", type: "extrude", sketch: "s1", distance: "20", op: "new" }];
+  const res = await K.buildPart(part([...box, { id: "a", type: "auflage", faces: [{ p: [200, 50, 10] }] }]));
+  okAll(res);
+  const b = res.bodies[0].shape.boundingBox.bounds;
+  near(b[0][2], 0, 1e-6); near(b[1][2] - b[0][2], 200, 1e-6);
+  near(vol(res), 200 * 100 * 20, 1e-3);
+  // Deckfläche (Normale +Z) → um 180° gedreht
+  const r2 = await K.buildPart(part([...box, { id: "a", type: "auflage", faces: [{ p: [100, 50, 20] }] }]));
+  okAll(r2);
+  const b2 = r2.bodies[0].shape.boundingBox.bounds;
+  near(b2[0][2], 0, 1e-6); near(b2[1][2], 20, 1e-6);
+  assert.match(r2.status.a.info, /180°/);
+});

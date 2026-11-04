@@ -336,6 +336,27 @@ ipcMain.handle("file:saveMany", async (_e, { files }) => {
   lastDir("export", path.join(dir, "x"));
   return { dir };
 });
+// An Slicer senden (SolidCraft-Abgleich E5): 3MF in einen Zwischenordner schreiben und im Slicer öffnen
+ipcMain.handle("slicer:open", async (_e, { name, data, exe }) => {
+  try {
+    const dir = path.join(os.tmpdir(), "PBCAD-Slicer");
+    fs.mkdirSync(dir, { recursive: true });
+    const safe = String(name || "Teil").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").slice(0, 80) || "Teil";
+    const file = path.join(dir, safe + ".3mf");
+    fs.writeFileSync(file, Buffer.from(new Uint8Array(data)));
+    if (exe) {
+      if (!fs.existsSync(exe) || !fs.statSync(exe).isFile()) return { error: "Slicer nicht gefunden: " + exe, path: file };
+      require("node:child_process").spawn(exe, [file], { detached: true, stdio: "ignore" }).unref();
+      return { path: file, exe };
+    }
+    const err = await shell.openPath(file);
+    return err ? { error: err, path: file } : { path: file };
+  } catch (e) { return { error: e.message }; }
+});
+ipcMain.handle("slicer:pick", async () => {
+  const r = await dialog.showOpenDialog(win, { title: "Slicer-Programm wählen", properties: ["openFile"], filters: process.platform === "win32" ? [{ name: "Programm", extensions: ["exe"] }] : [] });
+  return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+});
 ipcMain.handle("file:open", async (_e, { filters }) => {
   const r = await dialog.showOpenDialog(win, { title: "Datei öffnen", defaultPath: lastDir("import"), filters, properties: ["openFile"] });
   if (r.canceled || !r.filePaths[0]) return null;

@@ -1,8 +1,9 @@
 // Befehle ausführen, Tastaturkürzel verteilen, Befehlssuche (Strg+K) und Kürzel-Editor
 import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
-import { h, toast } from "./dom.js";
+import { h, toast, choiceDialog } from "./dom.js";
 import { motionStudyDialog } from "./bewegungsstudie.js";
+import { topologyDialog } from "./datenwerkzeuge.js";
 import { surfaceCheckDialog, compareBodiesDialog } from "./flaechenpruefung.js";
 import { t } from "../core/i18n.js";
 import { recordable } from "../core/makros.js";
@@ -45,11 +46,19 @@ export function commandRunners(app) {
     "file.glb": () => app.files.exportGlb(),
     "file.obj": () => app.files.exportObj(),
     "file.3mf": () => app.files.export3mf(),
+    "file.slicer": () => app.files.sendToSlicer(),
+    "file.urdf": () => app.files.exportUrdf(),
+    "part.listTopology": () => topologyDialog(app),
     "view.side": () => app.side.toggle(),
     "view.werkstatt": () => app.setWorkshop(),
     "file.newAssembly": () => app.newAssembly(),
     "file.importStep": () => app.files.importStepAsPart(),
     "app.settings": () => app.props.settingsDialog(),
+    "app.units": async () => {
+      const cur = app.prefs.get("allgemein.einheit") || "mm";
+      const v = await choiceDialog("Einheit der Konstruktion", `Messwerte werden in dieser Einheit angezeigt (jetzt: ${cur}). Gerechnet und gespeichert wird immer in mm; Eingaben ohne Einheit sind mm, z. B. »2 in« oder »1,5 m« gehen direkt.`, [["mm", "mm"], ["cm", "cm"], ["m", "m"], ["in", "Zoll"]].map(([value, label]) => ({ value, label, primary: value === cur })));
+      if (v) { app.prefs.set("allgemein.einheit", v); app.props.render(); toast(`Einheit: ${v}`); }
+    },
     "app.search": () => commandPalette(app),
     "app.help": () => showHelp(app),
     "app.tour": () => startTour(app),
@@ -96,6 +105,7 @@ export function commandRunners(app) {
     "sketch.sectionCurve": () => app.sketcher.sectionCurve(),
     "sketch.meshSection": () => app.sketcher.meshSection(),
     "sketch.spunProfile": () => app.sketcher.spunProfileCmd(),
+    "sketch.traceImage": () => app.sketcher.traceImage(),
     "sketch.autoConstrain": () => app.sketcher.applyAutoConstraints(false),
     "sketch.finishAuto": () => app.sketcher.applyAutoConstraints(true),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),

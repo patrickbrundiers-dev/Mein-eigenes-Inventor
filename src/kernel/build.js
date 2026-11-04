@@ -1,6 +1,7 @@
 // Feature-basierter Modellaufbau auf Basis von replicad (OpenCascade).
 // Wird im Web-Worker (App) und in Node (Tests) verwendet: createKernel(replicadModul)
 
+import { parseStl } from "../core/stl.js";
 import { installFastBooleans, cutMany } from "./bool.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { solveSketch } from "../core/solver.js";
@@ -2337,6 +2338,23 @@ export function createKernel(R) {
             st.info = info;
             break;
           }
+          case "auflage": {
+            // Auflagefläche (SolidCraft-Abgleich E5, 3D-Druck): gewählte ebene Fläche nach unten auf z = 0 drehen
+            const hits = facesAt((f.faces || []).map((r) => r.p));
+            if (!(f.faces || []).length) throw new Error("Ebene Fläche wählen, auf der das Teil liegen soll");
+            if (!hits.length) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+            const { face } = hits[0];
+            if (face.geomType !== "PLANE") throw new Error("Auflagefläche muss eben sein");
+            const n = v3.norm(tuple(face.normalAt()));
+            const down = [0, 0, -1], c = v3.dot(n, down), ax = v3.cross(n, down), sn = Math.hypot(...ax);
+            const rot = (sh) => (sn > 1e-9 ? sh.rotate((Math.atan2(sn, c) * 180) / Math.PI, [0, 0, 0], ax) : c < 0 ? sh.rotate(180, [0, 0, 0], [1, 0, 0]) : sh);
+            for (const b of state.bodies) b.shape = rot(b.shape);
+            let z0 = Infinity;
+            for (const b of state.bodies) z0 = Math.min(z0, b.shape.boundingBox.bounds[0][2]);
+            if (Number.isFinite(z0) && Math.abs(z0) > 1e-9) for (const b of state.bodies) b.shape = b.shape.translate([0, 0, -z0]);
+            st.info = `Auflage gedreht um ${String(Math.round(((Math.atan2(sn, c) * 180) / Math.PI) * 10) / 10).replace(".", ",")}°, liegt auf z = 0`;
+            break;
+          }
           case "flaechenkurve": {
             // Kurve auf Fläche (SolidCraft-Abgleich E1): isoparametrische Kurve oder Skizze auf die Fläche projiziert → 3D-Pfad
             const hits = facesAt((f.faces || []).map((r) => r.p));
@@ -2429,8 +2447,14 @@ export function createKernel(R) {
           case "import": {
             if (!f.data) throw new Error("Keine Datei geladen");
             let shape;
-            if (f.format === "stl") shape = await R.importSTL(new Blob([base64ToBytes(f.data)]));
-            else shape = await R.importSTEP(new Blob([f.data]));
+            // Netz konvertieren (SolidCraft-Abgleich E5): Dreiecke nähen, Volumenkörper bilden, ebene Dreiecke zusammenfassen
+            if (f.format === "stl" && !f.convert) shape = await R.importSTL(new Blob([base64ToBytes(f.data)]));
+            else if (f.format !== "stl") shape = await R.importSTEP(new Blob([f.data]));
+            if (f.format === "stl" && f.convert) {
+              const r = meshToSolid(parseStl(base64ToBytes(f.data)), { unify: f.unify !== false });
+              shape = r.shape;
+              st.info = `Netz → ${r.solid ? "Volumenkörper" : "Fläche (nicht geschlossen)"}, ${r.faces} Flächen${r.before > r.faces ? ` (aus ${r.before} Dreiecken)` : ""}`;
+            }
             state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape, kind: "tool" }] });
             applyOp(f.op || "new", shape, f.id, f.name || "Import");
             break;
@@ -3313,6 +3337,51 @@ export function createKernel(R) {
     };
   }
 
+  /** Kanten und Flächen auflisten (E5): Art, Fläche bzw. Länge, Radius, Lage */
+  function listTopology(shape) {
+    const radius = new Map(analyticRadii(shape).map((x) => [x.idx, x.r]));
+    const faces = shape.faces.map((fc, idx) => {
+      let area = NaN;
+      try { area = R.measureArea(fc); } catch { /* ohne */ }
+      const o = { idx, type: fc.geomType === "CYLINDRE" ? "CYLINDER" : fc.geomType, area, center: faceCentroid(fc) };
+      if (radius.has(idx)) o.r = radius.get(idx);
+      if (o.type === "PLANE") { try { o.normal = tuple(fc.normalAt()); } catch { /* ohne */ } }
+      return o;
+    });
+    const edges = shape.edges.map((e, idx) => {
+      let length = NaN;
+      try { length = R.measureLength(e); } catch { /* ohne */ }
+      const o = { idx, type: e.geomType, length, mid: edgeMid(e) };
+      if (o.type === "CIRCLE") { try { Object.assign(o, circleOf(e)); } catch { /* ohne */ } }
+      return o;
+    });
+    return { faces, edges };
+  }
+  /** Netz (STL-Dreiecke) → Volumenkörper: nähen, schließen, ebene Nachbarflächen zusammenfassen */
+  function meshToSolid({ vertices, triangles }, { unify = true } = {}) {
+    const oc = R.getOC(), before = triangles.length;
+    if (!before) throw new Error("Das Netz enthält keine Dreiecke");
+    const sew = new oc.BRepBuilderAPI_Sewing(1e-3, true, true, true, false);
+    let added = 0;
+    for (const [a, b, c] of triangles) {
+      try { sew.Add(R.makePolygon([vertices[a], vertices[b], vertices[c]]).wrapped); added++; } catch { /* entartet */ }
+    }
+    if (!added) throw new Error("Aus dem Netz ließ sich keine Fläche bilden");
+    sew.Perform(new oc.Message_ProgressRange());
+    let res = R.cast(sew.SewedShape()), solid = false;
+    sew.delete();
+    try { const so = R.makeSolid([res]); if (Math.abs(R.measureVolume(so)) > 1e-6) { res = so; solid = true; } } catch { /* offen */ }
+    if (unify) {
+      try {
+        const u = new oc.ShapeUpgrade_UnifySameDomain(res.wrapped, true, true, false);
+        u.Build();
+        res = R.cast(u.Shape());
+        u.delete();
+      } catch { /* bleibt in Dreiecken */ }
+    }
+    return { shape: res, solid, before, faces: res.faces.length };
+  }
+
   // ---------- Flächen prüfen (SolidCraft-Abgleich E4) ----------
   /** Isokurven aller gekrümmten Flächen: je Richtung n−1 Linien mit 24 Abschnitten (Parameter der Trägerfläche) */
   function isoCurves(shape, n = 5) {
@@ -3750,7 +3819,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { isoCurves, edgeContinuity, analyticRadii, compareShapes, buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, meshBodyCached, bodyPropsCached, measure, vertexOf, snapPoint, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { listTopology, meshToSolid, isoCurves, edgeContinuity, analyticRadii, compareShapes, buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, meshBodyCached, bodyPropsCached, measure, vertexOf, snapPoint, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

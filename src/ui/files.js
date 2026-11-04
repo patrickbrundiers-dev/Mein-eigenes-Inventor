@@ -35,6 +35,7 @@ import { listSheets } from "../core/lists.js";
 import { fmtNum } from "./dom.js";
 import { piecesOf, groupPieces, withSignature, dstvText, dstvFileName, stablePositions, piecesCsv, pieceMass } from "../core/dstv.js";
 import { writeIfc, ifcElements, ifcCounts } from "../core/ifc.js";
+import { urdfPackage } from "../core/urdf.js";
 
 const PROJECT_FILTERS = [{ name: "PBCAD-Projekt", extensions: ["wcad"] }];
 const AUTOSAVE_KEY = "werkcad.autosave";
@@ -436,6 +437,48 @@ export class Files {
     await this.withBusy("OBJ-Export", async () => {
       await this.saveText(writeObj(r.meshes), safeName(r.d.number || r.d.name) + ".obj", "model/obj", [{ name: "OBJ", extensions: ["obj"] }]);
     });
+  }
+  /** An Slicer senden (SolidCraft-Abgleich E5): 3MF im eingestellten Slicer öffnen (Desktop), sonst 3MF speichern */
+  async sendToSlicer(slicer = null) {
+    const r = this.meshList();
+    if (!r) return;
+    const data = write3mf(r.meshes, { title: r.d.name });
+    const list = this.app.prefs.get("dateien.slicer") || [];
+    const s = slicer || list[0] || null;
+    if (!this.bridge?.openInSlicer) {
+      await this.saveBinary(data, safeName(r.d.number || r.d.name) + ".3mf", [{ name: "3MF (3D-Druck)", extensions: ["3mf"] }]);
+      return toast("3MF gespeichert – im Slicer öffnen (direkt senden geht in der Desktop-Version)", { timeout: 6000 });
+    }
+    const res = await this.bridge.openInSlicer({ name: r.d.number || r.d.name, data, exe: s?.exe || null });
+    if (res?.error) return toast("Slicer: " + res.error, { kind: "err", timeout: 7000 });
+    toast(`An ${s?.name || "Slicer"} gesendet: ${res.path.split(/[\\/]/).pop()}`, { kind: "ok" });
+  }
+  /** URDF (E5): Baugruppe mit Gelenken als ROS-Paket (ZIP mit .urdf und STL-Netzen je Glied) */
+  async exportUrdf() {
+    const app = this.app, d = app.activeDoc();
+    if (d?.kind !== "assembly") return toast("URDF gibt es für Baugruppen mit Gelenken");
+    if (!d.components.some((c) => c.joint)) toast("Die Baugruppe hat keine Gelenke – alles landet im Grundglied »basis«", { timeout: 6000 });
+    const scene = app.viewer.exportScene((key) => (String(key).startsWith("comp:") ? key.slice(5) : String(key)));
+    const by = new Map();
+    for (const c of scene.children) {
+      const g = c.geometry, a = g?.attributes?.position;
+      if (!a) continue;
+      const e = c.matrix.elements, pos = new Array(a.count * 3);
+      for (let i = 0; i < a.count; i++) {
+        const x = a.getX(i), y = a.getY(i), z = a.getZ(i);
+        pos[i * 3] = e[0] * x + e[4] * y + e[8] * z + e[12];
+        pos[i * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+        pos[i * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+      }
+      if (!by.has(c.name)) by.set(c.name, []);
+      by.get(c.name).push({ pos, idx: g.index ? Array.from(g.index.array) : null });
+    }
+    const p = urdfPackage(d.name, d, (id) => by.get(id));
+    await this.withBusy("URDF-Export", async () => {
+      const r = await this.saveBinary(p.zip, safeName(d.number || d.name) + "_urdf.zip", [{ name: "URDF-Paket (ZIP)", extensions: ["zip"] }]);
+      if (r) toast(`URDF: ${p.model.links.length} Glieder, ${p.model.joints.length} Gelenke`, { kind: "ok", timeout: 5000 });
+    });
+    return p;
   }
   /** 3MF (F6): 3D-Druck mit Einheit mm und Farben, öffnet in PrusaSlicer, Cura, Bambu Studio */
   async export3mf() {
@@ -988,7 +1031,7 @@ export class Files {
 
 function importFeature(f) {
   const isStl = /\.stl$/i.test(f.name);
-  return { id: uid("f"), type: "import", name: "Import " + f.name, fileName: f.name, format: isStl ? "stl" : "step", data: f.data, op: "new" };
+  return { id: uid("f"), type: "import", name: "Import " + f.name, fileName: f.name, format: isStl ? "stl" : "step", data: f.data, op: "new", ...(isStl ? { convert: true } : {}) };
 }
 function pickFile(accept) {
   return new Promise((res) => {

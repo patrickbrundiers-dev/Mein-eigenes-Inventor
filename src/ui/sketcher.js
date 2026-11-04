@@ -1,5 +1,5 @@
 // 2D-Skizzierer über der 3D-Ansicht (SVG-Overlay, eigene Trefferprüfung im Bildschirmraum)
-import { svgEl, h, toast, fmtNum, choiceDialog, modal } from "./dom.js";
+import { svgEl, h, toast, fmtNum, choiceDialog, modal, promptDialog } from "./dom.js";
 import { solveSketch, checkNewConstraint, measureConstraint, explainDependency, DIMENSION_TYPES, entityFree } from "../core/solver.js";
 import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../core/sketch.js";
 import { evaluate, resolveParams } from "../core/expr.js";
@@ -19,7 +19,7 @@ import { splineCtrl } from "../core/sketch.js";
 const SPLINE_TOOLS = ["spline", "spline5", "splinefit"];
 import { buildBlendCurve, nearestEnd, buildTangentAt, buildCircleTangent2, arcSlotFrom3, polygonFromEdge, circumscribedVertex, insertSplinePoint, removeSplinePoint, reverseSpline, breakOffset, buildDrawingBounds, simplifyPolyline, addPolylines, chamferSecondDistance, autoConstraints, meshPlaneSection, spunProfile } from "../core/sketchtools2.js";
 import { defaultText, textBox, textPolylines, partTextVars, TEXT_STYLES } from "../core/schrift.js";
-import { imageCorners, newImageEntity, rescaleImage } from "../core/skizzenbild.js";
+import { imageCorners, newImageEntity, rescaleImage, traceContours, imageToSketch } from "../core/skizzenbild.js";
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 import { constraintOptions, SELECTION_CONSTRAINT_TOOLS } from "../core/bedingungsauswahl.js";
@@ -1809,6 +1809,39 @@ export class Sketcher {
     let loop;
     try { loop = spunProfile(all, this.frame, axis); } catch (err) { return toast(err.message, { kind: "err" }); }
     this.addSectionLoops([loop], sel ? "Gedrehtes Profil" : "Gedrehtes Profil (um die X-Achse)");
+  }
+  /** Bild nachzeichnen (E5): Umrisse dunkler Bereiche des gewählten (sonst ersten) Bildes als Linienzüge */
+  async traceImage(threshold = null) {
+    if (!this.sk) return;
+    const sel = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => this.entity(k.slice(2))).find((e) => e?.type === "image");
+    const e = sel || this.sk.entities.find((x) => x.type === "image");
+    const im = e && this.app.project.images?.[e.img];
+    if (!im?.src) return toast("Erst ein Bild einfügen (Übernehmen → Bild)");
+    if (threshold == null) {
+      const v = await promptDialog("Bild nachzeichnen", "Schwelle 1–254: dunkler als dieser Grauwert gilt als Linie bzw. Fläche (128 = Mitte).", "128");
+      if (v == null) return;
+      threshold = Number(String(v).replace(",", "."));
+      if (!(threshold >= 1 && threshold <= 254)) return toast("Schwelle zwischen 1 und 254", { kind: "err" });
+    }
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Bild nicht lesbar")); i.src = im.src; }).catch((err) => { toast(err.message, { kind: "err" }); return null; });
+    if (!img) return;
+    // höchstens 600 px auf der langen Seite: genug für Konturen, schnell
+    const k = Math.min(1, 600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const W = Math.max(2, Math.round(img.naturalWidth * k)), H = Math.max(2, Math.round(img.naturalHeight * k));
+    const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    const g = cv.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, W, H); g.drawImage(img, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data, gray = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) gray[i] = Math.round(0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]);
+    const loops = traceContours(gray, W, H, { threshold, minPts: 8 });
+    const P = this.sk.points.find((p) => p.id === e.p), c = imageCorners(e, P);
+    if (!c) return;
+    const px = e.w / W;
+    const pts = loops.map((l) => simplifyPolyline(l.map((q) => imageToSketch(c, [W, H], q)), px * 0.75)).filter((l) => l.length >= 4);
+    if (!pts.length) return toast("Keine Umrisse gefunden – Schwelle ändern");
+    let n = 0;
+    this.commit("Bild nachzeichnen", (sk) => { n = addPolylines(sk, pts, { uid, construction: !!this.construction }).length; });
+    toast(`Bild nachgezeichnet: ${pts.length} Umriss(e), ${n} Linien`, { kind: "ok" });
+    return { loops: pts.length, lines: n };
   }
   addSectionLoops(loops, label) {
     const clean = loops.map((l) => simplifyPolyline(l, 0.02)).filter((l) => l.length >= 2);

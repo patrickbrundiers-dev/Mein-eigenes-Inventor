@@ -862,7 +862,7 @@ export class App {
     this.endMeasure();
     if (f && (f.type === "fillet" || f.type === "chamfer") && (f.mode || "edges") === "edges") this.pick = { kind: "edges", feature: f.id };
     if (f && f.type === "naht") this.pick = { kind: "edges", feature: f.id };
-    if (f && ["shell", "aufdicken", "flaeche", "entformung", "lochblech", "flaechenkurve"].includes(f.type) || (f?.type === "freiflaeche" && ["offset", "kopie", "untrim"].includes(f.art))) this.pick = { kind: "faces", feature: f.id };
+    if (f && ["shell", "aufdicken", "flaeche", "entformung", "lochblech", "flaechenkurve", "auflage"].includes(f.type) || (f?.type === "freiflaeche" && ["offset", "kopie", "untrim"].includes(f.art))) this.pick = { kind: "faces", feature: f.id };
     if (f?.type === "direkt" && !(f.faces || []).length) this.pick = { kind: "faces", feature: f.id };
     const wasEditing = this._editingFeature;
     this._editingFeature = this.pick?.feature || null;
@@ -1331,7 +1331,7 @@ export class App {
   updateMeasureView() {
     const m = this.measure, r = m?.result;
     if (!r || r.items.length !== 2 || this.prefs.get("messen.anzeige3d") === false) return this.viewer.showMeasure(null);
-    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen"), second: this.prefs.get("messen.zweiteinheit") || "" });
+    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen"), second: this.prefs.get("messen.zweiteinheit") || "", unit: this.prefs.get("allgemein.einheit") || "mm" });
     const ax = m.show === "axis" ? axisDistance(r.items[0], r.items[1]) : null;
     if (ax) return this.viewer.showMeasure({ a: ax.a, b: ax.b, text: F.len(ax.value) });
     if (!r.pa || !r.pb) return this.viewer.showMeasure(null);
@@ -1515,7 +1515,7 @@ export class App {
       r = await this.kernel.call("measure", { items });
     } catch { if (ticket === this.quickTicket) el.hidden = true; return; }
     if (ticket !== this.quickTicket) return;
-    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen") ?? 2, angleDec: this.prefs.get("messen.winkelstellen") ?? 2 });
+    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen") ?? 2, angleDec: this.prefs.get("messen.winkelstellen") ?? 2, unit: this.prefs.get("allgemein.einheit") || "mm" });
     const rows = quickMeasure(r, F);
     el.replaceChildren(...rows.map((x) => h("button", { class: "qm-item", title: "Klicken: Wert kopieren", onclick: () => navigator.clipboard?.writeText(x.value).then(() => toast(`${x.label}: ${x.value} kopiert`), () => {}) },
       h("span", { class: "qm-l" }, x.label), h("span", { class: "qm-v" }, x.value))));
@@ -1694,7 +1694,7 @@ export const CONSTRAINT_NAMES = CONSTRAINT_TYPES;
 export const FEATURE_NAMES = {
   sketch: "Skizze", blechkasten: "Blechkasten", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
-  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", kroepfung: "Kröpfung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", flaechenkurve: "Kurve auf Fläche", freiflaeche: "Fläche", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
+  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", kroepfung: "Kröpfung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", flaechenkurve: "Kurve auf Fläche", freiflaeche: "Fläche", auflage: "Auflagefläche", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
   endkappe: "Endkappe", strecken: "Rohr gestreckt", zinkloch: "Verzinkungsbohrungen", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", huelle: "Hüllkörper", lochblech: "Lochblech", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung", direkt: "Direkt",
 };
 

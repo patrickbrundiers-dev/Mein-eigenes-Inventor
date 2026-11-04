@@ -568,7 +568,7 @@ export class Props {
   measureProps() {
     const app = this.app;
     const m = app.measure || {};
-    const F = measureFormat({ dec: app.prefs.get("allgemein.dezimalstellen"), angleDec: app.prefs.get("messen.winkelstellen") ?? 2, second: app.prefs.get("messen.zweiteinheit") || "" });
+    const F = measureFormat({ dec: app.prefs.get("allgemein.dezimalstellen"), angleDec: app.prefs.get("messen.winkelstellen") ?? 2, second: app.prefs.get("messen.zweiteinheit") || "", unit: app.prefs.get("allgemein.einheit") || "mm" });
     const P = (p) => p.map((v) => F.num(v)).join(" / ");
     const KIND = { face: "Fläche", edge: "Kante", vertex: "Punkt", axis: "Achse" };
     const T = { PLANE: "Ebene", CYLINDER: "Zylinder", CONE: "Kegel", SPHERE: "Kugel", TORUS: "Torus", BSPLINE: "Freiform", POINT: "Ecke", LINE: "Gerade", CIRCLE: "Kreis", ELLIPSE: "Ellipse", BSPLINE_CURVE: "Freiform" };
@@ -1434,7 +1434,7 @@ export class Props {
           h("p", { class: "hint" }, `Je Stabende eine Querbohrung durch beide Wände, so nah am Ende wie möglich (bei Gehrung hinter der Spitze). Richtwert-Ø nach DIN EN ISO 14713-2 aus der Profilgröße, z. B. 40er Rohr 12 mm, 80er 16 mm, 100er 20 mm – mit dem Verzinker abstimmen. Oberfläche des Bauteils: ${fin === "verzinkt" || fin === "duplex" ? "verzinkt" : "nicht verzinkt (unter Bauteil-Eigenschaften einstellen)"}.`)));
         break;
       }
-      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "huelle": case "lochblech": case "flaechenkurve": case "freiflaeche": case "aufdicken": case "flaeche": case "entformung": case "direkt":
+      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "huelle": case "lochblech": case "flaechenkurve": case "freiflaeche": case "auflage": case "aufdicken": case "flaeche": case "entformung": case "direkt":
         out.push(...this.bodyToolProps(part, f, E));
         break;
       case "steckzapfen": case "steckschlitz":
@@ -1449,6 +1449,9 @@ export class Props {
         out.push(this.section("Import",
           h("dl", { class: "kv" }, h("dt", {}, "Datei"), h("dd", {}, f.fileName || "–"), h("dt", {}, "Größe"), h("dd", {}, f.data ? fmtNum(f.data.length / 1024, 0) + " KB" : "–")),
           this.opSeg(f),
+          f.format === "stl" ? this.check("Netz in Volumenkörper wandeln", !!f.convert, (v) => this.set(f, "convert", v, "Netz konvertieren")) : null,
+          f.format === "stl" && f.convert ? this.check("Ebene Dreiecke zu Flächen zusammenfassen", f.unify !== false, (v) => this.set(f, "unify", v, "Netz konvertieren")) : null,
+          f.format === "stl" ? h("p", { class: "hint" }, "Netz konvertieren: Dreiecke werden genäht und zu einem Volumenkörper geschlossen; danach gehen Bohrung, Rundung und Boolesche Operationen.") : null,
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.replaceImport(f) }, "Andere Datei…"))));
         break;
     }
@@ -1545,6 +1548,10 @@ export class Props {
           need.has("solid") ? this.check("Geschlossen → Volumenkörper", f.solid !== false, (v) => this.set(f, "solid", v ? undefined : false, "Volumenkörper")) : null,
           h("p", { class: "hint" }, a.help + " Flächenkörper haben keine Masse und erscheinen in Stückliste und Gewicht nicht."))];
       }
+      case "auflage":
+        return [this.section("Auflagefläche",
+          facePick("Ebene Fläche anklicken, auf der das Teil im Drucker liegen soll."),
+          h("p", { class: "hint" }, "Dreht alle Körper so, dass die gewählte Fläche nach unten zeigt, und legt sie auf z = 0 – für 3D-Druck und »An Slicer senden«. Als letztes Feature einfügen."))];
       case "flaechenkurve": {
         const sks = part.features.filter((x) => x.type === "sketch");
         return [this.section("Kurve auf Fläche",

@@ -1,4 +1,5 @@
 // Einstellungscenter: Kategorien links, Suche oben, Optionen rechts. Gültige Änderungen wirken sofort.
+import { slicerEditor } from "./datenwerkzeuge.js";
 import { h, modal, toast, confirmDialog } from "./dom.js";
 import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings } from "../core/settings.js";
 import { materialList, validateMaterial, exportMaterialLib, importMaterialLib, usedMaterialKeys } from "../core/materials.js";
@@ -123,7 +124,7 @@ function extras(app, cat) {
       h("li", {}, "Beim Speichern bleiben die vorigen Fassungen als ».wcad.bak«, ».bak2« … neben der Datei (Anzahl oben)."),
       h("li", {}, "Schreibgeschützt öffnen (Datei-Menü): Ansehen und Ausprobieren, gespeichert wird nur unter neuem Namen. Gesperrte oder schreibgeschützte Dateien öffnen automatisch so."),
       h("li", {}, "Projekt paketieren (Datei-Menü): eine Kopie, in der verknüpfte Bauteile ganz enthalten sind – zum Weitergeben ohne die Bauteil-Dateien."),
-      h("li", {}, "Ältere Projektdateien werden beim Öffnen migriert; vorher wird eine Sicherung angelegt."))];
+      h("li", {}, "Ältere Projektdateien werden beim Öffnen migriert; vorher wird eine Sicherung angelegt.")), slicerEditor(app)];
   }
   if (cat === "datenschutz") {
     return window.werkcad?.openLogFolder ? [h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => window.werkcad.openLogFolder() }, "Protokollordner öffnen"))] : [];

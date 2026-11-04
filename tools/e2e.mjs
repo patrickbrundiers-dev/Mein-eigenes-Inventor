@@ -4506,6 +4506,21 @@ try {
       JSON.stringify({ info, on, off, cmp }));
   }
 
+  // SolidCraft-Abgleich E5: Kanten und Flächen auflisten, URDF, Einheit
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rohr"));
+    await idle();
+    await evalApp(() => { window.__werkcad.commands.exec("part.listTopology"); });
+    const td = page.locator(".dialog", { hasText: "Kanten und Flächen" });
+    await td.waitFor({ timeout: 20000 });
+    const faces = await td.locator("table.topo-faces tbody tr").count();
+    await td.locator("footer .btn", { hasText: "Schließen" }).click();
+    await evalApp(() => window.__werkcad.openDoc("beispiel_bg"));
+    await idle();
+    const urdf = await evalApp(async () => { const p = await window.__werkcad.files.exportUrdf(); return p && { links: p.model.links.length, files: p.files.length, robot: /<robot name=/.test(p.text) }; });
+    step("SolidCraft E5: Kanten/Flächen auflisten, URDF-Paket", faces > 3 && urdf?.robot && urdf.links >= 1 && urdf.files >= 2, JSON.stringify({ faces, urdf }));
+  }
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

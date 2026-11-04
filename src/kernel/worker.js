@@ -386,6 +386,7 @@ const handlers = {
       if (what === "iso") r.lines = K.isoCurves(b.shape);
       else if (what === "stetigkeit") r.edges = K.edgeContinuity(b.shape);
       else if (what === "radius") r.radii = K.analyticRadii(b.shape);
+      else if (what === "liste") Object.assign(r, K.listTopology(b.shape));
       out.push(r);
     }
     return out;
