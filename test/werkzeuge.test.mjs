@@ -898,3 +898,38 @@ test("Konstruktions-Assistent: Wellenabschnitte, Verzahnung, Lager, Feder", asyn
   assert.throws(() => A.springData(2, 6, 6, 40), /Wickelverhältnis/);
   assert.throws(() => A.springData(2, 16, 6, 15), /Blocklänge/);
 });
+
+test("Blech: Kröpfung – Versatz, Winkel, Maßbezug, feste Seite, Nummern dahinter", async () => {
+  const { planSheet } = await import("../src/core/blechplus.js");
+  const r3 = (q) => q.map((x) => Math.round(x * 1000) / 1000);
+  const flat = { legs: [100], angles: [], t: 2, ri: 2, k: 0.5, ref: "aussen", L: 50 };
+  const J = (o) => ({ type: "kroepfung", leg: 1, s: 50, h: 10, ref: "flaeche", angle: 90, dir: "auf", pos: "mitte", fixed: "anfang", keep: true, ri: null, ...o });
+  // 90°, 10 mm Fläche zu Fläche: Ende 10 mm höher, projizierte Länge 100 bleibt, zwei Gegenbiegungen
+  const a = planSheet(flat, [J({})]);
+  assert.deepEqual(a.angles, [90, -90]);
+  assert.deepEqual(r3(a.plan.center.at(-1).b), [100, 10]);
+  assert.equal(a.flat.bends.length, 2);
+  assert.equal(Math.round(a.plan.flat * 1000) / 1000, Math.round((100 - 12 + 10 + 2 * 3 * Math.PI / 2) * 1000) / 1000);
+  // ab, über alles, feste Seite hinter der Linie: Anfang wandert, Ende bleibt auf 0
+  const b = planSheet(flat, [J({ dir: "ab", ref: "gesamt", h: 12, fixed: "ende" })]);
+  assert.deepEqual(r3(b.plan.center[0].a), [0, 10]);
+  assert.deepEqual(r3(b.plan.center.at(-1).b), [100, 0]);
+  // 60°: Steg schräg, Ende trotzdem bei x = 100; ohne projizierte Länge wird das Teil länger
+  const c = planSheet(flat, [J({ angle: 60, h: 15 })]);
+  assert.deepEqual(r3(c.plan.center.at(-1).b), [100, 15]);
+  const d = planSheet(flat, [J({ angle: 60, h: 15, keep: false })]);
+  assert.ok(d.plan.center.at(-1).b[0] > 108);
+  // Steg vor / hinter der Linie: um eine halbe Blechdicke verschoben (90°)
+  const v = planSheet(flat, [J({ pos: "vor" })]), hi = planSheet(flat, [J({ pos: "hinter" })]);
+  assert.equal(Math.round((hi.legs[0] - v.legs[0]) * 1000) / 1000, 2);
+  // Grenzen: Versatz zu klein für den Radius, Linie zu nah am Rand, Winkel über 90°
+  assert.throws(() => planSheet(flat, [J({ h: 4 })]), /Versatz zu klein.*mindestens 6/);
+  assert.throws(() => planSheet(flat, [J({ s: 2 })]), /zu nah am Anfang/);
+  assert.throws(() => planSheet(flat, [J({ s: 98 })]), /zu nah am Ende/);
+  assert.throws(() => planSheet(flat, [J({ angle: 120 })]), /1° und 90°/);
+  // Im U-Profil: Kröpfung im Steg, Stanzung auf Schenkel 3 davor rückt auf Schenkel 5
+  const U = { legs: [40, 100, 40], angles: [90, 90], t: 2, ri: 2, k: 0.33, ref: "aussen", L: 500 };
+  const u = planSheet(U, [{ type: "stanzung", leg: 3, s: [10], y: [100], form: "rund", d: 8 }, J({ leg: 2 })]);
+  assert.equal(u.plan.bends.length, 4);
+  assert.equal(u.punch[0].leg, 4);
+});

@@ -413,6 +413,23 @@ test("Blech: Ecke schließen, Stanzwerkzeug, Konturwalzen mit Trennfuge (Stufe 4
   assert.match(bad2.status.tf.error, /360/);
 });
 
+test("Blech: Kröpfung im Kantteil – gültiger Körper, Abwicklung mit vier Biegungen", async () => {
+  const kt = { id: "k1", type: "kantteil", legs: "40; 100; 40", angles: "90; 90", ref: "aussen", t: "2", ri: "2", k: "0.5", length: "200" };
+  const build = async (feats) => { const res = await K.buildPart(part(feats)); okAll(res); const b = res.bodies.find((x) => x.meta?.sheet); assert.ok(K.shapeValid(b.shape), "Körper gültig"); return { res, b, sh: b.meta.sheet }; };
+  const plain = await build([kt]);
+  const jog = await build([kt, { id: "j1", type: "kroepfung", base: "k1", leg: "2", s: "50", h: "10", angle: "90", dir: "ab" }]);
+  assert.equal(jog.sh.flatModel.bends.length, 4);
+  // Steg (Z) bleibt 100 hoch, der obere Schenkel springt um den Versatz nach außen (X 40 → 50)
+  const bb = (x) => x.b.shape.boundingBox.bounds;
+  near(bb(jog)[1][2] - bb(jog)[0][2], bb(plain)[1][2] - bb(plain)[0][2], 1e-3, "Höhe");
+  near(bb(jog)[1][0] - bb(jog)[0][0], bb(plain)[1][0] - bb(plain)[0][0] + 10, 1e-3, "Breite");
+  near(R.measureVolume(jog.b.shape) / (2 * 200), jog.sh.flatModel.flat, 0.5, "Volumen = Abwicklung × t × L");
+  const flat = await build([{ ...kt, view: "abgewickelt" }, { id: "j1", type: "kroepfung", base: "k1", leg: "2", s: "50", h: "10", angle: "60", dir: "auf" }]);
+  assert.ok(flat.sh.flatModel.width > plain.sh.flatModel.width);
+  const bad = await K.buildPart(part([kt, { id: "j1", type: "kroepfung", base: "k1", leg: "2", s: "50", h: "3" }]));
+  assert.match(bad.status.j1.error, /Versatz zu klein/);
+});
+
 test("IGES-Export: Flächen aus dem Kern als NURBS mit Rand (Stufe 49)", async () => {
   const { igesFaces } = await import("../src/kernel/igesocc.js");
   const I = await import("../src/core/iges.js");

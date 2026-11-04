@@ -73,6 +73,7 @@ const P = {
   rules: '<path d="M4 6h4M4 12h4M4 18h4"/><path d="M11 6l2 2 4-4M11 12h9M11 18h9"/>',
   macro: '<path d="M5 4l7 8-7 8"/><path d="M13 20h7"/>',
   derive: '<rect x="3" y="4" width="8" height="8" rx="1"/><rect x="13" y="12" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><path d="M11 8h4v4"/>',
+  jog: '<path d="M3 15h7l3-6h8"/><path d="M3 18h8.5l3-6H21" stroke-width="1"/>',
   hem: '<path d="M3 16h14a3 3 0 0 0 0-6H8"/><path d="M3 13h14" stroke-width="1"/>',
   collar: '<path d="M3 16h6v-6M15 10v6h6"/><path d="M9 10h6" stroke-dasharray="2 1.5" stroke-width="1"/>',
   bolt: '<path d="M8 3h8v4H8z"/><path d="M10 7v14h4V7"/><path d="M10 10l4 1.5M10 13l4 1.5M10 16l4 1.5"/><path d="M5 17h14v3H5z" stroke-width="1"/>',
