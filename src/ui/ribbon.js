@@ -699,11 +699,12 @@ export class Ribbon {
         const btns = h("div", { class: "rb-buttons" });
         // groß: alle (Standard), keine (small) oder die ersten g.big; der Rest klein in Spalten zu je 3
         const nBig = g.small ? 0 : g.big ?? g.buttons.length;
+        const iconsOnly = !!this.app.prefs?.get("oberflaeche.nurSymbole");
         for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: (e) => this.press(b, e), disabled: b.disabled, ...this.tipAttrs(b) }, icon(b.icon), h("span", {}, ...breakable(t_(b.label)))));
         const rest = g.buttons.slice(nBig);
-        for (let i = 0; i < rest.length; i += 3) {
-          btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + 3).map((b) =>
-            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), ...this.tipAttrs(b), "aria-label": t_(b.label), onclick: (e) => this.press(b, e), disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : t_(b.label)))));
+        for (let i = 0, n = iconsOnly ? 2 : 3; i < rest.length; i += n) {
+          btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + n).map((b) =>
+            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly || iconsOnly ? " icon-only" : ""), ...this.tipAttrs(b), "aria-label": t_(b.label), onclick: (e) => this.press(b, e), disabled: b.disabled }, icon(b.icon), b.iconOnly || iconsOnly ? null : t_(b.label)))));
         }
         // Gruppenname öffnet die Gruppenliste (SolidCraft): alle Befehle mit Kürzel, Nadel heftet an den Schnellzugriff
         panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns,

@@ -1,4 +1,5 @@
 // Anwendungssteuerung: Projektzustand, Rückgängig, Neuaufbau, Auswahl, Modi
+import { themeById, themeVars } from "../core/themes.js";
 import { Viewer } from "./viewer.js";
 import { problemsDialog, quickCounts, countText } from "./pruefung.js";
 import { invertSelection } from "../core/boxselect.js";
@@ -1386,7 +1387,12 @@ export class App {
   /** Benutzereinstellungen anwenden. Ändert nie das Modell, nur Anzeige und Bedienung. */
   applyPrefs(keys) {
     const p = this.prefs;
-    if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
+    if (!keys || keys.some((k) => k === "darstellung.schema" || k === "darstellung.eigenerHintergrund" || k === "darstellung.hintergrund")) this.applyTheme();
+    if (!keys || keys.includes("oberflaeche.anordnung") || keys.includes("oberflaeche.nurSymbole")) {
+      document.body.classList.toggle("kompakt", p.get("oberflaeche.anordnung") === "kompakt");
+      document.body.classList.toggle("rb-nur-symbole", !!p.get("oberflaeche.nurSymbole"));
+      if (keys) { this.docking.apply(); this.ribbon.render(); }
+    }
     if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
     if (keys?.includes("oberflaeche.verlauf")) this.verlauf.render();
     if (keys?.includes("oberflaeche.schnellmessung")) this.updateQuickMeasure();
@@ -1424,8 +1430,16 @@ export class App {
     const mode = this.prefs.get("darstellung.schema");
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
     if (mq && !this.themeListener) { this.themeListener = () => { if (this.prefs.get("darstellung.schema") === "system") { this.applyTheme(); this.viewer.applyPrefs(this.prefs.values); } }; mq.addEventListener?.("change", this.themeListener); }
-    const dark = mode === "dunkel" || (mode === "system" && !!mq?.matches);
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    const theme = themeById(mode), root = document.documentElement;
+    const dark = theme ? theme.base === "dark" : mode === "dunkel" || (mode === "system" && !!mq?.matches);
+    root.dataset.theme = dark ? "dark" : "light";
+    // Thema (G1): Variablen über das Grundschema legen; vorher gesetzte eines anderen Themas entfernen
+    for (const k of this.themeKeys || []) root.style.removeProperty("--" + k);
+    const vars = theme ? themeVars(theme) : {};
+    if (this.prefs.get("darstellung.eigenerHintergrund")) { const c = this.prefs.get("darstellung.hintergrund"); vars["stage-a"] = c; vars["stage-b"] = c; }
+    for (const [k, v] of Object.entries(vars)) root.style.setProperty("--" + k, v);
+    this.themeKeys = Object.keys(vars);
+    root.dataset.colortheme = theme?.id || mode;
   }
 
   // ---------- Oberfläche ----------

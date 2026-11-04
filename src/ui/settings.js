@@ -1,5 +1,6 @@
 // Einstellungscenter: Kategorien links, Suche oben, Optionen rechts. Gültige Änderungen wirken sofort.
 import { slicerEditor, plasticRulesEditor } from "./datenwerkzeuge.js";
+import { THEMES } from "../core/themes.js";
 import { h, modal, toast, confirmDialog, promptDialog } from "./dom.js";
 import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings, profileSnapshot } from "../core/settings.js";
 import { materialList, validateMaterial, exportMaterialLib, importMaterialLib, usedMaterialKeys } from "../core/materials.js";
@@ -32,6 +33,7 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
     pane.replaceChildren(...[
       h("h3", { class: "set-title" }, c.label),
       c.note ? h("p", { class: "hint" }, c.note) : null,
+      ...(cat === "darstellung" && !query ? [themeCards(app, render)] : []),
       ...list.map((s) => row(s)),
       ...extras(app, cat),
       c.planned?.length ? h("div", { class: "set-planned" }, h("b", {}, "Geplant, noch nicht einstellbar:"), h("ul", {}, ...c.planned.map((t) => h("li", {}, t)))) : null,
@@ -444,6 +446,29 @@ export function profileEditor(app) {
         h("button", { class: "btn", onclick: () => { const n = name.value.trim(); if (!n) return toast("Namen eingeben"); put({ ...all, [n]: profileSnapshot(prefs.values) }); } }, "Aktuelle Einstellungen speichern"),
         h("button", { class: "btn", onclick: async () => { const text = await pickText(app); if (text == null) return; const n = name.value.trim() || `Profil ${Object.keys(all).length + 1}`; put({ ...all, [n]: text }); } }, "Profil importieren …")));
   };
+  render();
+  return box;
+}
+
+/** Farbthemen als Bildkarten (SolidCraft-Abgleich Runde 2, G1): Kopfleiste, Panel, 3D-Hintergrund, Akzent */
+export function themeCards(app, rerender) {
+  const box = h("div", { class: "theme-cards-box" });
+  const BUILTIN = [
+    { id: "hell", name: "Hell", vars: { appbar: "#2b3340", "steel-0": "#ffffff", "stage-a": "#eef1f5", "stage-b": "#dfe5ec", dye: "#1f6fb5", ink: "#1b2430", "steel-3": "#cbd3dd" } },
+    { id: "dunkel", name: "Dunkel", vars: { appbar: "#1c1e21", "steel-0": "#25272b", "stage-a": "#2f333a", "stage-b": "#23262b", dye: "#4aa3d8", ink: "#e0e2e5", "steel-3": "#484d55" } },
+    { id: "system", name: "Wie Windows", vars: null },
+  ];
+  const card = (t) => {
+    const v = t.vars;
+    const pic = v ? h("div", { class: "theme-pic", style: { background: `linear-gradient(180deg, ${v["stage-a"]}, ${v["stage-b"]})` } },
+      h("i", { class: "tp-bar", style: { background: v.appbar } }), h("i", { class: "tp-panel", style: { background: v["steel-0"], borderColor: v["steel-3"] } }, h("b", { style: { background: v.ink } }), h("b", { style: { background: v.ink, width: "60%" } })),
+      h("i", { class: "tp-body", style: { borderColor: v.dye } }), h("i", { class: "tp-accent", style: { background: v.dye } }))
+      : h("div", { class: "theme-pic theme-pic-system" }, h("i", { class: "half-l" }), h("i", { class: "half-r" }));
+    return h("button", { class: "theme-card" + (app.prefs.get("darstellung.schema") === t.id ? " on" : ""), "data-theme-id": t.id, title: t.base ? `${t.name} (${t.base === "dark" ? "dunkel" : "hell"}) – nach SolidCraft` : t.name,
+      onclick: () => { app.prefs.set("darstellung.schema", t.id); rerender ? rerender() : render(); } }, pic, h("span", {}, t.name));
+  };
+  const render = () => box.replaceChildren(h("h3", {}, "Farbthema"), h("p", { class: "hint" }, "Klick wählt das Thema für Menüband, Panels, Dialoge und 3D-Hintergrund. Die Themen ab Graphite übernehmen die Farbwerte von SolidCraft."),
+    h("div", { class: "theme-cards" }, ...BUILTIN.map(card), ...THEMES.map(card)));
   render();
   return box;
 }

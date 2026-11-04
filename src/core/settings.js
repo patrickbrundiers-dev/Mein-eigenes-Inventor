@@ -9,6 +9,7 @@ import { validateBendTables } from "./bendtable.js";
 import { validateKeymap, commandDef } from "./commands.js";
 import { validateTemplate, DEFAULT_TEMPLATE } from "./zeichnungsvorlage.js";
 import { validatePlasticRules, DEFAULT_PLASTIC_RULES } from "./kunststoff.js";
+import { THEMES } from "./themes.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
 // Reines Modul ohne DOM – die Oberfläche (src/ui/prefs.js) speichert und wendet an.
@@ -130,7 +131,7 @@ export const SETTINGS = [
   { key: "fertigung.knickSchenkel", cat: "fertigung", label: "Knickrahmen: Schenkel mindestens", unit: "× Rohrmaß", type: "number", default: 2, min: 0, max: 20, help: "Schenkel kürzer als Faktor × Rohrmaß in der Rahmenebene gibt eine Warnung. 0 = nicht prüfen." },
   { key: "fertigung.knickWand", cat: "fertigung", label: "Knickrahmen: Wand höchstens", unit: "mm", type: "number", default: 4, min: 0, max: 30, help: "Dickere Wände lassen sich schwer von Hand knicken (Hinweis). 0 = nicht prüfen." },
 
-  { key: "darstellung.schema", cat: "darstellung", label: "Farbschema", type: "enum", default: "hell", options: [{ value: "hell", label: "Hell" }, { value: "dunkel", label: "Dunkel" }, { value: "system", label: "Wie Windows" }], help: "Gilt für Menüband, Panels, Dialoge und den 3D-Hintergrund. Zeichnungsblätter bleiben weiß." },
+  { key: "darstellung.schema", cat: "darstellung", label: "Farbschema", type: "enum", default: "hell", options: [{ value: "hell", label: "Hell" }, { value: "dunkel", label: "Dunkel" }, { value: "system", label: "Wie Windows" }, ...THEMES.map((t) => ({ value: t.id, label: t.name }))], help: "Themen Graphite bis Platinum 9 nach SolidCraft. Gilt für Menüband, Panels, Dialoge und den 3D-Hintergrund. Zeichnungsblätter bleiben weiß." },
   { key: "dokument.neuesProjekt", cat: "dokument", label: "Neues Projekt beginnt mit", type: "enum", default: "bauteil", options: [{ value: "bauteil", label: "einem Bauteil" }, { value: "baugruppe", label: "Baugruppe mit einem Bauteil" }, { value: "leer", label: "leerem Projekt" }], help: "Datei → Neues Projekt (Strg+N). Die Kacheln auf der Startseite bleiben, wie sie heißen." },
   { key: "dokument.werkstoff", cat: "dokument", label: "Werkstoff neuer Bauteile", type: "materialkey", default: "S235", help: "Eingebaute und eigene Werkstoffe (Einstellungen → Material). Fehlt der gewählte, gilt S235." },
   { key: "dokument.name.bauteil", cat: "dokument", label: "Name neuer Bauteile", type: "name", default: "Bauteil {n}", placeholders: ["n", "projekt", "datum"], help: "Beispiel: »{projekt}-{n:2}« → »Carport-01«. Ist der Name schon vergeben, zählt {n} weiter." },
@@ -147,6 +148,10 @@ export const SETTINGS = [
   { key: "material.eigene", cat: "material", label: "Eigene Werkstoffe", type: "materials", default: [], custom: true },
   { key: "material.kunststoffregeln", cat: "material", label: "Kunststoffregeln", type: "plasticrules", default: DEFAULT_PLASTIC_RULES.map((r) => ({ ...r })), custom: true, help: "Wanddicke, Formschräge und Radius je Kunststoff für Ansatz, Rastnase, Lippe/Nut und die Regelprüfung." },
   { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
+  { key: "oberflaeche.anordnung", cat: "darstellung", label: "Fensteraufbau", type: "enum", default: "schwebend", options: [{ value: "schwebend", label: "Schwebend (Karten über der Ansicht)" }, { value: "kompakt", label: "Kompakt (angedockt, dichter)" }], help: "Kompakt: Menüband, Modellbrowser und Eigenschaften liegen ohne Abstand an den Fensterrändern – mehr Platz für die 3D-Ansicht." },
+  { key: "oberflaeche.nurSymbole", cat: "darstellung", label: "Menüband nur mit Symbolen", type: "bool", default: false, help: "Beschriftungen ausblenden; der Name steht im Tooltip. Spart Höhe und Breite." },
+  { key: "darstellung.eigenerHintergrund", cat: "darstellung", label: "Eigene Hintergrundfarbe der 3D-Ansicht", type: "bool", default: false, help: "Aus = Farbverlauf des Farbschemas." },
+  { key: "darstellung.hintergrund", cat: "darstellung", label: "Hintergrundfarbe", type: "color", default: "#ffffff", help: "Gilt, wenn »Eigene Hintergrundfarbe« an ist." },
   { key: "oberflaeche.verlauf", cat: "darstellung", label: "Verlaufsleiste unten im Bauteil", type: "bool", default: true, help: "Alle Features als Symbole in Aufbaureihenfolge; die Marke ist das Bauteilende und lässt sich ziehen." },
   { key: "oberflaeche.schnellmessung", cat: "darstellung", label: "Schnellmessung unten rechts", type: "bool", default: true, help: "Zeigt für gewählte Kanten und Flächen Länge, Ø, Fläche, Abstand und Winkel. Klick kopiert den Wert. Das Messwerkzeug (M) kann mehr." },
   { key: "baum.skizzenEinordnen", cat: "darstellung", label: "Modellbrowser: genutzte Skizzen unter ihrem Feature", type: "bool", default: true, help: "Wie Inventor: die Skizze einer Extrusion, Bohrung … steht eingerückt darunter. Aus = alle Features in einer flachen Liste." },
