@@ -58,3 +58,53 @@ export function slicerEditor(app) {
   render();
   return box;
 }
+
+/** Leistungsprofil (SolidCraft-Abgleich E6): Rechenzeit je Feature des letzten Neuaufbaus, langsamste zuerst */
+export function performanceDialog(app) {
+  const part = app.activeDoc(), res = part && app.results.get(part.id);
+  if (part?.kind !== "part" || !res?.status) return toast("Erst ein Bauteil öffnen");
+  const rows = part.features.map((f) => ({ f, ms: res.status[f.id]?.ms })).filter((r) => Number.isFinite(r.ms)).sort((a, b) => b.ms - a.ms);
+  const total = rows.reduce((s, r) => s + r.ms, 0) || 1;
+  const body = rows.length ? h("div", {}, h("p", { class: "hint" }, `Summe ${fmtNum(total / 1000, 2)} s über ${rows.length} Features (nur neu berechnete; F5 rechnet alles neu).`),
+    h("table", { class: "grid perf-table" }, h("thead", {}, h("tr", {}, h("th", {}, "Feature"), h("th", {}, "ms"), h("th", {}, "Anteil"))),
+      h("tbody", {}, ...rows.slice(0, 40).map((r) => h("tr", {}, h("td", {}, r.f.name || r.f.type), h("td", { class: "num" }, String(r.ms)),
+        h("td", {}, h("div", { style: { background: "var(--dye)", height: "8px", width: `${Math.max(1, Math.round((100 * r.ms) / total))}%`, borderRadius: "2px" } })))))))
+    : h("p", {}, "Noch keine Zeiten – Bauteil einmal neu berechnen (F5).");
+  modal({ title: `Leistungsprofil – ${part.name}`, width: "560px", body, buttons: [{ label: "Neu berechnen", run: () => { app.commands.exec("model.rebuild"); return true; } }, { label: "Schließen", primary: true }] });
+  return rows.length;
+}
+
+/** Absturzberichte (E6): Fehler dieser Sitzung; Kopieren für eine Fehlermeldung, Löschen, Protokollordner */
+export function crashReportsDialog(app) {
+  const list = app.errorReports || [];
+  const text = () => list.map((r) => `${r.time}  ${r.msg}\n${r.stack}`).join("\n\n");
+  const body = h("div", {}, list.length
+    ? h("div", { class: "crash-list", style: { maxHeight: "50vh", overflow: "auto" } }, ...list.slice().reverse().map((r) => h("details", {}, h("summary", {}, `${r.time.slice(11, 19)} – ${r.msg}`), h("pre", { style: { whiteSpace: "pre-wrap", fontSize: "11px" } }, r.stack))))
+    : h("p", {}, "In dieser Sitzung ist kein Fehler aufgetreten."),
+    h("p", { class: "hint" }, "Nur Meldung und Programmstelle, keine Projektdaten. Ältere Fehler stehen im Fehlerprotokoll."));
+  modal({ title: "Absturzberichte", width: "640px", body, buttons: [
+    ...(window.werkcad?.openLogFolder ? [{ label: "Protokollordner", run: () => { window.werkcad.openLogFolder(); return false; } }] : []),
+    { label: "Kopieren", run: () => { navigator.clipboard?.writeText(text()).then(() => toast("Berichte kopiert", { kind: "ok" }), () => toast("Kopieren nicht möglich", { kind: "err" })); return false; } },
+    { label: "Löschen", run: () => { list.splice(0); toast("Berichte gelöscht"); } },
+    { label: "Schließen", primary: true }] });
+  return list.length;
+}
+
+/** Einstellungen → Werkstoffe: Kunststoffregeln (Wanddicke, Formschräge, Radius) für Kunststoffteile (E5) */
+export function plasticRulesEditor(app) {
+  const prefs = app.prefs, box = h("div", { class: "mat-editor plastic-rules" });
+  const lib = () => (prefs.get("material.kunststoffregeln") || []).map((r) => ({ ...r }));
+  const save = (v) => { const r = prefs.set("material.kunststoffregeln", v); if (!r.ok) toast(r.error, { kind: "err", timeout: 6000 }); render(); };
+  const render = () => {
+    const list = lib();
+    const cell = (r, i, k, num = true) => h("input", { class: "inp" + (num ? " num" : ""), value: num ? String(r[k]).replace(".", ",") : r[k], onchange: (e) => { const n = lib(); n[i] = { ...n[i], [k]: e.target.value.trim() }; save(n); } });
+    box.replaceChildren(h("h3", {}, "Kunststoffregeln"),
+      h("p", { class: "hint" }, "Kunststoffteile (3D-Modell → Kunststoff) übernehmen die Werte der gewählten Regel: Lippe/Nut liegen in der Wandmitte, Rippen und Domwände werden gegen die Wanddicke geprüft."),
+      h("table", { class: "grid" }, h("thead", {}, h("tr", {}, ...["Name", "Wand mm", "Formschräge °", "Radius mm", ""].map((x) => h("th", {}, x)))),
+        h("tbody", {}, ...list.map((r, i) => h("tr", {}, h("td", {}, cell(r, i, "name", false)), h("td", {}, cell(r, i, "wall")), h("td", {}, cell(r, i, "draft")), h("td", {}, cell(r, i, "radius")),
+          h("td", {}, h("button", { class: "btn", onclick: () => save(lib().filter((_, k) => k !== i)) }, "Löschen")))))),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { let n = list.length + 1; while (list.some((r) => r.name === "Regel " + n)) n++; save([...list, { name: "Regel " + n, wall: 2, draft: 1, radius: 1 }]); } }, "Neue Regel")));
+  };
+  render();
+  return box;
+}

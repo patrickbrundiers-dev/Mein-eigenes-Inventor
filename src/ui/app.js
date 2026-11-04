@@ -25,6 +25,7 @@ import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { moveProblem, copyFeatures, moveFeaturesToPart } from "../core/ableiten.js";
 import { reapplySurfaceCheck } from "./flaechenpruefung.js";
+import { cloudPoints } from "../core/punktwolke.js";
 import { syncVariants } from "../core/varianten.js";
 import { setDynamicCommands } from "../core/commands.js";
 import { macroCommands } from "../core/makros.js";
@@ -55,7 +56,7 @@ import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generato
 import { groupParts } from "../core/genteil.js";
 import { gestellPlan } from "../core/gestell.js";
 import { refreshAllGestelle, gestellPick, skeletonSegs } from "./gestell.js";
-import { insertFeature, beforeDelete, setEnd } from "../core/bauteilende.js";
+import { insertFeature, beforeDelete, setEnd, activeCount } from "../core/bauteilende.js";
 import { colorMap } from "../core/komponentenfarben.js";
 import { templateOf, isCustomTemplate } from "../core/zeichnungsvorlage.js";
 import { snapshot, restoreSnapshot, trimStack } from "../core/undo.js";
@@ -633,6 +634,9 @@ export class App {
   partColor(part) { return part.color || finishColor(part) || materialOf(part.material).color; }
   showPart(part, res) {
     this.viewer.showMotionPaths([]);
+    // Punktwolken (E5) bis zum Bauteilende, nicht unterdrückt
+    const nAct = activeCount(part);
+    this.viewer.showPointClouds(part.features.filter((f, i) => f.type === "punktwolke" && !f.suppressed && f.data && !f.hidden && i < nAct).map((f) => { try { return { id: f.id, pts: cloudPoints(f), size: Number(f.size) || 2 }; } catch { return null; } }).filter(Boolean));
     if (this.mode === "sketch") {
       // im Skizzenmodus Modell halbtransparent hinter der Skizze
       this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35, material: part.material, finish: part.finish });
@@ -673,6 +677,7 @@ export class App {
     this.viewer.showAssembly(comps);
     this.viewer.showSketches([]);
     if (this.viewer.analysis) { this.surfaceCheck = null; this.viewer.setAnalysis(); }
+    this.viewer.showPointClouds([]);
     this.viewer.showMotionPaths((asm.motionPaths || []).filter((p) => !p.hidden).map((p) => ({ ...p, kept: true })));
     if (this.fittedFor !== asm.id && comps.length) {
       this.fittedFor = asm.id;
@@ -1674,6 +1679,7 @@ export class App {
       if (this.mode === "drawing" && this.drawing.key(e)) { e.preventDefault(); return; }
       if (e.key === "Enter" && this.pick?.kind === "datumCreate") { finishDatumPick(this); return; }
       if (e.key === "Escape") {
+        if (this.viewer.spin) { this.viewer.setSpin(0); return; }
         if (this.pick) { this.cancelPick(); return; }
         if (this.sel) { this.sel = null; this.selHits = []; this.refreshSelectionHits(); this.tree.render(); this.props.render(); }
         return;
@@ -1694,7 +1700,7 @@ export const CONSTRAINT_NAMES = CONSTRAINT_TYPES;
 export const FEATURE_NAMES = {
   sketch: "Skizze", blechkasten: "Blechkasten", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
-  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", kroepfung: "Kröpfung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", flaechenkurve: "Kurve auf Fläche", freiflaeche: "Fläche", auflage: "Auflagefläche", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
+  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", kroepfung: "Kröpfung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", flaechenkurve: "Kurve auf Fläche", freiflaeche: "Fläche", auflage: "Auflagefläche", kunststoff: "Kunststoffteil", punktwolke: "Punktwolke", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
   endkappe: "Endkappe", strecken: "Rohr gestreckt", zinkloch: "Verzinkungsbohrungen", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", huelle: "Hüllkörper", lochblech: "Lochblech", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung", direkt: "Direkt",
 };
 

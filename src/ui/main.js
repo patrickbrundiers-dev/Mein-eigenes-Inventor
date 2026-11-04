@@ -18,6 +18,11 @@ window.__werkcad = app; // für automatische Tests
 // Mausrad verstellt keine Zahlenfelder (wie in der Rohrlaser-Kalkulation): Fokus weg, die Seite rollt weiter
 document.addEventListener("wheel", (e) => { if (e.target instanceof HTMLInputElement && e.target.type === "number" && document.activeElement === e.target) e.target.blur(); }, { passive: true, capture: true });
 
+// Absturzberichte (SolidCraft-Abgleich E6): Fehler dieser Sitzung zum Ansehen und Kopieren (ohne Projektdaten)
+app.errorReports = [];
+const report = (msg, stack) => { app.errorReports.push({ time: new Date().toISOString(), msg: String(msg || "Fehler").slice(0, 500), stack: String(stack || "").slice(0, 4000) }); if (app.errorReports.length > 50) app.errorReports.shift(); };
+window.addEventListener("error", (e) => report(e.message, e.error?.stack || `${e.filename}:${e.lineno}`));
+window.addEventListener("unhandledrejection", (e) => report(e.reason?.message || e.reason, e.reason?.stack));
 const bridge = window.werkcad;
 if (bridge?.log) {
   // Fehler der Oberfläche ins Protokoll (nur Meldung und Stack, keine Projektdaten)

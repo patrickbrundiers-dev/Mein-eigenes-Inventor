@@ -4520,6 +4520,23 @@ try {
     const urdf = await evalApp(async () => { const p = await window.__werkcad.files.exportUrdf(); return p && { links: p.model.links.length, files: p.files.length, robot: /<robot name=/.test(p.text) }; });
     step("SolidCraft E5: Kanten/Flächen auflisten, URDF-Paket", faces > 3 && urdf?.robot && urdf.links >= 1 && urdf.files >= 2, JSON.stringify({ faces, urdf }));
   }
+  // SolidCraft-Abgleich E5: Kunststoffteil (Schraubdom mit Rippen an Skizzenpunkten), Regel aus den Einstellungen
+  {
+    await evalApp(() => window.__werkcad.newPart("Kunststoff"));
+    await idle();
+    await evalApp(() => { const a = window.__werkcad, p = a.activeDoc(); a.edit("Test", () => {
+      p.features.push({ id: "kb", type: "sketch", name: "Grund", plane: { ref: "XY" }, offset: "0", points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 80, y: 0 }, { id: "c", x: 80, y: 50 }, { id: "d", x: 0, y: 50 }], entities: [{ id: "l1", type: "line", a: "a", b: "b" }, { id: "l2", type: "line", a: "b", b: "c" }, { id: "l3", type: "line", a: "c", b: "d" }, { id: "l4", type: "line", a: "d", b: "a" }], constraints: [] },
+        { id: "ke", type: "extrude", sketch: "kb", distance: "3", op: "new" },
+        { id: "kp", type: "sketch", name: "Punkte", plane: { ref: "XY" }, offset: "3", points: [{ id: "q1", x: 15, y: 15 }, { id: "q2", x: 65, y: 35 }], entities: [{ id: "pe1", type: "point", p: "q1" }, { id: "pe2", type: "point", p: "q2" }], constraints: [] });
+    }); });
+    await idle();
+    await evalApp(() => window.__werkcad.commands.exec("part.kunststoff"));
+    await idle();
+    const ku = await evalApp(() => { const a = window.__werkcad, p = a.activeDoc(), f = p.features.at(-1), r = a.results.get(a.activeId); return { type: f.type, sketch: f.sketch, rule: f.ruleData?.name, st: r.status[f.id], secs: [...document.querySelectorAll("#props .sec-title, #props h3")].map((x) => x.textContent) }; });
+    await shot("e5-kunststoff");
+    step("SolidCraft E5: Kunststoffteil (Ansatz mit Rippen, Regel)", ku.type === "kunststoff" && ku.sketch === "kp" && ku.rule === "ABS" && ku.st?.ok && /2 Ansatz/.test(ku.st.info) && /Rippen/.test(ku.st.info), JSON.stringify(ku));
+  }
+
 
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));

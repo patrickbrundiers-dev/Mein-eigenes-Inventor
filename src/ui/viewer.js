@@ -182,10 +182,27 @@ export class Viewer {
     for (const fn of this.cameraListeners) fn();
   }
   onCamera(fn) { this.cameraListeners.push(fn); }
+  /** Dauerdrehen (E6): Ansicht dreht sich um die Hochachse (Z) durch den Drehpunkt; grad je Sekunde, 0 = aus */
+  setSpin(degPerSec = 0) {
+    this.spin = degPerSec || 0;
+    this.spinT = null;
+    this.render();
+  }
   renderLoop() {
-    const loop = () => {
+    const loop = (now) => {
       requestAnimationFrame(loop);
       if (this.anim) this.stepAnim();
+      if (this.spin) {
+        const dt = this.spinT == null ? 0 : Math.min(0.1, (now - this.spinT) / 1000);
+        this.spinT = now;
+        const t = this.controls.target, c = this.camera;
+        const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (this.spin * dt * Math.PI) / 180);
+        c.position.sub(t).applyQuaternion(q).add(t);
+        c.up.applyQuaternion(q);
+        c.lookAt(t);
+        this.cameraChanged?.();
+        this.needsRender = true;
+      }
       if (!this.needsRender) return;
       const r = this.renderer;
       const w = this.container.clientWidth, h = this.container.clientHeight;
@@ -318,6 +335,14 @@ export class Viewer {
     }
     this.colors.sel = new THREE.Color(v["ansicht.auswahlfarbe"]).getHex();
     this.colors.hover = new THREE.Color(v["ansicht.hoverfarbe"]).getHex();
+    // Ansichtswinkel (SolidCraft-Abgleich E6): Abstand so anpassen, dass der Ausschnitt gleich groß bleibt
+    const fov = Number(v["ansicht.blickwinkel"]) || 35;
+    if (fov !== this.persp.fov) {
+      const t = this.controls.target, back = this.persp.position.clone().sub(t), half = back.length() * Math.tan((this.persp.fov * Math.PI) / 360);
+      this.persp.fov = fov;
+      this.persp.position.copy(t.clone().add(back.setLength(half / Math.tan((fov * Math.PI) / 360))));
+      this.persp.updateProjectionMatrix();
+    }
     if (v["ansicht.projektion"] !== undefined) this.setPerspective(v["ansicht.projektion"] === "perspektive");
     if (v["ansicht.darstellung"] !== undefined && v["ansicht.darstellung"] !== this.displayMode) this.setDisplayMode(v["ansicht.darstellung"]);
     this.render();
@@ -1746,6 +1771,22 @@ export class Viewer {
       if (l.matrix) { g.matrixAutoUpdate = false; g.matrix.fromArray(l.matrix); }
       g.renderOrder = 997;
       this.anaGroup.add(g);
+    }
+    this.render();
+  }
+  /** Punktwolken (E5): clouds = [{ id, pts: Float32Array, color? }] als Punkte, Größe in Bildpunkten */
+  showPointClouds(clouds = []) {
+    if (!this.cloudGroup) { this.cloudGroup = new THREE.Group(); this.scene.add(this.cloudGroup); }
+    disposeTree(this.cloudGroup);
+    this.cloudGroup.clear();
+    for (const c of clouds) {
+      if (!(c.pts?.length >= 3)) continue;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(c.pts, 3));
+      g.computeBoundingBox();
+      const o = new THREE.Points(g, new THREE.PointsMaterial({ color: c.color || 0x2a7fd4, size: c.size || 2, sizeAttenuation: false }));
+      o.userData.cloud = c.id;
+      this.cloudGroup.add(o);
     }
     this.render();
   }

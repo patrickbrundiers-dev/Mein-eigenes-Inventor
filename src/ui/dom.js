@@ -98,6 +98,7 @@ const P = {
   combine: '<rect x="3" y="7" width="11" height="11" rx="1"/><circle cx="15" cy="10" r="6"/>',
   surface: '<path d="M3 17c3-6 6-8 9-4s6 2 9-4"/><path d="M3 17l3 3h12l3-3" stroke-dasharray="2 2"/>',
   thicken: '<path d="M3 15l9-5 9 5"/><path d="M3 19l9-5 9 5"/><path d="M12 4v5" stroke-dasharray="2 2"/>',
+  plastic: '<path d="M3 19h18"/><path d="M9 19V8h6v11"/><path d="M12 8v6" stroke-dasharray="2 2"/><path d="M9 12l-4 7M15 12l4 7"/>',
   facepick: '<path d="M3 14l7-3.5 7 3.5-7 3.5z" fill="currentColor" fill-opacity=".25"/><path d="M14 4l2 9 2-3 3 3 1-1-3-3 3-2z"/>',
   direct: '<path d="M3 15l6-3 6 3-6 3z"/><path d="M15 12V4M12.5 6.5L15 4l2.5 2.5"/><path d="M15 12l5 2.5M18 12l2 2.5-3 .5"/>',
   facesize: '<ellipse cx="10" cy="7" rx="6" ry="2.5"/><path d="M4 7v10a6 2.5 0 0 0 12 0V7"/><path d="M17 12h5M20 10l2 2-2 2"/>',

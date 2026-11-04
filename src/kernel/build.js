@@ -1,6 +1,7 @@
 // Feature-basierter Modellaufbau auf Basis von replicad (OpenCascade).
 // Wird im Web-Worker (App) und in Node (Tests) verwendet: createKernel(replicadModul)
 
+import { plasticWarnings } from "../core/kunststoff.js";
 import { parseStl } from "../core/stl.js";
 import { installFastBooleans, cutMany } from "./bool.js";
 import { evaluate, resolveParams } from "../core/expr.js";
@@ -950,6 +951,7 @@ export function createKernel(R) {
       const st = { ok: true };
       state.status[f.id] = st;
       if (f.suppressed) { st.suppressed = true; newCache.push({ key: keys[i], state: null }); continue; }
+      const t0 = Date.now(); // Leistungsprofil (SolidCraft-Abgleich E6): Rechenzeit je Feature
       try {
         switch (f.type) {
           case "sketch": {
@@ -2338,6 +2340,79 @@ export function createKernel(R) {
             st.info = info;
             break;
           }
+          case "kunststoff": {
+            // Kunststoffteile (SolidCraft-Abgleich E5): Ansatz, Rastnase, Lippe/Nut, Auflage an Skizzenpunkten bzw. -kontur
+            const art = f.art || "ansatz";
+            const rule = (f.rule && (f.rules || []).find((r) => r.name === f.rule)) || f.ruleData || null;
+            const s = getSketch(f.sketch, "Skizze");
+            const n = v3.mul(v3.norm(s.frame.normal), f.flip ? -1 : 1);
+            const num = (k, label, d) => E(f[k] ?? d, label);
+            const prism = (pts2, origin, xDir, normal, depth) => {
+              let pen = R.draw(pts2[0]);
+              for (const q of pts2.slice(1)) pen = pen.lineTo(q);
+              return pen.close().sketchOnPlane(new R.Plane(origin, xDir, normal)).extrude(depth);
+            };
+            const vals = {};
+            let add = [], sub = [];
+            if (art === "ansatz" || art === "auflage") {
+              const centers = holeCenters(s.sketch);
+              if (!centers.length) throw new Error("Skizze enthält keine Punkte (Werkzeug »Punkt«) für die Lage");
+              const D = (vals.d = num("d", "Außendurchmesser", "8")), H = (vals.h = num("h", "Höhe", "10"));
+              if (!(D > 0 && H > 0)) throw new Error("Durchmesser und Höhe > 0");
+              const di = (vals.di = art === "ansatz" ? num("di", "Bohrung", "3") : 0), depth = art === "ansatz" ? num("tiefe", "Bohrungstiefe", String(H)) : 0;
+              if (art === "ansatz" && !(di > 0 && di < D)) throw new Error("Bohrung muss kleiner als der Außendurchmesser sein");
+              const nr = (vals.rippen = art === "ansatz" ? Math.round(num("rippen", "Rippen", "0")) : 0), rt = (vals.rippeT = num("rippeT", "Rippendicke", "1.5")), rl = num("rippeL", "Rippenlänge", "5");
+              const xr = v3.norm(s.frame.xDir);
+              for (const c of centers) {
+                const p = toWorld(s.frame, c[0], c[1]);
+                add.push(R.makeCylinder(D / 2, H, p, n));
+                for (let k = 0; k < nr; k++) {
+                  const ang = (2 * Math.PI * k) / nr, r = v3.norm(v3.add(v3.mul(xr, Math.cos(ang)), v3.mul(v3.cross(n, xr), Math.sin(ang)))), t = v3.cross(n, r);
+                  // Rippe als Dreieck in der Ebene (radial, Achse), Dicke quer dazu
+                  add.push(prism([[D / 2 - 0.5, 0], [D / 2 + rl, 0], [D / 2 - 0.5, H * 0.8]], v3.add(p, v3.mul(t, rt / 2)), r, v3.mul(t, -1), rt));
+                }
+                if (di > 0) sub.push(R.makeCylinder(di / 2, depth + 0.01, v3.add(p, v3.mul(n, H - depth)), n));
+              }
+              st.info = `${centers.length} ${art === "ansatz" ? `Ansatz/Ansätze Ø ${D}/${di} × ${H}${nr ? `, ${nr} Rippen` : ""}` : `Auflage(n) Ø ${D} × ${H}`}`;
+            } else if (art === "rastnase") {
+              const centers = holeCenters(s.sketch);
+              if (!centers.length) throw new Error("Skizze enthält keine Punkte (Werkzeug »Punkt«) für die Lage");
+              const L = (vals.l = num("l", "Länge", "20")), t = (vals.t = num("t", "Dicke", "2")), b = num("b", "Breite", "6"), y = (vals.hub = num("hub", "Hinterschnitt", "1")), hk = num("fang", "Hakenhöhe", "3");
+              if (!(L > hk && t > 0 && b > 0 && y > 0 && hk > 0)) throw new Error("Länge > Hakenhöhe, alle Maße > 0");
+              const w = (num("winkel", "Richtung", "0") * Math.PI) / 180, xr = v3.norm(s.frame.xDir);
+              const r = v3.norm(v3.add(v3.mul(xr, Math.cos(w)), v3.mul(v3.cross(n, xr), Math.sin(w)))), tq = v3.cross(n, r);
+              for (const c of centers) {
+                const p = toWorld(s.frame, c[0], c[1]);
+                add.push(prism([[0, 0], [t, 0], [t, L - hk], [t + y, L - hk], [t, L], [0, L]], v3.add(p, v3.mul(tq, b / 2)), r, v3.mul(tq, -1), b));
+              }
+              st.info = `${centers.length} Rastnase(n) L ${L}, Dicke ${t}, Hinterschnitt ${y} – Dehnung ${String(Math.round(((150 * t * y) / (L * L)) * 10) / 10).replace(".", ",")} %`;
+            } else if (art === "lippe" || art === "nut") {
+              if (s.prof.errors.length && !s.prof.regions.length) throw new Error(s.prof.errors[0]);
+              const reg = s.prof.regions[0];
+              if (!reg) throw new Error("Skizze braucht eine geschlossene Kontur (Außenkante des Gehäuses)");
+              const w = num("breite", "Breite", "1.2"), hh = num("hoehe", "Höhe", "2"), gap = art === "nut" ? num("spiel", "Spiel", "0.1") : 0;
+              const wall = rule?.wall ?? num("wand", "Wanddicke", "2.5");
+              // Lippe: Band in der Wandmitte (Abstand innen = (Wand − Breite)/2); Nut: gleiches Band plus Spiel, nach innen geschnitten
+              const outer = loopToDrawing(reg.outer);
+              const o1 = (wall - w) / 2 - gap, o2 = (wall + w) / 2 + gap;
+              const band = outer.offset(-o1).cut(outer.offset(-o2));
+              const pl = new R.Plane(s.frame.origin, s.frame.xDir, n);
+              const solid = band.sketchOnPlane(pl).extrude(art === "nut" ? -(hh + gap) : hh);
+              (art === "nut" ? sub : add).push(solid);
+              st.info = `${art === "nut" ? "Nut" : "Lippe"} ${w + 2 * gap} × ${hh + gap} mm in Wandmitte (Wand ${wall} mm)`;
+            } else throw new Error("Unbekannte Art");
+            for (const t of add) applyOp(state.bodies.some((b) => b.kind === "solid") ? "join" : "new", t, f.id, "Kunststoffteil");
+            for (const t of sub) applyOp("cut", t, f.id, "Kunststoffteil");
+            const warn = plasticWarnings(art, vals, rule);
+            if (warn.length) st.warning = warn.join("; ");
+            break;
+          }
+          case "punktwolke": {
+            // Punktwolke (E5): nur Bezug für Anzeige und Messen, kein Körper
+            if (!f.data) throw new Error("Keine Punktdatei geladen");
+            st.info = `${Math.floor((f.data.length * 3) / 4 / 12).toLocaleString("de-DE")} Punkte`;
+            break;
+          }
           case "auflage": {
             // Auflagefläche (SolidCraft-Abgleich E5, 3D-Druck): gewählte ebene Fläche nach unten auf z = 0 drehen
             const hits = facesAt((f.faces || []).map((r) => r.p));
@@ -2469,6 +2544,7 @@ export function createKernel(R) {
         st.ok = false;
         st.error = errorText(e, R);
       }
+      st.ms = Date.now() - t0;
       if (useCache) newCache.push({ key: keys[i], state: null });
       if (useCache && i >= feats.length - 3) newCache[newCache.length - 1].state = cloneState(state);
     }

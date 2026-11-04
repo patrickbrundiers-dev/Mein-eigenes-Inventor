@@ -676,3 +676,21 @@ Neues Feature »Fläche« (Menüband Körper → Flächen) mit 17 Arten: Extrusi
 - Gelenkursprung: Achspunkt und Richtung eines Gelenks ändern.
 - Merkmal in anderes Bauteil verschieben (Kontextmenü im Modellbrowser): mit allen Abhängigen, benutzten Skizzen und Arbeitselementen; deckt »Körper/Merkmale/Skizzen in Komponente verschieben« ab. Komponenten aus Körpern gab es schon (Skelett, BG12).
 - Test: test/bewegung-e3.test.mjs.
+
+### Stand E4 (04.11.2026, nächster PR)
+
+Prüfen → »Flächen prüfen«: Zebrastreifen, Umgebungskarte, Krümmungskarte (mit Mindestradius in Rot), Krümmungskamm an gekrümmten Kanten, Isokurven, Silhouette, Kantenstetigkeit (tangential/Knick/Rand) und Zugänglichkeit aus einer Richtung (Werkzeug, Strahl, Brenner). Die Prüfung bleibt beim Neuberechnen an. »Körper vergleichen« zeigt Volumen, Fläche, Schwerpunkt und das Volumen nur in A / nur in B. Test: test/pruefen-e4.test.mjs.
+
+### Stand E5 (04.11.2026, nächster PR)
+
+- An Slicer senden (Export → 3D, Slicer in Einstellungen → Dateien), Auflagefläche (Teil liegt mit der gewählten Fläche auf z = 0).
+- URDF-Paket (Export der Baugruppe: Glieder, Gelenke mit Grenzen, Netze als STL) für ROS/Gazebo.
+- STL-Import wahlweise als Volumenkörper (Netz in Körper, ebene Dreiecke zusammengefasst).
+- Kanten und Flächen auflisten (Tabelle, CSV), Einheit der Anzeige (mm, cm, m, Zoll), Bild nachzeichnen (Konturen eines Bildes als Skizze), Punktwolke einfügen (XYZ/CSV/PTS/PLY, verschieben, skalieren, ausdünnen).
+- Kunststoffteile (Körper → Kunststoffteil): Ansatz/Schraubdom mit Rippen, Stützfuß, Rastnase (Dehnung beim Einrasten), Lippe und Nut in der Wandmitte. Kunststoffregeln (Wand, Formschräge, Radius) in Einstellungen → Werkstoffe, mit Prüfung auf Einfallstellen.
+- Weggelassen: richtungsabhängiger E-Modul (PBCAD hat keine FEM, der Wert hätte keine Wirkung).
+- Tests: test/daten-e5.test.mjs, test/solidcraft-kernel.test.mjs.
+
+### Stand E6 (04.11.2026, nächster PR)
+
+Einstellungsprofile (Einstellungen → Allgemein), Absturzberichte, Leistungsprofil (Rechenzeit je Feature), Blickwinkel (Einstellungen → Ansicht), Dauerdrehen (Esc hält an), Parametergraph und Parameter verschieben (Parameterdialog). Weggelassen: Panel in eigenem Fenster (die Oberfläche ist ein Fenster mit andockbaren Leisten; ein zweites Fenster bräuchte eine zweite Programminstanz).

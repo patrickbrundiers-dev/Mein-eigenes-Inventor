@@ -36,6 +36,7 @@ import { fmtNum } from "./dom.js";
 import { piecesOf, groupPieces, withSignature, dstvText, dstvFileName, stablePositions, piecesCsv, pieceMass } from "../core/dstv.js";
 import { writeIfc, ifcElements, ifcCounts } from "../core/ifc.js";
 import { urdfPackage } from "../core/urdf.js";
+import { parsePointCloud, encodeCloud, cloudBounds } from "../core/punktwolke.js";
 
 const PROJECT_FILTERS = [{ name: "PBCAD-Projekt", extensions: ["wcad"] }];
 const AUTOSAVE_KEY = "werkcad.autosave";
@@ -1008,6 +1009,18 @@ export class Files {
     if (this.bridge) { const f = await this.bridge.openFile({ filters: [{ name: "SVG", extensions: ["svg"] }] }); return f && { name: f.name, text: f.data }; }
     const f = await pickFile(".svg");
     return f && { name: f.name, text: await f.text() };
+  }
+  /** Punktwolke einfügen (E5): XYZ/TXT/CSV/PTS/PLY als Text */
+  async importPointCloud() {
+    let f;
+    if (this.bridge) f = await this.bridge.openFile({ filters: [{ name: "Punktwolke", extensions: ["xyz", "txt", "csv", "pts", "ply"] }] });
+    else { const x = await pickFile(".xyz,.txt,.csv,.pts,.ply"); f = x && { name: x.name, data: await x.text() }; }
+    if (!f) return;
+    let pts;
+    try { pts = parsePointCloud(f.data); } catch (e) { return toast(`${f.name}: ${e.message}`, { kind: "err" }); }
+    this.app.addFeature({ type: "punktwolke", name: "Punktwolke " + f.name.replace(/\.[^.]+$/, ""), fileName: f.name, data: encodeCloud(pts), offset: ["0", "0", "0"], scale: "1", size: 2 });
+    const [lo, hi] = cloudBounds(pts);
+    toast(`${(pts.length / 3).toLocaleString("de-DE")} Punkte, ${hi.map((v, i) => Math.round(v - lo[i])).join(" × ")} mm`, { kind: "ok" });
   }
   async importStepAsPart() {
     const f = await this.pickStep();

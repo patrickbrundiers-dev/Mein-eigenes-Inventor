@@ -1,9 +1,9 @@
 // Befehle ausführen, Tastaturkürzel verteilen, Befehlssuche (Strg+K) und Kürzel-Editor
 import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
-import { h, toast, choiceDialog } from "./dom.js";
+import { h, toast, choiceDialog, promptDialog } from "./dom.js";
 import { motionStudyDialog } from "./bewegungsstudie.js";
-import { topologyDialog } from "./datenwerkzeuge.js";
+import { topologyDialog, performanceDialog, crashReportsDialog } from "./datenwerkzeuge.js";
 import { surfaceCheckDialog, compareBodiesDialog } from "./flaechenpruefung.js";
 import { t } from "../core/i18n.js";
 import { recordable } from "../core/makros.js";
@@ -49,6 +49,8 @@ export function commandRunners(app) {
     "file.slicer": () => app.files.sendToSlicer(),
     "file.urdf": () => app.files.exportUrdf(),
     "part.listTopology": () => topologyDialog(app),
+    "model.profile": () => performanceDialog(app),
+    "app.crashReports": () => crashReportsDialog(app),
     "view.side": () => app.side.toggle(),
     "view.werkstatt": () => app.setWorkshop(),
     "file.newAssembly": () => app.newAssembly(),
@@ -70,6 +72,14 @@ export function commandRunners(app) {
     "model.buildLog": () => app.props.buildLogDialog(),
     "edit.redo": () => app.redo(),
     "view.fit": () => app.viewer.fit(),
+    "view.spin": () => { const on = !app.viewer.spin; app.viewer.setSpin(on ? 30 : 0); toast(on ? "Ansicht dreht sich – nochmal aufrufen oder Esc hält an" : "Drehen angehalten"); },
+    "view.fov": async () => {
+      const v = await promptDialog("Ansichtswinkel", "Öffnungswinkel in Grad (10–100), schaltet auf Perspektive", String(app.prefs.get("ansicht.blickwinkel") ?? 35));
+      if (v == null) return;
+      const r = app.prefs.set("ansicht.blickwinkel", v);
+      if (!r.ok) return toast(r.error, { kind: "err" });
+      app.prefs.set("ansicht.projektion", "perspektive");
+    },
     "view.fitSel": () => app.zoomToSelection(),
     "view.normal": () => app.viewNormalToFace(),
     "view.saveNamed": () => app.saveNamedView(),

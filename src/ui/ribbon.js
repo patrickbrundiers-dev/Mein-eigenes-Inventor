@@ -1,4 +1,5 @@
 // Menüband mit kontextabhängigen Registerkarten
+import { plasticDefaults } from "../core/kunststoff.js";
 import { SURFACE_CHECKS, surfaceCheckDialog, compareBodiesDialog } from "./flaechenpruefung.js";
 import { defaultWelle, defaultZahnrad, defaultLager, defaultFeder } from "../core/assistent.js";
 import { FF_ARTEN } from "../core/freiflaeche.js";
@@ -267,6 +268,11 @@ export class Ribbon {
       ...Object.fromEntries(FF_ARTEN.map((a) => ["ff_" + a.art, () => app.addFeature({ type: "freiflaeche", art: a.art, ...JSON.parse(JSON.stringify(a.def)) })])),
       flaechenkurve: () => app.addFeature({ type: "flaechenkurve", faces: [], art: "iso", richtung: "u", wert: "0.5" }),
       auflage: () => app.addFeature({ type: "auflage", faces: [] }),
+      kunststoff: () => {
+        const rule = (app.prefs.get("material.kunststoffregeln") || [])[0];
+        const sk = this.lastOf(["sketch"]);
+        app.addFeature({ type: "kunststoff", art: "ansatz", sketch: sk?.id || "", ruleData: rule ? { ...rule } : undefined, ...plasticDefaults("ansatz", rule) });
+      },
       lochblech: () => app.addFeature({ type: "lochblech", faces: [], muster: "Rv", d: "5", teilung: "8", rand: "10" }),
       huelle: () => app.addFeature({ type: "huelle", bodies: [], zugabe: "0" }),
       verschieben: () => app.addFeature({ type: "verschieben", bodies: [], move: ["0", "0", "0"], axis: "Z", angle: "0" }),
@@ -278,6 +284,7 @@ export class Ribbon {
       datumAxis: () => startDatumPick(app, "arbeitsachse"),
       datumPoint: () => startDatumPick(app, "arbeitspunkt"),
       importStep: () => app.files.importStepIntoPart(),
+      punktwolke: () => app.files.importPointCloud(),
       params: () => app.props.paramsDialog(),
       // Skizze
       finishSketch: () => app.finishSketch(),
@@ -439,7 +446,7 @@ export class Ribbon {
           { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch"), B("skizze3d", "3D-Skizze", "path3d")], big: 1 },
           { label: "Erstellen", big: 2, buttons: [B("extrude", "Extrusion", "extrude"), B("revolve", "Drehung", "revolve"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil"), B("cutExtrude", "Ausschnitt", "cut"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper")] },
           { label: "Ändern", big: 2, buttons: [B("hole", "Bohrung", "hole"), B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell"), B("langloch", "Langloch", "slot")] },
-          { label: "Körper", small: true, buttons: [B("kombinieren", "Kombinieren", "combine", { iconOnly: true }), B("stecksystem", "Stecksystem", "tabslot", { iconOnly: true }), B("trennen", "Trennen", "split", { iconOnly: true }), B("verschieben", "Verschieben", "move", { iconOnly: true }), B("huelle", "Hüllkörper", "hull", { iconOnly: true }), B("aufdicken", "Aufdicken", "thicken", { iconOnly: true }), B("flaeche", "Fläche verschieben", "pushpull", { iconOnly: true }), B("entformung", "Entformung", "draft", { iconOnly: true }), B("direkt", "Direkt", "direct", { iconOnly: true }), { ...M("ffMenu", "Flächen", "surface", [...FF_ARTEN.map((a) => FFB("ff_" + a.art, a.label)), B("flaechenkurve", "Kurve auf Fläche", "path3d"), B("auflage", "Auflagefläche (3D-Druck)", "facepick")]), iconOnly: true }] },
+          { label: "Körper", small: true, buttons: [B("kombinieren", "Kombinieren", "combine", { iconOnly: true }), B("stecksystem", "Stecksystem", "tabslot", { iconOnly: true }), B("trennen", "Trennen", "split", { iconOnly: true }), B("verschieben", "Verschieben", "move", { iconOnly: true }), B("huelle", "Hüllkörper", "hull", { iconOnly: true }), B("aufdicken", "Aufdicken", "thicken", { iconOnly: true }), B("kunststoff", "Kunststoffteil", "plastic", { iconOnly: true }), B("flaeche", "Fläche verschieben", "pushpull", { iconOnly: true }), B("entformung", "Entformung", "draft", { iconOnly: true }), B("direkt", "Direkt", "direct", { iconOnly: true }), { ...M("ffMenu", "Flächen", "surface", [...FF_ARTEN.map((a) => FFB("ff_" + a.art, a.label)), B("flaechenkurve", "Kurve auf Fläche", "path3d"), B("auflage", "Auflagefläche (3D-Druck)", "facepick")]), iconOnly: true }] },
           { label: "Muster", small: true, buttons: [B("patternLin", "Rechteckig", "pattern"), B("patternCirc", "Kreisförmig", "circpattern"), B("patternPath", "Entlang Pfad", "pathpattern"), B("mirror", "Spiegeln", "mirror")] },
           { label: "Arbeitselemente", small: true, buttons: [B("datumPlane", "Arbeitsebene", "plane"), B("datumAxis", "Arbeitsachse", "axis"), B("datumPoint", "Arbeitspunkt", "point")] },
           { label: "Prüfen", big: 1, buttons: [B("measure", "Messen", "measure", { on: app.pick?.kind === "measure", run: () => app.beginMeasure() }), B("problems", "Problemliste", "warn", { iconOnly: true, run: () => problemsDialog(app) }), B("draftAnalysis", "Entformungsanalyse", "draftan", { iconOnly: true, on: !!app.viewer.draftOn, run: () => draftDialog(app) }), B("regionPropsPart", "Bereichseigenschaften", "area", { iconOnly: true, run: () => regionDialog(app) }), { ...M("scMenu", "Flächen prüfen", "eye", [...SURFACE_CHECKS.map(([k, l]) => B(`sc_${k}`, l, "eye", { on: app.surfaceCheck?.mode === k, run: () => surfaceCheckDialog(app, k) })), B("compareBodies", "Körper vergleichen", "combine", { run: () => compareBodiesDialog(app) })]), iconOnly: true, on: !!app.surfaceCheck }] },
@@ -453,7 +460,7 @@ export class Ribbon {
         { id: "verwalten", label: "Verwalten", groups: [
           { label: "Parameter", buttons: [B("params", "Parameter", "params"), B("variants", "Variantentabelle", "table")] },
           { label: "Bibliothek", buttons: [B("libSave", "In Bibliothek ablegen", "save", { run: () => saveToLibrary(app) }), B("libBrowse", "Teilebibliothek", "open", { run: () => libraryDialog(app) })] },
-          { label: "Einfügen", buttons: [B("importStep", "STEP einfügen", "import"), B("abgeleitet", "Abgeleitetes Bauteil", "derive")] },
+          { label: "Einfügen", buttons: [B("importStep", "STEP einfügen", "import"), B("abgeleitet", "Abgeleitetes Bauteil", "derive"), B("punktwolke", "Punktwolke einfügen", "point", { iconOnly: true })] },
           { label: "Automatisierung", buttons: [B("rules", "Regeln", "rules"), B("macros", "Makros", "macro")] },
           { label: "iFeature", buttons: [B("ifeatExtract", "iFeature erstellen", "ifeature"), B("ifeatInsert", "iFeature einfügen", "ifeature")] },
           { label: "Aktualisieren", buttons: [B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },

@@ -1,7 +1,7 @@
 // Einstellungscenter: Kategorien links, Suche oben, Optionen rechts. Gültige Änderungen wirken sofort.
-import { slicerEditor } from "./datenwerkzeuge.js";
-import { h, modal, toast, confirmDialog } from "./dom.js";
-import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings } from "../core/settings.js";
+import { slicerEditor, plasticRulesEditor } from "./datenwerkzeuge.js";
+import { h, modal, toast, confirmDialog, promptDialog } from "./dom.js";
+import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings, profileSnapshot } from "../core/settings.js";
 import { materialList, validateMaterial, exportMaterialLib, importMaterialLib, usedMaterialKeys } from "../core/materials.js";
 import { keymapEditor, quickAccessEditor } from "./commands.js";
 import { orderedLabels, setGroupHidden, moveGroup, resetRibbonLayout, PROTECTED } from "../core/ribbonlayout.js";
@@ -111,12 +111,13 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
 /** Zusatzinhalte je Kategorie, die keine einfachen Optionen sind */
 function extras(app, cat) {
   if (cat === "updates") return [updatesSection(app)];
+  if (cat === "allgemein") return [profileEditor(app)];
   if (cat === "werkzeuge") {
     const memo = app.prefs.get("werkzeuge.letzte") || {};
     const forget = h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: !Object.keys(memo).length, onclick: (e) => { app.prefs.reset(["werkzeuge.letzte"]); e.currentTarget.disabled = true; toast("Werkzeuge starten wieder mit den Standardwerten"); } }, "Letzte Werkzeugwerte vergessen"));
     return [forget, quickAccessEditor(app), ribbonEditor(app), keymapEditor(app)];
   }
-  if (cat === "material") return [materialsEditor(app)];
+  if (cat === "material") return [materialsEditor(app), plasticRulesEditor(app)];
   if (cat === "blech") return [sheetRulesEditor(app), bendTablesEditor(app)];
   if (cat === "dateien") {
     return [h("ul", { class: "hint" },
@@ -415,3 +416,34 @@ async function pickText(app, filterName = "PBCAD-Einstellungen", exts = ["json"]
 }
 
 export { defaultSettings, settingDef };
+
+/** Einstellungsprofile (SolidCraft-Abgleich E6): speichern, anwenden, umbenennen, löschen, exportieren, importieren */
+export function profileEditor(app) {
+  const prefs = app.prefs, box = h("div", { class: "set-profiles" });
+  const render = () => {
+    const all = prefs.get("allgemein.profile") || {};
+    const put = (next) => { const r = prefs.set("allgemein.profile", next); if (!r.ok) toast(r.error, { kind: "err" }); render(); };
+    const name = h("input", { class: "inp", placeholder: "Name, z. B. Werkstatt" });
+    const apply = (n) => {
+      const keep = prefs.get("allgemein.profile");
+      const r = prefs.importText(all[n]);
+      if (r.corrupt) return toast("Profil beschädigt", { kind: "err" });
+      prefs.set("allgemein.profile", keep);
+      toast(`Profil »${n}« angewendet – die Einstellungen gelten sofort`, { kind: "ok" });
+      render();
+    };
+    box.replaceChildren(h("h4", {}, "Einstellungsprofile"),
+      h("p", { class: "hint" }, "Ein Profil merkt sich alle Einstellungen (außer den Profilen selbst). Anwenden ersetzt die aktuellen Einstellungen."),
+      Object.keys(all).length ? h("table", { class: "grid set-profile-list" }, h("tbody", {}, ...Object.keys(all).map((n) => h("tr", {}, h("td", {}, n),
+        h("td", {}, h("button", { class: "btn", onclick: () => apply(n) }, "Anwenden"),
+          h("button", { class: "btn", onclick: () => put({ ...all, [n]: profileSnapshot(prefs.values) }) }, "Überschreiben"),
+          h("button", { class: "btn", onclick: async () => { const v = await promptDialog("Profil umbenennen", "Neuer Name", n); if (v && v.trim() && v !== n) { const o = {}; for (const [k, t] of Object.entries(all)) o[k === n ? v.trim() : k] = t; put(o); } } }, "Umbenennen"),
+          h("button", { class: "btn", onclick: () => app.files.saveText(all[n], `PBCAD-Profil ${n}.json`, "application/json", [{ name: "PBCAD-Einstellungen", extensions: ["json"] }]) }, "Exportieren"),
+          h("button", { class: "btn danger", onclick: () => { const o = { ...all }; delete o[n]; put(o); } }, "Löschen")))))) : null,
+      h("div", { class: "btn-row" }, name,
+        h("button", { class: "btn", onclick: () => { const n = name.value.trim(); if (!n) return toast("Namen eingeben"); put({ ...all, [n]: profileSnapshot(prefs.values) }); } }, "Aktuelle Einstellungen speichern"),
+        h("button", { class: "btn", onclick: async () => { const text = await pickText(app); if (text == null) return; const n = name.value.trim() || `Profil ${Object.keys(all).length + 1}`; put({ ...all, [n]: text }); } }, "Profil importieren …")));
+  };
+  render();
+  return box;
+}

@@ -8,6 +8,7 @@ import { CLASSES } from "./tolerance.js";
 import { validateBendTables } from "./bendtable.js";
 import { validateKeymap, commandDef } from "./commands.js";
 import { validateTemplate, DEFAULT_TEMPLATE } from "./zeichnungsvorlage.js";
+import { validatePlasticRules, DEFAULT_PLASTIC_RULES } from "./kunststoff.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
 // Reines Modul ohne DOM – die Oberfläche (src/ui/prefs.js) speichert und wendet an.
@@ -65,6 +66,7 @@ export const SETTINGS = [
 
   { key: "ansicht.qualitaet", cat: "ansicht", label: "Darstellungsqualität beim Start", type: "enum", default: "normal", options: QUAL, help: "Feinheit der Dreiecksvernetzung. Wirkt nur auf die Anzeige, nicht auf Export oder Masse." },
   { key: "ansicht.projektion", cat: "ansicht", label: "Projektion", type: "enum", default: "orthogonal", options: [{ value: "orthogonal", label: "Orthogonal" }, { value: "perspektive", label: "Perspektive" }], help: "Skizzieren ist immer orthogonal." },
+  { key: "ansicht.blickwinkel", cat: "ansicht", label: "Ansichtswinkel (Perspektive)", unit: "°", type: "number", default: 35, min: 10, max: 100, help: "Öffnungswinkel der Kamera bei perspektivischer Projektion: klein wie ein Teleobjektiv, groß wie ein Weitwinkel." },
   { key: "ansicht.darstellung", cat: "ansicht", label: "Darstellungsmodus", type: "enum", default: "kanten", options: DISPLAY },
   { key: "ansicht.maus", cat: "ansicht", label: "Maustasten", type: "enum", default: "rechts-drehen", options: [
     { value: "rechts-drehen", label: "Rechte Taste drehen, mittlere schwenken" },
@@ -143,6 +145,7 @@ export const SETTINGS = [
   { key: "blech.regeln", cat: "blech", label: "Blechregeln", type: "sheetrules", default: DEFAULT_SHEET_RULES.map((r) => ({ ...r })), custom: true, help: "Benannte Vorgaben für Kantteile: Werkstoff, Dicke, Innenradius, Abwicklungsregel und Freischnitt. Am Kantteil als »Blechregel« wählbar." },
   { key: "blech.biegetabellen", cat: "blech", label: "Biegetabellen", type: "bendtables", default: [], custom: true, help: "Je Werkstoff und Blechdicke ein Raster Biegewinkel × Innenradius mit Werten der Abkantpresse. Zwischen den Zellen wird interpoliert, außerhalb gilt der Ersatz-K-Faktor der Tabelle." },
   { key: "material.eigene", cat: "material", label: "Eigene Werkstoffe", type: "materials", default: [], custom: true },
+  { key: "material.kunststoffregeln", cat: "material", label: "Kunststoffregeln", type: "plasticrules", default: DEFAULT_PLASTIC_RULES.map((r) => ({ ...r })), custom: true, help: "Wanddicke, Formschräge und Radius je Kunststoff für Ansatz, Rastnase, Lippe/Nut und die Regelprüfung." },
   { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
   { key: "oberflaeche.verlauf", cat: "darstellung", label: "Verlaufsleiste unten im Bauteil", type: "bool", default: true, help: "Alle Features als Symbole in Aufbaureihenfolge; die Marke ist das Bauteilende und lässt sich ziehen." },
   { key: "oberflaeche.schnellmessung", cat: "darstellung", label: "Schnellmessung unten rechts", type: "bool", default: true, help: "Zeigt für gewählte Kanten und Flächen Länge, Ø, Fläche, Abstand und Winkel. Klick kopiert den Wert. Das Messwerkzeug (M) kann mehr." },
@@ -236,6 +239,8 @@ export function validateValue(def, v) {
       if (v.some((x) => !x || bad(x.name, 60) || bad(x.exe, 500))) return { ok: false, error: "Slicer braucht Namen und Programmpfad" };
       return { ok: true, value: v.map((x) => ({ name: x.name.trim(), exe: x.exe.trim() })) };
     }
+    case "plasticrules":
+      return validatePlasticRules(v);
     case "profiles": {
       if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: "Profile erwartet" };
       const e = Object.entries(v);

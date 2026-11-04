@@ -223,3 +223,29 @@ test("Auflagefläche (E5): Seitenfläche nach unten, Teil liegt auf z = 0", asyn
   near(b2[0][2], 0, 1e-6); near(b2[1][2], 20, 1e-6);
   assert.match(r2.status.a.info, /180°/);
 });
+
+test("Kunststoffteile (E5): Ansatz mit Rippen, Rastnase, Lippe und Nut", async () => {
+  const base = [rectSketchFeature("s1", "XY", 0, 0, 0, "100", "60"), { id: "e1", type: "extrude", sketch: "s1", distance: "5", op: "new" }];
+  const pts = { id: "sp", type: "sketch", name: "Punkte", plane: { ref: "XY" }, offset: "5", points: [{ id: "q1", x: 20, y: 20 }, { id: "q2", x: 80, y: 40 }], entities: [{ id: "pe1", type: "point", p: "q1" }, { id: "pe2", type: "point", p: "q2" }], constraints: [] };
+  const v0 = 100 * 60 * 5;
+  const a = await K.buildPart(part([...base, pts, { id: "k", type: "kunststoff", art: "ansatz", sketch: "sp", d: "8", di: "3", h: "10", tiefe: "8", rippen: "0" }]));
+  okAll(a);
+  near(vol(a), v0 + 2 * (Math.PI * 16 * 10 - Math.PI * 2.25 * 8), 1);
+  const ar = await K.buildPart(part([...base, pts, { id: "k", type: "kunststoff", art: "ansatz", sketch: "sp", d: "8", di: "3", h: "10", tiefe: "8", rippen: "4", rippeT: "1.5", rippeL: "5" }]));
+  okAll(ar);
+  assert.ok(vol(ar) > vol(a) + 50, "Rippen");
+  assert.match(ar.status.k.info, /4 Rippen/);
+  const r = await K.buildPart(part([...base, pts, { id: "k", type: "kunststoff", art: "rastnase", sketch: "sp", l: "20", t: "2", b: "6", hub: "1", fang: "3" }]));
+  okAll(r);
+  near(vol(r), v0 + 2 * 6 * (2 * 20 + 1 * 3 / 2), 0.5);
+  assert.match(r.status.k.info, /Dehnung 0,8 %/);
+  // Lippe auf dem Rand: Band Breite 1 in Wandmitte einer 2-mm-Wand, Höhe 2
+  const top = rectSketchFeature("s2", "XY", 5, 0, 0, "100", "60");
+  const l = await K.buildPart(part([...base, top, { id: "k", type: "kunststoff", art: "lippe", sketch: "s2", breite: "1", hoehe: "2", wand: "2" }]));
+  okAll(l);
+  const ring = (o1, o2) => (100 - 2 * o1) * (60 - 2 * o1) - (100 - 2 * o2) * (60 - 2 * o2);
+  near(vol(l) - v0, ring(0.5, 1.5) * 2, 1);
+  const nn = await K.buildPart(part([...base, top, { id: "k", type: "kunststoff", art: "nut", sketch: "s2", breite: "1", hoehe: "2", wand: "2", spiel: "0.1" }]));
+  okAll(nn);
+  near(v0 - vol(nn), ring(0.4, 1.6) * 2.1, 1);
+});
