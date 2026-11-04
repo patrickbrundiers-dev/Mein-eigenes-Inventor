@@ -31,6 +31,7 @@ import { toAxis, rollSide, gapAngle, rollAngle, rollFlat } from "../core/konturw
 import { clampStack, boltStack, boltHoles } from "../core/schraubverbindung.js";
 import { planSheet, contourLegs, punchOutline, SHEET_FEATURES } from "../core/blechplus.js";
 import { path3d } from "../core/ableiten.js";
+import { sampleChain, projectPoints } from "../core/flaechenkurve.js";
 import { applyRules } from "../core/regeln.js";
 import { quadrantPoint } from "../core/fangpunkte.js";
 import { holeText } from "../core/autodims.js";
@@ -123,13 +124,18 @@ export function createKernel(R) {
   const MIRROR_N = { YZ: [1, 0, 0], XZ: [0, 1, 0], XY: [0, 0, 1] };
   /** Draht einer 3D-Skizze */
   function path3dWire(p) {
-    return R.assembleWire(p.pieces.map((q) => (q.t === "line" ? R.makeLine(q.a, q.b) : R.makeThreePointArc(q.a, q.m, q.b))));
+    return R.assembleWire(p.pieces.map((q) => (q.t === "line" ? R.makeLine(q.a, q.b) : q.t === "spline" ? splineEdge3(q) : R.makeThreePointArc(q.a, q.m, q.b))));
+  }
+  /** 3D-Spline als B-Spline durch die abgetasteten Punkte (glatt, Toleranz 1 µm) */
+  function splineEdge3(q) {
+    return R.makeBSplineApproximation(q.pts, { tolerance: 1e-3, degMin: 3, degMax: 5, smoothing: null });
   }
   /** Punkte zum Anzeigen einer 3D-Skizze (Bögen in Stücken) */
   function samplePath(p) {
     const out = [];
     for (const q of p.pieces) {
       if (q.t === "line") { if (!out.length) out.push(q.a); out.push(q.b); continue; }
+      if (q.t === "spline") { out.push(...(out.length ? q.pts.slice(1) : q.pts)); continue; }
       if (!out.length) out.push(q.a);
       for (let k = 1; k <= 8; k++) { const u = k / 8; out.push([0, 1, 2].map((j) => (1 - u) * (1 - u) * q.a[j] + 2 * u * (1 - u) * (2 * q.m[j] - (q.a[j] + q.b[j]) / 2) + u * u * q.b[j])); }
     }
@@ -1723,7 +1729,8 @@ export function createKernel(R) {
             const p = p3 ? null : getSketch(f.path, "Pfad-Skizze");
             const chain = p3 ? null : pathChain(p.sketch);
             const spine = p3 ? path3dWire(p3) : chainWire(chain, p.frame);
-            const cfg = { frenet: f.orient !== "fest", transitionMode: "right" };
+            // Frenet kippt an Wendepunkten eines Splines (Krümmung 0) → dort korrigiertes Frenet (Profil bleibt senkrecht)
+            const cfg = { frenet: f.orient !== "fest" && !p3?.pieces.some((q) => q.t === "spline"), transitionMode: "right" };
             let tool = null;
             for (const reg of s.prof.regions) {
               let solid = R.genericSweep(loopWire(reg.outer, s.frame), spine.clone(), cfg);
@@ -2153,13 +2160,38 @@ export function createKernel(R) {
             st.info = datumSummary(f, datums.map.get(f.id));
             break;
           }
+          case "flaechenkurve": {
+            // Kurve auf Fläche (SolidCraft-Abgleich E1): isoparametrische Kurve oder Skizze auf die Fläche projiziert → 3D-Pfad
+            const hits = facesAt((f.faces || []).map((r) => r.p));
+            if (!(f.faces || []).length) throw new Error("Fläche wählen");
+            if (!hits.length) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+            const face = hits[0].face;
+            let pts;
+            if ((f.art || "iso") === "iso") {
+              const w = E(f.wert ?? "0.5", "Lage");
+              if (!(w >= 0 && w <= 1)) throw new Error("Lage zwischen 0 und 1 (Anteil der Flächenparameter)");
+              pts = Array.from({ length: 41 }, (_, k) => tuple(f.richtung === "v" ? face.pointOnSurface(w, k / 40) : face.pointOnSurface(k / 40, w)));
+            } else {
+              const s = getSketch(f.sketch, "Skizze");
+              const W = sampleChain(pathChain(s.sketch), 1).map(([x, y]) => toWorld(s.frame, x, y));
+              // Netz der Fläche: Körper fein vernetzen (schreibt die Triangulierung in die Flächen), dann auslesen
+              hits[0].body.shape.mesh({ tolerance: 0.02, angularTolerance: 0.1 });
+              const tri = face.triangulation();
+              if (!tri?.trianglesIndexes?.length) throw new Error("Fläche ließ sich nicht vernetzen");
+              pts = projectPoints(W, s.frame.normal, tri.vertices, tri.trianglesIndexes);
+            }
+            const p = path3d(pts, { spline: true, closed: false });
+            state.paths.set(f.id, p);
+            st.info = `${f.art === "projektion" ? "Projiziert" : "Isokurve"}: ${pts.length} Punkte, Länge ${String(Math.round(p.length * 10) / 10).replace(".", ",")} mm`;
+            break;
+          }
           case "skizze3d": {
             const pts = resolvePathPoints(f.points, E);
             const r = E(f.radius ?? "0", "Eckradius");
             if (!(r >= 0)) throw new Error("Eckradius muss ≥ 0 sein");
-            const p = path3d(pts, { radius: r, closed: !!f.closed });
+            const p = path3d(pts, { radius: r, closed: !!f.closed, spline: !!f.spline });
             state.paths.set(f.id, p);
-            st.info = `${pts.length} Punkte, Länge ${String(Math.round(p.length * 10) / 10).replace(".", ",")} mm${f.closed ? ", geschlossen" : ""}${r > 0 ? `, Eckradius ${r}` : ""}`;
+            st.info = `${pts.length} Punkte, Länge ${String(Math.round(p.length * 10) / 10).replace(".", ",")} mm${f.closed ? ", geschlossen" : ""}${f.spline ? ", Spline" : r > 0 ? `, Eckradius ${r}` : ""}`;
             break;
           }
           case "schweissbaugruppe": {

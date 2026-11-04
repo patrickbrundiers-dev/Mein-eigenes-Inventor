@@ -17,7 +17,7 @@ import { autoDimension } from "../core/autodim.js";
 import { cleanSketch, cleanReportText, CLEAN_KINDS, CLEAN_DEFAULTS } from "../core/sketchclean.js";
 import { splineCtrl } from "../core/sketch.js";
 const SPLINE_TOOLS = ["spline", "spline5", "splinefit"];
-import { buildBlendCurve, nearestEnd, buildTangentAt, buildCircleTangent2, arcSlotFrom3, polygonFromEdge, circumscribedVertex, insertSplinePoint, removeSplinePoint, reverseSpline, breakOffset, buildDrawingBounds, simplifyPolyline, addPolylines } from "../core/sketchtools2.js";
+import { buildBlendCurve, nearestEnd, buildTangentAt, buildCircleTangent2, arcSlotFrom3, polygonFromEdge, circumscribedVertex, insertSplinePoint, removeSplinePoint, reverseSpline, breakOffset, buildDrawingBounds, simplifyPolyline, addPolylines, chamferSecondDistance, autoConstraints, meshPlaneSection, spunProfile } from "../core/sketchtools2.js";
 import { defaultText, textBox, textPolylines, partTextVars, TEXT_STYLES } from "../core/schrift.js";
 import { imageCorners, newImageEntity, rescaleImage } from "../core/skizzenbild.js";
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
@@ -59,7 +59,7 @@ export const SKETCH_TOOLS = {
   extend: "Verlängern: Linie oder Bogen nahe dem Ende anklicken, das bis zum nächsten Element verlängert wird",
   split: "Teilen: Linie oder Bogen an der Stelle anklicken, an der geteilt wird (nahe einem Schnittpunkt wird dort geteilt)",
   sfillet: "Rundung: Ecke anklicken, an der zwei Linien enden, dann Radius eingeben – vorher gewählte Ecken (Punkte) werden mitgerundet",
-  schamfer: "Fase: Ecke anklicken, an der zwei Linien enden, dann Abstand eingeben (zwei Abstände mit Semikolon, z. B. 5;10)",
+  schamfer: "Fase: Ecke anklicken, an der zwei Linien enden, dann Abstand eingeben (zwei Abstände mit Semikolon, z. B. 5;10, oder Abstand und Winkel, z. B. 5;30°)",
   rect3: "Rechteck über 3 Punkte: zwei Ecken der ersten Kante klicken, dann die Breite – das Rechteck darf schräg liegen",
   circlet3: "Kreis tangential an 3 Linien: drei Linien anklicken – der Kreis berührt alle drei (Inkreis, bei Bedarf Ankreis nahe der Klickstelle)",
   circle3: "Kreis durch 3 Punkte: drei Punkte auf dem Umfang klicken – getroffene Punkte werden an den Kreis gebunden",
@@ -1311,7 +1311,17 @@ export class Sketcher {
         this.askValue(sx, sy, this.lastValue("fase") || "5", (val) => {
           const parts = String(val).split(";").map((x) => x.trim()).filter(Boolean);
           let d;
-          try { d = parts.map((x) => evaluate(x, this.scope())); } catch (err) { return toast(err.message, { kind: "err" }); }
+          // »5;45°« = Abstand und Winkel: zweiter Abstand aus dem Eckwinkel
+          const angled = /°\s*$/.test(parts[1] || "");
+          try { d = parts.map((x) => evaluate(x.replace(/°\s*$/, ""), this.scope())); } catch (err) { return toast(err.message, { kind: "err" }); }
+          if (angled) {
+            const ls = this.sk.entities.filter((e) => e.type === "line" && !e.construction && (e.p1 === best || e.p2 === best));
+            const c0 = this.sk.points.find((p) => p.id === best);
+            const u = ls.map((l) => { const f = this.sk.points.find((p) => p.id === (l.p1 === best ? l.p2 : l.p1)); return Math.atan2(f.y - c0.y, f.x - c0.x); });
+            let phi = Math.abs(u[0] - u[1]); if (phi > Math.PI) phi = 2 * Math.PI - phi;
+            try { d[1] = chamferSecondDistance(d[0], d[1], phi); } catch (err) { return toast(err.message, { kind: "err" }); }
+            parts[1] = String(Math.round(d[1] * 1e4) / 1e4);
+          }
           const opts = { d2: d[1] ?? d[0], expr1: parts[0], expr2: parts[1] };
           const res = chamferCorner(JSON.parse(JSON.stringify(this.sk)), best, d[0], uid, opts);
           if (!res.ok) return toast(res.message, { kind: "err" });
@@ -1761,6 +1771,62 @@ export class Sketcher {
     this.commit("Spline umkehren", (sk) => { for (const id of ids) reverseSpline(sk.entities.find((e) => e.id === id)); });
     this.render();
   }
+  /** Netzquerschnitt: sichtbare Anzeigenetze mit der Skizzenebene schneiden, als Linienzüge (Konstruktion) */
+  meshSection() {
+    if (!this.sk) return;
+    const loops = [];
+    for (const pk of this.viewer.pickables || []) {
+      if (!pk.mesh?.visible) continue;
+      const g = pk.mesh.geometry, arr = g.attributes.position.array, ix = g.index ? g.index.array : null;
+      pk.mesh.updateMatrixWorld();
+      const e = pk.mesh.matrixWorld.elements, W = new Float64Array(arr.length);
+      for (let i = 0; i < arr.length; i += 3) for (let k = 0; k < 3; k++) W[i + k] = e[k] * arr[i] + e[4 + k] * arr[i + 1] + e[8 + k] * arr[i + 2] + e[12 + k];
+      loops.push(...meshPlaneSection(W, ix, this.frame));
+    }
+    this.addSectionLoops(loops, "Netzquerschnitt");
+  }
+  /** Schnittkurve: Körper des Bauteils im Kern mit der Skizzenebene schneiden (genauer als das Anzeigenetz) */
+  async sectionCurve() {
+    if (!this.sk) return;
+    let r;
+    try { r = await this.app.kernel.call("planeSection", { part: this.app.activeDoc(), frame: this.frame }); } catch (err) { return toast("Schnittkurve: " + err.message, { kind: "err" }); }
+    this.addSectionLoops((r.loops || []).map((l) => [...l, l[0]]), "Schnittkurve");
+  }
+  /** Gedrehtes Profil: sichtbare Körper um die gewählte Linie (sonst X-Achse der Skizze) gedreht in die Ebene legen */
+  spunProfileCmd() {
+    if (!this.sk) return;
+    const sel = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => this.entity(k.slice(2))).find((e) => e?.type === "line");
+    const P = (id) => this.sk.points.find((p) => p.id === id);
+    const axis = sel ? { a: [P(sel.p1).x, P(sel.p1).y], b: [P(sel.p2).x, P(sel.p2).y] } : { a: [0, 0], b: [1, 0] };
+    const all = [];
+    for (const pk of this.viewer.pickables || []) {
+      if (!pk.mesh?.visible) continue;
+      const arr = pk.mesh.geometry.attributes.position.array;
+      pk.mesh.updateMatrixWorld();
+      const e = pk.mesh.matrixWorld.elements;
+      for (let i = 0; i < arr.length; i += 3) for (let k = 0; k < 3; k++) all.push(e[k] * arr[i] + e[4 + k] * arr[i + 1] + e[8 + k] * arr[i + 2] + e[12 + k]);
+    }
+    let loop;
+    try { loop = spunProfile(all, this.frame, axis); } catch (err) { return toast(err.message, { kind: "err" }); }
+    this.addSectionLoops([loop], sel ? "Gedrehtes Profil" : "Gedrehtes Profil (um die X-Achse)");
+  }
+  addSectionLoops(loops, label) {
+    const clean = loops.map((l) => simplifyPolyline(l, 0.02)).filter((l) => l.length >= 2);
+    if (!clean.length) return toast(`${label}: die Skizzenebene schneidet keinen Körper`);
+    let n = 0;
+    this.commit(label, (sk) => { n = addPolylines(sk, clean, { uid, construction: !!this.construction }).length; });
+    toast(`${label}: ${clean.length} Zug/Züge, ${n} Linien`, { kind: "ok" });
+  }
+  /** Auto-Bedingungen: fast waagrechte/senkrechte Linien ausrichten; finish = danach Skizze fertig */
+  applyAutoConstraints(finish = false) {
+    if (!this.sk) return;
+    let n = 0;
+    const probe = JSON.parse(JSON.stringify(this.sk));
+    n = autoConstraints(probe, { uid });
+    if (n) this.commit("Auto-Bedingungen", (sk) => autoConstraints(sk, { uid }));
+    toast(n ? `${n} Bedingung(en) waagrecht/senkrecht ergänzt` : "Keine fast waagrechten oder senkrechten Linien ohne Bedingung");
+    if (finish) this.app.finishSketch();
+  }
   /** Versatzverknüpfung der gewählten Elemente lösen (Kopie wird frei beweglich) */
   breakSelectedOffset() {
     const ids = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => k.slice(2));
@@ -1782,9 +1848,11 @@ export class Sketcher {
       this.render();
     });
   }
-  equationDialog() {
+  equationDialog(editId = null) {
     if (!this.sk) return;
-    const last = (() => { try { return JSON.parse(this.lastValue("gleichung") || "null"); } catch { return null; } })();
+    // Doppelklick auf eine Gleichungskurve: Formel bearbeiten, die Kurve wird ersetzt
+    const editing = editId ? this.entity(editId)?.equation : null;
+    const last = editing ? { ...editing } : (() => { try { return JSON.parse(this.lastValue("gleichung") || "null"); } catch { return null; } })();
     const st = last || { mode: "param", x: "50*cos(t)", y: "50*sin(t)", f: "0,02*x^2", from: "0", to: "180", n: "36" };
     const inp = (key, w) => h("input", { class: "inp", value: st[key], style: w ? { width: w } : null, oninput: (e) => { st[key] = e.target.value; prev(); } });
     const out = h("p", { class: "hint" });
@@ -1804,18 +1872,21 @@ export class Sketcher {
     const seg = h("div", { class: "seg" }, ...[["param", "x(t), y(t)"], ["fx", "y = f(x)"]].map(([v, l]) => h("button", { class: st.mode === v ? "on" : "", onclick: (e) => { st.mode = v; for (const b of e.currentTarget.parentNode.children) b.classList.toggle("on", b === e.currentTarget); show(); prev(); } }, l)));
     show(); prev();
     modal({
-      title: "Gleichungskurve",
+      title: editing ? "Gleichungskurve bearbeiten" : "Gleichungskurve",
       body: h("div", { style: { minWidth: "360px" } }, seg, rowsParam, rowsFx,
         h("div", { class: "field" }, h("label", {}, st.mode === "fx" ? "x von … bis" : "t von … bis"), h("div", { style: { display: "flex", gap: "6px" } }, inp("from"), inp("to"))),
         h("div", { class: "field" }, h("label", {}, "Punkte"), inp("n")),
         out,
         h("p", { class: "hint" }, "Winkel in Grad (sin, cos, tan), Parameter der Skizze und des Bauteils sind erlaubt. Beispiele: Kreis 50*cos(t), 50*sin(t) mit t 0…360; Evolvente r*(cos(t)+t*pi/180*sin(t)); Kettenlinie a*cosh(x/a). Die Kurve wird ein Spline durch die Punkte.")),
-      buttons: [{ label: "Abbrechen", value: null }, { label: "Einfügen", primary: true, run: () => {
+      buttons: [{ label: "Abbrechen", value: null }, { label: editing ? "Übernehmen" : "Einfügen", primary: true, run: () => {
         const pts = prev();
         if (!pts) return false;
         this.rememberValue("gleichung", JSON.stringify(st));
         const ctrl = fitSplineCtrl(pts);
-        this.commit("Gleichungskurve", (sk) => addSplineFromCtrl(sk, ctrl, { uid, construction: !!this.construction, meta: { equation: { ...st } } }));
+        if (editing) {
+          const old = this.entity(editId);
+          this.commit("Gleichungskurve bearbeiten", (sk) => { deleteEntities(sk, [editId]); addSplineFromCtrl(sk, ctrl, { uid, construction: !!old.construction, meta: { equation: { ...st } } }); });
+        } else this.commit("Gleichungskurve", (sk) => addSplineFromCtrl(sk, ctrl, { uid, construction: !!this.construction, meta: { equation: { ...st } } }));
         this.render();
       } }],
     });
@@ -2060,6 +2131,7 @@ export class Sketcher {
     if (hit?.kind === "dim") this.editDimension(hit.id, sx, sy);
     else if (hit?.kind === "entity" && this.entity(hit.id)?.type === "text") this.editText(hit.id);
     else if (hit?.kind === "entity" && this.entity(hit.id)?.type === "image") this.editImage(hit.id);
+    else if (hit?.kind === "entity" && this.entity(hit.id)?.equation) this.equationDialog(hit.id);
     else if (hit?.kind === "point") {
       // Ankerpunkt eines Textes: ebenfalls Text bearbeiten
       const t = this.sk.entities.find((x) => (x.type === "text" || x.type === "image") && x.p === hit.id);
@@ -2092,6 +2164,7 @@ export class Sketcher {
     if (k === "Delete" || k === "Backspace") { this.deleteSelection(); return true; }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === "c" || k === "C")) return this.copySelection();
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === "v" || k === "V")) return this.pasteClip();
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === "x" || k === "X")) { if (this.sel.size) { this.copySelection(); this.deleteSelection(); } return true; }
     // Werkzeug-Tasten (L, R, C …) kommen aus der Befehlsliste (src/core/commands.js), anpassbar
     return false;
   }

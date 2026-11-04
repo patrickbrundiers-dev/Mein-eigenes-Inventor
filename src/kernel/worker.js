@@ -359,6 +359,24 @@ const handlers = {
     const local = (inv) => (bx) => ({ ...bx, c: matApply(inv, bx.c), u: matApplyDir(inv, bx.u), n: matApplyDir(inv, bx.n) });
     return { tabs: plan.tabs.map(local(A.inv)), slots: plan.slots.map(local(B.inv)), info: plan.info, tabBody: A.b.fid, slotBody: B.b.fid };
   },
+  /**
+   * Schnittkurve (SolidCraft »Section curve«): alle Körper des Bauteils mit der Skizzenebene schneiden.
+   * frame {origin, xDir, yDir, normal} → Schleifen [[x,y]…] in Skizzenkoordinaten (Kontur des Schnitts).
+   */
+  async planeSection({ part, frame }) {
+    const res = await getBuilt(part);
+    const n = frame.normal, c = n[0] * frame.origin[0] + n[1] * frame.origin[1] + n[2] * frame.origin[2];
+    const ox = frame.origin[0] * frame.xDir[0] + frame.origin[1] * frame.xDir[1] + frame.origin[2] * frame.xDir[2];
+    const oy = frame.origin[0] * frame.yDir[0] + frame.origin[1] * frame.yDir[1] + frame.origin[2] * frame.yDir[2];
+    const loops = [];
+    for (const b of res.bodies) {
+      if (b.meta?.huelle) continue;
+      let cs;
+      try { cs = K.cutAtPlane(b.shape, n, c); } catch { continue; }
+      for (const l of K.sectionLoops(cs, n, c, { dir: n.map((v) => -v), up: frame.yDir })) loops.push(l.map(([x, y]) => [x - ox, y - oy]));
+    }
+    return { loops };
+  },
   async ping() { return "ok"; },
   /** Messgerüst (tools/messen.mjs): WASM-Speicher und Füllstand der Zwischenspeicher */
   async stats() {

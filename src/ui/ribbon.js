@@ -262,6 +262,7 @@ export class Ribbon {
         app.addFeature({ type: "kombinieren", target: fids[0], tools: fids.slice(1), op: "cut" });
       },
       trennen: () => app.addFeature({ type: "trennen", plane: "YZ", offset: "0", keep: "beide" }),
+      flaechenkurve: () => app.addFeature({ type: "flaechenkurve", faces: [], art: "iso", richtung: "u", wert: "0.5" }),
       lochblech: () => app.addFeature({ type: "lochblech", faces: [], muster: "Rv", d: "5", teilung: "8", rand: "10" }),
       huelle: () => app.addFeature({ type: "huelle", bodies: [], zugabe: "0" }),
       verschieben: () => app.addFeature({ type: "verschieben", bodies: [], move: ["0", "0", "0"], axis: "Z", angle: "0" }),
@@ -430,7 +431,7 @@ export class Ribbon {
     if (mode === "part") {
       return [
         { id: "modell", label: "3D-Modell", groups: [
-          { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch"), B("skizze3d", "3D-Skizze", "path3d")], big: 1 },
+          { label: "Skizze", buttons: [B("sketch", "Skizze erstellen", "sketch"), B("skizze3d", "3D-Skizze", "path3d"), B("flaechenkurve", "Kurve auf Fläche", "path3d")], big: 1 },
           { label: "Erstellen", big: 2, buttons: [B("extrude", "Extrusion", "extrude"), B("revolve", "Drehung", "revolve"), B("sweep", "Sweeping", "sweep"), B("loft", "Erhebung", "loft"), B("spirale", "Spirale", "coil"), B("cutExtrude", "Ausschnitt", "cut"), B("emboss", "Prägen", "emboss"), B("regelkoerper", "Regelkörper", "regelkoerper")] },
           { label: "Ändern", big: 2, buttons: [B("hole", "Bohrung", "hole"), B("fillet", "Rundung", "fillet"), B("chamfer", "Fase", "chamfer"), B("shell", "Wandung", "shell"), B("langloch", "Langloch", "slot")] },
           { label: "Körper", small: true, buttons: [B("kombinieren", "Kombinieren", "combine", { iconOnly: true }), B("stecksystem", "Stecksystem", "tabslot", { iconOnly: true }), B("trennen", "Trennen", "split", { iconOnly: true }), B("verschieben", "Verschieben", "move", { iconOnly: true }), B("huelle", "Hüllkörper", "hull", { iconOnly: true }), B("aufdicken", "Aufdicken", "thicken", { iconOnly: true }), B("flaeche", "Fläche verschieben", "pushpull", { iconOnly: true }), B("entformung", "Entformung", "draft", { iconOnly: true }), B("direkt", "Direkt", "direct", { iconOnly: true })] },
@@ -476,7 +477,7 @@ export class Ribbon {
             { ...M("skHelp", "Hilfslinien", "construct", [T("clh", "Hilfslinie waagrecht", "horizontal"), T("clv", "Hilfslinie senkrecht", "vertical"), T("cla", "Hilfslinie unter Winkel", "angle"), T("clpar", "Hilfslinie parallel", "parallel"), T("clperp", "Hilfslinie senkrecht zu Linie", "perpendicular"), T("clbis", "Winkelhalbierende", "angle"), T("cltan", "Tangente durch Punkt", "tangent"), T("tanat", "Tangente an Kurvenpunkt", "tangent"), T("ctan2", "Gemeinsame Tangente", "tangent")]), iconOnly: true },
           ] },
           // Symbolspalte: spart Breite, damit die Skizze neben der Arbeitsbereich-Kachel in 1600 px passt
-          { label: "Übernehmen", small: true, buttons: [C("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { iconOnly: true, run: () => sk.importDxfDialog() }), C("image", "Bild", "import")] },
+          { label: "Übernehmen", small: true, buttons: [C("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { iconOnly: true, run: () => sk.importDxfDialog() }), C("image", "Bild", "import"), B("skSection", "Schnittkurve", "cut", { iconOnly: true, run: () => sk.sectionCurve() }), B("skMeshSection", "Netzquerschnitt", "cut", { iconOnly: true, run: () => sk.meshSection() }), B("skSpun", "Gedrehtes Profil (um gewählte Linie)", "revolve", { iconOnly: true, run: () => sk.spunProfileCmd() })] },
           { label: "Ändern", small: true, buttons: [
             T("smove", "Verschieben", "move"), T("scopy", "Kopieren", "copy"), T("srotate", "Drehen", "rotate"),
             T("trim", "Stutzen", "trim"), T("extend", "Verlängern", "extend"), T("split", "Teilen", "split"),

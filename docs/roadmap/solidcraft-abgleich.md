@@ -659,7 +659,7 @@ Rendern (Render-Studio, Looks, Dekal, Render-Panels und -Bildhilfen) bleibt ganz
 
 Umgesetzt: Übergangskurve, Tangente an Kurvenpunkt, Kreis an zwei Linien, Bogenlangloch über 3 Punkte, Polygon über Kante, Polygon umschrieben, Spline Grad 5, Spline durch Punkte, Spline umkehren, Splinepunkt einfügen/entfernen, Versatz lösen, Zeichnungsrahmen. Kettenwahl war schon da (Doppelklick wählt die verbundene Kette). Test: test/skizze-e1.test.mjs.
 
-Folgt im nächsten PR: Schnittkurve, isoparametrische Kurve, auf Fläche projizieren, 3D-Spline, gedrehtes Profil, Netzquerschnitt, mit Auto-Bedingung fertig, Fase Abstand/Winkel, Ausschneiden, Gleichungskurve bearbeiten.
+E1 Teil 2 (04.11.2026, nächster PR): Schnittkurve (Kern, Skizzenebene durch die Körper), Netzquerschnitt (Anzeigenetz, auch STL), gedrehtes Profil (Körper um gewählte Linie gedreht, halbes Drehprofil), Kurve auf Fläche (neues Feature: Isokurve u/v oder Skizze auf Fläche projiziert, als Sweep-Pfad nutzbar), 3D-Spline (3D-Skizze »Als Spline«, Sweep mit korrigiertem Frenet), Auto-Bedingungen und »Skizze fertig mit Auto-Bedingungen« (Befehlssuche), Fase Abstand + Winkel (»5;30°«), Strg+X Ausschneiden, Doppelklick bearbeitet Gleichungskurve. Damit ist E1 vollständig.
 
 ### Oberfläche L1–L6 (04.11.2026, PR #198)
 

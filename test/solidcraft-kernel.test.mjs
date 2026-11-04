@@ -58,3 +58,38 @@ test("Hüllkörper: Quader um zwei Körper mit Zugabe, zählt nicht zur Masse", 
   near(R.measureVolume(hb.shape), 360 * 110 * 40, 1, "Hüllvolumen");
   assert.match(res.status.h.info, /360 × 110 × 40 mm/);
 });
+
+test("3D-Spline als Sweep-Pfad und Schnittkurve der Skizzenebene (E1)", async () => {
+  const prof = { id: "s1", type: "sketch", plane: { ref: "YZ" }, offset: "0", points: [{ id: "c", x: 0, y: 0 }], entities: [{ id: "k", type: "circle", c: "c", r: 5 }], constraints: [] };
+  const res = await K.buildPart(part([prof,
+    { id: "p3", type: "skizze3d", points: [{ x: "0", y: "0", z: "0" }, { x: "100", y: "0", z: "0" }, { x: "200", y: "40", z: "30" }, { x: "300", y: "40", z: "30" }], spline: true },
+    { id: "sw", type: "sweep", sketch: "s1", path: "p3", op: "new" }]));
+  okAll(res);
+  assert.match(res.status.p3.info, /Spline/);
+  const len = res.paths3d[0].pts.reduce((s, p, i, a) => (i ? s + Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1], p[2] - a[i - 1][2]) : 0), 0);
+  near(vol(res), Math.PI * 25 * len, Math.PI * 25 * len * 0.02, "Volumen ≈ Querschnitt × Länge");
+  // Schnittkurve: Blech 200 × 100 × 2, Ebene x = 50 (YZ verschoben) → Rechteck 100 × 2
+  const r2 = await K.buildPart(part(blech));
+  const n = [1, 0, 0], c = 50;
+  const loops = K.sectionLoops(K.cutAtPlane(r2.bodies[0].shape, n, c), n, c, { dir: [-1, 0, 0], up: [0, 0, 1] });
+  assert.equal(loops.length, 1);
+  const xs = loops[0].map((q) => q[0]), ys = loops[0].map((q) => q[1]);
+  near(Math.max(...xs) - Math.min(...xs), 100, 1e-3, "Breite");
+  near(Math.max(...ys) - Math.min(...ys), 2, 1e-3, "Dicke");
+});
+
+test("Kurve auf Fläche: Isokurve auf Zylinder, Linie auf Zylinder projiziert (E1)", async () => {
+  // Zylinder Ø 40, Höhe 100 (Kreis auf XY, extrudiert)
+  const cyl = [{ id: "c1", type: "sketch", plane: { ref: "XY" }, offset: "0", points: [{ id: "m", x: 0, y: 0 }], entities: [{ id: "k", type: "circle", c: "m", r: 20 }], constraints: [] }, { id: "e1", type: "extrude", sketch: "c1", distance: "100", op: "new" }];
+  const iso = await K.buildPart(part([...cyl, { id: "f", type: "flaechenkurve", faces: [{ p: [20, 0, 50] }], art: "iso", richtung: "u", wert: "0.5" }]));
+  okAll(iso);
+  const pts = iso.paths3d[0].pts;
+  for (const q of pts) near(Math.hypot(q[0], q[1]), 20, 0.01, "auf dem Mantel");
+  // Linie auf YZ-Ebene bei x = 50, waagrecht in Y von -10 bis 10 auf Höhe z = 30 → auf den Mantel projiziert (Richtung x)
+  const ln = { id: "s2", type: "sketch", plane: { ref: "YZ" }, offset: "50", points: [{ id: "a", x: -10, y: 30 }, { id: "b", x: 10, y: 30 }], entities: [{ id: "l", type: "line", p1: "a", p2: "b" }], constraints: [] };
+  const pr = await K.buildPart(part([...cyl, ln, { id: "f", type: "flaechenkurve", faces: [{ p: [20, 0, 50] }], art: "projektion", sketch: "s2" }]));
+  okAll(pr);
+  const P = pr.paths3d[0].pts;
+  for (const q of P) { near(Math.hypot(q[0], q[1]), 20, 0.05, "auf dem Mantel"); near(q[2], 30, 1e-6, "Höhe bleibt"); }
+  assert.match(pr.status.f.info, /Projiziert/);
+});
