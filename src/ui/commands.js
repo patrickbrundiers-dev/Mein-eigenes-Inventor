@@ -2,6 +2,7 @@
 import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
 import { h, toast, choiceDialog, promptDialog } from "./dom.js";
+import { familyTool } from "../core/werkzeugfamilien.js";
 import { motionStudyDialog } from "./bewegungsstudie.js";
 import { topologyDialog, performanceDialog, crashReportsDialog } from "./datenwerkzeuge.js";
 import { surfaceCheckDialog, compareBodiesDialog } from "./flaechenpruefung.js";
@@ -165,6 +166,13 @@ export function commandRunners(app) {
     "asm.inContext": () => (app.sel?.type === "component" ? app.editInContext(app.activeId, app.sel.id) : toast("Erst eine Komponente wählen")),
   };
   for (const v of ["iso", "front", "back", "left", "right", "top", "bottom"]) run["view." + v] = () => app.viewer.setView(v);
+  run["sketch.lookAt"] = () => app.viewer.lookAtSketch();
+  for (const fam of ["line", "rect", "circle"]) run["sketch." + fam] = () => {
+    const sk = app.sketcher;
+    const t = familyTool(fam, { memo: app.prefs.get("werkzeuge.letzte")?.varianten || {}, current: sk.tool, idle: !sk.state, cycle: app.prefs.get("skizze.tasteWechselt") !== false });
+    sk.setTool(t);
+  };
+  for (const c of COMMANDS) if (c.args && /^view\.(turn|turn90|pan)\./.test(c.id)) run[c.id] = () => (c.args.pan ? app.viewer.panView(c.args.x, c.args.y) : app.viewer.turnView(c.args.x, c.args.y));
   for (const m of ["kanten", "schattiert", "draht", "transparent", "foto"]) run["view.mode." + m] = () => app.prefs.set("ansicht.darstellung", m);
   for (const c of COMMANDS) {
     if (run[c.id]) continue;

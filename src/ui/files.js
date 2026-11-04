@@ -249,6 +249,27 @@ export class Files {
     app.syncMaterials?.();
     toast(`${remote.name} aus ${baseName(f.path)} verknüpft`, { kind: "ok" });
   }
+  /**
+   * Quelle neu verknüpfen (L4, wie SolidCraft »Relink Source«): Datei verschoben oder umbenannt → andere .wcad wählen.
+   * Alle Vorkommen in Baugruppen bleiben, nur Pfad und Inhalt kommen aus der neuen Datei. Ein Rückgängig-Schritt.
+   */
+  async relinkPart(part) {
+    const app = this.app;
+    if (!part?.link) return toast("Bauteil ist nicht verknüpft");
+    const pick = await this.pickLinkedPart();
+    if (!pick) return;
+    const { f, remotePrj, remote } = pick;
+    const prev = part.link.path;
+    app.edit("Quelle neu verknüpfen", () => {
+      const { doc } = applyLinked(app.project, { ...part, link: makeLink(f.path, remote, app.filePath) }, remotePrj, remote);
+      for (const k of Object.keys(part)) delete part[k];
+      Object.assign(part, doc);
+      app.results.delete(part.id);
+    }, { link: true });
+    app.syncMaterials?.();
+    const uses = app.project.docs.filter((d) => d.kind === "assembly").reduce((n, a) => n + a.components.filter((c) => c.part === part.id).length, 0);
+    toast(`Neu verknüpft: ${baseName(prev)} → ${baseName(f.path)}${uses ? `, ${uses} Vorkommen behalten` : ""}. Abhängigkeiten bitte prüfen, falls sich die Geometrie geändert hat.`, { kind: "ok", timeout: 7000 });
+  }
   /** Bauteil als eigene Datei speichern und im Projekt damit verknüpfen */
   async savePartAsFile(part) {
     const app = this.app;
@@ -1033,7 +1054,10 @@ export class Files {
     const app = this.app;
     const f = await this.pickStep();
     if (!f) return;
-    app.addFeature(importFeature(f));
+    const feat = importFeature(f);
+    app.addFeature(feat);
+    // W8: viele Programme speichern mit Y nach oben – Aufstellen gleich anbieten
+    toast(`»${f.name}« eingefügt. Liegt das Modell auf der Seite (Y nach oben)?`, { timeout: 9000, action: { label: "Aufstellen", run: () => app.edit("Aufstellen", () => { const g = app.activeDoc()?.features.find((x) => x.id === feat.id); if (g) g.aufstellen = "y-oben"; }) } });
   }
   async replaceImport(feat) {
     const f = await this.pickStep();

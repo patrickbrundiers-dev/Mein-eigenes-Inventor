@@ -5,6 +5,7 @@ import { arcGeometry, circleFrom3, deleteEntities, extractProfiles } from "../co
 import { evaluate, resolveParams } from "../core/expr.js";
 import { planeFrame, toLocal, toWorld, v3 } from "../core/geom.js";
 import { resolvePlane } from "../core/datums.js";
+import { familyOf } from "../core/werkzeugfamilien.js";
 import { parseDxf, dxfToSketch, primsBounds } from "../core/dxfread.js";
 import { uid } from "../core/examples.js";
 import { trimEntity, filletCorner, chamferCorner, cornerAt, extendEntity, splitEntity } from "../core/sketchedit.js";
@@ -192,6 +193,11 @@ export class Sketcher {
     this.cancelInput();
     this.tool = t;
     this.state = null;
+    const fam = familyOf(t);
+    if (fam && this.app.prefs) {
+      const cur = this.app.prefs.get("werkzeuge.letzte") || {}, v = cur.varianten || {};
+      if (v[fam] !== t) this.app.prefs.set("werkzeuge.letzte", { ...cur, varianten: { ...v, [fam]: t } });
+    }
     if (!["select", "dimension"].includes(t)) this.pendingPick = [];
     this.pendingPick = [];
     this.app.setHint(SKETCH_TOOLS[t] || "");
@@ -310,6 +316,12 @@ export class Sketcher {
 
   /** Fangen beim Zeichnen: liefert {x,y, pointId?, on?: {type, e}} */
   snap(sx, sy, { exclude = new Set() } = {}) {
+    if (this.noSnap) {
+      // Alt gedrückt: kein Fang an Punkten, Kurven und Hilfslinien (Raster bleibt, wenn eingeschaltet)
+      let [lx, ly] = this.L(sx, sy);
+      if (this.gridSnap) { const step = this.gridFixed || gridStep(this.M.scale); lx = Math.round(lx / step) * step; ly = Math.round(ly / step) * step; }
+      return { x: lx, y: ly, label: "Fang aus (Alt)" };
+    }
     const hit = this.hitTest(sx, sy, { dims: false, exclude });
     const P = this.pts();
     if (hit?.kind === "point") { const p = P.get(hit.id); return { x: p.x, y: p.y, pointId: p.id, label: "Punkt" }; }
@@ -1249,6 +1261,7 @@ export class Sketcher {
   pointerDown(e) {
     if (e.button !== 0 || !this.active) return;
     this.noAuto = !!e.ctrlKey;
+    this.noSnap = !!e.altKey; // W3: Alt setzt den Fang für diesen Klick aus
     if (this.viewer.handleCubeClick(e.clientX, e.clientY)) return;
     this.mapping();
     const [sx, sy] = this.eventPos(e);
@@ -1997,6 +2010,7 @@ export class Sketcher {
   pointerMove(e) {
     if (!this.active) return;
     this.noAuto = !!e.ctrlKey;
+    this.noSnap = !!e.altKey;
     this.mapping();
     const [sx, sy] = this.eventPos(e);
     const [lx, ly] = this.L(sx, sy);

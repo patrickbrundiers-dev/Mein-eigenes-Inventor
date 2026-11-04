@@ -75,7 +75,11 @@ export function specialSnap(sk, x, y, tol, { exclude = new Set() } = {}) {
  * refs: zusätzliche Bezugspunkte (z. B. Startpunkt der Linie, auch wenn noch nicht in der Skizze).
  */
 export function alignSnap(sk, x, y, tol, { refs = [], excludePoints = new Set() } = {}) {
-  const pts = [...refs, ...sk.points.filter((p) => !excludePoints.has(p.id))];
+  // Quellen der Hilfslinien: Punkte (auch Kreis- und Bogenmittelpunkte) und Linienmitten (W3)
+  const P = new Map(sk.points.map((p) => [p.id, p]));
+  const mids = [];
+  for (const e of sk.entities) if (e.type === "line") { const a = P.get(e.p1), b = P.get(e.p2); if (a && b && !excludePoints.has(e.p1) && !excludePoints.has(e.p2)) mids.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, mid: true }); }
+  const pts = [...refs, ...sk.points.filter((p) => !excludePoints.has(p.id)), ...mids];
   let vx = null, vy = null, dvx = tol, dvy = tol;
   for (const p of pts) {
     const ex = Math.abs(p.x - x), ey = Math.abs(p.y - y);
@@ -87,5 +91,6 @@ export function alignSnap(sk, x, y, tol, { refs = [], excludePoints = new Set() 
   const guides = [];
   if (vx) guides.push({ x1: vx.x, y1: vx.y, x2: nx, y2: ny });
   if (vy) guides.push({ x1: vy.x, y1: vy.y, x2: nx, y2: ny });
-  return { x: nx, y: ny, label: vx && vy ? "Ausgerichtet" : vx ? "Senkrecht zu Punkt" : "Waagrecht zu Punkt", guides };
+  const what = (p) => (p.mid ? "Linienmitte" : "Punkt");
+  return { x: nx, y: ny, label: vx && vy ? "Kreuzung der Hilfslinien" : vx ? `Senkrecht zu ${what(vx)}` : `Waagrecht zu ${what(vy)}`, guides };
 }

@@ -66,7 +66,7 @@ import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity, massOverride, orderBomRows } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
-import { motionStudyDialog } from "./bewegungsstudie.js";
+import { motionStudyDialog, findJointLimits } from "./bewegungsstudie.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
@@ -380,6 +380,7 @@ export class Props {
     const app = this.app;
     const d = app.activeDoc();
     app.direct?.sync(); // Leiste der Direktbearbeitung folgt dem gewählten Feature
+    if (app.viewer?.cogGroup?.children.length) app.viewer.showPrincipalAxes(null); // Hauptachsen nur bei offenem Abschnitt (L13)
     if (app.viewer.fieldGroup?.children.length) app.viewer.highlightBodies([]); // Feld-Hervorhebung gehört zum alten Feld
     const body = h("div", { class: "props-body" });
     let title = "Eigenschaften";
@@ -472,6 +473,7 @@ export class Props {
       h("div", { class: "btn-row" },
         h("button", { class: "btn primary", onclick: () => app.files.refreshLinks() }, "Aktualisieren"),
         app.files.bridge ? h("button", { class: "btn", onclick: () => app.files.open(l.path) }, "Quelldatei öffnen") : null,
+        h("button", { class: "btn", title: "Datei verschoben oder umbenannt: andere Datei wählen, alle Vorkommen bleiben", onclick: () => app.files.relinkPart(part) }, "Neu verknüpfen…"),
         h("button", { class: "btn", onclick: () => app.edit("Verknüpfung lösen", () => { delete part.link; }, { link: true, rebuild: false }) }, "Verknüpfung lösen")));
   }
 
@@ -1467,6 +1469,7 @@ export class Props {
         out.push(this.section("Import",
           h("dl", { class: "kv" }, h("dt", {}, "Datei"), h("dd", {}, f.fileName || "–"), h("dt", {}, "Größe"), h("dd", {}, f.data ? fmtNum(f.data.length / 1024, 0) + " KB" : "–")),
           this.opSeg(f),
+          this.seg("Aufstellen", [["", "wie Datei"], ["y-oben", "Y oben → Z oben"], ["y-unten", "Y unten"], ["kopf", "Kopfüber"]], f.aufstellen || "", (v) => this.set(f, "aufstellen", v || undefined, "Aufstellen")),
           f.format === "stl" ? this.check("Netz in Volumenkörper wandeln", !!f.convert, (v) => this.set(f, "convert", v, "Netz konvertieren")) : null,
           f.format === "stl" && f.convert ? this.check("Ebene Dreiecke zu Flächen zusammenfassen", f.unify !== false, (v) => this.set(f, "unify", v, "Netz konvertieren")) : null,
           f.format === "stl" ? h("p", { class: "hint" }, "Netz konvertieren: Dreiecke werden genäht und zu einem Volumenkörper geschlossen; danach gehen Bohrung, Rundung und Boolesche Operationen.") : null,
@@ -1887,13 +1890,19 @@ export class Props {
     const f = (v) => fmtNum(v, v >= 100 ? 0 : 2);
     const I = it.atCenter;
     const dev = it.meshDeviation;
-    return h("details", { class: "inertia" }, h("summary", {}, "Trägheitsmomente"),
+    // L13: beim Aufklappen Schwerpunkt und Hauptachsen im Modell zeigen (rot I₁, grün I₂, blau I₃)
+    const box = r.bodies.reduce((b, x) => { const p = x.mesh.positions; for (let i = 0; i < p.length; i += 3) for (let k = 0; k < 3; k++) { b[0][k] = Math.min(b[0][k], p[i + k]); b[1][k] = Math.max(b[1][k], p[i + k]); } return b; }, [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]]);
+    const len = Math.max(10, Math.hypot(...box[1].map((v, k) => v - box[0][k])) * 0.4);
+    const toggle = (ev) => this.app.viewer.showPrincipalAxes(ev.currentTarget.open && this.app.mode === "part" ? { center: it.center, axes: it.axes, len } : null);
+    return h("details", { class: "inertia", ontoggle: toggle }, h("summary", {}, "Trägheitsmomente, Hauptachsen"),
       h("dl", { class: "kv" },
         h("dt", {}, "Haupt-I₁/I₂/I₃"), h("dd", {}, it.principal.map(f).join(" / ") + " kg·mm²"),
         h("dt", {}, "Ixx/Iyy/Izz"), h("dd", {}, [I[0][0], I[1][1], I[2][2]].map(f).join(" / ")),
         h("dt", {}, "Ixy/Ixz/Iyz"), h("dd", {}, [I[0][1], I[0][2], I[1][2]].map(f).join(" / ")),
         h("dt", {}, "um Ursprung Ixx/Iyy/Izz"), h("dd", {}, [it.atOrigin[0][0], it.atOrigin[1][1], it.atOrigin[2][2]].map(f).join(" / "))),
-      h("p", { class: "hint" }, `Bezogen auf den Schwerpunkt, Achsen parallel zum Bauteil. Berechnet aus dem Darstellungsnetz (Qualität „${{ grob: "Schnell", normal: "Normal", fein: "Fein" }[this.app.quality] || this.app.quality}“)` +
+      h("dl", { class: "kv" }, h("dt", {}, "Schwerpunkt"), h("dd", {}, it.center.map((v) => fmtNum(v, 1)).join(" / ") + " mm"),
+        ...it.axes.flatMap((a, i) => [h("dt", {}, `Hauptachse ${i + 1}`), h("dd", {}, a.map((v) => fmtNum(v, 3)).join(" / "))])),
+      h("p", { class: "hint" }, `Bezogen auf den Schwerpunkt, Achsen parallel zum Bauteil; die Hauptachsen stehen im Modell (rot, grün, blau), solange dieser Abschnitt offen ist. Berechnet aus dem Darstellungsnetz (Qualität „${{ grob: "Schnell", normal: "Normal", fein: "Fein" }[this.app.quality] || this.app.quality}“)` +
         (dev != null ? `; Volumen des Netzes weicht ${fmtNum(Math.abs(dev) * 100, 2)} % vom exakten Wert ab – Trägheitswerte ähnlich genau.` : ".")));
   }
 
@@ -2128,6 +2137,17 @@ export class Props {
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => this.animateJoints([c.id]) }, "Bewegen"),
         h("button", { class: "btn", onclick: () => this.jointSweepCheck(c) }, "Kollision im Bereich prüfen"),
+        j.kind === "zylinder" ? null : h("button", { class: "btn", title: "Von der heutigen Stellung nach beiden Seiten bis zur ersten Berührung suchen und als Bereich eintragen", onclick: async (ev) => {
+          const b = ev.currentTarget; b.disabled = true; b.textContent = "Suche Grenzen …";
+          try {
+            const r = await findJointLimits(app, asm, c);
+            if (r.start) return toast(`Grenzen finden: Teile durchdringen sich schon jetzt (${r.start.join(", ")}) – erst trennen`, { kind: "err", timeout: 7000 });
+            app.edit("Grenzen finden", () => { j.min = r.min; j.max = r.max; });
+            const why = (v, by) => `${fmtNum(v, slide ? 2 : 1)} ${u}${by ? ` (${by})` : " (kein Anschlag)"}`;
+            toast(`Bereich ${why(r.min, r.minBy)} bis ${why(r.max, r.maxBy)}`, { kind: "ok", timeout: 8000 });
+          } catch (e) { toast("Grenzen finden: " + e.message, { kind: "err" }); }
+          finally { b.disabled = false; b.textContent = "Grenzen finden"; }
+        } }, "Grenzen finden"),
         h("button", { class: "btn", title: "Diagramm, Bewegungsbahn, Punkt anfahren und Kollisionen über alle Stellungen (mit gekoppelten Gelenken)", onclick: () => motionStudyDialog(app, c) }, "Bewegungsuntersuchung…"),
         h("button", { class: "btn", title: "Gelenkursprung: Punkt und Richtung der Achse ändern", onclick: () => this.jointOriginDialog(c) }, "Gelenkursprung…"),
         h("button", { class: "btn danger", onclick: () => app.edit(jointLabel(j) + " entfernen", () => { delete c.joint; }) }, "Gelenk entfernen")));

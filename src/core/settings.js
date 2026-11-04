@@ -74,6 +74,10 @@ export const SETTINGS = [
     { value: "mitte-drehen", label: "Mittlere Taste drehen, rechte schwenken" },
   ] },
   { key: "ansicht.drehpunktCursor", cat: "ansicht", label: "Um den Punkt unter dem Mauszeiger drehen", type: "bool", default: true, help: "Drehpunkt ist der Modellpunkt, auf den die Maus beim Drücken zeigt; im Leeren die Bildmitte." },
+  { key: "ansicht.drehpunktFest", cat: "ansicht", label: "Drehpunkt ohne Mauszeiger-Drehpunkt", type: "enum", default: "mitte", options: [{ value: "mitte", label: "Bildmitte" }, { value: "ursprung", label: "Ursprung (0, 0, 0)" }], help: "Gilt, wenn »Um den Punkt unter dem Mauszeiger drehen« aus ist." },
+  { key: "ansicht.drehart", cat: "ansicht", label: "Drehen", type: "enum", default: "frei", options: [{ value: "frei", label: "Frei (um die Bildachsen)" }, { value: "drehteller", label: "Drehteller (Z bleibt oben)" }], help: "Drehteller: waagrechtes Ziehen dreht immer um die senkrechte Z-Achse, das Modell kippt nicht zur Seite." },
+  { key: "ansicht.zoomUmkehren", cat: "ansicht", label: "Zoomrichtung des Mausrads umkehren", type: "bool", default: false },
+  { key: "ansicht.mitteDoppelklick", cat: "ansicht", label: "Doppelklick mit der mittleren Taste", type: "enum", default: "alles", options: [{ value: "alles", label: "Alles zeigen" }, { value: "aus", label: "nichts" }] },
   { key: "ansicht.markierungsmenue", cat: "ansicht", label: "Rechtsklick öffnet das Markierungsmenü", type: "bool", default: true, help: "Häufige Befehle im Kreis um den Mauszeiger, seltene als Liste darunter (wie Inventor). Aus: nur die Liste." },
   { key: "ansicht.griffe", cat: "ansicht", label: "Ziehgriffe an gewählten Features", type: "bool", default: true, help: "Pfeil an Extrusion, Bohrungstiefe und Profillänge: ziehen ändert den Wert mit Vorschau, über null hinaus kippt die Extrusion auf die andere Seite. Umschalt: 0,1-mm-Schritte." },
   { key: "ansicht.naechsterSchritt", cat: "ansicht", label: "Hinweis »Nächster Schritt« anzeigen", type: "bool", default: true, help: "Bei leerem Bauteil, leerer Baugruppe, leerem Blatt oder einer fertigen Skizze schlägt eine kleine Kachel unten im Fenster die naheliegenden Befehle vor. Mit × lässt sie sich einzeln wegklicken." },
@@ -93,6 +97,9 @@ export const SETTINGS = [
   { key: "ansicht.hoverfarbe", cat: "ansicht", label: "Hervorhebung unter dem Mauszeiger", type: "color", default: "#ef7d1a" },
 
   { key: "skizze.standardebene", cat: "skizze", label: "Erste Skizze in leerem Bauteil auf", type: "enum", default: "waehlen", options: [{ value: "waehlen", label: "Ebene jedes Mal wählen" }, { value: "XY", label: "XY-Ebene" }, { value: "XZ", label: "XZ-Ebene" }, { value: "YZ", label: "YZ-Ebene" }], help: "Hat das Bauteil schon Körper, wählst du die Ebene oder Fläche wie gewohnt." },
+  { key: "skizze.ansichtDrehen", cat: "skizze", label: "Beim Öffnen einer Skizze senkrecht auf die Ebene drehen", type: "bool", default: true, help: "Aus: Die Ansicht bleibt, gezeichnet wird trotzdem auf der Skizzenebene. Strg+8 dreht jederzeit senkrecht." },
+  { key: "skizze.ansichtZurueck", cat: "skizze", label: "Beim Beenden einer Skizze", type: "enum", default: "bleiben", options: [{ value: "bleiben", label: "Ansicht bleiben lassen" }, { value: "zurueck", label: "zur Ansicht davor zurück" }, { value: "unveraendert", label: "zurück, wenn in der Skizze nicht verschoben oder gezoomt" }] },
+  { key: "skizze.tasteWechselt", cat: "skizze", label: "Werkzeugtaste nochmal drücken wechselt die Variante", type: "bool", default: true, help: "L, R und C starten die zuletzt benutzte Variante (z. B. Rechteck aus Mitte). Vor dem ersten Klick nochmal drücken schaltet zur nächsten: Linie ↔ aus Mitte, Rechteck → aus Mitte → 3 Punkte → abgerundet, Kreis → 3 Punkte → 2 Punkte → 3 Tangenten → 2 Linien." },
   { key: "skizze.rasterfang", cat: "skizze", label: "Rasterfang beim Öffnen einer Skizze", type: "bool", default: false },
   { key: "skizze.rasterweite", cat: "skizze", label: "Rasterweite", unit: "mm", type: "number", default: 0, min: 0, max: 1000, help: "0 = automatisch passend zum Zoom." },
   { key: "skizze.fangradius", cat: "skizze", label: "Fangradius", unit: "px", type: "int", default: 7, min: 3, max: 30, help: "Abstand, ab dem Punkte, Schnittpunkte, Mitten, Quadranten und Ausrichtungen gefangen werden." },
@@ -112,6 +119,7 @@ export const SETTINGS = [
   { key: "werkzeuge.std.musterAnzahl", cat: "werkzeuge", label: "Standardwert Musteranzahl", type: "int", default: 3, min: 2, max: 400 },
   { key: "werkzeuge.std.musterAbstand", cat: "werkzeuge", label: "Standardwert Musterabstand", unit: "mm", type: "number", default: 20, min: -100000, max: 100000 },
   { key: "werkzeuge.std.extrusion", cat: "werkzeuge", label: "Standardwert Extrusionstiefe", unit: "mm", type: "number", default: 10, min: 0.001, max: 100000, help: "Startwert neuer Extrusionen." },
+  { key: "werkzeuge.extrusionAutomatisch", cat: "werkzeuge", label: "Extrusion: Vorgang automatisch wählen", type: "bool", default: true, help: "Liegt die Skizze auf dem Körper und zeigt die Richtung ins Material, wird die Extrusion eine Differenz; berührt sie keinen Körper, ein neuer Körper; sonst Vereinigen. Rechts jederzeit umstellbar." },
   { key: "werkzeuge.merken", cat: "werkzeuge", label: "Letzte Werkzeugwerte merken", type: "bool", default: true, help: "Rundung, Versatz, Polygon und Muster starten mit dem zuletzt eingegebenen Wert, auch nach einem Neustart. Aus = immer die Standardwerte oben." },
   { key: "baugruppe.ziehen", cat: "werkzeuge", label: "Komponenten in der Baugruppe mit der Maus ziehen", type: "bool", default: true, help: "Linke Taste auf einer Komponente ziehen verschiebt sie, Umschalt+Ziehen dreht sie – nur in die Richtungen, die ihre Abhängigkeiten frei lassen. Alt+Ziehen fügt sie an eine Fläche oder Bohrung (Schnellfügen)." },
   { key: "baugruppe.fuegepunkte", cat: "werkzeuge", label: "Beim Platzieren über Fügepunkte automatisch fügen", type: "bool", default: true, help: "Hat ein Bauteil gemerkte Fügepunkte (Komponente → Eigenschaften → Fügepunkte), fügt es sich beim Absetzen an das nächstliegende passende Gegenstück." },
@@ -175,7 +183,7 @@ export const SETTINGS = [
 ];
 
 /** Werkzeuge, deren letzte Eingabe gemerkt wird (werkzeuge.letzte) */
-export const TOOL_MEMO_KEYS = ["rundung", "versatz", "polygon", "muster", "kreismuster", "trafo-move", "trafo-rotate", "trafo-scale"];
+export const TOOL_MEMO_KEYS = ["rundung", "versatz", "polygon", "muster", "kreismuster", "trafo-move", "trafo-rotate", "trafo-scale", "varianten"];
 
 const BY_KEY = new Map(SETTINGS.map((s) => [s.key, s]));
 export const settingDef = (key) => BY_KEY.get(key);

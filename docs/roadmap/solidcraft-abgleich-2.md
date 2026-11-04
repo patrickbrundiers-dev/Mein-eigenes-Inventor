@@ -38,3 +38,16 @@ Ansichtswechsel animieren, Panels links/rechts, Verlaufsleiste, Schnellmessung, 
 
 Etappe 1: G1 Themen (mit Vorher/nachher-Bildern), G2, G3, G7. Etappe 2: G4–G6, G8, W1, W6, W7. Etappe 3: W2–W5, W8.
 Alles schaltbar in den Einstellungen; Standard bleibt das heutige Aussehen, nur G1 bekommt neue Auswahl.
+
+## Stand
+
+- **Etappe 1** (G1–G3, G7): 14 Farbthemen, kompakter Aufbau, Menüband nur Symbole, eigene Hintergrundfarbe.
+- **Etappe 2** (G4–G6, G8, W1, W6, W7): Meldungen mittig, Statusleiste aus, Navigationsleiste Lage/Größe/blass, Dialogknöpfe
+  oben, Farben für Farbsehschwäche, Ebenennamen Oben/Vorne/Rechts, Bildrate.
+- **Etappe 3** (W2–W5, W8): Skizze senkrecht drehen ein/aus, beim Beenden zurück zur Ansicht davor (immer / wenn nicht
+  verschoben), Strg+8 Skizzenansicht; Hilfslinien auch aus Linienmitten, Kreuzung zweier Hilfslinien, Alt setzt den Fang aus;
+  Pfeiltasten drehen 15° (Umschalt 90°), Strg+Pfeile schwenken, Strg+1…7 Standardansichten, Drehteller, Zoomrichtung
+  umkehren, Doppelklick mittlere Taste = Alles zeigen, Drehpunkt Bildmitte/Ursprung; Extrusion wählt den Vorgang
+  (Differenz/Vereinigen/neuer Körper) nach Lage; STEP-Import »Aufstellen« (Y oben → Z oben) mit Vorschlag nach dem Einfügen.
+- **Lücken aus dem Inventar** (siehe solidcraft-inventar.md, L1–L16): Klick-Durchschalten und »Andere auswählen…« (L1),
+  Grenzen finden am Gelenk (L2), Quelle neu verknüpfen (L4), L/R/C mit zuletzt benutzter Variante (L7), Schwerpunkt mit Hauptachsen im Modell (L13).

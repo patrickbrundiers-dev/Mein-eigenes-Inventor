@@ -188,6 +188,7 @@ const P = {
   text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>',
   pdf: '<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5"/><path d="M9 13h2a1.5 1.5 0 0 1 0 3H9v-4zM9 16v2"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+  selectOther: '<path d="M5 3l12 6-5 1.5L10 16z"/><path d="M14 14h7M14 17.5h7M14 21h7"/>',
   eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   eyeoff: '<path d="M2 12s4-7 10-7c2 0 3.8.8 5.2 1.8M22 12s-4 7-10 7c-2 0-3.8-.8-5.2-1.8M3 3l18 18"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
@@ -348,7 +349,7 @@ export function contextMenu(x, y, items) {
   for (const it of items) {
     if (it === "-") { m.append(h("hr")); continue; }
     if (!it) continue;
-    m.append(h("button", { role: "menuitem", disabled: it.disabled, onclick: () => { closeMenu(); it.run(); } },
+    m.append(h("button", { role: "menuitem", disabled: it.disabled, onclick: () => { closeMenu(); it.run(); }, onmouseenter: it.onhover || null },
       it.icon ? icon(it.icon) : null, h("span", {}, it.label), it.kbd ? h("span", { class: "kbd" }, it.kbd) : null));
   }
   document.body.append(m);

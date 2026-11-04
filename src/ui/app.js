@@ -44,6 +44,7 @@ import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCop
 import { resolveParams, evaluate } from "../core/expr.js";
 import { axisDistance, measureFormat, quickMeasure, MAX_MEASURE_ITEMS, measurePickOptions, measureHitLabel, sameMeasureHit } from "../core/messen.js";
 import { resolveDatums, resolvePlane } from "../core/datums.js";
+import { profileInnerPoint, autoOp } from "../core/extrusionop.js";
 import { datumDisplay, datumPickClick, datumHover, datumSelectClick, datumHandleDown, finishDatumPick, toggleAllDatums, datumPicking, featureAtFace } from "./arbeitselemente.js";
 import { sketchRefs, dependents } from "../core/featurerefs.js";
 import { applyPatterns } from "../core/asmmuster.js";
@@ -842,6 +843,20 @@ export class App {
   }
 
   // ---------- Features ----------
+  /** Vorgang einer neuen Extrusion aus der Lage der Skizze zum Körper (W5) */
+  autoExtrudeOp(skId) {
+    try {
+      const part = this.activeDoc(), sk = part?.features.find((f) => f.id === skId);
+      if (!sk) return "join";
+      const q = profileInnerPoint(sk);
+      if (!q) return "join";
+      const scope = resolveParams(part.params || []).values;
+      const fr = planeFrame(resolvePlane(sk.plane, this.datumMap(part)), (() => { try { return evaluate(String(sk.offset || "0"), scope); } catch { return 0; } })());
+      const w = toWorld(fr, q[0], q[1]), n = fr.normal, e = 0.05;
+      const at = (s) => [w[0] + s * e * n[0], w[1] + s * e * n[1], w[2] + s * e * n[2]];
+      return autoOp({ hasBody: true, front: this.viewer.pointInside(at(1)), back: this.viewer.pointInside(at(-1)) });
+    } catch { return "join"; }
+  }
   lastSketchId(predicate) {
     const part = this.activeDoc();
     const sks = part.features.filter((f) => f.type === "sketch" && (!predicate || predicate(f)));
@@ -1123,6 +1138,23 @@ export class App {
       return;
     }
     // Bauteil: Kanten/Flächen sammeln (Strg/Umschalt = mehrfach)
+    // L1: erneuter Klick an derselben Stelle wählt das Nächste darunter (Durchschalten)
+    const now = performance.now(), last = this.lastPickClick;
+    const cam = JSON.stringify(this.viewer.viewState());
+    if (hit && !e.ctrlKey && !e.shiftKey && last && now - last.t < 4000 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 4 && last.cam === cam) {
+      const list = this.viewer.pickCandidates(e.clientX, e.clientY, this.pickOptions());
+      if (list.length > 1) {
+        const i = (last.i + 1) % list.length;
+        this.lastPickClick = { ...last, t: now, i };
+        this.setHint(`Durchschalten ${i + 1}/${list.length}: ${measureHitLabel(list[i])} – nochmal klicken für das Nächste`);
+        this.selHits = [list[i]];
+        this.sel = { type: "geometry" };
+        this.viewer.setSelectionHits(this.selHits);
+        this.tree.render(); this.props.render(); this.ribbon.render(); this.updateQuickMeasure();
+        return;
+      }
+    }
+    this.lastPickClick = hit ? { x: e.clientX, y: e.clientY, t: now, i: 0, cam } : null;
     if (!hit) { this.selHits = []; this.sel = null; }
     else {
       const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face) && a.end === hit.end;
@@ -1195,12 +1227,16 @@ export class App {
       redo: this.redoStack.length ? { label: "Wiederholen", icon: "redo", kbd: "Strg+Y", run: () => this.redo() } : null,
       search: { label: "Befehl suchen …", icon: "search", kbd: kbd("app.search"), run: () => this.commands.exec("app.search") },
       repeat: this.ribbon.last?.mode === this.mode ? { label: "Nochmal: " + t_(this.ribbon.last.b.label), icon: this.ribbon.last.b.icon, run: () => this.ribbon.press(this.ribbon.last.b) } : null,
+      other: part && !this.pick ? (() => {
+        const list = this.viewer.pickCandidates(e.clientX, e.clientY, this.pickOptions());
+        return list.length > 1 ? { label: `Andere auswählen … (${list.length})`, icon: "selectOther", run: () => this.selectOtherMenu(e.clientX, e.clientY, list) } : null;
+      })() : null,
       datums: part && this.activeDoc()?.features.some((f) => ["arbeitsebene", "arbeitsachse", "arbeitspunkt"].includes(f.type)) ? { label: this.activeDoc().hideDatums ? "Arbeitselemente einblenden" : "Arbeitselemente ausblenden", icon: this.activeDoc().hideDatums ? "eye" : "eyeoff", run: () => toggleAllDatums(this) } : null,
     };
     if (this.prefs.get("ansicht.markierungsmenue") === false) {
       // klassische Liste
       const items = [I.repeat, I.repeat && "-", ...(part ? [I.sketch, I.faceSketch] : asm ? [I.place] : [])].filter(Boolean);
-      items.push("-", I.hide, I.isolate, I.showAll, I.datums, "-", I.fit, I.fitSel, I.normal, I.iso);
+      items.push("-", I.other, I.hide, I.isolate, I.showAll, I.datums, "-", I.fit, I.fitSel, I.normal, I.iso);
       if (I.undo) items.push("-", { ...I.undo, label: "Rückgängig: " + this.undoStack[this.undoStack.length - 1].label });
       return contextMenu(e.clientX, e.clientY, items);
     }
@@ -1209,8 +1245,14 @@ export class App {
       : asm ? [I.place, I.constraint, I.measure, I.normal || I.iso, I.fit, I.isolate, I.hide, I.undo]
       : [null, null, null, I.iso, I.fit, null, null, I.undo];
     const used = new Set(ring.filter(Boolean));
-    const list = [I.repeat, part && I.faceSketch ? I.sketch : null, I.showAll, I.datums, I.fitSel, I.normal, I.iso, I.redo, "-", I.search].filter((x) => x && !used.has(x));
+    const list = [I.repeat, I.other, part && I.faceSketch ? I.sketch : null, I.showAll, I.datums, I.fitSel, I.normal, I.iso, I.redo, "-", I.search].filter((x) => x && !used.has(x));
     markingMenu(e.clientX, e.clientY, ring, list);
+  }
+  /** L1: Liste von allem unter dem Mauszeiger; Überfahren hebt hervor, Klick wählt */
+  selectOtherMenu(x, y, list) {
+    contextMenu(x, y, list.map((hit, i) => ({ label: `${i + 1}. ${measureHitLabel(hit)}${hit.kind === "face" && i > 0 ? " (dahinter)" : ""}`,
+      onhover: () => this.viewer.highlight([hit]),
+      run: () => { this.selHits = [hit]; this.sel = { type: "geometry" }; this.viewer.setSelectionHits(this.selHits); this.tree.render(); this.props.render(); this.ribbon.render(); this.updateQuickMeasure(); } })));
   }
   toggleFeatureEdge(fid, hit) {
     if (!hit || hit.kind !== "edge" || !hit.info?.mid) return;

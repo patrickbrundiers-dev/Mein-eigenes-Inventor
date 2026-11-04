@@ -293,7 +293,7 @@ try {
       return { cross: at(10, 10), align: at(30, 22) };
     } finally { sk.points.length = np; sk.entities.length = ne; }
   });
-  step("Fangen: Schnittpunkt und Ausrichtung", snaps.cross.label === "Schnittpunkt" && snaps.cross.x === 10 && snaps.cross.y === 10 && /Senkrecht zu Punkt|Ausgerichtet/.test(snaps.align.label) && snaps.align.x === 30, JSON.stringify(snaps));
+  step("Fangen: Schnittpunkt und Ausrichtung", snaps.cross.label === "Schnittpunkt" && snaps.cross.x === 10 && snaps.cross.y === 10 && /Senkrecht zu|Kreuzung der Hilfslinien/.test(snaps.align.label) && snaps.align.x === 30, JSON.stringify(snaps));
   await page.locator("#ribbon button", { hasText: "Rechteck" }).first().click();
   const box = await page.locator("#viewer canvas").boundingBox();
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
@@ -3566,6 +3566,14 @@ try {
     await shot("51-kontaktsatz");
     step("Kontaktsatz und Bewegung als Video", ks.set === "kf,kb" && ks.solver && ks.hit === true && ks.max > 5 && ks.max < 85 && ks.min === 0 && ks.anim === true && !!ks.video && /_Bewegung\.(mp4|webm)$/.test(ks.saved?.name || "") && ks.saved.size > 1000, JSON.stringify(ks));
   }
+  // SolidCraft-Abgleich Runde 2 (L2): Grenzen finden – vom heutigen Winkel bis zur ersten Berührung
+  {
+    await evalApp(() => { const a = window.__werkcad; a.sel = { type: "component", id: "kb" }; a.tree.render(); a.props.render(); });
+    await page.locator("#props .btn", { hasText: "Grenzen finden" }).first().click();
+    await page.waitForFunction(() => { const b = [...document.querySelectorAll("#props .btn")].find((x) => /Grenzen/.test(x.textContent)); return b && !b.disabled && b.textContent === "Grenzen finden"; }, null, { timeout: 120000 });
+    const gl = await evalApp(() => { const j = window.__werkcad.activeDoc().components.find((x) => x.id === "kb").joint; return { min: j.min, max: j.max }; });
+    step("Grenzen finden (Gelenk bis zur Berührung)", gl.max > 5 && gl.max < 85 && gl.min < -100, JSON.stringify(gl));
+  }
   // Werkzeuge Stufe 52: iFeature aus einem Bauteil erstellen und über das Menüband in ein anderes einsetzen
   {
     const mk = (h) => evalApp((h) => {
@@ -4519,6 +4527,43 @@ try {
     await idle();
     const urdf = await evalApp(async () => { const p = await window.__werkcad.files.exportUrdf(); return p && { links: p.model.links.length, files: p.files.length, robot: /<robot name=/.test(p.text) }; });
     step("SolidCraft E5: Kanten/Flächen auflisten, URDF-Paket", faces > 3 && urdf?.robot && urdf.links >= 1 && urdf.files >= 2, JSON.stringify({ faces, urdf }));
+  }
+  // SolidCraft-Abgleich Runde 2, Etappe 3: Tastaturnavigation, Skizzenansicht zurück, Extrusion automatisch, Durchschalten
+  {
+    await evalApp(() => window.__werkcad.newPart("Runde2"));
+    await idle();
+    await evalApp(() => { const a = window.__werkcad, p = a.activeDoc(); a.edit("Test", () => {
+      p.features.push({ id: "rb", type: "sketch", name: "Grund", plane: { ref: "XY" }, offset: "0", points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 80, y: 0 }, { id: "c", x: 80, y: 50 }, { id: "d", x: 0, y: 50 }], entities: [{ id: "l1", type: "line", p1: "a", p2: "b" }, { id: "l2", type: "line", p1: "b", p2: "c" }, { id: "l3", type: "line", p1: "c", p2: "d" }, { id: "l4", type: "line", p1: "d", p2: "a" }], constraints: [] },
+        { id: "re", type: "extrude", sketch: "rb", distance: "20", mode: "normal", op: "join" });
+    }); });
+    await idle();
+    // Pfeiltaste dreht 15°, Strg+Pfeil schwenkt
+    const nav = await evalApp(() => { const v = window.__werkcad.viewer; v.setView("front", { animate: false }); const d0 = v.viewState().dir; window.__werkcad.commands.exec("view.turn.rechts"); const d1 = v.viewState().dir; const t0 = v.viewState().target; window.__werkcad.commands.exec("view.pan.links"); const t1 = v.viewState().target;
+      const ang = Math.acos(Math.max(-1, Math.min(1, d0.reduce((s, x, i) => s + x * d1[i], 0)))) * 180 / Math.PI; return { ang, moved: Math.hypot(...t0.map((x, i) => x - t1[i])) }; });
+    // Skizze öffnen und beenden: »zurück zur Ansicht davor«
+    const back = await evalApp(async () => { const a = window.__werkcad, v = a.viewer; a.prefs.set("skizze.ansichtZurueck", "zurueck"); v.setView("iso", { animate: false }); const d0 = v.viewState().dir;
+      a.editSketch("rb"); await new Promise((r) => setTimeout(r, 400)); const inSk = v.viewState().dir; a.finishSketch(true); await new Promise((r) => setTimeout(r, 500)); const d1 = v.viewState().dir; a.prefs.set("skizze.ansichtZurueck", "bleiben");
+      return { turned: Math.abs(inSk[2]) > 0.99, back: Math.hypot(...d0.map((x, i) => x - d1[i])) < 0.02 }; });
+    await idle();
+    // Extrusion automatisch: Skizze auf XY (Unterseite), Richtung ins Material → Differenz; Skizze abseits → neuer Körper
+    const ops = await evalApp(async () => { const a = window.__werkcad, p = a.activeDoc();
+      a.edit("Test", () => { p.features.push({ id: "rc", type: "sketch", name: "Loch", plane: { ref: "XY" }, offset: "0", points: [{ id: "m", x: 40, y: 25 }], entities: [{ id: "k", type: "circle", c: "m", r: 8 }], constraints: [] },
+        { id: "rf", type: "sketch", name: "Weg", plane: { ref: "XY" }, offset: "0", points: [{ id: "m2", x: 200, y: 25 }], entities: [{ id: "k2", type: "circle", c: "m2", r: 8 }], constraints: [] }); });
+      return { inside: a.autoExtrudeOp("rc"), away: a.autoExtrudeOp("rf") }; });
+    await idle();
+    // Durchschalten: zweiter Klick an derselben Stelle wählt das Nächste darunter
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("top", { animate: false }); v.fit(); });
+    await page.waitForTimeout(300);
+    const vb = await page.locator("#viewer canvas").boundingBox();
+    const cnt = await evalApp(([x, y]) => window.__werkcad.viewer.pickCandidates(x, y, { edges: true, faces: true }).length, [vb.x + vb.width / 2, vb.y + vb.height / 2]);
+    await page.mouse.click(vb.x + vb.width / 2, vb.y + vb.height / 2);
+    await page.waitForTimeout(150);
+    const k1 = await evalApp(() => JSON.stringify(window.__werkcad.selHits.map((h) => [h.kind, h.face ?? h.edge])));
+    await page.mouse.click(vb.x + vb.width / 2, vb.y + vb.height / 2);
+    await page.waitForTimeout(150);
+    const k2 = await evalApp(() => JSON.stringify(window.__werkcad.selHits.map((h) => [h.kind, h.face ?? h.edge])));
+    step("SolidCraft R2: Pfeiltasten drehen/schwenken, Skizzenansicht zurück", Math.abs(nav.ang - 15) < 0.5 && nav.moved > 1 && back.turned && back.back, JSON.stringify({ nav, back }));
+    step("SolidCraft R2: Extrusion Vorgang automatisch, Durchschalten", ops.inside === "cut" && ops.away === "new" && cnt >= 2 && k1 !== k2, JSON.stringify({ ops, cnt, k1, k2 }));
   }
   // SolidCraft-Abgleich E5: Kunststoffteil (Schraubdom mit Rippen an Skizzenpunkten), Regel aus den Einstellungen
   {

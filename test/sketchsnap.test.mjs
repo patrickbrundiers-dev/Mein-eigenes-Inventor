@@ -40,8 +40,14 @@ test("Ausrichtung waagrecht/senkrecht zu Punkten, auch beides zugleich", () => {
   const v = alignSnap(s, 1, 30, 3);
   assert.deepEqual([v.x, v.y, v.label, v.guides.length], [0, 30, "Senkrecht zu Punkt", 1]);
   const both = alignSnap(s, 1.5, 49, 3);
-  assert.deepEqual([both.x, both.y, both.label, both.guides.length], [0, 50, "Ausgerichtet", 2]);
+  assert.deepEqual([both.x, both.y, both.label, both.guides.length], [0, 50, "Kreuzung der Hilfslinien", 2]);
   assert.equal(alignSnap(s, 40, 20, 3), null);
   const r = alignSnap({ points: [], entities: [], constraints: [] }, 10, 1, 3, { refs: [{ x: 50, y: 0 }] });
   assert.deepEqual([r.x, r.y, r.label], [10, 0, "Waagrecht zu Punkt"]);
+});
+
+test("Hilfslinien auch aus Linienmitten (SolidCraft W3)", () => {
+  const s = { points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 100, y: 0 }], entities: [{ id: "L", type: "line", p1: "a", p2: "b" }], constraints: [] };
+  const v = alignSnap(s, 51, 40, 3);
+  assert.deepEqual([v.x, v.y, v.label], [50, 40, "Senkrecht zu Linienmitte"]);
 });

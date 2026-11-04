@@ -2530,6 +2530,10 @@ export function createKernel(R) {
               shape = r.shape;
               st.info = `Netz → ${r.solid ? "Volumenkörper" : "Fläche (nicht geschlossen)"}, ${r.faces} Flächen${r.before > r.faces ? ` (aus ${r.before} Dreiecken)` : ""}`;
             }
+            // Aufstellen (SolidCraft-Abgleich W8): Modelle mit Y nach oben um X drehen, damit Z oben ist
+            if (f.aufstellen === "y-oben") shape = shape.rotate(90, [0, 0, 0], [1, 0, 0]);
+            else if (f.aufstellen === "y-unten") shape = shape.rotate(-90, [0, 0, 0], [1, 0, 0]);
+            else if (f.aufstellen === "kopf") shape = shape.rotate(180, [0, 0, 0], [1, 0, 0]);
             state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape, kind: "tool" }] });
             applyOp(f.op || "new", shape, f.id, f.name || "Import");
             break;

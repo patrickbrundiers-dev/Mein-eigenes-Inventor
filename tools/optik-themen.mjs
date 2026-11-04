@@ -38,6 +38,18 @@ await set("oberflaeche.anordnung", "schwebend"); await shot("aufbau-schwebend-nu
 await set("oberflaeche.nurSymbole", false);
 await set("darstellung.eigenerHintergrund", true); await set("darstellung.hintergrund", "#ffffff"); await shot("hintergrund-weiss");
 await set("darstellung.eigenerHintergrund", false);
+// Etappe 2: Meldungen mittig, Navigationsleiste rechts/groß/blass, ohne Statusleiste, Bildrate, Dialogknöpfe oben
+await set("oberflaeche.meldungen", "mitte"); await set("oberflaeche.navPosition", "rechts"); await set("oberflaeche.navGroesse", "kompakt");
+await set("oberflaeche.statusleiste", false); await set("ansicht.bildrate", true);
+await app(() => { const r = document.getElementById("toasts"); const d = document.createElement("div"); d.className = "toast ok"; d.textContent = "Beispielmeldung: Speichern fertig"; r?.appendChild(d); });
+await shot("etappe2-meldung-nav-bildrate");
+await set("oberflaeche.meldungen", "rechts"); await set("oberflaeche.navPosition", "mitte"); await set("oberflaeche.navGroesse", "normal");
+await set("oberflaeche.statusleiste", true); await set("ansicht.bildrate", false);
+await set("oberflaeche.dialogKnoepfe", "oben"); await set("ansicht.ebenennamen", "ansicht");
+await app(() => window.__werkcad.commands.exec("app.settings"));
+await page.waitForTimeout(300); await shot("etappe2-dialogknoepfe-oben");
+await page.keyboard.press("Escape");
+await set("oberflaeche.dialogKnoepfe", "unten"); await set("ansicht.ebenennamen", "xyz");
 await set("darstellung.schema", "nord");
 await app(() => window.__werkcad.commands.exec("app.settings"));
 await page.waitForTimeout(300);

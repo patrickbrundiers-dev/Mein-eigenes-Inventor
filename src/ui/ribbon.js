@@ -1,5 +1,6 @@
 // Menüband mit kontextabhängigen Registerkarten
 import { plasticDefaults } from "../core/kunststoff.js";
+import { OP_NAMES } from "../core/extrusionop.js";
 import { SURFACE_CHECKS, surfaceCheckDialog, compareBodiesDialog } from "./flaechenpruefung.js";
 import { defaultWelle, defaultZahnrad, defaultLager, defaultFeder } from "../core/assistent.js";
 import { FF_ARTEN } from "../core/freiflaeche.js";
@@ -74,7 +75,9 @@ export class Ribbon {
         if (!sk) return;
         const r = app.results.get(app.activeId);
         const hasBody = r?.bodies?.length > 0;
-        app.addFeature({ type: "extrude", sketch: sk, distance: String(app.prefs.get("werkzeuge.std.extrusion") ?? 10), mode: "normal", op: hasBody ? "join" : "join" });
+        const op = hasBody && app.prefs.get("werkzeuge.extrusionAutomatisch") !== false ? app.autoExtrudeOp(sk) : "join";
+        app.addFeature({ type: "extrude", sketch: sk, distance: String(app.prefs.get("werkzeuge.std.extrusion") ?? 10), mode: "normal", op });
+        if (op !== "join") toast(`Vorgang automatisch: ${OP_NAMES[op]}${op === "cut" ? " (Skizze liegt am Körper, Richtung ins Material)" : " (Skizze berührt keinen Körper)"} – rechts umstellbar`, { timeout: 4500 });
       },
       cutExtrude: () => {
         const sk = needSketch();

@@ -196,21 +196,21 @@ Abgeglichen mit dem PBCAD-Quellcode (Stand Zweig Runde 2). „Teilweise“ heiß
 
 | Nr. | Funktion | Stand PBCAD | Vorschlag |
 |---|---|---|---|
-| L1 | Klick-Durchschalten und „Andere auswählen…“ (alles unter dem Cursor) | fehlt | einbauen (Runde 2) |
-| L2 | Grenzen finden / Gelenk durchfahren bis Berührung | fehlt | einbauen |
+| L1 | Klick-Durchschalten und „Andere auswählen…“ (alles unter dem Cursor) | **erledigt (Runde 2)** | – |
+| L2 | Grenzen finden / Gelenk durchfahren bis Berührung | **erledigt (Runde 2):** Knopf »Grenzen finden« am Gelenk | – |
 | L3 | Verknüpftes Teil an Ort und Stelle bearbeiten (Rest blass) | fehlt | einbauen |
-| L4 | Quelle neu verknüpfen (alle Vorkommen) | fehlt | einbauen |
+| L4 | Quelle neu verknüpfen (alle Vorkommen) | **erledigt (Runde 2)** | – |
 | L5 | Kantenflansch: Höhe gemessen ab außen/innen/tangential, Biegeposition (5 Arten) | teilweise (Maßbezug beim Kantteil) | einbauen |
-| L6 | Persönliche Blechregeln im Benutzerprofil | fehlt (Regeln je Dokument) | einbauen |
-| L7 | L/R/C starten zuletzt benutzte Variante, erneut drücken schaltet weiter | fehlt | einbauen |
+| L6 | Persönliche Blechregeln im Benutzerprofil | vorhanden (Blechregeln in den Einstellungen, Kopie im Bauteil) | – |
+| L7 | L/R/C starten zuletzt benutzte Variante, erneut drücken schaltet weiter | **erledigt (Runde 2)** | – |
 | L8 | Tastenkürzel-Editor mit mehreren Tasten je Befehl, „Modelltasten aus Skizzen heraus“ | teilweise | ausbauen |
-| L9 | Pfeiltasten drehen Ansicht 15°, Strg+Pfeile schwenken, Strg+8 senkrecht | prüfen | einbauen |
+| L9 | Pfeiltasten drehen Ansicht 15°, Strg+Pfeile schwenken, Strg+1…8 Ansichten | **erledigt (Runde 2)** | – |
 | L10 | Teil ziehen mit Gelenkbegrenzung und Ketten | teilweise (Gelenk-Ziehen) | ausbauen |
 | L11 | Stücklistentyp untrennbar, Unterteile unter Schraube gruppiert | teilweise (Phantom/Referenz da) | ausbauen |
 | L12 | 3MF je Komponente ein Objekt, an Slicer senden mit Auswahl | teilweise | prüfen |
-| L13 | Schwerpunkt mit Hauptachsen im Fenster Eigenschaften | prüfen | einbauen |
-| L14 | Runde 2 Etappe 3: Skizze drehen/zurück, Hilfslinien aus Mitten, Kreuzungsfang, Alt unterdrückt Fang | offen | in Arbeit |
-| L15 | Runde 2: Navigation (Drehteller, Zoomrichtung, Doppelklick Mitte), Extrusion Operation automatisch, Y-oben-STEP | offen | in Arbeit |
+| L13 | Schwerpunkt mit Hauptachsen im Fenster Eigenschaften | **erledigt (Runde 2):** Abschnitt »Trägheitsmomente, Hauptachsen« zeigt sie im Modell | – |
+| L14 | Runde 2 Etappe 3: Skizze drehen/zurück, Hilfslinien aus Mitten, Kreuzungsfang, Alt unterdrückt Fang | **erledigt** | – |
+| L15 | Runde 2: Navigation (Drehteller, Zoomrichtung, Doppelklick Mitte, Drehpunkt), Extrusion Vorgang automatisch, STEP aufstellen | **erledigt** | – |
 | L16 | Verlauf links (Zeitleiste als Liste am Rand) | offen | in Arbeit |
 
 Nicht übernommen (bleibt so): Rendern komplett, Flächenbegradigung und Flächenanpassung (Kern), KI-Chat/MCP von SolidCraft,

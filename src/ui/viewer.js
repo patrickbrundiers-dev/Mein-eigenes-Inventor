@@ -76,6 +76,7 @@ export class Viewer {
     this.controls.rotateSpeed = 0.9;
     this.controls.zoomSpeed = 1.2;
     this.controls.addEventListener("change", () => this.cameraChanged());
+    this.controls.addEventListener("start", () => { if (this.sketchFrame) this.sketchMoved = true; });
     this.pivotOrbit = true;
     this.rotateButton = 2;
     this.bindPivotOrbit();
@@ -255,7 +256,8 @@ export class Viewer {
     let st = null;
     el.addEventListener("pointerdown", (e) => {
       if (!this.pivotOrbit || e.button !== this.rotateButton || !this.controls.enabled || !this.controls.enableRotate || this.sketchFrame) return;
-      st = { x: e.clientX, y: e.clientY, id: e.pointerId, pivot: this.pivotAt(e.clientX, e.clientY) };
+      const pivot = this.pivotCursor ? this.pivotAt(e.clientX, e.clientY) : this.pivotFixed === "ursprung" ? new THREE.Vector3() : this.controls.target.clone();
+      st = { x: e.clientX, y: e.clientY, id: e.pointerId, pivot };
       el.setPointerCapture?.(e.pointerId);
     });
     el.addEventListener("pointermove", (e) => {
@@ -263,6 +265,14 @@ export class Viewer {
       const dx = e.clientX - st.x, dy = e.clientY - st.y;
       st.x = e.clientX; st.y = e.clientY;
       if (dx || dy) this.orbitAround(st.pivot, dx, dy);
+    });
+    // Doppelklick mit der mittleren Taste (W4): Alles zeigen
+    let mid = null;
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 1) return;
+      const now = performance.now();
+      if (mid && now - mid.t < 400 && Math.hypot(e.clientX - mid.x, e.clientY - mid.y) < 6 && this.midDouble !== "aus") { mid = null; this.fit(); return; }
+      mid = { t: now, x: e.clientX, y: e.clientY };
     });
     const end = () => { if (st) { el.releasePointerCapture?.(st.id); st = null; } };
     el.addEventListener("pointerup", end);
@@ -277,7 +287,12 @@ export class Viewer {
   /** Kamera um pivot drehen (dx/dy in px, wie OrbitControls: waagrecht um die Hochachse, senkrecht um die Bildquerachse) */
   orbitAround(pivot, dx, dy) {
     const h = this.renderer.domElement.clientHeight || 1, sp = this.controls.rotateSpeed;
-    const cam = this.camera, tgt = this.controls.target, up = cam.up.clone().normalize();
+    const cam = this.camera, tgt = this.controls.target;
+    // Drehteller: Hochachse ist immer Welt-Z, die Kamera bleibt aufrecht
+    const look = tgt.clone().sub(cam.position).normalize();
+    const tt = this.turntable && Math.abs(look.z) < 0.995; // senkrecht von oben/unten: frei weiterdrehen
+    const up = tt ? new THREE.Vector3(0, 0, 1) : cam.up.clone().normalize();
+    if (tt) cam.up.copy(up);
     let q = new THREE.Quaternion().setFromAxisAngle(up, (-2 * Math.PI * dx * sp) / h);
     const dir = tgt.clone().sub(cam.position).normalize();
     const right = dir.clone().cross(up);
@@ -288,6 +303,50 @@ export class Viewer {
     }
     for (const v of [cam.position, tgt]) v.sub(pivot).applyQuaternion(q).add(pivot);
     cam.lookAt(tgt);
+    this.controls.update();
+    this.cameraChanged();
+  }
+
+  /** Liegt der Weltpunkt p im Material eines sichtbaren Körpers? (Strahl-Paritätstest, beidseitig) */
+  pointInside(p) {
+    const meshes = this.pickables.filter((x) => x.mesh.visible && !x.key?.startsWith?.("ghost")).map((x) => x.mesh);
+    if (!meshes.length) return false;
+    const dir = new THREE.Vector3(0.5773, 0.5931, 0.5612).normalize();
+    const rc = new THREE.Raycaster(new THREE.Vector3(...p), dir);
+    const sides = meshes.map((m) => m.material.side);
+    for (const m of meshes) m.material.side = THREE.DoubleSide;
+    let hits;
+    try { hits = rc.intersectObjects(meshes, false); } finally { meshes.forEach((m, i) => { m.material.side = sides[i]; }); }
+    // je Körper zählen; doppelte Treffer an Dreieckskanten zusammenfassen
+    const per = new Map();
+    for (const h of hits) { const a = per.get(h.object) || []; if (!a.some((d) => Math.abs(d - h.distance) < 1e-6)) a.push(h.distance); per.set(h.object, a); }
+    return [...per.values()].some((a) => a.length % 2 === 1);
+  }
+  /** Ansicht mit der Tastatur drehen (W4/L9): ax um die Bildhochachse, ay um die Bildquerachse, in Grad, um das Ziel */
+  turnView(ax, ay) {
+    if (this.sketchFrame) return;
+    this.anim = null;
+    const cam = this.camera, tgt = this.controls.target, up = cam.up.clone().normalize();
+    const dir = tgt.clone().sub(cam.position).normalize();
+    const right = dir.clone().cross(up).normalize();
+    const q = new THREE.Quaternion().setFromAxisAngle(up, (-ax * Math.PI) / 180)
+      .multiply(new THREE.Quaternion().setFromAxisAngle(right, (-ay * Math.PI) / 180));
+    cam.position.sub(tgt).applyQuaternion(q).add(tgt);
+    cam.up.applyQuaternion(q).normalize();
+    cam.lookAt(tgt);
+    this.controls.update();
+    this.cameraChanged();
+  }
+  /** Ansicht mit der Tastatur schwenken: fx/fy in Bruchteilen der sichtbaren Halbhöhe */
+  panView(fx, fy) {
+    this.anim = null;
+    const cam = this.camera, tgt = this.controls.target, up = cam.up.clone().normalize();
+    const dir = tgt.clone().sub(cam.position).normalize();
+    const right = dir.clone().cross(up).normalize();
+    const camUp = right.clone().cross(dir).normalize();
+    const half = this.visibleHalf();
+    const d = right.multiplyScalar(fx * half).add(camUp.multiplyScalar(fy * half));
+    cam.position.add(d); tgt.add(d);
     this.controls.update();
     this.cameraChanged();
   }
@@ -317,18 +376,24 @@ export class Viewer {
   applyPrefs(v) {
     const c = this.controls;
     this.showFps = !!v["ansicht.bildrate"];
+    this.sketchTurn = v["skizze.ansichtDrehen"] !== false;
+    this.sketchReturn = v["skizze.ansichtZurueck"] || "bleiben";
     if (this.fpsEl) this.fpsEl.hidden = !this.showFps;
     if (v["ansicht.beleuchtung"] !== this.lightPreset) { this.lightPreset = v["ansicht.beleuchtung"]; this.applyLighting(); this.render(); }
-    // Drehen um den Punkt unter dem Mauszeiger übernimmt bindPivotOrbit; OrbitControls dreht dann nicht selbst
-    this.pivotOrbit = v["ansicht.drehpunktCursor"] !== false;
-    const rot = this.pivotOrbit ? null : THREE.MOUSE.ROTATE;
+    // Drehen übernimmt immer bindPivotOrbit (W4): Drehpunkt Mauszeiger, Bildmitte oder Ursprung; frei oder Drehteller
+    this.pivotCursor = v["ansicht.drehpunktCursor"] !== false;
+    this.pivotFixed = v["ansicht.drehpunktFest"] || "mitte";
+    this.turntable = v["ansicht.drehart"] === "drehteller";
+    this.midDouble = v["ansicht.mitteDoppelklick"] || "alles";
+    this.pivotOrbit = true;
+    const rot = null;
     this.rotateButton = v["ansicht.maus"] === "mitte-drehen" ? 1 : 2;
     c.mouseButtons = v["ansicht.maus"] === "mitte-drehen"
       ? { LEFT: null, MIDDLE: rot, RIGHT: THREE.MOUSE.PAN }
       : { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: rot };
     if (this.navTool) c.mouseButtons.LEFT = { orbit: THREE.MOUSE.ROTATE, pan: THREE.MOUSE.PAN, zoom: THREE.MOUSE.DOLLY }[this.navTool];
     c.zoomToCursor = v["ansicht.zoomZumCursor"];
-    c.zoomSpeed = v["ansicht.zoomGeschwindigkeit"];
+    c.zoomSpeed = v["ansicht.zoomGeschwindigkeit"] * (v["ansicht.zoomUmkehren"] ? -1 : 1);
     c.rotateSpeed = v["ansicht.drehGeschwindigkeit"];
     this.animate = v["darstellung.animation"];
     this.showGrid = v["ansicht.raster"];
@@ -1081,13 +1146,27 @@ export class Viewer {
     if (this.wantPerspective) this.setPerspective(false);
     this.sketchFrame = frame;
     this.controls.enableRotate = false;
-    const n = frame.normal;
-    this.setViewDir([-n[0], -n[1], -n[2]], frame.yDir, { animate: true, target: frame.origin });
+    // W2: Ansicht vorher merken (für »zurück« beim Beenden), senkrecht drehen nur wenn eingestellt
+    this.sketchPrevView = this.viewState();
+    this.sketchMoved = false;
+    if (this.sketchTurn !== false) this.lookAtSketch(frame);
     this.setModelOpacity(0.35);
     this.grid.visible = false;
   }
+  /** Senkrecht auf die Skizzenebene schauen (auch Befehl »Skizzenansicht«) */
+  lookAtSketch(frame = this.sketchFrame) {
+    if (!frame) return;
+    const n = frame.normal;
+    this.setViewDir([-n[0], -n[1], -n[2]], frame.yDir, { animate: true, target: frame.origin });
+    this.sketchMoved = false;
+  }
   exitSketch() {
+    // W2: zur Ansicht vor der Skizze zurück – immer oder nur, wenn in der Skizze nicht verschoben/gezoomt wurde
+    const back = this.sketchReturn === "zurueck" || (this.sketchReturn === "unveraendert" && !this.sketchMoved);
+    const prev = this.sketchPrevView;
     this.sketchFrame = null;
+    this.sketchPrevView = null;
+    if (back && prev) this.applyViewState(prev, { animate: true });
     this.controls.enableRotate = true;
     if (this.wantPerspective) this.setPerspective(true);
     this.wantPerspective = false;
@@ -1495,6 +1574,31 @@ export class Viewer {
     return null;
   }
 
+  /**
+   * Alles unter dem Mauszeiger (L1, wie SolidCraft »Andere auswählen«): zuerst, was pick() liefert, dann jede Fläche
+   * entlang des Sehstrahls, auch verdeckte, von vorn nach hinten.
+   */
+  pickCandidates(cx, cy, opts = {}) {
+    const first = this.pick(cx, cy, opts);
+    const out = first ? [first] : [];
+    if (opts.faces === false) return out;
+    const rc = this.raycaster(cx, cy);
+    const meshes = this.pickables.filter((p) => p.mesh.visible).map((p) => p.mesh);
+    const seen = new Set(out.map((x) => `${x.kind}|${x.key}|${x.body}|${x.edge ?? x.face}`));
+    for (const fh of rc.intersectObjects(meshes, false)) {
+      if (this.clipped(fh.point)) continue;
+      const mesh = fh.object, flist = mesh.userData.faces || [];
+      const fi = flist.findIndex((f) => fh.faceIndex * 3 >= f.start && fh.faceIndex * 3 < f.start + f.count);
+      const pk = this.findPickable(mesh);
+      if (!pk) continue;
+      const id = `face|${pk.key}|${pk.body}|${fi}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const nrm = fh.face ? fh.face.normal.clone().transformDirection(mesh.matrixWorld).toArray() : null;
+      out.push({ kind: "face", key: pk.key, body: pk.body, face: fi, info: flist[fi] || {}, point: fh.point.toArray(), normal: nrm, group: pk.group, mesh });
+    }
+    return out;
+  }
   /** Weltpunkt → Bildschirm-px relativ zum 3D-Fenster */
   toScreen(p) {
     const v = new THREE.Vector3(p[0], p[1], p[2]).project(this.camera);
@@ -1803,6 +1907,24 @@ export class Viewer {
     this.render();
   }
   /** Bewegungsbahnen (E3): paths = [{ pts: [[x,y,z]…], color? }], gestrichelt die nur angezeigten, voll die behaltenen */
+  /** Schwerpunkt mit den drei Hauptträgheitsachsen (L13); spec = { center, axes:[[x,y,z]×3], len } oder null */
+  showPrincipalAxes(spec) {
+    if (!this.cogGroup) { this.cogGroup = new THREE.Group(); this.cogGroup.renderOrder = 997; this.scene.add(this.cogGroup); }
+    disposeTree(this.cogGroup);
+    this.cogGroup.clear();
+    if (spec) {
+      const c = new THREE.Vector3(...spec.center), cols = [0xd23b2a, 0x2e9d4a, 0x2457b8];
+      spec.axes.forEach((a, i) => {
+        const d = new THREE.Vector3(...a).normalize().multiplyScalar(spec.len * (1 - i * 0.15));
+        const geo = new THREE.BufferGeometry().setFromPoints([c.clone().sub(d), c.clone().add(d)]);
+        const l = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: cols[i], depthTest: false, transparent: true }));
+        l.renderOrder = 997;
+        this.cogGroup.add(l);
+      });
+      this.cogGroup.add(this.glyph(spec.center, "on", 0x111111));
+    }
+    this.render();
+  }
   showMotionPaths(paths = []) {
     if (!this.pathGroup) { this.pathGroup = new THREE.Group(); this.pathGroup.renderOrder = 998; this.scene.add(this.pathGroup); }
     disposeTree(this.pathGroup);

@@ -539,6 +539,7 @@ export class Tree {
       ...(d.kind !== "part" ? [] : d.link
         ? ["-", { label: "Aus Datei aktualisieren", icon: "update", run: () => app.files.refreshLinks() },
           app.files.bridge ? { label: "Quelldatei öffnen", icon: "open", run: () => app.files.open(d.link.path) } : null,
+          { label: "Quelle neu verknüpfen …", icon: "open", run: () => app.files.relinkPart(d) },
           { label: "Verknüpfung lösen", icon: "cut", run: () => app.edit("Verknüpfung lösen", () => { delete d.link; }, { link: true, rebuild: false }) }]
         : [{ label: "Als eigene Datei speichern", icon: "save", run: () => app.files.savePartAsFile(d) }]),
       "-",
