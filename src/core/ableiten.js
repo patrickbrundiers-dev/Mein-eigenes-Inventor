@@ -2,7 +2,7 @@
 // Feature kopieren und im Baum verschieben. Reine Rechnung ohne Kernel und Oberfläche.
 
 import { v3 } from "./geom.js";
-import { featureRefs } from "./featurerefs.js";
+import { featureRefs, dependents } from "./featurerefs.js";
 import { flattenAssembly } from "./subasm.js";
 
 const fmt = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
@@ -196,4 +196,39 @@ export function moveProblem(features, from, to) {
     if (hit) return `»${hit.name}« braucht »${f.name}« – »${f.name}« kann nicht dahinter stehen`;
   }
   return null;
+}
+
+/**
+ * Merkmale in ein anderes Bauteil verschieben (SolidCraft-Abgleich E3, »Merkmale/Körper/Skizzen in Komponente
+ * verschieben«): das Feature und alles, was davon abhängt, geht ins Ziel; benutzte Skizzen und Arbeitselemente
+ * kommen mit. Im Quellteil bleibt ein Bezug nur, wenn ein verbleibendes Feature ihn noch braucht.
+ * Rückgabe { src, dst, moved: [Namen] } – neue Listen, die Eingaben bleiben unverändert.
+ */
+export function moveFeaturesToPart(srcFeatures, id, dstFeatures, { newId }) {
+  if (!srcFeatures.some((f) => f.id === id)) throw new Error("Feature nicht gefunden");
+  const group = dependents(srcFeatures, id);
+  const copies = copyFeatures(srcFeatures, [...group], { newId, sameDoc: false, names: [] });
+  // mitkopierte Bezüge im Quellteil nur entfernen, wenn kein verbleibendes Feature sie braucht
+  const left = srcFeatures.filter((f) => !group.has(f.id));
+  const needed = new Set();
+  const need = (f) => { for (const r of featureRefs(f)) if (!needed.has(r)) { needed.add(r); const g = srcFeatures.find((x) => x.id === r); if (g) need(g); } };
+  for (const f of left) need(f);
+  const pulled = new Set(srcFeatures.filter((f) => !group.has(f.id) && !needed.has(f.id) && isPulledRef(srcFeatures, group, f.id)).map((f) => f.id));
+  const src = left.filter((f) => !pulled.has(f.id));
+  // Kopien behalten den ursprünglichen Namen (es ist ein Verschieben, kein Kopieren)
+  const taken = new Set(dstFeatures.map((g) => g.name));
+  for (const c of copies) {
+    const base = c.name.replace(/ \(Kopie( \d+)?\)$/, "");
+    let n = base, k = 2;
+    while (taken.has(n)) n = `${base} (${k++})`;
+    c.name = n; taken.add(n);
+  }
+  return { src, dst: [...dstFeatures, ...copies], moved: copies.map((c) => c.name) };
+}
+/** Ist f ein (auch mittelbarer) Bezug eines Features der Gruppe? */
+function isPulledRef(features, group, fid) {
+  const byId = new Map(features.map((f) => [f.id, f]));
+  const seen = new Set();
+  const walk = (id) => { for (const r of featureRefs(byId.get(id) || {})) { if (r === fid) return true; if (!seen.has(r)) { seen.add(r); if (walk(r)) return true; } } return false; };
+  return [...group].some((g) => walk(g));
 }

@@ -3313,6 +3313,65 @@ export function createKernel(R) {
     };
   }
 
+  // ---------- Flächen prüfen (SolidCraft-Abgleich E4) ----------
+  /** Isokurven aller gekrümmten Flächen: je Richtung n−1 Linien mit 24 Abschnitten (Parameter der Trägerfläche) */
+  function isoCurves(shape, n = 5) {
+    const out = [];
+    for (const fc of shape.faces) {
+      if (fc.geomType === "PLANE") continue;
+      for (let i = 1; i < n; i++) {
+        const t = i / n, lu = [], lv = [];
+        for (let k = 0; k <= 24; k++) {
+          const s = k / 24;
+          try { lu.push(tuple(fc.pointOnSurface(t, s))); lv.push(tuple(fc.pointOnSurface(s, t))); } catch { /* außerhalb */ }
+        }
+        if (lu.length > 1) out.push(lu);
+        if (lv.length > 1) out.push(lv);
+      }
+    }
+    return out;
+  }
+  /** Kantenstetigkeit: Winkel der beiden Flächennormalen in der Kantenmitte (°), Randkanten mit NaN */
+  function edgeContinuity(shape) {
+    const faceOf = new Map();
+    shape.faces.forEach((fc) => { for (const e of fc.edges) { const k = hashOf(e); if (!faceOf.has(k)) faceOf.set(k, []); const l = faceOf.get(k); if (!l.some((x) => x.isSame(fc))) l.push(fc); } });
+    return shape.edges.map((e, idx) => {
+      const fs = faceOf.get(hashOf(e)) || [];
+      let angle = NaN;
+      if (fs.length === 2) {
+        try {
+          const p = e.pointAt(0.5), n1 = tuple(fs[0].normalAt(p)), n2 = tuple(fs[1].normalAt(p));
+          const c = (n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) / (Math.hypot(...n1) * Math.hypot(...n2) || 1);
+          angle = (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI;
+        } catch { /* ohne Wert */ }
+      }
+      return { idx, angle, mid: edgeMid(e), seam: fs.length === 1 && fs[0].geomType !== "PLANE" };
+    });
+  }
+  /** Kleinster Radius der Regelflächen (Zylinder, Kugel, Torus, Kegel am kleinsten Ende) je Fläche */
+  function analyticRadii(shape) {
+    const oc = R.getOC(), out = [];
+    shape.faces.forEach((fc, idx) => {
+      let r = null;
+      try {
+        const ad = new oc.BRepAdaptor_Surface(fc.wrapped, true), T = ad.GetType();
+        if (T === oc.GeomAbs_SurfaceType.GeomAbs_Cylinder) r = ad.Cylinder().Radius();
+        else if (T === oc.GeomAbs_SurfaceType.GeomAbs_Sphere) r = ad.Sphere().Radius();
+        else if (T === oc.GeomAbs_SurfaceType.GeomAbs_Torus) r = ad.Torus().MinorRadius();
+        ad.delete();
+      } catch { /* andere Flächen über das Netz */ }
+      if (r != null) out.push({ idx, r, type: fc.geomType, point: faceCentroid(fc) });
+    });
+    return out;
+  }
+  /** Zwei Körper vergleichen: Volumen nur in A, nur in B, gemeinsam; Netze der Unterschiede */
+  function compareShapes(a, b) {
+    const vol = (s) => { try { return R.measureShapeVolumeProperties(s).volume; } catch { return 0; } };
+    const onlyA = a.cut(b), onlyB = b.cut(a), common = a.intersect(b);
+    const mesh = (s) => { try { const v = vol(s); return v > 1e-6 ? meshBody(s, "normal") : null; } catch { return null; } };
+    return { volA: vol(a), volB: vol(b), onlyA: vol(onlyA), onlyB: vol(onlyB), common: vol(common), meshA: mesh(onlyA), meshB: mesh(onlyB) };
+  }
+
   function bodyProps(shape) {
     let volume = NaN, center = null, area = NaN;
     try { const vp = R.measureShapeVolumeProperties(shape); volume = vp.volume; center = vp.centerOfMass; } catch { /* ignore */ }
@@ -3691,7 +3750,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, meshBodyCached, bodyPropsCached, measure, vertexOf, snapPoint, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { isoCurves, edgeContinuity, analyticRadii, compareShapes, buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, meshBodyCached, bodyPropsCached, measure, vertexOf, snapPoint, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

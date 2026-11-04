@@ -3,10 +3,14 @@
 // Skizzenwerkzeuge (t_…) kommen aus SKETCH_TOOLS in src/ui/sketcher.js und stehen hier nicht.
 
 import { FF_ARTEN } from "./freiflaeche.js";
+import { SURFACE_CHECKS } from "./flaechenpruefung.js";
 
 export const BEFEHLSHILFE = {
+  scMenu: "Flächen prüfen: Zebra, Umgebungskarte, Krümmung, Kamm, Isokurven, Silhouette, Stetigkeit, Zugänglichkeit, Körper vergleichen.",
+  compareBodies: "Zwei Körper (auch aus verschiedenen Bauteilen) vergleichen: Volumen nur in A, nur in B und gemeinsam, Unterschiede farbig.",
   ffMenu: "Flächenmodellierung: offene Flächen erzeugen, nähen, teilen, verrunden und aufdicken.",
   ...Object.fromEntries(FF_ARTEN.map((a) => ["ff_" + a.art, a.help])),
+  ...Object.fromEntries(SURFACE_CHECKS.map(([k, , help]) => ["sc_" + k, help])),
   // ---------- 3D-Modell ----------
   sketch: "Neue 2D-Skizze auf einer Ursprungsebene, Arbeitsebene oder ebenen Fläche anlegen.",
   skizze3d: "Skizze im Raum: Linien und Bögen zwischen 3D-Punkten, z. B. als Pfad für Rohre und Profile.",

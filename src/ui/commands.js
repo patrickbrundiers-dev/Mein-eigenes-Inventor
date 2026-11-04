@@ -2,6 +2,8 @@
 import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
 import { h, toast } from "./dom.js";
+import { motionStudyDialog } from "./bewegungsstudie.js";
+import { surfaceCheckDialog, compareBodiesDialog } from "./flaechenpruefung.js";
 import { t } from "../core/i18n.js";
 import { recordable } from "../core/makros.js";
 import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
@@ -125,6 +127,8 @@ export function commandRunners(app) {
     "sketch.regionProps": () => regionDialog(app),
     "sketch.dof": () => { const s = app.sketcher; s.showDof = !s.showDof; s.solve(); s.render(); app.ribbon.render(); },
     "part.draftAnalysis": () => draftDialog(app),
+    "part.surfaceCheck": () => surfaceCheckDialog(app),
+    "part.compareBodies": () => compareBodiesDialog(app),
     "part.welle": () => app.ribbon.run("welle"),
     "part.zahnrad": () => app.ribbon.run("zahnrad"),
     "part.lager": () => app.ribbon.run("lager"),
@@ -133,6 +137,8 @@ export function commandRunners(app) {
     "asm.contactSolver": () => app.props.toggleContactSolver(),
     "asm.contactSet": () => app.props.toggleContactSet(),
     "asm.motionVideo": () => app.props.recordMotion(),
+    "part.moveToPart": () => (app.sel?.type === "feature" ? app.moveFeatureToPartDialog(app.sel.id) : toast("Erst im Modellbrowser ein Merkmal wählen")),
+    "asm.motionStudy": () => { const asm = app.activeDoc(), sel = app.sel?.type === "component" && asm.components.find((c) => c.id === app.sel.id); const c = sel?.joint ? sel : asm.components.find((x) => x.joint); return c ? motionStudyDialog(app, c) : toast("Erst ein Gelenk anlegen (Baugruppe → Gelenk)"); },
     "asm.explode": () => app.props.explodeDialog(),
     "asm.positionSave": () => savePosition(app, app.activeDoc()),
     "asm.params": () => app.props.paramsDialog(),

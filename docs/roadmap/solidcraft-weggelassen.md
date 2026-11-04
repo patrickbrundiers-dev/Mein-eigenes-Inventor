@@ -3,6 +3,8 @@
 Stand 04.11.2026. Aus dem Abgleich aller 504 SolidCraft-Befehle (volle Tabelle: plan/solidcraft-abgleich.md).
 Darunter die 25 nur teilweise vorhandenen Befehle.
 
+> **Nachtrag 04.11.2026:** Patrick will alle Befehle außer Rendern. Inzwischen nachgebaut (PR #198, #200): die ganze Skizzen-Liste, alle Volumenkörper-Befehle außer Auflagefläche (kommt mit dem Slicer in E5), alle Flächen-Befehle außer **Flächenbegradigung** und **Flächenanpassung** (bleiben weg, im Kern fehlt ein stabiler Weg), die ganze Liste »Baugruppe und Gelenke« (Körper einfügen = abgeleitetes Bauteil, Komponenten aus Körpern = Skelett BG12, Verschieben = »In Bauteil verschieben…«). Die Tabellen unten zeigen den Stand vor dem Nachbau; der laufende Stand steht in solidcraft-abgleich.md unter »Stand E1/E2/E3«.
+
 ## Weggelassen (163)
 
 ### Skizze (12)

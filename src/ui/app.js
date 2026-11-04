@@ -20,10 +20,11 @@ import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
-import { h, icon, toast, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
+import { h, icon, toast, modal, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
 import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
-import { moveProblem, copyFeatures } from "../core/ableiten.js";
+import { moveProblem, copyFeatures, moveFeaturesToPart } from "../core/ableiten.js";
+import { reapplySurfaceCheck } from "./flaechenpruefung.js";
 import { syncVariants } from "../core/varianten.js";
 import { setDynamicCommands } from "../core/commands.js";
 import { macroCommands } from "../core/makros.js";
@@ -631,12 +632,16 @@ export class App {
   }
   partColor(part) { return part.color || finishColor(part) || materialOf(part.material).color; }
   showPart(part, res) {
+    this.viewer.showMotionPaths([]);
     if (this.mode === "sketch") {
       // im Skizzenmodus Modell halbtransparent hinter der Skizze
       this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35, material: part.material, finish: part.finish });
     } else this.viewer.showPart(res.bodies, { color: this.partColor(part), material: part.material, finish: part.finish });
     if (this.context?.part === part.id) this.showContextGhosts();
     this.showSketches3D();
+    // Flächen prüfen (E4) läuft weiter: nach dem Neuaufbau wieder anwenden
+    if (this.surfaceCheck && this.mode !== "sketch") reapplySurfaceCheck(this);
+    else if (this.viewer.analysis) { this.surfaceCheck = null; this.viewer.setAnalysis(); }
     if (this.fittedFor !== part.id) {
       this.fittedFor = part.id;
       const saved = this.mode !== "sketch" && this.docViews.get(part.id);
@@ -667,6 +672,8 @@ export class App {
     }
     this.viewer.showAssembly(comps);
     this.viewer.showSketches([]);
+    if (this.viewer.analysis) { this.surfaceCheck = null; this.viewer.setAnalysis(); }
+    this.viewer.showMotionPaths((asm.motionPaths || []).filter((p) => !p.hidden).map((p) => ({ ...p, kept: true })));
     if (this.fittedFor !== asm.id && comps.length) {
       this.fittedFor = asm.id;
       const saved = this.docViews.get(asm.id);
@@ -931,6 +938,24 @@ export class App {
     });
     this.selectFeature(copies.at(-1).id);
     if (copies.length > 1) toast(`Mit Bezügen eingefügt: ${copies.map((g) => g.name).join(", ")}`);
+  }
+  /** Merkmal (mit Abhängigen, Skizzen, Arbeitselementen) in ein anderes Bauteil verschieben (E3) */
+  moveFeatureToPartDialog(id) {
+    const part = this.activeDoc(), f = part?.features?.find((g) => g.id === id);
+    if (!f || this.linkedReadOnly(part)) return;
+    const targets = this.parts().filter((d) => d.id !== part.id && !d.link && !d.variant && !d.genAsm);
+    if (!targets.length) return toast("Kein anderes Bauteil im Projekt – erst ein Bauteil anlegen");
+    const sel = h("select", { class: "inp" }, ...targets.map((d) => h("option", { value: d.id }, d.name)));
+    modal({ title: `»${f.name}« in Bauteil verschieben`, width: "440px", body: h("div", {},
+      h("p", {}, "Das Merkmal und alles, was davon abhängt, wandert ins Zielbauteil; benutzte Skizzen und Arbeitselemente kommen mit. Was im Quellteil noch gebraucht wird, bleibt dort."),
+      h("div", { class: "field" }, h("label", {}, "Zielbauteil"), sel)),
+    buttons: [{ label: "Abbrechen" }, { label: "Verschieben", primary: true, run: () => {
+      const dst = this.doc(sel.value);
+      let r;
+      try { r = moveFeaturesToPart(part.features, id, dst.features || [], { newId: () => uid("f") }); } catch (e) { toast(e.message, { kind: "err" }); return false; }
+      this.edit("In Bauteil verschieben", () => { part.features = r.src; dst.features = r.dst; if (this.sel?.type === "feature" && !r.src.some((g) => g.id === this.sel.id)) this.sel = null; });
+      toast(`Nach »${dst.name}« verschoben: ${r.moved.join(", ")}`, { kind: "ok", timeout: 6000 });
+    } }] });
   }
   duplicateFeature(id) {
     const keep = this.featureClip;

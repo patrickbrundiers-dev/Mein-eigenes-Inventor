@@ -168,3 +168,27 @@ test("Flächen (E2): Begrenzung, Verbindung, Trimmen aufheben, Teilen, Dicke, Ve
   okAll(vr);
   assert.ok(vr.bodies[0].shape.faces.length >= 3, "Rundungsfläche dazu");
 });
+
+test("Flächen prüfen (E4): Isokurven, Kantenstetigkeit, Radien, Körper vergleichen", async () => {
+  // Quader 200 × 100 × 20 mit R 5 an den senkrechten Kanten
+  const box = [rectSketchFeature("s1", "XY", 0, 0, 0, "200", "100"), { id: "e1", type: "extrude", sketch: "s1", distance: "20", op: "new" }];
+  const res = await K.buildPart(part([...box, { id: "r", type: "fillet", mode: "dir", dir: "Z", radius: "5" }]));
+  okAll(res);
+  const sh = res.bodies[0].shape;
+  const iso = K.isoCurves(sh, 5);
+  assert.equal(iso.length, 4 * 2 * 4, "4 Rundungen × 2 Richtungen × 4 Linien");
+  const ed = K.edgeContinuity(sh);
+  const tang = ed.filter((e) => e.angle < 1), knick = ed.filter((e) => e.angle > 80);
+  assert.equal(tang.length, 8, "Übergänge Rundung ↔ Seitenfläche");
+  assert.equal(knick.length, ed.length - 8, "alle anderen Kanten 90°");
+  const rad = K.analyticRadii(sh);
+  assert.equal(rad.length, 4);
+  for (const x of rad) near(x.r, 5, 1e-6);
+  // Vergleich: Quader ohne Rundung gegen gerundeten → nur in A die vier Ecken (je (1 − π/4)·25·20)
+  const plain = (await K.buildPart(part(box))).bodies[0].shape;
+  const c = K.compareShapes(plain, sh);
+  near(c.onlyA, 4 * (1 - Math.PI / 4) * 25 * 20, 0.5);
+  near(c.onlyB, 0, 1e-3);
+  near(c.common, c.volB, 0.5);
+  assert.ok(c.meshA?.positions.length > 0); assert.equal(c.meshB, null);
+});

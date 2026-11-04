@@ -516,6 +516,7 @@ export class Tree {
       "-",
       { label: "Duplizieren", icon: "copy", run: () => app.duplicateFeature(f.id) },
       { label: "Kopieren", icon: "copy", run: () => app.copyFeature(f.id) },
+      { label: "In Bauteil verschieben…", icon: "move", run: () => app.moveFeatureToPartDialog(f.id) },
       app.featureClip ? { label: `Einfügen (${app.featureClip.label})`, icon: "copy", run: () => app.pasteFeatures() } : null,
       "-",
       { label: "Löschen", icon: "trash", kbd: "Entf", run: () => app.deleteFeature(f.id) });

@@ -1099,3 +1099,6 @@ button.rb-group-label:hover, button.rb-group-label.open { background: var(--dye-
 /* L6 Schild über dem gewählten Feature in der Verlaufsleiste */
 #verlauf { position: relative; overflow: visible; }
 .vl-editing { position: absolute; bottom: calc(100% + 6px); padding: 4px 10px; border-radius: 6px; background: #1c2129; color: #fff; font-size: var(--fs-s); white-space: nowrap; pointer-events: none; box-shadow: var(--shadow-1); z-index: 5; }
+.motion-chart-wrap { overflow-x: auto; color: var(--ink); margin: 4px 0 8px; }
+.motion-chart-wrap svg { display: block; max-width: 100%; height: auto; }
+.motion-study h4 { margin: 12px 0 4px; font-size: 12px; }

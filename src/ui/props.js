@@ -62,6 +62,7 @@ import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity, massOverride, orderBomRows } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
+import { motionStudyDialog } from "./bewegungsstudie.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
@@ -2086,7 +2087,25 @@ export class Props {
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => this.animateJoints([c.id]) }, "Bewegen"),
         h("button", { class: "btn", onclick: () => this.jointSweepCheck(c) }, "Kollision im Bereich prüfen"),
+        h("button", { class: "btn", title: "Diagramm, Bewegungsbahn, Punkt anfahren und Kollisionen über alle Stellungen (mit gekoppelten Gelenken)", onclick: () => motionStudyDialog(app, c) }, "Bewegungsuntersuchung…"),
+        h("button", { class: "btn", title: "Gelenkursprung: Punkt und Richtung der Achse ändern", onclick: () => this.jointOriginDialog(c) }, "Gelenkursprung…"),
         h("button", { class: "btn danger", onclick: () => app.edit(jointLabel(j) + " entfernen", () => { delete c.joint; }) }, "Gelenk entfernen")));
+  }
+  /** Gelenkursprung (E3): Achspunkt und Richtung eines vorhandenen Gelenks ändern; Wert und Bereich bleiben */
+  jointOriginDialog(c) {
+    const app = this.app, j = c.joint;
+    const parse = (s) => { const v = String(s).split(/[;\s]+/).filter(Boolean).map((x) => Number(x.replace(",", "."))); return v.length === 3 && v.every(Number.isFinite) ? v : null; };
+    const fmt3 = (v) => v.map((x) => fmtNum(x, 3)).join("; ");
+    const pi = h("input", { class: "inp", value: fmt3(j.p) }), di = h("input", { class: "inp", value: fmt3(j.d) });
+    modal({ title: `Gelenkursprung – ${c.name}`, width: "440px", body: h("div", {},
+      h("p", {}, "Die Komponente bleibt in ihrer heutigen Lage; künftige Bewegungen laufen um bzw. entlang der neuen Achse."),
+      this.field(isSlide(j) ? "Bezugspunkt" : "Achse durch", pi), this.field("Richtung", di)),
+    buttons: [{ label: "Abbrechen" }, { label: "Übernehmen", primary: true, run: () => {
+      const p = parse(pi.value), d = parse(di.value);
+      if (!p || !d || !(Math.hypot(...d) > 1e-9)) { toast("Punkt und Richtung als x; y; z eingeben (Richtung nicht 0)", { kind: "err" }); return false; }
+      const n = Math.hypot(...d);
+      app.edit("Gelenkursprung", () => { j.p = p; j.d = d.map((x) => x / n); });
+    } }] });
   }
   /** Schiebegelenk anlegen: Richtung (±X, ±Y, ±Z), Weg von … bis in mm; 0 = heutige Lage */
   slideDialog(c, preset = null) {

@@ -377,6 +377,24 @@ const handlers = {
     }
     return { loops };
   },
+  /** Flächen prüfen (E4): Isokurven, Kantenstetigkeit, Regelflächen-Radien je Körper des Bauteils */
+  async surfaceAnalysis({ part, what }) {
+    const res = await getBuilt(part), out = [];
+    for (const [bi, b] of res.bodies.entries()) {
+      if (b.meta?.huelle || !b.shape?.faces) continue;
+      const r = { body: bi, name: b.name };
+      if (what === "iso") r.lines = K.isoCurves(b.shape);
+      else if (what === "stetigkeit") r.edges = K.edgeContinuity(b.shape);
+      else if (what === "radius") r.radii = K.analyticRadii(b.shape);
+      out.push(r);
+    }
+    return out;
+  },
+  /** Körper vergleichen (E4): a/b = { part, body } */
+  async compareBodies({ a, b }) {
+    const pick = async (x) => { const res = await getBuilt(x.part); const s = res.bodies[x.body ?? 0]?.shape; if (!s) throw new Error("Körper nicht gefunden"); return s; };
+    return K.compareShapes(await pick(a), await pick(b));
+  },
   async ping() { return "ok"; },
   /** Messgerüst (tools/messen.mjs): WASM-Speicher und Füllstand der Zwischenspeicher */
   async stats() {
