@@ -3474,6 +3474,24 @@ try {
     await shot("48-konturwalzen");
     step("Blech: Ecke schließen, Stanzwerkzeug, Konturwalzen, Trennfuge", ec.ok && /eckeschliessen,stanzung$/.test(ec.types) && ec.holes === 1 && /1 Ecke\(n\) geschlossen/.test(ec.info || "") && kw0.type === "konturwalzen" && kw0.ok && /Trennfuge setzen/.test(kw0.info || "") && kw.next === "trennfuge" && kw.ok && Math.abs(kw.width - (2 * Math.PI * 51 - 1)) < 1e-6 && !!kw.dxf && kw.dxf.poly >= 1, JSON.stringify({ ec, kw0, kw }));
   }
+  // Kröpfung: Z-Abkantung im Steg des Kantteils über das Menüband, zwei Gegenbiegungen mehr in der Abwicklung
+  {
+    await evalApp(() => window.__werkcad.newPart("Kröpfung"));
+    await idle();
+    await rbClick("Kantteil");
+    await idle(60000);
+    await rbClick("Kröpfung");
+    await idle(60000);
+    const jg = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc(), r = a.results.get(a.activeId);
+      const sh = r.bodies.find((b) => b.meta?.sheet)?.meta.sheet;
+      return { types: d.features.map((f) => f.type).join(","), ok: Object.values(r.status).every((s) => s.ok), bends: sh?.flatModel?.bends.length, panel: [...document.querySelectorAll("#props .section h3")].map((x) => x.textContent) };
+    });
+    await evalApp(() => { const v = window.__werkcad.viewer; v.setView("iso", { animate: false }); v.fit(); });
+    await shot("48-blech-kroepfung");
+    step("Blech: Kröpfung", jg.ok && /kantteil,kroepfung$/.test(jg.types) && jg.bends === 4 && jg.panel.includes("Kröpfung"), JSON.stringify(jg));
+  }
+
 
   // Werkzeuge Stufe 49: IGES-Export über den Reiter Export (Blechteil mit Konturwalze von oben)
   {

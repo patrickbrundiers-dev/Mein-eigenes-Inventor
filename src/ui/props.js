@@ -24,7 +24,7 @@ import { DIREKT_OPS, DIREKT_RICHTUNGEN, DIREKT_ACHSEN, DIREKT_GROESSE } from "..
 import { CONSTRAINT_TYPES } from "../core/asmsolve.js";
 import { holeFromConstraints, defaultAsmPattern } from "../core/asmmuster.js";
 import { CAP_MODES, equalParts } from "../core/rahmen.js";
-import { LASCHE_EDGES, HEM_KINDS, PUNCH_FORMS, CORNER_THROUGH, SHEET_FEATURES } from "../core/blechplus.js";
+import { LASCHE_EDGES, HEM_KINDS, PUNCH_FORMS, CORNER_THROUGH, SHEET_FEATURES, JOG_REFS, JOG_POS } from "../core/blechplus.js";
 import { ROLL_AXES } from "../core/konturwalzen.js";
 import { BOLT_JOINTS } from "../core/schraubverbindung.js";
 import { derivableSources, mirrorPlacement, MIRROR_PLANES } from "../core/ableiten.js";
@@ -959,7 +959,8 @@ export class Props {
       case "umschlag":
       case "durchzug":
       case "eckeschliessen":
-      case "stanzung": {
+      case "stanzung":
+      case "kroepfung": {
         const bases = part.features.filter((g) => g.type === "kantteil");
         const opt = (label, key, placeholder) => this.text(label, f[key] ?? "", (v) => this.set(f, key, v, label), { placeholder });
         const baseSel = this.select("Kantteil", [["", "– wählen –"], ...bases.map((g) => [g.id, g.name])], f.base || "", (v) => this.set(f, "base", v, "Kantteil"));
@@ -988,6 +989,19 @@ export class Props {
             this.select("Stoß", CORNER_THROUGH, f.through === "b" ? "b" : "a", (v) => this.set(f, "through", v, "Stoß")),
             E("Spalt", "gap", { allowNeg: false }),
             h("p", { class: "hint" }, "Zieht die Stirnlaschen an einer 90°-Biegung bis an den Nachbarschenkel (Kassette, Schale). Die durchlaufende Lasche geht bis auf den Spalt an die Innenfläche des Nachbarschenkels, die andere endet mit dem Spalt an ihr. Steht nur an einem der beiden Schenkel eine Stirnlasche, läuft sie bis an den anderen Schenkel. Die Stirnlaschen brauchen den Eckfreischnitt und müssen nach innen zeigen.")));
+        } else if (f.type === "kroepfung") {
+          out.push(this.section("Kröpfung", baseSel,
+            E("Schenkel Nr.", "leg", { unit: "", allowNeg: false, allowZero: false }),
+            E("Lage der Kröpflinie ab Schenkelanfang", "s", { allowNeg: false }),
+            this.select("Steg zur Linie", JOG_POS, ["vor", "hinter"].includes(f.pos) ? f.pos : "mitte", (v) => this.set(f, "pos", v, "Steg zur Linie")),
+            E("Versatz", "h", { allowNeg: false, allowZero: false }),
+            this.select("Versatz gemessen", JOG_REFS, ["gesamt", "innen"].includes(f.ref) ? f.ref : "flaeche", (v) => this.set(f, "ref", v, "Versatz gemessen")),
+            E("Kröpfwinkel", "angle", { unit: "°", allowNeg: false, allowZero: false }),
+            dirSeg("Richtung"),
+            this.seg("Feste Seite", [["anfang", "Anfang"], ["ende", "Ende"]], f.fixed === "ende" ? "ende" : "anfang", (v) => this.set(f, "fixed", v, "Feste Seite")),
+            this.check("Projizierte Länge beibehalten", f.keep !== false, (v) => this.set(f, "keep", v, "Projizierte Länge")),
+            opt("Innenradius (mm)", "ri", "leer = wie Kantteil"),
+            h("p", { class: "hint" }, "Kröpft einen Schenkel an einer Linie quer über die ganze Kantlänge: zwei gleich große Gegenbiegungen, der Rest des Schenkels liegt um den Versatz höher (auf) oder tiefer (ab). Fläche zu Fläche misst von Oberseite zu Oberseite, über alles bis zur äußeren Fläche, lichtes Maß zwischen den Blechflächen. Mit »projizierte Länge« bleibt das Schenkelende an seiner Stelle; sonst behält das Stück hinter der Kröpfung seine Länge. Feste Seite: welcher Teil liegen bleibt (Anfang = Seite vor der Linie). Die Schenkel hinter der Kröpfung zählen danach zwei weiter (Steg und Rest).")));
         } else if (f.type === "stanzung") {
           const form = ["rechteck", "langloch"].includes(f.form) ? f.form : "rund";
           out.push(this.section("Stanzwerkzeug", baseSel,

@@ -61,6 +61,7 @@ export const BEFEHLSHILFE = {
   lasche: "Lasche an eine Blechkante anbiegen.",
   umschlag: "Blechkante umschlagen (Falz), z. B. als Kantenschutz.",
   durchzug: "Kragen um eine Bohrung im Blech hochziehen, z. B. für Gewinde in dünnem Blech.",
+  kroepfung: "Schenkel an einer Linie um einen Versatz kröpfen (Z-Abkantung mit zwei Gegenbiegungen).",
   eckeschliessen: "Spalt zwischen zwei Laschen an einer Blechecke schließen.",
   stanzung: "Stanzform (Sicke, Lüftungsschlitz, Ausklinkung) ins Blech setzen.",
   konturwalzen: "Blech aus einer offenen Kontur über eine Länge rollen, z. B. für Zylinder und Rinnen.",

@@ -699,6 +699,7 @@ export function createKernel(R) {
         return { type: "durchzug", leg: E(f.leg ?? "1", "Schenkel"), s: lst(f.s ?? "20", "Lage entlang"), y: lst(f.y ?? "50", "Lage längs"), d: E(f.d ?? "8", "Innendurchmesser"), height: E(f.height ?? "6", "Kragenhöhe"), dir: sg, d0: opt(f.d0, "Vorloch") };
       }
       if (f.type === "eckeschliessen") return { type: "eckeschliessen", bend: E(f.bend ?? "1", "Biegung"), side: f.side === "hinten" ? "hinten" : "vorne", through: f.through === "b" ? "b" : "a", gap: opt(f.gap, "Spalt") ?? 0 };
+      if (f.type === "kroepfung") return { type: "kroepfung", leg: E(f.leg ?? "1", "Schenkel"), s: E(f.s ?? "50", "Lage der Kröpflinie"), h: E(f.h ?? "10", "Versatz"), ref: ["gesamt", "innen"].includes(f.ref) ? f.ref : "flaeche", angle: E(f.angle ?? "90", "Kröpfwinkel"), dir: sg, pos: ["vor", "hinter"].includes(f.pos) ? f.pos : "mitte", fixed: f.fixed === "ende" ? "ende" : "anfang", keep: f.keep !== false, ri: opt(f.ri, "Innenradius") };
       if (f.type === "stanzung") {
         const lst = (x, label) => splitList(String(x ?? "")).map((v, k) => E(v, `${label} ${k + 1}`));
         const form = ["rechteck", "langloch"].includes(f.form) ? f.form : "rund";
@@ -1477,7 +1478,8 @@ export function createKernel(R) {
           case "umschlag":
           case "durchzug":
           case "eckeschliessen":
-          case "stanzung": {
+          case "stanzung":
+          case "kroepfung": {
             const bi = feats.findIndex((g) => g.id === f.base);
             const tool = state.tools.get(f.base);
             if (bi < 0 || bi > i || !tool?.sheet) throw new Error(missingRef(f.base, "Kantteil", f));
