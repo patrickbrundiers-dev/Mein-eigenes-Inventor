@@ -1,6 +1,7 @@
 // Arbeitselemente in der Oberfläche (Inventor »Arbeitselemente«, Fusion »Konstruieren«): Erzeugen durch Anklicken mit
 // erkannter Art und Vorschau, Bezüge im 3D-Fenster wählen, Griff zum Ziehen des Abstands, Anzeige mit Bezügen,
 // Auswahl im 3D-Fenster und Sichtbarkeit. Die Rechnung steht in src/core/datums.js und src/core/datumpick.js.
+import { planeLabel } from "../core/ebenennamen.js";
 import { h, toast } from "./dom.js";
 import { resolveParams, evaluate } from "../core/expr.js";
 import { planeFrame, planeFromFace, v3, toWorld } from "../core/geom.js";
@@ -197,7 +198,7 @@ export function classifyPick(app, e) {
   const dh = v.pickDatum(e.clientX, e.clientY);
   const fromKey = (key) => {
     if (!key) return null;
-    if (ORIGIN[key]) return { kind: ORIGIN[key].kind, ref: key, label: ORIGIN[key].label };
+    if (ORIGIN[key]) return { kind: ORIGIN[key].kind, ref: key, label: ORIGIN[key].kind === "plane" ? planeLabel(key) : ORIGIN[key].label };
     if (key.startsWith("datum:")) {
       const f = part?.features.find((x) => x.id === key.slice(6));
       // 3D-Pfad (3D-Skizze) als Kurve: Stützpunkte aus dem Ergebnis
@@ -453,7 +454,7 @@ export function datumPropsPanel(props, part, f, E) {
   const refRow = (key, want) => {
     const v = f[key], label = LABEL[key] || key;
     const opts = [];
-    if (want === "plane") opts.push(["XY", "XY-Ebene"], ["XZ", "XZ-Ebene"], ["YZ", "YZ-Ebene"], ...before("arbeitsebene").map((g) => [g.id, g.name]));
+    if (want === "plane") opts.push(...["XY", "XZ", "YZ"].map((x) => [x, planeLabel(x)]), ...before("arbeitsebene").map((g) => [g.id, g.name]));
     if (want === "axis") { if (mode === "winkel" && key === "axis") opts.push(["u", "x-Richtung der Ebene"], ["v", "y-Richtung der Ebene"]); opts.push(["X", "X-Achse"], ["Y", "Y-Achse"], ["Z", "Z-Achse"], ...before("arbeitsachse").map((g) => [g.id, g.name])); }
     if (want === "point") opts.push(["O", "Ursprung"], ...before("arbeitspunkt").map((g) => [g.id, g.name]), ["frei", "Koordinaten"]);
     const snap = snapLabel(v);

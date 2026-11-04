@@ -1,4 +1,5 @@
 // Modellbrowser: Projekt-Dokumente und Feature-Liste des aktiven Bauteils
+import { planeLabel } from "../core/ebenennamen.js";
 import { h, icon, contextMenu, promptDialog } from "./dom.js";
 import { deleteGrid } from "./achsraster.js";
 import { FEATURE_NAMES } from "./app.js";
@@ -190,7 +191,7 @@ export class Tree {
     oli.append(this.node({ label: "Ursprung", ic: "origin", twist: this.collapsed.has(ok + ":open") ? "▾" : "▸", onTwist: () => this.toggle(ok + ":open"), cls: "group" }));
     if (this.collapsed.has(ok + ":open") || oOpen) {
       const ou = h("ul");
-      for (const [pl, label] of [["XY", "XY-Ebene"], ["XZ", "XZ-Ebene"], ["YZ", "YZ-Ebene"]]) {
+      for (const [pl, label] of ["XY", "XZ", "YZ"].map((x) => [x, planeLabel(x)])) {
         ou.append(h("li", {}, this.node({ label, ic: "plane", onClick: () => {}, onDbl: () => app.createSketch({ ref: pl }), title: label + " – Doppelklick: neue Skizze",
           onMenu: (e) => contextMenu(e.clientX, e.clientY, [{ label: "Neue Skizze auf " + label, icon: "sketch", run: () => app.createSketch({ ref: pl }) }]) })));
       }

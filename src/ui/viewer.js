@@ -216,7 +216,9 @@ export class Viewer {
       const s = 60 / this.pixelsPerUnit();
       this.triad.scale.setScalar(s);
       if (this.directGlyph) this.directGlyph.scale.setScalar(70 / this.pixelsPerUnit());
+      const t0 = performance.now();
       r.render(this.scene, this.camera);
+      if (this.showFps) this.updateFps(now, performance.now() - t0);
       this.placeMeasureLabel();
       this.placeHoleNotes();
       // ViewCube
@@ -238,6 +240,14 @@ export class Viewer {
     requestAnimationFrame(loop);
   }
   render() { this.needsRender = true; }
+  /** Bildrate (Runde 2, W7): gezeichnete Bilder der letzten Sekunde und Zeichenzeit des letzten Bildes */
+  updateFps(now, ms) {
+    if (!this.fpsEl) { this.fpsEl = document.createElement("div"); this.fpsEl.className = "fps-meter"; this.container.append(this.fpsEl); }
+    this.fpsEl.hidden = false;
+    (this.fpsT ||= []).push(now);
+    while (this.fpsT.length && now - this.fpsT[0] > 1000) this.fpsT.shift();
+    this.fpsEl.textContent = `${this.fpsT.length} Bilder/s · ${ms.toFixed(1).replace(".", ",")} ms`;
+  }
 
   // ---------- Drehen um den Punkt unter dem Mauszeiger ----------
   bindPivotOrbit() {
@@ -306,6 +316,8 @@ export class Viewer {
   }
   applyPrefs(v) {
     const c = this.controls;
+    this.showFps = !!v["ansicht.bildrate"];
+    if (this.fpsEl) this.fpsEl.hidden = !this.showFps;
     if (v["ansicht.beleuchtung"] !== this.lightPreset) { this.lightPreset = v["ansicht.beleuchtung"]; this.applyLighting(); this.render(); }
     // Drehen um den Punkt unter dem Mauszeiger übernimmt bindPivotOrbit; OrbitControls dreht dann nicht selbst
     this.pivotOrbit = v["ansicht.drehpunktCursor"] !== false;

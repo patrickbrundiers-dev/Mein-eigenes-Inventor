@@ -1,4 +1,6 @@
 // Anwendungssteuerung: Projektzustand, Rückgängig, Neuaufbau, Auswahl, Modi
+import { setColorVision } from "../core/farbsehen.js";
+import { setPlaneNames } from "../core/ebenennamen.js";
 import { themeById, themeVars } from "../core/themes.js";
 import { Viewer } from "./viewer.js";
 import { problemsDialog, quickCounts, countText } from "./pruefung.js";
@@ -1388,6 +1390,15 @@ export class App {
   applyPrefs(keys) {
     const p = this.prefs;
     if (!keys || keys.some((k) => k === "darstellung.schema" || k === "darstellung.eigenerHintergrund" || k === "darstellung.hintergrund")) this.applyTheme();
+    {
+      // Runde 2, Etappe 2: Meldungen, Statusleiste, Navigationsleiste, Dialogknöpfe, Farbsehschwäche als Attribute am Wurzelelement
+      const d = document.documentElement.dataset;
+      d.meldungen = p.get("oberflaeche.meldungen"); d.navPos = p.get("oberflaeche.navPosition"); d.navGroesse = p.get("oberflaeche.navGroesse");
+      d.navLeerlauf = p.get("oberflaeche.navLeerlauf"); d.dialogKnoepfe = p.get("oberflaeche.dialogKnoepfe"); d.farbsehen = p.get("darstellung.farbsehen");
+      d.statusleiste = p.get("oberflaeche.statusleiste") ? "an" : "aus";
+      setColorVision(d.farbsehen);
+      if (!keys || keys.includes("ansicht.ebenennamen")) { setPlaneNames(p.get("ansicht.ebenennamen")); if (keys) { this.tree.render(); this.props?.render?.(); } }
+    }
     if (!keys || keys.includes("oberflaeche.anordnung") || keys.includes("oberflaeche.nurSymbole")) {
       document.body.classList.toggle("kompakt", p.get("oberflaeche.anordnung") === "kompakt");
       document.body.classList.toggle("rb-nur-symbole", !!p.get("oberflaeche.nurSymbole"));

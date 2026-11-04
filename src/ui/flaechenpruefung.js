@@ -1,6 +1,7 @@
 // Flächen prüfen (SolidCraft-Abgleich E4): Zebra, Umgebungskarte, Krümmungskarte mit Mindestradius, Krümmungskamm,
 // Isokurven, Silhouette, Kantenstetigkeit, Zugänglichkeit und Körper vergleichen. Rechnung: src/core/flaechenpruefung.js
 // (Netz) und Kern (surfaceAnalysis, compareBodies).
+import { meaning } from "../core/farbsehen.js";
 import { h, toast, modal, fmtNum } from "./dom.js";
 import { vertexCurvature, minRadiusOf, curvatureColor, accessibility, continuityClass, curvatureComb, SURFACE_CHECKS } from "../core/flaechenpruefung.js";
 export { SURFACE_CHECKS };
@@ -70,7 +71,7 @@ export async function applySurfaceCheck(app, mode, { rMin = 2, dir = "Z+" } = {}
         if (!m?.positions) continue;
         const pts = [];
         for (let i = 0; i < m.positions.length; i += 3) pts.push([m.positions[i], m.positions[i + 1], m.positions[i + 2]]);
-        lines.push({ pts, color: c.color, onTop: true });
+        lines.push({ pts, color: c.cls === "g1" ? meaning("gut") : c.cls === "knick" ? meaning("schlecht") : c.color, onTop: true });
       }
     }
     v.setAnalysis({ lines });
@@ -79,7 +80,7 @@ export async function applySurfaceCheck(app, mode, { rMin = 2, dir = "Z+" } = {}
     const d = DIRS[dir] || DIRS["Z+"];
     const meshes = v.pickables.map((pk) => { pk.mesh.updateMatrixWorld(); const g = geoArrays(pk.mesh); const M = pk.mesh.matrixWorld.elements; return { mesh: pk.mesh, ...g, positions: worldPos(g.positions, M), normals: worldDir(g.normals, M) }; }).filter((m) => m.indices && m.normals);
     const r = accessibility(meshes, d);
-    const col = { 0: [0.85, 0.15, 0.12], 1: [0.15, 0.7, 0.35], 2: [0.6, 0.62, 0.66] };
+    const col = { 0: meaning("schlecht"), 1: meaning("gut"), 2: [0.6, 0.62, 0.66] };
     const byMesh = new Map(meshes.map((m, i) => [m.mesh, r.vis[i]]));
     v.setAnalysis({ colors: (mesh) => { const vis = byMesh.get(mesh); if (!vis) return null; const out = new Float32Array(vis.length * 3); vis.forEach((x, i) => out.set(col[x], i * 3)); return out; } });
     const tot = r.area.frei + r.area.verdeckt + r.area.abgewandt || 1;
@@ -150,7 +151,7 @@ export function compareBodiesDialog(app) {
           h("tr", {}, h("td", {}, "nur in A (rot)"), h("td", { class: "num" }, cm3(r.onlyA))),
           h("tr", {}, h("td", {}, "nur in B (grün)"), h("td", { class: "num" }, cm3(r.onlyB))),
           h("tr", {}, h("td", {}, "gemeinsam"), h("td", { class: "num" }, cm3(r.common))))));
-      app.viewer.setAnalysis({ meshes: [r.meshA && { mesh: r.meshA, color: [0.85, 0.15, 0.12] }, r.meshB && { mesh: r.meshB, color: [0.15, 0.7, 0.35] }].filter(Boolean) });
+      app.viewer.setAnalysis({ meshes: [r.meshA && { mesh: r.meshA, color: meaning("schlecht") }, r.meshB && { mesh: r.meshB, color: meaning("gut") }].filter(Boolean) });
       app.lastCompare = r;
     } catch (e) { out.replaceChildren(h("p", { class: "msg err" }, "Vergleich fehlgeschlagen: " + e.message)); }
     return false;

@@ -1,4 +1,5 @@
 // Eigenschaften-Fenster und Dialoge (Parameter, Stückliste, Zuschnittliste, Einstellungen)
+import { planeLabel } from "../core/ebenennamen.js";
 import { PLASTIC_ARTS, plasticDefaults } from "../core/kunststoff.js";
 import { encodeCloud, decodeCloud, decimateCloud } from "../core/punktwolke.js";
 import { paramUsages, paramGraphSvg, moveParam } from "../core/paramgraph.js";
@@ -1495,7 +1496,7 @@ export class Props {
     })), true);
   }
   /** Ebenen- und Achsenwahl mit Arbeitselementen */
-  planeChoices(part, f) { return [["XY", "XY-Ebene"], ["XZ", "XZ-Ebene"], ["YZ", "YZ-Ebene"], ...this.datumsBefore(part, f, "arbeitsebene").map((g) => ["datum:" + g.id, g.name])]; }
+  planeChoices(part, f) { return [...["XY", "XZ", "YZ"].map((x) => [x, planeLabel(x)]), ...this.datumsBefore(part, f, "arbeitsebene").map((g) => ["datum:" + g.id, g.name])]; }
   axisChoices(part, f) { return [["X", "X-Achse"], ["Y", "Y-Achse"], ["Z", "Z-Achse"], ...this.datumsBefore(part, f, "arbeitsachse").map((g) => ["datum:" + g.id, g.name])]; }
   /** Eigenschaften der Körper-Werkzeuge (Stufe 38) */
   bodyToolProps(part, f, E) {

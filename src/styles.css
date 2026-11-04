@@ -1137,3 +1137,27 @@ body.kompakt #props .sec { margin: 0; }
 .tp-accent { right: 6px; bottom: 6px; width: 14px; height: 8px; border-radius: 3px; }
 .theme-pic-system .half-l { left: 0; top: 0; bottom: 0; width: 50%; background: linear-gradient(180deg, #eef1f5, #dfe5ec); }
 .theme-pic-system .half-r { right: 0; top: 0; bottom: 0; width: 50%; background: linear-gradient(180deg, #2f333a, #23262b); }
+
+/* Runde 2, Etappe 2 – G4 Meldungen und Statusleiste */
+:root[data-meldungen="mitte"] #toasts { right: auto; left: 50%; transform: translateX(-50%); align-items: center; }
+:root[data-statusleiste="aus"] { --status-h: 0px; }
+:root[data-statusleiste="aus"] #status { display: none; }
+/* G6 Navigationsleiste: Lage, Größe, blass im Leerlauf */
+:root[data-nav-pos="mitte"] .view-tools { right: auto; left: 50%; transform: translateX(-50%); }
+:root[data-nav-pos="links"] .view-tools { right: auto; left: 12px; }
+:root[data-nav-pos="links"] #stage.split .view-tools, :root[data-nav-pos="mitte"] #stage.split .view-tools { right: auto; }
+:root[data-nav-groesse="kompakt"] .view-tools { padding: 2px; border-radius: 9px; }
+:root[data-nav-groesse="kompakt"] .view-tools > button { width: 26px; height: 26px; }
+:root[data-nav-groesse="kompakt"] .view-tools svg { width: 15px; height: 15px; }
+:root[data-nav-leerlauf="blass"] .view-tools { opacity: .45; transition: opacity var(--t-med); }
+:root[data-nav-leerlauf="blass"] .view-tools:hover, :root[data-nav-leerlauf="blass"] .view-tools:focus-within { opacity: 1; }
+/* W1 Dialogknöpfe oben */
+:root[data-dialog-knoepfe="oben"] .dialog > footer { order: -1; border-top: 0; border-bottom: 1px solid var(--steel-2); }
+:root[data-dialog-knoepfe="oben"] .dialog > header { order: -2; }
+/* G8 Farbsehschwäche: Bedeutungsfarben (Okabe-Ito) */
+:root[data-farbsehen="protan"], :root[data-farbsehen="deutan"] { --ok: #0072b2; --err: #d55e00; --warn: #b58a00; --err-soft: #fbe3cf; }
+:root[data-farbsehen="tritan"] { --ok: #009e73; --err: #c0392b; --warn: #cc79a7; }
+:root[data-farbsehen="protan"][data-theme="dark"], :root[data-farbsehen="deutan"][data-theme="dark"] { --ok: #56b4e9; --err: #e69f00; --err-soft: #4a3418; }
+/* W7 Bildrate */
+.fps-meter { position: absolute; left: 10px; top: 10px; z-index: 4; padding: 2px 8px; border-radius: var(--radius-m); background: color-mix(in srgb, var(--steel-0) 85%, transparent); border: 1px solid var(--steel-2); font: 500 var(--fs-xs) var(--ui); color: var(--ink-soft); font-variant-numeric: tabular-nums; pointer-events: none; }
+.fps-meter[hidden] { display: none; }
