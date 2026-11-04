@@ -1,5 +1,5 @@
 // Blech, zweite Ausbaustufe (ADR-0008): Lasche, Umschlag, Stirnlasche mit Eckfreischnitt, Durchzug und Konturlasche
-// auf dem Kantteil; Stufe 48: Ecke schließen und Stanzwerkzeug. Reine Rechnung: Plan aller Biegungen, Abwicklung als Umriss mit Löchern und Biegelinien.
+// auf dem Kantteil; Stufe 48: Ecke schließen und Stanzwerkzeug; Kröpfung (Z-Abkantung mit zwei Gegenbiegungen in einem Schenkel). Reine Rechnung: Plan aller Biegungen, Abwicklung als Umriss mit Löchern und Biegelinien.
 //
 // Koordinaten wie beim Kantteil: Querschnitt in (u, v) = Plan-Ebene, Kantlänge y von 0 bis L.
 // Abwicklung: x längs der Abwicklung (0 = freies Ende von Schenkel 1), y längs der Kantlänge.
@@ -7,7 +7,10 @@
 import { planKantteil, bendCut, kantteilOutline } from "./blech.js";
 
 const fmt = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
-export const SHEET_FEATURES = ["lasche", "umschlag", "durchzug", "eckeschliessen", "stanzung"];
+export const SHEET_FEATURES = ["lasche", "umschlag", "durchzug", "eckeschliessen", "stanzung", "kroepfung"];
+const DEG = Math.PI / 180;
+export const JOG_REFS = [["flaeche", "Fläche zu Fläche (Oberseite–Oberseite)"], ["gesamt", "über alles (außen)"], ["innen", "lichtes Maß (zwischen den Flächen)"]];
+export const JOG_POS = [["vor", "vor der Linie"], ["mitte", "mittig auf der Linie"], ["hinter", "hinter der Linie"]];
 export const LASCHE_EDGES = [["ende", "Ende (letzter Schenkel)"], ["anfang", "Anfang (erster Schenkel)"], ["vorne", "Stirnseite vorne (y = 0)"], ["hinten", "Stirnseite hinten (y = Länge)"]];
 export const HEM_KINDS = [["geschlossen", "geschlossen (zugedrückt)"], ["offen", "offen mit Spalt"]];
 export const PUNCH_FORMS = [["rund", "rund"], ["rechteck", "Rechteck"], ["langloch", "Langloch"]];
@@ -17,6 +20,7 @@ export const defaultLasche = (base) => ({ type: "lasche", base, edge: "ende", le
 export const defaultUmschlag = (base) => ({ type: "umschlag", base, edge: "ende", kind: "geschlossen", length: "15", gap: "1", dir: "auf" });
 export const defaultDurchzug = (base) => ({ type: "durchzug", base, leg: "1", s: "20", y: "50", d: "8", height: "4", dir: "auf", d0: "" });
 export const defaultEckeSchliessen = (base) => ({ type: "eckeschliessen", base, bend: "1", side: "vorne", through: "a", gap: "0.5" });
+export const defaultKroepfung = (base) => ({ type: "kroepfung", base, leg: "2", s: "50", h: "10", ref: "flaeche", angle: "90", dir: "auf", pos: "mitte", fixed: "anfang", keep: true, ri: "" });
 export const defaultStanzung = (base) => ({ type: "stanzung", base, leg: "2", s: "40", y: "50", form: "langloch", d: "10", a: "30", b: "10" });
 
 /**
@@ -62,8 +66,20 @@ export function planSheet(base, extras = []) {
   let anchorLeg = 0;
   const partial = [], stirn = [], holes = [], closes = [], stanz = [];
   const sideTaken = { anfang: false, ende: false };
+  const jogs = []; // Kröpfungen mit fester Seite am Ende: Schenkel vor der Kröpfung, Versatz zum Zurückschieben
   for (const e of extras) {
     const sg = e.dir === "ab" ? -1 : 1;
+    if (e.type === "kroepfung") {
+      const j = Math.round(e.leg) - 1;
+      const r = applyJog(e, j, { legs, angles, ris, refs, t, ri });
+      // Schenkel- und Biegungsnummern der Features davor rücken hinter der Kröpfung um zwei weiter
+      const shiftLeg = (x) => (Math.round(x.leg) - 1 > j ? { ...x, leg: Math.round(x.leg) + 2 } : x);
+      for (const arr of [holes, stanz, stirn]) arr.forEach((x, q) => { arr[q] = shiftLeg(x); });
+      closes.forEach((x, q) => { if (Math.round(x.bend) - 1 >= j) closes[q] = { ...x, bend: Math.round(x.bend) + 2 }; });
+      for (const g of jogs) if (g.leg > j) g.leg += 2;
+      if (e.fixed === "ende") jogs.push({ leg: j, ...r });
+      continue;
+    }
     if (e.type === "durchzug") { holes.push(e); continue; }
     if (e.type === "eckeschliessen") { closes.push(e); continue; }
     if (e.type === "stanzung") { stanz.push(e); continue; }
@@ -79,11 +95,25 @@ export function planSheet(base, extras = []) {
       if (!(e.length > 0)) throw new Error("Lasche: Länge > 0 angeben");
       len = e.length; ang = sg * e.angle; r = e.ri ?? ri; rf = ref === "links" || ref === "rechts" ? "aussen" : ref;
     }
-    if (e.edge === "anfang") { legs.unshift(len); angles.unshift(ang); ris.unshift(r); refs.unshift(rf); anchorLeg++; }
+    if (e.edge === "anfang") { legs.unshift(len); angles.unshift(ang); ris.unshift(r); refs.unshift(rf); anchorLeg++; for (const g of jogs) g.leg++; }
     else { legs.push(len); angles.push(ang); ris.push(r); refs.push(rf); }
   }
   const anchor = anchorLeg ? { leg: anchorLeg, at: [0, 0], dir: 0 } : null;
-  const P = (o) => planKantteil({ legs, angles, t, ri, k, kOf, ref, ris, refs, anchor, ...o });
+  const P0 = (o) => planKantteil({ legs, angles, t, ri, k, kOf, ref, ris, refs, anchor, ...o });
+  const plan0 = P0({});
+  // Feste Seite am Ende: das Teil um den Versatz der Kröpfung zurückschieben, die Seite hinter der Linie bleibt liegen
+  const T = [0, 0];
+  for (const g of jogs) {
+    const c = plan0.center[g.leg];
+    T[0] -= g.sg * g.hm * c.n[0] + g.dp * c.d[0];
+    T[1] -= g.sg * g.hm * c.n[1] + g.dp * c.d[1];
+  }
+  const moved = Math.hypot(T[0], T[1]) > 1e-12;
+  const mv = (q) => [q[0] + T[0], q[1] + T[1]];
+  const P = (o) => {
+    const pl = Object.keys(o).length ? P0(o) : plan0;
+    return moved ? { ...pl, center: pl.center.map((x) => ({ ...x, a: mv(x.a), b: mv(x.b) })), bends: pl.bends.map((x) => ({ ...x, c: mv(x.c) })) } : pl;
+  };
   const plan = P({});
   const n = plan.center.length;
 
@@ -187,6 +217,42 @@ export function planSheet(base, extras = []) {
   }
 
   return { plan, legs, angles, parts, ends, pierce, punch, flat: flatModel(plan, L, t, { k, kOf }, parts, ends, pierce, punch) };
+}
+
+/**
+ * Kröpfung (Z-Abkantung) in Schenkel j einsetzen: Schenkel teilen, Steg mit zwei gleich großen Gegenbiegungen dazwischen.
+ * e: {s Lage der Kröpflinie ab Schenkelanfang (Schenkelmaß), h Versatz, ref flaeche|gesamt|innen, angle Kröpfwinkel,
+ * dir auf|ab, pos vor|mitte|hinter (Steg zur Linie), keep projizierte Länge beibehalten, ri Innenradius oder leer}.
+ * Biegungen der Kröpfung mit Maßbezug Mitte Blech, damit beide Gegenbiegungen gleich zählen. Ändert legs, angles, ris, refs.
+ * Rückgabe { hm Versatz der Mittellinie, sg Richtung, dp Längenzuwachs in Schenkelrichtung (ohne »projizierte Länge«) }.
+ */
+export function applyJog(e, j, { legs, angles, ris, refs, t, ri }) {
+  const fmtL = (x) => fmt(x) + " mm";
+  if (!(j >= 0 && j < legs.length)) throw new Error(`Kröpfung: Schenkel ${j + 1} gibt es nicht (1 bis ${legs.length})`);
+  const a = e.angle ?? 90;
+  if (!(a >= 1 && a <= 90)) throw new Error("Kröpfung: Kröpfwinkel zwischen 1° und 90° angeben");
+  if (!(e.h > 0)) throw new Error("Kröpfung: Versatz > 0 angeben");
+  const th = a * DEG, r = e.ri ?? ri, sg = e.dir === "ab" ? -1 : 1;
+  if (!(r >= 0)) throw new Error("Kröpfung: Innenradius ≥ 0 angeben");
+  const hm = e.ref === "gesamt" ? e.h - t : e.ref === "innen" ? e.h + t : e.h;
+  const cm = (r + t / 2) * Math.tan(th / 2); // Rücksprung je Gegenbiegung auf der Mittellinie
+  const hMin = 2 * cm * Math.sin(th);
+  if (hm < hMin - 1e-9) {
+    const add = e.ref === "gesamt" ? t : e.ref === "innen" ? -t : 0;
+    throw new Error(`Kröpfung: Versatz zu klein für Radius ${fmt(r)} und ${fmt(a)}° – mindestens ${fmtL(hMin + add)} (${{ gesamt: "über alles", innen: "lichtes Maß" }[e.ref] || "Fläche zu Fläche"})`);
+  }
+  const m = hm / Math.sin(th), p = m * Math.cos(th), wx = t / (2 * Math.sin(th));
+  const s0 = e.s - p / 2 + (e.pos === "vor" ? -wx : e.pos === "hinter" ? wx : 0);
+  const keep = e.keep !== false;
+  const A = s0, B = legs[j] - s0 - (keep ? p : 0);
+  const prev = j > 0 ? bendCut(angles[j - 1], ris[j - 1], t, refs[j - 1]) : 0, next = j < angles.length ? bendCut(angles[j], ris[j], t, refs[j]) : 0;
+  if (A - cm - prev < -1e-6) throw new Error(`Kröpfung: Linie zu nah am Anfang von Schenkel ${j + 1} – Lage mindestens ${fmtL(e.s + prev + cm - A)}`);
+  if (B - cm - next < -1e-6) throw new Error(`Kröpfung: Linie zu nah am Ende von Schenkel ${j + 1} – Lage höchstens ${fmtL(e.s - (cm + next - B))}`);
+  legs.splice(j, 1, A, m, B);
+  angles.splice(j, 0, sg * a, -sg * a);
+  ris.splice(j, 0, r, r);
+  refs.splice(j, 0, "mitte", "mitte");
+  return { hm, sg, dp: keep ? 0 : p };
 }
 
 /**
