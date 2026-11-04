@@ -11,9 +11,39 @@ const fmt = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
  * 3D-Skizze: Punktzug mit Eckradius r (0 = scharfe Ecken). Rückgabe der Stücke
  * [{t: "line", a, b} | {t: "arc", a, m, b}] und der Gesamtlänge. Geschlossen verbindet zum ersten Punkt.
  */
-export function path3d(pts, { radius = 0, closed = false } = {}) {
+/**
+ * 3D-Spline (SolidCraft »3D spline«): glatte Kurve durch die Punkte (Catmull-Rom, zentripetal), n Stützpunkte je Abschnitt.
+ * Geschlossen läuft die Kurve glatt zum ersten Punkt zurück.
+ */
+export function catmullRom3(pts, { closed = false, n = 12 } = {}) {
+  const P = closed ? [pts.at(-1), ...pts, pts[0], pts[1]] : [v3.sub(v3.mul(pts[0], 2), pts[1]), ...pts, v3.sub(v3.mul(pts.at(-1), 2), pts.at(-2))];
+  const out = [pts[0]];
+  const segs = closed ? pts.length : pts.length - 1;
+  for (let i = 0; i < segs; i++) {
+    const [p0, p1, p2, p3] = [P[i], P[i + 1], P[i + 2], P[i + 3]];
+    const tj = (a, b) => Math.sqrt(Math.max(v3.dist(a, b), 1e-9));
+    const t1 = tj(p0, p1), t2 = t1 + tj(p1, p2), t3 = t2 + tj(p2, p3);
+    for (let k = 1; k <= n; k++) {
+      const t = t1 + ((t2 - t1) * k) / n;
+      const L = (a, b, ta, tb) => v3.add(v3.mul(a, (tb - t) / (tb - ta)), v3.mul(b, (t - ta) / (tb - ta)));
+      const A1 = L(p0, p1, 0, t1), A2 = L(p1, p2, t1, t2), A3 = L(p2, p3, t2, t3);
+      const B1 = L(A1, A2, 0, t2), B2 = L(A2, A3, t1, t3);
+      out.push(L(B1, B2, t1, t2));
+    }
+  }
+  return out;
+}
+
+export function path3d(pts, { radius = 0, closed = false, spline = false } = {}) {
   if (pts.length < 2) throw new Error("3D-Skizze braucht mindestens 2 Punkte");
   for (let i = 1; i < pts.length; i++) if (v3.dist(pts[i], pts[i - 1]) < 1e-6) throw new Error(`Punkt ${i + 1} liegt auf Punkt ${i}`);
+  if (spline) {
+    if (pts.length < 3) throw new Error("3D-Spline braucht mindestens 3 Punkte");
+    const smp = catmullRom3(pts, { closed });
+    let len = 0;
+    for (let i = 1; i < smp.length; i++) len += v3.dist(smp[i], smp[i - 1]);
+    return { pieces: [{ t: "spline", a: smp[0], b: smp.at(-1), pts: smp, through: pts.map((q) => [...q]), closed }], length: len, closed };
+  }
   if (closed && pts.length < 3) throw new Error("Geschlossene 3D-Skizze braucht mindestens 3 Punkte");
   const P = closed ? [...pts] : pts;
   const n = P.length;

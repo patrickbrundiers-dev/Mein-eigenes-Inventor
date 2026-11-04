@@ -2,7 +2,11 @@
 // Schlüssel = Knopf-ID aus src/ui/ribbon.js. Ein Satz, was der Befehl tut, optional ein zweiter, wie man ihn benutzt.
 // Skizzenwerkzeuge (t_…) kommen aus SKETCH_TOOLS in src/ui/sketcher.js und stehen hier nicht.
 
+import { FF_ARTEN } from "./freiflaeche.js";
+
 export const BEFEHLSHILFE = {
+  ffMenu: "Flächenmodellierung: offene Flächen erzeugen, nähen, teilen, verrunden und aufdicken.",
+  ...Object.fromEntries(FF_ARTEN.map((a) => ["ff_" + a.art, a.help])),
   // ---------- 3D-Modell ----------
   sketch: "Neue 2D-Skizze auf einer Ursprungsebene, Arbeitsebene oder ebenen Fläche anlegen.",
   skizze3d: "Skizze im Raum: Linien und Bögen zwischen 3D-Punkten, z. B. als Pfad für Rohre und Profile.",
@@ -20,6 +24,7 @@ export const BEFEHLSHILFE = {
   chamfer: "Kanten mit einer Fase brechen, gleichschenklig oder mit zwei Abständen.",
   shell: "Körper aushöhlen und gewählte Flächen offen lassen, mit einheitlicher Wandstärke.",
   lochblech: "Lochraster auf einer ebenen Fläche: Rundloch versetzt oder gerade, Quadratloch, Langloch, mit freiem Rand. Zeigt den freien Querschnitt.",
+  flaechenkurve: "3D-Pfad auf einer Fläche: Isokurve oder Skizze senkrecht auf die Fläche projiziert, z. B. als Sweep-Pfad.",
   huelle: "Quader um die gewählten Körper mit Zugabe je Seite – für Bauraum, Rohmaß und Transportmaß.",
   kombinieren: "Körper vereinigen, voneinander abziehen oder nur die Schnittmenge behalten.",
   stecksystem: "Zapfen und passende Schlitze für Laserteile, damit sie sich vor dem Schweißen zusammenstecken lassen.",
@@ -95,6 +100,9 @@ export const BEFEHLSHILFE = {
   skSvg: "SVG-Datei (Pfade, Linien, Rechtecke, Kreise) als Skizzengeometrie übernehmen.",
   skSplRev: "Laufrichtung der gewählten Splines umkehren (Anfang und Ende tauschen).",
   skBounds: "Rechteck aus Konstruktionslinien B × H um den Ursprung als Zeichnungsrahmen, fixiert.",
+  skSection: "Körper des Bauteils mit der Skizzenebene schneiden und den Schnitt als Linienzug übernehmen.",
+  skMeshSection: "Sichtbare Netze (auch STL) mit der Skizzenebene schneiden und als Linienzug übernehmen.",
+  skSpun: "Körper um die gewählte Linie (sonst X-Achse) gedreht in die Skizze legen: halbes Drehprofil, geschlossen.",
   skOffBreak: "Versatz-Verknüpfung der gewählten Elemente lösen, die Kopie wird frei beweglich.",
   sclean: "Endpunkte zusammenführen, doppelte und überlappende Elemente entfernen, fast gerade Linien gerade stellen.",
   autodim: "Fehlende Maße und Abhängigkeiten setzen, bis die Skizze voll bestimmt ist.",

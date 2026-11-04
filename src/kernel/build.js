@@ -31,6 +31,7 @@ import { toAxis, rollSide, gapAngle, rollAngle, rollFlat } from "../core/konturw
 import { clampStack, boltStack, boltHoles } from "../core/schraubverbindung.js";
 import { planSheet, contourLegs, punchOutline, SHEET_FEATURES } from "../core/blechplus.js";
 import { path3d } from "../core/ableiten.js";
+import { sampleChain, projectPoints } from "../core/flaechenkurve.js";
 import { applyRules } from "../core/regeln.js";
 import { quadrantPoint } from "../core/fangpunkte.js";
 import { holeText } from "../core/autodims.js";
@@ -123,13 +124,18 @@ export function createKernel(R) {
   const MIRROR_N = { YZ: [1, 0, 0], XZ: [0, 1, 0], XY: [0, 0, 1] };
   /** Draht einer 3D-Skizze */
   function path3dWire(p) {
-    return R.assembleWire(p.pieces.map((q) => (q.t === "line" ? R.makeLine(q.a, q.b) : R.makeThreePointArc(q.a, q.m, q.b))));
+    return R.assembleWire(p.pieces.map((q) => (q.t === "line" ? R.makeLine(q.a, q.b) : q.t === "spline" ? splineEdge3(q) : R.makeThreePointArc(q.a, q.m, q.b))));
+  }
+  /** 3D-Spline als B-Spline durch die abgetasteten Punkte (glatt, Toleranz 1 µm) */
+  function splineEdge3(q) {
+    return R.makeBSplineApproximation(q.pts, { tolerance: 1e-3, degMin: 3, degMax: 5, smoothing: null });
   }
   /** Punkte zum Anzeigen einer 3D-Skizze (Bögen in Stücken) */
   function samplePath(p) {
     const out = [];
     for (const q of p.pieces) {
       if (q.t === "line") { if (!out.length) out.push(q.a); out.push(q.b); continue; }
+      if (q.t === "spline") { out.push(...(out.length ? q.pts.slice(1) : q.pts)); continue; }
       if (!out.length) out.push(q.a);
       for (let k = 1; k <= 8; k++) { const u = k / 8; out.push([0, 1, 2].map((j) => (1 - u) * (1 - u) * q.a[j] + 2 * u * (1 - u) * (2 * q.m[j] - (q.a[j] + q.b[j]) / 2) + u * u * q.b[j])); }
     }
@@ -1723,7 +1729,8 @@ export function createKernel(R) {
             const p = p3 ? null : getSketch(f.path, "Pfad-Skizze");
             const chain = p3 ? null : pathChain(p.sketch);
             const spine = p3 ? path3dWire(p3) : chainWire(chain, p.frame);
-            const cfg = { frenet: f.orient !== "fest", transitionMode: "right" };
+            // Frenet kippt an Wendepunkten eines Splines (Krümmung 0) → dort korrigiertes Frenet (Profil bleibt senkrecht)
+            const cfg = { frenet: f.orient !== "fest" && !p3?.pieces.some((q) => q.t === "spline"), transitionMode: "right" };
             let tool = null;
             for (const reg of s.prof.regions) {
               let solid = R.genericSweep(loopWire(reg.outer, s.frame), spine.clone(), cfg);
@@ -2153,13 +2160,215 @@ export function createKernel(R) {
             st.info = datumSummary(f, datums.map.get(f.id));
             break;
           }
+          case "freiflaeche": {
+            // Flächenmodellierung (SolidCraft-Abgleich E2): offene Flächen als eigene Körper (kind "flaeche", ohne Masse)
+            const oc = R.getOC();
+            const art = f.art || "extrusion";
+            const wireOf = (id, what) => {
+              const p3 = state.paths.get(id);
+              if (p3) return { w: path3dWire(p3), s: null };
+              const s = getSketch(id, what);
+              return { w: chainWire(pathChain(s.sketch), s.frame), s };
+            };
+            const surfBodies = () => {
+              const ids = f.bodies || [];
+              const list = state.bodies.filter((b, i) => b.kind === "flaeche" && (!ids.length || ids.includes(i) || ids.includes(b.name)));
+              if (!list.length) throw new Error("Keine Fläche vorhanden – zuerst eine Fläche erzeugen");
+              return list;
+            };
+            const out = [];
+            let info = "";
+            if (art === "extrusion") {
+              const { w, s } = wireOf(f.sketch, "Skizze");
+              if (!s) throw new Error("Flächen-Extrusion braucht eine Skizze");
+              const L = E(f.distance ?? "50", "Abstand");
+              if (!(Math.abs(L) > 0)) throw new Error("Abstand ≠ 0");
+              let base = w;
+              if (f.symmetric) base = w.clone().translate(v3.mul(s.frame.normal, -L / 2));
+              const mk = new oc.BRepPrimAPI_MakePrism(base.wrapped, new oc.gp_Vec(...v3.mul(s.frame.normal, L)), false, true);
+              out.push(R.cast(mk.Shape()));
+              info = `Fläche extrudiert ${String(Math.abs(L)).replace(".", ",")} mm`;
+            } else if (art === "rotation") {
+              const { w, s } = wireOf(f.sketch, "Skizze");
+              if (!s) throw new Error("Flächen-Rotation braucht eine Skizze");
+              const ax = sketchAxis(s, f.axis || "y");
+              const ang = E(f.angle ?? "360", "Winkel");
+              if (!(ang > 0 && ang <= 360)) throw new Error("Winkel zwischen 0° und 360°");
+              const mk = new oc.BRepPrimAPI_MakeRevol(w.wrapped, new oc.gp_Ax1(new oc.gp_Pnt(...ax.origin), new oc.gp_Dir(...v3.norm(ax.dir))), (ang * Math.PI) / 180, false);
+              out.push(R.cast(mk.Shape()));
+              info = `Fläche gedreht ${String(ang).replace(".", ",")}°`;
+            } else if (art === "sweep") {
+              const prof = wireOf(f.sketch, "Profil").w, spine = wireOf(f.path, "Pfad").w;
+              const [sh] = R.genericSweep(prof, spine, { frenet: !state.paths.get(f.path)?.pieces.some((q) => q.t === "spline"), transitionMode: "right" }, true);
+              out.push(sh);
+              info = "Fläche entlang Pfad";
+            } else if (art === "loft" || art === "regel") {
+              const ids = (f.sections || []).filter(Boolean);
+              if (ids.length < 2) throw new Error("Mindestens zwei Kurven (Skizzen oder 3D-Pfade) wählen");
+              out.push(R.loft(ids.map((id) => wireOf(id, "Kurve").w), { ruled: art === "regel" }, true));
+              info = `${art === "regel" ? "Regelfläche" : "Fläche über"} ${ids.length} Kurven`;
+            } else if (art === "fuellung") {
+              // Begrenzungsfüllung / Patch: geschlossene Randkurve (auch räumlich) mit glatter Fläche schließen
+              const { w } = wireOf(f.sketch, "Randkurve");
+              out.push(R.makeNonPlanarFace(w));
+              info = "Fläche in Randkurve gefüllt";
+            } else if (art === "offset") {
+              const hits = facesAt((f.faces || []).map((r) => r.p));
+              if (!hits.length) throw new Error("Fläche wählen");
+              const d = E(f.distance ?? "5", "Abstand");
+              for (const { face } of hits) out.push(R.makeOffset(face.clone(), d));
+              info = `${hits.length} Fläche(n) um ${String(d).replace(".", ",")} mm versetzt`;
+            } else if (art === "kopie") {
+              const hits = facesAt((f.faces || []).map((r) => r.p));
+              if (!hits.length) throw new Error("Fläche wählen");
+              for (const { face } of hits) out.push(face.clone());
+              info = `${hits.length} Fläche(n) als Flächenkörper kopiert`;
+            } else if (art === "naehen") {
+              const list = surfBodies();
+              const sew = new oc.BRepBuilderAPI_Sewing(1e-3, true, true, true, false);
+              for (const b of list) sew.Add(b.shape.wrapped);
+              sew.Perform(new oc.Message_ProgressRange());
+              let res = R.cast(sew.SewedShape());
+              let solid = false;
+              if (f.solid !== false) { try { const so = R.makeSolid([res]); if (Math.abs(R.measureVolume(so)) > 1e-6) { res = so; solid = true; } } catch { /* offen: bleibt Fläche */ } }
+              state.bodies = state.bodies.filter((b) => !list.includes(b));
+              state.bodies.push({ shape: res, kind: solid ? "solid" : "flaeche", name: f.name || (solid ? "Genähter Körper" : "Genähte Fläche"), fid: f.id, meta: solid ? undefined : { flaeche: true, density: 0 } });
+              st.info = `${list.length} Fläche(n) genäht${solid ? " → geschlossener Körper" : " (offen, bleibt Fläche)"}`;
+              break;
+            } else if (art === "aufheben") {
+              // Verbund aufheben: Körper oder Fläche in einzelne Flächenkörper zerlegen
+              const ids = f.bodies || [];
+              const list = state.bodies.filter((b, i) => !ids.length || ids.includes(i) || ids.includes(b.name));
+              const take = ids.length ? list : list.slice(-1);
+              if (!take.length) throw new Error("Kein Körper vorhanden");
+              let n = 0;
+              for (const b of take) for (const fc of b.shape.faces) { state.bodies.push({ shape: fc.clone(), kind: "flaeche", name: `${b.name || "Fläche"}.${++n}`, fid: f.id, meta: { flaeche: true, density: 0 } }); }
+              state.bodies = state.bodies.filter((b) => !take.includes(b));
+              st.info = `${n} Einzelflächen`;
+              break;
+            } else if (art === "umkehren") {
+              const list = surfBodies();
+              for (const b of list) b.shape = R.cast(b.shape.wrapped.Reversed());
+              st.info = `Normale von ${list.length} Fläche(n) umgekehrt`;
+              break;
+            } else if (art === "begrenzung") {
+              // Begrenzungsfläche: 2–4 Randkurven (Skizzen/3D-Pfade) zu einem geschlossenen Rand, glatt gefüllt
+              const ids = (f.sections || []).filter(Boolean);
+              if (ids.length < 2) throw new Error("Mindestens zwei Randkurven wählen");
+              const edges = ids.flatMap((id) => wireOf(id, "Randkurve").w.edges);
+              let w;
+              try { w = R.assembleWire(edges); } catch { throw new Error("Die Randkurven bilden keinen geschlossenen Rand (Enden müssen sich treffen)"); }
+              out.push(R.makeNonPlanarFace(w));
+              info = `Begrenzungsfläche aus ${ids.length} Kurven`;
+            } else if (art === "verbindung") {
+              // Verbindungsfläche: glatter Übergang zwischen zwei Kurven (Loft ohne Regelung)
+              const ids = (f.sections || []).filter(Boolean);
+              if (ids.length !== 2) throw new Error("Genau zwei Kurven wählen");
+              out.push(R.loft(ids.map((id) => wireOf(id, "Kurve").w), { ruled: false }, true));
+              info = "Verbindungsfläche";
+            } else if (art === "untrim") {
+              // Trimmen aufheben: Fläche auf ihre volle Grundfläche (Parameterbereich) zurücksetzen
+              const hits = facesAt((f.faces || []).map((r) => r.p));
+              if (!hits.length) throw new Error("Fläche wählen");
+              for (const { face } of hits) {
+                const b = face.UVBounds;
+                const mk = new oc.BRepBuilderAPI_MakeFace(oc.BRep_Tool.Surface(face.wrapped), b.uMin, b.uMax, b.vMin, b.vMax, 1e-6);
+                out.push(R.cast(mk.Face()));
+              }
+              info = `${hits.length} Fläche(n) ohne Trimmung`;
+            } else if (art === "teilen") {
+              // Fläche teilen: Flächenkörper (oder Körper) entlang der Kurven einer Skizze (senkrecht zur Skizzenebene) trennen
+              const { w, s } = wireOf(f.sketch, "Trennskizze");
+              if (!s) throw new Error("Trennskizze wählen");
+              const list = state.bodies.filter((b) => (f.bodies || []).length ? f.bodies.includes(b.name) : true);
+              const big = 1e4;
+              const cutter = R.cast(new oc.BRepPrimAPI_MakePrism(w.clone().translate(v3.mul(s.frame.normal, -big)).wrapped, new oc.gp_Vec(...v3.mul(s.frame.normal, 2 * big)), false, true).Shape());
+              let n = 0;
+              for (const b of list) {
+                const A = new oc.NCollection_List_TopoDS_Shape(), T = new oc.NCollection_List_TopoDS_Shape();
+                A.Append(b.shape.wrapped); T.Append(cutter.wrapped);
+                const sp = new oc.BRepAlgoAPI_Splitter();
+                sp.SetArguments(A); sp.SetTools(T); sp.Build(new oc.Message_ProgressRange());
+                if (sp.HasErrors()) throw new Error("Teilen fehlgeschlagen");
+                b.shape = R.cast(sp.Shape());
+                n += b.shape.faces.length;
+              }
+              st.info = `${list.length} Körper geteilt, ${n} Flächen`;
+              break;
+            } else if (art === "dicke") {
+              // Dicke vergeben: Flächenkörper zu Volumenkörpern aufdicken
+              const list = surfBodies();
+              const d = E(f.distance ?? "2", "Dicke");
+              if (!(Math.abs(d) > 0)) throw new Error("Dicke ≠ 0");
+              for (const b of list) {
+                const m = new oc.BRepOffsetAPI_MakeThickSolid();
+                m.MakeThickSolidBySimple(b.shape.wrapped, d);
+                m.Build(new oc.Message_ProgressRange());
+                let so = R.cast(m.Shape());
+                if (R.measureVolume(so) < 0) so = R.cast(so.wrapped.Reversed());
+                Object.assign(b, { shape: so, kind: "solid", meta: undefined });
+              }
+              st.info = `${list.length} Fläche(n) ${String(Math.abs(d)).replace(".", ",")} mm aufgedickt`;
+              break;
+            } else if (art === "verrundung") {
+              // Flächenverrundung: zwei Flächenkörper nähen und die gemeinsame Kante runden
+              const list = surfBodies();
+              if (list.length < 2) throw new Error("Zwei Flächen nötig, die sich an einer Kante treffen");
+              const r = E(f.radius ?? "5", "Radius");
+              const sew = new oc.BRepBuilderAPI_Sewing(1e-3, true, true, true, false);
+              for (const b of list) sew.Add(b.shape.wrapped);
+              sew.Perform(new oc.Message_ProgressRange());
+              const shell = R.cast(sew.SewedShape());
+              // innere Kanten (zwei Flächen) runden
+              const mk = new oc.BRepFilletAPI_MakeFillet(shell.wrapped, oc.ChFi3d_FilletShape.ChFi3d_Rational);
+              let n = 0;
+              const faceCount = new Map();
+              for (const fc of shell.faces) for (const e of fc.edges) { const k = hashOf(e); faceCount.set(k, (faceCount.get(k) || 0) + 1); }
+              for (const e of shell.edges) if ((faceCount.get(hashOf(e)) || 0) >= 2) { mk.Add(r, e.wrapped); n++; }
+              if (!n) throw new Error("Keine gemeinsame Kante – Flächen müssen sich berühren");
+              mk.Build(new oc.Message_ProgressRange());
+              if (!mk.IsDone()) throw new Error("Verrundung mit diesem Radius nicht möglich");
+              state.bodies = state.bodies.filter((b) => !list.includes(b));
+              state.bodies.push({ shape: R.cast(mk.Shape()), kind: "flaeche", name: f.name || "Verrundete Fläche", fid: f.id, meta: { flaeche: true, density: 0 } });
+              st.info = `${n} Kante(n) mit R ${String(r).replace(".", ",")} verrundet`;
+              break;
+            } else throw new Error("Unbekannte Flächenart " + art);
+            for (const sh of out) state.bodies.push({ shape: sh, kind: "flaeche", name: f.name || "Fläche", fid: f.id, meta: { flaeche: true, density: 0 } });
+            st.info = info;
+            break;
+          }
+          case "flaechenkurve": {
+            // Kurve auf Fläche (SolidCraft-Abgleich E1): isoparametrische Kurve oder Skizze auf die Fläche projiziert → 3D-Pfad
+            const hits = facesAt((f.faces || []).map((r) => r.p));
+            if (!(f.faces || []).length) throw new Error("Fläche wählen");
+            if (!hits.length) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+            const face = hits[0].face;
+            let pts;
+            if ((f.art || "iso") === "iso") {
+              const w = E(f.wert ?? "0.5", "Lage");
+              if (!(w >= 0 && w <= 1)) throw new Error("Lage zwischen 0 und 1 (Anteil der Flächenparameter)");
+              pts = Array.from({ length: 41 }, (_, k) => tuple(f.richtung === "v" ? face.pointOnSurface(w, k / 40) : face.pointOnSurface(k / 40, w)));
+            } else {
+              const s = getSketch(f.sketch, "Skizze");
+              const W = sampleChain(pathChain(s.sketch), 1).map(([x, y]) => toWorld(s.frame, x, y));
+              // Netz der Fläche: Körper fein vernetzen (schreibt die Triangulierung in die Flächen), dann auslesen
+              hits[0].body.shape.mesh({ tolerance: 0.02, angularTolerance: 0.1 });
+              const tri = face.triangulation();
+              if (!tri?.trianglesIndexes?.length) throw new Error("Fläche ließ sich nicht vernetzen");
+              pts = projectPoints(W, s.frame.normal, tri.vertices, tri.trianglesIndexes);
+            }
+            const p = path3d(pts, { spline: true, closed: false });
+            state.paths.set(f.id, p);
+            st.info = `${f.art === "projektion" ? "Projiziert" : "Isokurve"}: ${pts.length} Punkte, Länge ${String(Math.round(p.length * 10) / 10).replace(".", ",")} mm`;
+            break;
+          }
           case "skizze3d": {
             const pts = resolvePathPoints(f.points, E);
             const r = E(f.radius ?? "0", "Eckradius");
             if (!(r >= 0)) throw new Error("Eckradius muss ≥ 0 sein");
-            const p = path3d(pts, { radius: r, closed: !!f.closed });
+            const p = path3d(pts, { radius: r, closed: !!f.closed, spline: !!f.spline });
             state.paths.set(f.id, p);
-            st.info = `${pts.length} Punkte, Länge ${String(Math.round(p.length * 10) / 10).replace(".", ",")} mm${f.closed ? ", geschlossen" : ""}${r > 0 ? `, Eckradius ${r}` : ""}`;
+            st.info = `${pts.length} Punkte, Länge ${String(Math.round(p.length * 10) / 10).replace(".", ",")} mm${f.closed ? ", geschlossen" : ""}${f.spline ? ", Spline" : r > 0 ? `, Eckradius ${r}` : ""}`;
             break;
           }
           case "schweissbaugruppe": {

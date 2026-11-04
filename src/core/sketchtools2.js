@@ -252,3 +252,124 @@ export function addPolylines(sk, loops, { uid, construction = false, closed = tr
   }
   return out;
 }
+
+/**
+ * Fase Abstand + Winkel (SolidCraft »Distance-angle chamfer«): Abstand d1 auf der ersten Linie, Winkel alpha (Grad)
+ * zwischen erster Linie und Fasenlinie; phi = Eckwinkel (Bogenmaß). Sinussatz → Abstand auf der zweiten Linie.
+ */
+export function chamferSecondDistance(d1, alphaDeg, phi) {
+  const a = (alphaDeg * Math.PI) / 180;
+  if (!(a > 0) || a + phi >= Math.PI - 1e-9) throw new Error("Winkel passt nicht zur Ecke");
+  return (d1 * Math.sin(a)) / Math.sin(a + phi);
+}
+
+/**
+ * Auto-Bedingungen (SolidCraft »Finish with auto constraints«): fast waagrechte/senkrechte Linien bekommen
+ * horizontal/vertikal, sofern sie noch keine Richtungsbedingung haben. tolDeg = Winkeltoleranz → Anzahl neuer Bedingungen.
+ */
+export function autoConstraints(sk, { uid, tolDeg = 1 } = {}) {
+  const has = new Set(sk.constraints.filter((c) => ["horizontal", "vertical", "parallel", "perpendicular", "angle", "collinear"].includes(c.type)).flatMap((c) => [c.e, c.e1, c.e2]).filter(Boolean));
+  const tol = Math.sin((tolDeg * Math.PI) / 180);
+  let n = 0;
+  for (const e of sk.entities) {
+    if (e.type !== "line" || e.bounds || has.has(e.id)) continue;
+    const a = P(sk, e.p1), b = P(sk, e.p2);
+    const L = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!(L > 1e-9)) continue;
+    const type = Math.abs(b.y - a.y) / L < tol ? "horizontal" : Math.abs(b.x - a.x) / L < tol ? "vertical" : null;
+    if (!type) continue;
+    sk.constraints.push({ id: uid("k"), type, e: e.id });
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Netzquerschnitt (SolidCraft »Mesh section«): Dreiecksnetz (Weltkoordinaten pos[], idx[] oder null) mit der
+ * Skizzenebene frame {origin, xDir, yDir, normal} schneiden → Polylinien [[x,y]…] in Skizzenkoordinaten.
+ * Geschlossene Schnitte wiederholen den ersten Punkt am Ende.
+ */
+export function meshPlaneSection(pos, idx, frame, { tol = 1e-4 } = {}) {
+  const { origin: o, xDir: X, yDir: Y, normal: N } = frame;
+  const nTri = idx ? idx.length / 3 : pos.length / 9;
+  const vi = (t, k) => (idx ? idx[3 * t + k] : 3 * t + k);
+  const P3 = (i) => [pos[3 * i] - o[0], pos[3 * i + 1] - o[1], pos[3 * i + 2] - o[2]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const key = (q) => `${Math.round(q[0] / tol)},${Math.round(q[1] / tol)}`;
+  const segs = [];
+  for (let t = 0; t < nTri; t++) {
+    const p = [P3(vi(t, 0)), P3(vi(t, 1)), P3(vi(t, 2))];
+    // leicht verschobene Abstände: Ecken genau auf der Ebene zählen zur positiven Seite (keine doppelten Punkte)
+    const d = p.map((q) => { const v = dot(q, N); return Math.abs(v) < 1e-9 ? 1e-9 : v; });
+    const cut = [];
+    for (let k = 0; k < 3; k++) {
+      const a = k, b = (k + 1) % 3;
+      if ((d[a] > 0) === (d[b] > 0)) continue;
+      const s = d[a] / (d[a] - d[b]);
+      const q = [0, 1, 2].map((m) => p[a][m] + s * (p[b][m] - p[a][m]));
+      cut.push([dot(q, X), dot(q, Y)]);
+    }
+    if (cut.length === 2 && key(cut[0]) !== key(cut[1])) segs.push(cut);
+  }
+  // Abschnitte über gemeinsame Endpunkte zu Polylinien verketten
+  const adj = new Map();
+  segs.forEach((s, i) => { for (const q of s) { const k = key(q); if (!adj.has(k)) adj.set(k, []); adj.get(k).push(i); } });
+  const used = new Uint8Array(segs.length), out = [];
+  const other = (i, k) => (key(segs[i][0]) === k ? segs[i][1] : segs[i][0]);
+  const walk = (line) => {
+    for (;;) {
+      const k = key(line.at(-1));
+      const next = (adj.get(k) || []).find((j) => !used[j]);
+      if (next == null) return;
+      used[next] = 1;
+      line.push(other(next, k));
+    }
+  };
+  // offene Enden zuerst (Grad 1), dann die geschlossenen Schleifen
+  const order = [...segs.keys()].sort((a, b) => Math.min(...segs[a].map((q) => adj.get(key(q)).length)) - Math.min(...segs[b].map((q) => adj.get(key(q)).length)));
+  for (const i of order) {
+    if (used[i]) continue;
+    used[i] = 1;
+    const line = [segs[i][0], segs[i][1]];
+    walk(line);
+    line.reverse();
+    walk(line);
+    out.push(line);
+  }
+  return out;
+}
+
+/**
+ * Gedrehtes Profil (SolidCraft »Spun profile«): alle Netzpunkte (Welt) um eine Achse in der Skizzenebene gedreht
+ * in die Ebene gelegt → Hüllkontur r(s) als halbes Drehprofil, geschlossen über die Achse (für Drehung nutzbar).
+ * axis {a:[x,y], b:[x,y]} in Skizzenkoordinaten; bins = Auflösung längs der Achse.
+ */
+export function spunProfile(pos, frame, axis, { bins = 200 } = {}) {
+  const { origin: o, xDir: X, yDir: Y, normal: N } = frame;
+  const A = [o[0] + X[0] * axis.a[0] + Y[0] * axis.a[1], o[1] + X[1] * axis.a[0] + Y[1] * axis.a[1], o[2] + X[2] * axis.a[0] + Y[2] * axis.a[1]];
+  const d2 = [axis.b[0] - axis.a[0], axis.b[1] - axis.a[1]], L2 = Math.hypot(...d2);
+  if (!(L2 > 1e-9)) throw new Error("Achse hat keine Länge");
+  const u2 = [d2[0] / L2, d2[1] / L2];
+  const U = [0, 1, 2].map((k) => X[k] * u2[0] + Y[k] * u2[1]);
+  let sMin = Infinity, sMax = -Infinity;
+  const S = [], Rr = [];
+  for (let i = 0; i < pos.length; i += 3) {
+    const v = [pos[i] - A[0], pos[i + 1] - A[1], pos[i + 2] - A[2]];
+    const s = v[0] * U[0] + v[1] * U[1] + v[2] * U[2];
+    const r = Math.hypot(v[0] - s * U[0], v[1] - s * U[1], v[2] - s * U[2]);
+    S.push(s); Rr.push(r);
+    if (s < sMin) sMin = s; if (s > sMax) sMax = s;
+  }
+  if (!S.length || !(sMax - sMin > 1e-9)) throw new Error("Keine Körper zum Drehen");
+  const n = bins, rmax = new Float64Array(n + 1).fill(-1);
+  for (let i = 0; i < S.length; i++) { const k = Math.round(((S[i] - sMin) / (sMax - sMin)) * n); if (Rr[i] > rmax[k]) rmax[k] = Rr[i]; }
+  // Lücken (keine Netzpunkte im Fach) aus den Nachbarn füllen
+  for (let k = 0; k <= n; k++) if (rmax[k] < 0) { let l = k - 1, r = k + 1; while (l >= 0 && rmax[l] < 0) l--; while (r <= n && rmax[r] < 0) r++; rmax[k] = Math.max(l >= 0 ? rmax[l] : 0, r <= n ? rmax[r] : 0); }
+  // Seite: Normale der Achse in der Ebene, zur Seite des Ursprungsabstands positiv
+  const nrm = [-u2[1], u2[0]];
+  const P = (s, r) => [axis.a[0] + u2[0] * s + nrm[0] * r, axis.a[1] + u2[1] * s + nrm[1] * r];
+  const out = [P(sMin, 0)];
+  for (let k = 0; k <= n; k++) out.push(P(sMin + ((sMax - sMin) * k) / n, rmax[k]));
+  out.push(P(sMax, 0), P(sMin, 0));
+  return out;
+}

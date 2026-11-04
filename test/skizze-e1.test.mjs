@@ -1,7 +1,7 @@
 // Etappe E1 des SolidCraft-Abgleichs: weitere Skizzenwerkzeuge
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildBlendCurve, buildTangentAt, buildCircleTangent2, arcSlotFrom3, polygonFromEdge, circumscribedVertex, reverseSpline, insertSplinePoint, removeSplinePoint, breakOffset, buildDrawingBounds, simplifyPolyline, addPolylines } from "../src/core/sketchtools2.js";
+import { buildBlendCurve, buildTangentAt, buildCircleTangent2, arcSlotFrom3, polygonFromEdge, circumscribedVertex, reverseSpline, insertSplinePoint, removeSplinePoint, breakOffset, buildDrawingBounds, simplifyPolyline, addPolylines, chamferSecondDistance, autoConstraints, meshPlaneSection, spunProfile } from "../src/core/sketchtools2.js";
 import { buildArcSlot } from "../src/core/sketchtools.js";
 import { solveSketch } from "../src/core/solver.js";
 import { newSketch, extractProfiles } from "../src/core/sketch.js";
@@ -99,4 +99,39 @@ test("Versatz lösen, Zeichnungsrahmen, Polylinie vereinfachen", () => {
   addPolylines(sk2, [sq], { uid });
   assert.equal(sk2.entities.length, 4);
   near(Math.abs(extractProfiles(sk2).regions[0].area), 100, 1e-6);
+});
+
+test("Fase Abstand/Winkel, Auto-Bedingungen, Netzquerschnitt", () => {
+  near(chamferSecondDistance(5, 45, Math.PI / 2), 5, 1e-9, "90°-Ecke, 45° → gleiche Abstände");
+  near(chamferSecondDistance(5, 30, Math.PI / 2), 5 * Math.tan(Math.PI / 6), 1e-9);
+  assert.throws(() => chamferSecondDistance(5, 100, Math.PI / 2), /Winkel/);
+  const sk = sketch();
+  line(sk, [0, 0], [100, 0.5]); line(sk, [0, 0], [0.4, 80]); line(sk, [0, 0], [50, 50]);
+  assert.equal(autoConstraints(sk, { uid }), 2);
+  assert.equal(autoConstraints(sk, { uid }), 0, "kein zweites Mal");
+  assert.ok(solveSketch(sk).ok);
+  // Würfel 10 mm als Dreiecksnetz, Schnitt bei z = 5 → ein geschlossenes Quadrat
+  const V = [[0,0,0],[10,0,0],[10,10,0],[0,10,0],[0,0,10],[10,0,10],[10,10,10],[0,10,10]];
+  const F = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,5,1],[0,4,5],[1,6,2],[1,5,6],[2,7,3],[2,6,7],[3,4,0],[3,7,4]];
+  const pos = V.flat(), idx = F.flat();
+  const frame = { origin: [0, 0, 5], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] };
+  const loops = meshPlaneSection(pos, idx, frame);
+  assert.equal(loops.length, 1);
+  const L = simplifyPolyline(loops[0], 1e-6);
+  assert.ok(L.length <= 6, JSON.stringify(L));
+  near(Math.hypot(L[0][0] - L.at(-1)[0], L[0][1] - L.at(-1)[1]), 0, 1e-6, "geschlossen");
+  const sk2 = sketch();
+  addPolylines(sk2, [L], { uid });
+  near(Math.abs(extractProfiles(sk2).regions[0].area), 100, 1e-6);
+  assert.equal(meshPlaneSection(pos, idx, { ...frame, origin: [0, 0, 20] }).length, 0);
+});
+
+test("Gedrehtes Profil: Würfel um die X-Achse gedreht → Halbprofil mit Radius = halbe Diagonale", () => {
+  const V = [[0,-5,-5],[10,-5,-5],[10,5,-5],[0,5,-5],[0,-5,5],[10,-5,5],[10,5,5],[0,5,5]];
+  const frame = { origin: [0, 0, 0], xDir: [1, 0, 0], yDir: [0, 1, 0], normal: [0, 0, 1] };
+  const L = spunProfile(V.flat(), frame, { a: [0, 0], b: [1, 0] }, { bins: 10 });
+  const ys = L.map((q) => q[1]), xs = L.map((q) => q[0]);
+  near(Math.max(...ys), Math.hypot(5, 5), 1e-9);
+  near(Math.min(...xs), 0); near(Math.max(...xs), 10);
+  near(L[0][0], L.at(-1)[0]); near(L[0][1], 0);
 });

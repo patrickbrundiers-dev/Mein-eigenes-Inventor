@@ -96,6 +96,7 @@ const P = {
   coil: '<path d="M6 4c8 0 8 3 0 3s-8 3 0 3 8 3 0 3-8 3 0 3 8 3 0 3"/><path d="M18 3v18" stroke-dasharray="2 2"/>',
   pathpattern: '<path d="M3 19c5-1 8-14 18-14" stroke-dasharray="2 2"/><circle cx="5" cy="18" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="19" cy="6" r="2"/>',
   combine: '<rect x="3" y="7" width="11" height="11" rx="1"/><circle cx="15" cy="10" r="6"/>',
+  surface: '<path d="M3 17c3-6 6-8 9-4s6 2 9-4"/><path d="M3 17l3 3h12l3-3" stroke-dasharray="2 2"/>',
   thicken: '<path d="M3 15l9-5 9 5"/><path d="M3 19l9-5 9 5"/><path d="M12 4v5" stroke-dasharray="2 2"/>',
   facepick: '<path d="M3 14l7-3.5 7 3.5-7 3.5z" fill="currentColor" fill-opacity=".25"/><path d="M14 4l2 9 2-3 3 3 1-1-3-3 3-2z"/>',
   direct: '<path d="M3 15l6-3 6 3-6 3z"/><path d="M15 12V4M12.5 6.5L15 4l2.5 2.5"/><path d="M15 12l5 2.5M18 12l2 2.5-3 .5"/>',
