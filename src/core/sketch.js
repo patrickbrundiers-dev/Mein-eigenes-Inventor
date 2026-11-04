@@ -8,11 +8,12 @@ import { textLoops, textBox } from "./schrift.js";
 export function splineCtrl(e, pts) {
   const out = [];
   for (const id of e.pts || []) { const p = pts.get(id); if (!p) return null; out.push([p.x, p.y]); }
+  if (e.deg) out.deg = e.deg; // Grad 5 (SolidCraft »Spline Grad 5«)
   return out.length >= 2 ? out : null;
 }
 /** Bézier-Abschnitte {t:"bez", c1, c2, to} eines Splines, wahlweise rückwärts */
 function splineSegs(ctrl, reverse) {
-  const B = splineBeziers(reverse ? [...ctrl].reverse() : ctrl);
+  const B = splineBeziers(reverse ? Object.assign([...ctrl].reverse(), { deg: ctrl.deg }) : ctrl);
   return B.segs.map(([c1, c2, to]) => ({ t: "bez", c1, c2, to }));
 }
 

@@ -1,21 +1,22 @@
 /* PBCAD – Werkstatt-Oberfläche: Stahlgrau, Anreißblau, Laser-Orange für Auswahl */
 :root {
-  --steel-0: #f6f8fa;
-  --steel-1: #e8edf1;
-  --steel-2: #d6dee5;
-  --steel-3: #b9c4ce;
-  --steel-4: #7d8b98;
-  --ink: #1c2733;
-  --ink-soft: #4a5866;
-  --dye: #1f4fa8;          /* Anreißfarbe */
-  --dye-soft: #dbe5f6;
+  /* Farbwerte an SolidCraft angelehnt (hell: weiße Panels, Schieferblau-Kopfleiste, Akzent Blau) */
+  --steel-0: #ffffff;
+  --steel-1: #f2f4f7;
+  --steel-2: #e2e7ed;
+  --steel-3: #cbd3dd;
+  --steel-4: #8592a3;
+  --ink: #1b2430;
+  --ink-soft: #4a5664;
+  --dye: #1f6fb5;          /* Akzent */
+  --dye-soft: #e3f0fb;
   --laser: #ef7d1a;        /* Auswahl */
   --laser-soft: #fde9d6;
   --ok: #2e7d4f;
   --warn: #b7791f;
   --err: #c0392b;
   --err-soft: #f8e1de;
-  --text-faint: #5f6c78;   /* Hinweis-/Nebentext: ≥ 4,5 : 1 auf steel-0/steel-1 (steel-4 nur für Linien) */
+  --text-faint: #5c6876;   /* Hinweis-/Nebentext: ≥ 4,5 : 1 auf steel-0/steel-1 (steel-4 nur für Linien) */
   /* Schriftstufen (OP1): statt 10 / 10,5 / 11 / 11,5 / 12 / 12,5 / 13 / 14 px */
   --fs-2xs: 10px;
   --fs-xs: 11px;
@@ -26,6 +27,7 @@
   --radius-s: 3px;
   --radius-m: 6px;
   --radius-l: 10px;
+  --card-gap: 8px;
   /* Tiefe und Bewegung: einheitlich für Menüs, Dialoge, Meldungen */
   --shadow-1: 0 1px 2px rgba(28, 39, 51, .08), 0 2px 6px rgba(28, 39, 51, .08);
   --shadow-2: 0 4px 10px rgba(28, 39, 51, .10), 0 10px 28px rgba(28, 39, 51, .16);
@@ -34,13 +36,20 @@
   --t-fast: .12s;
   --t-med: .18s;
   --din: "Bahnschrift", "DIN Alternate", "DIN 2014", "Roboto Condensed", "Arial Narrow", sans-serif;
-  --ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --ui: "IBM Plex Sans", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --ribbon-h: 122px;
   --status-h: 26px;
   --doctabs-h: 30px;
+  --appbar-h: 40px;
   --surface: #fff;
-  --stage-a: #f3f6f9;
-  --stage-b: #d9e1e8;
+  --stage-a: #eef1f5;
+  --stage-b: #dfe5ec;
+  --appbar: #2b3340;
+  --appbar-ink: #e6eaf0;
+  --appbar-hover: rgba(255, 255, 255, .10);
+  --appbar-active: rgba(255, 255, 255, .16);
+  --rail: #236ead;
+  --icon-fill: color-mix(in srgb, var(--dye) 16%, transparent);
   --sk-line: #1d3b78;
   --sk-full: #142236;
   --sk-dim: #2b4a7e;
@@ -49,25 +58,29 @@
 }
 /* Dunkles Schema (Einstellung darstellung.schema): nur Farbwerte, Aufbau bleibt gleich */
 :root[data-theme="dark"] {
-  --text-faint: #9aa7b4;
-  --steel-0: #1b2129;
-  --steel-1: #222a33;
-  --steel-2: #323c47;
-  --steel-3: #4a5663;
-  --steel-4: #8795a3;
-  --ink: #e3e8ee;
-  --ink-soft: #a9b5c1;
-  --dye: #6a9bf0;          /* ≥ 4,5 : 1 auf --surface */
-  --dye-soft: #24344f;
+  /* dunkel: an SolidCraft »Graphite« angelehnt */
+  --text-faint: #9aa1ab;
+  --steel-0: #25272b;
+  --steel-1: #1f2124;
+  --steel-2: #34373d;
+  --steel-3: #484d55;
+  --steel-4: #8a919b;
+  --ink: #e0e2e5;
+  --ink-soft: #a0a6b0;
+  --dye: #4aa3d8;          /* ≥ 4,5 : 1 auf --steel-0 */
+  --dye-soft: #293c49;
   --laser-soft: #4a3220;
   --err-soft: #4a2420;
-  --surface: #2a323c;
-  --stage-a: #3a4450;
-  --stage-b: #262d36;
-  --sk-line: #8fb4f5;
-  --sk-full: #e3e8ee;
-  --sk-dim: #9fb9e6;
-  --sk-dim-text: #cfe0ff;
+  --surface: #303338;
+  --stage-a: #2f333a;
+  --stage-b: #23262b;
+  --appbar: #1c1e21;
+  --appbar-ink: #e0e2e5;
+  --rail: #1b4a6e;
+  --sk-line: #8fc4ea;
+  --sk-full: #e0e2e5;
+  --sk-dim: #5fd0c8;
+  --sk-dim-text: #a8ece7;
   color-scheme: dark;
 }
 :root[data-theme="dark"] .rb-finish { background: #23402f; border-color: #3f7a57; }
@@ -85,7 +98,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--dye); outline-offset: 1px; }
 [hidden] { display: none !important; }
 
-#app { display: grid; grid-template-rows: var(--ribbon-h) 1fr var(--doctabs-h) var(--status-h); height: 100vh; }
+#app { display: grid; grid-template-rows: var(--appbar-h) var(--ribbon-h) 1fr auto var(--status-h); height: 100vh; }
 #workspace { display: grid; grid-template-columns: 260px 1fr 300px; min-height: 0; }
 .dock { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--steel-0); }
 .dock-left { border-right: 1px solid var(--steel-3); }
@@ -843,7 +856,7 @@ body.is-scrubbing, body.is-scrubbing * { cursor: ew-resize !important; user-sele
 /* Nebeneinander (Q5): Modell links, Zeichnung rechts */
 #stage { --split-w: 45%; }
 #stage.split #viewer { right: var(--split-w); }
-#stage.split .view-tools { right: calc(var(--split-w) + 10px); }
+#stage.split .view-tools { right: calc(var(--split-w) + 12px); }
 #stage.split .next-step { left: calc((100% - var(--split-w)) / 2); }
 #side-sheet { position: absolute; top: 0; right: 0; bottom: 0; width: var(--split-w); display: flex; flex-direction: column; background: var(--steel-1, #eef1f5); border-left: 1px solid var(--steel-3); z-index: 5; }
 #side-sheet[hidden] { display: none; }
@@ -882,3 +895,207 @@ html[data-theme="dark"] body.werkstatt { --ink: #fff; --ink-soft: #e4ebf2; }
   .view-tools button { padding: 10px 12px; }
   .icon-btn { min-width: 36px; min-height: 36px; }
 }
+
+
+/* ================= SolidCraft-Optik (plan/solidcraft-abgleich.md, D1–D8) =================
+   Aufbau bleibt PBCAD (Inventor-Menüband, Metallbau-Reiter); angelehnt sind Kopfleiste, Pillen-Reiter,
+   schwebende Panels, Navigationspille, Verlaufsleiste und Startseite. */
+
+/* D1 Kopfleiste: dunkel mit Logo, Speichern/Rückgängig, Dokument-Reitern als Pillen, rechts Einstellungen/Hilfe */
+#appbar { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 8px 0 12px; background: var(--appbar); color: var(--appbar-ink); }
+.ab-logo { display: flex; align-items: center; gap: 7px; flex: none; margin-right: 6px; font: 700 15px/1 var(--ui); letter-spacing: .01em; color: #fff; user-select: none; }
+.ab-logo svg { width: 22px; height: 22px; }
+.ab-logo .l1 { fill: #62a0ec; }
+.ab-logo .l2 { fill: #3b88e8; }
+.ab-logo .l3 { fill: #346fc4; }
+#ab-cmds, #ab-right { display: flex; align-items: center; gap: 2px; flex: none; }
+#ab-cmds { padding-right: 8px; margin-right: 4px; border-right: 1px solid rgba(255, 255, 255, .14); }
+.ab-btn { display: grid; place-items: center; min-width: 30px; height: 30px; padding: 0 4px; border: 0; border-radius: var(--radius-m); background: none; color: var(--appbar-ink); cursor: pointer; }
+.ab-btn svg { width: 18px; height: 18px; }
+.ab-btn:hover:not(:disabled) { background: var(--appbar-hover); }
+.ab-btn:disabled { opacity: .35; cursor: default; }
+.ab-btn.rb-undo-list { min-width: 14px; width: 14px; padding: 0; margin-left: -3px; font-size: 10px; }
+.ab-spacer { flex: 1; }
+#appbar .rb-doc { color: color-mix(in srgb, var(--appbar-ink) 70%, transparent); font: var(--fs-s) var(--ui); max-width: 22vw; padding: 0 8px; }
+#appbar .ab-dirty { color: #f0b35a; }
+.ab-ver { font-size: var(--fs-xs); color: color-mix(in srgb, var(--appbar-ink) 60%, transparent); padding: 0 4px 0 6px; }
+#appbar .rb-qa { margin-left: 6px; }
+#appbar .rb-qa-btn { color: var(--appbar-ink); background: none; border-color: rgba(255, 255, 255, .18); }
+#appbar .rb-qa-btn:hover { background: var(--appbar-hover); }
+#appbar #doctabs { flex: 0 1 auto; min-width: 0; height: 100%; padding: 0; gap: 2px; background: none; border: 0; align-items: center; }
+#appbar .dt-btn { width: 30px; height: 30px; margin: 0; border: 0; border-radius: var(--radius-m); color: var(--appbar-ink); }
+#appbar .dt-btn:hover { background: var(--appbar-hover); border: 0; color: #fff; }
+#appbar .dt-btn.on { background: var(--appbar-active); color: #fff; }
+#appbar .dt-tabs { align-items: center; margin-left: 4px; padding-left: 0; border-left: 0; gap: 2px; height: 100%; }
+#appbar .dt-tab { height: 30px; margin: 0; padding: 0 4px 0 12px; border: 0; border-radius: var(--radius-m); color: color-mix(in srgb, var(--appbar-ink) 72%, transparent); font-size: var(--fs-m); }
+#appbar .dt-tab:hover { background: var(--appbar-hover); color: #fff; }
+#appbar .dt-tab.active { background: var(--appbar-active); color: #fff; border: 0; font-weight: 600; }
+#appbar .dt-tab.active svg { color: #8cc0f2; }
+#appbar .dt-x { color: inherit; }
+#appbar .dt-x:hover { background: var(--appbar-hover); color: #fff; }
+#appbar .dt-new { width: 28px; }
+
+/* D2 Menüband: Reiter als Pillen, Gruppen mit ⌄, Symbole in Akzentblau mit leichter Füllung */
+#ribbon { background: var(--steel-0); border-bottom: 1px solid var(--steel-2); }
+.rb-tabs { height: 36px; align-items: center; gap: 4px; padding: 0 10px; background: var(--steel-0); border-bottom: 0; }
+.rb-file { margin: 0 6px 0 0; height: 28px; padding: 0 14px; border-radius: var(--radius-m); font-family: var(--ui); }
+.rb-file:hover { background: color-mix(in srgb, var(--dye) 85%, #000); }
+.rb-tablist { display: flex; align-items: center; gap: 2px; }
+.rb-tab { height: 28px; padding: 0 12px; border: 0; border-radius: var(--radius-m); font-size: var(--fs-l); color: var(--ink-soft); }
+.rb-tab:hover { color: var(--ink); background: var(--steel-1); }
+.rb-tab.active { background: var(--dye-soft); color: var(--dye); border: 0; font-weight: 600; }
+.rb-tab.context { color: var(--dye); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--dye) 45%, transparent); }
+.rb-search { height: 28px; border-radius: var(--radius-m); }
+.rb-panel { padding: 2px 8px 0; }
+.rb-group { border-right-color: var(--steel-2); padding: 0 6px; }
+.rb-group-label { color: var(--ink-soft); font-size: var(--fs-xs); }
+.rb-group-label::after { content: " ⌄"; font-size: 10px; color: var(--steel-4); position: relative; top: -2px; }
+.rb-btn { border-radius: var(--radius-m); font-size: var(--fs-s); }
+.rb-btn svg, .rb-small svg { color: var(--dye); }
+.rb-btn svg :is(rect, circle, ellipse, polygon), .rb-btn svg path[d$="Z"], .rb-btn svg path[d$="z"] { fill: var(--icon-fill); }
+.rb-btn:hover:not(:disabled), .rb-small:hover:not(:disabled) { background: var(--dye-soft); border-color: transparent; }
+.rb-btn.on, .rb-small.on { background: var(--dye-soft); border-color: color-mix(in srgb, var(--dye) 55%, transparent); }
+.rb-btn.on span, .rb-small.on { color: var(--dye); }
+.rb-small { border-radius: var(--radius-m); }
+
+/* D3 Seitenpanels als schwebende Karten über der Bühne */
+#workspace { padding: var(--card-gap); column-gap: var(--card-gap); background: linear-gradient(180deg, var(--stage-a) 0%, var(--stage-b) 100%); }
+#stage { background: transparent; border-radius: var(--radius-l); }
+.dock { background: var(--steel-0); border: 1px solid var(--steel-2) !important; border-radius: var(--radius-l); box-shadow: var(--shadow-1); }
+.dock.empty { border: 0 !important; box-shadow: none; background: none; }
+.dock > aside:not([hidden]) ~ aside:not([hidden]) { border-top: 1px solid var(--steel-2); }
+.dock-grip { width: 8px; }
+.dock-left .dock-grip { right: 0; }
+.dock-right .dock-grip { left: 0; }
+.dock-grip:hover { background: color-mix(in srgb, var(--dye) 30%, transparent); border-radius: 4px; }
+.pane-head { padding: 10px 12px 8px; background: var(--steel-0); border-bottom: 1px solid var(--steel-2); font-family: var(--ui); font-size: var(--fs-l); }
+.tree-search { background: var(--steel-0); }
+.tree-search-input { border-radius: var(--radius-m); padding: 3px 8px; }
+.node { padding: 3px 8px 3px 6px; margin: 0 4px; border-radius: var(--radius-m); }
+.node .ico { color: var(--dye); }
+.node.folder > .ico-wrap .ico { color: var(--ink-soft); }
+.node .ico-wrap svg :is(rect, circle, polygon), .node .ico-wrap svg path[d$="Z"] { fill: var(--icon-fill); }
+
+/* D8 Eigenschaften: Abschnittsköpfe klein in Großbuchstaben, Eingaben mit Radius, Primärknopf blau */
+.section > h3 { font: 600 var(--fs-xs) var(--ui); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); }
+.props-body { padding: 10px 12px 20px; }
+.inp, select.inp, textarea.inp { border-radius: var(--radius-m); padding: 4px 8px; border-color: var(--steel-3); }
+.seg { border-radius: var(--radius-m); }
+.seg button.on { background: var(--dye-soft); color: var(--dye); font-weight: 600; }
+.btn { border-radius: var(--radius-m); padding: 5px 12px; }
+.btn.primary { background: var(--dye); border-color: var(--dye); }
+.btn.primary:hover { background: color-mix(in srgb, var(--dye) 85%, #000); }
+.icon-btn { border-radius: var(--radius-m); }
+
+/* D5 Navigationsleiste: Pille unten in der Mitte mit Symbolen */
+.view-tools { right: 12px; left: auto; bottom: 12px; transform: none; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; border-color: var(--steel-2); background: color-mix(in srgb, var(--steel-0) 96%, transparent); box-shadow: var(--shadow-2); z-index: 4; }
+.view-tools > button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: var(--radius-m); color: var(--ink-soft); }
+.view-tools > button svg { width: 19px; height: 19px; }
+.view-tools > button:hover { background: var(--dye-soft); color: var(--dye); }
+.view-tools .vt-sep { width: 1px; height: 20px; margin: 0 4px; background: var(--steel-2); }
+.view-tools .clip-bar:not([hidden]) { display: flex; align-items: center; gap: 6px; margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--steel-2); }
+.next-step { bottom: 64px; border-radius: var(--radius-l); }
+.hud-card { border-radius: var(--radius-l); border-color: var(--steel-2); }
+body.werkstatt .view-tools > button { width: 44px; height: 44px; }
+
+/* Statuszeile schlicht */
+#status { grid-row: 5; background: var(--steel-0); border-top: 1px solid var(--steel-2); }
+#verlauf { grid-row: 4; }
+
+/* D6 Startseite: blaue Leiste links, Kacheln weiß mit Radius */
+.st-side { background: var(--rail); border-right: 0; color: #fff; }
+.st-brand h1, .st-brand h1 span { color: #fff; }
+.st-brand small, .st-claim, .st-foot, .st-meta { color: rgba(255, 255, 255, .78); }
+.st-btn { border-radius: var(--radius-m); border-color: rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .08); color: #fff; }
+.st-btn svg { color: #fff; }
+.st-btn .kbd { color: rgba(255, 255, 255, .7); }
+.st-btn:hover { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .4); }
+.st-primary { background: #fff; color: var(--rail); border-color: #fff; }
+.st-primary svg { color: var(--rail); }
+.st-primary:hover { background: #fff; filter: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, .25); }
+.st-split .st-drop svg { color: var(--rail); }
+.st-split .st-drop { background: #fff; border-color: #fff; border-left: 1px solid color-mix(in srgb, var(--rail) 25%, #fff); }
+.st-links { border-top-color: rgba(255, 255, 255, .2); }
+.st-link { color: #fff; border-radius: var(--radius-m); padding: 7px 8px; }
+.st-link:hover { background: rgba(255, 255, 255, .14); }
+.st-link .kbd { color: rgba(255, 255, 255, .7); }
+.st-restore { border-color: #f0c674; background: rgba(255, 246, 229, .95); color: #7a4a05; border-radius: var(--radius-m); }
+.st-main { background: var(--steel-1); background-image: none; }
+.st-quick h2 { font-family: var(--ui); }
+.st-qtile { border-radius: var(--radius-l); border-color: var(--steel-2); padding: 12px 14px; }
+.st-qtile svg { fill: var(--icon-fill); }
+
+/* D4 Verlaufsleiste unten im Bauteil */
+#verlauf { display: flex; align-items: center; gap: 10px; min-width: 0; height: 44px; padding: 0 12px; background: var(--steel-0); border-top: 1px solid var(--steel-2); }
+#verlauf[hidden] { display: none; }
+.vl-title { font: 600 var(--fs-m) var(--ui); color: var(--ink); flex: none; }
+.vl-ctls { display: flex; gap: 1px; flex: none; }
+.vl-ctl { width: 26px; height: 26px; border: 0; border-radius: var(--radius-m); background: none; color: var(--ink-soft); cursor: pointer; font-size: 12px; }
+.vl-ctl:hover:not(:disabled) { background: var(--dye-soft); color: var(--dye); }
+.vl-ctl:disabled { opacity: .35; cursor: default; }
+.vl-track { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1; overflow-x: auto; scrollbar-width: thin; padding: 4px 2px; border-left: 1px solid var(--steel-2); padding-left: 10px; }
+.vl-item { display: grid; place-items: center; flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--steel-2); border-radius: var(--radius-m); background: var(--steel-1); color: var(--dye); cursor: pointer; }
+.vl-item svg { width: 18px; height: 18px; }
+.vl-item svg :is(rect, circle, polygon), .vl-item svg path[d$="Z"] { fill: var(--icon-fill); }
+.vl-item:hover { border-color: var(--dye); background: var(--dye-soft); }
+.vl-item.sel { border-color: var(--dye); background: var(--dye-soft); box-shadow: 0 0 0 1px var(--dye); }
+.vl-item.off { opacity: .4; }
+.vl-item.err { color: var(--err); border-color: var(--err); }
+.vl-item.warn { color: var(--warn); }
+.vl-marker { position: relative; flex: none; width: 3px; height: 30px; margin: 0 3px; border-radius: 2px; background: var(--dye); cursor: ew-resize; touch-action: none; }
+.vl-marker::after { content: ""; position: absolute; left: 50%; bottom: -7px; width: 9px; height: 9px; transform: translateX(-50%); border: 2px solid var(--dye); border-radius: 50%; background: var(--steel-0); }
+.vl-marker::before { content: ""; position: absolute; inset: 0 -6px; }
+.vl-marker.drag { z-index: 2; opacity: .8; }
+.vl-marker:focus-visible { outline: 2px solid var(--dye); outline-offset: 2px; }
+.vl-info { flex: none; color: var(--text-faint); font-size: var(--fs-s); }
+@media (max-width: 900px) { .vl-info { display: none; } }
+.sk-trim-path { fill: none; stroke: var(--err); stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
+
+/* Schnellmessung (SolidCraft-Abgleich F3): unten rechts über der Navigationspille */
+.quick-measure { position: absolute; right: 12px; bottom: 62px; z-index: 4; display: flex; gap: 2px; padding: 3px; border-radius: 10px; border: 1px solid var(--steel-2); background: color-mix(in srgb, var(--steel-0) 96%, transparent); box-shadow: var(--shadow-2); }
+.quick-measure[hidden] { display: none; }
+.quick-measure .qm-item { display: flex; gap: 6px; align-items: baseline; border: 0; background: transparent; padding: 3px 8px; border-radius: var(--radius-m); cursor: copy; color: var(--ink); font: inherit; font-size: var(--fs-s); }
+.quick-measure .qm-item:hover { background: var(--dye-soft); }
+.quick-measure .qm-l { color: var(--ink-soft); }
+.quick-measure .qm-v { font-variant-numeric: tabular-nums; font-weight: 600; }
+#stage.split .quick-measure { right: calc(var(--split-w) + 12px); }
+
+/* ---- SolidCraft-Aufbau L1–L6 (Patrick 04.11.: »Design, Layout, Oberfläche auch übernehmen«) ---- */
+/* L1 Menüband als schwebende Karte, links die Kachel des Arbeitsbereichs */
+:root { --ribbon-h: 134px; }
+#ribbon { flex-direction: row; gap: var(--card-gap); padding: var(--card-gap) var(--card-gap) 0; background: var(--stage-a); border-bottom: 0; }
+#ribbon .rb-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--steel-0); border: 1px solid var(--steel-2); border-radius: var(--radius-l); box-shadow: var(--shadow-1); overflow: hidden; }
+.rb-ws { flex: none; width: 104px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 1px solid var(--steel-2); border-radius: var(--radius-l); background: var(--steel-0); box-shadow: var(--shadow-1); color: var(--dye); cursor: pointer; padding: 6px 4px; position: relative; font: inherit; }
+.rb-ws::before { content: ""; position: absolute; left: 14px; right: 14px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--dye); }
+.rb-ws svg { width: 30px; height: 30px; }
+.rb-ws svg :is(rect, circle, polygon), .rb-ws svg path[d$="z"], .rb-ws svg path[d$="Z"] { fill: var(--icon-fill); }
+.rb-ws-name { font-weight: 600; font-size: var(--fs-m); color: var(--ink); }
+.rb-ws-sub { font-size: var(--fs-xs); color: var(--ink-soft); }
+.rb-ws:hover { border-color: var(--dye); }
+body.werkstatt .rb-ws { display: none; }
+.rb-ws.schmal { width: 52px; }
+.rb-ws.weg { display: none; }
+.rb-ws.schmal :is(.rb-ws-name, .rb-ws-sub) { display: none; }
+/* L2 Gruppenname öffnet die Gruppenliste */
+button.rb-group-label { border: 0; background: transparent; font: inherit; font-size: var(--fs-s); cursor: pointer; border-radius: 6px; margin: 0 auto 2px; padding: 1px 8px; }
+button.rb-group-label:hover, button.rb-group-label.open { background: var(--dye-soft); color: var(--dye); }
+.rb-glist { position: fixed; z-index: 300; min-width: 280px; max-width: 360px; max-height: calc(100vh - 220px); overflow-y: auto; background: var(--steel-0); border: 1px solid var(--steel-2); border-radius: var(--radius-l); box-shadow: var(--shadow-2); padding: 6px 0; }
+.rb-gl-title, .rb-gl-head { font: 600 var(--fs-xs) var(--ui); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); padding: 8px 16px 4px; }
+.rb-gl-row { display: grid; grid-template-columns: 22px 1fr auto 22px; align-items: center; gap: 10px; padding: 6px 12px 6px 16px; cursor: pointer; color: var(--ink); font-size: var(--fs-m); outline: none; }
+.rb-gl-row svg { width: 20px; height: 20px; color: var(--dye); }
+.rb-gl-row svg :is(rect, circle, polygon), .rb-gl-row svg path[d$="z"], .rb-gl-row svg path[d$="Z"] { fill: var(--icon-fill); }
+.rb-gl-row:hover, .rb-gl-row:focus { background: var(--dye-soft); }
+.rb-gl-row.off { opacity: .45; cursor: default; }
+.rb-gl-kbd { font-size: var(--fs-xs); color: var(--ink-soft); }
+.rb-gl-pin { border: 0; background: transparent; padding: 0; width: 22px; height: 22px; display: grid; place-items: center; color: var(--steel-4); cursor: pointer; opacity: 0; }
+.rb-gl-pin svg { width: 15px; height: 15px; color: currentColor; }
+.rb-gl-row:hover .rb-gl-pin, .rb-gl-row:focus .rb-gl-pin, .rb-gl-pin.on { opacity: 1; }
+.rb-gl-pin.on { color: var(--dye); }
+.rb-gl-foot { border-top: 1px solid var(--steel-2); margin-top: 6px; padding: 8px 16px 4px; font-size: var(--fs-xs); color: var(--ink-soft); }
+/* L4 Navigationswerkzeuge aktiv */
+.view-tools > button.on { background: var(--dye); color: #fff; }
+/* L5 Karten nur so hoch wie ihr Inhalt, Kopf mit Titel */
+/* (rechte Karte bleibt volle Höhe: Inhalt scrollt darin) */
+/* L6 Schild über dem gewählten Feature in der Verlaufsleiste */
+#verlauf { position: relative; overflow: visible; }
+.vl-editing { position: absolute; bottom: calc(100% + 6px); padding: 4px 10px; border-radius: 6px; background: #1c2129; color: #fff; font-size: var(--fs-s); white-space: nowrap; pointer-events: none; box-shadow: var(--shadow-1); z-index: 5; }

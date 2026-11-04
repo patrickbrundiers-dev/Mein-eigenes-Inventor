@@ -8,6 +8,7 @@ import { DirectBar, directFaceRef } from "./direkt.js";
 import { NextStep } from "./naechster.js";
 import { SideBySide } from "./nebeneinander.js";
 import { DocTabs } from "./doctabs.js";
+import { Verlauf } from "./verlauf.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
 import { Tree } from "./tree.js";
@@ -19,7 +20,7 @@ import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
-import { h, toast, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
+import { h, icon, toast, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
 import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { moveProblem, copyFeatures } from "../core/ableiten.js";
@@ -36,7 +37,7 @@ import { contextScene, contextLabel } from "../core/kontext.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
-import { axisDistance, measureFormat, MAX_MEASURE_ITEMS, measurePickOptions, measureHitLabel, sameMeasureHit } from "../core/messen.js";
+import { axisDistance, measureFormat, quickMeasure, MAX_MEASURE_ITEMS, measurePickOptions, measureHitLabel, sameMeasureHit } from "../core/messen.js";
 import { resolveDatums, resolvePlane } from "../core/datums.js";
 import { datumDisplay, datumPickClick, datumHover, datumSelectClick, datumHandleDown, finishDatumPick, toggleAllDatums, datumPicking, featureAtFace } from "./arbeitselemente.js";
 import { sketchRefs, dependents } from "../core/featurerefs.js";
@@ -100,6 +101,7 @@ export class App {
     this.minibar = new MiniBar(this);
     this.direct = new DirectBar(this);
     this.doctabs = new DocTabs(this);
+    this.verlauf = new Verlauf(this);
     this.tree = new Tree(this);
     this.props = new Props(this);
     this.drawing = new DrawingEditor(this);
@@ -150,6 +152,7 @@ export class App {
   }
   setMode(mode) {
     this.mode = mode;
+    if (this.quickEl) this.quickEl.hidden = true;
     const draw = mode === "drawing";
     const start = mode === "start";
     document.getElementById("viewer").hidden = draw || start;
@@ -852,7 +855,7 @@ export class App {
     this.endMeasure();
     if (f && (f.type === "fillet" || f.type === "chamfer") && (f.mode || "edges") === "edges") this.pick = { kind: "edges", feature: f.id };
     if (f && f.type === "naht") this.pick = { kind: "edges", feature: f.id };
-    if (f && ["shell", "aufdicken", "flaeche", "entformung"].includes(f.type)) this.pick = { kind: "faces", feature: f.id };
+    if (f && ["shell", "aufdicken", "flaeche", "entformung", "lochblech"].includes(f.type)) this.pick = { kind: "faces", feature: f.id };
     if (f?.type === "direkt" && !(f.faces || []).length) this.pick = { kind: "faces", feature: f.id };
     const wasEditing = this._editingFeature;
     this._editingFeature = this.pick?.feature || null;
@@ -983,7 +986,7 @@ export class App {
     const boxEl = h("div", { class: "view-box", hidden: true });
     document.getElementById("stage").append(boxEl);
     const boxRect = (e) => { const r = cv.getBoundingClientRect(); return { x0: down.x - r.left, y0: down.y - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, ox: r.left - boxEl.parentElement.getBoundingClientRect().left, oy: r.top - boxEl.parentElement.getBoundingClientRect().top }; };
-    const boxAllowed = () => this.mode === "part" && !this.pick && down?.b === 0 && !down.touch; // Finger ziehen dreht
+    const boxAllowed = () => this.mode === "part" && !this.pick && down?.b === 0 && !down.touch && !this.viewer.navTool; // Finger ziehen dreht
     cv.addEventListener("pointermove", (e) => {
       if (!down || !boxAllowed() || Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) return;
       const b = boxRect(e);
@@ -1007,7 +1010,7 @@ export class App {
       if (b === 2 && this.mode === "sketch") { this.sketcher.state = null; this.sketcher.render(); return; }
       if (b === 2 && this.pick?.kind === "place") return this.cancelPick();
       if (b === 2) return this.viewerContextMenu(e);
-      if (b !== 0 || this.mode === "sketch") return;
+      if (b !== 0 || this.mode === "sketch" || this.viewer.navTool) return;
       if (this.viewer.handleCubeClick(e.clientX, e.clientY)) return;
       this.viewerClick(e);
     });
@@ -1100,6 +1103,7 @@ export class App {
     this.tree.render();
     this.props.render();
     this.ribbon.render();
+    this.updateQuickMeasure();
     if (hit) this.minibar.show(e.clientX, e.clientY);
   }
   /** Wählbares im Bauteil nach Auswahlfilter (Flächen/Kanten) */
@@ -1112,6 +1116,7 @@ export class App {
     this.selHits = hits;
     this.sel = hits.length ? { type: "geometry" } : null;
     this.viewer.setSelectionHits(this.selHits);
+    this.updateQuickMeasure();
     this.tree.render();
     this.props.render();
     this.ribbon.render();
@@ -1256,6 +1261,7 @@ export class App {
     if (this.mode !== "part" && this.mode !== "assembly") return;
     this.pick = { kind: "measure" };
     this.measure = { hits: [], filter: this.measureFilter || "alle" };
+    this.updateQuickMeasure();
     this.viewer.setSelectionHits([]);
     this.viewer.showMeasure(null);
     this.setHint("Messen: Fläche, Kante, Achse oder Fangpunkt (Endpunkt, Mitte, Kreismitte, Quadrant) anklicken, dann optional ein zweites Element (Strg/Umschalt: weitere) – Esc beendet");
@@ -1330,6 +1336,7 @@ export class App {
     if (!this.measure) return;
     this.measure = null;
     this.viewer.showMeasure(null);
+    this.updateQuickMeasure();
   }
   cancelPick() {
     const datumMode = datumPicking(this);
@@ -1351,6 +1358,8 @@ export class App {
     const p = this.prefs;
     if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
     if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
+    if (keys?.includes("oberflaeche.verlauf")) this.verlauf.render();
+    if (keys?.includes("oberflaeche.schnellmessung")) this.updateQuickMeasure();
     if (keys?.some((k) => k.startsWith("baum."))) this.tree.render();
     if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
     this.viewer.applyPrefs(p.values);
@@ -1466,17 +1475,49 @@ export class App {
     this.nextStep?.update();
     this.side?.update();
   }
+  /** Schnellmessung (SolidCraft-Abgleich F3): Werte der Auswahl unten rechts über der Navigationspille, Klick kopiert */
+  async updateQuickMeasure() {
+    const el = this.quickEl;
+    if (!el) return;
+    const hits = (this.selHits || []).filter((x) => x.kind === "edge" || x.kind === "face" || x.kind === "point");
+    const on = this.prefs.get("oberflaeche.schnellmessung") !== false && !this.measure && (this.mode === "part" || this.mode === "assembly");
+    const ticket = (this.quickTicket = (this.quickTicket || 0) + 1);
+    if (!on || !hits.length || hits.length > 50) { el.hidden = true; return; }
+    let r;
+    try {
+      const items = hits.map((x) => this.measureItem(x)).filter(Boolean);
+      if (!items.length) { el.hidden = true; return; }
+      r = await this.kernel.call("measure", { items });
+    } catch { if (ticket === this.quickTicket) el.hidden = true; return; }
+    if (ticket !== this.quickTicket) return;
+    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen") ?? 2, angleDec: this.prefs.get("messen.winkelstellen") ?? 2 });
+    const rows = quickMeasure(r, F);
+    el.replaceChildren(...rows.map((x) => h("button", { class: "qm-item", title: "Klicken: Wert kopieren", onclick: () => navigator.clipboard?.writeText(x.value).then(() => toast(`${x.label}: ${x.value} kopiert`), () => {}) },
+      h("span", { class: "qm-l" }, x.label), h("span", { class: "qm-v" }, x.value))));
+    el.hidden = !rows.length;
+  }
   buildViewTools() {
-    const mk = (label, run, title) => h("button", { onclick: run, title }, label);
-    this.viewTools = h("div", { class: "view-tools" },
-      mk("Iso", () => this.viewer.setView("iso"), "Isometrische Ansicht"),
-      mk("Vorne", () => this.viewer.setView("front")),
-      mk("Oben", () => this.viewer.setView("top")),
-      mk("Rechts", () => this.viewer.setView("right")),
-      mk("Alles", () => this.viewer.fit(), "Alles zeigen (F6)"),
-      mk("Auswahl", () => this.zoomToSelection(), "Auswahl zeigen"),
+    // Navigationsleiste als schwebende Pille unten in der Mitte (SolidCraft-Aufbau), Symbole mit Tooltip
+    const mk = (ic, label, run, title) => h("button", { onclick: run, title: title || label, "aria-label": label, "data-view": label }, icon(ic));
+    // Navigationswerkzeuge wie SolidCraft: linke Maustaste dreht/verschiebt/zoomt, bis Esc oder erneuter Klick
+    const nav = (ic, kind, label) => { const b = mk(ic, label, () => { const k = this.viewer.navTool === kind ? null : kind; this.viewer.setNavTool(k); syncNav(); }, label + " (linke Maustaste, Esc beendet)"); b.dataset.nav = kind; return b; };
+    const syncNav = () => { for (const b of this.viewTools.querySelectorAll("[data-nav]")) b.classList.toggle("on", b.dataset.nav === this.viewer.navTool); };
+    this.viewer.onNavTool = syncNav;
+    const views = (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu(r.left, r.top - 4, [["iso", "Isometrisch", "viewIso"], ["front", "Vorne", "viewFront"], ["back", "Hinten", "viewFront"], ["left", "Links", "viewRight"], ["right", "Rechts", "viewRight"], ["top", "Oben", "viewTop"], ["bottom", "Unten", "viewTop"]].map(([v, label, ic]) => ({ label, icon: ic, run: () => this.viewer.setView(v) }))); };
+    this.viewTools = h("div", { class: "view-tools", role: "toolbar", "aria-label": "Ansicht" },
+      nav("orbit", "orbit", "Drehen"), nav("pan", "pan", "Verschieben"), nav("zoom", "zoom", "Zoomen"),
+      h("span", { class: "vt-sep" }),
+      mk("viewIso", "Iso", () => this.viewer.setView("iso"), "Isometrische Ansicht"),
+      mk("viewFront", "Vorne", () => this.viewer.setView("front"), "Ansicht vorne"),
+      mk("viewTop", "Oben", () => this.viewer.setView("top"), "Ansicht oben"),
+      mk("viewRight", "Rechts", () => this.viewer.setView("right"), "Ansicht rechts"),
+      mk("home", "Ansichten", views, "Alle Standardansichten"),
+      h("span", { class: "vt-sep" }),
+      mk("fit", "Alles", () => this.viewer.fit(), "Alles zeigen (F6)"),
+      mk("search", "Auswahl", () => this.zoomToSelection(), "Auswahl zeigen (Umschalt+F6)"),
       this.clipBar = h("span", { class: "clip-bar", hidden: true }));
-    document.getElementById("stage").append(this.viewTools);
+    this.quickEl = h("div", { class: "quick-measure", role: "status", "aria-label": "Schnellmessung", hidden: true });
+    document.getElementById("stage").append(this.viewTools, this.quickEl);
   }
   // ---------- Ansicht ----------
   /** Schlüssel für Ausblenden: in Baugruppen die ganze Komponente, im Bauteil der Körper */
@@ -1629,7 +1670,7 @@ export const FEATURE_NAMES = {
   sketch: "Skizze", blechkasten: "Blechkasten", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
   arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", kroepfung: "Kröpfung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
-  endkappe: "Endkappe", strecken: "Rohr gestreckt", zinkloch: "Verzinkungsbohrungen", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung", direkt: "Direkt",
+  endkappe: "Endkappe", strecken: "Rohr gestreckt", zinkloch: "Verzinkungsbohrungen", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", huelle: "Hüllkörper", lochblech: "Lochblech", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung", direkt: "Direkt",
 };
 
 /** Welche Bedingungen nicht erfüllbar sind, in Klartext (rot markiert in der Skizze) */

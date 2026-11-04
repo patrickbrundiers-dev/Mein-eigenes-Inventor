@@ -48,6 +48,8 @@ import { gestellPlan } from "../core/gestell.js";
 import { planBodies, localPlan } from "../core/genteil.js";
 import { FILL_DENSITY } from "../core/mass.js";
 import { activeCount } from "../core/bauteilende.js";
+import { huellQuader, huellText } from "../core/huelle.js";
+import { lochRaster, lochName } from "../core/lochblech.js";
 import { tabLayout, wallFromDepths, slotSize } from "../core/stecksystem.js";
 
 const BIG = 20000;
@@ -1980,6 +1982,70 @@ export function createKernel(R) {
             if (!n) throw new Error("Die Ebene schneidet keinen Körper");
             state.bodies = out;
             st.info = `${n} Körper geteilt`;
+            break;
+          }
+          case "lochblech": {
+            // Lochblech / Perforieren (SolidCraft-Abgleich F1): Lochraster auf ebener Fläche, freier Rand, durch den Körper
+            const hits = facesAt((f.faces || []).map((r) => r.p));
+            if (!(f.faces || []).length) throw new Error("Ebene Fläche wählen");
+            if (!hits.length) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+            const muster = f.muster || "Rv";
+            const masse = { muster, d: E(f.d ?? "5", "Lochgröße"), teilung: E(f.teilung ?? "8", "Teilung"), rand: E(f.rand ?? "10", "Rand"), laenge: muster === "Lv" ? E(f.laenge ?? "20", "Langlochlänge") : 0 };
+            let count = 0, frei = 0;
+            for (const { body, face } of hits) {
+              if (face.geomType !== "PLANE") throw new Error("Lochblech nur auf ebenen Flächen");
+              const n = v3.norm(tuple(face.normalAt()));
+              const loops = [face.clone().outerWire(), ...face.clone().innerWires()].map((w) => {
+                const pts = [];
+                for (const e of w.edges) {
+                  const k = e.geomType === "LINE" ? 1 : 24;
+                  for (let i = 0; i < k; i++) pts.push(tuple(e.pointAt(i / k)));
+                }
+                return pts;
+              });
+              // Richtung des Rasters: längste gerade Kante der Außenkontur (Reihen laufen parallel zur Blechkante)
+              let xDir = null, best = 0;
+              for (const e of face.clone().outerWire().edges) {
+                if (e.geomType !== "LINE") continue;
+                const dv = v3.sub(tuple(e.endPoint), tuple(e.startPoint)), L = v3.len(dv);
+                if (L > best) { best = L; xDir = v3.mul(dv, 1 / L); }
+              }
+              if (f.quer) xDir = xDir ? v3.norm(v3.cross(n, xDir)) : null;
+              if (!xDir) { const a = Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]; xDir = v3.norm(v3.cross(a, n)); }
+              // Werkzeug-Ebene zeigt in den Körper (−n), etwas vor der Fläche
+              const nd = v3.mul(n, -1), yDir = v3.cross(nd, xDir);
+              const o = loops[0][0];
+              const to2 = (p) => { const q = v3.sub(p, o); return [v3.dot(q, xDir), v3.dot(q, yDir)]; };
+              const r = lochRaster({ outer: loops[0].map(to2), inner: loops.slice(1).map((l) => l.map(to2)), ...masse });
+              if (!r.centers.length) throw new Error("Kein ganzes Loch passt – Rand oder Teilung verkleinern");
+              const [b0, b1] = body.shape.boundingBox.bounds;
+              // Tiefe: von 1 mm vor der Fläche bis hinter den Körper (kurze Werkzeuge rechnen schneller)
+              const corners = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => [k & 1 ? b1[0] : b0[0], k & 2 ? b1[1] : b0[1], k & 4 ? b1[2] : b0[2]]);
+              const depth = Math.max(...corners.map((c) => v3.dot(v3.sub(o, c), n))) + 2;
+              const po = v3.add(o, n), plane = new R.Plane(po, xDir, nd);
+              const holeDraw = muster === "Qg" ? () => R.drawRectangle(masse.d, masse.d)
+                : muster === "Lv" ? () => R.drawRoundedRectangle(masse.laenge, masse.d, masse.d / 2 - 1e-4)
+                : () => R.drawCircle(masse.d / 2);
+              // Rundlöcher als Zylinder (schnellster Schnitt), Quadrat/Langloch einmal bauen und verschieben
+              const at = (x, y) => v3.add(po, v3.add(v3.mul(xDir, x), v3.mul(yDir, y)));
+              const base = muster === "Rv" || muster === "Rg" ? null : holeDraw().sketchOnPlane(plane).extrude(depth);
+              const tools = r.centers.map(([x, y]) => base ? base.clone().translate(v3.add(v3.mul(xDir, x), v3.mul(yDir, y))) : R.makeCylinder(masse.d / 2, depth, at(x, y), nd));
+              body.shape = cutMany(R, body.shape, tools, { simplify: false });
+              count += r.centers.length; frei = r.frei;
+            }
+            st.info = `${lochName(masse)}: ${count} Löcher, freier Querschnitt ${String(Math.round(frei * 10) / 10).replace(".", ",")} %`;
+            break;
+          }
+          case "huelle": {
+            // Hüllkörper (SolidCraft-Abgleich F7): Quader um die gewählten Körper, Zugabe je Seite
+            const sel = state.bodies.filter((b) => b.kind === "solid" && (!f.bodies?.length || f.bodies.includes(b.fid)));
+            if (!sel.length) throw new Error("Keine Körper gewählt");
+            const zg = E(f.zugabe ?? "0", "Zugabe");
+            if (zg < 0) throw new Error("Zugabe ≥ 0");
+            const q = huellQuader(sel.map((b) => b.shape.boundingBox.bounds), zg);
+            const solid = R.makeBaseBox(q.size[0], q.size[1], q.size[2]).translate([(q.lo[0] + q.hi[0]) / 2, (q.lo[1] + q.hi[1]) / 2, q.lo[2]]);
+            state.bodies.push({ shape: solid, kind: "solid", name: f.name || "Hüllkörper", fid: f.id, meta: { huelle: true, density: 0, size: q.size } }); // Dichte 0: zählt nicht zur Masse
+            st.info = `Hüllkörper ${huellText(q.size)} um ${sel.length} Körper`;
             break;
           }
           case "verschieben": {
