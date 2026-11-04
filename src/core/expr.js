@@ -16,6 +16,16 @@ const FUNCS = {
   round: (x, n = 0) => Math.round(x * 10 ** n) / 10 ** n,
   floor: Math.floor,
   ceil: Math.ceil,
+  sinh: Math.sinh,
+  cosh: Math.cosh,
+  tanh: Math.tanh,
+  exp: Math.exp,
+  ln: Math.log,
+  log: Math.log10,
+  sign: Math.sign,
+  mod: (a, b) => a - b * Math.floor(a / b),
+  // fest(x; n): auf n Nachkommastellen runden (SolidCraft »fixed«)
+  fest: (x, n = 0) => Math.round(x * 10 ** n) / 10 ** n,
   wenn: (c, a, b) => (c ? a : b),
   if: (c, a, b) => (c ? a : b),
 };

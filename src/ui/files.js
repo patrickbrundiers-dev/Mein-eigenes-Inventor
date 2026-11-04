@@ -20,6 +20,7 @@ import { orderRows, orderCsv, orderPages, ORDER_GROUPS } from "../core/bestellli
 import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
 import { decomposePlacement } from "../core/geom.js";
 import { buildXlsx, zipFiles } from "../core/xlsx.js";
+import { writeObj, write3mf } from "../core/meshexport.js";
 import { mappeHtml, listPages, mappeName } from "../core/mappe.js";
 import { checkBeforeMappe, openPointsPage } from "./pruefung.js";
 import { partTextVars } from "../core/schrift.js";
@@ -399,6 +400,49 @@ export class Files {
     await this.withBusy("GLB-Export", async () => {
       const buf = await new GLTFExporter().parseAsync(scene, { binary: true });
       await this.saveBinary(buf, safeName(d.number || d.name) + ".glb", [{ name: "glTF binär", extensions: ["glb"] }]);
+    });
+  }
+  /** Sichtbare Netze in mm (Z oben) für OBJ/3MF – gleiche Auswahl wie GLB */
+  meshList() {
+    const app = this.app, d = app.activeDoc();
+    if (d?.kind !== "part" && d?.kind !== "assembly") { toast("OBJ/3MF gibt es für Bauteile und Baugruppen"); return null; }
+    const comps = new Map((d.components || []).map((c) => [c.id, c.name]));
+    const scene = app.viewer.exportScene((key, body) => {
+      const id = String(key).startsWith("comp:") ? key.slice(5) : null;
+      const r = d.kind === "part" ? app.results.get(d.id) : null;
+      return id ? comps.get(id) || "" : r?.bodies?.[body]?.name || `${d.name} ${body + 1}`;
+    });
+    const out = [];
+    for (const c of scene.children) {
+      const g = c.geometry, a = g?.attributes?.position;
+      if (!a) continue;
+      const e = c.matrix.elements, pos = new Array(a.count * 3);
+      for (let i = 0; i < a.count; i++) {
+        const x = a.getX(i), y = a.getY(i), z = a.getZ(i);
+        pos[i * 3] = e[0] * x + e[4] * y + e[8] * z + e[12];
+        pos[i * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+        pos[i * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+      }
+      const col = c.material.color;
+      out.push({ name: c.name, pos, idx: g.index ? Array.from(g.index.array) : null, color: [col.r, col.g, col.b] });
+    }
+    if (!out.length) { toast("Nichts zu exportieren"); return null; }
+    return { d, meshes: out };
+  }
+  /** OBJ (SolidCraft-Abgleich F6): Netz mit Farben für Blender, Render- und Druckprogramme */
+  async exportObj() {
+    const r = this.meshList();
+    if (!r) return;
+    await this.withBusy("OBJ-Export", async () => {
+      await this.saveText(writeObj(r.meshes), safeName(r.d.number || r.d.name) + ".obj", "model/obj", [{ name: "OBJ", extensions: ["obj"] }]);
+    });
+  }
+  /** 3MF (F6): 3D-Druck mit Einheit mm und Farben, öffnet in PrusaSlicer, Cura, Bambu Studio */
+  async export3mf() {
+    const r = this.meshList();
+    if (!r) return;
+    await this.withBusy("3MF-Export", async () => {
+      await this.saveBinary(write3mf(r.meshes, { title: r.d.name }), safeName(r.d.number || r.d.name) + ".3mf", [{ name: "3MF (3D-Druck)", extensions: ["3mf"] }]);
     });
   }
   /** Jedes Profil/Rohr als eigene STEP-Datei – direkt für die Rohrlaser-Software */

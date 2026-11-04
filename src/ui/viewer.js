@@ -499,14 +499,17 @@ export class Viewer {
       const geo = shared?.[bi]?.geo || meshGeometry(b.mesh);
       const c = new THREE.Color(color);
       if (b.kind === "member") c.offsetHSL(0, 0, ((bi % 3) - 1) * 0.035);
+      // Hüllkörper (F7) durchsichtig blau, damit das Teil darin sichtbar bleibt
+      const hull = !!b.meta?.huelle, op = hull ? Math.min(opacity, 0.2) : opacity;
+      if (hull) c.set("#4aa3d8");
       const mat = new THREE.MeshStandardMaterial({
         color: c, metalness: 0.08, roughness: 0.5, side: THREE.DoubleSide,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
-        transparent: opacity < 1, opacity, depthWrite: opacity >= 1,
+        transparent: op < 1, opacity: op, depthWrite: op >= 1,
         clippingPlanes: this.clipPlanes(),
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.userData = { key, body: bi, faces: b.mesh.faces, baseColor: c.clone(), baseOpacity: opacity, material, finish, meta: b.meta };
+      mesh.userData = { key, body: bi, faces: b.mesh.faces, baseColor: c.clone(), baseOpacity: op, material, finish, meta: b.meta };
       g.add(mesh);
       const edgeObjs = [];
       const eg = shared?.[bi]?.edgeGeo || edgeGeometry(b.mesh.edges);

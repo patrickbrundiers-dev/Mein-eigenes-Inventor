@@ -2,6 +2,7 @@
 import { gearData, centerDistance, BEARINGS, BEARING_SEALS } from "../core/assistent.js";
 import { defaultSchweissbaugruppe, phaseCounts, WELD_PHASES } from "../core/schweissbaugruppe.js";
 import { RULES } from "../core/bendtable.js";
+import { LOCH_MUSTER } from "../core/lochblech.js";
 import { applySheetRule } from "../core/blechregeln.js";
 import { BOX_SIDES, BOX_THROUGH, wallSet } from "../core/blechkasten.js";
 import { TAB_MODES } from "../core/stecksystem.js";
@@ -1416,7 +1417,7 @@ export class Props {
           h("p", { class: "hint" }, `Je Stabende eine Querbohrung durch beide Wände, so nah am Ende wie möglich (bei Gehrung hinter der Spitze). Richtwert-Ø nach DIN EN ISO 14713-2 aus der Profilgröße, z. B. 40er Rohr 12 mm, 80er 16 mm, 100er 20 mm – mit dem Verzinker abstimmen. Oberfläche des Bauteils: ${fin === "verzinkt" || fin === "duplex" ? "verzinkt" : "nicht verzinkt (unter Bauteil-Eigenschaften einstellen)"}.`)));
         break;
       }
-      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "aufdicken": case "flaeche": case "entformung": case "direkt":
+      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "huelle": case "lochblech": case "aufdicken": case "flaeche": case "entformung": case "direkt":
         out.push(...this.bodyToolProps(part, f, E));
         break;
       case "steckzapfen": case "steckschlitz":
@@ -1495,6 +1496,21 @@ export class Props {
           E("Abstand", "offset"),
           this.seg("Ergebnis", SPLIT_KEEP, f.keep || "beide", (v) => this.set(f, "keep", v, "Ergebnis")),
           this.bodyChecks(part, f, "bodies", "Nur diese Körper (leer = alle)"))];
+      case "lochblech":
+        return [this.section("Lochblech",
+          facePick("Ebene Fläche(n) im 3D-Fenster anklicken. Die Löcher gehen durch den Körper."),
+          this.select("Lochmuster", LOCH_MUSTER, f.muster || "Rv", (v) => this.set(f, "muster", v, "Lochmuster")),
+          E((f.muster || "Rv") === "Qg" ? "Kantenlänge" : (f.muster || "Rv") === "Lv" ? "Breite" : "Durchmesser", "d", { allowNeg: false, allowZero: false }),
+          (f.muster || "Rv") === "Lv" ? E("Länge", "laenge", { allowNeg: false, allowZero: false }) : null,
+          E("Teilung", "teilung", { allowNeg: false, allowZero: false }),
+          E("Freier Rand", "rand", { allowNeg: false, allowZero: true }),
+          this.check("Reihen quer zur langen Kante", !!f.quer, (v) => this.set(f, "quer", v || undefined, "Richtung")),
+          h("p", { class: "hint" }, "Bezeichnung nach DIN 24041, z. B. Rv 5-8: Rundloch Ø 5 versetzt, Teilung 8. Nur ganze Löcher, mit freiem Rand zu Außenkante und Ausschnitten. Der freie Querschnitt steht in der Feature-Meldung."))];
+      case "huelle":
+        return [this.section("Hüllkörper",
+          this.bodyChecks(part, f, "bodies", "Körper (leer = alle)"),
+          E("Zugabe je Seite", "zugabe", { allowZero: true }),
+          h("p", { class: "hint" }, "Quader um die gewählten Körper: Bauraum, Rohmaß oder Transportmaß. Die Maße stehen in der Statuszeile des Features und im Messen. Durchsichtig darstellen oder ausblenden über den Modellbrowser."))];
       case "verschieben":
         return [this.section("Körper verschieben",
           this.bodyChecks(part, f, "bodies", "Körper (leer = alle)"),

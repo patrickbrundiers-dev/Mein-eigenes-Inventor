@@ -41,6 +41,8 @@ export function commandRunners(app) {
     "file.refreshLinks": () => app.files.refreshLinks(),
     "file.render": () => app.files.exportPng({ photo: true }),
     "file.glb": () => app.files.exportGlb(),
+    "file.obj": () => app.files.exportObj(),
+    "file.3mf": () => app.files.export3mf(),
     "view.side": () => app.side.toggle(),
     "view.werkstatt": () => app.setWorkshop(),
     "file.newAssembly": () => app.newAssembly(),

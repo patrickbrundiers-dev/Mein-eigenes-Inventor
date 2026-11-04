@@ -856,7 +856,7 @@ body.is-scrubbing, body.is-scrubbing * { cursor: ew-resize !important; user-sele
 /* Nebeneinander (Q5): Modell links, Zeichnung rechts */
 #stage { --split-w: 45%; }
 #stage.split #viewer { right: var(--split-w); }
-#stage.split .view-tools { left: calc((100% - var(--split-w)) / 2); }
+#stage.split .view-tools { right: calc(var(--split-w) + 12px); }
 #stage.split .next-step { left: calc((100% - var(--split-w)) / 2); }
 #side-sheet { position: absolute; top: 0; right: 0; bottom: 0; width: var(--split-w); display: flex; flex-direction: column; background: var(--steel-1, #eef1f5); border-left: 1px solid var(--steel-3); z-index: 5; }
 #side-sheet[hidden] { display: none; }
@@ -988,7 +988,7 @@ html[data-theme="dark"] body.werkstatt { --ink: #fff; --ink-soft: #e4ebf2; }
 .icon-btn { border-radius: var(--radius-m); }
 
 /* D5 Navigationsleiste: Pille unten in der Mitte mit Symbolen */
-.view-tools { left: 50%; right: auto; bottom: 12px; transform: translateX(-50%); align-items: center; gap: 2px; padding: 4px; border-radius: 12px; border-color: var(--steel-2); background: color-mix(in srgb, var(--steel-0) 96%, transparent); box-shadow: var(--shadow-2); z-index: 4; }
+.view-tools { right: 12px; left: auto; bottom: 12px; transform: none; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; border-color: var(--steel-2); background: color-mix(in srgb, var(--steel-0) 96%, transparent); box-shadow: var(--shadow-2); z-index: 4; }
 .view-tools > button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: var(--radius-m); color: var(--ink-soft); }
 .view-tools > button svg { width: 19px; height: 19px; }
 .view-tools > button:hover { background: var(--dye-soft); color: var(--dye); }
@@ -1050,3 +1050,12 @@ body.werkstatt .view-tools > button { width: 44px; height: 44px; }
 .vl-info { flex: none; color: var(--text-faint); font-size: var(--fs-s); }
 @media (max-width: 900px) { .vl-info { display: none; } }
 .sk-trim-path { fill: none; stroke: var(--err); stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
+
+/* Schnellmessung (SolidCraft-Abgleich F3): unten rechts über der Navigationspille */
+.quick-measure { position: absolute; right: 12px; bottom: 62px; z-index: 4; display: flex; gap: 2px; padding: 3px; border-radius: 10px; border: 1px solid var(--steel-2); background: color-mix(in srgb, var(--steel-0) 96%, transparent); box-shadow: var(--shadow-2); }
+.quick-measure[hidden] { display: none; }
+.quick-measure .qm-item { display: flex; gap: 6px; align-items: baseline; border: 0; background: transparent; padding: 3px 8px; border-radius: var(--radius-m); cursor: copy; color: var(--ink); font: inherit; font-size: var(--fs-s); }
+.quick-measure .qm-item:hover { background: var(--dye-soft); }
+.quick-measure .qm-l { color: var(--ink-soft); }
+.quick-measure .qm-v { font-variant-numeric: tabular-nums; font-weight: 600; }
+#stage.split .quick-measure { right: calc(var(--split-w) + 12px); }

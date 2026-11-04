@@ -37,7 +37,7 @@ import { contextScene, contextLabel } from "../core/kontext.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
 import { resolveParams, evaluate } from "../core/expr.js";
-import { axisDistance, measureFormat, MAX_MEASURE_ITEMS, measurePickOptions, measureHitLabel, sameMeasureHit } from "../core/messen.js";
+import { axisDistance, measureFormat, quickMeasure, MAX_MEASURE_ITEMS, measurePickOptions, measureHitLabel, sameMeasureHit } from "../core/messen.js";
 import { resolveDatums, resolvePlane } from "../core/datums.js";
 import { datumDisplay, datumPickClick, datumHover, datumSelectClick, datumHandleDown, finishDatumPick, toggleAllDatums, datumPicking, featureAtFace } from "./arbeitselemente.js";
 import { sketchRefs, dependents } from "../core/featurerefs.js";
@@ -152,6 +152,7 @@ export class App {
   }
   setMode(mode) {
     this.mode = mode;
+    if (this.quickEl) this.quickEl.hidden = true;
     const draw = mode === "drawing";
     const start = mode === "start";
     document.getElementById("viewer").hidden = draw || start;
@@ -854,7 +855,7 @@ export class App {
     this.endMeasure();
     if (f && (f.type === "fillet" || f.type === "chamfer") && (f.mode || "edges") === "edges") this.pick = { kind: "edges", feature: f.id };
     if (f && f.type === "naht") this.pick = { kind: "edges", feature: f.id };
-    if (f && ["shell", "aufdicken", "flaeche", "entformung"].includes(f.type)) this.pick = { kind: "faces", feature: f.id };
+    if (f && ["shell", "aufdicken", "flaeche", "entformung", "lochblech"].includes(f.type)) this.pick = { kind: "faces", feature: f.id };
     if (f?.type === "direkt" && !(f.faces || []).length) this.pick = { kind: "faces", feature: f.id };
     const wasEditing = this._editingFeature;
     this._editingFeature = this.pick?.feature || null;
@@ -1102,6 +1103,7 @@ export class App {
     this.tree.render();
     this.props.render();
     this.ribbon.render();
+    this.updateQuickMeasure();
     if (hit) this.minibar.show(e.clientX, e.clientY);
   }
   /** Wählbares im Bauteil nach Auswahlfilter (Flächen/Kanten) */
@@ -1114,6 +1116,7 @@ export class App {
     this.selHits = hits;
     this.sel = hits.length ? { type: "geometry" } : null;
     this.viewer.setSelectionHits(this.selHits);
+    this.updateQuickMeasure();
     this.tree.render();
     this.props.render();
     this.ribbon.render();
@@ -1258,6 +1261,7 @@ export class App {
     if (this.mode !== "part" && this.mode !== "assembly") return;
     this.pick = { kind: "measure" };
     this.measure = { hits: [], filter: this.measureFilter || "alle" };
+    this.updateQuickMeasure();
     this.viewer.setSelectionHits([]);
     this.viewer.showMeasure(null);
     this.setHint("Messen: Fläche, Kante, Achse oder Fangpunkt (Endpunkt, Mitte, Kreismitte, Quadrant) anklicken, dann optional ein zweites Element (Strg/Umschalt: weitere) – Esc beendet");
@@ -1332,6 +1336,7 @@ export class App {
     if (!this.measure) return;
     this.measure = null;
     this.viewer.showMeasure(null);
+    this.updateQuickMeasure();
   }
   cancelPick() {
     const datumMode = datumPicking(this);
@@ -1354,6 +1359,7 @@ export class App {
     if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
     if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
     if (keys?.includes("oberflaeche.verlauf")) this.verlauf.render();
+    if (keys?.includes("oberflaeche.schnellmessung")) this.updateQuickMeasure();
     if (keys?.some((k) => k.startsWith("baum."))) this.tree.render();
     if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
     this.viewer.applyPrefs(p.values);
@@ -1469,6 +1475,27 @@ export class App {
     this.nextStep?.update();
     this.side?.update();
   }
+  /** Schnellmessung (SolidCraft-Abgleich F3): Werte der Auswahl unten rechts über der Navigationspille, Klick kopiert */
+  async updateQuickMeasure() {
+    const el = this.quickEl;
+    if (!el) return;
+    const hits = (this.selHits || []).filter((x) => x.kind === "edge" || x.kind === "face" || x.kind === "point");
+    const on = this.prefs.get("oberflaeche.schnellmessung") !== false && !this.measure && (this.mode === "part" || this.mode === "assembly");
+    const ticket = (this.quickTicket = (this.quickTicket || 0) + 1);
+    if (!on || !hits.length || hits.length > 50) { el.hidden = true; return; }
+    let r;
+    try {
+      const items = hits.map((x) => this.measureItem(x)).filter(Boolean);
+      if (!items.length) { el.hidden = true; return; }
+      r = await this.kernel.call("measure", { items });
+    } catch { if (ticket === this.quickTicket) el.hidden = true; return; }
+    if (ticket !== this.quickTicket) return;
+    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen") ?? 2, angleDec: this.prefs.get("messen.winkelstellen") ?? 2 });
+    const rows = quickMeasure(r, F);
+    el.replaceChildren(...rows.map((x) => h("button", { class: "qm-item", title: "Klicken: Wert kopieren", onclick: () => navigator.clipboard?.writeText(x.value).then(() => toast(`${x.label}: ${x.value} kopiert`), () => {}) },
+      h("span", { class: "qm-l" }, x.label), h("span", { class: "qm-v" }, x.value))));
+    el.hidden = !rows.length;
+  }
   buildViewTools() {
     // Navigationsleiste als schwebende Pille unten in der Mitte (SolidCraft-Aufbau), Symbole mit Tooltip
     const mk = (ic, label, run, title) => h("button", { onclick: run, title: title || label, "aria-label": label, "data-view": label }, icon(ic));
@@ -1481,7 +1508,8 @@ export class App {
       mk("fit", "Alles", () => this.viewer.fit(), "Alles zeigen (F6)"),
       mk("search", "Auswahl", () => this.zoomToSelection(), "Auswahl zeigen (Umschalt+F6)"),
       this.clipBar = h("span", { class: "clip-bar", hidden: true }));
-    document.getElementById("stage").append(this.viewTools);
+    this.quickEl = h("div", { class: "quick-measure", role: "status", "aria-label": "Schnellmessung", hidden: true });
+    document.getElementById("stage").append(this.viewTools, this.quickEl);
   }
   // ---------- Ansicht ----------
   /** Schlüssel für Ausblenden: in Baugruppen die ganze Komponente, im Bauteil der Körper */
@@ -1634,7 +1662,7 @@ export const FEATURE_NAMES = {
   sketch: "Skizze", blechkasten: "Blechkasten", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
   arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
-  endkappe: "Endkappe", strecken: "Rohr gestreckt", zinkloch: "Verzinkungsbohrungen", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung", direkt: "Direkt",
+  endkappe: "Endkappe", strecken: "Rohr gestreckt", zinkloch: "Verzinkungsbohrungen", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", huelle: "Hüllkörper", lochblech: "Lochblech", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung", direkt: "Direkt",
 };
 
 /** Welche Bedingungen nicht erfüllbar sind, in Klartext (rot markiert in der Skizze) */

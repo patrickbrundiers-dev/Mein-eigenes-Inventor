@@ -122,3 +122,37 @@ export function sameMeasureHit(a, b) {
   if (a.kind === "point") return a.src === b.src && (a.src === "edge" ? a.edge === b.edge : a.face === b.face) && a.ref === b.ref;
   return (a.edge ?? a.face) === (b.edge ?? b.face) && a.end === b.end;
 }
+
+/**
+ * Schnellmessung (SolidCraft-Abgleich F3): Kurztext für die gewählten Elemente, unten rechts im 3D-Fenster.
+ * r = Ergebnis von kernel »measure«; F = measureFormat(…). Gibt [{label, value}] zurück, leer = nichts zeigen.
+ * Eine Kante: Länge (Kreis Ø und R), eine Fläche: Fläche, ein Punkt: Lage, zwei Elemente: Abstand und Winkel,
+ * mehrere Kanten oder Flächen: Summe.
+ */
+export function quickMeasure(r, F) {
+  const items = r?.items || [];
+  if (!items.length) return [];
+  const P = (p) => p.map((v) => F.num(v)).join(" / ");
+  if (items.length === 1) {
+    const it = items[0];
+    if (it.kind === "vertex" || it.type === "POINT") return it.point ? [{ label: "Punkt", value: P(it.point) }] : [];
+    if (it.kind === "face") {
+      const out = [{ label: "Fläche", value: F.area(it.area) }];
+      if (it.radius) out.push({ label: "Ø", value: F.len(2 * it.radius) });
+      return out;
+    }
+    if (it.type === "CIRCLE" && it.radius) {
+      if (it.arc) return [{ label: "Bogen", value: F.len(it.length) }, { label: "R", value: F.len(it.radius) }];
+      return [{ label: "Ø", value: F.len(2 * it.radius) }, { label: "R", value: F.len(it.radius) }];
+    }
+    return [{ label: "Länge", value: F.len(it.length) }];
+  }
+  if (items.length === 2 && Number.isFinite(r.distance)) {
+    const out = [{ label: "Abstand", value: F.len(r.distance) }];
+    if (Number.isFinite(r.angle)) out.push({ label: "Winkel", value: F.angle(r.angle) });
+    return out;
+  }
+  if (items.every((i) => i.kind === "face")) return [{ label: `Σ ${items.length} Flächen`, value: F.area(items.reduce((s, i) => s + (i.area || 0), 0)) }];
+  if (items.every((i) => Number.isFinite(i.length))) return [{ label: `Σ ${items.length} Kanten`, value: F.len(items.reduce((s, i) => s + i.length, 0)) }];
+  return [];
+}
