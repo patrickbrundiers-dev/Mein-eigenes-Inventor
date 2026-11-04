@@ -8,7 +8,7 @@
 import { h, toast } from "./dom.js";
 import { uid } from "../core/examples.js";
 import { faceRef, axisRef, insertRef, endFaceFor, worldToLocal, solveAssembly, pointRef, edgeRef, frameRef, rigidRelation, CONSTRAINT_TYPES, AXIS_SOLUTIONS, valueKey } from "../core/asmsolve.js";
-import { MOTION_KINDS, motionProblem } from "../core/kinematik.js";
+import { MOTION_KINDS, MOTION_DEFAULTS, motionProblem } from "../core/kinematik.js";
 import { matApply, matApplyDir, v3, placementMatrix } from "../core/geom.js";
 
 export const PLACE_TYPES = [["passend", "Passend"], ["winkel", "Winkel"], ["tangential", "Tangential"], ["einfuegen", "Einfügen"], ["symmetrie", "Symmetrie"], ["starr", "Starr"]];
@@ -196,7 +196,10 @@ function finishPlace(app) {
     app.ribbon?.render?.();
   };
   if (st.tab === "bewegung") {
-    const m = { id: uid("bw"), kind: st.motion || "drehung", a: picks[0].cid, b: picks[1].cid, ratio: st.ratio || "1", sense: st.sense || "gleich" };
+    const kind = st.motion || "drehung";
+    const m = { id: uid("bw"), kind, a: picks[0].cid, b: picks[1].cid, ratio: st.ratio || "1", sense: st.sense || "gleich" };
+    for (const k of MOTION_FIELD_KEYS) if (st[k] !== undefined && k !== "ratio" && k !== "sense") m[k] = st[k];
+    for (const [k, v] of Object.entries(MOTION_DEFAULTS[kind] || {})) if (m[k] === undefined) m[k] = v;
     const prob = motionProblem(asm, m);
     if (prob) { st.picks = []; app.align.first = null; app.refreshSelectionHits(); app.props.render(); return toast(prob + " – Gelenk an der Komponente anlegen", { kind: "err", timeout: 6000 }); }
     const nm = (id) => asm.components.find((c) => c.id === id)?.name || "?";
@@ -282,10 +285,8 @@ export function placeProps(P) {
     }[st.type]));
     if (!st.edit) body.push(P.check("Als Abhängigkeit speichern (folgt Änderungen)", st.persist !== false, (v) => { st.persist = v; }));
   } else if (st.tab === "bewegung") {
-    body.push(P.seg("Typ", MOTION_KINDS, st.motion || "drehung", (v) => { st.motion = v; P.render(); }),
-      P.expr(st.motion === "drehschiebung" ? "Weg je Umdrehung" : "Übersetzung", st.ratio || "1", (v) => { st.ratio = v; }, { unit: st.motion === "drehschiebung" ? "mm" : "" }),
-      P.seg("Richtung", [["gleich", "Gleichsinnig"], ["gegen", "Gegensinnig"]], st.sense || "gleich", (v) => { st.sense = v; P.render(); }),
-      h("p", { class: "hint" }, st.motion === "drehschiebung" ? "Zahnstange oder Spindel: Die erste Komponente dreht (Dreh- oder Zylindergelenk), die zweite schiebt (Schiebegelenk) um den Weg je Umdrehung." : "Zahnräder, Riemen: Dreht die erste Komponente um 1°, dreht die zweite um die Übersetzung. Beide brauchen ein Dreh- oder Zylindergelenk."));
+    body.push(P.select("Typ", MOTION_KINDS, st.motion || "drehung", (v) => { st.motion = v; Object.assign(st, MOTION_DEFAULTS[v] || {}); P.render(); }),
+      ...motionFields(P, st.motion || "drehung", st, (k, v, re) => { st[k] = v; if (re) P.render(); }));
   } else if (st.tab === "uebergang") {
     body.push(h("div", { class: "msg info" }, "Übergang (Kurvenbahn, Nocken an Fläche) folgt später. Bis dahin Tangential oder ein Gelenk verwenden."));
   } else {
@@ -387,11 +388,36 @@ export function motionEditor(P, asm, m) {
     prob ? h("div", { class: "msg err" }, prob) : null,
     P.section(m.name || "Bewegung",
       h("dl", { class: "kv" }, h("dt", {}, "Antrieb"), h("dd", {}, comp(m.a)?.name || "–"), h("dt", {}, "Folgt"), h("dd", {}, comp(m.b)?.name || "–")),
-      P.seg("Typ", MOTION_KINDS, m.kind, (v) => set("Bewegung", (x) => { x.kind = v; })),
-      P.expr(m.kind === "drehschiebung" ? "Weg je Umdrehung" : "Übersetzung", m.ratio || "1", (v) => set("Übersetzung", (x) => { x.ratio = v; }), { unit: m.kind === "drehschiebung" ? "mm" : "" }),
-      P.seg("Richtung", [["gleich", "Gleichsinnig"], ["gegen", "Gegensinnig"]], m.sense || "gleich", (v) => set("Richtung", (x) => { x.sense = v; })),
+      P.select("Typ", MOTION_KINDS, m.kind, (v) => set("Bewegung", (x) => { x.kind = v; Object.assign(x, MOTION_DEFAULTS[v] || {}); })),
+      ...motionFields(P, m.kind, m, (k, v) => set("Bewegung", (x) => { x[k] = v; })),
       P.check("Unterdrückt", m.suppressed, (v) => set("Bewegung", (x) => { x.suppressed = v; })),
-      h("p", { class: "hint" }, "Am Gelenk der antreibenden Komponente den Winkel verstellen oder »Bewegen« – die zweite folgt.")),
+      h("p", { class: "hint" }, m.kind === "nocken" ? "Am Drehgelenk des Nockens den Winkel verstellen oder »Bewegen« – der Stößel fährt den Hub s(w)." : "Am Gelenk der antreibenden Komponente den Winkel verstellen oder »Bewegen« – die zweite folgt.")),
     h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => app.edit("Bewegung löschen", () => { asm.motions = (asm.motions || []).filter((x) => x.id !== m.id); app.sel = null; }) }, "Löschen")),
   ];
+}
+
+const MOTION_FIELD_KEYS = ["ratio", "sense", "z1", "z2", "modul", "z", "steigung", "kurve", "offset"];
+const MOTION_HINTS = {
+  drehung: "Riemen, Kette, Reibrad: Dreht die erste Komponente um 1°, dreht die zweite um die Übersetzung. Beide brauchen ein Dreh- oder Zylindergelenk.",
+  drehschiebung: "Spindel oder Zahnstange: Die erste Komponente dreht (Dreh- oder Zylindergelenk), die zweite schiebt (Schiebegelenk) um den Weg je Umdrehung.",
+  zahnrad: "Zahnradpaar: Übersetzung aus den Zähnezahlen (z1/z2), außenverzahnt gegensinnig. Beide brauchen ein Dreh- oder Zylindergelenk.",
+  zahnstange: "Ritzel und Zahnstange: Je Umdrehung schiebt die Zahnstange π · Modul · Zähnezahl. Ritzel dreht, Zahnstange hat ein Schiebegelenk.",
+  schraube: "Schraube und Mutter: Je Umdrehung schiebt die zweite Komponente um die Steigung. Linksgewinde: Richtung »Gegensinnig«.",
+  nocken: "Nocken und Stößel: Der Stößel (Schiebegelenk) fährt den Hub s(w) als Formel des Nockenwinkels w in Grad, z. B. 10*(1-cos(w))/2.",
+  linear: "Bewegungsverknüpfung: Beliebige zwei Gelenke (Dreh-, Zylinder- oder Schiebegelenk) laufen im festen Verhältnis Δb = Faktor · Δa.",
+};
+/** Eingabefelder je Bewegungsart; set(k, v, neuZeichnen) */
+function motionFields(P, kind, o, set) {
+  const sense = (a = "Gleichsinnig", b = "Gegensinnig") => P.seg("Richtung", [["gleich", a], ["gegen", b]], o.sense || "gleich", (v) => set("sense", v, true));
+  const ex = (label, k, unit = "") => P.expr(label, o[k] ?? MOTION_DEFAULTS[kind]?.[k] ?? "1", (v) => set(k, v), { unit, allowNeg: false });
+  const out = {
+    drehung: () => [ex("Übersetzung", "ratio"), sense()],
+    drehschiebung: () => [ex("Weg je Umdrehung", "ratio", "mm"), sense()],
+    zahnrad: () => [ex("Zähne Antrieb z1", "z1"), ex("Zähne Abtrieb z2", "z2"), sense("Gleichsinnig (innen)", "Gegensinnig (außen)")],
+    zahnstange: () => [ex("Modul", "modul", "mm"), ex("Zähne Ritzel", "z"), sense()],
+    schraube: () => [ex("Steigung", "steigung", "mm"), sense("Rechtsgewinde", "Linksgewinde")],
+    nocken: () => [P.text("Hub s(w)", o.kurve ?? MOTION_DEFAULTS.nocken.kurve, (v) => set("kurve", v)), P.expr("Grundlage", o.offset ?? "0", (v) => set("offset", v), { unit: "mm" })],
+    linear: () => [P.expr("Faktor", o.ratio || "1", (v) => set("ratio", v), { unit: "" }), sense()],
+  }[kind] || (() => []);
+  return [...out(), h("p", { class: "hint" }, MOTION_HINTS[kind] || "")];
 }

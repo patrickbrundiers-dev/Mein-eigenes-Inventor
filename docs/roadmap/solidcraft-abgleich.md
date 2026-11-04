@@ -664,3 +664,33 @@ E1 Teil 2 (04.11.2026, nächster PR): Schnittkurve (Kern, Skizzenebene durch die
 ### Oberfläche L1–L6 (04.11.2026, PR #198)
 
 Arbeitsbereich-Kachel links neben dem Menüband, Menüband als Karte, Gruppenname öffnet Befehlsliste mit Anheften an den Schnellzugriff, Navigationswerkzeuge Drehen/Schieben/Zoomen und Ansichten-Menü in der Leiste unten rechts, Schild »bearbeiten« über dem gewählten Feature in der Verlaufsleiste. Vorher/nachher-Bilder: optik/solidcraft/.
+
+### Stand E2 (04.11.2026, PR #200)
+
+Neues Feature »Fläche« (Menüband Körper → Flächen) mit 17 Arten: Extrusion, Rotation, Sweep, Loft, Regelfläche, Verbindungsfläche, Begrenzungsfläche, Begrenzungsfüllung (Patch), Offsetfläche, Fläche kopieren, Trimmen aufheben, Fläche teilen, Nähen (geschlossen → Volumenkörper), Verbund aufheben, Normale umkehren, Flächenverrundung und Dicke (Fläche → Körper). Flächenkörper haben keine Masse und zählen nicht in der Stückliste. Auflagefläche folgt in E5 mit dem Slicer. Nicht umgesetzt: Flächenbegradigung (Fair) und Flächenanpassung (Match), dafür fehlt im Kern ein stabiler Weg; sie stehen in solidcraft-weggelassen.md. Test: test/solidcraft-kernel.test.mjs.
+
+### Stand E3 (04.11.2026, PR #200)
+
+- Bewegungen: Zahnrad (z1/z2), Zahnstange und Ritzel (Modul, Zähnezahl), Schraube (Steigung, Rechts/Links), Nocken (Hub s(w) als Formel des Nockenwinkels) und Bewegungsverknüpfung (zwei beliebige Gelenke im festen Verhältnis), zusätzlich zu Drehung und Drehung–Verschiebung.
+- Bewegungsuntersuchung (Gelenk → »Bewegungsuntersuchung…« und Befehlssuche): Diagramm aller gekoppelten Gelenke über den Bereich des Antriebs, Bewegungsbahn eines Punktes (anzeigen, behalten, neu berechnen, ausblenden, löschen), Punkt anfahren (Gelenkwert, bei dem ein Punkt einem Ziel am nächsten kommt), Kollisionen über alle Stellungen, Abspielen.
+- Gelenkursprung: Achspunkt und Richtung eines Gelenks ändern.
+- Merkmal in anderes Bauteil verschieben (Kontextmenü im Modellbrowser): mit allen Abhängigen, benutzten Skizzen und Arbeitselementen; deckt »Körper/Merkmale/Skizzen in Komponente verschieben« ab. Komponenten aus Körpern gab es schon (Skelett, BG12).
+- Test: test/bewegung-e3.test.mjs.
+
+### Stand E4 (04.11.2026, nächster PR)
+
+Prüfen → »Flächen prüfen«: Zebrastreifen, Umgebungskarte, Krümmungskarte (mit Mindestradius in Rot), Krümmungskamm an gekrümmten Kanten, Isokurven, Silhouette, Kantenstetigkeit (tangential/Knick/Rand) und Zugänglichkeit aus einer Richtung (Werkzeug, Strahl, Brenner). Die Prüfung bleibt beim Neuberechnen an. »Körper vergleichen« zeigt Volumen, Fläche, Schwerpunkt und das Volumen nur in A / nur in B. Test: test/pruefen-e4.test.mjs.
+
+### Stand E5 (04.11.2026, nächster PR)
+
+- An Slicer senden (Export → 3D, Slicer in Einstellungen → Dateien), Auflagefläche (Teil liegt mit der gewählten Fläche auf z = 0).
+- URDF-Paket (Export der Baugruppe: Glieder, Gelenke mit Grenzen, Netze als STL) für ROS/Gazebo.
+- STL-Import wahlweise als Volumenkörper (Netz in Körper, ebene Dreiecke zusammengefasst).
+- Kanten und Flächen auflisten (Tabelle, CSV), Einheit der Anzeige (mm, cm, m, Zoll), Bild nachzeichnen (Konturen eines Bildes als Skizze), Punktwolke einfügen (XYZ/CSV/PTS/PLY, verschieben, skalieren, ausdünnen).
+- Kunststoffteile (Körper → Kunststoffteil): Ansatz/Schraubdom mit Rippen, Stützfuß, Rastnase (Dehnung beim Einrasten), Lippe und Nut in der Wandmitte. Kunststoffregeln (Wand, Formschräge, Radius) in Einstellungen → Werkstoffe, mit Prüfung auf Einfallstellen.
+- Weggelassen: richtungsabhängiger E-Modul (PBCAD hat keine FEM, der Wert hätte keine Wirkung).
+- Tests: test/daten-e5.test.mjs, test/solidcraft-kernel.test.mjs.
+
+### Stand E6 (04.11.2026, nächster PR)
+
+Einstellungsprofile (Einstellungen → Allgemein), Absturzberichte, Leistungsprofil (Rechenzeit je Feature), Blickwinkel (Einstellungen → Ansicht), Dauerdrehen (Esc hält an), Parametergraph und Parameter verschieben (Parameterdialog). Weggelassen: Panel in eigenem Fenster (die Oberfläche ist ein Fenster mit andockbaren Leisten; ein zweites Fenster bräuchte eine zweite Programminstanz).

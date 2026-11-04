@@ -7,6 +7,7 @@
 // damit Stückliste, Zeichnung, Export und Kollision unverändert damit rechnen. Eine Komponente mit Gelenk
 // wird von Abhängigkeiten nicht verschoben (wie fixiert); sie bewegt sich nur über den Gelenkwinkel.
 
+import { evaluate as exprEvaluate } from "./expr.js";
 import { placementMatrix, rotationAbout, matMul, decomposePlacement, v3 } from "./geom.js";
 
 /** Neues Gelenk mit Achse (Punkt, Richtung); Winkel 0 = heutige Lage */
@@ -155,7 +156,34 @@ export function jointFollowers(asm, compId) {
 //   drehung:        beide drehen (Dreh- oder Zylindergelenk), Δb = ratio · Δa (Zahnrad, Riemen; Übersetzung)
 //   drehschiebung:  a dreht, b schiebt (Schiebegelenk), Δb = Δa / 360 · ratio (ratio = Weg je Umdrehung in mm; Zahnstange, Spindel)
 // sense "gegen" kehrt die Richtung um. Bewegt man eine Komponente, folgen alle gekoppelten (Kette, ohne Rückwirkung).
-export const MOTION_KINDS = Object.freeze([["drehung", "Drehung"], ["drehschiebung", "Drehung – Verschiebung"]]);
+export const MOTION_KINDS = Object.freeze([["drehung", "Drehung"], ["drehschiebung", "Drehung – Verschiebung"], ["zahnrad", "Zahnrad"], ["zahnstange", "Zahnstange"], ["schraube", "Schraube"], ["nocken", "Nocken"], ["linear", "Verknüpfung"]]);
+// SolidCraft-Abgleich E3: Zahnrad (z1/z2, gegensinnig), Zahnstange und Ritzel (π·m·z je Umdrehung), Schraube (Steigung),
+// Nocken (Hub s = h(w) als Formel des Antriebswinkels w in °) und Bewegungsverknüpfung (beliebige Gelenke, Δb = k · Δa).
+const num = (x) => Number(String(x ?? "").replace(",", "."));
+/** Vorgabewerte je Bewegungsart (für neue Bewegungen und beim Umschalten der Art) */
+export const MOTION_DEFAULTS = Object.freeze({
+  drehung: { ratio: "1", sense: "gleich" }, drehschiebung: { ratio: "5", sense: "gleich" },
+  zahnrad: { z1: "20", z2: "40", sense: "gegen" }, zahnstange: { modul: "2", z: "20", sense: "gleich" },
+  schraube: { steigung: "1.5", sense: "gleich" }, nocken: { kurve: "10*(1-cos(w))/2", offset: "0" }, linear: { ratio: "1", sense: "gleich" },
+});
+/** Grundart und Faktor einer Bewegung: drehung (Δb = f·Δa), drehschiebung (Δs = f·Δa), linear, nocken (f = null) */
+export function motionLaw(m) {
+  switch (m.kind) {
+    case "zahnrad": return { base: "drehung", f: num(m.z1) / num(m.z2) };
+    case "zahnstange": return { base: "drehschiebung", f: (Math.PI * num(m.modul) * num(m.z)) / 360 };
+    case "schraube": return { base: "drehschiebung", f: num(m.steigung) / 360 };
+    case "drehschiebung": return { base: "drehschiebung", f: num(m.ratio) / 360 };
+    case "linear": return { base: "linear", f: num(m.ratio) };
+    case "nocken": return { base: "nocken", f: null };
+    default: return { base: "drehung", f: num(m.ratio) };
+  }
+}
+/** Nockenhub s(w) aus der Formel (w = Antriebswinkel in °); evaluate wird übergeben, damit der Kern ohne Ausdrücke auskommt */
+export function camLift(m, w, evaluate = exprEvaluate) {
+  const s = evaluate(String(m.kurve || "0"), { w });
+  if (!Number.isFinite(s)) throw new Error("Nockenkurve ergibt keine Zahl");
+  return s + (num(m.offset) || 0);
+}
 const turns = (j) => !!j && !isSlide(j);
 
 /** Passt die Bewegung zu den Gelenken der beiden Komponenten? Rückgabe Fehlertext oder null */
@@ -163,8 +191,16 @@ export function motionProblem(asm, m) {
   const A = asm.components.find((c) => c.id === m.a), B = asm.components.find((c) => c.id === m.b);
   if (!A || !B) return "Komponente fehlt";
   if (A.id === B.id) return "Zwei verschiedene Komponenten wählen";
-  if (!(Number(m.ratio) > 0 || Number(m.ratio) < 0)) return "Übersetzung bzw. Weg je Umdrehung angeben";
-  if (m.kind === "drehschiebung") {
+  const law = motionLaw(m);
+  if (law.base === "nocken") {
+    if (!turns(A.joint)) return `»${A.name}« braucht ein Dreh- oder Zylindergelenk`;
+    if (!isSlide(B.joint)) return `»${B.name}« braucht ein Schiebegelenk`;
+    if (!String(m.kurve || "").trim()) return "Nockenkurve s(w) angeben";
+    return null;
+  }
+  if (!Number.isFinite(law.f) || law.f === 0) return m.kind === "zahnrad" ? "Zähnezahlen angeben" : m.kind === "zahnstange" ? "Modul und Zähnezahl angeben" : m.kind === "schraube" ? "Steigung angeben" : "Übersetzung bzw. Weg je Umdrehung angeben";
+  if (law.base === "linear") { if (!A.joint || !B.joint) return "Beide Komponenten brauchen ein Gelenk"; return null; }
+  if (law.base === "drehschiebung") {
     if (!turns(A.joint)) return `»${A.name}« braucht ein Dreh- oder Zylindergelenk`;
     if (!isSlide(B.joint)) return `»${B.name}« braucht ein Schiebegelenk`;
   } else if (!turns(A.joint) || !turns(B.joint)) return "Beide Komponenten brauchen ein Dreh- oder Zylindergelenk";
@@ -175,7 +211,7 @@ export function motionProblem(asm, m) {
  * Gelenkwert einer Komponente setzen und die Werte aller gekoppelten Gelenke ausrechnen (ohne etwas zu ändern).
  * Rückgabe { values: Map compId → Wert (im Bereich), clamped: [Namen, die an ihre Grenze stoßen] }
  */
-export function coupledJointValues(asm, compId, value) {
+export function coupledJointValues(asm, compId, value, evaluate = exprEvaluate) {
   const comps = new Map(asm.components.map((c) => [c.id, c]));
   const start = comps.get(compId);
   const values = new Map([[compId, clampAngle(start.joint, value)]]);
@@ -189,9 +225,17 @@ export function coupledJointValues(asm, compId, value) {
       const fwd = m.a === x, other = fwd ? m.b : m.b === x ? m.a : null;
       if (!other || values.has(other)) continue;
       const Y = comps.get(other);
-      const f = (m.kind === "drehschiebung" ? Number(m.ratio) / 360 : Number(m.ratio)) * (m.sense === "gegen" ? -1 : 1);
-      const dy = fwd ? dx * f : dx / f;
-      const want = (Y.joint.angle || 0) + dy, got = clampAngle(Y.joint, want);
+      const law = motionLaw(m);
+      let want;
+      if (law.base === "nocken") {
+        // Nocken treibt nur vorwärts (Hub folgt dem Winkel), rückwärts lässt er sich nicht umkehren
+        if (!fwd || !evaluate) continue;
+        try { want = camLift(m, values.get(x), evaluate); } catch { continue; }
+      } else {
+        const f = law.f * (m.sense === "gegen" ? -1 : 1);
+        want = (Y.joint.angle || 0) + (fwd ? dx * f : dx / f);
+      }
+      const got = clampAngle(Y.joint, want);
       if (Math.abs(got - want) > 1e-9) clamped.push(Y.name || Y.id);
       values.set(other, got);
       todo.push(other);

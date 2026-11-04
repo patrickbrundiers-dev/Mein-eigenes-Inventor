@@ -3,7 +3,7 @@
 // hier steht die reine Rechnung und Formatierung, damit sie ohne Geometriekern prüfbar ist.
 
 export const SECOND_UNITS = [["", "Kein(e)"], ["in", "Zoll (in)"], ["cm", "cm"], ["m", "m"]];
-const UNIT_MM = { in: 25.4, cm: 10, m: 1000 };
+const UNIT_MM = { mm: 1, in: 25.4, cm: 10, m: 1000 };
 export const MAX_MEASURE_ITEMS = 20;
 
 const sub = (p, q) => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
@@ -77,12 +77,14 @@ export function fmtFixed(v, dec) {
 }
 
 /** Länge, Fläche, Winkel mit Genauigkeit und optionaler Zweiteinheit (»88,000 mm (3,465 in)«) */
-export function measureFormat({ dec = 3, angleDec = 2, second = "" } = {}) {
-  const u = UNIT_MM[second];
+export function measureFormat({ dec = 3, angleDec = 2, second = "", unit = "mm" } = {}) {
+  const u = second && second !== unit ? UNIT_MM[second] : null;
+  // Einheit der Konstruktion (SolidCraft-Abgleich E5): Hauptanzeige in mm, cm, m oder Zoll; gerechnet wird in mm
+  const main = UNIT_MM[unit] ? unit : "mm", k = UNIT_MM[main] || 1;
   const extra = (mm, pow) => (u ? ` (${fmtFixed(mm / u ** pow, dec)} ${second}${pow === 2 ? "²" : ""})` : "");
   return {
-    len: (v) => `${fmtFixed(v, dec)} mm${extra(v, 1)}`,
-    area: (v) => `${fmtFixed(v, dec)} mm²${extra(v, 2)}`,
+    len: (v) => `${fmtFixed(v / k, dec)} ${main}${extra(v, 1)}`,
+    area: (v) => `${fmtFixed(v / k ** 2, dec)} ${main}²${extra(v, 2)}`,
     angle: (v) => `${fmtFixed(v, angleDec)}°`,
     num: (v) => fmtFixed(v, dec),
   };

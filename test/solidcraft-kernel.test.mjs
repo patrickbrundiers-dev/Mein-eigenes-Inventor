@@ -168,3 +168,84 @@ test("Flächen (E2): Begrenzung, Verbindung, Trimmen aufheben, Teilen, Dicke, Ve
   okAll(vr);
   assert.ok(vr.bodies[0].shape.faces.length >= 3, "Rundungsfläche dazu");
 });
+
+test("Flächen prüfen (E4): Isokurven, Kantenstetigkeit, Radien, Körper vergleichen", async () => {
+  // Quader 200 × 100 × 20 mit R 5 an den senkrechten Kanten
+  const box = [rectSketchFeature("s1", "XY", 0, 0, 0, "200", "100"), { id: "e1", type: "extrude", sketch: "s1", distance: "20", op: "new" }];
+  const res = await K.buildPart(part([...box, { id: "r", type: "fillet", mode: "dir", dir: "Z", radius: "5" }]));
+  okAll(res);
+  const sh = res.bodies[0].shape;
+  const iso = K.isoCurves(sh, 5);
+  assert.equal(iso.length, 4 * 2 * 4, "4 Rundungen × 2 Richtungen × 4 Linien");
+  const ed = K.edgeContinuity(sh);
+  const tang = ed.filter((e) => e.angle < 1), knick = ed.filter((e) => e.angle > 80);
+  assert.equal(tang.length, 8, "Übergänge Rundung ↔ Seitenfläche");
+  assert.equal(knick.length, ed.length - 8, "alle anderen Kanten 90°");
+  const rad = K.analyticRadii(sh);
+  assert.equal(rad.length, 4);
+  for (const x of rad) near(x.r, 5, 1e-6);
+  // Vergleich: Quader ohne Rundung gegen gerundeten → nur in A die vier Ecken (je (1 − π/4)·25·20)
+  const plain = (await K.buildPart(part(box))).bodies[0].shape;
+  const c = K.compareShapes(plain, sh);
+  near(c.onlyA, 4 * (1 - Math.PI / 4) * 25 * 20, 0.5);
+  near(c.onlyB, 0, 1e-3);
+  near(c.common, c.volB, 0.5);
+  assert.ok(c.meshA?.positions.length > 0); assert.equal(c.meshB, null);
+});
+
+test("Netz konvertieren (E5): STL-Würfel → Volumenkörper mit 6 Flächen", async () => {
+  const V = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0], [0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]];
+  const T = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
+  const stl = "solid w\n" + T.map((t) => `facet normal 0 0 0\nouter loop\n${t.map((i) => `vertex ${V[i].join(" ")}`).join("\n")}\nendloop\nendfacet`).join("\n") + "\nendsolid w\n";
+  const data = Buffer.from(stl).toString("base64");
+  const res = await K.buildPart(part([{ id: "i", type: "import", format: "stl", data, op: "new", convert: true }]));
+  okAll(res);
+  assert.match(res.status.i.info, /Volumenkörper, 6 Flächen \(aus 12 Dreiecken\)/);
+  near(vol(res), 1000, 1e-3);
+  // Kanten und Flächen auflisten
+  const t = K.listTopology(res.bodies[0].shape);
+  assert.equal(t.faces.length, 6); assert.equal(t.edges.length, 12);
+  for (const f of t.faces) { assert.equal(f.type, "PLANE"); near(f.area, 100, 1e-6); }
+  for (const e of t.edges) { assert.equal(e.type, "LINE"); near(e.length, 10, 1e-6); }
+});
+
+test("Auflagefläche (E5): Seitenfläche nach unten, Teil liegt auf z = 0", async () => {
+  const box = [rectSketchFeature("s1", "XY", 0, 0, 0, "200", "100"), { id: "e1", type: "extrude", sketch: "s1", distance: "20", op: "new" }];
+  const res = await K.buildPart(part([...box, { id: "a", type: "auflage", faces: [{ p: [200, 50, 10] }] }]));
+  okAll(res);
+  const b = res.bodies[0].shape.boundingBox.bounds;
+  near(b[0][2], 0, 1e-6); near(b[1][2] - b[0][2], 200, 1e-6);
+  near(vol(res), 200 * 100 * 20, 1e-3);
+  // Deckfläche (Normale +Z) → um 180° gedreht
+  const r2 = await K.buildPart(part([...box, { id: "a", type: "auflage", faces: [{ p: [100, 50, 20] }] }]));
+  okAll(r2);
+  const b2 = r2.bodies[0].shape.boundingBox.bounds;
+  near(b2[0][2], 0, 1e-6); near(b2[1][2], 20, 1e-6);
+  assert.match(r2.status.a.info, /180°/);
+});
+
+test("Kunststoffteile (E5): Ansatz mit Rippen, Rastnase, Lippe und Nut", async () => {
+  const base = [rectSketchFeature("s1", "XY", 0, 0, 0, "100", "60"), { id: "e1", type: "extrude", sketch: "s1", distance: "5", op: "new" }];
+  const pts = { id: "sp", type: "sketch", name: "Punkte", plane: { ref: "XY" }, offset: "5", points: [{ id: "q1", x: 20, y: 20 }, { id: "q2", x: 80, y: 40 }], entities: [{ id: "pe1", type: "point", p: "q1" }, { id: "pe2", type: "point", p: "q2" }], constraints: [] };
+  const v0 = 100 * 60 * 5;
+  const a = await K.buildPart(part([...base, pts, { id: "k", type: "kunststoff", art: "ansatz", sketch: "sp", d: "8", di: "3", h: "10", tiefe: "8", rippen: "0" }]));
+  okAll(a);
+  near(vol(a), v0 + 2 * (Math.PI * 16 * 10 - Math.PI * 2.25 * 8), 1);
+  const ar = await K.buildPart(part([...base, pts, { id: "k", type: "kunststoff", art: "ansatz", sketch: "sp", d: "8", di: "3", h: "10", tiefe: "8", rippen: "4", rippeT: "1.5", rippeL: "5" }]));
+  okAll(ar);
+  assert.ok(vol(ar) > vol(a) + 50, "Rippen");
+  assert.match(ar.status.k.info, /4 Rippen/);
+  const r = await K.buildPart(part([...base, pts, { id: "k", type: "kunststoff", art: "rastnase", sketch: "sp", l: "20", t: "2", b: "6", hub: "1", fang: "3" }]));
+  okAll(r);
+  near(vol(r), v0 + 2 * 6 * (2 * 20 + 1 * 3 / 2), 0.5);
+  assert.match(r.status.k.info, /Dehnung 0,8 %/);
+  // Lippe auf dem Rand: Band Breite 1 in Wandmitte einer 2-mm-Wand, Höhe 2
+  const top = rectSketchFeature("s2", "XY", 5, 0, 0, "100", "60");
+  const l = await K.buildPart(part([...base, top, { id: "k", type: "kunststoff", art: "lippe", sketch: "s2", breite: "1", hoehe: "2", wand: "2" }]));
+  okAll(l);
+  const ring = (o1, o2) => (100 - 2 * o1) * (60 - 2 * o1) - (100 - 2 * o2) * (60 - 2 * o2);
+  near(vol(l) - v0, ring(0.5, 1.5) * 2, 1);
+  const nn = await K.buildPart(part([...base, top, { id: "k", type: "kunststoff", art: "nut", sketch: "s2", breite: "1", hoehe: "2", wand: "2", spiel: "0.1" }]));
+  okAll(nn);
+  near(v0 - vol(nn), ring(0.4, 1.6) * 2.1, 1);
+});

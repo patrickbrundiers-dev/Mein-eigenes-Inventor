@@ -4424,6 +4424,120 @@ try {
       JSON.stringify({ used, prop, title, ref, bomText: bomText.slice(0, 200), rows, cd, ind, sheetHit: sheet.includes("Schlosserei Muster") }));
   }
 
+  // SolidCraft-Abgleich E3: Zahnrad-Bewegung, Bewegungsuntersuchung mit Diagramm und Bahn, Merkmal verschieben
+  {
+    const e3 = await evalApp(() => {
+      const a = window.__werkcad, d = a.activeDoc();
+      const [c1, c2] = d.components.filter((c) => !c.fixed).slice(0, 2);
+      a.edit("Test", () => {
+        c1.joint = { p: [...c1.pos], d: [0, 0, 1], angle: 0, min: 0, max: 360 };
+        c2.joint = { p: [...c2.pos], d: [0, 0, 1], angle: 0, min: -360, max: 360 };
+        d.constraints = (d.constraints || []).filter((x) => ![x.a?.comp, x.b?.comp].some((k) => k === c1.id || k === c2.id));
+      });
+      a.beginPlace({ tab: "bewegung", motion: "zahnrad", z1: "20", z2: "40", sense: "gegen" });
+      const f = a.planarFaces(c1.part)[0] || a.planarFaces("beispiel_platte")[0];
+      a.alignPick({ kind: "face", key: "comp:" + c1.id, info: f });
+      a.alignPick({ kind: "face", key: "comp:" + c2.id, info: f });
+      const m = (d.motions || []).at(-1);
+      a.sel = { type: "component", id: c1.id }; a.tree.render(); a.props.render();
+      return { kind: m?.kind, z2: m?.z2, c1: c1.id, c2: c2.id };
+    });
+    await page.locator("#props input.joint-angle").evaluate((el) => { el.value = "90"; el.dispatchEvent(new Event("change")); });
+    await idle(60000);
+    const j3 = await evalApp((ids) => { const d = window.__werkcad.activeDoc(); return ids.map((id) => d.components.find((c) => c.id === id).joint.angle); }, [e3.c1, e3.c2]);
+    await page.locator("#props .btn", { hasText: "Bewegungsuntersuchung" }).click();
+    await page.locator(".dialog", { hasText: "Bewegungsuntersuchung" }).waitFor({ timeout: 10000 });
+    const lines = await page.locator(".dialog svg.motion-chart polyline").count();
+    await shot("e3-bewegungsuntersuchung");
+    await page.locator(".dialog .btn", { hasText: "Bahn behalten" }).click();
+    const kept = await evalApp(() => (window.__werkcad.activeDoc().motionPaths || []).map((p) => p.pts.length));
+    await page.locator(".dialog footer .btn", { hasText: "Schließen" }).click();
+    // Merkmal mit Skizze in ein anderes Bauteil verschieben
+    await evalApp(() => window.__werkcad.openDoc("beispiel_platte"));
+    await idle();
+    const mv0 = await evalApp(() => { const a = window.__werkcad, d = a.activeDoc(); const f = d.features.find((g) => g.type !== "sketch" && g.sketch); a.moveFeatureToPartDialog(f.id); return { id: f.id, name: f.name, n: d.features.length }; });
+    await page.locator(".dialog", { hasText: "in Bauteil verschieben" }).waitFor({ timeout: 10000 });
+    const target = await page.locator(".dialog select option").first().textContent();
+    await page.locator(".dialog footer .btn", { hasText: "Verschieben" }).click();
+    await idle();
+    const mv = await evalApp((t) => { const a = window.__werkcad, src = a.doc("beispiel_platte"), dst = a.parts().find((d) => d.name === t); return { left: src.features.length, inDst: dst?.features.map((g) => g.name) || [] }; }, target);
+    await evalApp(() => window.__werkcad.undo());
+    await idle();
+    step("SolidCraft E3: Zahnrad-Bewegung, Bewegungsuntersuchung, Bahn behalten, Merkmal verschieben",
+      e3.kind === "zahnrad" && e3.z2 === "40" && j3[0] === 90 && Math.abs(j3[1] + 45) < 1e-6 && lines === 2 && kept.length === 1 && kept[0] > 10
+        && mv.left < mv0.n && mv.inDst.includes(mv0.name),
+      JSON.stringify({ e3, j3, lines, kept, mv0, target, mv }));
+  }
+
+  // SolidCraft-Abgleich E4: Flächen prüfen und Körper vergleichen
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rohr"));
+    await idle();
+    const info = {};
+    for (const mode of ["kruemmung", "stetigkeit", "isokurven", "zugang", "zebra"]) {
+      await evalApp(() => { window.__werkcad.commands.exec("part.surfaceCheck"); });
+      const dlg = page.locator(".dialog", { hasText: "Flächen prüfen" });
+      await dlg.waitFor({ timeout: 10000 });
+      await dlg.locator(".field", { hasText: "Prüfung" }).locator("select").selectOption(mode);
+      await dlg.locator("footer .btn", { hasText: "Anzeigen" }).click();
+      await page.waitForFunction(() => !/berechnet/.test(document.querySelector(".surface-check-info")?.textContent || "berechnet"), null, { timeout: 30000 });
+      info[mode] = await dlg.locator(".surface-check-info").textContent();
+      if (mode === "kruemmung") await shot("e4-kruemmung");
+      if (mode === "zebra") await shot("e4-zebra");
+      await dlg.locator("footer .btn", { hasText: "Schließen" }).click();
+    }
+    const on = await evalApp(() => ({ mode: window.__werkcad.surfaceCheck?.mode, ana: !!window.__werkcad.viewer.analysis }));
+    await evalApp(() => { window.__werkcad.commands.exec("part.surfaceCheck"); });
+    await page.locator(".dialog footer .btn", { hasText: "Aus" }).click();
+    await page.locator(".dialog footer .btn", { hasText: "Schließen" }).click();
+    const off = await evalApp(() => ({ mode: window.__werkcad.surfaceCheck?.mode || null, ana: !!window.__werkcad.viewer.analysis }));
+    // Körper vergleichen: Rohr gegen Platte
+    await evalApp(() => { window.__werkcad.commands.exec("part.compareBodies"); });
+    const cd = page.locator(".dialog", { hasText: "Körper vergleichen" });
+    await cd.waitFor({ timeout: 10000 });
+    await cd.locator("footer .btn", { hasText: "Vergleichen" }).click();
+    await cd.locator("table.compare-bodies").waitFor({ timeout: 30000 });
+    const cmp = await cd.locator("table.compare-bodies").innerText();
+    await shot("e4-vergleich");
+    await cd.locator("footer .btn", { hasText: "Schließen" }).click();
+    step("SolidCraft E4: Flächen prüfen (Krümmung, Stetigkeit, Isokurven, Zugänglichkeit, Zebra), Körper vergleichen",
+      /Kleinster Radius|Keine gekrümmten/.test(info.kruemmung) && /Knickkanten/.test(info.stetigkeit) && /Isokurven|Keine gekrümmten/.test(info.isokurven) && /erreichbar/.test(info.zugang)
+        && on.mode === "zebra" && on.ana && off.mode === null && !off.ana && /nur in A/.test(cmp),
+      JSON.stringify({ info, on, off, cmp }));
+  }
+
+  // SolidCraft-Abgleich E5: Kanten und Flächen auflisten, URDF, Einheit
+  {
+    await evalApp(() => window.__werkcad.openDoc("beispiel_rohr"));
+    await idle();
+    await evalApp(() => { window.__werkcad.commands.exec("part.listTopology"); });
+    const td = page.locator(".dialog", { hasText: "Kanten und Flächen" });
+    await td.waitFor({ timeout: 20000 });
+    const faces = await td.locator("table.topo-faces tbody tr").count();
+    await td.locator("footer .btn", { hasText: "Schließen" }).click();
+    await evalApp(() => window.__werkcad.openDoc("beispiel_bg"));
+    await idle();
+    const urdf = await evalApp(async () => { const p = await window.__werkcad.files.exportUrdf(); return p && { links: p.model.links.length, files: p.files.length, robot: /<robot name=/.test(p.text) }; });
+    step("SolidCraft E5: Kanten/Flächen auflisten, URDF-Paket", faces > 3 && urdf?.robot && urdf.links >= 1 && urdf.files >= 2, JSON.stringify({ faces, urdf }));
+  }
+  // SolidCraft-Abgleich E5: Kunststoffteil (Schraubdom mit Rippen an Skizzenpunkten), Regel aus den Einstellungen
+  {
+    await evalApp(() => window.__werkcad.newPart("Kunststoff"));
+    await idle();
+    await evalApp(() => { const a = window.__werkcad, p = a.activeDoc(); a.edit("Test", () => {
+      p.features.push({ id: "kb", type: "sketch", name: "Grund", plane: { ref: "XY" }, offset: "0", points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 80, y: 0 }, { id: "c", x: 80, y: 50 }, { id: "d", x: 0, y: 50 }], entities: [{ id: "l1", type: "line", a: "a", b: "b" }, { id: "l2", type: "line", a: "b", b: "c" }, { id: "l3", type: "line", a: "c", b: "d" }, { id: "l4", type: "line", a: "d", b: "a" }], constraints: [] },
+        { id: "ke", type: "extrude", sketch: "kb", distance: "3", op: "new" },
+        { id: "kp", type: "sketch", name: "Punkte", plane: { ref: "XY" }, offset: "3", points: [{ id: "q1", x: 15, y: 15 }, { id: "q2", x: 65, y: 35 }], entities: [{ id: "pe1", type: "point", p: "q1" }, { id: "pe2", type: "point", p: "q2" }], constraints: [] });
+    }); });
+    await idle();
+    await evalApp(() => window.__werkcad.commands.exec("part.kunststoff"));
+    await idle();
+    const ku = await evalApp(() => { const a = window.__werkcad, p = a.activeDoc(), f = p.features.at(-1), r = a.results.get(a.activeId); return { type: f.type, sketch: f.sketch, rule: f.ruleData?.name, st: r.status[f.id], secs: [...document.querySelectorAll("#props .sec-title, #props h3")].map((x) => x.textContent) }; });
+    await shot("e5-kunststoff");
+    step("SolidCraft E5: Kunststoffteil (Ansatz mit Rippen, Regel)", ku.type === "kunststoff" && ku.sketch === "kp" && ku.rule === "ABS" && ku.st?.ok && /2 Ansatz/.test(ku.st.info) && /Rippen/.test(ku.st.info), JSON.stringify(ku));
+  }
+
+
 } catch (e) {
   step("Abbruch", false, String(e.stack || e));
   try { await shot("99-fehler"); } catch { /* */ }

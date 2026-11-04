@@ -1,4 +1,7 @@
 // Eigenschaften-Fenster und Dialoge (Parameter, Stückliste, Zuschnittliste, Einstellungen)
+import { PLASTIC_ARTS, plasticDefaults } from "../core/kunststoff.js";
+import { encodeCloud, decodeCloud, decimateCloud } from "../core/punktwolke.js";
+import { paramUsages, paramGraphSvg, moveParam } from "../core/paramgraph.js";
 import { gearData, centerDistance, BEARINGS, BEARING_SEALS } from "../core/assistent.js";
 import { FF_ARTEN, ffArt } from "../core/freiflaeche.js";
 import { defaultSchweissbaugruppe, phaseCounts, WELD_PHASES } from "../core/schweissbaugruppe.js";
@@ -13,7 +16,7 @@ import { steckProps, newSteckverbindung, dropSteckForComponent } from "./steckve
 import { gridProps, gridSnapRow } from "./achsraster.js";
 import { settingsCenter } from "./settings.js";
 import { h, icon, toast, modal, fmtNum, confirmDialog, promptDialog } from "./dom.js";
-import { evaluate, resolveParams, isValidName } from "../core/expr.js";
+import { evaluate, resolveParams, isValidName, identifiers } from "../core/expr.js";
 import { SECTION_KINDS, fieldLabel, CATALOG, catalogToDims, profileId, sectionGeometry, kgPerMeter, THREADS, CLEARANCE } from "../core/sections.js";
 import { profileMatches, resolveProfile } from "../core/profilesearch.js";
 import { LIB_GROUPS, groupOfMaterial, groupKinds, mainSizes, wallsFor, wallLabel, hasWall, findEntry, pickEntry, defaultEntry, mainOfDims, mainLabel, splitSize } from "../core/profillib.js";
@@ -62,6 +65,7 @@ import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity, massOverride, orderBomRows } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
+import { motionStudyDialog } from "./bewegungsstudie.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
@@ -567,7 +571,7 @@ export class Props {
   measureProps() {
     const app = this.app;
     const m = app.measure || {};
-    const F = measureFormat({ dec: app.prefs.get("allgemein.dezimalstellen"), angleDec: app.prefs.get("messen.winkelstellen") ?? 2, second: app.prefs.get("messen.zweiteinheit") || "" });
+    const F = measureFormat({ dec: app.prefs.get("allgemein.dezimalstellen"), angleDec: app.prefs.get("messen.winkelstellen") ?? 2, second: app.prefs.get("messen.zweiteinheit") || "", unit: app.prefs.get("allgemein.einheit") || "mm" });
     const P = (p) => p.map((v) => F.num(v)).join(" / ");
     const KIND = { face: "Fläche", edge: "Kante", vertex: "Punkt", axis: "Achse" };
     const T = { PLANE: "Ebene", CYLINDER: "Zylinder", CONE: "Kegel", SPHERE: "Kugel", TORUS: "Torus", BSPLINE: "Freiform", POINT: "Ecke", LINE: "Gerade", CIRCLE: "Kreis", ELLIPSE: "Ellipse", BSPLINE_CURVE: "Freiform" };
@@ -1433,7 +1437,7 @@ export class Props {
           h("p", { class: "hint" }, `Je Stabende eine Querbohrung durch beide Wände, so nah am Ende wie möglich (bei Gehrung hinter der Spitze). Richtwert-Ø nach DIN EN ISO 14713-2 aus der Profilgröße, z. B. 40er Rohr 12 mm, 80er 16 mm, 100er 20 mm – mit dem Verzinker abstimmen. Oberfläche des Bauteils: ${fin === "verzinkt" || fin === "duplex" ? "verzinkt" : "nicht verzinkt (unter Bauteil-Eigenschaften einstellen)"}.`)));
         break;
       }
-      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "huelle": case "lochblech": case "flaechenkurve": case "freiflaeche": case "aufdicken": case "flaeche": case "entformung": case "direkt":
+      case "stecksystem": case "kombinieren": case "trennen": case "verschieben": case "huelle": case "lochblech": case "flaechenkurve": case "freiflaeche": case "auflage": case "kunststoff": case "aufdicken": case "flaeche": case "entformung": case "direkt":
         out.push(...this.bodyToolProps(part, f, E));
         break;
       case "steckzapfen": case "steckschlitz":
@@ -1444,10 +1448,27 @@ export class Props {
       case "arbeitsebene": case "arbeitsachse": case "arbeitspunkt":
         out.push(...this.datumProps(part, f, E));
         break;
+      case "punktwolke": {
+        const n = Math.floor((String(f.data || "").length * 3) / 4 / 12);
+        out.push(this.section("Punktwolke",
+          h("dl", { class: "kv" }, h("dt", {}, "Datei"), h("dd", {}, f.fileName || "–"), h("dt", {}, "Punkte"), h("dd", {}, n.toLocaleString("de-DE"))),
+          ...["x", "y", "z"].map((k, i) => this.expr(`Verschiebung ${k.toUpperCase()}`, f.offset?.[i] ?? "0", (v) => this.set(f, (x) => { x.offset = [...(x.offset || ["0", "0", "0"])]; x.offset[i] = v; }, "Verschieben"))),
+          this.expr("Maßstab", f.scale ?? "1", (v) => this.set(f, "scale", v, "Maßstab"), { unit: "", allowNeg: false, allowZero: false }),
+          this.select("Punktgröße", [["1", "1 px"], ["2", "2 px"], ["3", "3 px"], ["5", "5 px"]], String(f.size || 2), (v) => this.set(f, "size", Number(v), "Punktgröße")),
+          this.check("Ausblenden", !!f.hidden, (v) => this.set(f, "hidden", v || undefined, "Ausblenden")),
+          h("div", { class: "btn-row" },
+            h("button", { class: "btn", title: "Jeden zweiten Punkt weglassen (kleinere Datei, schnellere Anzeige)", onclick: () => this.set(f, (x) => { x.data = encodeCloud(decimateCloud(decodeCloud(x.data), 2)); }, "Punktwolke ausdünnen") }, "Ausdünnen ½"),
+            h("button", { class: "btn", onclick: async () => { const keep = { ...f }; await app.files.importPointCloud(); const nf = app.activeDoc().features.at(-1); if (nf?.type === "punktwolke" && nf.id !== keep.id) app.edit("Punktwolke ersetzen", () => { const doc = app.activeDoc(); Object.assign(doc.features.find((x) => x.id === keep.id), { data: nf.data, fileName: nf.fileName }); doc.features = doc.features.filter((x) => x !== nf); }); } }, "Andere Datei…")),
+          h("p", { class: "hint" }, "Bezug zum Nachkonstruieren: Punkte werden angezeigt, sind aber kein Körper und zählen nicht in Masse und Stückliste.")));
+        break;
+      }
       case "import":
         out.push(this.section("Import",
           h("dl", { class: "kv" }, h("dt", {}, "Datei"), h("dd", {}, f.fileName || "–"), h("dt", {}, "Größe"), h("dd", {}, f.data ? fmtNum(f.data.length / 1024, 0) + " KB" : "–")),
           this.opSeg(f),
+          f.format === "stl" ? this.check("Netz in Volumenkörper wandeln", !!f.convert, (v) => this.set(f, "convert", v, "Netz konvertieren")) : null,
+          f.format === "stl" && f.convert ? this.check("Ebene Dreiecke zu Flächen zusammenfassen", f.unify !== false, (v) => this.set(f, "unify", v, "Netz konvertieren")) : null,
+          f.format === "stl" ? h("p", { class: "hint" }, "Netz konvertieren: Dreiecke werden genäht und zu einem Volumenkörper geschlossen; danach gehen Bohrung, Rundung und Boolesche Operationen.") : null,
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.replaceImport(f) }, "Andere Datei…"))));
         break;
     }
@@ -1544,6 +1565,26 @@ export class Props {
           need.has("solid") ? this.check("Geschlossen → Volumenkörper", f.solid !== false, (v) => this.set(f, "solid", v ? undefined : false, "Volumenkörper")) : null,
           h("p", { class: "hint" }, a.help + " Flächenkörper haben keine Masse und erscheinen in Stückliste und Gewicht nicht."))];
       }
+      case "kunststoff": {
+        const art = f.art || "ansatz", sks = part.features.filter((x) => x.type === "sketch");
+        const rules = this.app.prefs.get("material.kunststoffregeln") || [];
+        const setArt = (v) => this.set(f, (x) => { x.art = v; Object.assign(x, plasticDefaults(v, x.ruleData || rules[0])); }, "Art");
+        const HINT = { ansatz: "Schraubdom an jedem Punkt der Skizze, mit Kernbohrung und Stützrippen.", auflage: "Stützfuß (Zylinder) an jedem Punkt der Skizze.", rastnase: "Biegebalken mit Haken an jedem Punkt; Richtung dreht den Haken um die Skizzennormale. Die Dehnung beim Einrasten steht in der Statuszeile.", lippe: "Umlaufende Lippe in der Wandmitte entlang der geschlossenen Außenkontur der Skizze (Gehäuserand).", nut: "Gegenstück zur Lippe: Nut mit Spiel, nach innen in die Wand geschnitten." };
+        return [this.section("Kunststoffteil",
+          this.select("Art", PLASTIC_ARTS, art, setArt),
+          this.select("Skizze", [["", "– wählen –"], ...sks.map((x) => [x.id, x.name])], f.sketch || "", (v) => this.set(f, "sketch", v, "Skizze")),
+          this.select("Regel", [["", "– keine –"], ...rules.map((r) => [r.name, `${r.name} (Wand ${String(r.wall).replace(".", ",")} mm)`])], f.ruleData?.name || "", (v) => this.set(f, (x) => { const r = rules.find((q) => q.name === v); x.ruleData = r ? { ...r } : undefined; }, "Regel")),
+          ...(art === "ansatz" ? [E("Außendurchmesser", "d"), E("Bohrung", "di"), E("Höhe", "h"), E("Bohrungstiefe", "tiefe"), E("Rippen", "rippen", { allowZero: true, unit: "" }), E("Rippendicke", "rippeT"), E("Rippenlänge", "rippeL")]
+            : art === "auflage" ? [E("Durchmesser", "d"), E("Höhe", "h")]
+            : art === "rastnase" ? [E("Länge", "l"), E("Dicke", "t"), E("Breite", "b"), E("Hinterschnitt", "hub"), E("Hakenhöhe", "fang"), E("Richtung", "winkel", { allowZero: true, allowNeg: true, unit: "°" })]
+            : [E("Breite", "breite"), E("Höhe", "hoehe"), f.ruleData ? null : E("Wanddicke", "wand"), art === "nut" ? E("Spiel", "spiel", { allowZero: true }) : null]),
+          this.check("Richtung umkehren", !!f.flip, (v) => this.set(f, "flip", v || undefined, "Richtung")),
+          h("p", { class: "hint" }, HINT[art] + " Punkte setzt das Skizzenwerkzeug »Punkt«."))];
+      }
+      case "auflage":
+        return [this.section("Auflagefläche",
+          facePick("Ebene Fläche anklicken, auf der das Teil im Drucker liegen soll."),
+          h("p", { class: "hint" }, "Dreht alle Körper so, dass die gewählte Fläche nach unten zeigt, und legt sie auf z = 0 – für 3D-Druck und »An Slicer senden«. Als letztes Feature einfügen."))];
       case "flaechenkurve": {
         const sks = part.features.filter((x) => x.type === "sketch");
         return [this.section("Kurve auf Fläche",
@@ -2086,7 +2127,25 @@ export class Props {
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => this.animateJoints([c.id]) }, "Bewegen"),
         h("button", { class: "btn", onclick: () => this.jointSweepCheck(c) }, "Kollision im Bereich prüfen"),
+        h("button", { class: "btn", title: "Diagramm, Bewegungsbahn, Punkt anfahren und Kollisionen über alle Stellungen (mit gekoppelten Gelenken)", onclick: () => motionStudyDialog(app, c) }, "Bewegungsuntersuchung…"),
+        h("button", { class: "btn", title: "Gelenkursprung: Punkt und Richtung der Achse ändern", onclick: () => this.jointOriginDialog(c) }, "Gelenkursprung…"),
         h("button", { class: "btn danger", onclick: () => app.edit(jointLabel(j) + " entfernen", () => { delete c.joint; }) }, "Gelenk entfernen")));
+  }
+  /** Gelenkursprung (E3): Achspunkt und Richtung eines vorhandenen Gelenks ändern; Wert und Bereich bleiben */
+  jointOriginDialog(c) {
+    const app = this.app, j = c.joint;
+    const parse = (s) => { const v = String(s).split(/[;\s]+/).filter(Boolean).map((x) => Number(x.replace(",", "."))); return v.length === 3 && v.every(Number.isFinite) ? v : null; };
+    const fmt3 = (v) => v.map((x) => fmtNum(x, 3)).join("; ");
+    const pi = h("input", { class: "inp", value: fmt3(j.p) }), di = h("input", { class: "inp", value: fmt3(j.d) });
+    modal({ title: `Gelenkursprung – ${c.name}`, width: "440px", body: h("div", {},
+      h("p", {}, "Die Komponente bleibt in ihrer heutigen Lage; künftige Bewegungen laufen um bzw. entlang der neuen Achse."),
+      this.field(isSlide(j) ? "Bezugspunkt" : "Achse durch", pi), this.field("Richtung", di)),
+    buttons: [{ label: "Abbrechen" }, { label: "Übernehmen", primary: true, run: () => {
+      const p = parse(pi.value), d = parse(di.value);
+      if (!p || !d || !(Math.hypot(...d) > 1e-9)) { toast("Punkt und Richtung als x; y; z eingeben (Richtung nicht 0)", { kind: "err" }); return false; }
+      const n = Math.hypot(...d);
+      app.edit("Gelenkursprung", () => { j.p = p; j.d = d.map((x) => x / n); });
+    } }] });
   }
   /** Schiebegelenk anlegen: Richtung (±X, ±Y, ±Z), Weg von … bis in mm; 0 = heutige Lage */
   slideDialog(c, preset = null) {
@@ -2605,7 +2664,14 @@ export class Props {
         if (bad) name.classList.add("bad");
         if (errors[r.name]) { ex.classList.add("bad"); ex.title = errors[r.name]; }
         return h("tr", {}, h("td", {}, name), h("td", {}, ex), sources.length || r.link ? h("td", {}, linkSel(r)) : null, h("td", { class: "num" }, errors[r.name] ? "Fehler" : fmtNum(values[r.name], 4)), h("td", {}, cm),
-          h("td", {}, h("button", { class: "icon-btn", title: "Entfernen", onclick: () => { rows.splice(i, 1); draw(); } }, icon("trash"))));
+          h("td", { class: "param-tools" },
+            h("button", { class: "icon-btn", title: "Nach oben", disabled: i === 0 ? true : undefined, onclick: () => { rows.splice(0, rows.length, ...moveParam(rows, i, -1)); draw(); } }, icon("up")),
+            h("button", { class: "icon-btn", title: "Nach unten", disabled: i === rows.length - 1 ? true : undefined, onclick: () => { rows.splice(0, rows.length, ...moveParam(rows, i, 1)); draw(); } }, icon("down")),
+            h("button", { class: "icon-btn", title: "Verwendungen", onclick: () => {
+              const u = [...paramUsages(part.features || [], r.name), ...rows.filter((x) => x !== r && identifiers(x.expr || "").includes(r.name)).map((x) => ({ feature: "Parameter " + x.name, field: "Ausdruck" }))];
+              modal({ title: `Verwendungen von ${r.name}`, width: "460px", body: u.length ? h("ul", { class: "param-usages" }, ...u.map((x) => h("li", {}, `${x.feature}${x.field ? " – " + x.field : ""}`))) : h("p", {}, "Nirgends benutzt."), buttons: [{ label: "Schließen", primary: true }] });
+            } }, icon("search")),
+            h("button", { class: "icon-btn", title: "Entfernen", onclick: () => { rows.splice(i, 1); draw(); } }, icon("trash"))));
       }));
     };
     draw();
@@ -2624,6 +2690,11 @@ export class Props {
             draw();
             toast(`${f.name}: ${m.added.length} neu, ${m.updated.length} geändert${errors.length ? ` – ${errors.length} Zeile(n) übersprungen: ${errors.slice(0, 3).join("; ")}` : ""}. Mit »Übernehmen« bestätigen.`, { kind: errors.length ? "" : "ok", timeout: errors.length ? 9000 : 5000 });
           } }, icon("import"), " Importieren…"),
+          h("button", { class: "btn", title: "Wer hängt von wem ab (Pfeil von benutzt zu benutzend)", onclick: () => {
+            const box = h("div", { class: "param-graph-wrap", style: { overflow: "auto", maxHeight: "60vh" } });
+            box.innerHTML = paramGraphSvg(rows, resolveParams(rows).values);
+            modal({ title: `Parametergraph – ${part.name}`, width: "760px", body: box, buttons: [{ label: "Schließen", primary: true }] });
+          } }, icon("tiles"), " Graph"),
           part.kind === "assembly" ? h("button", { class: "btn", title: "Gleichnamige Parameter der Bauteile mit dieser Baugruppe verknüpfen (Top-down)", onclick: () => pushParamsDialog(app, part, rows) }, icon("down"), " An Bauteile weitergeben…") : null),
         part.kind === "assembly" ? h("p", { class: "hint" }, "Baugruppen-Parameter gelten für alle verknüpften Bauteile: ein Maß hier ändert jedes Teil, das es übernimmt.") : null,
         h("p", { class: "hint" }, "Parameter können in jedem Maß verwendet werden, z. B. »Länge - 2*Rand«. Funktionen: sin, cos, tan (Grad), sqrt, min, max, round, wenn(Bedingung; dann; sonst). Dezimalkomma ist erlaubt.")),

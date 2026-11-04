@@ -182,10 +182,27 @@ export class Viewer {
     for (const fn of this.cameraListeners) fn();
   }
   onCamera(fn) { this.cameraListeners.push(fn); }
+  /** Dauerdrehen (E6): Ansicht dreht sich um die Hochachse (Z) durch den Drehpunkt; grad je Sekunde, 0 = aus */
+  setSpin(degPerSec = 0) {
+    this.spin = degPerSec || 0;
+    this.spinT = null;
+    this.render();
+  }
   renderLoop() {
-    const loop = () => {
+    const loop = (now) => {
       requestAnimationFrame(loop);
       if (this.anim) this.stepAnim();
+      if (this.spin) {
+        const dt = this.spinT == null ? 0 : Math.min(0.1, (now - this.spinT) / 1000);
+        this.spinT = now;
+        const t = this.controls.target, c = this.camera;
+        const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (this.spin * dt * Math.PI) / 180);
+        c.position.sub(t).applyQuaternion(q).add(t);
+        c.up.applyQuaternion(q);
+        c.lookAt(t);
+        this.cameraChanged?.();
+        this.needsRender = true;
+      }
       if (!this.needsRender) return;
       const r = this.renderer;
       const w = this.container.clientWidth, h = this.container.clientHeight;
@@ -318,6 +335,14 @@ export class Viewer {
     }
     this.colors.sel = new THREE.Color(v["ansicht.auswahlfarbe"]).getHex();
     this.colors.hover = new THREE.Color(v["ansicht.hoverfarbe"]).getHex();
+    // Ansichtswinkel (SolidCraft-Abgleich E6): Abstand so anpassen, dass der Ausschnitt gleich groß bleibt
+    const fov = Number(v["ansicht.blickwinkel"]) || 35;
+    if (fov !== this.persp.fov) {
+      const t = this.controls.target, back = this.persp.position.clone().sub(t), half = back.length() * Math.tan((this.persp.fov * Math.PI) / 360);
+      this.persp.fov = fov;
+      this.persp.position.copy(t.clone().add(back.setLength(half / Math.tan((fov * Math.PI) / 360))));
+      this.persp.updateProjectionMatrix();
+    }
     if (v["ansicht.projektion"] !== undefined) this.setPerspective(v["ansicht.projektion"] === "perspektive");
     if (v["ansicht.darstellung"] !== undefined && v["ansicht.darstellung"] !== this.displayMode) this.setDisplayMode(v["ansicht.darstellung"]);
     this.render();
@@ -1693,6 +1718,95 @@ export class Viewer {
    * Maß des Messwerkzeugs (Stufe 47): Linie zwischen a und b mit Endpunkten und Beschriftung; dims = gestrichelte
    * Hilfslinien (z. B. Achsen). null löscht. Die Beschriftung ist ein HTML-Element, das der Kamera folgt.
    */
+  /**
+   * Flächen prüfen (E4): Darstellung der Körper umschalten. kind = "zebra" | "umgebung" | "silhouette" | null (aus).
+   * colors: Funktion (mesh) → Float32Array (rgb je Punkt) für Krümmung/Zugänglichkeit; lines: [{pts, color}] Überlagerung.
+   */
+  setAnalysis({ kind = null, colors = null, lines = null, meshes = null, stripes = 14 } = {}) {
+    this.analysis = kind || colors || lines || meshes ? { kind, colors: !!colors, lines: !!lines } : null;
+    if (!this.anaGroup) { this.anaGroup = new THREE.Group(); this.anaGroup.renderOrder = 997; this.scene.add(this.anaGroup); }
+    disposeTree(this.anaGroup);
+    this.anaGroup.clear();
+    for (const pk of this.pickables) {
+      const mesh = pk.mesh, ud = mesh.userData;
+      if (ud.anaOrig) { mesh.material.dispose(); mesh.material = ud.anaOrig; delete ud.anaOrig; }
+      if (ud.anaColors) { mesh.geometry.deleteAttribute("color"); delete ud.anaColors; mesh.material.vertexColors = false; mesh.material.needsUpdate = true; }
+      if (kind === "zebra") {
+        ud.anaOrig = mesh.material;
+        mesh.material = new THREE.ShaderMaterial({ uniforms: { n: { value: stripes } }, side: THREE.DoubleSide,
+          vertexShader: "varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = mv.xyz; gl_Position = projectionMatrix * mv; }",
+          fragmentShader: "uniform float n; varying vec3 vN; varying vec3 vV; void main(){ vec3 r = reflect(normalize(vV), normalize(vN)); float s = step(0.5, fract((r.y * 0.5 + 0.5) * n)); gl_FragColor = vec4(vec3(0.08 + 0.88 * s), 1.0); }" });
+      } else if (kind === "umgebung") {
+        if (!this.anaEnv) { const pm = new THREE.PMREMGenerator(this.renderer); this.anaEnv = pm.fromScene(new RoomEnvironment(), 0.04).texture; pm.dispose(); }
+        ud.anaOrig = mesh.material;
+        mesh.material = new THREE.MeshStandardMaterial({ color: 0xf2f4f7, metalness: 1, roughness: 0.06, envMap: this.anaEnv, envMapIntensity: 1.2, side: THREE.DoubleSide });
+      } else if (kind === "silhouette") {
+        ud.anaOrig = mesh.material;
+        mesh.material = new THREE.MeshBasicMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+        const o = new THREE.Mesh(mesh.geometry, new THREE.ShaderMaterial({ side: THREE.BackSide, uniforms: { w: { value: 2.5 }, res: { value: new THREE.Vector2(this.container.clientWidth || 800, this.container.clientHeight || 600) } },
+          vertexShader: "uniform float w; uniform vec2 res; void main(){ vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); vec3 n = normalize(normalMatrix * normal); vec2 d = normalize(n.xy + vec2(1e-6)); p.xy += d * w * 2.0 * p.w / res; gl_Position = p; }",
+          fragmentShader: "void main(){ gl_FragColor = vec4(0.05,0.07,0.1,1.0); }" }));
+        mesh.updateMatrixWorld();
+        o.matrixAutoUpdate = false;
+        o.matrix.copy(mesh.matrixWorld);
+        this.anaGroup.add(o);
+      }
+      if (colors) {
+        const cols = colors(mesh);
+        if (cols) { mesh.geometry.setAttribute("color", new THREE.BufferAttribute(cols, 3)); ud.anaColors = true; mesh.material.vertexColors = true; mesh.material.color?.set(0xffffff); mesh.material.needsUpdate = true; }
+      }
+    }
+    for (const m of meshes || []) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(m.mesh.positions, 3));
+      if (m.mesh.normals?.length) geo.setAttribute("normal", new THREE.BufferAttribute(m.mesh.normals, 3)); else geo.computeVertexNormals();
+      geo.setIndex(new THREE.BufferAttribute(m.mesh.indices, 1));
+      const o = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: new THREE.Color(...m.color), transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
+      o.renderOrder = 997;
+      this.anaGroup.add(o);
+    }
+    for (const l of lines || []) {
+      if (!(l.pts?.length > 1)) continue;
+      const g = new THREE.Line(new THREE.BufferGeometry().setFromPoints(l.pts.map((q) => new THREE.Vector3(q[0], q[1], q[2]))), new THREE.LineBasicMaterial({ color: new THREE.Color(...(l.color || [0.1, 0.3, 0.9])), depthTest: l.onTop ? false : true, transparent: !!l.onTop }));
+      if (l.matrix) { g.matrixAutoUpdate = false; g.matrix.fromArray(l.matrix); }
+      g.renderOrder = 997;
+      this.anaGroup.add(g);
+    }
+    this.render();
+  }
+  /** Punktwolken (E5): clouds = [{ id, pts: Float32Array, color? }] als Punkte, Größe in Bildpunkten */
+  showPointClouds(clouds = []) {
+    if (!this.cloudGroup) { this.cloudGroup = new THREE.Group(); this.scene.add(this.cloudGroup); }
+    disposeTree(this.cloudGroup);
+    this.cloudGroup.clear();
+    for (const c of clouds) {
+      if (!(c.pts?.length >= 3)) continue;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(c.pts, 3));
+      g.computeBoundingBox();
+      const o = new THREE.Points(g, new THREE.PointsMaterial({ color: c.color || 0x2a7fd4, size: c.size || 2, sizeAttenuation: false }));
+      o.userData.cloud = c.id;
+      this.cloudGroup.add(o);
+    }
+    this.render();
+  }
+  /** Bewegungsbahnen (E3): paths = [{ pts: [[x,y,z]…], color? }], gestrichelt die nur angezeigten, voll die behaltenen */
+  showMotionPaths(paths = []) {
+    if (!this.pathGroup) { this.pathGroup = new THREE.Group(); this.pathGroup.renderOrder = 998; this.scene.add(this.pathGroup); }
+    disposeTree(this.pathGroup);
+    this.pathGroup.clear();
+    for (const p of paths) {
+      if (!(p.pts?.length > 1)) continue;
+      const geo = new THREE.BufferGeometry().setFromPoints(p.pts.map((q) => new THREE.Vector3(q[0], q[1], q[2])));
+      const mat = p.kept ? new THREE.LineBasicMaterial({ color: p.color || 0xd97706, depthTest: false, transparent: true })
+        : new THREE.LineDashedMaterial({ color: p.color || 0xd97706, depthTest: false, transparent: true, dashSize: 4, gapSize: 3 });
+      const l = new THREE.Line(geo, mat);
+      if (!p.kept) l.computeLineDistances();
+      l.renderOrder = 998;
+      this.pathGroup.add(l, this.glyph(p.pts[0], "on", p.color || 0xd97706));
+    }
+    this.render();
+  }
   showMeasure(spec) {
     if (!this.measureGroup) { this.measureGroup = new THREE.Group(); this.measureGroup.renderOrder = 999; this.scene.add(this.measureGroup); }
     disposeTree(this.measureGroup);

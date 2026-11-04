@@ -1,7 +1,10 @@
 // Befehle ausführen, Tastaturkürzel verteilen, Befehlssuche (Strg+K) und Kürzel-Editor
 import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
-import { h, toast } from "./dom.js";
+import { h, toast, choiceDialog, promptDialog } from "./dom.js";
+import { motionStudyDialog } from "./bewegungsstudie.js";
+import { topologyDialog, performanceDialog, crashReportsDialog } from "./datenwerkzeuge.js";
+import { surfaceCheckDialog, compareBodiesDialog } from "./flaechenpruefung.js";
 import { t } from "../core/i18n.js";
 import { recordable } from "../core/makros.js";
 import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
@@ -43,11 +46,21 @@ export function commandRunners(app) {
     "file.glb": () => app.files.exportGlb(),
     "file.obj": () => app.files.exportObj(),
     "file.3mf": () => app.files.export3mf(),
+    "file.slicer": () => app.files.sendToSlicer(),
+    "file.urdf": () => app.files.exportUrdf(),
+    "part.listTopology": () => topologyDialog(app),
+    "model.profile": () => performanceDialog(app),
+    "app.crashReports": () => crashReportsDialog(app),
     "view.side": () => app.side.toggle(),
     "view.werkstatt": () => app.setWorkshop(),
     "file.newAssembly": () => app.newAssembly(),
     "file.importStep": () => app.files.importStepAsPart(),
     "app.settings": () => app.props.settingsDialog(),
+    "app.units": async () => {
+      const cur = app.prefs.get("allgemein.einheit") || "mm";
+      const v = await choiceDialog("Einheit der Konstruktion", `Messwerte werden in dieser Einheit angezeigt (jetzt: ${cur}). Gerechnet und gespeichert wird immer in mm; Eingaben ohne Einheit sind mm, z. B. »2 in« oder »1,5 m« gehen direkt.`, [["mm", "mm"], ["cm", "cm"], ["m", "m"], ["in", "Zoll"]].map(([value, label]) => ({ value, label, primary: value === cur })));
+      if (v) { app.prefs.set("allgemein.einheit", v); app.props.render(); toast(`Einheit: ${v}`); }
+    },
     "app.search": () => commandPalette(app),
     "app.help": () => showHelp(app),
     "app.tour": () => startTour(app),
@@ -59,6 +72,14 @@ export function commandRunners(app) {
     "model.buildLog": () => app.props.buildLogDialog(),
     "edit.redo": () => app.redo(),
     "view.fit": () => app.viewer.fit(),
+    "view.spin": () => { const on = !app.viewer.spin; app.viewer.setSpin(on ? 30 : 0); toast(on ? "Ansicht dreht sich – nochmal aufrufen oder Esc hält an" : "Drehen angehalten"); },
+    "view.fov": async () => {
+      const v = await promptDialog("Ansichtswinkel", "Öffnungswinkel in Grad (10–100), schaltet auf Perspektive", String(app.prefs.get("ansicht.blickwinkel") ?? 35));
+      if (v == null) return;
+      const r = app.prefs.set("ansicht.blickwinkel", v);
+      if (!r.ok) return toast(r.error, { kind: "err" });
+      app.prefs.set("ansicht.projektion", "perspektive");
+    },
     "view.fitSel": () => app.zoomToSelection(),
     "view.normal": () => app.viewNormalToFace(),
     "view.saveNamed": () => app.saveNamedView(),
@@ -94,6 +115,7 @@ export function commandRunners(app) {
     "sketch.sectionCurve": () => app.sketcher.sectionCurve(),
     "sketch.meshSection": () => app.sketcher.meshSection(),
     "sketch.spunProfile": () => app.sketcher.spunProfileCmd(),
+    "sketch.traceImage": () => app.sketcher.traceImage(),
     "sketch.autoConstrain": () => app.sketcher.applyAutoConstraints(false),
     "sketch.finishAuto": () => app.sketcher.applyAutoConstraints(true),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
@@ -125,6 +147,8 @@ export function commandRunners(app) {
     "sketch.regionProps": () => regionDialog(app),
     "sketch.dof": () => { const s = app.sketcher; s.showDof = !s.showDof; s.solve(); s.render(); app.ribbon.render(); },
     "part.draftAnalysis": () => draftDialog(app),
+    "part.surfaceCheck": () => surfaceCheckDialog(app),
+    "part.compareBodies": () => compareBodiesDialog(app),
     "part.welle": () => app.ribbon.run("welle"),
     "part.zahnrad": () => app.ribbon.run("zahnrad"),
     "part.lager": () => app.ribbon.run("lager"),
@@ -133,6 +157,8 @@ export function commandRunners(app) {
     "asm.contactSolver": () => app.props.toggleContactSolver(),
     "asm.contactSet": () => app.props.toggleContactSet(),
     "asm.motionVideo": () => app.props.recordMotion(),
+    "part.moveToPart": () => (app.sel?.type === "feature" ? app.moveFeatureToPartDialog(app.sel.id) : toast("Erst im Modellbrowser ein Merkmal wählen")),
+    "asm.motionStudy": () => { const asm = app.activeDoc(), sel = app.sel?.type === "component" && asm.components.find((c) => c.id === app.sel.id); const c = sel?.joint ? sel : asm.components.find((x) => x.joint); return c ? motionStudyDialog(app, c) : toast("Erst ein Gelenk anlegen (Baugruppe → Gelenk)"); },
     "asm.explode": () => app.props.explodeDialog(),
     "asm.positionSave": () => savePosition(app, app.activeDoc()),
     "asm.params": () => app.props.paramsDialog(),

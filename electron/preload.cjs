@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("werkcad", {
   saveFile: (opts) => ipcRenderer.invoke("file:save", opts),
   saveFiles: (opts) => ipcRenderer.invoke("file:saveMany", opts),
   openFile: (opts) => ipcRenderer.invoke("file:open", opts),
+  openInSlicer: (opts) => ipcRenderer.invoke("slicer:open", opts),
+  pickSlicer: () => ipcRenderer.invoke("slicer:pick"),
   printPdf: (opts) => ipcRenderer.invoke("pdf:print", opts),
   renderPdf: (html) => ipcRenderer.invoke("pdf:render", html),
   setTitle: (t) => ipcRenderer.send("app:title", t),

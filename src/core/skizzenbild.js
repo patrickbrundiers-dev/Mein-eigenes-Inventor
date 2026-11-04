@@ -33,3 +33,52 @@ export function pruneImages(project) {
   if (!Object.keys(project.images).length) delete project.images;
   return n;
 }
+
+/**
+ * Bild nachzeichnen (SolidCraft-Abgleich E5): Umrisse dunkler Bereiche (Grauwert < threshold) mit Marching Squares.
+ * gray = Uint8Array W×H (Zeile für Zeile, oben zuerst). Rückgabe geschlossene Züge in Pixelkoordinaten [[u, v] …]
+ * (u nach rechts, v nach unten), erster Punkt am Ende wiederholt; Züge mit weniger als minPts Punkten fallen weg.
+ */
+export function traceContours(gray, W, H, { threshold = 128, minPts = 8 } = {}) {
+  // Rand mit »hell« auffüllen, damit alle Umrisse geschlossen sind
+  const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H && gray[y * W + x] < threshold;
+  const segs = new Map(); // Anfangspunkt → Endpunkt (gerichtet, dunkel links)
+  const key = (x, y) => `${x},${y}`;
+  const add = (a, b) => segs.set(key(...a), b);
+  for (let y = -1; y < H; y++) for (let x = -1; x < W; x++) {
+    // Ecken der Zelle: Pixelmitten (x,y) (x+1,y) (x+1,y+1) (x,y+1)
+    const tl = inside(x, y), tr = inside(x + 1, y), br = inside(x + 1, y + 1), bl = inside(x, y + 1);
+    const c = (tl ? 8 : 0) | (tr ? 4 : 0) | (br ? 2 : 0) | (bl ? 1 : 0);
+    if (c === 0 || c === 15) continue;
+    // Kantenmitten (Pixelmitte + 0,5), doppelt gezählt für ganze Zahlen
+    const T = [2 * x + 2, 2 * y + 1], R = [2 * x + 3, 2 * y + 2], B = [2 * x + 2, 2 * y + 3], L = [2 * x + 1, 2 * y + 2];
+    switch (c) {
+      case 1: add(L, B); break; case 2: add(B, R); break; case 3: add(L, R); break; case 4: add(R, T); break;
+      case 5: add(L, T); add(R, B); break; case 6: add(B, T); break; case 7: add(L, T); break; case 8: add(T, L); break;
+      case 9: add(T, B); break; case 10: add(T, R); add(B, L); break; case 11: add(T, R); break; case 12: add(R, L); break;
+      case 13: add(R, B); break; case 14: add(B, L); break;
+    }
+  }
+  const loops = [];
+  while (segs.size) {
+    const [k0] = segs.keys();
+    const start = k0.split(",").map(Number), loop = [start];
+    let k = k0;
+    for (let guard = 0; guard < 1e7; guard++) {
+      const nx = segs.get(k);
+      if (!nx) break;
+      segs.delete(k);
+      loop.push(nx);
+      k = key(...nx);
+      if (k === k0) break;
+    }
+    if (loop.length > minPts && key(...loop.at(-1)) === k0) loops.push(loop.map(([u, v]) => [u / 2 - 0.5, v / 2 - 0.5]));
+  }
+  return loops;
+}
+
+/** Pixelkoordinaten des Bildes (px = [Breite, Höhe]) → Skizzenkoordinaten über die Bildecken [BL, BR, TR, TL] */
+export function imageToSketch(corners, px, [u, v]) {
+  const [BL, BR, , TL] = corners, s = (u + 0.5) / px[0], t = (v + 0.5) / px[1];
+  return [TL[0] + s * (BR[0] - BL[0]) + t * (BL[0] - TL[0]), TL[1] + s * (BR[1] - BL[1]) + t * (BL[1] - TL[1])];
+}

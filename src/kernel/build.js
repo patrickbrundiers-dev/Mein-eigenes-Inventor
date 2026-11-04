@@ -1,6 +1,8 @@
 // Feature-basierter Modellaufbau auf Basis von replicad (OpenCascade).
 // Wird im Web-Worker (App) und in Node (Tests) verwendet: createKernel(replicadModul)
 
+import { plasticWarnings } from "../core/kunststoff.js";
+import { parseStl } from "../core/stl.js";
 import { installFastBooleans, cutMany } from "./bool.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { solveSketch } from "../core/solver.js";
@@ -949,6 +951,7 @@ export function createKernel(R) {
       const st = { ok: true };
       state.status[f.id] = st;
       if (f.suppressed) { st.suppressed = true; newCache.push({ key: keys[i], state: null }); continue; }
+      const t0 = Date.now(); // Leistungsprofil (SolidCraft-Abgleich E6): Rechenzeit je Feature
       try {
         switch (f.type) {
           case "sketch": {
@@ -2337,6 +2340,96 @@ export function createKernel(R) {
             st.info = info;
             break;
           }
+          case "kunststoff": {
+            // Kunststoffteile (SolidCraft-Abgleich E5): Ansatz, Rastnase, Lippe/Nut, Auflage an Skizzenpunkten bzw. -kontur
+            const art = f.art || "ansatz";
+            const rule = (f.rule && (f.rules || []).find((r) => r.name === f.rule)) || f.ruleData || null;
+            const s = getSketch(f.sketch, "Skizze");
+            const n = v3.mul(v3.norm(s.frame.normal), f.flip ? -1 : 1);
+            const num = (k, label, d) => E(f[k] ?? d, label);
+            const prism = (pts2, origin, xDir, normal, depth) => {
+              let pen = R.draw(pts2[0]);
+              for (const q of pts2.slice(1)) pen = pen.lineTo(q);
+              return pen.close().sketchOnPlane(new R.Plane(origin, xDir, normal)).extrude(depth);
+            };
+            const vals = {};
+            let add = [], sub = [];
+            if (art === "ansatz" || art === "auflage") {
+              const centers = holeCenters(s.sketch);
+              if (!centers.length) throw new Error("Skizze enthält keine Punkte (Werkzeug »Punkt«) für die Lage");
+              const D = (vals.d = num("d", "Außendurchmesser", "8")), H = (vals.h = num("h", "Höhe", "10"));
+              if (!(D > 0 && H > 0)) throw new Error("Durchmesser und Höhe > 0");
+              const di = (vals.di = art === "ansatz" ? num("di", "Bohrung", "3") : 0), depth = art === "ansatz" ? num("tiefe", "Bohrungstiefe", String(H)) : 0;
+              if (art === "ansatz" && !(di > 0 && di < D)) throw new Error("Bohrung muss kleiner als der Außendurchmesser sein");
+              const nr = (vals.rippen = art === "ansatz" ? Math.round(num("rippen", "Rippen", "0")) : 0), rt = (vals.rippeT = num("rippeT", "Rippendicke", "1.5")), rl = num("rippeL", "Rippenlänge", "5");
+              const xr = v3.norm(s.frame.xDir);
+              for (const c of centers) {
+                const p = toWorld(s.frame, c[0], c[1]);
+                add.push(R.makeCylinder(D / 2, H, p, n));
+                for (let k = 0; k < nr; k++) {
+                  const ang = (2 * Math.PI * k) / nr, r = v3.norm(v3.add(v3.mul(xr, Math.cos(ang)), v3.mul(v3.cross(n, xr), Math.sin(ang)))), t = v3.cross(n, r);
+                  // Rippe als Dreieck in der Ebene (radial, Achse), Dicke quer dazu
+                  add.push(prism([[D / 2 - 0.5, 0], [D / 2 + rl, 0], [D / 2 - 0.5, H * 0.8]], v3.add(p, v3.mul(t, rt / 2)), r, v3.mul(t, -1), rt));
+                }
+                if (di > 0) sub.push(R.makeCylinder(di / 2, depth + 0.01, v3.add(p, v3.mul(n, H - depth)), n));
+              }
+              st.info = `${centers.length} ${art === "ansatz" ? `Ansatz/Ansätze Ø ${D}/${di} × ${H}${nr ? `, ${nr} Rippen` : ""}` : `Auflage(n) Ø ${D} × ${H}`}`;
+            } else if (art === "rastnase") {
+              const centers = holeCenters(s.sketch);
+              if (!centers.length) throw new Error("Skizze enthält keine Punkte (Werkzeug »Punkt«) für die Lage");
+              const L = (vals.l = num("l", "Länge", "20")), t = (vals.t = num("t", "Dicke", "2")), b = num("b", "Breite", "6"), y = (vals.hub = num("hub", "Hinterschnitt", "1")), hk = num("fang", "Hakenhöhe", "3");
+              if (!(L > hk && t > 0 && b > 0 && y > 0 && hk > 0)) throw new Error("Länge > Hakenhöhe, alle Maße > 0");
+              const w = (num("winkel", "Richtung", "0") * Math.PI) / 180, xr = v3.norm(s.frame.xDir);
+              const r = v3.norm(v3.add(v3.mul(xr, Math.cos(w)), v3.mul(v3.cross(n, xr), Math.sin(w)))), tq = v3.cross(n, r);
+              for (const c of centers) {
+                const p = toWorld(s.frame, c[0], c[1]);
+                add.push(prism([[0, 0], [t, 0], [t, L - hk], [t + y, L - hk], [t, L], [0, L]], v3.add(p, v3.mul(tq, b / 2)), r, v3.mul(tq, -1), b));
+              }
+              st.info = `${centers.length} Rastnase(n) L ${L}, Dicke ${t}, Hinterschnitt ${y} – Dehnung ${String(Math.round(((150 * t * y) / (L * L)) * 10) / 10).replace(".", ",")} %`;
+            } else if (art === "lippe" || art === "nut") {
+              if (s.prof.errors.length && !s.prof.regions.length) throw new Error(s.prof.errors[0]);
+              const reg = s.prof.regions[0];
+              if (!reg) throw new Error("Skizze braucht eine geschlossene Kontur (Außenkante des Gehäuses)");
+              const w = num("breite", "Breite", "1.2"), hh = num("hoehe", "Höhe", "2"), gap = art === "nut" ? num("spiel", "Spiel", "0.1") : 0;
+              const wall = rule?.wall ?? num("wand", "Wanddicke", "2.5");
+              // Lippe: Band in der Wandmitte (Abstand innen = (Wand − Breite)/2); Nut: gleiches Band plus Spiel, nach innen geschnitten
+              const outer = loopToDrawing(reg.outer);
+              const o1 = (wall - w) / 2 - gap, o2 = (wall + w) / 2 + gap;
+              const band = outer.offset(-o1).cut(outer.offset(-o2));
+              const pl = new R.Plane(s.frame.origin, s.frame.xDir, n);
+              const solid = band.sketchOnPlane(pl).extrude(art === "nut" ? -(hh + gap) : hh);
+              (art === "nut" ? sub : add).push(solid);
+              st.info = `${art === "nut" ? "Nut" : "Lippe"} ${w + 2 * gap} × ${hh + gap} mm in Wandmitte (Wand ${wall} mm)`;
+            } else throw new Error("Unbekannte Art");
+            for (const t of add) applyOp(state.bodies.some((b) => b.kind === "solid") ? "join" : "new", t, f.id, "Kunststoffteil");
+            for (const t of sub) applyOp("cut", t, f.id, "Kunststoffteil");
+            const warn = plasticWarnings(art, vals, rule);
+            if (warn.length) st.warning = warn.join("; ");
+            break;
+          }
+          case "punktwolke": {
+            // Punktwolke (E5): nur Bezug für Anzeige und Messen, kein Körper
+            if (!f.data) throw new Error("Keine Punktdatei geladen");
+            st.info = `${Math.floor((f.data.length * 3) / 4 / 12).toLocaleString("de-DE")} Punkte`;
+            break;
+          }
+          case "auflage": {
+            // Auflagefläche (SolidCraft-Abgleich E5, 3D-Druck): gewählte ebene Fläche nach unten auf z = 0 drehen
+            const hits = facesAt((f.faces || []).map((r) => r.p));
+            if (!(f.faces || []).length) throw new Error("Ebene Fläche wählen, auf der das Teil liegen soll");
+            if (!hits.length) throw new Error("Gewählte Fläche nicht mehr vorhanden");
+            const { face } = hits[0];
+            if (face.geomType !== "PLANE") throw new Error("Auflagefläche muss eben sein");
+            const n = v3.norm(tuple(face.normalAt()));
+            const down = [0, 0, -1], c = v3.dot(n, down), ax = v3.cross(n, down), sn = Math.hypot(...ax);
+            const rot = (sh) => (sn > 1e-9 ? sh.rotate((Math.atan2(sn, c) * 180) / Math.PI, [0, 0, 0], ax) : c < 0 ? sh.rotate(180, [0, 0, 0], [1, 0, 0]) : sh);
+            for (const b of state.bodies) b.shape = rot(b.shape);
+            let z0 = Infinity;
+            for (const b of state.bodies) z0 = Math.min(z0, b.shape.boundingBox.bounds[0][2]);
+            if (Number.isFinite(z0) && Math.abs(z0) > 1e-9) for (const b of state.bodies) b.shape = b.shape.translate([0, 0, -z0]);
+            st.info = `Auflage gedreht um ${String(Math.round(((Math.atan2(sn, c) * 180) / Math.PI) * 10) / 10).replace(".", ",")}°, liegt auf z = 0`;
+            break;
+          }
           case "flaechenkurve": {
             // Kurve auf Fläche (SolidCraft-Abgleich E1): isoparametrische Kurve oder Skizze auf die Fläche projiziert → 3D-Pfad
             const hits = facesAt((f.faces || []).map((r) => r.p));
@@ -2429,8 +2522,14 @@ export function createKernel(R) {
           case "import": {
             if (!f.data) throw new Error("Keine Datei geladen");
             let shape;
-            if (f.format === "stl") shape = await R.importSTL(new Blob([base64ToBytes(f.data)]));
-            else shape = await R.importSTEP(new Blob([f.data]));
+            // Netz konvertieren (SolidCraft-Abgleich E5): Dreiecke nähen, Volumenkörper bilden, ebene Dreiecke zusammenfassen
+            if (f.format === "stl" && !f.convert) shape = await R.importSTL(new Blob([base64ToBytes(f.data)]));
+            else if (f.format !== "stl") shape = await R.importSTEP(new Blob([f.data]));
+            if (f.format === "stl" && f.convert) {
+              const r = meshToSolid(parseStl(base64ToBytes(f.data)), { unify: f.unify !== false });
+              shape = r.shape;
+              st.info = `Netz → ${r.solid ? "Volumenkörper" : "Fläche (nicht geschlossen)"}, ${r.faces} Flächen${r.before > r.faces ? ` (aus ${r.before} Dreiecken)` : ""}`;
+            }
             state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape, kind: "tool" }] });
             applyOp(f.op || "new", shape, f.id, f.name || "Import");
             break;
@@ -2445,6 +2544,7 @@ export function createKernel(R) {
         st.ok = false;
         st.error = errorText(e, R);
       }
+      st.ms = Date.now() - t0;
       if (useCache) newCache.push({ key: keys[i], state: null });
       if (useCache && i >= feats.length - 3) newCache[newCache.length - 1].state = cloneState(state);
     }
@@ -3313,6 +3413,110 @@ export function createKernel(R) {
     };
   }
 
+  /** Kanten und Flächen auflisten (E5): Art, Fläche bzw. Länge, Radius, Lage */
+  function listTopology(shape) {
+    const radius = new Map(analyticRadii(shape).map((x) => [x.idx, x.r]));
+    const faces = shape.faces.map((fc, idx) => {
+      let area = NaN;
+      try { area = R.measureArea(fc); } catch { /* ohne */ }
+      const o = { idx, type: fc.geomType === "CYLINDRE" ? "CYLINDER" : fc.geomType, area, center: faceCentroid(fc) };
+      if (radius.has(idx)) o.r = radius.get(idx);
+      if (o.type === "PLANE") { try { o.normal = tuple(fc.normalAt()); } catch { /* ohne */ } }
+      return o;
+    });
+    const edges = shape.edges.map((e, idx) => {
+      let length = NaN;
+      try { length = R.measureLength(e); } catch { /* ohne */ }
+      const o = { idx, type: e.geomType, length, mid: edgeMid(e) };
+      if (o.type === "CIRCLE") { try { Object.assign(o, circleOf(e)); } catch { /* ohne */ } }
+      return o;
+    });
+    return { faces, edges };
+  }
+  /** Netz (STL-Dreiecke) → Volumenkörper: nähen, schließen, ebene Nachbarflächen zusammenfassen */
+  function meshToSolid({ vertices, triangles }, { unify = true } = {}) {
+    const oc = R.getOC(), before = triangles.length;
+    if (!before) throw new Error("Das Netz enthält keine Dreiecke");
+    const sew = new oc.BRepBuilderAPI_Sewing(1e-3, true, true, true, false);
+    let added = 0;
+    for (const [a, b, c] of triangles) {
+      try { sew.Add(R.makePolygon([vertices[a], vertices[b], vertices[c]]).wrapped); added++; } catch { /* entartet */ }
+    }
+    if (!added) throw new Error("Aus dem Netz ließ sich keine Fläche bilden");
+    sew.Perform(new oc.Message_ProgressRange());
+    let res = R.cast(sew.SewedShape()), solid = false;
+    sew.delete();
+    try { const so = R.makeSolid([res]); if (Math.abs(R.measureVolume(so)) > 1e-6) { res = so; solid = true; } } catch { /* offen */ }
+    if (unify) {
+      try {
+        const u = new oc.ShapeUpgrade_UnifySameDomain(res.wrapped, true, true, false);
+        u.Build();
+        res = R.cast(u.Shape());
+        u.delete();
+      } catch { /* bleibt in Dreiecken */ }
+    }
+    return { shape: res, solid, before, faces: res.faces.length };
+  }
+
+  // ---------- Flächen prüfen (SolidCraft-Abgleich E4) ----------
+  /** Isokurven aller gekrümmten Flächen: je Richtung n−1 Linien mit 24 Abschnitten (Parameter der Trägerfläche) */
+  function isoCurves(shape, n = 5) {
+    const out = [];
+    for (const fc of shape.faces) {
+      if (fc.geomType === "PLANE") continue;
+      for (let i = 1; i < n; i++) {
+        const t = i / n, lu = [], lv = [];
+        for (let k = 0; k <= 24; k++) {
+          const s = k / 24;
+          try { lu.push(tuple(fc.pointOnSurface(t, s))); lv.push(tuple(fc.pointOnSurface(s, t))); } catch { /* außerhalb */ }
+        }
+        if (lu.length > 1) out.push(lu);
+        if (lv.length > 1) out.push(lv);
+      }
+    }
+    return out;
+  }
+  /** Kantenstetigkeit: Winkel der beiden Flächennormalen in der Kantenmitte (°), Randkanten mit NaN */
+  function edgeContinuity(shape) {
+    const faceOf = new Map();
+    shape.faces.forEach((fc) => { for (const e of fc.edges) { const k = hashOf(e); if (!faceOf.has(k)) faceOf.set(k, []); const l = faceOf.get(k); if (!l.some((x) => x.isSame(fc))) l.push(fc); } });
+    return shape.edges.map((e, idx) => {
+      const fs = faceOf.get(hashOf(e)) || [];
+      let angle = NaN;
+      if (fs.length === 2) {
+        try {
+          const p = e.pointAt(0.5), n1 = tuple(fs[0].normalAt(p)), n2 = tuple(fs[1].normalAt(p));
+          const c = (n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) / (Math.hypot(...n1) * Math.hypot(...n2) || 1);
+          angle = (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI;
+        } catch { /* ohne Wert */ }
+      }
+      return { idx, angle, mid: edgeMid(e), seam: fs.length === 1 && fs[0].geomType !== "PLANE" };
+    });
+  }
+  /** Kleinster Radius der Regelflächen (Zylinder, Kugel, Torus, Kegel am kleinsten Ende) je Fläche */
+  function analyticRadii(shape) {
+    const oc = R.getOC(), out = [];
+    shape.faces.forEach((fc, idx) => {
+      let r = null;
+      try {
+        const ad = new oc.BRepAdaptor_Surface(fc.wrapped, true), T = ad.GetType();
+        if (T === oc.GeomAbs_SurfaceType.GeomAbs_Cylinder) r = ad.Cylinder().Radius();
+        else if (T === oc.GeomAbs_SurfaceType.GeomAbs_Sphere) r = ad.Sphere().Radius();
+        else if (T === oc.GeomAbs_SurfaceType.GeomAbs_Torus) r = ad.Torus().MinorRadius();
+        ad.delete();
+      } catch { /* andere Flächen über das Netz */ }
+      if (r != null) out.push({ idx, r, type: fc.geomType, point: faceCentroid(fc) });
+    });
+    return out;
+  }
+  /** Zwei Körper vergleichen: Volumen nur in A, nur in B, gemeinsam; Netze der Unterschiede */
+  function compareShapes(a, b) {
+    const vol = (s) => { try { return R.measureShapeVolumeProperties(s).volume; } catch { return 0; } };
+    const onlyA = a.cut(b), onlyB = b.cut(a), common = a.intersect(b);
+    const mesh = (s) => { try { const v = vol(s); return v > 1e-6 ? meshBody(s, "normal") : null; } catch { return null; } };
+    return { volA: vol(a), volB: vol(b), onlyA: vol(onlyA), onlyB: vol(onlyB), common: vol(common), meshA: mesh(onlyA), meshB: mesh(onlyB) };
+  }
+
   function bodyProps(shape) {
     let volume = NaN, center = null, area = NaN;
     try { const vp = R.measureShapeVolumeProperties(shape); volume = vp.volume; center = vp.centerOfMass; } catch { /* ignore */ }
@@ -3691,7 +3895,7 @@ export function createKernel(R) {
     return [...pairs.values()];
   }
 
-  return { buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, meshBodyCached, bodyPropsCached, measure, vertexOf, snapPoint, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
+  return { listTopology, meshToSolid, isoCurves, edgeContinuity, analyticRadii, compareShapes, buildPart, tabSlotPlan, tabSlotParams, buildKnickrahmen, shapeValid, cylinderAxis, collisions, meshBody, bodyProps, meshBodyCached, bodyPropsCached, measure, vertexOf, snapPoint, placed, compound, projectView, cylinderAxes, projectRaw, largestPlanarFace, upFor, halfSpace, camera, sectionLoops, cutAtPlane, makeMember, memberFrame, prefixCache };
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen

@@ -20,10 +20,12 @@ import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
-import { h, icon, toast, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
+import { h, icon, toast, modal, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
 import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
-import { moveProblem, copyFeatures } from "../core/ableiten.js";
+import { moveProblem, copyFeatures, moveFeaturesToPart } from "../core/ableiten.js";
+import { reapplySurfaceCheck } from "./flaechenpruefung.js";
+import { cloudPoints } from "../core/punktwolke.js";
 import { syncVariants } from "../core/varianten.js";
 import { setDynamicCommands } from "../core/commands.js";
 import { macroCommands } from "../core/makros.js";
@@ -54,7 +56,7 @@ import { GENERATORS, defaultGenerator, resolveGenParams } from "../core/generato
 import { groupParts } from "../core/genteil.js";
 import { gestellPlan } from "../core/gestell.js";
 import { refreshAllGestelle, gestellPick, skeletonSegs } from "./gestell.js";
-import { insertFeature, beforeDelete, setEnd } from "../core/bauteilende.js";
+import { insertFeature, beforeDelete, setEnd, activeCount } from "../core/bauteilende.js";
 import { colorMap } from "../core/komponentenfarben.js";
 import { templateOf, isCustomTemplate } from "../core/zeichnungsvorlage.js";
 import { snapshot, restoreSnapshot, trimStack } from "../core/undo.js";
@@ -631,12 +633,19 @@ export class App {
   }
   partColor(part) { return part.color || finishColor(part) || materialOf(part.material).color; }
   showPart(part, res) {
+    this.viewer.showMotionPaths([]);
+    // Punktwolken (E5) bis zum Bauteilende, nicht unterdrückt
+    const nAct = activeCount(part);
+    this.viewer.showPointClouds(part.features.filter((f, i) => f.type === "punktwolke" && !f.suppressed && f.data && !f.hidden && i < nAct).map((f) => { try { return { id: f.id, pts: cloudPoints(f), size: Number(f.size) || 2 }; } catch { return null; } }).filter(Boolean));
     if (this.mode === "sketch") {
       // im Skizzenmodus Modell halbtransparent hinter der Skizze
       this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35, material: part.material, finish: part.finish });
     } else this.viewer.showPart(res.bodies, { color: this.partColor(part), material: part.material, finish: part.finish });
     if (this.context?.part === part.id) this.showContextGhosts();
     this.showSketches3D();
+    // Flächen prüfen (E4) läuft weiter: nach dem Neuaufbau wieder anwenden
+    if (this.surfaceCheck && this.mode !== "sketch") reapplySurfaceCheck(this);
+    else if (this.viewer.analysis) { this.surfaceCheck = null; this.viewer.setAnalysis(); }
     if (this.fittedFor !== part.id) {
       this.fittedFor = part.id;
       const saved = this.mode !== "sketch" && this.docViews.get(part.id);
@@ -667,6 +676,9 @@ export class App {
     }
     this.viewer.showAssembly(comps);
     this.viewer.showSketches([]);
+    if (this.viewer.analysis) { this.surfaceCheck = null; this.viewer.setAnalysis(); }
+    this.viewer.showPointClouds([]);
+    this.viewer.showMotionPaths((asm.motionPaths || []).filter((p) => !p.hidden).map((p) => ({ ...p, kept: true })));
     if (this.fittedFor !== asm.id && comps.length) {
       this.fittedFor = asm.id;
       const saved = this.docViews.get(asm.id);
@@ -855,7 +867,7 @@ export class App {
     this.endMeasure();
     if (f && (f.type === "fillet" || f.type === "chamfer") && (f.mode || "edges") === "edges") this.pick = { kind: "edges", feature: f.id };
     if (f && f.type === "naht") this.pick = { kind: "edges", feature: f.id };
-    if (f && ["shell", "aufdicken", "flaeche", "entformung", "lochblech", "flaechenkurve"].includes(f.type) || (f?.type === "freiflaeche" && ["offset", "kopie", "untrim"].includes(f.art))) this.pick = { kind: "faces", feature: f.id };
+    if (f && ["shell", "aufdicken", "flaeche", "entformung", "lochblech", "flaechenkurve", "auflage"].includes(f.type) || (f?.type === "freiflaeche" && ["offset", "kopie", "untrim"].includes(f.art))) this.pick = { kind: "faces", feature: f.id };
     if (f?.type === "direkt" && !(f.faces || []).length) this.pick = { kind: "faces", feature: f.id };
     const wasEditing = this._editingFeature;
     this._editingFeature = this.pick?.feature || null;
@@ -931,6 +943,24 @@ export class App {
     });
     this.selectFeature(copies.at(-1).id);
     if (copies.length > 1) toast(`Mit Bezügen eingefügt: ${copies.map((g) => g.name).join(", ")}`);
+  }
+  /** Merkmal (mit Abhängigen, Skizzen, Arbeitselementen) in ein anderes Bauteil verschieben (E3) */
+  moveFeatureToPartDialog(id) {
+    const part = this.activeDoc(), f = part?.features?.find((g) => g.id === id);
+    if (!f || this.linkedReadOnly(part)) return;
+    const targets = this.parts().filter((d) => d.id !== part.id && !d.link && !d.variant && !d.genAsm);
+    if (!targets.length) return toast("Kein anderes Bauteil im Projekt – erst ein Bauteil anlegen");
+    const sel = h("select", { class: "inp" }, ...targets.map((d) => h("option", { value: d.id }, d.name)));
+    modal({ title: `»${f.name}« in Bauteil verschieben`, width: "440px", body: h("div", {},
+      h("p", {}, "Das Merkmal und alles, was davon abhängt, wandert ins Zielbauteil; benutzte Skizzen und Arbeitselemente kommen mit. Was im Quellteil noch gebraucht wird, bleibt dort."),
+      h("div", { class: "field" }, h("label", {}, "Zielbauteil"), sel)),
+    buttons: [{ label: "Abbrechen" }, { label: "Verschieben", primary: true, run: () => {
+      const dst = this.doc(sel.value);
+      let r;
+      try { r = moveFeaturesToPart(part.features, id, dst.features || [], { newId: () => uid("f") }); } catch (e) { toast(e.message, { kind: "err" }); return false; }
+      this.edit("In Bauteil verschieben", () => { part.features = r.src; dst.features = r.dst; if (this.sel?.type === "feature" && !r.src.some((g) => g.id === this.sel.id)) this.sel = null; });
+      toast(`Nach »${dst.name}« verschoben: ${r.moved.join(", ")}`, { kind: "ok", timeout: 6000 });
+    } }] });
   }
   duplicateFeature(id) {
     const keep = this.featureClip;
@@ -1306,7 +1336,7 @@ export class App {
   updateMeasureView() {
     const m = this.measure, r = m?.result;
     if (!r || r.items.length !== 2 || this.prefs.get("messen.anzeige3d") === false) return this.viewer.showMeasure(null);
-    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen"), second: this.prefs.get("messen.zweiteinheit") || "" });
+    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen"), second: this.prefs.get("messen.zweiteinheit") || "", unit: this.prefs.get("allgemein.einheit") || "mm" });
     const ax = m.show === "axis" ? axisDistance(r.items[0], r.items[1]) : null;
     if (ax) return this.viewer.showMeasure({ a: ax.a, b: ax.b, text: F.len(ax.value) });
     if (!r.pa || !r.pb) return this.viewer.showMeasure(null);
@@ -1490,7 +1520,7 @@ export class App {
       r = await this.kernel.call("measure", { items });
     } catch { if (ticket === this.quickTicket) el.hidden = true; return; }
     if (ticket !== this.quickTicket) return;
-    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen") ?? 2, angleDec: this.prefs.get("messen.winkelstellen") ?? 2 });
+    const F = measureFormat({ dec: this.prefs.get("allgemein.dezimalstellen") ?? 2, angleDec: this.prefs.get("messen.winkelstellen") ?? 2, unit: this.prefs.get("allgemein.einheit") || "mm" });
     const rows = quickMeasure(r, F);
     el.replaceChildren(...rows.map((x) => h("button", { class: "qm-item", title: "Klicken: Wert kopieren", onclick: () => navigator.clipboard?.writeText(x.value).then(() => toast(`${x.label}: ${x.value} kopiert`), () => {}) },
       h("span", { class: "qm-l" }, x.label), h("span", { class: "qm-v" }, x.value))));
@@ -1649,6 +1679,7 @@ export class App {
       if (this.mode === "drawing" && this.drawing.key(e)) { e.preventDefault(); return; }
       if (e.key === "Enter" && this.pick?.kind === "datumCreate") { finishDatumPick(this); return; }
       if (e.key === "Escape") {
+        if (this.viewer.spin) { this.viewer.setSpin(0); return; }
         if (this.pick) { this.cancelPick(); return; }
         if (this.sel) { this.sel = null; this.selHits = []; this.refreshSelectionHits(); this.tree.render(); this.props.render(); }
         return;
@@ -1669,7 +1700,7 @@ export const CONSTRAINT_NAMES = CONSTRAINT_TYPES;
 export const FEATURE_NAMES = {
   sketch: "Skizze", blechkasten: "Blechkasten", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
-  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", kroepfung: "Kröpfung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", flaechenkurve: "Kurve auf Fläche", freiflaeche: "Fläche", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
+  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", kroepfung: "Kröpfung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", flaechenkurve: "Kurve auf Fläche", freiflaeche: "Fläche", auflage: "Auflagefläche", kunststoff: "Kunststoffteil", punktwolke: "Punktwolke", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
   endkappe: "Endkappe", strecken: "Rohr gestreckt", zinkloch: "Verzinkungsbohrungen", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", huelle: "Hüllkörper", lochblech: "Lochblech", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung", direkt: "Direkt",
 };
 

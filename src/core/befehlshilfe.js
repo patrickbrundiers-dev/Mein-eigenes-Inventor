@@ -3,10 +3,14 @@
 // Skizzenwerkzeuge (t_…) kommen aus SKETCH_TOOLS in src/ui/sketcher.js und stehen hier nicht.
 
 import { FF_ARTEN } from "./freiflaeche.js";
+import { SURFACE_CHECKS } from "./flaechenpruefung.js";
 
 export const BEFEHLSHILFE = {
+  scMenu: "Flächen prüfen: Zebra, Umgebungskarte, Krümmung, Kamm, Isokurven, Silhouette, Stetigkeit, Zugänglichkeit, Körper vergleichen.",
+  compareBodies: "Zwei Körper (auch aus verschiedenen Bauteilen) vergleichen: Volumen nur in A, nur in B und gemeinsam, Unterschiede farbig.",
   ffMenu: "Flächenmodellierung: offene Flächen erzeugen, nähen, teilen, verrunden und aufdicken.",
   ...Object.fromEntries(FF_ARTEN.map((a) => ["ff_" + a.art, a.help])),
+  ...Object.fromEntries(SURFACE_CHECKS.map(([k, , help]) => ["sc_" + k, help])),
   // ---------- 3D-Modell ----------
   sketch: "Neue 2D-Skizze auf einer Ursprungsebene, Arbeitsebene oder ebenen Fläche anlegen.",
   skizze3d: "Skizze im Raum: Linien und Bögen zwischen 3D-Punkten, z. B. als Pfad für Rohre und Profile.",
@@ -25,6 +29,8 @@ export const BEFEHLSHILFE = {
   shell: "Körper aushöhlen und gewählte Flächen offen lassen, mit einheitlicher Wandstärke.",
   lochblech: "Lochraster auf einer ebenen Fläche: Rundloch versetzt oder gerade, Quadratloch, Langloch, mit freiem Rand. Zeigt den freien Querschnitt.",
   flaechenkurve: "3D-Pfad auf einer Fläche: Isokurve oder Skizze senkrecht auf die Fläche projiziert, z. B. als Sweep-Pfad.",
+  kunststoff: "Kunststoffteil: Schraubdom mit Rippen, Rastnase, Lippe/Nut oder Stützfuß an Skizzenpunkten bzw. Gehäusekontur, nach Kunststoffregel.",
+  auflage: "Teil für den 3D-Druck auf eine ebene Fläche legen: Fläche zeigt nach unten, Teil liegt auf z = 0.",
   huelle: "Quader um die gewählten Körper mit Zugabe je Seite – für Bauraum, Rohmaß und Transportmaß.",
   kombinieren: "Körper vereinigen, voneinander abziehen oder nur die Schnittmenge behalten.",
   stecksystem: "Zapfen und passende Schlitze für Laserteile, damit sie sich vor dem Schweißen zusammenstecken lassen.",
@@ -80,6 +86,7 @@ export const BEFEHLSHILFE = {
   params: "Parameter mit Namen und Formeln anlegen und in allen Maßfeldern verwenden.",
   variants: "Variantentabelle: mehrere Größen eines Bauteils aus einer Tabelle von Parameterwerten.",
   importStep: "STEP-Datei als Körper in dieses Bauteil einfügen.",
+  punktwolke: "Scan-Punkte (XYZ, CSV, PTS, PLY als Text) als Bezug einfügen: verschieben, skalieren, ausdünnen.",
   abgeleitet: "Bauteil aus einem anderen Bauteil ableiten, verknüpft, gespiegelt oder skaliert.",
   rules: "Regeln (wenn … dann …), die Parameter setzen oder Features unterdrücken.",
   macros: "Befehlsfolgen aufzeichnen, verwalten und wieder abspielen.",
@@ -102,6 +109,7 @@ export const BEFEHLSHILFE = {
   skBounds: "Rechteck aus Konstruktionslinien B × H um den Ursprung als Zeichnungsrahmen, fixiert.",
   skSection: "Körper des Bauteils mit der Skizzenebene schneiden und den Schnitt als Linienzug übernehmen.",
   skMeshSection: "Sichtbare Netze (auch STL) mit der Skizzenebene schneiden und als Linienzug übernehmen.",
+  skTrace: "Umrisse dunkler Bereiche des Skizzenbildes als Linienzüge nachzeichnen (Schwelle wählbar).",
   skSpun: "Körper um die gewählte Linie (sonst X-Achse) gedreht in die Skizze legen: halbes Drehprofil, geschlossen.",
   skOffBreak: "Versatz-Verknüpfung der gewählten Elemente lösen, die Kopie wird frei beweglich.",
   sclean: "Endpunkte zusammenführen, doppelte und überlappende Elemente entfernen, fast gerade Linien gerade stellen.",
@@ -265,6 +273,8 @@ export const BEFEHLSHILFE = {
   x_glb: "3D-Modell mit Farben als GLB speichern: öffnet im Browser, am Handy und im Windows-3D-Viewer, ideal für Kunden.",
   x_obj: "Netz mit Farben als OBJ speichern: für Blender, Render- und Druckprogramme. Einheit mm.",
   x_3mf: "Modell als 3MF für den 3D-Druck speichern: Einheit mm und Farben bleiben erhalten, öffnet in PrusaSlicer, Cura und Bambu Studio.",
+  x_slicer: "Teil als 3MF direkt im eingestellten Slicer öffnen (Einstellungen → Dateien → Installierte Slicer).",
+  x_urdf: "Baugruppe mit Gelenken als URDF-Paket für ROS, Gazebo und MoveIt (ZIP mit STL je Glied).",
   x_vereinfachen: "Export vereinfachen: Normteile, Schweißnähte und kleine Körper weglassen oder durch Hüllquader ersetzen – für Architekt, Kunde und BIM.",
   x_png: "Aktuelle Ansicht als Bild speichern.",
   x_render: "Fotorealistisches Bild der aktuellen Ansicht berechnen.",

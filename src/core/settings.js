@@ -8,6 +8,7 @@ import { CLASSES } from "./tolerance.js";
 import { validateBendTables } from "./bendtable.js";
 import { validateKeymap, commandDef } from "./commands.js";
 import { validateTemplate, DEFAULT_TEMPLATE } from "./zeichnungsvorlage.js";
+import { validatePlasticRules, DEFAULT_PLASTIC_RULES } from "./kunststoff.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
 // Reines Modul ohne DOM – die Oberfläche (src/ui/prefs.js) speichert und wendet an.
@@ -24,7 +25,7 @@ export const SETTINGS_VERSION = 1;
  * teilweise = einige Optionen wirken, Rest geplant; geplant = nur Beschreibung, keine Optionen.
  */
 export const CATEGORIES = [
-  { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Englisch auch für Eigenschaften, Meldungen und Zeichnungstexte", "Zahlenformat und Standard-Einheit (intern immer mm/Grad)"], note: "Sprache: Englisch gilt in dieser Ausbaustufe für Menüband, Befehlssuche und Befehlsnamen; Eigenschaften, Meldungen und Zeichnungstexte bleiben deutsch." },
+  { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Englisch auch für Eigenschaften, Meldungen und Zeichnungstexte", "Zahlenformat"], note: "Sprache: Englisch gilt in dieser Ausbaustufe für Menüband, Befehlssuche und Befehlsnamen; Eigenschaften, Meldungen und Zeichnungstexte bleiben deutsch." },
   { id: "ansicht", label: "3D-Ansicht", status: "aktiv", note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
   { id: "skizze", label: "Skizzen", status: "aktiv" },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
@@ -58,12 +59,14 @@ export const SETTINGS = [
   { key: "allgemein.startSortierung", cat: "allgemein", label: "Startseite: sortieren nach", type: "enum", default: "geaendert", options: [{ value: "geaendert", label: "Änderungsdatum" }, { value: "geoeffnet", label: "zuletzt geöffnet" }, { value: "name", label: "Name" }] },
   { key: "allgemein.dezimalstellen", cat: "allgemein", label: "Dezimalstellen für Messwerte", type: "int", default: 3, min: 0, max: 6, help: "Anzeige beim Messen (Abstand, Winkel). Gerechnet wird immer mit voller Genauigkeit." },
   { key: "messen.winkelstellen", cat: "allgemein", label: "Dezimalstellen für Winkel beim Messen", type: "int", default: 2, min: 0, max: 6, help: "Winkelgenauigkeit im Messwerkzeug." },
+  { key: "allgemein.einheit", cat: "allgemein", label: "Einheit der Konstruktion (Anzeige)", type: "enum", default: "mm", options: [{ value: "mm", label: "mm" }, { value: "cm", label: "cm" }, { value: "m", label: "m" }, { value: "in", label: "Zoll (in)" }], help: "Messwerte in dieser Einheit. Eingaben ohne Einheit bleiben mm; andere Einheiten direkt dazuschreiben, z. B. »2 in« oder »1,5 m«." },
   { key: "messen.zweiteinheit", cat: "allgemein", label: "Zweiteinheit beim Messen", type: "enum", default: "", options: [{ value: "", label: "Kein(e)" }, { value: "in", label: "Zoll (in)" }, { value: "cm", label: "cm" }, { value: "m", label: "m" }], help: "Messwerte zusätzlich in dieser Einheit anzeigen, z. B. »88,000 mm (3,465 in)«." },
   { key: "messen.fangradius", cat: "allgemein", label: "Fangradius beim Messen", unit: "px", type: "int", default: 9, min: 3, max: 30, help: "Abstand, ab dem Endpunkte, Mitten, Kreismitten, Quadranten und Flächenmitten beim Messen gefangen werden." },
   { key: "messen.anzeige3d", cat: "allgemein", label: "Maß beim Messen im 3D-Fenster zeigen", type: "bool", default: true },
 
   { key: "ansicht.qualitaet", cat: "ansicht", label: "Darstellungsqualität beim Start", type: "enum", default: "normal", options: QUAL, help: "Feinheit der Dreiecksvernetzung. Wirkt nur auf die Anzeige, nicht auf Export oder Masse." },
   { key: "ansicht.projektion", cat: "ansicht", label: "Projektion", type: "enum", default: "orthogonal", options: [{ value: "orthogonal", label: "Orthogonal" }, { value: "perspektive", label: "Perspektive" }], help: "Skizzieren ist immer orthogonal." },
+  { key: "ansicht.blickwinkel", cat: "ansicht", label: "Ansichtswinkel (Perspektive)", unit: "°", type: "number", default: 35, min: 10, max: 100, help: "Öffnungswinkel der Kamera bei perspektivischer Projektion: klein wie ein Teleobjektiv, groß wie ein Weitwinkel." },
   { key: "ansicht.darstellung", cat: "ansicht", label: "Darstellungsmodus", type: "enum", default: "kanten", options: DISPLAY },
   { key: "ansicht.maus", cat: "ansicht", label: "Maustasten", type: "enum", default: "rechts-drehen", options: [
     { value: "rechts-drehen", label: "Rechte Taste drehen, mittlere schwenken" },
@@ -142,6 +145,7 @@ export const SETTINGS = [
   { key: "blech.regeln", cat: "blech", label: "Blechregeln", type: "sheetrules", default: DEFAULT_SHEET_RULES.map((r) => ({ ...r })), custom: true, help: "Benannte Vorgaben für Kantteile: Werkstoff, Dicke, Innenradius, Abwicklungsregel und Freischnitt. Am Kantteil als »Blechregel« wählbar." },
   { key: "blech.biegetabellen", cat: "blech", label: "Biegetabellen", type: "bendtables", default: [], custom: true, help: "Je Werkstoff und Blechdicke ein Raster Biegewinkel × Innenradius mit Werten der Abkantpresse. Zwischen den Zellen wird interpoliert, außerhalb gilt der Ersatz-K-Faktor der Tabelle." },
   { key: "material.eigene", cat: "material", label: "Eigene Werkstoffe", type: "materials", default: [], custom: true },
+  { key: "material.kunststoffregeln", cat: "material", label: "Kunststoffregeln", type: "plasticrules", default: DEFAULT_PLASTIC_RULES.map((r) => ({ ...r })), custom: true, help: "Wanddicke, Formschräge und Radius je Kunststoff für Ansatz, Rastnase, Lippe/Nut und die Regelprüfung." },
   { key: "oberflaeche.layout", cat: "darstellung", label: "Anordnung der Panels", type: "layout", default: DEFAULT_LAYOUT, custom: true, help: "Seite und Breite von Modellbrowser und Eigenschaften; Menüband Ansicht → Fenster oder am Rand ziehen." },
   { key: "oberflaeche.verlauf", cat: "darstellung", label: "Verlaufsleiste unten im Bauteil", type: "bool", default: true, help: "Alle Features als Symbole in Aufbaureihenfolge; die Marke ist das Bauteilende und lässt sich ziehen." },
   { key: "oberflaeche.schnellmessung", cat: "darstellung", label: "Schnellmessung unten rechts", type: "bool", default: true, help: "Zeigt für gewählte Kanten und Flächen Länge, Ø, Fläche, Abstand und Winkel. Klick kopiert den Wert. Das Messwerkzeug (M) kann mehr." },
@@ -150,6 +154,8 @@ export const SETTINGS = [
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },
   { key: "kernel.automatisch", cat: "kernel", label: "Automatisch neu berechnen", type: "bool", default: true, help: "Aus = Änderungen sammeln und erst mit F5 (»Neu berechnen«) rechnen – hilfreich bei großen Bauteilen. Beim Öffnen und Wechseln eines Dokuments wird immer gerechnet." },
   { key: "kernel.protokoll", cat: "kernel", label: "Berechnungsprotokoll führen", type: "bool", default: false, help: "Merkt sich für die letzten 200 Berechnungen Dauer, Features und Meldungen (nur im Speicher, nicht im Fehlerprotokoll). Ansehen und kopieren: Befehlssuche → »Berechnungsprotokoll«." },
+  { key: "dateien.slicer", cat: "dateien", label: "Installierte Slicer", type: "slicers", default: [], custom: true, help: "Programme für »An Slicer senden«. Leer = 3MF mit dem Programm öffnen, das Windows für .3mf kennt." },
+  { key: "allgemein.profile", cat: "allgemein", label: "Einstellungsprofile", type: "profiles", default: {}, custom: true, help: "Benannte Stände aller Einstellungen, z. B. »Werkstatt« und »Büro«." },
   { key: "dateien.sicherungen", cat: "dateien", label: "Sicherungen beim Speichern", type: "int", default: 1, min: 0, max: 9, help: "So viele frühere Fassungen bleiben neben der Datei: ».wcad.bak« ist die jüngste, dann ».bak2«, ».bak3« … 0 = keine neue Sicherung. Nur in der Desktop-Version." },
   { key: "darstellung.skalierung", cat: "darstellung", label: "Oberflächengröße", unit: "%", type: "enum", default: 100, options: [80, 90, 100, 110, 125, 150].map((v) => ({ value: v, label: v + " %" })), help: "Nur in der Desktop-Version; im Browser die Zoomfunktion des Browsers verwenden." },
 ];
@@ -227,6 +233,21 @@ export function validateValue(def, v) {
     }
     case "drawtemplate":
       return validateTemplate(v);
+    case "slicers": {
+      if (!Array.isArray(v) || v.length > 8) return { ok: false, error: "Liste von höchstens 8 Slicern erwartet" };
+      const bad = (t, n) => typeof t !== "string" || !t.trim() || t.length > n || /[\u0000-\u001f]/.test(t);
+      if (v.some((x) => !x || bad(x.name, 60) || bad(x.exe, 500))) return { ok: false, error: "Slicer braucht Namen und Programmpfad" };
+      return { ok: true, value: v.map((x) => ({ name: x.name.trim(), exe: x.exe.trim() })) };
+    }
+    case "plasticrules":
+      return validatePlasticRules(v);
+    case "profiles": {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: "Profile erwartet" };
+      const e = Object.entries(v);
+      if (e.length > 20) return { ok: false, error: "Höchstens 20 Profile" };
+      if (e.some(([k, t]) => !k.trim() || k.length > 60 || typeof t !== "string" || t.length > 400000)) return { ok: false, error: "Ungültiges Profil" };
+      return { ok: true, value: { ...v } };
+    }
     case "color":
       return typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? { ok: true, value: v.toLowerCase() } : { ok: false, error: "Farbe als #rrggbb erwartet" };
     default:
@@ -291,6 +312,10 @@ export function loadSettings(input) {
 }
 
 /** Zum Speichern/Exportieren: nur Abweichungen vom Standard, mit Format und Version */
+/** Einstellungsprofil (E6): alle Werte außer den Profilen selbst als Text */
+export function profileSnapshot(values) {
+  return serializeSettings({ ...values, "allgemein.profile": {} });
+}
 export function serializeSettings(values) {
   const out = {};
   for (const s of SETTINGS) {
