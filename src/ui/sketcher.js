@@ -21,6 +21,10 @@ import { imageCorners, newImageEntity, rescaleImage } from "../core/skizzenbild.
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
 import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
 import { constraintOptions, SELECTION_CONSTRAINT_TOOLS } from "../core/bedingungsauswahl.js";
+import { buildRoundedRect, buildMidLine, buildCircle2, buildArcSlot, buildHelperLine, tangentPoints, commonTangents, bisectors, joinCorner, equationPoints, fitSplineCtrl, addSplineFromCtrl, conicPoints, copyEntities, pasteEntities, clipCenter, svgToPrims } from "../core/sketchtools.js";
+
+// Zwischenablage für Skizzenelemente (Strg+C / Strg+V, auch in eine andere Skizze)
+let sketchClip = null;
 
 const PT_R = 7, CURVE_R = 6;
 
@@ -49,14 +53,28 @@ export const SKETCH_TOOLS = {
   mirror: "Spiegeln: vorher Elemente wählen (Auswählen, Umschalt für mehrere), dann die Spiegellinie anklicken",
   dimension: "Bemaßung: Linie, Kreis, zwei Punkte oder zwei Linien wählen, dann Lage klicken",
   project: "Kante des 3D-Modells anklicken, um sie in die Skizze zu übernehmen",
-  trim: "Stutzen: Teil einer Linie, eines Kreises oder Bogens anklicken – wird bis zu den nächsten Schnittpunkten entfernt",
+  trim: "Stutzen: Teil einer Linie, eines Kreises oder Bogens anklicken – oder mit gedrückter Maustaste über mehrere Stücke ziehen, alle gekreuzten fallen weg",
   extend: "Verlängern: Linie oder Bogen nahe dem Ende anklicken, das bis zum nächsten Element verlängert wird",
   split: "Teilen: Linie oder Bogen an der Stelle anklicken, an der geteilt wird (nahe einem Schnittpunkt wird dort geteilt)",
-  sfillet: "Rundung: Ecke anklicken, an der zwei Linien enden, dann Radius eingeben",
+  sfillet: "Rundung: Ecke anklicken, an der zwei Linien enden, dann Radius eingeben – vorher gewählte Ecken (Punkte) werden mitgerundet",
   schamfer: "Fase: Ecke anklicken, an der zwei Linien enden, dann Abstand eingeben (zwei Abstände mit Semikolon, z. B. 5;10)",
   rect3: "Rechteck über 3 Punkte: zwei Ecken der ersten Kante klicken, dann die Breite – das Rechteck darf schräg liegen",
   circlet3: "Kreis tangential an 3 Linien: drei Linien anklicken – der Kreis berührt alle drei (Inkreis, bei Bedarf Ankreis nahe der Klickstelle)",
   circle3: "Kreis durch 3 Punkte: drei Punkte auf dem Umfang klicken – getroffene Punkte werden an den Kreis gebunden",
+  rectr: "Abgerundetes Rechteck: erste Ecke, gegenüberliegende Ecke klicken, dann Eckradius eingeben",
+  linem: "Linie aus Mitte: Mittelpunkt klicken, dann ein Ende – die Linie liegt symmetrisch zur Mitte",
+  circle2: "Kreis über 2 Punkte: zwei Punkte klicken, die einander gegenüber auf dem Umfang liegen (Durchmesser)",
+  slota: "Bogenlangloch: Mitte der Bahn, Anfang (Bahnradius), Ende gegen den Uhrzeigersinn klicken, dann Breite eingeben",
+  conic: "Kegelschnitt: Anfang, Ende, dann Scheitelpunkt (Schnitt der Endtangenten) klicken, Völligkeit eingeben (0,5 = Parabel)",
+  clh: "Hilfslinie waagrecht: Punkt klicken, durch den sie läuft",
+  clv: "Hilfslinie senkrecht: Punkt klicken, durch den sie läuft",
+  cla: "Hilfslinie unter Winkel: Punkt klicken, dann Winkel zur X-Achse eingeben",
+  clpar: "Hilfslinie parallel: Linie anklicken, dann Punkt(e), durch die eine Parallele läuft – Esc beendet",
+  clperp: "Hilfslinie senkrecht zu: Linie anklicken, dann Punkt(e), durch die eine Senkrechte läuft – Esc beendet",
+  clbis: "Winkelhalbierende: zwei Linien anklicken – nahe der gewünschten Halbierenden",
+  cltan: "Tangente durch Punkt: Kreis oder Bogen auf der Seite anklicken, wo die Tangente berühren soll, dann den Punkt außerhalb",
+  ctan2: "Gemeinsame Tangente: ersten Kreis/Bogen nahe dem Berührpunkt anklicken, dann den zweiten",
+  scorner: "Ecke: zwei Linien anklicken – beide werden bis zu ihrem Schnittpunkt verlängert oder gekürzt und dort verbunden",
   arct: "Tangentialer Bogen: Ende einer Linie klicken, dann den Endpunkt des Bogens – der Bogen schließt tangential an",
   horizontal: "Horizontal: Linie oder zwei Punkte wählen – oder erst wählen, dann Bedingung",
   vertical: "Vertikal: Linie oder zwei Punkte wählen – oder erst wählen, dann Bedingung",
@@ -563,12 +581,12 @@ export class Sketcher {
   }
   /** „Skizze säubern“ (MegaCAD-Abgleich M7): Vorschau der Änderungen, ein Rückgängig-Schritt */
   /** DXF in die offene Skizze übernehmen: Layer wählen, Lage, als Konstruktion, danach säubern (M21) */
-  async importDxfDialog(file) {
+  async importDxfDialog(file, parsed = null, kind = "DXF") {
     if (!this.sk) return;
     file = file || (await this.app.files.pickDxf());
     if (!file) return;
-    let dx;
-    try { dx = parseDxf(file.text); } catch (e) { toast("DXF: " + e.message, { kind: "err" }); return; }
+    let dx = parsed;
+    if (!dx) try { dx = parseDxf(file.text); } catch (e) { toast("DXF: " + e.message, { kind: "err" }); return; }
     if (!dx.prims.length) { toast("DXF enthält keine Linien, Bögen oder Kreise", { kind: "err" }); return; }
     const on = new Set(dx.layers.map((l) => l.name));
     const opt = { place: "origin", construction: false, clean: true };
@@ -583,7 +601,7 @@ export class Sketcher {
     const chk = (key, label) => h("label", { class: "chk" }, h("input", { type: "checkbox", checked: opt[key], onchange: (e) => { opt[key] = e.target.checked; } }), label);
     update();
     modal({
-      title: "DXF importieren – " + file.name,
+      title: `${kind} importieren – ` + file.name,
       body: h("div", {},
         h("h4", {}, "Layer"),
         ...dx.layers.map((l) => h("label", { class: "chk" }, h("input", { type: "checkbox", checked: true, onchange: (e) => { if (e.target.checked) on.add(l.name); else on.delete(l.name); update(); } }), `${l.name} (${l.count})`)),
@@ -600,13 +618,13 @@ export class Sketcher {
         const offset = opt.place === "corner" ? [-bb[0][0], -bb[0][1]] : opt.place === "center" ? [-(bb[0][0] + bb[1][0]) / 2, -(bb[0][1] + bb[1][1]) / 2] : [0, 0];
         let rep = null, cnt = null;
         this.sel.clear();
-        this.commit("DXF importieren", (sk) => {
+        this.commit(`${kind} importieren`, (sk) => {
           cnt = dxfToSketch(sk, prims, { uid, offset, construction: opt.construction });
           if (opt.clean) rep = cleanSketch(sk, { ...CLEAN_DEFAULTS, kinds: { ...Object.fromEntries(Object.keys(CLEAN_KINDS).map((k) => [k, true])), straighten: false }, uid });
         });
         const corners = [[bb[0][0], bb[0][1]], [bb[1][0], bb[1][1]]].map(([x, y]) => toWorld(this.frame, x + offset[0], y + offset[1]));
         this.viewer.fitPoints(corners);
-        toast(`DXF: ${cnt.entities} Elemente übernommen` + (rep?.total ? ` · ${cleanReportText(rep)}` : ""), { kind: "ok" });
+        toast(`${kind}: ${cnt.entities} Elemente übernommen` + (rep?.total ? ` · ${cleanReportText(rep)}` : ""), { kind: "ok" });
       } }],
     });
   }
@@ -1244,15 +1262,9 @@ export class Sketcher {
     }
     if (t === "trim") {
       const hit = this.hitTest(sx, sy, { points: false, dims: false });
-      if (hit?.kind !== "entity") return;
-      // erst an einer Kopie prüfen, damit Fehlversuche keinen Rückgängig-Schritt erzeugen
-      const test = JSON.parse(JSON.stringify(this.sk));
-      const r = trimEntity(test, hit.id, { x: lx, y: ly }, uid);
-      if (!r.ok) return toast(r.message);
-      this.commit("Stutzen", (sk) => trimEntity(sk, hit.id, { x: lx, y: ly }, uid));
-      if (r.dropped?.length) toast("Entfernt, weil nicht mehr gültig: " + [...new Set(r.dropped)].map((t) => ({ length: "Längenmaß", midpoint: "Mittelpunkt", equal: "Gleich" })[t] || t).join(", "));
-      this.hover = null;
-      this.render();
+      // Stutzen entlang Pfad (SolidCraft): Ziehen über mehrere Stücke, beim Loslassen fallen alle gekreuzten
+      this.trimPath = { pts: [[lx, ly]], hits: hit?.kind === "entity" ? [{ id: hit.id, x: lx, y: ly }] : [], sx, sy, moved: false };
+      this.canvas.setPointerCapture?.(e.pointerId);
       return;
     }
     if (t === "extend" || t === "split") {
@@ -1292,13 +1304,16 @@ export class Sketcher {
         }, { allowList: true });
         return;
       }
+      // mehrere Ecken auf einmal (SolidCraft): vorher gewählte Eckpunkte werden mitgerundet, ein Rückgängig-Schritt
+      const corners = [best, ...[...this.sel].filter((k) => k.startsWith("p:")).map((k) => k.slice(2)).filter((id) => id !== best && cornerAt(this.sk, id))];
       this.askValue(sx, sy, this.lastValue("rundung") || String(this.prefs?.["werkzeuge.std.rundung"] ?? 5), (val) => {
         const r = evaluate(val, this.scope());
-        const test = JSON.parse(JSON.stringify(this.sk));
-        const res = filletCorner(test, best, r, uid, val);
+        const runAll = (sk) => { let res = null; for (const id of corners) { if (!cornerAt(sk, id)) continue; res = filletCorner(sk, id, r, uid, val); if (!res.ok) return res; } return res || { ok: false, message: "Keine Ecke" }; };
+        const res = runAll(JSON.parse(JSON.stringify(this.sk)));
         if (!res.ok) return toast(res.message, { kind: "err" });
         this.rememberValue("rundung", val);
-        this.commit("Skizzenrundung", (sk) => filletCorner(sk, best, r, uid, val));
+        this.commit(corners.length > 1 ? `Skizzenrundung (${corners.length} Ecken)` : "Skizzenrundung", runAll);
+        if (corners.length > 1) { this.sel.clear(); this.app.selectSketchItems([]); }
         if (res.dropped?.length) toast("Entfernt, weil nicht mehr gültig: " + [...new Set(res.dropped)].map((t) => ({ midpoint: "Mittelpunkt", equal: "Gleich" })[t] || t).join(", "));
       });
       return;
@@ -1386,6 +1401,7 @@ export class Sketcher {
       this.render();
       return;
     }
+    if (this.extraTool(t, sx, sy, lx, ly)) { this.render(); return; }
     if (GLYPH[t] || ["horizontal", "vertical", "coincident", "parallel", "perpendicular", "equal", "tangent", "fix", "midpoint", "concentric", "collinear", "symmetric"].includes(t)) {
       const hit = this.hitTest(sx, sy, { dims: false });
       this.pickForConstraint(hit);
@@ -1478,6 +1494,248 @@ export class Sketcher {
     }
     this.render();
   }
+  // ---------- Werkzeuge aus dem SolidCraft-Abgleich (src/core/sketchtools.js) ----------
+  /** Klick für die neuen Werkzeuge; true = verarbeitet */
+  extraTool(t, sx, sy, lx, ly) {
+    const opts = { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction };
+    const hitEnt = (types) => { const hit = this.hitTest(sx, sy, { points: false, dims: false }); const en = hit?.kind === "entity" ? this.entity(hit.id) : null; return en && types.includes(en.type) ? en : null; };
+    const pos = (id) => this.sk.points.find((p) => p.id === id);
+    const twoClick = (label, build) => {
+      const sn = this.snap(sx, sy);
+      if (!this.state) { this.state = { pts: [sn] }; return true; }
+      const a = this.state.pts[0];
+      if (Math.hypot(sn.x - a.x, sn.y - a.y) * this.M.scale < 2) return true;
+      this.state = null;
+      this.commitShape(label, (sk) => build(sk, a, sn));
+      return true;
+    };
+    switch (t) {
+      case "linem": return twoClick("Linie aus Mitte", (sk, a, b) => buildMidLine(sk, a, b, opts));
+      case "circle2": return twoClick("Kreis über 2 Punkte", (sk, a, b) => buildCircle2(sk, a, b, opts));
+      case "rectr": {
+        const sn = this.snap(sx, sy);
+        if (!this.state) { this.state = { pts: [sn] }; return true; }
+        const a = this.state.pts[0];
+        this.state = null;
+        const w = Math.abs(sn.x - a.x), hh = Math.abs(sn.y - a.y);
+        if (!(w > 1e-6 && hh > 1e-6)) { toast("Gegenüberliegende Ecke klicken"); return true; }
+        const def = this.lastValue("eckradius") || String(Math.round(Math.min(w, hh) * 0.15 * 10) / 10 || 5);
+        this.askValue(sx, sy, def, (val) => {
+          let r; try { r = evaluate(val, this.scope()); } catch (err) { return toast(err.message, { kind: "err" }); }
+          this.rememberValue("eckradius", val);
+          this.commitShape("Abgerundetes Rechteck", (sk) => buildRoundedRect(sk, a, sn, r, { ...opts, rExpr: val }));
+          this.render();
+        });
+        return true;
+      }
+      case "slota": case "conic": {
+        const sn = this.snap(sx, sy);
+        if (!this.state) { this.state = { pts: [sn] }; return true; }
+        if (this.state.pts.length < 2) { this.state.pts.push(sn); return true; }
+        const [p0, p1] = this.state.pts;
+        this.state = null;
+        if (t === "slota") {
+          this.askValue(sx, sy, this.lastValue("bogenlangloch") || "10", (val) => {
+            let w; try { w = evaluate(val, this.scope()); } catch (err) { return toast(err.message, { kind: "err" }); }
+            this.rememberValue("bogenlangloch", val);
+            this.commitShape("Bogenlangloch", (sk) => buildArcSlot(sk, p0, p1, sn, w, { ...opts, wExpr: val }));
+            this.render();
+          });
+        } else {
+          this.askValue(sx, sy, this.lastValue("conic") || "0,5", (val) => {
+            let rho; try { rho = evaluate(val, this.scope()); } catch (err) { return toast(err.message, { kind: "err" }); }
+            let ctrl; try { ctrl = fitSplineCtrl(conicPoints(p0, p1, sn, rho, 12)); } catch (err) { return toast(err.message, { kind: "err" }); }
+            this.rememberValue("conic", val);
+            this.commit("Kegelschnitt", (sk) => {
+              const cons = [];
+              const id = addSplineFromCtrl(sk, ctrl, { uid, construction: !!this.construction, meta: { conic: { rho: val } } });
+              const sp = sk.entities.find((x) => x.id === id);
+              // Enden an geklickte Punkte binden
+              for (const [end, q] of [["p1", p0], ["p2", p1]]) if (q.pointId) { const old = sp[end]; sp[end] = q.pointId; sp.pts[end === "p1" ? 0 : sp.pts.length - 1] = q.pointId; sk.points = sk.points.filter((p) => p.id !== old); }
+              sk.constraints.push(...cons);
+            });
+            this.render();
+          });
+        }
+        return true;
+      }
+      case "clh": case "clv": {
+        const sn = this.snap(sx, sy);
+        this.commitShape("Hilfslinie", (sk) => buildHelperLine(sk, sn, t === "clh" ? [1, 0] : [0, 1], { ...opts, kind: t === "clh" ? "h" : "v" }));
+        return true;
+      }
+      case "cla": {
+        const sn = this.snap(sx, sy);
+        this.askValue(sx, sy, this.lastValue("hilfswinkel") || "45", (val) => {
+          let a; try { a = evaluate(val, this.scope()); } catch (err) { return toast(err.message, { kind: "err" }); }
+          this.rememberValue("hilfswinkel", val);
+          this.commitShape("Hilfslinie", (sk) => buildHelperLine(sk, sn, [Math.cos((a * Math.PI) / 180), Math.sin((a * Math.PI) / 180)], { ...opts, kind: "angle", angleExpr: val }));
+          this.render();
+        });
+        return true;
+      }
+      case "clpar": case "clperp": {
+        if (!this.state?.ref) {
+          const ln = hitEnt(["line"]);
+          if (!ln) { toast("Zuerst eine Linie anklicken"); return true; }
+          this.state = { ref: ln.id };
+          return true;
+        }
+        const ln = this.entity(this.state.ref);
+        if (!ln) { this.state = null; return true; }
+        const a = pos(ln.p1), b = pos(ln.p2), d = t === "clpar" ? [b.x - a.x, b.y - a.y] : [-(b.y - a.y), b.x - a.x];
+        const sn = this.snap(sx, sy);
+        this.commitShape("Hilfslinie", (sk) => buildHelperLine(sk, sn, d, { ...opts, kind: t === "clpar" ? "parallel" : "perp", ref: ln.id }));
+        return true; // Bezug bleibt gewählt für weitere Linien
+      }
+      case "clbis": {
+        const ln = hitEnt(["line"]);
+        if (!ln) { toast("Linie anklicken"); return true; }
+        if (!this.state?.lines) { this.state = { lines: [ln.id], clicks: [{ x: lx, y: ly }] }; return true; }
+        const [first] = this.state.lines, c0 = this.state.clicks[0];
+        this.state = null;
+        if (first === ln.id) return true;
+        const e1 = this.entity(first);
+        const bi = bisectors(pos(e1.p1), pos(e1.p2), pos(ln.p1), pos(ln.p2));
+        if (!bi) { toast("Die Linien sind parallel – keine Winkelhalbierende", { kind: "err" }); return true; }
+        const want = [(c0.x + lx) / 2 - bi.at.x, (c0.y + ly) / 2 - bi.at.y];
+        const dir = Math.abs(bi.dirs[0][0] * want[0] + bi.dirs[0][1] * want[1]) / (Math.hypot(...want) || 1) >= Math.abs(bi.dirs[1][0] * want[0] + bi.dirs[1][1] * want[1]) / (Math.hypot(...want) || 1) ? bi.dirs[0] : bi.dirs[1];
+        this.commitShape("Winkelhalbierende", (sk) => buildHelperLine(sk, { x: bi.at.x, y: bi.at.y }, dir, { ...opts, kind: "free" }));
+        return true;
+      }
+      case "cltan": {
+        if (!this.state?.circ) {
+          const c = hitEnt(["circle", "arc"]);
+          if (!c) { toast("Kreis oder Bogen anklicken"); return true; }
+          this.state = { circ: c.id, near: { x: lx, y: ly } };
+          return true;
+        }
+        const ce = this.entity(this.state.circ), near = this.state.near;
+        this.state = null;
+        if (!ce) return true;
+        const C = pos(ce.c), R = ce.type === "circle" ? ce.r : Math.hypot(pos(ce.p1).x - C.x, pos(ce.p1).y - C.y);
+        const sn = this.snap(sx, sy);
+        const T = tangentPoints(sn, C, R);
+        if (!T.length) { toast("Der Punkt liegt im Kreis – keine Tangente", { kind: "err" }); return true; }
+        const tp = T.sort((p, q) => Math.hypot(p.x - near.x, p.y - near.y) - Math.hypot(q.x - near.x, q.y - near.y))[0];
+        this.commitShape("Tangente", (sk) => {
+          const cons = [];
+          const p1 = this.usePoint(sk, sn, cons), p2 = uid("p");
+          sk.points.push({ id: p2, x: tp.x, y: tp.y });
+          const id = uid("l");
+          sk.entities.push({ id, type: "line", p1, p2, construction: !!this.construction });
+          cons.push({ id: uid("k"), type: "pointOnCircle", p: p2, e: ce.id }, { id: uid("k"), type: "tangent", e1: id, e2: ce.id });
+          sk.constraints.push(...cons);
+        });
+        return true;
+      }
+      case "ctan2": {
+        const c = hitEnt(["circle", "arc"]);
+        if (!c) { toast("Kreis oder Bogen anklicken"); return true; }
+        if (!this.state?.circ) { this.state = { circ: c.id, near: { x: lx, y: ly } }; return true; }
+        const c1 = this.entity(this.state.circ), n1 = this.state.near;
+        this.state = null;
+        if (!c1 || c1.id === c.id) return true;
+        const rad = (en) => (en.type === "circle" ? en.r : Math.hypot(pos(en.p1).x - pos(en.c).x, pos(en.p1).y - pos(en.c).y));
+        const sols = commonTangents(pos(c1.c), rad(c1), pos(c.c), rad(c));
+        if (!sols.length) { toast("Keine gemeinsame Tangente (ein Kreis liegt im anderen)", { kind: "err" }); return true; }
+        const best = sols.sort((p, q) => Math.hypot(p.a.x - n1.x, p.a.y - n1.y) + Math.hypot(p.b.x - lx, p.b.y - ly) - Math.hypot(q.a.x - n1.x, q.a.y - n1.y) - Math.hypot(q.b.x - lx, q.b.y - ly))[0];
+        this.commitShape("Gemeinsame Tangente", (sk) => {
+          const pa = uid("p"), pb = uid("p"), id = uid("l");
+          sk.points.push({ id: pa, x: best.a.x, y: best.a.y }, { id: pb, x: best.b.x, y: best.b.y });
+          sk.entities.push({ id, type: "line", p1: pa, p2: pb, construction: !!this.construction });
+          sk.constraints.push({ id: uid("k"), type: "pointOnCircle", p: pa, e: c1.id }, { id: uid("k"), type: "pointOnCircle", p: pb, e: c.id },
+            { id: uid("k"), type: "tangent", e1: id, e2: c1.id }, { id: uid("k"), type: "tangent", e1: id, e2: c.id });
+        });
+        return true;
+      }
+      case "scorner": {
+        const ln = hitEnt(["line"]);
+        if (!ln) { toast("Linie anklicken"); return true; }
+        if (!this.state?.line) { this.state = { line: ln.id }; return true; }
+        const first = this.state.line;
+        this.state = null;
+        if (first === ln.id) return true;
+        this.commitShape("Ecke", (sk) => joinCorner(sk, first, ln.id, { uid }));
+        return true;
+      }
+    }
+    return false;
+  }
+  /** Gleichungskurve (SolidCraft »Equation Curve«): Formeln mit Skizzenparametern, als Spline durch die Punkte */
+  equationDialog() {
+    if (!this.sk) return;
+    const last = (() => { try { return JSON.parse(this.lastValue("gleichung") || "null"); } catch { return null; } })();
+    const st = last || { mode: "param", x: "50*cos(t)", y: "50*sin(t)", f: "0,02*x^2", from: "0", to: "180", n: "36" };
+    const inp = (key, w) => h("input", { class: "inp", value: st[key], style: w ? { width: w } : null, oninput: (e) => { st[key] = e.target.value; prev(); } });
+    const out = h("p", { class: "hint" });
+    const rowsParam = h("div", {}, h("div", { class: "field" }, h("label", {}, "x(t) ="), inp("x")), h("div", { class: "field" }, h("label", {}, "y(t) ="), inp("y")));
+    const rowsFx = h("div", {}, h("div", { class: "field" }, h("label", {}, "y = f(x) ="), inp("f")));
+    const show = () => { rowsParam.hidden = st.mode !== "param"; rowsFx.hidden = st.mode !== "fx"; };
+    const prev = () => {
+      try {
+        const vars = this.scope();
+        const pts = equationPoints({ ...st, from: st.from.replace(",", "."), to: st.to.replace(",", ".") }, vars);
+        const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+        out.textContent = `${pts.length} Punkte, Ausdehnung ${fmtNum(Math.max(...xs) - Math.min(...xs), 1)} × ${fmtNum(Math.max(...ys) - Math.min(...ys), 1)} mm`;
+        out.style.color = "";
+        return pts;
+      } catch (err) { out.textContent = err.message; out.style.color = "var(--err)"; return null; }
+    };
+    const seg = h("div", { class: "seg" }, ...[["param", "x(t), y(t)"], ["fx", "y = f(x)"]].map(([v, l]) => h("button", { class: st.mode === v ? "on" : "", onclick: (e) => { st.mode = v; for (const b of e.currentTarget.parentNode.children) b.classList.toggle("on", b === e.currentTarget); show(); prev(); } }, l)));
+    show(); prev();
+    modal({
+      title: "Gleichungskurve",
+      body: h("div", { style: { minWidth: "360px" } }, seg, rowsParam, rowsFx,
+        h("div", { class: "field" }, h("label", {}, st.mode === "fx" ? "x von … bis" : "t von … bis"), h("div", { style: { display: "flex", gap: "6px" } }, inp("from"), inp("to"))),
+        h("div", { class: "field" }, h("label", {}, "Punkte"), inp("n")),
+        out,
+        h("p", { class: "hint" }, "Winkel in Grad (sin, cos, tan), Parameter der Skizze und des Bauteils sind erlaubt. Beispiele: Kreis 50*cos(t), 50*sin(t) mit t 0…360; Evolvente r*(cos(t)+t*pi/180*sin(t)); Kettenlinie a*cosh(x/a). Die Kurve wird ein Spline durch die Punkte.")),
+      buttons: [{ label: "Abbrechen", value: null }, { label: "Einfügen", primary: true, run: () => {
+        const pts = prev();
+        if (!pts) return false;
+        this.rememberValue("gleichung", JSON.stringify(st));
+        const ctrl = fitSplineCtrl(pts);
+        this.commit("Gleichungskurve", (sk) => addSplineFromCtrl(sk, ctrl, { uid, construction: !!this.construction, meta: { equation: { ...st } } }));
+        this.render();
+      } }],
+    });
+  }
+  /** Strg+C: gewählte Elemente (mit Punkten und inneren Bedingungen) in die Zwischenablage */
+  copySelection() {
+    const ids = [...this.sel].filter((k) => k.startsWith("e:")).map((k) => k.slice(2));
+    const clip = ids.length ? copyEntities(this.sk, ids) : null;
+    if (!clip) { toast("Zuerst Elemente wählen, dann Strg+C"); return true; }
+    sketchClip = clip;
+    try { localStorage.setItem("pbcad.skizzeAblage", JSON.stringify(clip)); } catch { /* Speicher voll oder gesperrt */ }
+    toast(`${clip.entities.length} Element(e) kopiert – Strg+V fügt sie in diese oder eine andere Skizze ein`, { kind: "ok" });
+    return true;
+  }
+  /** Strg+V: Kopie an der Mausposition einfügen (Mitte der Kopie auf den Mauszeiger); neue Elemente sind gewählt */
+  pasteClip() {
+    let clip = sketchClip;
+    if (!clip) try { clip = JSON.parse(localStorage.getItem("pbcad.skizzeAblage") || "null"); } catch { clip = null; }
+    if (!clip) { toast("Zwischenablage leer – Elemente wählen und Strg+C"); return true; }
+    const c = clipCenter(clip), m = this.mouse;
+    const dx = m ? m.lx - c.x : 10, dy = m ? m.ly - c.y : 10;
+    let ids = [];
+    this.commit("Einfügen", (sk) => { ids = pasteEntities(sk, clip, { uid, dx, dy }); });
+    this.sel.clear();
+    for (const id of ids) this.sel.add("e:" + id);
+    this.app.selectSketchItems([...this.sel]);
+    this.render();
+    return true;
+  }
+  /** SVG importieren: gleiche Optionen wie DXF (Lage, Konstruktion, säubern) */
+  async importSvgDialog(file) {
+    if (!this.sk) return;
+    file = file || (await this.app.files.pickSvg());
+    if (!file) return;
+    let dx;
+    try { dx = svgToPrims(file.text); } catch (e) { toast("SVG: " + e.message, { kind: "err" }); return; }
+    if (!dx.prims.length) { toast("SVG enthält keine Pfade, Linien, Rechtecke oder Kreise", { kind: "err" }); return; }
+    return this.importDxfDialog(file, dx, "SVG");
+  }
   selectAll() {
     if (!this.sk) return;
     this.sel = new Set(this.sk.entities.filter((e) => !e.origin).map((e) => "e:" + e.id));
@@ -1522,6 +1780,15 @@ export class Sketcher {
     this.mouse = { sx, sy, lx, ly };
     if (this.box) {
       this.box.x1 = sx; this.box.y1 = sy;
+      this.render();
+      return;
+    }
+    if (this.trimPath) {
+      const tp = this.trimPath;
+      if (Math.hypot(sx - tp.sx, sy - tp.sy) > 4) tp.moved = true;
+      tp.pts.push([lx, ly]);
+      const hit = this.hitTest(sx, sy, { points: false, dims: false });
+      if (hit?.kind === "entity" && !tp.hits.some((q) => q.id === hit.id)) tp.hits.push({ id: hit.id, x: lx, y: ly });
       this.render();
       return;
     }
@@ -1596,6 +1863,21 @@ export class Sketcher {
   }
   pointerUp(e) {
     if (!this.active) return;
+    if (this.trimPath) {
+      const tp = this.trimPath;
+      this.trimPath = null;
+      if (!tp.hits.length) { this.render(); return; }
+      const hits = tp.moved ? tp.hits : tp.hits.slice(0, 1);
+      // nacheinander an einer Kopie stutzen; was nicht geht, wird übersprungen
+      const run = (sk) => { let n = 0; const dropped = []; for (const q of hits) { if (!sk.entities.some((x) => x.id === q.id)) continue; const r = trimEntity(sk, q.id, { x: q.x, y: q.y }, uid); if (r.ok) { n++; dropped.push(...(r.dropped || [])); } } return { n, dropped }; };
+      const test = run(JSON.parse(JSON.stringify(this.sk)));
+      if (!test.n) { if (!tp.moved) { const r = trimEntity(JSON.parse(JSON.stringify(this.sk)), hits[0].id, hits[0], uid); toast(r.message || "Nichts zu stutzen"); } this.render(); return; }
+      this.commit(test.n > 1 ? `Stutzen (${test.n})` : "Stutzen", (sk) => run(sk));
+      if (test.dropped.length) toast("Entfernt, weil nicht mehr gültig: " + [...new Set(test.dropped)].map((x) => ({ length: "Längenmaß", midpoint: "Mittelpunkt", equal: "Gleich" })[x] || x).join(", "));
+      this.hover = null;
+      this.render();
+      return;
+    }
     if (this.box) {
       const b = this.box;
       this.box = null;
@@ -1689,6 +1971,8 @@ export class Sketcher {
       return true;
     }
     if (k === "Delete" || k === "Backspace") { this.deleteSelection(); return true; }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === "c" || k === "C")) return this.copySelection();
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === "v" || k === "V")) return this.pasteClip();
     // Werkzeug-Tasten (L, R, C …) kommen aus der Befehlsliste (src/core/commands.js), anpassbar
     return false;
   }
@@ -2081,6 +2365,10 @@ export class Sketcher {
   renderPreview(g, P) {
     const m = this.mouse;
     if (!m) return;
+    if (this.trimPath?.moved) {
+      g.append(svgEl("path", { d: "M" + this.trimPath.pts.map(([x, y]) => this.S(x, y).join(",")).join("L"), class: "sk-trim-path" }));
+      for (const q of this.trimPath.hits) { const [x, y] = this.S(q.x, q.y); g.append(svgEl("circle", { cx: x, cy: y, r: 4, class: "sk-snap" })); }
+    }
     const sn = this.snapInfo;
     if (sn) {
       const [x, y] = this.S(sn.x, sn.y);
@@ -2160,6 +2448,22 @@ export class Sketcher {
       const C = S(c.x, c.y), tm = t1 + ((sw * Math.PI) / 360), M = S(c.x + R * 0.6 * Math.cos(tm), c.y + R * 0.6 * Math.sin(tm));
       g.append(svgEl("path", { d: `M${pts[0][0]},${pts[0][1]}L${C[0]},${C[1]}L${pts[n][0]},${pts[n][1]}`, class: "sk-dyn-line" }));
       if (st.dyn) this.dynBox(g, 0, M[0], M[1], "", "°", sw);
+    } else if (["rectr", "linem", "circle2", "slota", "conic"].includes(this.tool) && st.pts) {
+      const a = st.pts[0];
+      if (this.tool === "rectr") path(`M${S(a.x, a.y).join(",")}L${S(cur.x, a.y).join(",")}L${S(cur.x, cur.y).join(",")}L${S(a.x, cur.y).join(",")}Z`);
+      else if (this.tool === "linem") path(`M${S(2 * a.x - cur.x, 2 * a.y - cur.y).join(",")}L${S(cur.x, cur.y).join(",")}`);
+      else if (this.tool === "circle2") { const C = S((a.x + cur.x) / 2, (a.y + cur.y) / 2); g.append(svgEl("circle", { cx: C[0], cy: C[1], r: (Math.hypot(cur.x - a.x, cur.y - a.y) / 2) * this.M.scale, class: "sk-preview" })); }
+      else if (this.tool === "slota" && st.pts.length === 2) {
+        const c = a, s0 = st.pts[1], R = Math.hypot(s0.x - c.x, s0.y - c.y), t0 = Math.atan2(s0.y - c.y, s0.x - c.x);
+        let sw = Math.atan2(cur.y - c.y, cur.x - c.x) - t0; while (sw <= 0) sw += 2 * Math.PI;
+        const q = []; for (let i = 0; i <= 48; i++) q.push(S(c.x + R * Math.cos(t0 + (sw * i) / 48), c.y + R * Math.sin(t0 + (sw * i) / 48)));
+        path("M" + q.map((v) => v.join(",")).join("L"));
+      } else if (this.tool === "conic" && st.pts.length === 2) {
+        const q = conicPoints(st.pts[0], st.pts[1], cur, 0.5, 32).map(([x, y]) => S(x, y));
+        path("M" + q.map((v) => v.join(",")).join("L"));
+        path(`M${S(st.pts[0].x, st.pts[0].y).join(",")}L${S(cur.x, cur.y).join(",")}L${S(st.pts[1].x, st.pts[1].y).join(",")}`);
+      } else path("M" + [...st.pts, cur].map((p) => S(p.x, p.y).join(",")).join("L"));
+      for (const p of st.pts) { const q = S(p.x, p.y); g.append(svgEl("circle", { cx: q[0], cy: q[1], r: 3, class: "sk-snap" })); }
     } else if (this.tool === "rect3" && st.pts) {
       const [a, b] = st.pts;
       if (!b) path(`M${S(a.x, a.y).join(",")}L${S(cur.x, cur.y).join(",")}`);

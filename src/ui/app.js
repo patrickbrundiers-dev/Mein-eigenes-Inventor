@@ -8,6 +8,7 @@ import { DirectBar, directFaceRef } from "./direkt.js";
 import { NextStep } from "./naechster.js";
 import { SideBySide } from "./nebeneinander.js";
 import { DocTabs } from "./doctabs.js";
+import { Verlauf } from "./verlauf.js";
 import { KernelClient } from "./kernel.js";
 import { Ribbon } from "./ribbon.js";
 import { Tree } from "./tree.js";
@@ -19,7 +20,7 @@ import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
-import { h, toast, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
+import { h, icon, toast, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
 import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
 import { moveProblem, copyFeatures } from "../core/ableiten.js";
@@ -100,6 +101,7 @@ export class App {
     this.minibar = new MiniBar(this);
     this.direct = new DirectBar(this);
     this.doctabs = new DocTabs(this);
+    this.verlauf = new Verlauf(this);
     this.tree = new Tree(this);
     this.props = new Props(this);
     this.drawing = new DrawingEditor(this);
@@ -1351,6 +1353,7 @@ export class App {
     const p = this.prefs;
     if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
     if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
+    if (keys?.includes("oberflaeche.verlauf")) this.verlauf.render();
     if (keys?.some((k) => k.startsWith("baum."))) this.tree.render();
     if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
     this.viewer.applyPrefs(p.values);
@@ -1467,14 +1470,16 @@ export class App {
     this.side?.update();
   }
   buildViewTools() {
-    const mk = (label, run, title) => h("button", { onclick: run, title }, label);
-    this.viewTools = h("div", { class: "view-tools" },
-      mk("Iso", () => this.viewer.setView("iso"), "Isometrische Ansicht"),
-      mk("Vorne", () => this.viewer.setView("front")),
-      mk("Oben", () => this.viewer.setView("top")),
-      mk("Rechts", () => this.viewer.setView("right")),
-      mk("Alles", () => this.viewer.fit(), "Alles zeigen (F6)"),
-      mk("Auswahl", () => this.zoomToSelection(), "Auswahl zeigen"),
+    // Navigationsleiste als schwebende Pille unten in der Mitte (SolidCraft-Aufbau), Symbole mit Tooltip
+    const mk = (ic, label, run, title) => h("button", { onclick: run, title: title || label, "aria-label": label, "data-view": label }, icon(ic));
+    this.viewTools = h("div", { class: "view-tools", role: "toolbar", "aria-label": "Ansicht" },
+      mk("viewIso", "Iso", () => this.viewer.setView("iso"), "Isometrische Ansicht"),
+      mk("viewFront", "Vorne", () => this.viewer.setView("front"), "Ansicht vorne"),
+      mk("viewTop", "Oben", () => this.viewer.setView("top"), "Ansicht oben"),
+      mk("viewRight", "Rechts", () => this.viewer.setView("right"), "Ansicht rechts"),
+      h("span", { class: "vt-sep" }),
+      mk("fit", "Alles", () => this.viewer.fit(), "Alles zeigen (F6)"),
+      mk("search", "Auswahl", () => this.zoomToSelection(), "Auswahl zeigen (Umschalt+F6)"),
       this.clipBar = h("span", { class: "clip-bar", hidden: true }));
     document.getElementById("stage").append(this.viewTools);
   }

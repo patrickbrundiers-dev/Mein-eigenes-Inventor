@@ -84,6 +84,8 @@ export function commandRunners(app) {
     "sketch.autodim": () => app.sketcher.autoDimensionDialog(),
     "sketch.clean": () => app.sketcher.cleanDialog(),
     "sketch.importDxf": () => app.sketcher.importDxfDialog(),
+    "sketch.importSvg": () => app.sketcher.importSvgDialog(),
+    "sketch.equation": () => app.sketcher.equationDialog(),
     "tools.measure": () => (app.pick?.kind === "measure" ? app.cancelPick() : app.beginMeasure()),
     "asm.place": r("place"),
     "asm.copyDesign": () => copyDesignDialog(app, app.activeId),

@@ -88,6 +88,8 @@ export const BEFEHLSHILFE = {
 
   // ---------- Skizze ----------
   sdxf: "DXF-Datei als Skizzengeometrie übernehmen.",
+  skEquation: "Kurve aus Formeln x(t), y(t) oder y = f(x) mit Parametern, als Spline durch die Punkte.",
+  skSvg: "SVG-Datei (Pfade, Linien, Rechtecke, Kreise) als Skizzengeometrie übernehmen.",
   sclean: "Endpunkte zusammenführen, doppelte und überlappende Elemente entfernen, fast gerade Linien gerade stellen.",
   autodim: "Fehlende Maße und Abhängigkeiten setzen, bis die Skizze voll bestimmt ist.",
   constr: "Gewählte Elemente zu Konstruktionslinien machen (oder zurück). Sie bilden keine Kontur.",

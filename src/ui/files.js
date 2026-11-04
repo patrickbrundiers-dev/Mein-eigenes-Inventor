@@ -917,6 +917,11 @@ export class Files {
     const f = await pickFile(".dxf");
     return f && { name: f.name, text: await f.text() };
   }
+  async pickSvg() {
+    if (this.bridge) { const f = await this.bridge.openFile({ filters: [{ name: "SVG", extensions: ["svg"] }] }); return f && { name: f.name, text: f.data }; }
+    const f = await pickFile(".svg");
+    return f && { name: f.name, text: await f.text() };
+  }
   async importStepAsPart() {
     const f = await this.pickStep();
     if (!f) return;

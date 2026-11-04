@@ -468,6 +468,9 @@ export class Ribbon {
             T("ellipse", "Ellipse", "ellipse"), T("slot", "Langloch", "slot"), T("polygon", "Polygon", "polygon"),
             T("sfillet", "Rundung", "fillet"), T("point", "Punkt", "point"),
             C("schamfer", "Fase", "chamfer"), C("circle3", "Kreis durch 3 Punkte", "circle3"), C("rect3", "Rechteck über 3 Punkte", "rect3"), C("circlet3", "Kreis tangential an 3 Linien", "circlet3"), C("arct", "Tangentialer Bogen", "arct"),
+            // SolidCraft-Abgleich: weitere Formen und Hilfslinien als Aufklappmenüs (Skizzen-Band bleibt so breit wie vorher)
+            { ...M("skMore", "Weitere Formen", "rect", [T("rectr", "Abgerundetes Rechteck", "rect"), T("linem", "Linie aus Mitte", "line"), T("circle2", "Kreis über 2 Punkte", "circle"), T("slota", "Bogenlangloch", "slot"), T("conic", "Kegelschnitt", "spline"), B("skEquation", "Gleichungskurve …", "spline", { run: () => sk.equationDialog() }), B("skSvg", "SVG importieren …", "import", { run: () => sk.importSvgDialog() })]), iconOnly: true },
+            { ...M("skHelp", "Hilfslinien", "construct", [T("clh", "Hilfslinie waagrecht", "horizontal"), T("clv", "Hilfslinie senkrecht", "vertical"), T("cla", "Hilfslinie unter Winkel", "angle"), T("clpar", "Hilfslinie parallel", "parallel"), T("clperp", "Hilfslinie senkrecht zu Linie", "perpendicular"), T("clbis", "Winkelhalbierende", "angle"), T("cltan", "Tangente durch Punkt", "tangent"), T("ctan2", "Gemeinsame Tangente", "tangent")]), iconOnly: true },
           ] },
           { label: "Übernehmen", small: true, buttons: [T("project", "Kante projizieren", "project"), B("sdxf", "DXF importieren", "import", { run: () => sk.importDxfDialog() }), T("image", "Bild", "import")] },
           { label: "Ändern", small: true, buttons: [
@@ -476,6 +479,7 @@ export class Ribbon {
             T("sscale", "Skalieren", "scale"), T("offset", "Versatz", "offset"), B("sclean", "Säubern", "clean", { run: () => sk.cleanDialog() }),
             // Muster als Symbolspalte im selben Abschnitt (spart eine Gruppe, damit die Skizze in 1600 px passt)
             C("pattern", "Rechteckmuster", "pattern"), C("cpattern", "Kreismuster", "circpattern"), C("mirror", "Spiegeln", "mirror"),
+            C("scorner", "Ecke (zwei Linien verbinden)", "extend"),
           ] },
           { label: "Bemaßung", big: 1, buttons: [T("dimension", "Bemaßung", "dimension"), B("autodim", "Voll bemaßen", "dimension", { run: () => sk.autoDimensionDialog() }), B("params", "Parameter", "params"), T("text", "Text", "text")] },
           { label: "Abhängigkeiten", small: true, buttons: [
@@ -637,6 +641,25 @@ export class Ribbon {
     }));
   }
 
+  /** Kopfleiste (SolidCraft-Aufbau): Speichern, Rückgängig/Wiederholen, Schnellzugriff links; Projekt, Einstellungen, Hilfe rechts */
+  renderAppBar() {
+    const app = this.app;
+    const cmds = document.getElementById("ab-cmds"), right = document.getElementById("ab-right");
+    if (!cmds || !right) return;
+    const ab = (ic, title, run, opts = {}) => h("button", { class: "ab-btn" + (opts.cls ? " " + opts.cls : ""), title, "aria-label": opts.label || title, disabled: !!opts.disabled, onclick: run }, typeof ic === "string" ? icon(ic) : ic);
+    cmds.replaceChildren(
+      ab("save", `Speichern (${this.kbd("file.save") || "Strg+S"})`, () => app.commands.exec("file.save"), { disabled: app.mode === "start" && !app.project?.docs?.length }),
+      ab("undo", "Rückgängig (Strg+Z)", () => app.undo(), { disabled: !app.undoStack.length }),
+      ab(h("span", {}, "▾"), "Rückgängig-Verlauf", (e) => this.undoMenu(e), { cls: "rb-undo-list", disabled: !app.undoStack.length }),
+      ...[ab("redo", "Wiederholen (Strg+Y)", () => app.redo(), { disabled: !app.redoStack.length }), this.quickAccess()].filter(Boolean));
+    right.replaceChildren(
+      this.docLabel = h("div", { class: "rb-doc" }),
+      ab("settings", `Einstellungen (${this.kbd("app.settings") || "Strg+,"})`, () => app.commands.exec("app.settings")),
+      ...[ab("help", "Kurzhilfe (F1)", () => app.commands.exec("app.help")),
+        window.werkcad?.version ? h("span", { class: "ab-ver" }, "v" + window.werkcad.version) : null].filter(Boolean));
+    this.renderDocLabel();
+  }
+
   render() {
     const app = this.app;
     const mode = app.mode;
@@ -648,12 +671,8 @@ export class Ribbon {
       h("div", { class: "rb-tablist", role: "tablist", "aria-label": "Menüband", onkeydown: (e) => this.tabKey(e, tabs) },
         ...tabs.map((t) => h("button", { class: "rb-tab" + (t.id === this.tab ? " active" : "") + (t.context ? " context" : ""), role: "tab", "aria-selected": String(t.id === this.tab), tabindex: t.id === this.tab ? "0" : "-1", "data-tab": t.id, onclick: () => { this.tab = t.id; this.render(); } }, t_(t.label)))),
       h("div", { class: "rb-spacer" }),
-      h("button", { class: "rb-search", title: `Befehl suchen (${this.kbd("app.search") || "Strg+K"})`, onclick: () => app.commands.exec("app.search") }, icon("search"), h("span", {}, "Befehl suchen"), this.kbd("app.search") ? h("span", { class: "kbd" }, this.kbd("app.search")) : null),
-      h("button", { class: "icon-btn", title: "Rückgängig (Strg+Z)", disabled: !app.undoStack.length, onclick: () => app.undo() }, icon("undo")),
-      h("button", { class: "icon-btn rb-undo-list", title: "Rückgängig-Verlauf", "aria-label": "Rückgängig-Verlauf", disabled: !app.undoStack.length, onclick: (e) => this.undoMenu(e) }, "▾"),
-      h("button", { class: "icon-btn", title: "Wiederholen (Strg+Y)", disabled: !app.redoStack.length, onclick: () => app.redo() }, icon("redo")),
-      this.quickAccess(),
-      this.docLabel = h("div", { class: "rb-doc" }));
+      h("button", { class: "rb-search", title: `Befehl suchen (${this.kbd("app.search") || "Strg+K"})`, onclick: () => app.commands.exec("app.search") }, icon("search"), h("span", {}, "Befehl suchen"), this.kbd("app.search") ? h("span", { class: "kbd" }, this.kbd("app.search")) : null));
+    this.renderAppBar();
     this.renderDocLabel();
     const tab = tabs.find((t) => t.id === this.tab);
     const panel = h("div", { class: "rb-panel", role: "tabpanel", "aria-label": t_(tabs.find((t) => t.id === this.tab)?.label || "") });
@@ -820,7 +839,9 @@ export class Ribbon {
     if (!this.docLabel) return;
     const d = this.app.activeDoc();
     const kind = { part: "Bauteil", assembly: "Baugruppe", drawing: "Zeichnung" }[d?.kind] || "";
-    this.docLabel.replaceChildren(this.app.project.name, d ? h("span", {}, "  /  ", kind, " ", h("b", {}, d.name)) : "", this.app.dirty ? " •" : "");
+    // Name des Dokuments steht im Dokument-Reiter; hier Projekt und ungespeichert-Punkt
+    this.docLabel.title = d ? `${this.app.project.name} / ${kind} ${d.name}` : this.app.project.name;
+    this.docLabel.replaceChildren(this.app.project.name, this.app.dirty ? h("span", { class: "ab-dirty", title: "Ungespeicherte Änderungen" }, " •") : "");
   }
 
   fileMenu(e) {

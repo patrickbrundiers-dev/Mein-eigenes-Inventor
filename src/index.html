@@ -10,6 +10,13 @@
 </head>
 <body>
   <div id="app">
+    <div id="appbar">
+      <div class="ab-logo" aria-label="PBCAD"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="l1" d="M3 7.5 12 2.5l9 5-9 5z"/><path class="l2" d="M3 7.5v9l9 5v-9z"/><path class="l3" d="M21 7.5v9l-9 5v-9z"/></svg><span>PBCAD</span></div>
+      <div id="ab-cmds" role="toolbar" aria-label="Schnellzugriff"></div>
+      <nav id="doctabs" aria-label="Dokumente"></nav>
+      <div class="ab-spacer"></div>
+      <div id="ab-right"></div>
+    </div>
     <header id="ribbon"></header>
     <div id="workspace">
       <aside id="browser" aria-label="Modellbrowser"></aside>
@@ -22,7 +29,7 @@
       </main>
       <aside id="props" aria-label="Eigenschaften"></aside>
     </div>
-    <nav id="doctabs" aria-label="Dokumente"></nav>
+    <nav id="verlauf" aria-label="Verlauf" hidden></nav>
     <footer id="status"></footer>
   </div>
   <div id="modal-root"></div>

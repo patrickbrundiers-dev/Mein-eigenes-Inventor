@@ -1,4 +1,4 @@
-// Dokument-Reiter am unteren Fensterrand (wie Inventor): jedes geöffnete Bauteil, jede Baugruppe und Zeichnung
+// Dokument-Reiter in der Kopfleiste (SolidCraft-Aufbau, früher unten wie Inventor): jedes geöffnete Bauteil, jede Baugruppe und Zeichnung
 // als Reiter mit Symbol, Name und Schließen-Kreuz. Links Startseite und Liste aller Dokumente des Projekts.
 // »Offen« heißt: in dieser Sitzung angezeigt; die Dokumente bleiben Teil des Projekts, Schließen löscht nichts.
 
@@ -30,7 +30,8 @@ export class DocTabs {
     this.el.replaceChildren(
       h("button", { class: "dt-btn" + (home ? " on" : ""), title: "Startseite", "aria-label": "Startseite", onclick: () => app.goHome() }, icon("tiles")),
       h("button", { class: "dt-btn", title: "Alle Dokumente des Projekts", "aria-label": "Alle Dokumente", onclick: (e) => this.listMenu(e) }, icon("list")),
-      tabs);
+      tabs,
+      h("button", { class: "dt-btn dt-new", title: "Neu oder öffnen (Startseite)", "aria-label": "Neu", onclick: () => app.goHome() }, icon("plus")));
     tabs.querySelector(".dt-tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   key(e, open, d) {
