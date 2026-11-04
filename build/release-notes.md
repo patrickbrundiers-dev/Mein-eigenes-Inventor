@@ -1,18 +1,17 @@
-**Neu in 0.39.0**
+**Neu in 0.40.0**
 
-PBCAD hat eine neue, aufgeräumte Oberfläche und viele neue Skizzenwerkzeuge.
+PBCAD kann jetzt Flächen modellieren und hat weitere Skizzenwerkzeuge.
 
-- **Neue Optik:** dunkle Kopfleiste mit Dokument-Reitern, Speichern und Rückgängig. Die Menüband-Reiter sind Pillen, die Panels schweben. Die Arbeitsbereich-Kachel steht neben dem Menüband. Ein Klick auf den Gruppennamen öffnet die Befehlsliste zum Anheften. Drehen, Schieben und Zoomen findest du unten rechts.
-- **Verlaufsleiste:** unten im Bauteil stehen die Features als Symbole. Wenn du die Marke ziehst, verschiebst du das Bauteilende. Mit Abspielen läuft die Konstruktion Schritt für Schritt ab.
+- **Flächenmodellierung:** das neue Feature »Fläche« bringt 17 Flächenbefehle:
+  - Flächen erzeugen: Extrusion, Rotation, Sweep, Loft, Regelfläche, Verbindungsfläche, Begrenzungsfläche und Füllung.
+  - Flächen ableiten: Offset und Kopie.
+  - Flächen bearbeiten: Trimmen aufheben, Teilen, Verbund aufheben, Normale umkehren, Verrundung und Dicke.
+  - Nähen: geschlossene Flächen werden zum Volumenkörper.
 - **Skizze:**
-  - Neue Formen: abgerundetes Rechteck, Linie aus Mitte, Kreis über 2 Punkte, Kreis an zwei Linien und Bogenlangloch (auch über 3 Punkte).
-  - Kurven: Kegelschnitt, Gleichungskurve, Übergangskurve und Tangente an Kurvenpunkt.
-  - Hilfslinien: waagrecht, senkrecht, Winkel, parallel, Winkelhalbierende und Tangenten.
-  - Polygon über Kante oder umschrieben.
-  - Splines: Grad 5 und durch Punkte, Splinepunkte lassen sich einfügen und entfernen.
-  - Weitere Neuerungen: Ecke verbinden, SVG-Import, Kopieren und Einfügen zwischen Skizzen, Stutzen per Wischen und Zeichnungsrahmen.
-- **Lochblech:** Rv, Rg, Qg und Lv nach DIN 24041, mit freiem Rand und freiem Querschnitt.
-- **Hüllkörper:** für Rohmaß und Transportmaß.
-- **Schnellmessung:** unten rechts im Fenster.
-- **Export:** OBJ und 3MF.
-- **Ausdrücke:** sinh, cosh, tanh, exp, ln und fest.
+  - Schnittkurve und Netzquerschnitt: Körper und Anzeigenetze (auch STL) mit der Skizzenebene schneiden.
+  - Gedrehtes Profil um eine gewählte Linie.
+  - Auto-Bedingungen, auch beim Fertigstellen der Skizze.
+  - Fase mit Abstand und Winkel, zum Beispiel `5;30°`.
+  - Strg+X schneidet aus. Ein Doppelklick bearbeitet die Gleichungskurve.
+- **Kurve auf Fläche:** neues Feature mit Isokurve u/v oder einer auf die Fläche projizierten Skizze, nutzbar als Sweep-Pfad.
+- **3D-Skizze:** »Als Spline«. Der Sweep entlang eines Splines kippt an Wendepunkten nicht mehr.
