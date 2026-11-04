@@ -271,7 +271,7 @@ export class Ribbon {
       kunststoff: () => {
         const rule = (app.prefs.get("material.kunststoffregeln") || [])[0];
         const sk = this.lastOf(["sketch"]);
-        app.addFeature({ type: "kunststoff", art: "ansatz", sketch: sk?.id || "", ruleData: rule ? { ...rule } : undefined, ...plasticDefaults("ansatz", rule) });
+        app.addFeature({ type: "kunststoff", art: "ansatz", sketch: sk || "", ruleData: rule ? { ...rule } : undefined, ...plasticDefaults("ansatz", rule) });
       },
       lochblech: () => app.addFeature({ type: "lochblech", faces: [], muster: "Rv", d: "5", teilung: "8", rand: "10" }),
       huelle: () => app.addFeature({ type: "huelle", bodies: [], zugabe: "0" }),
