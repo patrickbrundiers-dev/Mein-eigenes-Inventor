@@ -187,10 +187,12 @@ export function normHolePick(app, hit) {
   let names = [];
   app.edit("Normteil an Bohrung", () => {
     const placed = [];
+    // Garnitur (L11): Teile gehören zusammen, die Schraube führt (Stückliste: Scheiben/Mutter darunter)
+    const gid = plan.parts.length > 1 ? uid("g") : null;
     for (const part of plan.parts) {
       const fam = familyOf(part.kind, part.custom);
       const p = normPart(app, part);
-      const c = { id: uid("c"), part: p.id, name: nextName(asm, p), ...partPlacement(hw, part) };
+      const c = { id: uid("c"), part: p.id, name: nextName(asm, p), ...partPlacement(hw, part), ...(gid ? { garnitur: gid, ...(part.kind === pk.sel.kind ? { garniturLead: true } : {}) } : {}) };
       asm.components.push(c);
       placed.push({ part, fam, comp: c });
       names.push(p.normDesignation);

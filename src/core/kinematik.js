@@ -8,7 +8,13 @@
 // wird von Abhängigkeiten nicht verschoben (wie fixiert); sie bewegt sich nur über den Gelenkwinkel.
 
 import { evaluate as exprEvaluate } from "./expr.js";
-import { placementMatrix, rotationAbout, matMul, decomposePlacement, v3 } from "./geom.js";
+import { placementMatrix, rotationAbout, matMul, decomposePlacement, matApply, matApplyDir, v3 } from "./geom.js";
+
+/** Mitgehende Komponente um D bewegen; hat sie ein eigenes Gelenk (Kette), wandert dessen Achse mit */
+export function moveFollower(f, D) {
+  Object.assign(f, decomposePlacement(matMul(D, placementMatrix(f.pos, f.rot))));
+  if (f.joint) { f.joint.p = matApply(D, f.joint.p); f.joint.d = v3.norm(matApplyDir(D, f.joint.d)); }
+}
 
 /** Neues Gelenk mit Achse (Punkt, Richtung); Winkel 0 = heutige Lage */
 export function defaultJoint(p = [0, 0, 0], d = [0, 0, 1], { min = 0, max = 90, kind = "dreh", smin = 0, smax = 100 } = {}) {
@@ -34,7 +40,8 @@ export function setJointSlide(c, s, followers = []) {
   const j = c.joint;
   const t = clampSlide(j, Number(s) || 0);
   const D = slideDelta(j, t);
-  for (const f of [c, ...followers]) Object.assign(f, decomposePlacement(matMul(D, placementMatrix(f.pos, f.rot))));
+  Object.assign(c, decomposePlacement(matMul(D, placementMatrix(c.pos, c.rot))));
+  for (const f of followers) moveFollower(f, D);
   j.p = v3.add(j.p, v3.mul(v3.norm(j.d), t - (j.s || 0)));
   j.s = t;
   return t;
@@ -62,7 +69,7 @@ export function setJointAngle(c, a, followers = []) {
   const j = c.joint;
   const t = clampAngle(j, Number(a) || 0);
   const D = jointDelta(j, t);
-  for (const f of followers) Object.assign(f, decomposePlacement(matMul(D, placementMatrix(f.pos, f.rot))));
+  for (const f of followers) moveFollower(f, D);
   Object.assign(c, jointPlacement(c, t));
   j.angle = t;
   return t;
@@ -136,19 +143,53 @@ export function explodeOffsets(items, factor) {
  */
 export function jointFollowers(asm, compId) {
   const comps = new Map(asm.components.map((c) => [c.id, c]));
-  const held = (id) => { const c = comps.get(id); return !c || c.fixed || !!c.joint; };
+  // Kette (SolidCraft-Abgleich L10): Gelenk mit joint.parent hängt an dieser Komponente und geht samt Achse mit;
+  // die eigenen Vorfahren bleiben stehen.
+  const ancestors = new Set();
+  for (let p = comps.get(compId)?.joint?.parent; p && !ancestors.has(p); p = comps.get(p)?.joint?.parent) ancestors.add(p);
   const out = new Set(), todo = [compId];
+  const held = (id, from) => { const c = comps.get(id); return !c || c.fixed || ancestors.has(id) || (!!c.joint && c.joint.parent !== from); };
+  const add = (id) => { out.add(id); todo.push(id); };
   while (todo.length) {
     const id = todo.pop();
     for (const k of asm.constraints || []) {
       if (k.suppressed) continue;
       const other = k.a.comp === id ? k.b.comp : k.b.comp === id ? k.a.comp : null;
-      if (!other || other === compId || out.has(other) || held(other)) continue;
-      out.add(other);
-      todo.push(other);
+      if (!other || other === compId || out.has(other) || held(other, id)) continue;
+      add(other);
     }
+    for (const c of asm.components) if (c.joint?.parent === id && c.id !== compId && !out.has(c.id) && !c.fixed && !ancestors.has(c.id)) add(c.id);
   }
   return [...out];
+}
+
+/** Kann parentId Elternteil des Gelenks an compId sein (kein Kreis)? */
+export function canChainTo(asm, compId, parentId) {
+  if (!parentId || parentId === compId) return !parentId;
+  const comps = new Map(asm.components.map((c) => [c.id, c]));
+  const seen = new Set();
+  for (let p = parentId; p; p = comps.get(p)?.joint?.parent) { if (p === compId || seen.has(p)) return false; seen.add(p); }
+  return comps.has(parentId);
+}
+
+/**
+ * Ziehen am Gelenk (L10): Gelenkwert aus der Mausbewegung. p0 = Griffpunkt, p = Punkt unter der Maus (beide in der
+ * Ebene senkrecht zur Achse durch p0 bzw. in der Blickebene), a0 = Wert beim Greifen. Schiebegelenk: Weg = Projektion
+ * auf die Richtung; sonst Drehwinkel um die Achse. Rückgabe { value, raw, atLimit } (value im Bereich).
+ */
+export function dragJointValue(j, p0, p, a0 = j.angle || 0, { slide = isSlide(j) } = {}) {
+  const d = v3.norm(j.d);
+  let raw;
+  if (slide) raw = a0 + v3.dot(v3.sub(p, p0), d);
+  else {
+    const flat = (q) => { const r = v3.sub(q, j.p); return v3.sub(r, v3.mul(d, v3.dot(r, d))); };
+    const r0 = flat(p0), r1 = flat(p);
+    if (v3.len(r0) < 1e-9 || v3.len(r1) < 1e-9) raw = a0;
+    else raw = a0 + (Math.atan2(v3.dot(v3.cross(r0, r1), d), v3.dot(r0, r1)) * 180) / Math.PI;
+  }
+  if (slide && isCylinder(j)) { const v = clampSlide(j, raw); return { value: v, raw, atLimit: Math.abs(v - raw) > 1e-9 }; }
+  const value = clampAngle(j, raw);
+  return { value, raw, atLimit: Math.abs(value - raw) > 1e-9 };
 }
 
 // ---------- Bewegungs-Abhängigkeiten (Werkzeuge Stufe 44, wie Inventor »Bewegung«) ----------

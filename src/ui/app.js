@@ -1503,6 +1503,7 @@ export class App {
   /** Benutzereinstellungen anwenden. Ändert nie das Modell, nur Anzeige und Bedienung. */
   applyPrefs(keys) {
     const p = this.prefs;
+    if (keys?.includes("oberflaeche.navFelder")) this.arrangeViewTools?.();
     if (!keys || keys.some((k) => k === "darstellung.schema" || k === "darstellung.eigenerHintergrund" || k === "darstellung.hintergrund" || k === "darstellung.eigenerAkzent" || k === "darstellung.akzent")) this.applyTheme();
     {
       // Runde 2, Etappe 2: Meldungen, Statusleiste, Navigationsleiste, Dialogknöpfe, Farbsehschwäche als Attribute am Wurzelelement
@@ -1654,7 +1655,10 @@ export class App {
     }
     if (this.viewer?.hidden.size && (this.mode === "part" || this.mode === "assembly")) parts.push(h("button", { class: "status-btn", title: "Alle einblenden", onclick: () => this.showAllBodies() }, `${this.viewer.hidden.size} ausgeblendet`));
     if (this.mode === "part" && this.selHits?.length > 1) parts.push(h("span", {}, `${this.selHits.length} gewählt`));
-    if (this.selFilter !== "alles" && this.mode === "part") parts.push(h("span", {}, "Filter: " + (this.selFilter === "flaechen" ? "nur Flächen" : "nur Kanten")));
+    // Status-Chips (SolidCraft): aktive Zustände, Klick schaltet zurück
+    if (this.selFilter !== "alles" && this.mode === "part") parts.push(h("button", { class: "status-btn chip", title: "Filter aufheben", onclick: () => this.setSelFilter("alles") }, "Filter: " + (this.selFilter === "flaechen" ? "nur Flächen" : "nur Kanten") + " ×"));
+    if (this.viewer?.navTool) parts.push(h("button", { class: "status-btn chip", title: "Navigationswerkzeug beenden (Esc)", onclick: () => { this.viewer.setNavTool(null); this.viewer.onNavTool?.(null); } }, ({ orbit: "Drehen", pan: "Verschieben", zoom: "Zoomen" }[this.viewer.navTool] || this.viewer.navTool) + " ×"));
+    if (this.viewer?.clip) parts.push(h("button", { class: "status-btn chip", title: "Schnitt aufheben", onclick: () => { this.viewer.setClip(null); this.renderClipBar(); this.ribbon.render(); } }, "Schnitt ×"));
     parts.push(h("span", {}, "mm · Grad"));
     this.statusEl.replaceChildren(...parts);
     this.nextStep?.update();
@@ -1686,21 +1690,42 @@ export class App {
     const mk = (ic, label, run, title) => h("button", { onclick: run, title: title || label, "aria-label": label, "data-view": label }, icon(ic));
     // Navigationswerkzeuge wie SolidCraft: linke Maustaste dreht/verschiebt/zoomt, bis Esc oder erneuter Klick
     const nav = (ic, kind, label) => { const b = mk(ic, label, () => { const k = this.viewer.navTool === kind ? null : kind; this.viewer.setNavTool(k); syncNav(); }, label + " (linke Maustaste, Esc beendet)"); b.dataset.nav = kind; return b; };
-    const syncNav = () => { for (const b of this.viewTools.querySelectorAll("[data-nav]")) b.classList.toggle("on", b.dataset.nav === this.viewer.navTool); };
+    const syncNav = () => { for (const b of this.viewTools.querySelectorAll("[data-nav]")) b.classList.toggle("on", b.dataset.nav === this.viewer.navTool); this.updateStatus(); };
     this.viewer.onNavTool = syncNav;
     const views = (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu(r.left, r.top - 4, [["iso", "Isometrisch", "viewIso"], ["front", "Vorne", "viewFront"], ["back", "Hinten", "viewFront"], ["left", "Links", "viewRight"], ["right", "Rechts", "viewRight"], ["top", "Oben", "viewTop"], ["bottom", "Unten", "viewTop"]].map(([v, label, ic]) => ({ label, icon: ic, run: () => this.viewer.setView(v) }))); };
-    this.viewTools = h("div", { class: "view-tools", role: "toolbar", "aria-label": "Ansicht" },
-      nav("orbit", "orbit", "Drehen"), nav("pan", "pan", "Verschieben"), nav("zoom", "zoom", "Zoomen"),
-      h("span", { class: "vt-sep" }),
-      mk("viewIso", "Iso", () => this.viewer.setView("iso"), "Isometrische Ansicht"),
-      mk("viewFront", "Vorne", () => this.viewer.setView("front"), "Ansicht vorne"),
-      mk("viewTop", "Oben", () => this.viewer.setView("top"), "Ansicht oben"),
-      mk("viewRight", "Rechts", () => this.viewer.setView("right"), "Ansicht rechts"),
-      mk("home", "Ansichten", views, "Alle Standardansichten"),
-      h("span", { class: "vt-sep" }),
-      mk("fit", "Alles", () => this.viewer.fit(), "Alles zeigen (F6)"),
-      mk("search", "Auswahl", () => this.zoomToSelection(), "Auswahl zeigen (Umschalt+F6)"),
-      this.clipBar = h("span", { class: "clip-bar", hidden: true }));
+    // Felder per Ziehen anordnen (SolidCraft »Navigationsleiste anpassen«), Reihenfolge in oberflaeche.navFelder
+    const fields = [["orbit", nav("orbit", "orbit", "Drehen")], ["pan", nav("pan", "pan", "Verschieben")], ["zoom", nav("zoom", "zoom", "Zoomen")],
+      ["sep1", h("span", { class: "vt-sep" })],
+      ["iso", mk("viewIso", "Iso", () => this.viewer.setView("iso"), "Isometrische Ansicht")],
+      ["vorne", mk("viewFront", "Vorne", () => this.viewer.setView("front"), "Ansicht vorne")],
+      ["oben", mk("viewTop", "Oben", () => this.viewer.setView("top"), "Ansicht oben")],
+      ["rechts", mk("viewRight", "Rechts", () => this.viewer.setView("right"), "Ansicht rechts")],
+      ["ansichten", mk("home", "Ansichten", views, "Alle Standardansichten")],
+      ["sep2", h("span", { class: "vt-sep" })],
+      ["alles", mk("fit", "Alles", () => this.viewer.fit(), "Alles zeigen (F6)")],
+      ["auswahl", mk("search", "Auswahl", () => this.zoomToSelection(), "Auswahl zeigen (Umschalt+F6)")]];
+    const byId = new Map(fields);
+    for (const [id, el] of fields) { el.dataset.field = id; el.draggable = true; }
+    const order = () => {
+      const want = String(this.prefs.get("oberflaeche.navFelder") || "").split(",").map((x) => x.trim()).filter((x) => byId.has(x));
+      return [...new Set([...want, ...fields.map((f) => f[0])])];
+    };
+    this.viewTools = h("div", { class: "view-tools", role: "toolbar", "aria-label": "Ansicht" }, ...order().map((id) => byId.get(id)), this.clipBar = h("span", { class: "clip-bar", hidden: true }));
+    this.arrangeViewTools = () => { this.viewTools.prepend(...order().map((id) => byId.get(id))); };
+    let dragId = null;
+    this.viewTools.addEventListener("dragstart", (e) => { dragId = e.target.closest?.("[data-field]")?.dataset.field || null; if (dragId) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragId); } });
+    this.viewTools.addEventListener("dragover", (e) => { if (dragId) e.preventDefault(); });
+    this.viewTools.addEventListener("drop", (e) => {
+      const t = e.target.closest?.("[data-field]");
+      if (!dragId || !t || t.dataset.field === dragId) return (dragId = null);
+      e.preventDefault();
+      const r = t.getBoundingClientRect(), after = e.clientX > r.left + r.width / 2;
+      const ids = order().filter((x) => x !== dragId);
+      ids.splice(ids.indexOf(t.dataset.field) + (after ? 1 : 0), 0, dragId);
+      dragId = null;
+      this.prefs.set("oberflaeche.navFelder", ids.join(","));
+      this.arrangeViewTools();
+    });
     this.quickEl = h("div", { class: "quick-measure", role: "status", "aria-label": "Schnellmessung", hidden: true });
     document.getElementById("stage").append(this.viewTools, this.quickEl);
   }
@@ -1822,6 +1847,7 @@ export class App {
   renderClipBar() {
     const c = this.viewer.clip;
     this.clipBar.hidden = !c;
+    queueMicrotask(() => this.updateStatus());
     if (!c) return this.clipBar.replaceChildren();
     const num = h("input", { class: "inp num", value: String(c.offset).replace(".", ","), title: "Lage der Schnittebene in mm", style: { width: "70px" } });
     const range = h("input", { type: "range", min: String(c.min), max: String(c.max), step: String(Math.max(0.01, (c.max - c.min) / 500)), value: String(c.offset), title: "Schnittebene verschieben" });

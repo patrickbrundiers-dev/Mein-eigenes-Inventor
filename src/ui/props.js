@@ -68,9 +68,10 @@ import { bodiesMass, hasOwnDensity, massOverride, orderBomRows } from "../core/m
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { motionStudyDialog, findJointLimits } from "./bewegungsstudie.js";
 import { presetFrom, applyPreset, holeDiagramSvg } from "../core/bohrvorlagen.js";
-import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
+import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat, canChainTo } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
-import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
+import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc, garniturGroups } from "../core/subasm.js";
+import { nearestCollisions } from "../core/kollisionsliste.js";
 import { linkedPart, asmParamValues } from "../core/baugruppenparameter.js";
 import { pushParamsDialog, invalidateLinked, explosionDialog, positionsSection, explosionSection, asmParamsSection } from "./darstellungen.js";
 import { materialOf, materialList } from "../core/materials.js";
@@ -2228,17 +2229,23 @@ export class Props {
       ss.addEventListener("change", () => app.edit("Gelenkweg", () => { setJointSlide(c, Number(ss.value), movers.slice(1).map((id) => asm.components.find((x) => x.id === id)).filter(Boolean)); }));
       slideRow = [this.field("Weg", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, ss, so)), h("p", { class: "hint" }, `Weg ${fmtNum(j.smin, 0)} … ${fmtNum(j.smax, 0)} mm entlang der Achse`)];
     }
+    // Gelenkkette (L10): Gelenk hängt an einer anderen Komponente und geht samt Achse mit, wenn diese sich bewegt
+    const par = h("select", { class: "inp joint-parent" }, h("option", { value: "" }, "– (steht fest)"),
+      ...asm.components.filter((x) => x.id !== c.id && !x.pat && canChainTo(asm, c.id, x.id)).map((x) => h("option", { value: x.id, selected: j.parent === x.id ? true : undefined }, x.name)));
+    par.addEventListener("change", () => app.edit("Gelenk hängt an", () => { if (par.value) j.parent = par.value; else delete j.parent; }));
     return this.section(jointLabel(j),
       this.field(slide ? "Weg" : "Winkel", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, slider, out)),
       lim("von", "min"), lim("bis", "max"),
       slideRow,
+      this.field("Hängt an", par),
+
       h("dl", { class: "kv" }, slide ? null : h("dt", {}, "Achse durch"), slide ? null : h("dd", {}, f(j.p)), h("dt", {}, "Richtung"), h("dd", {}, f(j.d)),
         movers.length > 1 ? h("dt", {}, "Geht mit") : null, movers.length > 1 ? h("dd", {}, movers.slice(1).map((id) => asm.components.find((x) => x.id === id)?.name).join(", ")) : null),
-      h("p", { class: "hint" }, "Abhängigkeiten verschieben diese Komponente nicht mehr; daran hängende Teile gehen mit."),
+      h("p", { class: "hint" }, "Abhängigkeiten verschieben diese Komponente nicht mehr; daran hängende Teile gehen mit. Im Modell am Teil ziehen bewegt das Gelenk im Bereich."),
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => this.animateJoints([c.id]) }, "Bewegen"),
         h("button", { class: "btn", onclick: () => this.jointSweepCheck(c) }, "Kollision im Bereich prüfen"),
-        j.kind === "zylinder" ? null : h("button", { class: "btn", title: "Von der heutigen Stellung nach beiden Seiten bis zur ersten Berührung suchen und als Bereich eintragen", onclick: async (ev) => {
+        j.kind === "zylinder" ? null : h("button", { class: "btn", title: "Von der heutigen Stellung nach beiden Seiten bis zur ersten Berührung suchen und als Bereich eintragen. Ist ein Kontaktsatz gesetzt, zählen nur Berührungen zwischen dessen Komponenten.", onclick: async (ev) => {
           const b = ev.currentTarget; b.disabled = true; b.textContent = "Suche Grenzen …";
           try {
             const P = app.prefs, num = (k) => Number(P.get(k)) || null;
@@ -2856,6 +2863,7 @@ export class Props {
           h("button", { class: "btn", onclick: () => sortBy("number") }, "Nach Teilenummer"),
           h("button", { class: "btn", onclick: () => sortBy("name") }, "Nach Benennung"),
           asm.bomOrder?.length ? h("button", { class: "btn", onclick: () => { app.edit("Stückliste Reihenfolge", () => { delete asm.bomOrder; }, { rebuild: false }); show("menge"); } }, "Wie eingefügt") : null),
+          flattenAssembly(asm, docOf, { bom: true }).some((o) => o.comp?.garnitur) ? h("label", { class: "chk bom-garnitur" }, h("input", { type: "checkbox", checked: asm.bomGarnitur !== false ? true : undefined, onchange: (e) => { app.edit("Garnituren in der Stückliste", () => { if (e.target.checked) delete asm.bomGarnitur; else asm.bomGarnitur = false; }, { rebuild: false }); show("menge"); } }), "Scheiben und Muttern unter der Schraube (Garnitur)") : null,
           h("p", { class: "hint" }, "Die Reihenfolge bleibt gespeichert und bestimmt die Positionsnummern in Zeichnung, Listen und Excel. Normteile stehen immer am Ende. Masse von Hand (z. B. Kaufteil) im Bauteil unter Masse-Eigenschaften."));
       }
     };
@@ -2890,15 +2898,16 @@ export class Props {
     if (comps.length < 2) return toast("Mindestens zwei sichtbare Komponenten nötig");
     // Optionen wie SolidCraft »Clearance«: Mindestvolumen, Mindestabstand, nur gegen gewählte Komponenten
     if (opts === "dialog") {
-      const last = app.collisionOpts || { tol: 1, clearance: 0, against: [] };
-      const tolIn = h("input", { class: "inp", value: fmtNum(last.tol, 2) }), clIn = h("input", { class: "inp", value: fmtNum(last.clearance, 2) });
+      const last = app.collisionOpts || { tol: 1, clearance: 0, against: [], nearest: 0 };
+      const tolIn = h("input", { class: "inp", value: fmtNum(last.tol, 2) }), clIn = h("input", { class: "inp", value: fmtNum(last.clearance, 2) }), nIn = h("input", { class: "inp coll-nearest", value: String(last.nearest || 0) });
       const checks = comps.map((c) => { const i = h("input", { type: "checkbox", checked: last.against.includes(c.id) ? true : undefined }); return [c.id, i, h("label", { class: "check" }, i, " ", c.name || app.doc(c.part)?.name || c.id)]; });
       const num = (el, d) => { const x = Number(String(el.value).replace(",", ".")); return Number.isFinite(x) && x >= 0 ? x : d; };
       return modal({ title: "Kollisionsprüfung", width: "460px", body: h("div", {},
         h("div", { class: "field" }, h("label", {}, "Kleinere Überschneidung zählt als Berührung (mm³)"), tolIn),
         h("div", { class: "field" }, h("label", {}, "Auch Abstände unter (mm, 0 = aus)"), clIn),
+        h("div", { class: "field" }, h("label", {}, "Je Komponente nur die n nächsten (0 = alle)"), nIn),
         h("div", { class: "field" }, h("label", {}, "Nur gegen (keine = alle mit allen)"), h("div", { class: "checks" }, ...checks.map((x) => x[2])))),
-        buttons: [{ label: "Abbrechen" }, { label: "Prüfen", primary: true, run: () => { app.collisionOpts = { tol: num(tolIn, 1), clearance: num(clIn, 0), against: checks.filter((x) => x[1].checked).map((x) => x[0]) }; this.collisionDialog(app.collisionOpts); } }] });
+        buttons: [{ label: "Abbrechen" }, { label: "Prüfen", primary: true, run: () => { app.collisionOpts = { tol: num(tolIn, 1), clearance: num(clIn, 0), nearest: Math.round(num(nIn, 0)), against: checks.filter((x) => x[1].checked).map((x) => x[0]) }; this.collisionDialog(app.collisionOpts); } }] });
     }
     opts = opts || app.collisionOpts || { tol: 1, clearance: 0, against: [] };
     // Unterbaugruppen: alle ihre Bauteile mit dem Schlüssel der Komponente (innere Kollisionen zählen hier nicht)
@@ -2909,6 +2918,8 @@ export class Props {
     try { res = (await app.kernel.call("collisions", { items, tol: opts.tol ?? 1, clearance: opts.clearance ?? 0, against: opts.against?.length ? opts.against : null })).filter((r) => r.a !== r.b); }
     catch (e) { busy.remove(); return toast("Kollisionsprüfung fehlgeschlagen: " + e.message, { kind: "err" }); }
     busy.remove();
+    // SolidCraft »n nächste«: je Komponente nur die n schwersten Treffer (größte Überschneidung, dann kleinster Abstand)
+    if (opts.nearest > 0) res = nearestCollisions(res, opts.nearest);
     app.collisions = res;
     const show = (r) => app.viewer.setSelectionHits([{ kind: "group", key: "comp:" + r.a }, { kind: "group", key: "comp:" + r.b }]);
     if (res[0]) show(res[0]);
@@ -2978,10 +2989,18 @@ export function unionBox(boxes) {
 /** Mengenstückliste: alle Bauteile der Baugruppe einschließlich der Unterbaugruppen, summiert */
 const resolvedOrNull = (fn) => { try { return fn(); } catch { return null; } };
 
-export function bomRows(app, asm) {
+export function bomRows(app, asm, depth = 0) {
   const map = new Map(), norm = [];
-  for (const o of flattenAssembly(asm, (id) => app.doc(id), { bom: true })) {
+  const occ = flattenAssembly(asm, (id) => app.doc(id), { bom: true, units: true });
+  for (const o of occ) {
     const p = o.part;
+    if (o.unit) {
+      // untrennbare/Kauf-Baugruppe (L11): eine Zeile, Masse = Summe ihres Inhalts
+      const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: "", finish: "", qty: 0, mass: depth < 8 ? bomRows(app, p, depth + 1).reduce((s, r) => s + (r.mass || 0) * r.qty, 0) : NaN, unit: p.bomStructure };
+      row.qty++;
+      map.set(p.id, row);
+      continue;
+    }
     const r = app.results.get(p.id);
     // Normteile (M20) zählen als eigene Zeilen mit Normbezeichnung; ein Bauteil nur aus Normteilen entfällt selbst
     const own = (r?.bodies || []).filter((b) => !b.meta?.norm);
@@ -2993,17 +3012,43 @@ export function bomRows(app, asm) {
     map.set(p.id, row);
   }
   const normRows = collectNorm(norm).map((x) => ({ name: x.name, number: "", material: x.material, qty: x.qty, mass: x.mass, norm: true }));
-  return orderBomRows([...map.values(), ...normRows], asm.bomOrder).map((r, i) => ({ ...r, pos: i + 1 }));
+  const main = orderBomRows([...map.values(), ...normRows], asm.bomOrder);
+  // Garnituren (L11): Scheiben und Muttern einer Schraubengarnitur als Unterzeilen unter der Schraube
+  const groups = asm.bomGarnitur === false ? new Map() : garniturGroups(occ, (p) => p.normDesignation || null);
+  if (!groups.size) return main.map((r, i) => ({ ...r, pos: i + 1 }));
+  const byName = new Map(normRows.map((r) => [r.name, r]));
+  const subs = new Map();
+  for (const [lead, members] of groups) {
+    if (!byName.has(lead)) continue;
+    for (const [d, n] of members) {
+      const r = byName.get(d);
+      if (!r) continue;
+      const take = Math.min(n, r.qty);
+      if (!take) continue;
+      r.qty -= take;
+      if (!subs.has(lead)) subs.set(lead, []);
+      subs.get(lead).push({ ...r, qty: take, sub: true, parent: lead });
+    }
+  }
+  const out = [];
+  let pos = 0;
+  for (const r of main) {
+    if (r.norm && r.qty <= 0) continue;
+    const row = { ...r, pos: ++pos };
+    out.push(row);
+    (subs.get(r.name) || []).forEach((s, k) => out.push({ ...s, pos: `${row.pos}.${k + 1}` }));
+  }
+  return out;
 }
 function bomTable(rows, compact = false) {
   return h("table", { class: "grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Benennung"), compact ? null : h("th", {}, "Nummer"), h("th", {}, "Menge"), compact ? null : h("th", {}, "Werkstoff"), h("th", {}, "Masse kg"))),
-    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, r.name), compact ? null : h("td", {}, r.number), h("td", { class: "num" }, String(r.qty)), compact ? null : h("td", {}, [r.material, finishLabel({ finish: r.part?.finish }, { short: true })].filter(Boolean).join(" · ")), h("td", { class: "num" }, fmtNum(r.mass, 3))))));
+    h("tbody", {}, ...rows.map((r) => h("tr", { class: r.sub ? "bom-sub" : null }, h("td", { class: "num" }, String(r.pos)), h("td", { style: r.sub ? { paddingLeft: "18px" } : null }, r.name, r.unit ? h("span", { class: "hint" }, r.unit === "kaufteil" ? " (Kaufteil)" : " (untrennbar)") : null), compact ? null : h("td", {}, r.number), h("td", { class: "num" }, String(r.qty)), compact ? null : h("td", {}, [r.material, finishLabel({ finish: r.part?.finish }, { short: true })].filter(Boolean).join(" · ")), h("td", { class: "num" }, fmtNum(r.mass, 3))))));
 }
 function structureTable(rows, app) {
   return h("table", { class: "grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Ebene"), h("th", {}, "Benennung"), h("th", {}, "Nummer"), h("th", {}, "Menge"), h("th", {}, "Gesamt"), h("th", {}, "Art"))),
-    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, r.level), h("td", { style: { paddingLeft: 6 + r.depth * 14 + "px" } }, r.doc.name), h("td", {}, r.doc.number || ""), h("td", { class: "num" }, String(r.qty)), h("td", { class: "num" }, String(r.total)), h("td", {}, r.kind === "assembly" ? "Baugruppe" : "Bauteil")))));
+    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, r.level), h("td", { style: { paddingLeft: 6 + r.depth * 14 + "px" } }, r.doc.name), h("td", {}, r.doc.number || ""), h("td", { class: "num" }, String(r.qty)), h("td", { class: "num" }, String(r.total)), h("td", {}, r.kind === "assembly" ? (r.bom === "kaufteil" ? "Kaufteil" : r.bom === "untrennbar" ? "Baugruppe, untrennbar" : "Baugruppe") : "Bauteil")))));
 }
 function modularTable(rows) {
   return h("table", { class: "grid" },

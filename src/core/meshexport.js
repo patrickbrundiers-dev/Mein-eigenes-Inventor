@@ -43,6 +43,32 @@ export function writeObj(meshes, { app = "PBCAD" } = {}) {
   return out.join("\n") + "\n";
 }
 
+/**
+ * Objekte für 3MF/Slicer (SolidCraft-Abgleich L12). mode "komponente": Netze mit gleichem m.group (Komponente) zu
+ * einem Objekt zusammenfassen (Name = m.groupName); "eins": alles ein Objekt; sonst je Körper wie geliefert.
+ * only = Set der group-Schlüssel, die mitgehen (null = alle).
+ */
+export function groupMeshes(meshes, mode = "komponente", { only = null, title = "Modell" } = {}) {
+  const sel = only ? meshes.filter((m) => only.has(m.group ?? m.name)) : meshes;
+  if (mode !== "komponente" && mode !== "eins") return sel;
+  const out = new Map();
+  for (const m of sel) {
+    const k = mode === "eins" ? "*" : (m.group ?? m.name);
+    const o = out.get(k) || { name: mode === "eins" ? title : (m.groupName || m.name), group: k, pos: [], idx: [], color: m.color };
+    const base = o.pos.length / 3;
+    for (const i of tris(m)) o.idx.push(i + base);
+    for (const v of m.pos) o.pos.push(v);
+    out.set(k, o);
+  }
+  return [...out.values()];
+}
+/** Auswahlliste der Komponenten (Schlüssel, Name, Anzahl Körper) für den Slicer-Dialog */
+export function meshGroups(meshes) {
+  const m = new Map();
+  for (const x of meshes) { const k = x.group ?? x.name; const g = m.get(k) || { key: k, name: x.groupName || x.name, bodies: 0 }; g.bodies++; m.set(k, g); }
+  return [...m.values()];
+}
+
 /** 3MF (3D-Druck, Einheit mm, Farben als Basismaterial) → Uint8Array (ZIP) */
 export function write3mf(meshes, { title = "PBCAD", app = "PBCAD" } = {}) {
   const cols = [...new Set(meshes.map((m) => hex(m.color || [0.7, 0.7, 0.7])))];

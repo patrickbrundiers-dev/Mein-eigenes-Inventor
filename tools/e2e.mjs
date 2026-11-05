@@ -869,6 +869,9 @@ try {
   const solved = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); a.solveAssemblyConstraints(asm); return Object.keys(a.asmErrors || {}).filter((id) => asm.constraints.find((k) => k.id === id)?.type === "einfuegen").length; });
   await evalApp(() => { const a = window.__werkcad; a.sel = { type: "component", id: "cLoch" }; a.viewer.fit?.(); });
   await shot("normteil-an-bohrung");
+  // L11: Scheiben und Mutter stehen in der Stückliste unter der Schraube
+  const gar = await evalApp(() => { const a = window.__werkcad; a.props.bomDialog(); const sub = [...document.querySelectorAll(".dialog tr.bom-sub")].map((tr) => tr.children[0].textContent + " " + tr.children[3].textContent); document.querySelector(".dialog footer .btn:not(.primary)")?.click(); return sub; });
+  step("Stückliste: Garniturteile unter der Schraube", gar.length === 2 && gar.every((x) => /^\d+\.\d /.test(x)) && gar.some((x) => / 2$/.test(x)), JSON.stringify(gar));
   step("Normteil-Bibliothek: Suche, Vorschau, Garnitur an Bohrung", lib.title === "Zylinderschraube mit Innensechskant" && lib.svg > 2 && holePlate === "normHole"
     && hole.names?.join("|") === "Scheibe ISO 7089 - 12 - 200 HV|Sechskantschraube ISO 4017 - M12 x 30 - 8.8|Scheibe ISO 7089 - 12 - 200 HV|Sechskantmutter ISO 4032 - M12 - 8" && solved === 0,
     JSON.stringify({ lib, hole, solved }));
@@ -4614,6 +4617,69 @@ try {
     await idle();
     step("SolidCraft-Optionen: Grafik-Voreinstellung, Raster seitlich, Schwenken umkehren, Einpassen, ganze Körper wählen, Flächenkanten projizieren, neue Formen bemaßen",
       Object.values(es).every(Boolean) && ep.proj === 4 && ep.dims === 1, JSON.stringify({ es, ep }));
+  }
+  // SolidCraft-Restpunkt L10: Komponente mit Gelenk im Modell ziehen (Bereich, Kette mit Kind-Gelenk)
+  {
+    await evalApp(() => { const a = window.__werkcad; a.dirty = false; return a.openExample(); });
+    await idle(120000);
+    await evalApp(() => window.__werkcad.openDoc("beispiel_bg"));
+    await idle(120000);
+    await page.waitForTimeout(1500);
+    await idle(120000);
+    const prep = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc(), v = a.viewer;
+      const free = asm.components.filter((x) => !x.fixed && !x.joint && !x.pat);
+      const top = (c) => v.componentBox(c.id)?.[1][2] ?? -1e9;
+      const c = free.sort((p, q) => top(q) - top(p))[0], other = free.find((x) => x !== c);
+      const b = v.componentBox(c.id);
+      a.edit("Gelenk", () => { c.joint = { p: [b[0][0], b[0][1], 0], d: [0, 0, 1], angle: 0, min: -90, max: 90 }; if (other) other.joint = { p: [...other.pos], d: [0, 0, 1], angle: 0, min: 0, max: 45, parent: c.id }; });
+      v.setView("top", { animate: false }); v.fit();
+      return { id: c.id, other: other?.id, otherPos: other ? [...other.pos] : null };
+    });
+    await idle();
+    const R = await page.locator("#viewer canvas").first().boundingBox();
+    const s0 = await evalApp((id) => { const a = window.__werkcad, b = a.viewer.componentBox(id), c = b[0].map((x, i) => (x + b[1][i]) / 2); c[2] = b[1][2]; return a.viewer.worldToScreen(c); }, prep.id);
+    await page.mouse.move(R.x + s0[0], R.y + s0[1]); await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(R.x + s0[0] - i * 8, R.y + s0[1] + i * 12);
+    await page.mouse.up();
+    await idle();
+    const jd = await evalApp(([id, oid]) => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === id), o = asm.components.find((x) => x.id === oid); return { angle: c.joint.angle, otherPos: o ? [...o.pos] : null, undo: a.undoStack.at(-1)?.label || a.undoStack.at(-1)?.[0] || null }; }, [prep.id, prep.other]);
+    step("Gelenk im Modell ziehen: Wert im Bereich, Kind-Gelenk geht mit",
+      Math.abs(jd.angle) > 5 && jd.angle >= -90 && jd.angle <= 90 && jd.undo === "Gelenkwinkel" && (!prep.other || Math.hypot(jd.otherPos[0] - prep.otherPos[0], jd.otherPos[1] - prep.otherPos[1]) > 1), JSON.stringify({ prep, jd }));
+    // L12: 3MF je Komponente ein Objekt, Auswahl im Dialog
+    const tm = await evalApp(async () => {
+      const a = window.__werkcad, wait = (ms) => new Promise((r) => setTimeout(r, ms)), orig = a.files.saveBinary;
+      let saved = null; a.files.saveBinary = async (data) => { saved = data; return true; };
+      try {
+        const p = a.files.export3mf(); await wait(1500);
+        const groups = document.querySelectorAll(".dialog .print-groups input").length;
+        document.querySelectorAll(".dialog .print-groups input")[0]?.click();
+        [...document.querySelectorAll(".dialog footer .btn")].find((b) => b.textContent === "Speichern")?.click();
+        await p; await wait(300);
+        return { groups, comps: a.activeDoc().components.filter((c) => !c.hidden).length, objects: saved ? (new TextDecoder().decode(saved).match(/<object /g) || []).length : -1 };
+      } finally { a.files.saveBinary = orig; }
+    });
+    step("3MF: je Komponente ein Objekt, Komponenten wählbar", tm.groups === tm.comps && tm.objects === tm.comps - 1, JSON.stringify(tm));
+    // Navigationsleiste anordnen, Trackpad dreht, STEP nur Auswahl
+    await page.locator('.view-tools [data-field="alles"]').dragTo(page.locator('.view-tools [data-field="orbit"]'), { targetPosition: { x: 2, y: 10 } });
+    const nv = await evalApp(async () => {
+      const a = window.__werkcad, v = a.viewer, wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const first = document.querySelector(".view-tools [data-field]")?.dataset.field;
+      a.prefs.set("oberflaeche.navFelder", ""); const reset = document.querySelector(".view-tools [data-field]")?.dataset.field;
+      v.setView("iso", { animate: false }); a.prefs.set("ansicht.trackpadDrehen", true); const p0 = v.camera.position.clone(); // nicht von oben: dort dreht die Kamera nur um sich selbst
+      v.container.dispatchEvent(new WheelEvent("wheel", { deltaX: 40, bubbles: true, cancelable: true, clientX: 500, clientY: 400 })); await wait(100);
+      const turned = v.camera.position.distanceTo(p0) > 1; a.prefs.set("ansicht.trackpadDrehen", false);
+      let got = null; const orig = a.kernel.call, origSave = a.files.saveText;
+      a.kernel.call = async function (n, arg) { if (n === "exportStep") { got = arg.items.length; return "x"; } return orig.call(this, n, arg); };
+      a.files.saveText = async () => true;
+      try {
+        a.sel = { type: "component", id: a.activeDoc().components[0].id };
+        const p = a.files.exportStep(); await wait(300);
+        [...document.querySelectorAll(".dialog footer .btn")].find((b) => b.textContent === "Nur Auswahl")?.click(); await p;
+      } finally { a.kernel.call = orig; a.files.saveText = origSave; a.sel = null; }
+      return { first, reset, turned, got, all: a.files.exportItems().length };
+    });
+    step("Navigationsleiste anordnen, Trackpad dreht, STEP nur Auswahl", nv.first === "alles" && nv.reset === "orbit" && nv.turned && nv.got >= 1 && nv.got < nv.all, JSON.stringify(nv));
   }
   // SolidCraft-Abgleich E5: Kunststoffteil (Schraubdom mit Rippen an Skizzenpunkten), Regel aus den Einstellungen
   {

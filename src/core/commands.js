@@ -388,14 +388,20 @@ export function effectiveKeymap(user = {}) {
   return map;
 }
 
+/** Tasten eines Eintrags: mehrere Kürzel je Befehl durch »;« getrennt (L8, SolidCraft) */
+export function combosOf(v) { return String(v || "").split(";").map((x) => x.trim()).filter(Boolean); }
+
 /** Doppelte Belegungen in überlappenden Bereichen: [{combo, ids:[a,b]}] */
 export function keymapConflicts(map) {
   const out = [];
   const ids = Object.keys(map);
   for (let i = 0; i < ids.length; i++) {
+    const ca = combosOf(map[ids[i]]);
     for (let j = i + 1; j < ids.length; j++) {
       const a = commandDef(ids[i]), b = commandDef(ids[j]);
-      if (a && b && map[ids[i]] === map[ids[j]] && overlap(a.scope, b.scope)) out.push({ combo: map[ids[i]], ids: [a.id, b.id] });
+      if (!a || !b || !overlap(a.scope, b.scope)) continue;
+      const same = combosOf(map[ids[j]]).find((x) => ca.includes(x));
+      if (same) out.push({ combo: same, ids: [a.id, b.id] });
     }
   }
   return out;
@@ -408,9 +414,16 @@ export function validateKeymap(user) {
   for (const [id, v] of Object.entries(user)) {
     if (!BY_ID.has(id)) return { ok: false, error: `Unbekannter Befehl »${id}«` };
     if (v === "") { if (BY_ID.get(id).key) clean[id] = ""; continue; }
-    const r = parseCombo(v);
-    if (!r.ok) return { ok: false, error: `${BY_ID.get(id).label}: ${r.error}` };
-    if (r.combo !== BY_ID.get(id).key) clean[id] = r.combo;
+    if (typeof v !== "string") return { ok: false, error: `${BY_ID.get(id).label}: Taste als Text erwartet` };
+    const list = [];
+    for (const part of combosOf(v)) {
+      const r = parseCombo(part);
+      if (!r.ok) return { ok: false, error: `${BY_ID.get(id).label}: ${r.error}` };
+      if (!list.includes(r.combo)) list.push(r.combo);
+    }
+    if (list.length > 4) return { ok: false, error: `${BY_ID.get(id).label}: höchstens 4 Tasten je Befehl` };
+    const joined = list.join(";");
+    if (joined !== (BY_ID.get(id).key || "")) clean[id] = joined;
   }
   const conf = keymapConflicts(effectiveKeymap(clean));
   if (conf.length) return { ok: false, error: `»${conf[0].combo}« doppelt belegt: ${conf[0].ids.map((i) => BY_ID.get(i).label).join(" und ")}` };
@@ -418,10 +431,11 @@ export function validateKeymap(user) {
 }
 
 /** Befehl zu einem Tastendruck im aktuellen Modus */
-export function commandForCombo(map, combo, mode) {
-  const scopes = mode === "sketch" ? ["sketch", "global"] : mode === "part" ? ["part", "3d", "global"] : mode === "assembly" ? ["assembly", "3d", "global"] : mode === "drawing" ? ["drawing", "global"] : ["global"];
+export function commandForCombo(map, combo, mode, { modelFromSketch = false } = {}) {
+  // Modelltasten aus Skizzen heraus (L8): in der Skizze zuletzt auch Bauteilbefehle (die Skizze wird vorher beendet)
+  const scopes = mode === "sketch" ? (modelFromSketch ? ["sketch", "global", "part", "3d"] : ["sketch", "global"]) : mode === "part" ? ["part", "3d", "global"] : mode === "assembly" ? ["assembly", "3d", "global"] : mode === "drawing" ? ["drawing", "global"] : ["global"];
   for (const s of scopes) {
-    const c = COMMANDS.find((x) => x.scope === s && map[x.id] === combo);
+    const c = COMMANDS.find((x) => x.scope === s && map[x.id] && combosOf(map[x.id]).includes(combo));
     if (c) return c;
   }
   return null;
