@@ -485,8 +485,14 @@ export class Props {
     if (!ctx || ctx.part !== part.id) return null;
     return this.section("Im Kontext: " + ctx.label,
       h("div", { class: "hint" }, "Die übrigen Teile der Baugruppe stehen halbdurchsichtig daneben. In einer Skizze holt »Projizieren« auch ihre Kanten."),
+      ctx.linkEdit ? h("div", { class: "msg" }, `Verknüpftes Teil (${part.link?.path?.split(/[\\/]/).pop() || "Datei"}) – »Fertig« schreibt die Änderungen in diese Datei.`) : null,
       this.check("Nachbarteile zeigen", ctx.ghosts, (v) => app.toggleContextGhosts(v)),
-      h("div", { class: "btn-row" }, h("button", { class: "btn primary", "data-act": "leave-context", onclick: () => app.leaveContext() }, "Zurück zur Baugruppe")));
+      h("div", { class: "btn-row" }, h("button", { class: "btn primary", "data-act": "leave-context", onclick: () => app.leaveContext() }, ctx.linkEdit ? "Fertig – zurück zur Baugruppe" : "Zurück zur Baugruppe"),
+        ctx.linkEdit ? h("button", { class: "btn", "data-act": "discard-context", title: "Stand vor dem Bearbeiten wiederherstellen, Datei bleibt unverändert", onclick: () => {
+          const before = JSON.parse(ctx.linkEdit.before);
+          app.edit("Änderungen verwerfen", () => { const link = part.link; for (const k of Object.keys(part)) delete part[k]; Object.assign(part, before, { link }); }, { link: true });
+          app.leaveContext({ discard: true });
+        } }, "Verwerfen") : null));
   }
   partProps(part) {
     const app = this.app;
@@ -2795,7 +2801,9 @@ export class Props {
     modal({
       title: `Parameter – ${part.name}`, width: "760px",
       body: h("div", {},
-        h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Ausdruck"), sources.length || rows.some((r) => r.link) ? h("th", {}, "Aus Baugruppe") : null, h("th", {}, "Wert"), h("th", {}, "Kommentar"), h("th"))), tbody),
+        // SolidCraft: »Zeilen der Parameterliste« – 0 = so hoch wie der Dialog
+        h("div", { class: "param-scroll", style: (Number(app.prefs?.get("dokument.parameterZeilen")) || 0) > 0 ? { maxHeight: `calc(${Number(app.prefs.get("dokument.parameterZeilen")) + 1} * 2.1em)`, overflow: "auto" } : {} },
+          h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Ausdruck"), sources.length || rows.some((r) => r.link) ? h("th", {}, "Aus Baugruppe") : null, h("th", {}, "Wert"), h("th", {}, "Kommentar"), h("th"))), tbody)),
         h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { let n = rows.length + 1; while (rows.some((r) => r.name === "P" + n)) n++; rows.push({ name: "P" + n, expr: "10", comment: "" }); draw(); } }, icon("plus"), " Parameter"),
           h("button", { class: "btn", title: "Parameter als Tabelle für Excel speichern (CSV)", onclick: () => app.files.saveText(paramsCsv(rows, resolveParams(rows).values), String(part.name || "Bauteil").replace(/[\\/:*?"<>|]+/g, "_") + " Parameter.csv", "text/csv", [{ name: "CSV", extensions: ["csv"] }]) }, icon("export"), " Exportieren"),
           h("button", { class: "btn", title: "Parameter aus CSV übernehmen: gleiche Namen werden geändert, neue angehängt", onclick: async () => {

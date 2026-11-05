@@ -152,6 +152,22 @@ export class Viewer {
     this.cube.add(edges);
     this.cubeScene.add(this.cube);
     this.cubeScene.add(new THREE.AmbientLight(0xffffff, 1));
+    // SolidCraft: Navigator wahlweise als Achsen-Gizmo (Kugeln an ±X/±Y/±Z anklicken)
+    this.axesGizmo = new THREE.Group();
+    this.axesBalls = [];
+    for (const [dir, color] of [[[1, 0, 0], 0xd23b2a], [[0, 1, 0], 0x2e9d4a], [[0, 0, 1], 0x2457b8]]) {
+      const v = new THREE.Vector3(...dir);
+      this.axesGizmo.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([v.clone().multiplyScalar(-1.1), v.clone().multiplyScalar(1.1)]), new THREE.LineBasicMaterial({ color })));
+      for (const sgn of [1, -1]) {
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(sgn > 0 ? 0.32 : 0.22, 20, 14), new THREE.MeshBasicMaterial({ color, transparent: sgn < 0, opacity: sgn < 0 ? 0.45 : 1 }));
+        ball.position.copy(v.clone().multiplyScalar(1.1 * sgn));
+        ball.userData.dir = v.clone().multiplyScalar(sgn);
+        this.axesGizmo.add(ball);
+        this.axesBalls.push(ball);
+      }
+    }
+    this.axesGizmo.visible = false;
+    this.cubeScene.add(this.axesGizmo);
     this.cubeSize = 96;
   }
   resize() {
@@ -501,6 +517,8 @@ export class Viewer {
     this.showGrid = v["ansicht.raster"];
     if (!this.sketchFrame) this.grid.visible = this.showGrid && !this.photo;
     this.showCube = v["ansicht.viewcube"];
+    const axesNav = v["ansicht.navigatorStil"] === "achsen";
+    if (this.axesGizmo) { this.axesGizmo.visible = axesNav; this.cube.visible = !axesNav; }
     const dark = document.documentElement.dataset.theme === "dark";
     if (dark !== !!this.dark) { this.dark = dark; if (this.grid) { const old = this.grid; this.makeGrid(this.gridSize || 400); this.grid.position.copy(old.position); this.grid.quaternion.copy(old.quaternion); this.grid.visible = old.visible; } }
     if (v["ansicht.schnittFuellen"] !== undefined && v["ansicht.schnittFuellen"] !== this.fillSection) {
@@ -1548,10 +1566,11 @@ export class Viewer {
     const ndc = new THREE.Vector2(((x - (w - cs - 8)) / cs) * 2 - 1, -((y - 8) / cs) * 2 + 1);
     const rc = new THREE.Raycaster();
     rc.setFromCamera(ndc, this.cubeCam);
-    const hit = rc.intersectObject(this.cube, false)[0];
+    const axes = this.axesGizmo?.visible;
+    const hit = axes ? rc.intersectObjects(this.axesBalls, false)[0] : rc.intersectObject(this.cube, false)[0];
     if (!hit) return true;
-    // Treffer nahe Ecke -> Iso-Richtung; sonst Flächennormale
-    const p = hit.point.clone().divideScalar(0.9);
+    // Treffer nahe Ecke -> Iso-Richtung; sonst Flächennormale (Achsen-Gizmo: Richtung der Kugel)
+    const p = axes ? hit.object.userData.dir.clone() : hit.point.clone().divideScalar(0.9);
     const snap = (v) => (Math.abs(v) > 0.6 ? Math.sign(v) : 0);
     const dir = new THREE.Vector3(snap(p.x), snap(p.y), snap(p.z));
     if (dir.lengthSq() === 0) return true;
@@ -1839,6 +1858,34 @@ export class Viewer {
   }
 
   /** Eintrag zu einem Treffer ({key, body}) oder Netz – auch unter den Nachbarteilen im Kontext */
+  /** SolidCraft »Hervorhebung der Auflagefläche«: ebene Flächen, die nach unten zeigen und auf der tiefsten Höhe liegen */
+  showBedFaces(on) {
+    if (!this.bedGroup) { this.bedGroup = new THREE.Group(); this.scene.add(this.bedGroup); }
+    if (!on) { disposeTree(this.bedGroup); this.bedGroup.clear(); this.render(); return 0; }
+    const box = this.contentBox();
+    if (box.isEmpty()) return 0;
+    const tol = Math.max(1e-3, box.getSize(new THREE.Vector3()).length() * 1e-4), z0 = box.min.z;
+    const hits = [], a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+    for (const pk of this.pickables) {
+      if (!pk.mesh.visible) continue;
+      pk.mesh.updateMatrixWorld();
+      const pos = pk.mesh.geometry.attributes.position.array, idx = pk.mesh.geometry.index?.array;
+      if (!idx) continue;
+      (pk.mesh.userData.faces || []).forEach((f, fi) => {
+        let ok = f.count > 0;
+        for (let i = f.start; ok && i + 2 < f.start + f.count; i += 3) {
+          a.fromArray(pos, idx[i] * 3).applyMatrix4(pk.mesh.matrixWorld); b.fromArray(pos, idx[i + 1] * 3).applyMatrix4(pk.mesh.matrixWorld); c.fromArray(pos, idx[i + 2] * 3).applyMatrix4(pk.mesh.matrixWorld);
+          n.subVectors(b, a).cross(c.clone().sub(a));
+          if (n.lengthSq() < 1e-18) continue;
+          n.normalize();
+          ok = n.z < -0.999 && Math.abs(a.z - z0) < tol && Math.abs(b.z - z0) < tol && Math.abs(c.z - z0) < tol;
+        }
+        if (ok) hits.push({ kind: "face", key: pk.key, body: pk.body, face: fi });
+      });
+    }
+    this.highlight(hits, { group: this.bedGroup, color: 0x2fb36b, opacity: 0.6 });
+    return hits.length;
+  }
   /** Kanten, die auf dem Rand der getroffenen Fläche liegen (für »Flächenkanten in neue Skizzen projizieren«) */
   faceEdgeIndices(hit) {
     const pk = this.findPickable(hit);

@@ -191,6 +191,29 @@ export class Files {
     if (!r || r.error) throw new Error(r?.error || "nicht lesbar");
     return r.text;
   }
+  /**
+   * L3 (SolidCraft »Edit in place« / »Finish edit«): an Ort und Stelle geändertes verknüpftes Teil in seine Quelldatei
+   * schreiben. Das Bauteil ersetzt dort seinen Stand (eigene id der Quelle bleibt); andere Dokumente der Datei bleiben.
+   * Rückgabe: Pfad der Datei.
+   */
+  async writeLinkedBack(part) {
+    const app = this.app;
+    if (!this.bridge?.saveProject) throw new Error("nur in der Desktop-App");
+    let text = null, path = null, why = "";
+    for (const p of linkCandidates(part.link, app.filePath)) {
+      try { text = await this.readLinkedFile(p); path = p; break; } catch (e) { why = e.message; }
+    }
+    if (text == null) throw new Error(why || "Quelldatei nicht gefunden");
+    const rp = parseProject(text), remote = findLinkedDoc(rp, part.link);
+    if (!remote) throw new Error("Bauteil in der Quelldatei nicht mehr gefunden");
+    const { link, ...content } = JSON.parse(JSON.stringify(part));
+    rp.docs[rp.docs.indexOf(remote)] = { ...content, id: remote.id };
+    const mats = (app.project.materials || []).filter((m) => m?.key === part.material && !(rp.materials || []).some((x) => x.key === m.key));
+    if (mats.length) rp.materials = [...(rp.materials || []), ...mats];
+    const r = await this.bridge.saveProject({ path, text: serializeProject(rp), backups: app.prefs.get("dateien.sicherungen") });
+    if (!r?.path) throw new Error("Speichern abgebrochen");
+    return r.path;
+  }
   /** .wcad-Datei wählen → { path, text } oder null */
   async pickProjectFile() {
     if (this.bridge) {

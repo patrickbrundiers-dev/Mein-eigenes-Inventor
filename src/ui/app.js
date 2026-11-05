@@ -142,8 +142,12 @@ export class App {
     const prev = this.activeDoc();
     if (prev && prev.id !== id && (this.mode === "part" || this.mode === "assembly")) this.docViews.set(prev.id, this.viewer.viewState());
     if (!this.openIds.includes(id)) this.openIds.push(id);
+    // SolidCraft: »Dialoge und Werkzeuge beim Wechsel zwischen Konstruktionen offen lassen« – gewähltes Feature je Dokument merken
+    this.docSel = this.docSel || new Map();
+    if (prev && prev.id !== id && this.sel?.type === "feature") this.docSel.set(prev.id, this.sel.id); else if (prev && prev.id !== id) this.docSel.delete(prev.id);
+    const keepSel = this.prefs.get("oberflaeche.dialogeOffen") && this.docSel.get(id);
     this.activeId = id;
-    this.sel = null;
+    this.sel = keepSel && d.features?.some((f) => f.id === keepSel) ? { type: "feature", id: keepSel } : null;
     this.selHits = [];
     this.pick = null;
     this.endMeasure();
@@ -425,7 +429,7 @@ export class App {
     this.dirty = false;
     this.undoStack = [];
     this.redoStack = [];
-    if (this.context) this.leaveContext({ reopen: false });
+    if (this.context) this.leaveContext({ reopen: false, discard: true });
     this.results.clear();
     this.activeId = null;
     this.openIds = [];
@@ -490,7 +494,8 @@ export class App {
     const redo = this.redoStack;
     this.checkpoint(label);
     // Verknüpfte Bauteile (M24) sind schreibgeschützt – geändert wird in ihrer Datei
-    const linked = opts?.link ? null : this.project.docs.filter((d) => d.kind === "part" && (d.link || d.variant)).map((d) => [d, partContent(d)]);
+    // L3: das an Ort und Stelle bearbeitete verknüpfte Teil ist freigegeben (wird beim Beenden in seine Datei geschrieben)
+    const linked = opts?.link ? null : this.project.docs.filter((d) => d.kind === "part" && (d.link || d.variant) && d.id !== this.context?.linkEdit?.id).map((d) => [d, partContent(d)]);
     try {
       fn();
       const hit = linked?.find(([d, before]) => this.project.docs.includes(d) && partContent(d) !== before);
@@ -518,6 +523,7 @@ export class App {
   /** Verknüpftes Bauteil (M24)? Dann Hinweis und true – Skizzen/Features dort nur in der Quelldatei */
   linkedReadOnly(part) {
     if (part?.kind !== "part" || !(part.link || part.variant)) return false;
+    if (part.link && this.context?.linkEdit?.id === part.id) return false;
     toast(linkedMessage(part, (id) => this.doc(id)), { kind: "err", timeout: 6000 });
     return true;
   }
@@ -633,13 +639,25 @@ export class App {
     const asm = this.doc(asmId);
     const scene = asm && contextScene(asm, compId, (id) => this.doc(id));
     if (!scene) return toast("Nur Bauteile der obersten Ebene lassen sich im Kontext bearbeiten", { kind: "err" });
-    this.context = { asm: asmId, comp: compId, part: scene.part.id, ghosts: true, label: contextLabel(asm, compId, (id) => this.doc(id)) };
+    // L3 (SolidCraft »Edit in place«): ein verknüpftes Teil wird hier bearbeitet und beim Beenden in seine Datei geschrieben
+    const linkEdit = scene.part.link && !scene.part.variant ? { id: scene.part.id, before: partContent(scene.part) } : null;
+    if (linkEdit && !this.files.bridge?.readLinked) return toast("Verknüpfte Teile lassen sich nur in der Desktop-App an Ort und Stelle bearbeiten", { kind: "err" });
+    this.context = { asm: asmId, comp: compId, part: scene.part.id, ghosts: true, label: contextLabel(asm, compId, (id) => this.doc(id)), linkEdit };
     this.openDoc(scene.part.id);
+    if (linkEdit) toast(`»${scene.part.name}« ist verknüpft: Änderungen werden beim Beenden in ${scene.part.link.path.split(/[\\/]/).pop()} gespeichert.`, { timeout: 7000 });
   }
   /** Zurück zur Baugruppe (reopen) oder nur die Nachbarteile wegräumen */
-  leaveContext({ reopen = true } = {}) {
+  leaveContext({ reopen = true, discard = false } = {}) {
     const ctx = this.context;
     this.context = null;
+    // L3: geändertes verknüpftes Teil in seine Quelldatei schreiben (FinishEdit)
+    const part = ctx?.linkEdit && this.doc(ctx.linkEdit.id);
+    if (part && !discard && partContent(part) !== ctx.linkEdit.before) {
+      this.files.writeLinkedBack(part).then((file) => {
+        this.edit("Verknüpfung gespeichert", () => { part.link = { ...part.link, time: new Date().toISOString() }; }, { link: true, rebuild: false });
+        toast(`Gespeichert in ${file.split(/[\\/]/).pop()}`, { kind: "ok" });
+      }).catch((e) => toast(`Quelldatei nicht geschrieben: ${e.message} – die Änderung steht im Projekt, die Verknüpfung zeigt sie als abweichend`, { kind: "err", timeout: 9000 }));
+    }
     this.ghostsShown = null;
     this.viewer.setGhosts([]);
     if (reopen && ctx && this.doc(ctx.asm)) this.openDoc(ctx.asm);
@@ -682,6 +700,8 @@ export class App {
       this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35, material: part.material, finish: part.finish });
     } else this.viewer.showPart(res.bodies, { color: this.partColor(part), material: part.material, finish: part.finish });
     if (this.context?.part === part.id) this.showContextGhosts();
+    // SolidCraft: Auflagefläche hervorheben, wenn das Bauteil für den Druck hingelegt ist
+    this.viewer.showBedFaces(this.mode !== "sketch" && this.prefs.get("allgemein.auflageHervorheben") !== false && part.features.some((f, i) => f.type === "auflage" && !f.suppressed && i < nAct));
     this.showSketches3D();
     // Flächen prüfen (E4) läuft weiter: nach dem Neuaufbau wieder anwenden
     if (this.surfaceCheck && this.mode !== "sketch") reapplySurfaceCheck(this);
@@ -1483,7 +1503,7 @@ export class App {
   /** Benutzereinstellungen anwenden. Ändert nie das Modell, nur Anzeige und Bedienung. */
   applyPrefs(keys) {
     const p = this.prefs;
-    if (!keys || keys.some((k) => k === "darstellung.schema" || k === "darstellung.eigenerHintergrund" || k === "darstellung.hintergrund")) this.applyTheme();
+    if (!keys || keys.some((k) => k === "darstellung.schema" || k === "darstellung.eigenerHintergrund" || k === "darstellung.hintergrund" || k === "darstellung.eigenerAkzent" || k === "darstellung.akzent")) this.applyTheme();
     {
       // Runde 2, Etappe 2: Meldungen, Statusleiste, Navigationsleiste, Dialogknöpfe, Farbsehschwäche als Attribute am Wurzelelement
       const d = document.documentElement.dataset;
@@ -1504,6 +1524,7 @@ export class App {
     }
     if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
     if (keys?.includes("oberflaeche.verlauf")) this.verlauf.render();
+    if (keys?.includes("allgemein.auflageHervorheben") && this.activeDoc()?.kind === "part") this.rebuild();
     if (keys?.includes("oberflaeche.schnellmessung")) this.updateQuickMeasure();
     if (keys?.some((k) => k.startsWith("baum."))) this.tree.render();
     if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
@@ -1555,6 +1576,8 @@ export class App {
     for (const k of this.themeKeys || []) root.style.removeProperty("--" + k);
     const vars = theme ? themeVars(theme) : {};
     if (this.prefs.get("darstellung.eigenerHintergrund")) { const c = this.prefs.get("darstellung.hintergrund"); vars["stage-a"] = c; vars["stage-b"] = c; }
+    // SolidCraft: eigene Akzentfarbe über dem Thema (Knöpfe, Auswahl im Menüband, Fokus)
+    if (this.prefs.get("darstellung.eigenerAkzent")) { const c = this.prefs.get("darstellung.akzent"); vars.dye = c; vars["dye-soft"] = `color-mix(in srgb, ${c} 22%, ${dark ? "#1c1f24" : "#ffffff"})`; }
     for (const [k, v] of Object.entries(vars)) root.style.setProperty("--" + k, v);
     this.themeKeys = Object.keys(vars);
     root.dataset.colortheme = theme?.id || mode;
