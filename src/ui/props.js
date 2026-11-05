@@ -1534,8 +1534,8 @@ export class Props {
           this.opSeg(f),
           this.seg("Aufstellen", [["", "wie Datei"], ["y-oben", "Y oben → Z oben"], ["y-unten", "Y unten"], ["kopf", "Kopfüber"]], f.aufstellen || "", (v) => this.set(f, "aufstellen", v || undefined, "Aufstellen")),
           f.format === "stl" ? this.check("Netz in Volumenkörper wandeln", !!f.convert, (v) => this.set(f, "convert", v, "Netz konvertieren")) : null,
-          f.format === "stl" && f.convert ? this.check("Ebene Dreiecke zu Flächen zusammenfassen", f.unify !== false, (v) => this.set(f, "unify", v, "Netz konvertieren")) : null,
-          f.format === "stl" ? h("p", { class: "hint" }, "Netz konvertieren: Dreiecke werden genäht und zu einem Volumenkörper geschlossen; danach gehen Bohrung, Rundung und Boolesche Operationen.") : null,
+          (f.format === "stl" && f.convert) || f.format === "obj" ? this.check("Ebene Dreiecke zu Flächen zusammenfassen", f.unify !== false, (v) => this.set(f, "unify", v, "Netz konvertieren")) : null,
+          f.format === "stl" || f.format === "obj" ? h("p", { class: "hint" }, `Netz konvertieren${f.format === "obj" ? " (OBJ immer)" : ""}: Dreiecke werden genäht und zu einem Volumenkörper geschlossen; danach gehen Bohrung, Rundung, Boolesche Operationen und STEP-Export. Ein Netz mit Löchern bleibt eine Fläche.`) : null,
           h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.replaceImport(f) }, "Andere Datei…"))));
         break;
     }

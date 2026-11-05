@@ -1084,8 +1084,8 @@ export class Files {
 
   // ---------- Import ----------
   async pickStep() {
-    if (this.bridge) { const r = await this.bridge.openFile({ filters: [{ name: "STEP / STL", extensions: ["step", "stp", "stl"] }] }); return r && (await this.sizeOk(r.name, (r.data?.length || 0) * (r.binary ? 0.75 : 1), "dateien.maxImportMB")) ? r : null; }
-    const f = await pickFile(".step,.stp,.stl");
+    if (this.bridge) { const r = await this.bridge.openFile({ filters: [{ name: "STEP / STL / OBJ", extensions: ["step", "stp", "stl", "obj"] }] }); return r && (await this.sizeOk(r.name, (r.data?.length || 0) * (r.binary ? 0.75 : 1), "dateien.maxImportMB")) ? r : null; }
+    const f = await pickFile(".step,.stp,.stl,.obj");
     if (!f) return null;
     if (!(await this.sizeOk(f.name, f.size, "dateien.maxImportMB"))) return null;
     const isStl = /\.stl$/i.test(f.name);
@@ -1158,7 +1158,7 @@ export class Files {
   async importStepAsPart() {
     const f = await this.pickStep();
     if (!f) return;
-    const p = this.app.withPartDefaults(newPart(f.name.replace(/\.(step|stp|stl)$/i, "")));
+    const p = this.app.withPartDefaults(newPart(f.name.replace(/\.(step|stp|stl|obj)$/i, "")));
     const feat = importFeature(f);
     this.importUpright(feat);
     p.features.push(feat);
@@ -1182,8 +1182,8 @@ export class Files {
 }
 
 function importFeature(f) {
-  const isStl = /\.stl$/i.test(f.name);
-  return { id: uid("f"), type: "import", name: "Import " + f.name, fileName: f.name, format: isStl ? "stl" : "step", data: f.data, op: "new", ...(isStl ? { convert: true } : {}) };
+  const isStl = /\.stl$/i.test(f.name), isObj = /\.obj$/i.test(f.name);
+  return { id: uid("f"), type: "import", name: "Import " + f.name, fileName: f.name, format: isStl ? "stl" : isObj ? "obj" : "step", data: f.data, op: "new", ...(isStl || isObj ? { convert: true } : {}) };
 }
 function pickFile(accept) {
   return new Promise((res) => {

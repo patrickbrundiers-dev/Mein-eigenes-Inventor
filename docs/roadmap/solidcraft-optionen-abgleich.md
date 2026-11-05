@@ -251,3 +251,4 @@ Stand: 05.11.2026, PR #204. Grundlage ist das Inventar aus Handbuch und Quellcod
 | L11 | Stücklistentyp untrennbar/Kaufteil, Unterteile unter Schraube | Stücklistenstruktur Untrennbar / Kaufteil; Scheiben und Muttern einer Garnitur als Unterpositionen 3.1, 3.2 (abschaltbar im Stücklisten-Dialog) | neu eingebaut |
 | L12 | 3MF je Komponente ein Objekt, an Slicer senden mit Auswahl | Dialog: je Komponente / je Körper / alles ein Objekt, Komponenten wählen, Slicer wählen; Dateien → 3MF / Slicer: Objekte | neu eingebaut |
 | – | Export einzelner Körper | STEP, IGES, STL: ist etwas gewählt, fragt der Export »Nur Auswahl« oder »Alles« | neu eingebaut |
+| – | Netz (STL/OBJ) in Volumenkörper | Importieren nimmt STEP, STL und OBJ; STL/OBJ werden genäht und zu einem Volumenkörper geschlossen, ebene Dreiecke zu Flächen zusammengefasst; Netz mit Löchern bleibt Fläche mit Warnung | neu eingebaut |

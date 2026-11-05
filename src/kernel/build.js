@@ -2,7 +2,7 @@
 // Wird im Web-Worker (App) und in Node (Tests) verwendet: createKernel(replicadModul)
 
 import { plasticWarnings } from "../core/kunststoff.js";
-import { parseStl } from "../core/stl.js";
+import { parseStl, parseObj } from "../core/stl.js";
 import { installFastBooleans, cutMany } from "./bool.js";
 import { evaluate, resolveParams } from "../core/expr.js";
 import { solveSketch } from "../core/solver.js";
@@ -2721,12 +2721,16 @@ export function createKernel(R) {
             if (!f.data) throw new Error("Keine Datei geladen");
             let shape;
             // Netz konvertieren (SolidCraft-Abgleich E5): Dreiecke nähen, Volumenkörper bilden, ebene Dreiecke zusammenfassen
+            const mesh = f.format === "stl" || f.format === "obj";
             if (f.format === "stl" && !f.convert) shape = await R.importSTL(new Blob([base64ToBytes(f.data)]));
-            else if (f.format !== "stl") shape = await R.importSTEP(new Blob([f.data]));
-            if (f.format === "stl" && f.convert) {
-              const r = meshToSolid(parseStl(base64ToBytes(f.data)), { unify: f.unify !== false });
+            else if (!mesh) shape = await R.importSTEP(new Blob([f.data]));
+            // OBJ wird immer genäht (OpenCascade liest OBJ nicht direkt); »convert« aus = ohne Volumenkörper-Prüfung wie STL
+            if ((f.format === "stl" && f.convert) || f.format === "obj") {
+              const m = f.format === "obj" ? parseObj(f.data) : parseStl(base64ToBytes(f.data));
+              const r = meshToSolid(m, { unify: f.unify !== false });
               shape = r.shape;
-              st.info = `Netz → ${r.solid ? "Volumenkörper" : "Fläche (nicht geschlossen)"}, ${r.faces} Flächen${r.before > r.faces ? ` (aus ${r.before} Dreiecken)` : ""}`;
+              st.info = `Netz → ${r.solid ? "Volumenkörper" : "Fläche (nicht geschlossen)"}, ${r.faces} Flächen${r.before > r.faces ? ` (aus ${r.before} Dreiecken)` : ""}${m.objects > 1 ? `, ${m.objects} Objekte` : ""}`;
+              if (!r.solid) st.warning = `Netz ist nicht geschlossen (${r.free || "einige"} offene Kanten) – nur eine Fläche, kein Volumenkörper`;
             }
             // Aufstellen (SolidCraft-Abgleich W8): Modelle mit Y nach oben um X drehen, damit Z oben ist
             if (f.aufstellen === "y-oben") shape = shape.rotate(90, [0, 0, 0], [1, 0, 0]);
@@ -3659,8 +3663,10 @@ export function createKernel(R) {
     if (!added) throw new Error("Aus dem Netz ließ sich keine Fläche bilden");
     sew.Perform(new oc.Message_ProgressRange());
     let res = R.cast(sew.SewedShape()), solid = false;
+    // freie Kanten = Löcher im Netz: dann kein Volumenkörper (makeSolid würde sonst ein ungültiges Volumen liefern)
+    const free = sew.NbFreeEdges();
     sew.delete();
-    try { const so = R.makeSolid([res]); if (Math.abs(R.measureVolume(so)) > 1e-6) { res = so; solid = true; } } catch { /* offen */ }
+    if (!free) try { const so = R.makeSolid([res]); if (Math.abs(R.measureVolume(so)) > 1e-6) { res = so; solid = true; } } catch { /* offen */ }
     if (unify) {
       try {
         const u = new oc.ShapeUpgrade_UnifySameDomain(res.wrapped, true, true, false);
@@ -3669,7 +3675,7 @@ export function createKernel(R) {
         u.delete();
       } catch { /* bleibt in Dreiecken */ }
     }
-    return { shape: res, solid, before, faces: res.faces.length };
+    return { shape: res, solid, before, faces: res.faces.length, free };
   }
 
   // ---------- Flächen prüfen (SolidCraft-Abgleich E4) ----------

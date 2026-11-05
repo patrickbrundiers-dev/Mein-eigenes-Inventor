@@ -464,7 +464,7 @@ export class Ribbon {
         { id: "verwalten", label: "Verwalten", groups: [
           { label: "Parameter", buttons: [B("params", "Parameter", "params"), B("variants", "Variantentabelle", "table")] },
           { label: "Bibliothek", buttons: [B("libSave", "In Bibliothek ablegen", "save", { run: () => saveToLibrary(app) }), B("libBrowse", "Teilebibliothek", "open", { run: () => libraryDialog(app) })] },
-          { label: "Einfügen", buttons: [B("importStep", "STEP einfügen", "import"), B("abgeleitet", "Abgeleitetes Bauteil", "derive"), B("punktwolke", "Punktwolke einfügen", "point", { iconOnly: true })] },
+          { label: "Einfügen", buttons: [B("importStep", "Importieren", "import"), B("abgeleitet", "Abgeleitetes Bauteil", "derive"), B("punktwolke", "Punktwolke einfügen", "point", { iconOnly: true })] },
           { label: "Automatisierung", buttons: [B("rules", "Regeln", "rules"), B("macros", "Makros", "macro")] },
           { label: "iFeature", buttons: [B("ifeatExtract", "iFeature erstellen", "ifeature"), B("ifeatInsert", "iFeature einfügen", "ifeature")] },
           { label: "Aktualisieren", buttons: [B("rebuildNow", "Neu berechnen", "update", { on: !!app.stale, run: () => app.rebuildNow() }), B("problems", "Problemliste", "warn", { run: () => problemsDialog(app) })] },
@@ -953,7 +953,7 @@ export class Ribbon {
       item("assembly", "Neue Baugruppe", () => app.newAssembly()),
       item("drawing", "Neue Zeichnung", () => app.newDrawing(), null, !app.project.docs.some((d) => d.kind !== "drawing")),
       h("hr"),
-      item("import", "STEP als Bauteil importieren…", () => f.importStepAsPart()),
+      item("import", "STEP, STL oder OBJ als Bauteil importieren…", () => f.importStepAsPart()),
       item("steel", "Beispielprojekt öffnen", () => app.openExample()),
       h("hr"),
       item("search", "Befehl suchen…", () => app.commands.exec("app.search"), this.kbd("app.search")),
