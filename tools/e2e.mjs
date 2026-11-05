@@ -4660,6 +4660,26 @@ try {
       } finally { a.files.saveBinary = orig; }
     });
     step("3MF: je Komponente ein Objekt, Komponenten wählbar", tm.groups === tm.comps && tm.objects === tm.comps - 1, JSON.stringify(tm));
+    // Navigationsleiste anordnen, Trackpad dreht, STEP nur Auswahl
+    await page.locator('.view-tools [data-field="alles"]').dragTo(page.locator('.view-tools [data-field="orbit"]'), { targetPosition: { x: 2, y: 10 } });
+    const nv = await evalApp(async () => {
+      const a = window.__werkcad, v = a.viewer, wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const first = document.querySelector(".view-tools [data-field]")?.dataset.field;
+      a.prefs.set("oberflaeche.navFelder", ""); const reset = document.querySelector(".view-tools [data-field]")?.dataset.field;
+      a.prefs.set("ansicht.trackpadDrehen", true); const p0 = v.camera.position.clone();
+      v.container.dispatchEvent(new WheelEvent("wheel", { deltaX: 40, bubbles: true, cancelable: true, clientX: 500, clientY: 400 })); await wait(100);
+      const turned = v.camera.position.distanceTo(p0) > 1; a.prefs.set("ansicht.trackpadDrehen", false);
+      let got = null; const orig = a.kernel.call, origSave = a.files.saveText;
+      a.kernel.call = async function (n, arg) { if (n === "exportStep") { got = arg.items.length; return "x"; } return orig.call(this, n, arg); };
+      a.files.saveText = async () => true;
+      try {
+        a.sel = { type: "component", id: a.activeDoc().components[0].id };
+        const p = a.files.exportStep(); await wait(300);
+        [...document.querySelectorAll(".dialog footer .btn")].find((b) => b.textContent === "Nur Auswahl")?.click(); await p;
+      } finally { a.kernel.call = orig; a.files.saveText = origSave; a.sel = null; }
+      return { first, reset, turned, got, all: a.files.exportItems().length };
+    });
+    step("Navigationsleiste anordnen, Trackpad dreht, STEP nur Auswahl", nv.first === "alles" && nv.reset === "orbit" && nv.turned && nv.got >= 1 && nv.got < nv.all, JSON.stringify(nv));
   }
   // SolidCraft-Abgleich E5: Kunststoffteil (Schraubdom mit Rippen an Skizzenpunkten), Regel aus den Einstellungen
   {

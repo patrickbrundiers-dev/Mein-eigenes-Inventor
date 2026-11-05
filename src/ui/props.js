@@ -71,6 +71,7 @@ import { presetFrom, applyPreset, holeDiagramSvg } from "../core/bohrvorlagen.js
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat, canChainTo } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc, garniturGroups } from "../core/subasm.js";
+import { nearestCollisions } from "../core/kollisionsliste.js";
 import { linkedPart, asmParamValues } from "../core/baugruppenparameter.js";
 import { pushParamsDialog, invalidateLinked, explosionDialog, positionsSection, explosionSection, asmParamsSection } from "./darstellungen.js";
 import { materialOf, materialList } from "../core/materials.js";
@@ -2896,15 +2897,16 @@ export class Props {
     if (comps.length < 2) return toast("Mindestens zwei sichtbare Komponenten nötig");
     // Optionen wie SolidCraft »Clearance«: Mindestvolumen, Mindestabstand, nur gegen gewählte Komponenten
     if (opts === "dialog") {
-      const last = app.collisionOpts || { tol: 1, clearance: 0, against: [] };
-      const tolIn = h("input", { class: "inp", value: fmtNum(last.tol, 2) }), clIn = h("input", { class: "inp", value: fmtNum(last.clearance, 2) });
+      const last = app.collisionOpts || { tol: 1, clearance: 0, against: [], nearest: 0 };
+      const tolIn = h("input", { class: "inp", value: fmtNum(last.tol, 2) }), clIn = h("input", { class: "inp", value: fmtNum(last.clearance, 2) }), nIn = h("input", { class: "inp coll-nearest", value: String(last.nearest || 0) });
       const checks = comps.map((c) => { const i = h("input", { type: "checkbox", checked: last.against.includes(c.id) ? true : undefined }); return [c.id, i, h("label", { class: "check" }, i, " ", c.name || app.doc(c.part)?.name || c.id)]; });
       const num = (el, d) => { const x = Number(String(el.value).replace(",", ".")); return Number.isFinite(x) && x >= 0 ? x : d; };
       return modal({ title: "Kollisionsprüfung", width: "460px", body: h("div", {},
         h("div", { class: "field" }, h("label", {}, "Kleinere Überschneidung zählt als Berührung (mm³)"), tolIn),
         h("div", { class: "field" }, h("label", {}, "Auch Abstände unter (mm, 0 = aus)"), clIn),
+        h("div", { class: "field" }, h("label", {}, "Je Komponente nur die n nächsten (0 = alle)"), nIn),
         h("div", { class: "field" }, h("label", {}, "Nur gegen (keine = alle mit allen)"), h("div", { class: "checks" }, ...checks.map((x) => x[2])))),
-        buttons: [{ label: "Abbrechen" }, { label: "Prüfen", primary: true, run: () => { app.collisionOpts = { tol: num(tolIn, 1), clearance: num(clIn, 0), against: checks.filter((x) => x[1].checked).map((x) => x[0]) }; this.collisionDialog(app.collisionOpts); } }] });
+        buttons: [{ label: "Abbrechen" }, { label: "Prüfen", primary: true, run: () => { app.collisionOpts = { tol: num(tolIn, 1), clearance: num(clIn, 0), nearest: Math.round(num(nIn, 0)), against: checks.filter((x) => x[1].checked).map((x) => x[0]) }; this.collisionDialog(app.collisionOpts); } }] });
     }
     opts = opts || app.collisionOpts || { tol: 1, clearance: 0, against: [] };
     // Unterbaugruppen: alle ihre Bauteile mit dem Schlüssel der Komponente (innere Kollisionen zählen hier nicht)
@@ -2915,6 +2917,8 @@ export class Props {
     try { res = (await app.kernel.call("collisions", { items, tol: opts.tol ?? 1, clearance: opts.clearance ?? 0, against: opts.against?.length ? opts.against : null })).filter((r) => r.a !== r.b); }
     catch (e) { busy.remove(); return toast("Kollisionsprüfung fehlgeschlagen: " + e.message, { kind: "err" }); }
     busy.remove();
+    // SolidCraft »n nächste«: je Komponente nur die n schwersten Treffer (größte Überschneidung, dann kleinster Abstand)
+    if (opts.nearest > 0) res = nearestCollisions(res, opts.nearest);
     app.collisions = res;
     const show = (r) => app.viewer.setSelectionHits([{ kind: "group", key: "comp:" + r.a }, { kind: "group", key: "comp:" + r.b }]);
     if (res[0]) show(res[0]);

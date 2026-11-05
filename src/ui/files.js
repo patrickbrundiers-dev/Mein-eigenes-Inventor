@@ -368,8 +368,30 @@ export class Files {
     if (!d) return null;
     if (d.kind === "part") return [{ part: d, name: d.name }];
     // alle Komponenten, auch ausgeblendete – passend zu Stück- und Zuschnittliste
-    if (d.kind === "assembly") return flattenAssembly(d, (id) => app.doc(id), { includeHidden: true }).map((o) => ({ part: o.part, ...decomposePlacement(o.matrix), name: o.path.join(" / ") }));
+    if (d.kind === "assembly") return flattenAssembly(d, (id) => app.doc(id), { includeHidden: true }).map((o) => ({ part: o.part, ...decomposePlacement(o.matrix), name: o.path.join(" / "), top: o.top.id }));
     return null;
+  }
+  /**
+   * Nur die Auswahl exportieren (SolidCraft: STEP einzelner Körper): Ist etwas gewählt (Komponenten in der Baugruppe,
+   * Körper im Bauteil), fragt der Export »Nur Auswahl« oder »Alles«. Rückgabe items | null (abgebrochen).
+   */
+  async selectedItems(items, what = "STEP") {
+    const app = this.app, d = app.activeDoc(), hits = app.selHits || [];
+    let only = null, n = 0;
+    if (d.kind === "assembly") {
+      const ids = new Set(hits.map((x) => String(x.key || "")).filter((k) => k.startsWith("comp:")).map((k) => k.slice(5)));
+      if (app.sel?.type === "component" && app.sel.id) ids.add(app.sel.id);
+      const sub = items.filter((it) => ids.has(it.top));
+      if (sub.length && sub.length < items.length) { only = sub; n = ids.size; }
+    } else if (d.kind === "part") {
+      const all = app.results.get(d.id)?.bodies?.length || 0;
+      const idx = [...new Set(hits.filter((x) => Number.isInteger(x.body)).map((x) => x.body))];
+      if (idx.length && idx.length < all) { only = items.map((it) => ({ ...it, bodies: idx })); n = idx.length; }
+    }
+    if (!only) return items;
+    const v = await choiceDialog(`${what}-Export`, `${n} ${d.kind === "assembly" ? (n === 1 ? "Komponente" : "Komponenten") : n === 1 ? "Körper" : "Körper"} gewählt. Nur die Auswahl oder alles exportieren?`,
+      [{ label: "Abbrechen", value: null }, { label: "Alles", value: "alles" }, { label: "Nur Auswahl", value: "auswahl", primary: true }]);
+    return v === "auswahl" ? only : v === "alles" ? items : null;
   }
   async withBusy(label, fn) {
     const t = toast(label + " …", { timeout: 0 });
@@ -378,8 +400,10 @@ export class Files {
 
   // ---------- Export ----------
   async exportStep() {
-    const items = this.exportItems();
+    let items = this.exportItems();
     if (!items?.length) return toast("Nichts zu exportieren");
+    items = await this.selectedItems(items);
+    if (!items) return;
     const d = this.app.activeDoc();
     await this.withBusy("STEP-Export", async () => {
       const text = await this.app.kernel.call("exportStep", { items, simplify: simplifyOf(d) });
@@ -388,8 +412,10 @@ export class Files {
   }
   /** IGES 5.3: getrimmte NURBS-Flächen (Werkzeuge Stufe 49), Baugruppe mit allen Komponenten an ihrer Lage */
   async exportIges() {
-    const items = this.exportItems();
+    let items = this.exportItems();
     if (!items?.length) return toast("Nichts zu exportieren");
+    items = await this.selectedItems(items, "IGES");
+    if (!items) return;
     const d = this.app.activeDoc();
     await this.withBusy("IGES-Export", async () => {
       const name = safeName(d.number || d.name) + ".igs";
@@ -415,8 +441,10 @@ export class Files {
     });
   }
   async exportStl() {
-    const items = this.exportItems();
+    let items = this.exportItems();
     if (!items?.length) return toast("Nichts zu exportieren");
+    items = await this.selectedItems(items, "STL");
+    if (!items) return;
     const d = this.app.activeDoc();
     await this.withBusy("STL-Export", async () => {
       const acc = Number(this.app.prefs.get("dateien.netzgenauigkeit")) || 0;

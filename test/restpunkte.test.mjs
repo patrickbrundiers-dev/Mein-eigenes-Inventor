@@ -96,3 +96,13 @@ test("L12: 3MF-Objekte je Komponente, Auswahl", async () => {
   const z = M.write3mf(per, { title: "x" });
   assert.ok(z.length > 100);
 });
+
+test("Kollision: je Komponente nur die n nächsten", async () => {
+  const { nearestCollisions } = await import("../src/core/kollisionsliste.js");
+  const res = [{ a: "A", b: "B", volume: 0, gap: 3 }, { a: "A", b: "C", volume: 500 }, { a: "A", b: "D", volume: 0, gap: 1 }, { a: "E", b: "F", volume: 0, gap: 9 }];
+  const r = nearestCollisions(res, 1);
+  assert.deepEqual(r.map((x) => x.b), ["C", "D", "B", "F"].filter((b) => r.some((x) => x.b === b)));
+  assert.equal(r[0].b, "C");
+  assert.ok(r.some((x) => x.b === "F"));
+  assert.equal(nearestCollisions(res, 0).length, 4);
+});

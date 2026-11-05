@@ -436,9 +436,16 @@ export class Viewer {
     };
     // Trackpad: Scrollen ohne Strg schwenkt, Kneifen (Strg + Rad) zoomt
     this.container.addEventListener("wheel", (e) => {
-      if (!this.trackpadPan || e.ctrlKey || e.metaKey || !c.enabled) return;
+      if (!(this.trackpadPan || this.trackpadRotate) || e.ctrlKey || e.metaKey || !c.enabled) return;
       if (!pan) return;
       e.preventDefault(); e.stopImmediatePropagation();
+      if (this.trackpadRotate && !e.shiftKey && c._rotateLeft) {
+        // 2π je Höhe der Ansicht, wie Ziehen mit der Maus
+        const k = (2 * Math.PI) / (this.container.clientHeight || 600) * (this.trackpadInvert ? -1 : 1);
+        c._rotateLeft(e.deltaX * k); c._rotateUp(e.deltaY * k);
+        c.update();
+        return;
+      }
       pan(-e.deltaX * (this.panInvertX ? -1 : 1), -e.deltaY * (this.panInvertY ? -1 : 1));
       c.update();
     }, { capture: true, passive: false });
@@ -506,6 +513,8 @@ export class Viewer {
     this.panInvertY = !!v["ansicht.schwenkenUmkehrenV"];
     this.smoothZoom = !!v["ansicht.sanftZoomen"];
     this.trackpadPan = !!v["ansicht.trackpadSchwenken"];
+    this.trackpadRotate = !!v["ansicht.trackpadDrehen"];
+    this.trackpadInvert = !!v["ansicht.trackpadUmkehren"];
     this.zoomStop = !!v["ansicht.zoomStopp"];
     const ss = Number(v["grafik.supersampling"]) || 1;
     const ratio = Math.min(4, Math.min(2, window.devicePixelRatio || 1) * ss);

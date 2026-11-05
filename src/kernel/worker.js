@@ -82,6 +82,7 @@ async function placedShapes(items, simplify = null, count = { drop: 0, box: 0 })
     const res = await getBuilt(it.part);
     const base = it.name || it.part.number || it.part.name || "Bauteil";
     res.bodies.forEach((b, i) => {
+      if (it.bodies && !it.bodies.includes(i)) return; // nur gewählte Körper (STEP einzelner Körper)
       const shape = simplified(b, simplify, count);
       if (!shape) return;
       out.push({ shape: K.placed(shape, it.pos || [0, 0, 0], it.rot || [0, 0, 0]), name: bodyName(base, b, i, res.bodies.length), color: it.color || partColor(it.part), body: b });

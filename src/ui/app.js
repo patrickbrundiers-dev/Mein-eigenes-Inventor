@@ -1503,6 +1503,7 @@ export class App {
   /** Benutzereinstellungen anwenden. Ändert nie das Modell, nur Anzeige und Bedienung. */
   applyPrefs(keys) {
     const p = this.prefs;
+    if (keys?.includes("oberflaeche.navFelder")) this.arrangeViewTools?.();
     if (!keys || keys.some((k) => k === "darstellung.schema" || k === "darstellung.eigenerHintergrund" || k === "darstellung.hintergrund" || k === "darstellung.eigenerAkzent" || k === "darstellung.akzent")) this.applyTheme();
     {
       // Runde 2, Etappe 2: Meldungen, Statusleiste, Navigationsleiste, Dialogknöpfe, Farbsehschwäche als Attribute am Wurzelelement
@@ -1689,18 +1690,39 @@ export class App {
     const syncNav = () => { for (const b of this.viewTools.querySelectorAll("[data-nav]")) b.classList.toggle("on", b.dataset.nav === this.viewer.navTool); };
     this.viewer.onNavTool = syncNav;
     const views = (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu(r.left, r.top - 4, [["iso", "Isometrisch", "viewIso"], ["front", "Vorne", "viewFront"], ["back", "Hinten", "viewFront"], ["left", "Links", "viewRight"], ["right", "Rechts", "viewRight"], ["top", "Oben", "viewTop"], ["bottom", "Unten", "viewTop"]].map(([v, label, ic]) => ({ label, icon: ic, run: () => this.viewer.setView(v) }))); };
-    this.viewTools = h("div", { class: "view-tools", role: "toolbar", "aria-label": "Ansicht" },
-      nav("orbit", "orbit", "Drehen"), nav("pan", "pan", "Verschieben"), nav("zoom", "zoom", "Zoomen"),
-      h("span", { class: "vt-sep" }),
-      mk("viewIso", "Iso", () => this.viewer.setView("iso"), "Isometrische Ansicht"),
-      mk("viewFront", "Vorne", () => this.viewer.setView("front"), "Ansicht vorne"),
-      mk("viewTop", "Oben", () => this.viewer.setView("top"), "Ansicht oben"),
-      mk("viewRight", "Rechts", () => this.viewer.setView("right"), "Ansicht rechts"),
-      mk("home", "Ansichten", views, "Alle Standardansichten"),
-      h("span", { class: "vt-sep" }),
-      mk("fit", "Alles", () => this.viewer.fit(), "Alles zeigen (F6)"),
-      mk("search", "Auswahl", () => this.zoomToSelection(), "Auswahl zeigen (Umschalt+F6)"),
-      this.clipBar = h("span", { class: "clip-bar", hidden: true }));
+    // Felder per Ziehen anordnen (SolidCraft »Navigationsleiste anpassen«), Reihenfolge in oberflaeche.navFelder
+    const fields = [["orbit", nav("orbit", "orbit", "Drehen")], ["pan", nav("pan", "pan", "Verschieben")], ["zoom", nav("zoom", "zoom", "Zoomen")],
+      ["sep1", h("span", { class: "vt-sep" })],
+      ["iso", mk("viewIso", "Iso", () => this.viewer.setView("iso"), "Isometrische Ansicht")],
+      ["vorne", mk("viewFront", "Vorne", () => this.viewer.setView("front"), "Ansicht vorne")],
+      ["oben", mk("viewTop", "Oben", () => this.viewer.setView("top"), "Ansicht oben")],
+      ["rechts", mk("viewRight", "Rechts", () => this.viewer.setView("right"), "Ansicht rechts")],
+      ["ansichten", mk("home", "Ansichten", views, "Alle Standardansichten")],
+      ["sep2", h("span", { class: "vt-sep" })],
+      ["alles", mk("fit", "Alles", () => this.viewer.fit(), "Alles zeigen (F6)")],
+      ["auswahl", mk("search", "Auswahl", () => this.zoomToSelection(), "Auswahl zeigen (Umschalt+F6)")]];
+    const byId = new Map(fields);
+    for (const [id, el] of fields) { el.dataset.field = id; el.draggable = true; }
+    const order = () => {
+      const want = String(this.prefs.get("oberflaeche.navFelder") || "").split(",").map((x) => x.trim()).filter((x) => byId.has(x));
+      return [...new Set([...want, ...fields.map((f) => f[0])])];
+    };
+    this.viewTools = h("div", { class: "view-tools", role: "toolbar", "aria-label": "Ansicht" }, ...order().map((id) => byId.get(id)), this.clipBar = h("span", { class: "clip-bar", hidden: true }));
+    this.arrangeViewTools = () => { this.viewTools.prepend(...order().map((id) => byId.get(id))); };
+    let dragId = null;
+    this.viewTools.addEventListener("dragstart", (e) => { dragId = e.target.closest?.("[data-field]")?.dataset.field || null; if (dragId) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragId); } });
+    this.viewTools.addEventListener("dragover", (e) => { if (dragId) e.preventDefault(); });
+    this.viewTools.addEventListener("drop", (e) => {
+      const t = e.target.closest?.("[data-field]");
+      if (!dragId || !t || t.dataset.field === dragId) return (dragId = null);
+      e.preventDefault();
+      const r = t.getBoundingClientRect(), after = e.clientX > r.left + r.width / 2;
+      const ids = order().filter((x) => x !== dragId);
+      ids.splice(ids.indexOf(t.dataset.field) + (after ? 1 : 0), 0, dragId);
+      dragId = null;
+      this.prefs.set("oberflaeche.navFelder", ids.join(","));
+      this.arrangeViewTools();
+    });
     this.quickEl = h("div", { class: "quick-measure", role: "status", "aria-label": "Schnellmessung", hidden: true });
     document.getElementById("stage").append(this.viewTools, this.quickEl);
   }
