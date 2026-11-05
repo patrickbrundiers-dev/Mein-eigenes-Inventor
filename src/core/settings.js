@@ -161,6 +161,7 @@ export const SETTINGS = [
   { key: "werkzeuge.bohrvorlagen", cat: "werkzeuge", label: "Bohrungsvorlagen", type: "holepresets", default: [], custom: true, help: "Persönliche Vorlagen für Bohrungen (Gewinde, Ø, Tiefe, Senkung, Bohrgrund); speichern und abrufen im Bohrungsdialog." },
   { key: "werkzeuge.makros", cat: "werkzeuge", label: "Makros", type: "macros", default: [], custom: true, help: "Benannte Befehlsfolgen; anlegen und aufzeichnen über die Befehlssuche (»Makros verwalten«, »Makro aufzeichnen«)." },
   { key: "werkzeuge.kuerzel", cat: "werkzeuge", label: "Tastaturkürzel", type: "keymap", default: {}, custom: true, help: "Abweichungen von der Standardbelegung; Konflikte werden abgelehnt." },
+  { key: "werkzeuge.modelltastenInSkizze", cat: "werkzeuge", label: "Modelltasten aus Skizzen heraus", type: "bool", default: false, help: "In einer Skizze lösen auch Kürzel von Bauteilbefehlen aus (z. B. E für Extrusion): die Skizze wird dann zuerst beendet." },
 
   { key: "fertigung.stange", cat: "fertigung", label: "Max. Stangenlänge", unit: "mm", type: "number", default: 6500, min: 0, max: 20000, help: "Nutzbar ist die Stange minus Endbeschnitt und Greiferrest. 0 = nicht prüfen." },
   { key: "fertigung.endbeschnitt", cat: "fertigung", label: "Endbeschnitt", unit: "mm", type: "number", default: 10, min: 0, max: 2000, help: "Anschnitt am Stangenanfang." },

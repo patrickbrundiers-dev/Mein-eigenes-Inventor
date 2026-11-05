@@ -498,7 +498,7 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .km h4 { margin: 12px 0 6px; }
 .km-table { max-height: 340px; overflow: auto; margin-top: 6px; border: 1px solid var(--steel-2); border-radius: var(--radius-s); }
 .km-group { font: 600 var(--fs-s) var(--din); padding: 6px 8px 2px; background: var(--steel-1); }
-.km-row { display: grid; grid-template-columns: 1fr 150px 64px 64px; gap: 6px; align-items: center; padding: 2px 8px; border-bottom: 1px solid var(--steel-1); }
+.km-row { display: grid; grid-template-columns: 1fr 220px 64px 64px; gap: 6px; align-items: center; padding: 2px 8px; border-bottom: 1px solid var(--steel-1); }
 .km-key { padding: 1px 6px; font-family: var(--din); font-size: var(--fs-s); }
 .km-key.on { border-color: var(--dye); color: var(--dye); }
 /* Profil-Schnelleingabe (Treffer unter dem Feld) */
@@ -1176,3 +1176,5 @@ body.kompakt #props .sec { margin: 0; }
 /* SolidCraft: Seitenleisten durchscheinend */
 :root[data-panels="durchscheinend"] .dock:not(.empty), :root[data-panels="durchscheinend"] .dock .pane-head { background: color-mix(in srgb, var(--steel-0) 74%, transparent); }
 :root[data-panels="durchscheinend"] .dock:not(.empty) { backdrop-filter: blur(12px) saturate(1.2); }
+.km-keys { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.km-keys .km-key { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

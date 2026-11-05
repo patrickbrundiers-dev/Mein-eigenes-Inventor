@@ -9,7 +9,7 @@ import { topologyDialog, performanceDialog, crashReportsDialog } from "./datenwe
 import { surfaceCheckDialog, compareBodiesDialog } from "./flaechenpruefung.js";
 import { t } from "../core/i18n.js";
 import { recordable } from "../core/makros.js";
-import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands } from "../core/commands.js";
+import { COMMANDS, commandDef, comboFromEvent, commandForCombo, effectiveKeymap, keymapConflicts, parseCombo, searchCommands, combosOf } from "../core/commands.js";
 import { pushRecent, orderWithRecent } from "../core/zuletzt.js";
 import { problemsDialog } from "./pruefung.js";
 import { copyDesignDialog, makeIndependent, whereUsedDialog, openDrawingOf } from "./arbeitsablauf.js";
@@ -208,15 +208,18 @@ export class CommandKeys {
     this.update();
   }
   update() { this.map = effectiveKeymap(this.app.prefs.get("werkzeuge.kuerzel")); }
-  label(id) { return this.map[id] || ""; }
+  label(id) { return combosOf(this.map[id]).join(" / "); }
   /** Tastendruck verteilen; true = verarbeitet */
   handle(e, { typing }) {
     const combo = comboFromEvent(e);
     if (!combo) return false;
-    let cmd = commandForCombo(this.map, combo, this.app.mode);
+    const modelFromSketch = !!this.app.prefs.get("werkzeuge.modelltastenInSkizze");
+    let cmd = commandForCombo(this.map, combo, this.app.mode, { modelFromSketch });
     if (!cmd && combo === "Strg+Umschalt+Z") cmd = commandDef("edit.redo"); // gewohnte Zweitbelegung
     if (!cmd) return false;
     if (typing && !cmd.typing) return false;
+    // Bauteilbefehl aus der Skizze heraus: Skizze erst beenden
+    if (this.app.mode === "sketch" && (cmd.scope === "part" || cmd.scope === "3d")) { e?.preventDefault?.(); this.app.finishSketch(true); }
     return this.exec(cmd.id, e);
   }
   exec(id, e) {
@@ -347,7 +350,7 @@ export function keymapEditor(app) {
     render();
     return r.ok;
   };
-  const capture = (c, btn) => {
+  const capture = (c, btn, add = false) => {
     btn.textContent = "Taste drücken … (Esc bricht ab)";
     btn.classList.add("on");
     const onKey = (e) => {
@@ -359,15 +362,17 @@ export function keymapEditor(app) {
       done();
       const p = parseCombo(combo);
       if (!p.ok) { msg.textContent = p.error; render(); return; }
-      const map = effectiveKeymap({ ...user(), [c.id]: p.combo });
+      const cur = combosOf(effectiveKeymap(user())[c.id]);
+      const value = add ? [...cur.filter((x) => x !== p.combo), p.combo].join(";") : p.combo;
+      const map = effectiveKeymap({ ...user(), [c.id]: value });
       const conf = keymapConflicts(map).find((x) => x.ids.includes(c.id));
       if (conf) {
         const other = commandDef(conf.ids.find((i) => i !== c.id));
-        msg.textContent = `»${p.combo}« ist schon »${other.label}« zugeordnet. Erst dort entfernen oder ändern.`;
+        msg.textContent = `»${conf.combo}« ist schon »${other.label}« zugeordnet. Erst dort entfernen oder ändern.`;
         render();
         return;
       }
-      apply({ ...user(), [c.id]: p.combo });
+      apply({ ...user(), [c.id]: value });
     };
     // vor dem Dialog abfangen (Esc/Eingabe sollen ihn nicht schließen)
     const done = () => window.removeEventListener("keydown", onKey, true);
@@ -382,11 +387,14 @@ export function keymapEditor(app) {
     for (const c of list) {
       if (!filter.value && c.group !== group) { group = c.group; rows.push(h("div", { class: "km-group" }, group)); }
       const changed = Object.prototype.hasOwnProperty.call(u, c.id);
-      const btn = h("button", { class: "btn km-key", title: "Klicken und neue Taste drücken" }, map[c.id] || "–");
+      const btn = h("button", { class: "btn km-key", title: "Klicken und neue Taste drücken (ersetzt)" }, combosOf(map[c.id]).join(" / ") || "–");
       btn.addEventListener("click", () => capture(c, btn));
+      // L8: weitere Taste für denselben Befehl
+      const more = h("button", { class: "set-default", title: "Weitere Taste für diesen Befehl", "data-act": "km-add" }, "+ Taste");
+      more.addEventListener("click", () => capture(c, more, true));
       rows.push(h("div", { class: "km-row", "data-cmd": c.id },
         h("span", {}, c.label),
-        btn,
+        h("span", { class: "km-keys" }, btn, more),
         map[c.id] ? h("button", { class: "set-default", title: "Taste entfernen", onclick: () => apply({ ...user(), [c.id]: "" }) }, "entfernen") : h("span"),
         changed ? h("button", { class: "set-default", title: `Standard: ${c.key || "keine Taste"}`, onclick: () => { const n = user(); delete n[c.id]; apply(n); } }, "Standard") : h("span")));
     }
