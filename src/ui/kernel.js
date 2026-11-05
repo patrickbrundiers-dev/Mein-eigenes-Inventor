@@ -109,6 +109,7 @@ export class KernelClient {
     return new Promise((resolve, reject) => {
       const entry = this.latest.get(part.id) || { waiters: [] };
       entry.part = JSON.parse(JSON.stringify(part));
+      if (this.bodyCheck && this.bodyCheck !== "ende") entry.part._koerperpruefung = this.bodyCheck; // Einstellung Körperprüfung
       entry.quality = quality;
       entry.waiters.push({ resolve, reject });
       this.latest.set(part.id, entry);

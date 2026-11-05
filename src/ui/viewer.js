@@ -76,9 +76,11 @@ export class Viewer {
     this.controls.rotateSpeed = 0.9;
     this.controls.zoomSpeed = 1.2;
     this.controls.addEventListener("change", () => this.cameraChanged());
+    this.controls.addEventListener("start", () => { if (this.sketchFrame) this.sketchMoved = true; });
     this.pivotOrbit = true;
     this.rotateButton = 2;
     this.bindPivotOrbit();
+    this.bindNavExtras();
 
     this.root = new THREE.Group();
     this.scene.add(this.root);
@@ -123,6 +125,7 @@ export class Viewer {
     g.material.depthWrite = false;
     g.visible = this.grid ? this.grid.visible : true;
     this.grid = g;
+    this.gridPlane = null;
     this.helpers.add(g);
     this.gridStep = step;
     this.gridSize = size;
@@ -149,6 +152,22 @@ export class Viewer {
     this.cube.add(edges);
     this.cubeScene.add(this.cube);
     this.cubeScene.add(new THREE.AmbientLight(0xffffff, 1));
+    // SolidCraft: Navigator wahlweise als Achsen-Gizmo (Kugeln an ±X/±Y/±Z anklicken)
+    this.axesGizmo = new THREE.Group();
+    this.axesBalls = [];
+    for (const [dir, color] of [[[1, 0, 0], 0xd23b2a], [[0, 1, 0], 0x2e9d4a], [[0, 0, 1], 0x2457b8]]) {
+      const v = new THREE.Vector3(...dir);
+      this.axesGizmo.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([v.clone().multiplyScalar(-1.1), v.clone().multiplyScalar(1.1)]), new THREE.LineBasicMaterial({ color })));
+      for (const sgn of [1, -1]) {
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(sgn > 0 ? 0.32 : 0.22, 20, 14), new THREE.MeshBasicMaterial({ color, transparent: sgn < 0, opacity: sgn < 0 ? 0.45 : 1 }));
+        ball.position.copy(v.clone().multiplyScalar(1.1 * sgn));
+        ball.userData.dir = v.clone().multiplyScalar(sgn);
+        this.axesGizmo.add(ball);
+        this.axesBalls.push(ball);
+      }
+    }
+    this.axesGizmo.visible = false;
+    this.cubeScene.add(this.axesGizmo);
     this.cubeSize = 96;
   }
   resize() {
@@ -178,10 +197,24 @@ export class Viewer {
     this.camera.updateMatrixWorld();
     this.edgeCache = null;
     this.needsRender = true;
+    this.orientGrid();
     // Kopf-Licht und Raster an Zoom anpassen
     for (const fn of this.cameraListeners) fn();
   }
   onCamera(fn) { this.cameraListeners.push(fn); }
+  /** Einstellung »Raster in Seitenansichten aufrecht«: bei Blick entlang X bzw. Y liegt das Raster in der YZ- bzw. XZ-Ebene */
+  orientGrid() {
+    const g = this.grid;
+    if (!g || this.sketchFrame) return;
+    let plane = "xy";
+    if (this.gridSide) {
+      const d = new THREE.Vector3().subVectors(this.controls?.target || new THREE.Vector3(), this.camera.position).normalize();
+      if (Math.abs(d.x) > 0.985) plane = "yz"; else if (Math.abs(d.y) > 0.985) plane = "xz";
+    }
+    if (plane === this.gridPlane) return;
+    this.gridPlane = plane;
+    g.rotation.set(plane === "xy" ? Math.PI / 2 : 0, 0, plane === "yz" ? Math.PI / 2 : 0);
+  }
   /** Dauerdrehen (E6): Ansicht dreht sich um die Hochachse (Z) durch den Drehpunkt; grad je Sekunde, 0 = aus */
   setSpin(degPerSec = 0) {
     this.spin = degPerSec || 0;
@@ -192,6 +225,7 @@ export class Viewer {
     const loop = (now) => {
       requestAnimationFrame(loop);
       if (this.anim) this.stepAnim();
+      if (this.zoomRest) this.stepSmoothZoom();
       if (this.spin) {
         const dt = this.spinT == null ? 0 : Math.min(0.1, (now - this.spinT) / 1000);
         this.spinT = now;
@@ -216,7 +250,9 @@ export class Viewer {
       const s = 60 / this.pixelsPerUnit();
       this.triad.scale.setScalar(s);
       if (this.directGlyph) this.directGlyph.scale.setScalar(70 / this.pixelsPerUnit());
+      const t0 = performance.now();
       r.render(this.scene, this.camera);
+      if (this.showFps) this.updateFps(now, performance.now() - t0);
       this.placeMeasureLabel();
       this.placeHoleNotes();
       // ViewCube
@@ -238,6 +274,14 @@ export class Viewer {
     requestAnimationFrame(loop);
   }
   render() { this.needsRender = true; }
+  /** Bildrate (Runde 2, W7): gezeichnete Bilder der letzten Sekunde und Zeichenzeit des letzten Bildes */
+  updateFps(now, ms) {
+    if (!this.fpsEl) { this.fpsEl = document.createElement("div"); this.fpsEl.className = "fps-meter"; this.container.append(this.fpsEl); }
+    this.fpsEl.hidden = false;
+    (this.fpsT ||= []).push(now);
+    while (this.fpsT.length && now - this.fpsT[0] > 1000) this.fpsT.shift();
+    this.fpsEl.textContent = `${this.fpsT.length} Bilder/s · ${ms.toFixed(1).replace(".", ",")} ms`;
+  }
 
   // ---------- Drehen um den Punkt unter dem Mauszeiger ----------
   bindPivotOrbit() {
@@ -245,7 +289,8 @@ export class Viewer {
     let st = null;
     el.addEventListener("pointerdown", (e) => {
       if (!this.pivotOrbit || e.button !== this.rotateButton || !this.controls.enabled || !this.controls.enableRotate || this.sketchFrame) return;
-      st = { x: e.clientX, y: e.clientY, id: e.pointerId, pivot: this.pivotAt(e.clientX, e.clientY) };
+      const pivot = this.pivotCursor ? this.pivotAt(e.clientX, e.clientY) : this.pivotFixed === "ursprung" ? new THREE.Vector3() : this.controls.target.clone();
+      st = { x: e.clientX, y: e.clientY, id: e.pointerId, pivot };
       el.setPointerCapture?.(e.pointerId);
     });
     el.addEventListener("pointermove", (e) => {
@@ -253,6 +298,14 @@ export class Viewer {
       const dx = e.clientX - st.x, dy = e.clientY - st.y;
       st.x = e.clientX; st.y = e.clientY;
       if (dx || dy) this.orbitAround(st.pivot, dx, dy);
+    });
+    // Doppelklick mit der mittleren Taste (W4): Alles zeigen
+    let mid = null;
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 1) return;
+      const now = performance.now();
+      if (mid && now - mid.t < 400 && Math.hypot(e.clientX - mid.x, e.clientY - mid.y) < 6 && this.midDouble !== "aus") { mid = null; this.fit(); return; }
+      mid = { t: now, x: e.clientX, y: e.clientY };
     });
     const end = () => { if (st) { el.releasePointerCapture?.(st.id); st = null; } };
     el.addEventListener("pointerup", end);
@@ -267,7 +320,12 @@ export class Viewer {
   /** Kamera um pivot drehen (dx/dy in px, wie OrbitControls: waagrecht um die Hochachse, senkrecht um die Bildquerachse) */
   orbitAround(pivot, dx, dy) {
     const h = this.renderer.domElement.clientHeight || 1, sp = this.controls.rotateSpeed;
-    const cam = this.camera, tgt = this.controls.target, up = cam.up.clone().normalize();
+    const cam = this.camera, tgt = this.controls.target;
+    // Drehteller: Hochachse ist immer Welt-Z, die Kamera bleibt aufrecht
+    const look = tgt.clone().sub(cam.position).normalize();
+    const tt = this.turntable && Math.abs(look.z) < 0.995; // senkrecht von oben/unten: frei weiterdrehen
+    const up = tt ? new THREE.Vector3(0, 0, 1) : cam.up.clone().normalize();
+    if (tt) cam.up.copy(up);
     let q = new THREE.Quaternion().setFromAxisAngle(up, (-2 * Math.PI * dx * sp) / h);
     const dir = tgt.clone().sub(cam.position).normalize();
     const right = dir.clone().cross(up);
@@ -282,7 +340,120 @@ export class Viewer {
     this.cameraChanged();
   }
 
+  /** Liegt der Weltpunkt p im Material eines sichtbaren Körpers? (Strahl-Paritätstest, beidseitig) */
+  pointInside(p) {
+    const meshes = this.pickables.filter((x) => x.mesh.visible && !x.key?.startsWith?.("ghost")).map((x) => x.mesh);
+    if (!meshes.length) return false;
+    const dir = new THREE.Vector3(0.5773, 0.5931, 0.5612).normalize();
+    const rc = new THREE.Raycaster(new THREE.Vector3(...p), dir);
+    const sides = meshes.map((m) => m.material.side);
+    for (const m of meshes) m.material.side = THREE.DoubleSide;
+    let hits;
+    try { hits = rc.intersectObjects(meshes, false); } finally { meshes.forEach((m, i) => { m.material.side = sides[i]; }); }
+    // je Körper zählen; doppelte Treffer an Dreieckskanten zusammenfassen
+    const per = new Map();
+    for (const h of hits) { const a = per.get(h.object) || []; if (!a.some((d) => Math.abs(d - h.distance) < 1e-6)) a.push(h.distance); per.set(h.object, a); }
+    return [...per.values()].some((a) => a.length % 2 === 1);
+  }
+  /** Ansicht mit der Tastatur drehen (W4/L9): ax um die Bildhochachse, ay um die Bildquerachse, in Grad, um das Ziel */
+  turnView(ax, ay) {
+    if (this.sketchFrame) return;
+    if (this.turnInvert) { ax = -ax; ay = -ay; }
+    this.anim = null;
+    const cam = this.camera, tgt = this.controls.target, up = cam.up.clone().normalize();
+    const dir = tgt.clone().sub(cam.position).normalize();
+    const right = dir.clone().cross(up).normalize();
+    const q = new THREE.Quaternion().setFromAxisAngle(up, (-ax * Math.PI) / 180)
+      .multiply(new THREE.Quaternion().setFromAxisAngle(right, (-ay * Math.PI) / 180));
+    cam.position.sub(tgt).applyQuaternion(q).add(tgt);
+    cam.up.applyQuaternion(q).normalize();
+    cam.lookAt(tgt);
+    this.controls.update();
+    this.cameraChanged();
+  }
+  /** Zoomen um einen Faktor (> 1 heran) zur Bildmitte – Tastatur und 3D-Maus */
+  zoomBy(f) {
+    if (!(f > 0)) return;
+    this.anim = null;
+    const cam = this.camera, tgt = this.controls.target;
+    if (cam.isPerspectiveCamera) cam.position.sub(tgt).multiplyScalar(1 / f).add(tgt);
+    else { cam.zoom = Math.min(this.controls.maxZoom ?? Infinity, Math.max(this.controls.minZoom ?? 0, cam.zoom * f)); cam.updateProjectionMatrix(); }
+    this.controls.update();
+    this.cameraChanged();
+  }
+  /** Um die Blickrichtung rollen (3D-Maus) */
+  rollView(deg) {
+    if (this.sketchFrame || !deg) return;
+    this.anim = null;
+    const cam = this.camera, tgt = this.controls.target;
+    const dir = tgt.clone().sub(cam.position).normalize();
+    cam.up.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(dir, (deg * Math.PI) / 180)).normalize();
+    cam.lookAt(tgt);
+    this.controls.update();
+    this.cameraChanged();
+  }
+  /** Ansicht mit der Tastatur schwenken: fx/fy in Bruchteilen der sichtbaren Halbhöhe */
+  panView(fx, fy) {
+    this.anim = null;
+    const cam = this.camera, tgt = this.controls.target, up = cam.up.clone().normalize();
+    const dir = tgt.clone().sub(cam.position).normalize();
+    const right = dir.clone().cross(up).normalize();
+    const camUp = right.clone().cross(dir).normalize();
+    const half = this.visibleHalf();
+    const d = right.multiplyScalar(fx * half).add(camUp.multiplyScalar(fy * half));
+    cam.position.add(d); tgt.add(d);
+    this.controls.update();
+    this.cameraChanged();
+  }
+
   /** Benutzereinstellungen (src/core/settings.js) übernehmen */
+  /**
+   * Navigationseinstellungen wie SolidCraft: Schwenkrichtung umkehren, sanftes Zoomen, Zwei-Finger-Scrollen schwenkt
+   * (Strg/Kneifen zoomt), Zoom am Modell stoppen. Greift in OrbitControls ein, ohne dessen Verhalten sonst zu ändern.
+   */
+  bindNavExtras() {
+    const c = this.controls;
+    const pan = c._pan?.bind(c), wheel = c._handleMouseWheel?.bind(c), dollyIn = c._dollyIn?.bind(c), dollyOut = c._dollyOut?.bind(c);
+    if (pan) c._pan = (dx, dy) => pan(this.panInvertX ? -dx : dx, this.panInvertY ? -dy : dy);
+    // Zoom am Modell stoppen: nicht näher heran als bis kurz vor die Hüllkugel des Modells
+    const blocked = (scale) => {
+      if (!this.zoomStop || scale >= 1) return false;
+      const box = this.contentBox();
+      if (box.isEmpty()) return false;
+      const sph = box.getBoundingSphere(new THREE.Sphere());
+      if (this.camera.isPerspectiveCamera) return this.camera.position.distanceTo(c.target) * scale < Math.max(1, sph.radius * 0.05);
+      return this.visibleHalf() * scale < Math.max(0.5, sph.radius * 0.02);
+    };
+    // OrbitControls: _dollyIn(s) multipliziert den Abstand mit s, _dollyOut(s) teilt ihn durch s (s < 1 beim Rad)
+    if (dollyIn) c._dollyIn = (s) => { if (!blocked(s)) dollyIn(s); };
+    if (dollyOut) c._dollyOut = (s) => { if (!blocked(1 / s)) dollyOut(s); };
+    this.wheelZoom = wheel;
+    if (wheel) c._handleMouseWheel = (e) => {
+      if (!this.smoothZoom) return wheel(e);
+      this.zoomRest = (this.zoomRest || 0) + e.deltaY;
+      this.zoomAt = { clientX: e.clientX, clientY: e.clientY };
+      this.needsRender = true;
+    };
+    // Trackpad: Scrollen ohne Strg schwenkt, Kneifen (Strg + Rad) zoomt
+    this.container.addEventListener("wheel", (e) => {
+      if (!this.trackpadPan || e.ctrlKey || e.metaKey || !c.enabled) return;
+      if (!pan) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      pan(-e.deltaX * (this.panInvertX ? -1 : 1), -e.deltaY * (this.panInvertY ? -1 : 1));
+      c.update();
+    }, { capture: true, passive: false });
+  }
+  /** Sanftes Zoomen: aufgestauten Raddrehweg über mehrere Bilder verteilen */
+  stepSmoothZoom() {
+    const rest = this.zoomRest;
+    if (!rest) return;
+    const step = Math.abs(rest) < 2 ? rest : rest * 0.25;
+    this.zoomRest = rest - step;
+    if (Math.abs(this.zoomRest) < 0.5) this.zoomRest = 0;
+    const c = this.controls;
+    this.wheelZoom?.({ ...this.zoomAt, deltaY: step });
+    this.needsRender = true;
+  }
   /** Licht nach Einstellung bzw. Fotodarstellung */
   applyLighting() {
     const L = lighting(this.lightPreset, !!this.photo);
@@ -306,22 +477,48 @@ export class Viewer {
   }
   applyPrefs(v) {
     const c = this.controls;
+    this.showFps = !!v["ansicht.bildrate"];
+    this.sketchTurn = v["skizze.ansichtDrehen"] !== false;
+    this.sketchReturn = v["skizze.ansichtZurueck"] || "bleiben";
+    if (this.fpsEl) this.fpsEl.hidden = !this.showFps;
     if (v["ansicht.beleuchtung"] !== this.lightPreset) { this.lightPreset = v["ansicht.beleuchtung"]; this.applyLighting(); this.render(); }
-    // Drehen um den Punkt unter dem Mauszeiger übernimmt bindPivotOrbit; OrbitControls dreht dann nicht selbst
-    this.pivotOrbit = v["ansicht.drehpunktCursor"] !== false;
-    const rot = this.pivotOrbit ? null : THREE.MOUSE.ROTATE;
+    // Drehen übernimmt immer bindPivotOrbit (W4): Drehpunkt Mauszeiger, Bildmitte oder Ursprung; frei oder Drehteller
+    this.pivotCursor = v["ansicht.drehpunktCursor"] !== false;
+    this.pivotFixed = v["ansicht.drehpunktFest"] || "mitte";
+    this.turntable = v["ansicht.drehart"] === "drehteller";
+    this.midDouble = v["ansicht.mitteDoppelklick"] || "alles";
+    this.pivotOrbit = true;
+    const rot = null;
     this.rotateButton = v["ansicht.maus"] === "mitte-drehen" ? 1 : 2;
     c.mouseButtons = v["ansicht.maus"] === "mitte-drehen"
       ? { LEFT: null, MIDDLE: rot, RIGHT: THREE.MOUSE.PAN }
       : { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: rot };
     if (this.navTool) c.mouseButtons.LEFT = { orbit: THREE.MOUSE.ROTATE, pan: THREE.MOUSE.PAN, zoom: THREE.MOUSE.DOLLY }[this.navTool];
     c.zoomToCursor = v["ansicht.zoomZumCursor"];
-    c.zoomSpeed = v["ansicht.zoomGeschwindigkeit"];
+    c.zoomSpeed = v["ansicht.zoomGeschwindigkeit"] * (v["ansicht.zoomUmkehren"] ? -1 : 1);
     c.rotateSpeed = v["ansicht.drehGeschwindigkeit"];
     this.animate = v["darstellung.animation"];
+    this.animSpeed = { langsam: 0.55, normal: 1, schnell: 1.8 }[v["ansicht.animTempo"]] || 1;
+    this.fitFill = Number(v["ansicht.einpassenGroesse"]) || 80;
+    this.fitOnCube = !!v["ansicht.einpassenWuerfel"];
+    this.turnInvert = !!v["ansicht.drehpfeileUmkehren"];
+    this.panInvertX = !!v["ansicht.schwenkenUmkehrenH"];
+    this.panInvertY = !!v["ansicht.schwenkenUmkehrenV"];
+    this.smoothZoom = !!v["ansicht.sanftZoomen"];
+    this.trackpadPan = !!v["ansicht.trackpadSchwenken"];
+    this.zoomStop = !!v["ansicht.zoomStopp"];
+    const ss = Number(v["grafik.supersampling"]) || 1;
+    const ratio = Math.min(4, Math.min(2, window.devicePixelRatio || 1) * ss);
+    if (ratio !== this.renderer.getPixelRatio()) { this.renderer.setPixelRatio(ratio); this.resize(); }
+    const gs = !!v["grafik.bodenschatten"];
+    if (gs !== !!this.groundShadow) { this.groundShadow = gs; this.updateStage(); }
+    const side = !!v["grafik.rasterSeite"];
+    if (side !== !!this.gridSide) { this.gridSide = side; this.orientGrid(); }
     this.showGrid = v["ansicht.raster"];
     if (!this.sketchFrame) this.grid.visible = this.showGrid && !this.photo;
     this.showCube = v["ansicht.viewcube"];
+    const axesNav = v["ansicht.navigatorStil"] === "achsen";
+    if (this.axesGizmo) { this.axesGizmo.visible = axesNav; this.cube.visible = !axesNav; }
     const dark = document.documentElement.dataset.theme === "dark";
     if (dark !== !!this.dark) { this.dark = dark; if (this.grid) { const old = this.grid; this.makeGrid(this.gridSize || 400); this.grid.position.copy(old.position); this.grid.quaternion.copy(old.quaternion); this.grid.visible = old.visible; } }
     if (v["ansicht.schnittFuellen"] !== undefined && v["ansicht.schnittFuellen"] !== this.fillSection) {
@@ -389,7 +586,7 @@ export class Viewer {
     this.controls.update();
     this.cameraChanged();
   }
-  setViewDir(dir, up, { animate = this.animate, target } = {}) {
+  setViewDir(dir, up, { animate = this.animate, target, fitAfter = false } = {}) {
     const d = new THREE.Vector3(...dir).normalize();
     const t = target ? new THREE.Vector3(...target) : this.controls.target.clone();
     const dist = this.camera.isPerspectiveCamera ? this.camera.position.distanceTo(this.controls.target) : 5000;
@@ -402,12 +599,13 @@ export class Viewer {
       this.camera.lookAt(t);
       this.controls.update();
       this.cameraChanged();
+      if (fitAfter) this.fit(null, { keepGrid: true });
       return;
     }
     const q0 = this.camera.quaternion.clone();
     const m = new THREE.Matrix4().lookAt(pos, t, upV);
     const q1 = new THREE.Quaternion().setFromRotationMatrix(m);
-    this.anim = { t0: performance.now(), dur: 280, q0, q1, from: this.controls.target.clone(), to: t, upV, dist };
+    this.anim = { t0: performance.now(), dur: 280 / (this.animSpeed || 1), fitAfter, q0, q1, from: this.controls.target.clone(), to: t, upV, dist };
   }
   stepAnim() {
     const a = this.anim;
@@ -424,6 +622,7 @@ export class Viewer {
       this.camera.up.copy(a.upV);
       this.anim = null;
       this.controls.update();
+      if (a.fitAfter) { this.cameraChanged(); this.fit(null, { keepGrid: true }); return; }
     }
     this.cameraChanged();
   }
@@ -459,7 +658,8 @@ export class Viewer {
     this.controls.target.copy(c);
     // schmales Fenster (z. B. »Zeichnung daneben«): nach der Breite einpassen, sonst ragt das Modell seitlich hinaus
     const aspect = (this.container.clientWidth || 1) / (this.container.clientHeight || 1);
-    this.viewHalf = size * 0.62 * Math.max(1, 1 / aspect);
+    // Einstellung »Größe bei Home und Einpassen« (Anteil der Ansicht, den die Hüllkugel füllt; 80 % ≙ bisheriger Rand)
+    this.viewHalf = (size * 0.5 / Math.min(1, Math.max(0.3, (this.fitFill || 80) / 100))) * Math.max(1, 1 / aspect);
     const dist = this.camera.isPerspectiveCamera ? this.viewHalf / Math.tan((this.persp.fov * Math.PI) / 360) : 5000;
     this.camera.position.copy(c.clone().add(dir.multiplyScalar(dist)));
     this.ortho.zoom = 1;
@@ -1069,13 +1269,27 @@ export class Viewer {
     if (this.wantPerspective) this.setPerspective(false);
     this.sketchFrame = frame;
     this.controls.enableRotate = false;
-    const n = frame.normal;
-    this.setViewDir([-n[0], -n[1], -n[2]], frame.yDir, { animate: true, target: frame.origin });
+    // W2: Ansicht vorher merken (für »zurück« beim Beenden), senkrecht drehen nur wenn eingestellt
+    this.sketchPrevView = this.viewState();
+    this.sketchMoved = false;
+    if (this.sketchTurn !== false) this.lookAtSketch(frame);
     this.setModelOpacity(0.35);
     this.grid.visible = false;
   }
+  /** Senkrecht auf die Skizzenebene schauen (auch Befehl »Skizzenansicht«) */
+  lookAtSketch(frame = this.sketchFrame) {
+    if (!frame) return;
+    const n = frame.normal;
+    this.setViewDir([-n[0], -n[1], -n[2]], frame.yDir, { animate: true, target: frame.origin });
+    this.sketchMoved = false;
+  }
   exitSketch() {
+    // W2: zur Ansicht vor der Skizze zurück – immer oder nur, wenn in der Skizze nicht verschoben/gezoomt wurde
+    const back = this.sketchReturn === "zurueck" || (this.sketchReturn === "unveraendert" && !this.sketchMoved);
+    const prev = this.sketchPrevView;
     this.sketchFrame = null;
+    this.sketchPrevView = null;
+    if (back && prev) this.applyViewState(prev, { animate: true });
     this.controls.enableRotate = true;
     if (this.wantPerspective) this.setPerspective(true);
     this.wantPerspective = false;
@@ -1151,10 +1365,11 @@ export class Viewer {
     this.stage.traverse((o) => o.isLight && o.dispose?.());
     disposeTree(this.stage);
     this.stage.clear();
-    if (!this.photo) return;
+    if (!this.photo && !this.groundShadow) return;
     const box = new THREE.Box3();
     for (const pk of this.pickables) if (pk.mesh.visible) box.expandByObject(pk.mesh);
     if (box.isEmpty()) return;
+    if (!this.photo) { this.stage.add(contactShadow(box)); return; }
     const st = photoStage(box.min.toArray(), box.max.toArray());
     const sun = new THREE.DirectionalLight(0xffffff, 2.2);
     sun.position.set(...st.sun);
@@ -1196,10 +1411,12 @@ export class Viewer {
   setClip(c) {
     if (!c) this.clip = null;
     else {
-      const n = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] }[c.axis] || [0, 0, 1];
+      // Achse X/Y/Z oder beliebige Ebene (SolidCraft »Section« an Arbeitsebene/Fläche): Normale n, Lage = n·o + offset
+      const n = c.n ? new THREE.Vector3(...c.n).normalize().toArray() : { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] }[c.axis] || [0, 0, 1];
+      const off = (c.o ? n[0] * c.o[0] + n[1] * c.o[1] + n[2] * c.o[2] : 0) + c.offset;
       const v = new THREE.Vector3(...n).multiplyScalar(c.flip ? 1 : -1);
       // sichtbar bleibt, was auf der positiven Seite liegt: n·p + d ≥ 0
-      this.clip = { ...c, plane: new THREE.Plane(v, c.flip ? -c.offset : c.offset) };
+      this.clip = { ...c, plane: new THREE.Plane(v, c.flip ? -off : off) };
     }
     const planes = this.clipPlanes();
     for (const pk of this.pickables) {
@@ -1349,10 +1566,11 @@ export class Viewer {
     const ndc = new THREE.Vector2(((x - (w - cs - 8)) / cs) * 2 - 1, -((y - 8) / cs) * 2 + 1);
     const rc = new THREE.Raycaster();
     rc.setFromCamera(ndc, this.cubeCam);
-    const hit = rc.intersectObject(this.cube, false)[0];
+    const axes = this.axesGizmo?.visible;
+    const hit = axes ? rc.intersectObjects(this.axesBalls, false)[0] : rc.intersectObject(this.cube, false)[0];
     if (!hit) return true;
-    // Treffer nahe Ecke -> Iso-Richtung; sonst Flächennormale
-    const p = hit.point.clone().divideScalar(0.9);
+    // Treffer nahe Ecke -> Iso-Richtung; sonst Flächennormale (Achsen-Gizmo: Richtung der Kugel)
+    const p = axes ? hit.object.userData.dir.clone() : hit.point.clone().divideScalar(0.9);
     const snap = (v) => (Math.abs(v) > 0.6 ? Math.sign(v) : 0);
     const dir = new THREE.Vector3(snap(p.x), snap(p.y), snap(p.z));
     if (dir.lengthSq() === 0) return true;
@@ -1360,7 +1578,8 @@ export class Viewer {
     const up = Math.abs(n.z) > 0.99 ? [0, n.z > 0 ? 1 : -1, 0] : [0, 0, 1];
     if (Math.abs(n.z) > 0.99 && n.z < 0) up[1] = -1;
     if (this.sketchFrame) return true;
-    this.setViewDir([-n.x, -n.y, -n.z], up);
+    if (this.fitOnCube) { const b = this.contentBox(); this.setViewDir([-n.x, -n.y, -n.z], up, b.isEmpty() ? {} : { target: b.getCenter(new THREE.Vector3()).toArray(), fitAfter: true }); }
+    else this.setViewDir([-n.x, -n.y, -n.z], up);
     return true;
   }
 
@@ -1483,6 +1702,31 @@ export class Viewer {
     return null;
   }
 
+  /**
+   * Alles unter dem Mauszeiger (L1, wie SolidCraft »Andere auswählen«): zuerst, was pick() liefert, dann jede Fläche
+   * entlang des Sehstrahls, auch verdeckte, von vorn nach hinten.
+   */
+  pickCandidates(cx, cy, opts = {}) {
+    const first = this.pick(cx, cy, opts);
+    const out = first ? [first] : [];
+    if (opts.faces === false) return out;
+    const rc = this.raycaster(cx, cy);
+    const meshes = this.pickables.filter((p) => p.mesh.visible).map((p) => p.mesh);
+    const seen = new Set(out.map((x) => `${x.kind}|${x.key}|${x.body}|${x.edge ?? x.face}`));
+    for (const fh of rc.intersectObjects(meshes, false)) {
+      if (this.clipped(fh.point)) continue;
+      const mesh = fh.object, flist = mesh.userData.faces || [];
+      const fi = flist.findIndex((f) => fh.faceIndex * 3 >= f.start && fh.faceIndex * 3 < f.start + f.count);
+      const pk = this.findPickable(mesh);
+      if (!pk) continue;
+      const id = `face|${pk.key}|${pk.body}|${fi}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const nrm = fh.face ? fh.face.normal.clone().transformDirection(mesh.matrixWorld).toArray() : null;
+      out.push({ kind: "face", key: pk.key, body: pk.body, face: fi, info: flist[fi] || {}, point: fh.point.toArray(), normal: nrm, group: pk.group, mesh });
+    }
+    return out;
+  }
   /** Weltpunkt → Bildschirm-px relativ zum 3D-Fenster */
   toScreen(p) {
     const v = new THREE.Vector3(p[0], p[1], p[2]).project(this.camera);
@@ -1614,6 +1858,58 @@ export class Viewer {
   }
 
   /** Eintrag zu einem Treffer ({key, body}) oder Netz – auch unter den Nachbarteilen im Kontext */
+  /** SolidCraft »Hervorhebung der Auflagefläche«: ebene Flächen, die nach unten zeigen und auf der tiefsten Höhe liegen */
+  showBedFaces(on) {
+    if (!this.bedGroup) { this.bedGroup = new THREE.Group(); this.scene.add(this.bedGroup); }
+    if (!on) { disposeTree(this.bedGroup); this.bedGroup.clear(); this.render(); return 0; }
+    const box = this.contentBox();
+    if (box.isEmpty()) return 0;
+    const tol = Math.max(1e-3, box.getSize(new THREE.Vector3()).length() * 1e-4), z0 = box.min.z;
+    const hits = [], a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+    for (const pk of this.pickables) {
+      if (!pk.mesh.visible) continue;
+      pk.mesh.updateMatrixWorld();
+      const pos = pk.mesh.geometry.attributes.position.array, idx = pk.mesh.geometry.index?.array;
+      if (!idx) continue;
+      (pk.mesh.userData.faces || []).forEach((f, fi) => {
+        let ok = f.count > 0;
+        for (let i = f.start; ok && i + 2 < f.start + f.count; i += 3) {
+          a.fromArray(pos, idx[i] * 3).applyMatrix4(pk.mesh.matrixWorld); b.fromArray(pos, idx[i + 1] * 3).applyMatrix4(pk.mesh.matrixWorld); c.fromArray(pos, idx[i + 2] * 3).applyMatrix4(pk.mesh.matrixWorld);
+          n.subVectors(b, a).cross(c.clone().sub(a));
+          if (n.lengthSq() < 1e-18) continue;
+          n.normalize();
+          ok = n.z < -0.999 && Math.abs(a.z - z0) < tol && Math.abs(b.z - z0) < tol && Math.abs(c.z - z0) < tol;
+        }
+        if (ok) hits.push({ kind: "face", key: pk.key, body: pk.body, face: fi });
+      });
+    }
+    this.highlight(hits, { group: this.bedGroup, color: 0x2fb36b, opacity: 0.6 });
+    return hits.length;
+  }
+  /** Kanten, die auf dem Rand der getroffenen Fläche liegen (für »Flächenkanten in neue Skizzen projizieren«) */
+  faceEdgeIndices(hit) {
+    const pk = this.findPickable(hit);
+    const f = pk?.mesh.userData.faces?.[hit.face];
+    if (!f || !pk.lines?.userData.edgeRanges) return [];
+    pk.mesh.updateMatrixWorld(); pk.lines.updateMatrixWorld();
+    const pos = pk.mesh.geometry.attributes.position.array, idx = pk.mesh.geometry.index.array;
+    const tris = [];
+    const box = new THREE.Box3();
+    for (let i = f.start; i + 2 < f.start + f.count; i += 3) {
+      const t = new THREE.Triangle(...[0, 1, 2].map((k) => new THREE.Vector3().fromArray(pos, idx[i + k] * 3).applyMatrix4(pk.mesh.matrixWorld)));
+      tris.push(t); box.expandByPoint(t.a).expandByPoint(t.b).expandByPoint(t.c);
+    }
+    const tol = Math.max(1e-3, box.getSize(new THREE.Vector3()).length() * 2e-3);
+    const lp = pk.lines.geometry.attributes.position.array, q = new THREE.Vector3(), cp = new THREE.Vector3();
+    const near = (pt) => tris.some((t) => t.closestPointToPoint(pt, cp).distanceTo(pt) < tol);
+    const out = [];
+    pk.lines.userData.edgeRanges.forEach(([s, c], ei) => {
+      if (!c) return;
+      const probe = [s, s + Math.floor(c / 2), s + c - 1];
+      if (probe.every((i) => near(q.fromArray(lp, i * 3).applyMatrix4(pk.lines.matrixWorld).clone()))) out.push(ei);
+    });
+    return out;
+  }
   findPickable(x) {
     const ok = x?.isMesh ? (p) => p.mesh === x : (p) => p.key === x.key && p.body === x.body;
     return this.pickables.find(ok) || this.ghosts.find(ok);
@@ -1791,6 +2087,24 @@ export class Viewer {
     this.render();
   }
   /** Bewegungsbahnen (E3): paths = [{ pts: [[x,y,z]…], color? }], gestrichelt die nur angezeigten, voll die behaltenen */
+  /** Schwerpunkt mit den drei Hauptträgheitsachsen (L13); spec = { center, axes:[[x,y,z]×3], len } oder null */
+  showPrincipalAxes(spec) {
+    if (!this.cogGroup) { this.cogGroup = new THREE.Group(); this.cogGroup.renderOrder = 997; this.scene.add(this.cogGroup); }
+    disposeTree(this.cogGroup);
+    this.cogGroup.clear();
+    if (spec) {
+      const c = new THREE.Vector3(...spec.center), cols = [0xd23b2a, 0x2e9d4a, 0x2457b8];
+      spec.axes.forEach((a, i) => {
+        const d = new THREE.Vector3(...a).normalize().multiplyScalar(spec.len * (1 - i * 0.15));
+        const geo = new THREE.BufferGeometry().setFromPoints([c.clone().sub(d), c.clone().add(d)]);
+        const l = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: cols[i], depthTest: false, transparent: true }));
+        l.renderOrder = 997;
+        this.cogGroup.add(l);
+      });
+      this.cogGroup.add(this.glyph(spec.center, "on", 0x111111));
+    }
+    this.render();
+  }
   showMotionPaths(paths = []) {
     if (!this.pathGroup) { this.pathGroup = new THREE.Group(); this.pathGroup.renderOrder = 998; this.scene.add(this.pathGroup); }
     disposeTree(this.pathGroup);
@@ -2090,6 +2404,23 @@ function bubbleTexture(text, active) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+/** Weicher Bodenschatten unter der Inhaltsbox (Einstellung Grafik → Bodenschatten), ohne Schattenberechnung */
+function contactShadow(box) {
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = 128;
+  const g = cv.getContext("2d");
+  const grd = g.createRadialGradient(64, 64, 8, 64, 64, 64);
+  grd.addColorStop(0, "rgba(0,0,0,0.42)"); grd.addColorStop(0.55, "rgba(0,0,0,0.2)"); grd.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(size.x * 1.5 + 1, size.y * 1.5 + 1),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
+  m.position.set(c.x, c.y, box.min.z - Math.max(0.05, size.z * 0.002));
+  m.raycast = () => {};
+  m.userData = { ground: true };
+  m.renderOrder = -1;
+  return m;
 }
 function labelTexture(text) {
   const c = document.createElement("canvas");

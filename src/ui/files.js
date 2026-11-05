@@ -191,13 +191,37 @@ export class Files {
     if (!r || r.error) throw new Error(r?.error || "nicht lesbar");
     return r.text;
   }
+  /**
+   * L3 (SolidCraft »Edit in place« / »Finish edit«): an Ort und Stelle geändertes verknüpftes Teil in seine Quelldatei
+   * schreiben. Das Bauteil ersetzt dort seinen Stand (eigene id der Quelle bleibt); andere Dokumente der Datei bleiben.
+   * Rückgabe: Pfad der Datei.
+   */
+  async writeLinkedBack(part) {
+    const app = this.app;
+    if (!this.bridge?.saveProject) throw new Error("nur in der Desktop-App");
+    let text = null, path = null, why = "";
+    for (const p of linkCandidates(part.link, app.filePath)) {
+      try { text = await this.readLinkedFile(p); path = p; break; } catch (e) { why = e.message; }
+    }
+    if (text == null) throw new Error(why || "Quelldatei nicht gefunden");
+    const rp = parseProject(text), remote = findLinkedDoc(rp, part.link);
+    if (!remote) throw new Error("Bauteil in der Quelldatei nicht mehr gefunden");
+    const { link, ...content } = JSON.parse(JSON.stringify(part));
+    rp.docs[rp.docs.indexOf(remote)] = { ...content, id: remote.id };
+    const mats = (app.project.materials || []).filter((m) => m?.key === part.material && !(rp.materials || []).some((x) => x.key === m.key));
+    if (mats.length) rp.materials = [...(rp.materials || []), ...mats];
+    const r = await this.bridge.saveProject({ path, text: serializeProject(rp), backups: app.prefs.get("dateien.sicherungen") });
+    if (!r?.path) throw new Error("Speichern abgebrochen");
+    return r.path;
+  }
   /** .wcad-Datei wählen → { path, text } oder null */
   async pickProjectFile() {
     if (this.bridge) {
       const r = await this.bridge.openFile({ filters: PROJECT_FILTERS });
-      return r ? { path: r.path, text: r.data } : null;
+      return r && (await this.sizeOk(r.name || r.path, r.data?.length || 0, "dateien.maxProjektMB")) ? { path: r.path, text: r.data } : null;
     }
     const f = await pickFile(".wcad,application/json");
+    if (f && !(await this.sizeOk(f.name, f.size, "dateien.maxProjektMB"))) return null;
     return f ? { path: f.name, text: await f.text() } : null;
   }
   /** Bauteil-Datei schreiben (Speichern-Dialog) → Pfad oder null */
@@ -248,6 +272,27 @@ export class Files {
     }, { link: true });
     app.syncMaterials?.();
     toast(`${remote.name} aus ${baseName(f.path)} verknüpft`, { kind: "ok" });
+  }
+  /**
+   * Quelle neu verknüpfen (L4, wie SolidCraft »Relink Source«): Datei verschoben oder umbenannt → andere .wcad wählen.
+   * Alle Vorkommen in Baugruppen bleiben, nur Pfad und Inhalt kommen aus der neuen Datei. Ein Rückgängig-Schritt.
+   */
+  async relinkPart(part) {
+    const app = this.app;
+    if (!part?.link) return toast("Bauteil ist nicht verknüpft");
+    const pick = await this.pickLinkedPart();
+    if (!pick) return;
+    const { f, remotePrj, remote } = pick;
+    const prev = part.link.path;
+    app.edit("Quelle neu verknüpfen", () => {
+      const { doc } = applyLinked(app.project, { ...part, link: makeLink(f.path, remote, app.filePath) }, remotePrj, remote);
+      for (const k of Object.keys(part)) delete part[k];
+      Object.assign(part, doc);
+      app.results.delete(part.id);
+    }, { link: true });
+    app.syncMaterials?.();
+    const uses = app.project.docs.filter((d) => d.kind === "assembly").reduce((n, a) => n + a.components.filter((c) => c.part === part.id).length, 0);
+    toast(`Neu verknüpft: ${baseName(prev)} → ${baseName(f.path)}${uses ? `, ${uses} Vorkommen behalten` : ""}. Abhängigkeiten bitte prüfen, falls sich die Geometrie geändert hat.`, { kind: "ok", timeout: 7000 });
   }
   /** Bauteil als eigene Datei speichern und im Projekt damit verknüpfen */
   async savePartAsFile(part) {
@@ -374,7 +419,8 @@ export class Files {
     if (!items?.length) return toast("Nichts zu exportieren");
     const d = this.app.activeDoc();
     await this.withBusy("STL-Export", async () => {
-      const buf = await this.app.kernel.call("exportStl", { items, simplify: simplifyOf(d) });
+      const acc = Number(this.app.prefs.get("dateien.netzgenauigkeit")) || 0;
+      const buf = await this.app.kernel.call("exportStl", { items, simplify: simplifyOf(d), tolerance: acc > 0 ? acc : null });
       await this.saveBinary(buf, safeName(d.number || d.name) + ".stl", [{ name: "STL", extensions: ["stl"] }]);
     });
   }
@@ -405,6 +451,16 @@ export class Files {
     });
   }
   /** Sichtbare Netze in mm (Z oben) für OBJ/3MF – gleiche Auswahl wie GLB */
+  /** Netze für OBJ/3MF: mit eingestellter Netzgenauigkeit aus dem Kern, sonst wie in der Ansicht */
+  async meshListExact() {
+    const acc = Number(this.app.prefs.get("dateien.netzgenauigkeit")) || 0;
+    if (!(acc > 0)) return this.meshList();
+    const d = this.app.activeDoc(), items = this.exportItems(d);
+    if (!items?.length) { toast("OBJ/3MF gibt es für Bauteile und Baugruppen"); return null; }
+    const list = await this.app.kernel.call("ifcData", { items, tolerance: acc, simplify: simplifyOf(d) });
+    const rgb = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || "")); const n = m ? parseInt(m[1], 16) : 0xb4b9c0; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+    return { d, meshes: list.filter((x) => x.vertices?.length).map((x) => ({ name: x.name, pos: x.vertices, idx: x.triangles, color: rgb(x.color) })) };
+  }
   meshList() {
     const app = this.app, d = app.activeDoc();
     if (d?.kind !== "part" && d?.kind !== "assembly") { toast("OBJ/3MF gibt es für Bauteile und Baugruppen"); return null; }
@@ -433,7 +489,7 @@ export class Files {
   }
   /** OBJ (SolidCraft-Abgleich F6): Netz mit Farben für Blender, Render- und Druckprogramme */
   async exportObj() {
-    const r = this.meshList();
+    const r = await this.meshListExact();
     if (!r) return;
     await this.withBusy("OBJ-Export", async () => {
       await this.saveText(writeObj(r.meshes), safeName(r.d.number || r.d.name) + ".obj", "model/obj", [{ name: "OBJ", extensions: ["obj"] }]);
@@ -441,7 +497,7 @@ export class Files {
   }
   /** An Slicer senden (SolidCraft-Abgleich E5): 3MF im eingestellten Slicer öffnen (Desktop), sonst 3MF speichern */
   async sendToSlicer(slicer = null) {
-    const r = this.meshList();
+    const r = await this.meshListExact();
     if (!r) return;
     const data = write3mf(r.meshes, { title: r.d.name });
     const list = this.app.prefs.get("dateien.slicer") || [];
@@ -474,7 +530,8 @@ export class Files {
       if (!by.has(c.name)) by.set(c.name, []);
       by.get(c.name).push({ pos, idx: g.index ? Array.from(g.index.array) : null });
     }
-    const p = urdfPackage(d.name, d, (id) => by.get(id));
+    const P = app.prefs;
+    const p = urdfPackage(d.name, d, (id) => by.get(id), { prefix: P.get("dateien.urdfPfad"), effort: Number(P.get("dateien.urdfKraft")) || 100, velocity: Number(P.get("dateien.urdfGeschw")) || 1 });
     await this.withBusy("URDF-Export", async () => {
       const r = await this.saveBinary(p.zip, safeName(d.number || d.name) + "_urdf.zip", [{ name: "URDF-Paket (ZIP)", extensions: ["zip"] }]);
       if (r) toast(`URDF: ${p.model.links.length} Glieder, ${p.model.joints.length} Gelenke`, { kind: "ok", timeout: 5000 });
@@ -483,7 +540,7 @@ export class Files {
   }
   /** 3MF (F6): 3D-Druck mit Einheit mm und Farben, öffnet in PrusaSlicer, Cura, Bambu Studio */
   async export3mf() {
-    const r = this.meshList();
+    const r = await this.meshListExact();
     if (!r) return;
     await this.withBusy("3MF-Export", async () => {
       await this.saveBinary(write3mf(r.meshes, { title: r.d.name }), safeName(r.d.number || r.d.name) + ".3mf", [{ name: "3MF (3D-Druck)", extensions: ["3mf"] }]);
@@ -690,7 +747,7 @@ export class Files {
     const sh = app.results.get(part?.id)?.bodies?.find((b) => b.fid === f.id)?.meta?.sheet;
     if (!sh?.flatModel) return toast("Kantteil hat Fehler – erst korrigieren", { kind: "err" });
     const name = `${safeName(part.number || part.name)}_${safeName(f.name || "Kantteil")}_${String(sh.t).replace(".", ",")}mm.dxf`.replace(/\s+/g, "_");
-    await this.saveText(sheetFlatDxf(DxfWriter, sh.flatModel, { name: f.name || part.name }), name, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
+    await this.saveText(sheetFlatDxf(DxfWriter, sh.flatModel, { name: f.name || part.name, angleDisplay: f.sheetRule?.angleDisplay }), name, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
     toast(`Abwicklung ${fmtNum(sh.flat, 1)} × ${fmtNum(sh.length, 1)} mm gespeichert`, { kind: "ok" });
   }
   /** Bild der 3D-Ansicht als PNG (doppelte Auflösung, weißer Hintergrund) */
@@ -965,11 +1022,25 @@ export class Files {
 
   // ---------- Import ----------
   async pickStep() {
-    if (this.bridge) return await this.bridge.openFile({ filters: [{ name: "STEP / STL", extensions: ["step", "stp", "stl"] }] });
+    if (this.bridge) { const r = await this.bridge.openFile({ filters: [{ name: "STEP / STL", extensions: ["step", "stp", "stl"] }] }); return r && (await this.sizeOk(r.name, (r.data?.length || 0) * (r.binary ? 0.75 : 1), "dateien.maxImportMB")) ? r : null; }
     const f = await pickFile(".step,.stp,.stl");
     if (!f) return null;
+    if (!(await this.sizeOk(f.name, f.size, "dateien.maxImportMB"))) return null;
     const isStl = /\.stl$/i.test(f.name);
     return { name: f.name, data: isStl ? bytesToBase64(new Uint8Array(await f.arrayBuffer())) : await f.text(), binary: isStl };
+  }
+  /** SolidCraft: »Maximale Dateigröße zum Öffnen« – größere Dateien nur nach Rückfrage (0 = keine Grenze) */
+  async sizeOk(name, bytes, key) {
+    const max = Number(this.app.prefs.get(key)) || 0;
+    if (!max || !(bytes > max * 1048576)) return true;
+    const mb = (bytes / 1048576).toLocaleString("de-DE", { maximumFractionDigits: 1 });
+    return !!(await choiceDialog("Große Datei", `»${name}« ist ${mb} MB groß, die Grenze steht auf ${max} MB (Einstellungen → Dateien). Öffnen kann lange dauern und viel Speicher brauchen.`, [{ label: "Abbrechen", value: null }, { label: "Trotzdem öffnen", value: true, primary: true }]));
+  }
+  /** SolidCraft: »Dateien aus unbekannten Programmen« – Y-oben-Modelle aufstellen: fragen, immer oder nie */
+  importUpright(feat, onAsk) {
+    const mode = this.app.prefs.get("dateien.importAusrichtung") || "fragen";
+    if (mode === "aufstellen") feat.aufstellen = "y-oben";
+    else if (mode === "fragen") onAsk?.();
   }
   /**
    * Bild für die Skizze wählen (FU2) → { name, src (data-URL), px: [Breite, Höhe] } oder null.
@@ -1026,14 +1097,20 @@ export class Files {
     const f = await this.pickStep();
     if (!f) return;
     const p = this.app.withPartDefaults(newPart(f.name.replace(/\.(step|stp|stl)$/i, "")));
-    p.features.push(importFeature(f));
+    const feat = importFeature(f);
+    this.importUpright(feat);
+    p.features.push(feat);
     this.app.addDoc(p);
   }
   async importStepIntoPart() {
     const app = this.app;
     const f = await this.pickStep();
     if (!f) return;
-    app.addFeature(importFeature(f));
+    const feat = importFeature(f);
+    this.importUpright(feat);
+    app.addFeature(feat);
+    // W8: viele Programme speichern mit Y nach oben – Aufstellen gleich anbieten
+    if ((app.prefs.get("dateien.importAusrichtung") || "fragen") === "fragen") toast(`»${f.name}« eingefügt. Liegt das Modell auf der Seite (Y nach oben)?`, { timeout: 9000, action: { label: "Aufstellen", run: () => app.edit("Aufstellen", () => { const g = app.activeDoc()?.features.find((x) => x.id === feat.id); if (g) g.aufstellen = "y-oben"; }) } });
   }
   async replaceImport(feat) {
     const f = await this.pickStep();

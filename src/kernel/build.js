@@ -167,6 +167,25 @@ export function createKernel(R) {
     return out;
   }
 
+  /** Dünnwandige Extrusion (SolidCraft »thin«): Band um jede Kontur, innen/außen/mittig/beidseitig */
+  function extrudeThin(regions, frame, startOffset, length, { t, side, t2 }) {
+    const fr = { ...frame, origin: v3.add(frame.origin, v3.mul(frame.normal, startOffset)) };
+    const a = side === "aussen" ? t : side === "mitte" ? t / 2 : side === "beidseitig" ? t2 : 0; // nach außen
+    const b = side === "aussen" ? 0 : side === "mitte" ? t / 2 : t; // nach innen
+    let out = null;
+    for (const reg of regions) for (const loop of [reg.outer, ...reg.holes]) {
+      const L = loopToDrawing(loop);
+      const outer = a > 0 ? L.offset(a) : L;
+      let band;
+      try { band = b > 0 ? outer.cut(L.offset(-b)) : outer.cut(L); }
+      catch { band = outer; }
+      const solid = band.sketchOnPlane(makePlane(fr)).extrude(length);
+      out = out ? out.fuse(solid) : solid;
+    }
+    if (!out) throw new Error("Keine geschlossene Kontur in der Skizze");
+    return out;
+  }
+
   // Halbraum (großer Quader), der alles auf der Seite +n des Punktes p umfasst
   function halfSpace(p, n, size) {
     n = v3.norm(n);
@@ -600,6 +619,9 @@ export function createKernel(R) {
 
   async function buildPart(part0, { useCache = true, validate = true } = {}) {
     // Regeln (Stufe 43): Parameter setzen, Features unterdrücken, Prüfmeldungen – vor dem Aufbau
+    // Körperprüfung (Einstellung kernel.koerperpruefung): »ende« = einmal am Ende, »feature« = nach jedem Feature, »aus«
+    const check = part0._koerperpruefung || "ende";
+    if (check === "aus") validate = false;
     const ruled = applyRules(part0);
     const part = ruled.part;
     const { values, errors: paramErrors } = resolveParams(part.params || []);
@@ -692,28 +714,29 @@ export function createKernel(R) {
         let O = v3.add(toWorld(fr, c.start[0], c.start[1]), v3.mul(V, c.offset * h));
         if (dirMode === "normal") O = v3.add(O, v3.mul(N, L));
         else if (dirMode === "symmetrisch") O = v3.add(O, v3.mul(N, L / 2));
-        return { legs: c.legs, angles: c.angles, ref: c.ref, t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, frame: { O, U, V, W: v3.mul(N, -1) }, flatFrame: { origin: v3.sub(fr.origin, v3.mul(fr.normal, h)), xDir: fr.xDir, normal: fr.normal } };
+        return { legs: c.legs, angles: c.angles, ref: c.ref, t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, hemGap: eff.hemGap, cornerGap: eff.gap, frame: { O, U, V, W: v3.mul(N, -1) }, flatFrame: { origin: v3.sub(fr.origin, v3.mul(fr.normal, h)), xDir: fr.xDir, normal: fr.normal } };
       }
       const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Lage " + "XYZ"[k]));
-      return { legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), ref: f.ref || "aussen", t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, frame: { O: pos, U: X, V: Z, W: Y }, flatFrame: { origin: v3.add(pos, [0, 0, -t / 2]), xDir: X, normal: Z } };
+      return { legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), ref: f.ref || "aussen", t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, hemGap: eff.hemGap, cornerGap: eff.gap, frame: { O: pos, U: X, V: Z, W: Y }, flatFrame: { origin: v3.add(pos, [0, 0, -t / 2]), xDir: X, normal: Z } };
     };
     /** Zahlen eines Blech-Features */
     const sheetExtra = (f, spec) => {
       const opt = (x, label) => (x === undefined || x === null || String(x).trim() === "" ? null : E(x, label));
       const sg = f.dir === "ab" ? "ab" : "auf";
-      if (f.type === "umschlag") return { type: "umschlag", edge: f.edge === "anfang" ? "anfang" : "ende", kind: f.kind || "geschlossen", length: E(f.length ?? "15", "Länge"), gap: opt(f.gap, "Spalt") ?? 0, dir: sg };
+      if (f.type === "umschlag") return { type: "umschlag", edge: f.edge === "anfang" ? "anfang" : "ende", kind: f.kind || "geschlossen", length: E(f.length ?? "15", "Länge"), gap: opt(f.gap, "Spalt") ?? spec?.hemGap ?? 0, dir: sg };
       if (f.type === "durchzug") {
         const lst = (x, label) => splitList(String(x ?? "")).map((v, k) => E(v, `${label} ${k + 1}`));
         return { type: "durchzug", leg: E(f.leg ?? "1", "Schenkel"), s: lst(f.s ?? "20", "Lage entlang"), y: lst(f.y ?? "50", "Lage längs"), d: E(f.d ?? "8", "Innendurchmesser"), height: E(f.height ?? "6", "Kragenhöhe"), dir: sg, d0: opt(f.d0, "Vorloch") };
       }
-      if (f.type === "eckeschliessen") return { type: "eckeschliessen", bend: E(f.bend ?? "1", "Biegung"), side: f.side === "hinten" ? "hinten" : "vorne", through: f.through === "b" ? "b" : "a", gap: opt(f.gap, "Spalt") ?? 0 };
+      if (f.type === "eckeschliessen") return { type: "eckeschliessen", bend: E(f.bend ?? "1", "Biegung"), side: f.side === "hinten" ? "hinten" : "vorne", through: f.through === "b" ? "b" : "a", gap: opt(f.gap, "Spalt") ?? spec?.cornerGap ?? 0 };
+      if (f.type === "falten") return { type: "falten", leg: E(f.leg ?? "1", "Schenkel"), s: E(f.s ?? "50", "Lage der Biegelinie"), angle: E(f.angle ?? "90", "Biegewinkel"), dir: sg, ri: opt(f.ri, "Innenradius"), line: ["aussen", "innen"].includes(f.line) ? f.line : "mitte" };
       if (f.type === "kroepfung") return { type: "kroepfung", leg: E(f.leg ?? "1", "Schenkel"), s: E(f.s ?? "50", "Lage der Kröpflinie"), h: E(f.h ?? "10", "Versatz"), ref: ["gesamt", "innen"].includes(f.ref) ? f.ref : "flaeche", angle: E(f.angle ?? "90", "Kröpfwinkel"), dir: sg, pos: ["vor", "hinter"].includes(f.pos) ? f.pos : "mitte", fixed: f.fixed === "ende" ? "ende" : "anfang", keep: f.keep !== false, ri: opt(f.ri, "Innenradius") };
       if (f.type === "stanzung") {
         const lst = (x, label) => splitList(String(x ?? "")).map((v, k) => E(v, `${label} ${k + 1}`));
         const form = ["rechteck", "langloch"].includes(f.form) ? f.form : "rund";
         return { type: "stanzung", leg: E(f.leg ?? "1", "Schenkel"), s: lst(f.s ?? "30", "Lage entlang"), y: lst(f.y ?? "50", "Lage längs"), form, d: form === "rund" ? E(f.d ?? "10", "Durchmesser") : 0, a: form === "rund" ? 0 : E(f.a ?? "30", "Länge entlang"), b: form === "rund" ? 0 : E(f.b ?? "10", "Breite längs") };
       }
-      return { type: "lasche", edge: f.edge || "ende", length: E(f.length ?? "30", "Länge"), angle: E(f.angle ?? "90", "Winkel"), dir: sg, ri: opt(f.ri, "Innenradius"), width: opt(f.width, "Breite"), offset: opt(f.offset, "Versatz") ?? 0, relief: f.relief || spec?.relief?.relief || "rechteck", reliefW: opt(f.reliefW, "Freischnitt-Breite") ?? (spec?.relief?.reliefW || null), reliefD: opt(f.reliefD, "Freischnitt-Tiefe") ?? (spec?.relief?.reliefD || null), leg: opt(f.leg, "Schenkel") ?? 1 };
+      return { type: "lasche", edge: f.edge || "ende", length: E(f.length ?? "30", "Länge"), angle: E(f.angle ?? "90", "Winkel"), dir: sg, ri: opt(f.ri, "Innenradius"), width: opt(f.width, "Breite"), offset: opt(f.offset, "Versatz") ?? 0, relief: f.relief || spec?.relief?.relief || "rechteck", reliefW: opt(f.reliefW, "Freischnitt-Breite") ?? (spec?.relief?.reliefW || null), reliefD: opt(f.reliefD, "Freischnitt-Tiefe") ?? (spec?.relief?.reliefD || null), leg: opt(f.leg, "Schenkel") ?? 1, heightFrom: f.heightFrom || "aussen", position: f.position || "innen" };
     };
     /** Körper eines Kantteils mit allen Blech-Features bis hierher */
     const sheetBuild = (f, spec, extras) => {
@@ -928,8 +951,12 @@ export function createKernel(R) {
         bodies.push({ shape: tool.clone(), kind: "solid", name: label, fid });
         return;
       }
+      // Zielkörper (SolidCraft »targets«): nur die gewählten Körper vereinigen/schneiden
+      const tg = currentFeature?.targets?.length ? currentFeature.targets : null;
+      const inScope = (b) => !tg || tg.includes(b.fid);
       if (op === "join") {
-        const b = bodies.find(fusable);
+        const b = bodies.find((x) => fusable(x) && inScope(x));
+        if (!b) { bodies.push({ shape: tool.clone(), kind: "solid", name: label, fid }); return; }
         b.shape = b.shape.fuse(tool.clone());
         return;
       }
@@ -937,6 +964,7 @@ export function createKernel(R) {
       const tb = tool.boundingBox;
       let touched = 0;
       for (const b of bodies) {
+        if (!inScope(b)) continue;
         if (!bboxOverlap(b.shape.boundingBox, tb)) { if (op === "intersect") b.empty = true; continue; }
         b.shape = op === "cut" ? b.shape.cut(tool.clone()) : b.shape.intersect(tool.clone());
         touched++;
@@ -952,6 +980,7 @@ export function createKernel(R) {
       state.status[f.id] = st;
       if (f.suppressed) { st.suppressed = true; newCache.push({ key: keys[i], state: null }); continue; }
       const t0 = Date.now(); // Leistungsprofil (SolidCraft-Abgleich E6): Rechenzeit je Feature
+      const shapesBefore = check === "feature" ? new Set(state.bodies.map((b) => b.shape)) : null;
       try {
         switch (f.type) {
           case "sketch": {
@@ -966,13 +995,53 @@ export function createKernel(R) {
             break;
           }
           case "extrude": {
+            if (f.source === "flaeche") {
+              // Ebene Körperfläche(n) extrudieren (SolidCraft »face«/»faces«), entlang ihrer Normale
+              const hits = facesAt((f.faces || []).map((r) => r.p));
+              if (!hits.length) throw new Error("Ebene Fläche(n) im 3D-Fenster wählen");
+              const d = E(f.distance, "Abstand");
+              if (!(d > 0)) throw new Error("Abstand muss > 0 sein");
+              let tool = null;
+              for (const { face } of hits) {
+                if (face.geomType !== "PLANE") throw new Error("Nur ebene Flächen lassen sich extrudieren");
+                const n = v3.norm(tuple(face.normalAt()));
+                const sg = f.mode === "reverse" ? -1 : 1;
+                let one = R.basicFaceExtrusion(face, new R.Vector(v3.mul(n, sg * d)));
+                if (f.mode === "symmetric") one = one.translate(v3.mul(n, -sg * d / 2));
+                tool = tool ? tool.fuse(one) : one;
+              }
+              state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
+              applyOp(f.op || "join", tool, f.id, f.name);
+              st.info = `${hits.length} Fläche(n) extrudiert`;
+              break;
+            }
             const s = getSketch(f.sketch);
             if (s.prof.errors.length && !s.prof.regions.length) throw new Error(s.prof.errors[0]);
             const regions = f.regions && f.regions.length ? s.prof.regions.filter((_, k) => f.regions.includes(k)) : s.prof.regions;
-            const d = f.mode === "through" ? 0 : E(f.distance, "Abstand");
+            const N0 = s.frame.normal;
+            // Start ab Fläche/Punkt (SolidCraft »from«) oder Versatz vom Skizzenende (»start_offset«)
+            const off0 = f.from?.p ? v3.dot(v3.sub(f.from.p, s.frame.origin), N0) : E(f.startOffset || "0", "Versatz Start");
+            // Bis Fläche/Punkt (»to«, »to_offset«): Länge bis zur Ebene durch den Punkt
+            let toCut = null;
+            if (f.mode === "bis") {
+              if (!f.to?.p) throw new Error("Bis: Fläche oder Punkt im 3D-Fenster wählen");
+              const extra = E(f.toOffset || "0", "Abstand darüber hinaus");
+              const dz = v3.dot(v3.sub(f.to.p, s.frame.origin), N0) - off0;
+              if (Math.abs(dz) < 1e-6) throw new Error("Bis-Fläche liegt in der Startebene");
+              const sg = Math.sign(dz);
+              toCut = { sg, P: v3.add(f.to.p, v3.mul(N0, sg * extra)), n: f.to.n && Math.abs(v3.dot(v3.norm(f.to.n), N0)) > 1e-3 ? v3.norm(f.to.n) : N0, len: Math.abs(dz) + sg * extra };
+              if (!(toCut.len > 1e-6)) throw new Error("Abstand darüber hinaus hebt die Länge auf");
+            }
+            const d = f.mode === "through" ? 0 : f.mode === "bis" ? toCut.len : E(f.distance, "Abstand");
             if (f.mode !== "through" && !(d > 0)) throw new Error("Abstand muss > 0 sein");
             let start, len;
             switch (f.mode) {
+              case "bis": {
+                // gegen eine schräge Ebene: weit genug ziehen, dann an der Ebene abschneiden
+                const tilt = Math.abs(v3.dot(toCut.n, N0)) < 0.999;
+                const L = tilt ? BIG / 4 : d;
+                start = toCut.sg > 0 ? 0 : -L; len = L; break;
+              }
               case "reverse": start = -d; len = d; break;
               case "symmetric": start = -d / 2; len = d; break;
               case "twoSided": {
@@ -983,7 +1052,29 @@ export function createKernel(R) {
               case "through": start = -BIG / 2; len = BIG; break;
               default: start = 0; len = d;
             }
-            let tool = extrudeRegions(regions, s.frame, start, len);
+            if (f.mode === "twoSided" && f.distance2Through) { start = -BIG / 2; len = d + BIG / 2; }
+            start += off0;
+            const thin = f.thin ? {
+              t: E(f.thickness || "1", "Wanddicke"), side: f.side || "innen",
+              t2: f.side === "beidseitig" ? E(f.thickness2 || f.thickness || "1", "Wanddicke außen") : 0,
+            } : null;
+            if (thin && !(thin.t > 0)) throw new Error("Wanddicke muss > 0 sein");
+            let tool = thin ? extrudeThin(regions, s.frame, start, len, thin) : extrudeRegions(regions, s.frame, start, len);
+            if (toCut) {
+              const m = v3.dot(toCut.n, N0) * toCut.sg > 0 ? toCut.n : v3.mul(toCut.n, -1);
+              tool = tool.cut(halfSpace(toCut.P, m, BIG));
+            }
+            const taper = E(f.taper || "0", "Verjüngung");
+            if (taper) {
+              if (!(Math.abs(taper) < 89)) throw new Error("Verjüngung muss zwischen −89° und 89° liegen");
+              // Seitenflächen neigen; neutrale Ebene = Startebene, Zugrichtung = Extrusionsrichtung
+              const up = f.mode === "reverse" || toCut?.sg < 0 ? -1 : 1;
+              const o = v3.add(s.frame.origin, v3.mul(N0, f.mode === "reverse" || (toCut && toCut.sg < 0) ? start + len : start));
+              const pl = new R.Plane(o, s.frame.xDir, v3.mul(N0, up));
+              const side = (ff) => ff.not((x) => x.parallelTo(pl));
+              try { tool = tool.draft(-taper, side, pl); }
+              catch (e) { if (isFatal(e)) throw e; throw new Error("Verjüngung nicht möglich – Winkel zu groß für die Länge? (" + errorText(e, R) + ")"); }
+            }
             if (keepWall && f.op === "cut" && f.mode !== "through") {
               // Mindest-Restwand: Ende(n) fern der Skizze, symmetrisch/zweiseitig beide
               const N = s.frame.normal, P = (z) => v3.add(s.frame.origin, v3.mul(N, z));
@@ -1461,7 +1552,13 @@ export function createKernel(R) {
             checkRegel(kind, d);
             const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Basispunkt " + "XYZ"[k]));
             const dir = f.axis === "custom" ? (f.dir || ["0", "0", "1"]).map((x) => E(x, "Richtung")) : AXES[f.axis || "Z"];
-            const tool = orientZ(regelSolid(kind, d), dir, pos);
+            let tool = orientZ(regelSolid(kind, d), dir, pos);
+            // Bezugspunkt (SolidCraft Quader »corner«/»center«): Mitte Grundfläche (Standard), kleinste Ecke oder Mitte
+            if (f.anchor === "ecke" || f.anchor === "mitte") {
+              const [lo, hi] = tool.boundingBox.bounds;
+              const ref = f.anchor === "ecke" ? lo : lo.map((x, k) => (x + hi[k]) / 2);
+              tool = tool.translate(pos.map((x, k) => x - ref[k]));
+            }
             state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
             applyOp(f.op || "join", tool, f.id, f.name);
             break;
@@ -1488,7 +1585,8 @@ export function createKernel(R) {
           case "durchzug":
           case "eckeschliessen":
           case "stanzung":
-          case "kroepfung": {
+          case "kroepfung":
+          case "falten": {
             const bi = feats.findIndex((g) => g.id === f.base);
             const tool = state.tools.get(f.base);
             if (bi < 0 || bi > i || !tool?.sheet) throw new Error(missingRef(f.base, "Kantteil", f));
@@ -1642,6 +1740,47 @@ export function createKernel(R) {
               return (d[k] >= 0) !== !!f.flip ? [r0, r2] : [r2, r0];
             } : () => r0;
             let total = 0, miss = 0;
+            // SolidCraft-Rundungsarten: Sehne (Breite), Kurve (weicher Querschnitt), Zwischenradien entlang der Kante
+            const kind = f.type === "fillet" ? f.kind || "konstant" : "konstant";
+            const mids = f.type === "fillet" && f.variable && Array.isArray(f.mid) ? f.mid.map(([t, rr], k) => [E(String(t), `Lage ${k + 1}`), E(String(rr), `Radius ${k + 1}`)]) : [];
+            for (const [t, rr] of mids) if (!(t > 0 && t < 1) || !(rr > 0)) throw new Error("Zwischenradien: Lage zwischen 0 und 1, Radius > 0");
+            const special = kind === "sehne" || kind === "kurve" || mids.length > 0;
+            const specialFillet = (b, counted) => {
+              const oc = R.getOC();
+              const mk = new oc.BRepFilletAPI_MakeFillet(b.shape.wrapped, kind === "kurve" ? oc.ChFi3d_FilletShape.ChFi3d_Polynomial : oc.ChFi3d_FilletShape.ChFi3d_Rational);
+              let n = 0;
+              for (const e of b.shape.edges) {
+                let v = counted(e);
+                if (!v) continue;
+                if (kind === "sehne") {
+                  // Sehnenbreite w → Radius aus dem Winkel zwischen den Flächennormalen an der Kante
+                  const m = edgeMid(e), ns = [];
+                  for (const fc of b.shape.faces) {
+                    if (!fc.edges.some((x) => hashOf(x) === hashOf(e) && x.isSame?.(e) !== false)) continue;
+                    try { ns.push(v3.norm(tuple(fc.normalAt(m)))); } catch { /* ohne */ }
+                  }
+                  const phi = ns.length >= 2 ? Math.acos(Math.max(-1, Math.min(1, v3.dot(ns[0], ns[1])))) : Math.PI / 2;
+                  const w = Array.isArray(v) ? v[0] : v;
+                  v = w / (2 * Math.sin(Math.max(phi, 1e-3) / 2));
+                }
+                if (Array.isArray(v)) mk.Add(v[0], v[1], e.wrapped); else mk.Add(v, e.wrapped);
+                n++;
+                if (mids.length) {
+                  const [ra, rb] = Array.isArray(v) ? v : [v, v];
+                  const pts = [[0, ra], ...mids, [1, rb]].sort((x, y) => x[0] - y[0]);
+                  // gerade zwischen den Radien: Zwischenpunkte linear einfügen; weich: nur die Stützpunkte
+                  const dense = f.smooth ? pts : pts.flatMap((p, k) => k === 0 ? [p] : Array.from({ length: 8 }, (_, j) => { const q = pts[k - 1], s = (j + 1) / 8; return [q[0] + (p[0] - q[0]) * s, q[1] + (p[1] - q[1]) * s]; }));
+                  const arr = new oc.NCollection_Array1_gp_Pnt2d(1, dense.length);
+                  dense.forEach(([t, rr], k) => arr.SetValue(k + 1, new oc.gp_Pnt2d(t, rr)));
+                  mk.SetRadius(arr, mk.NbContours(), 1);
+                }
+              }
+              if (!n) return 0;
+              mk.Build(new oc.Message_ProgressRange());
+              if (!mk.IsDone()) throw new Error("Rundung nicht möglich");
+              b.shape = R.cast(mk.Shape());
+              return n;
+            };
             for (const b of state.bodies) {
               const seams = seamEdges(b.shape);
               let fn;
@@ -1674,7 +1813,28 @@ export function createKernel(R) {
                 return v;
               };
               try {
-                b.shape = f.type === "fillet" ? b.shape.fillet(counted) : b.shape.chamfer(counted);
+                if (f.type === "fillet" && special) { const n = specialFillet(b, counted); if (n) total++; continue; }
+                if (f.type === "chamfer" && (f.chamferMode === "zwei" || f.chamferMode === "winkel")) {
+                  // Fase mit zwei Abständen oder Abstand und Winkel (SolidCraft/Inventor); Bezugsfläche = obere bzw. getauschte Nachbarfläche
+                  const d2 = f.chamferMode === "zwei" ? E(f.distance2 || f.radius, "Abstand 2") : 0;
+                  const ang = f.chamferMode === "winkel" ? E(f.chamferAngle || "45", "Winkel") : 0;
+                  if (f.chamferMode === "zwei" && !(d2 > 0)) throw new Error("Abstand 2 muss > 0 sein");
+                  if (f.chamferMode === "winkel" && !(ang > 0 && ang < 90)) throw new Error("Winkel muss zwischen 0° und 90° liegen");
+                  const refFace = (e) => {
+                    const adj = b.shape.faces.filter((fc) => fc.edges.some((x) => hashOf(x) === hashOf(e) && x.isSame?.(e) !== false));
+                    const m = edgeMid(e);
+                    const key = (fc) => { try { const n = tuple(fc.normalAt(m)); return n[2] * 1e6 + n[1] * 1e3 + n[0]; } catch { return 0; } };
+                    adj.sort((x, y) => key(y) - key(x));
+                    return adj[f.chamferFlip ? 1 : 0] || adj[0];
+                  };
+                  b.shape = b.shape.chamfer((e) => {
+                    const v = counted(e);
+                    if (!v) return null;
+                    const d1 = Array.isArray(v) ? v[0] : v, fc = refFace(e);
+                    const sel = (ff) => ff.inList([fc]);
+                    return f.chamferMode === "zwei" ? { distances: [d1, d2], selectedFace: sel } : { distance: d1, angle: ang, selectedFace: sel };
+                  });
+                } else b.shape = f.type === "fillet" ? b.shape.fillet(counted) : b.shape.chamfer(counted);
                 if (any) total++;
               } catch (e) {
                 if (isFatal(e)) throw e;
@@ -1725,6 +1885,26 @@ export function createKernel(R) {
             break;
           }
           case "sweep": {
+            if (f.profil === "rohr") {
+              // Rohr entlang eines Pfads (SolidCraft »Pipe«): Außen-Ø und Wand (leer = voll)
+              const D = E(f.diameter || "20", "Außendurchmesser");
+              const w = String(f.wall ?? "").trim() ? E(f.wall, "Wanddicke") : 0;
+              if (!(D > 0)) throw new Error("Außendurchmesser muss > 0 sein");
+              if (w && !(w > 0 && w < D / 2)) throw new Error("Wanddicke muss > 0 und kleiner als der halbe Durchmesser sein");
+              const p3 = state.paths.get(f.path);
+              const p = p3 ? null : getSketch(f.path, "Pfad-Skizze");
+              const chain = p3 ? null : pathChain(p.sketch);
+              const spine = p3 ? path3dWire(p3) : chainWire(chain, p.frame);
+              const c0 = tuple(spine.startPoint), t0 = v3.norm(tuple(spine.tangentAt(0)));
+              const cfg = { frenet: !p3?.pieces.some((q) => q.t === "spline"), transitionMode: "round" };
+              const ring = (r) => R.genericSweep(R.assembleWire([R.makeCircle(r, c0, t0)]), spine.clone(), cfg);
+              let tool = ring(D / 2);
+              if (w) tool = tool.cut(ring(D / 2 - w));
+              state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape: tool, kind: "tool" }] });
+              applyOp(f.op || "join", tool, f.id, f.name);
+              st.info = `Rohr Ø ${round(D)}${w ? ` × ${round(w)}` : " voll"}, Pfad ${round(p3 ? p3.length : chainLength(chain))} mm`;
+              break;
+            }
             const s = getSketch(f.sketch, "Profil-Skizze");
             if (!s.prof.regions.length) throw new Error(s.prof.errors[0] || "Profil-Skizze ohne geschlossene Kontur");
             if (f.path === f.sketch) throw new Error("Profil und Pfad müssen verschiedene Skizzen sein");
@@ -2064,12 +2244,30 @@ export function createKernel(R) {
             const mv = (f.move || ["0", "0", "0"]).map((x) => E(x, "Verschiebung"));
             const ang = E(f.angle || "0", "Winkel");
             const ax = Math.abs(ang) > 1e-12 ? axisOf(f.axis, datums.map) : null;
-            const tf = (sh) => { let x = sh; if (ax) x = x.rotate(ang, ax.p, ax.d); return v3.len(mv) > 0 ? x.translate(mv) : x; };
+            // Skalieren (SolidCraft »Scale«): gleicher Faktor oder je Achse, um einen festen Punkt
+            const sf = f.scaleMode === "achsen" ? (f.scaleXYZ || ["1", "1", "1"]).map((x, k) => E(x, "Faktor " + "XYZ"[k])) : [1, 1, 1].map(() => E(f.scale || "1", "Faktor"));
+            for (const x of sf) if (!(x > 1e-9 && x < 1e6)) throw new Error("Faktor muss zwischen 0 und 1 000 000 liegen");
+            const so = (f.scaleOrigin || ["0", "0", "0"]).map((x) => E(x, "Fester Punkt"));
+            const scaled = sf.some((x) => Math.abs(x - 1) > 1e-12);
+            const scl = (sh) => {
+              if (!scaled) return sh;
+              if (Math.abs(sf[0] - sf[1]) < 1e-12 && Math.abs(sf[0] - sf[2]) < 1e-12) return sh.scale(sf[0], so);
+              // Je Achse verschieden: über ein feines Netz (ebene Flächen bleiben eben, gekrümmte werden facettiert)
+              const m = sh.mesh({ tolerance: 0.01, angularTolerance: 0.05 });
+              const vs = [];
+              for (let i = 0; i < m.vertices.length; i += 3) vs.push([0, 1, 2].map((k) => so[k] + (m.vertices[i + k] - so[k]) * sf[k]));
+              const tr = [];
+              for (let i = 0; i < m.triangles.length; i += 3) tr.push([m.triangles[i], m.triangles[i + 1], m.triangles[i + 2]]);
+              const r = meshToSolid({ vertices: vs, triangles: tr });
+              if (!sh.faces.every((x) => x.geomType === "PLANE")) st.warning = "Gekrümmte Flächen sind beim Skalieren je Achse facettiert";
+              return r.shape;
+            };
+            const tf = (sh) => { let x = scl(sh); if (ax) x = x.rotate(ang, ax.p, ax.d); return v3.len(mv) > 0 ? x.translate(mv) : x; };
             for (const b of sel) {
               if (f.copy) state.bodies.push({ ...b, shape: tf(b.shape.clone()), name: b.name + " (Kopie)", fid: f.id, meta: b.meta ? { ...b.meta } : b.meta });
               else b.shape = tf(b.shape);
             }
-            st.info = `${sel.length} Körper ${f.copy ? "kopiert" : "verschoben"}`;
+            st.info = `${sel.length} Körper ${f.copy ? "kopiert" : scaled && !ax && !(v3.len(mv) > 0) ? "skaliert" : "verschoben"}` + (scaled ? ` (Faktor ${sf.map(round).join(" × ")})` : "");
             break;
           }
           case "aufdicken": case "flaeche": {
@@ -2530,6 +2728,10 @@ export function createKernel(R) {
               shape = r.shape;
               st.info = `Netz → ${r.solid ? "Volumenkörper" : "Fläche (nicht geschlossen)"}, ${r.faces} Flächen${r.before > r.faces ? ` (aus ${r.before} Dreiecken)` : ""}`;
             }
+            // Aufstellen (SolidCraft-Abgleich W8): Modelle mit Y nach oben um X drehen, damit Z oben ist
+            if (f.aufstellen === "y-oben") shape = shape.rotate(90, [0, 0, 0], [1, 0, 0]);
+            else if (f.aufstellen === "y-unten") shape = shape.rotate(-90, [0, 0, 0], [1, 0, 0]);
+            else if (f.aufstellen === "kopf") shape = shape.rotate(180, [0, 0, 0], [1, 0, 0]);
             state.tools.set(f.id, { op: f.op || "join", shapes: [{ shape, kind: "tool" }] });
             applyOp(f.op || "new", shape, f.id, f.name || "Import");
             break;
@@ -2544,6 +2746,15 @@ export function createKernel(R) {
         st.ok = false;
         st.error = errorText(e, R);
       }
+      if (shapesBefore && st.ok) {
+        for (const b of state.bodies) {
+          if (shapesBefore.has(b.shape)) continue;
+          let ok;
+          try { ok = shapeValid(b.shape); } catch { ok = false; }
+          b.invalid = !ok;
+          if (!ok && !st.warning?.includes(INVALID_BODY)) st.warning = st.warning ? st.warning + "; " + INVALID_BODY : INVALID_BODY;
+        }
+      }
       st.ms = Date.now() - t0;
       if (useCache) newCache.push({ key: keys[i], state: null });
       if (useCache && i >= feats.length - 3) newCache[newCache.length - 1].state = cloneState(state);
@@ -2557,7 +2768,7 @@ export function createKernel(R) {
     for (const [k, msg] of Object.entries(paramErrors)) state.status["param:" + k] = { ok: false, error: msg };
     // Körperprüfung des Endergebnisses: nur Hinweis am erzeugenden Feature, blockiert nichts.
     // Statusobjekt ersetzen statt ändern – es kann mit dem Zwischenspeicher geteilt sein.
-    if (validate) {
+    if (validate && check !== "feature") {
       for (const b of state.bodies) {
         let ok;
         try { ok = shapeValid(b.shape); } catch { ok = false; }
@@ -2790,7 +3001,10 @@ export function createKernel(R) {
     // Profil im Halbschnitt (x = Radius, y = Tiefe entlang a) -> Rotation
     const w = v3.norm(Math.abs(a[0]) < 0.9 ? v3.cross(a, [1, 0, 0]) : v3.cross(a, [0, 1, 0]));
     const normal = v3.cross(w, a);
-    const tip = through || f.tip === false ? 0 : r / Math.tan((59 * Math.PI) / 180);
+    // Bohrgrund: Spitze mit Spitzenwinkel (Standard 118°) oder flach
+    const tipA = f.tip === false || f.tip === "flach" ? 0 : E(f.tipAngle || "118", "Spitzenwinkel");
+    if (tipA && !(tipA > 0 && tipA < 180)) throw new Error("Spitzenwinkel muss zwischen 0° und 180° liegen");
+    const tip = through || !tipA ? 0 : r / Math.tan(((tipA / 2) * Math.PI) / 180);
     const pts = [[0, -eps]];
     if (kind === "senkung") {
       const D = E(f.sinkDiameter, "Senkdurchmesser") / 2;
@@ -3872,16 +4086,27 @@ export function createKernel(R) {
    * tol: Mindestvolumen in mm³ – fachlich: Rundungs- und Tessellierungsfehler der Booleschen Operation liegen weit
    * darunter, eine echte Überschneidung von 0,1 mm auf 10 × 10 mm ergibt bereits 10 mm³.
    */
-  function collisions(list, { tol = 1 } = {}) {
+  /**
+   * Kollisionen (und mit clearance > 0 zu knappe Abstände) zwischen Körpern verschiedener Komponenten.
+   * tol: kleinere Überschneidung zählt als Berührung (mm³); against: nur Paare mit genau einer Seite in dieser Liste
+   */
+  function collisions(list, { tol = 1, clearance = 0, against = null } = {}) {
     const out = [];
     const boxes = list.map((x) => x.shape.boundingBox);
+    const ag = against?.length ? new Set(against) : null;
     for (let i = 0; i < list.length; i++)
       for (let j = i + 1; j < list.length; j++) {
         if (list[i].key === list[j].key) continue;
-        if (!bboxOverlap(boxes[i], boxes[j], 1e-3)) continue;
+        if (ag && ag.has(list[i].key) === ag.has(list[j].key)) continue;
+        if (!bboxOverlap(boxes[i], boxes[j], Math.max(1e-3, clearance))) continue;
         let vol = 0;
         try { vol = R.measureVolume(list[i].shape.clone().intersect(list[j].shape.clone())); } catch { vol = NaN; }
-        if (!(vol <= tol)) out.push({ a: list[i].key, b: list[j].key, volume: vol });
+        if (!(vol <= tol)) { out.push({ a: list[i].key, b: list[j].key, volume: vol }); continue; }
+        if (clearance > 0) {
+          let d = Infinity;
+          try { d = R.measureDistanceBetween(list[i].shape, list[j].shape); } catch { /* ohne */ }
+          if (d < clearance) out.push({ a: list[i].key, b: list[j].key, volume: 0, gap: d });
+        }
       }
     // je Komponentenpaar zusammenfassen
     const pairs = new Map();
@@ -3889,6 +4114,7 @@ export function createKernel(R) {
       const k = [c.a, c.b].sort().join("|");
       const p = pairs.get(k) || { a: c.a, b: c.b, volume: 0 };
       p.volume += Number.isFinite(c.volume) ? c.volume : 0;
+      if (c.gap != null) p.gap = Math.min(p.gap ?? Infinity, c.gap);
       if (!Number.isFinite(c.volume)) p.unsure = true;
       pairs.set(k, p);
     }

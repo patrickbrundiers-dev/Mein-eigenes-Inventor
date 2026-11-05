@@ -72,6 +72,7 @@ export const BEFEHLSHILFE = {
   lasche: "Lasche an eine Blechkante anbiegen.",
   umschlag: "Blechkante umschlagen (Falz), z. B. als Kantenschutz.",
   durchzug: "Kragen um eine Bohrung im Blech hochziehen, z. B. für Gewinde in dünnem Blech.",
+  falten: "Schenkel eines Blechteils an einer Linie längs des Teils biegen (zusätzliche Abkantung, wie SolidCraft »Falten«).",
   kroepfung: "Schenkel an einer Linie um einen Versatz kröpfen (Z-Abkantung mit zwei Gegenbiegungen).",
   eckeschliessen: "Spalt zwischen zwei Laschen an einer Blechecke schließen.",
   stanzung: "Stanzform (Sicke, Lüftungsschlitz, Ausklinkung) ins Blech setzen.",

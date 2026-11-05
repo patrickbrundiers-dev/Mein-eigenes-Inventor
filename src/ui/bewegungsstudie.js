@@ -128,3 +128,44 @@ export function motionStudyDialog(app, c, st = {}) {
 }
 
 const showKept = (app, asm) => app.viewer.showMotionPaths((asm.motionPaths || []).filter((p) => !p.hidden).map((p) => ({ ...p, kept: true })));
+
+/**
+ * Grenzen finden (L2, wie SolidCraft »Find Limits«): Gelenk von der heutigen Stellung aus nach beiden Seiten drehen bzw.
+ * schieben, bis ein bewegtes Teil ein anderes durchdringt; die Grenze wird auf `refine` genau eingegabelt und Richtung
+ * heutiger Stellung gerundet. Eigene Grenzen des Gelenks zählen nicht. Rückgabe { min, max, minBy, maxBy, start }.
+ */
+export async function findJointLimits(app, asm, c, { coarse = null, refine = null } = {}) {
+  const j = c.joint, slide = isSlide(j);
+  const a0 = Number(j.angle) || 0;
+  const range = slide ? 2000 : 360;
+  coarse = coarse ?? (slide ? 5 : 5);
+  refine = refine ?? (slide ? 0.01 : 0.1);
+  const clone = JSON.parse(JSON.stringify(asm));
+  const cj = clone.components.find((x) => x.id === c.id).joint;
+  cj.min = a0 - range; cj.max = a0 + range;
+  if (slide) { cj.smin = a0 - range; cj.smax = a0 + range; }
+  const name = (id) => asm.components.find((x) => x.id === id)?.name || id;
+  const hitsAt = async (a) => (await studyCollisions(app, clone, [{ a, deltas: motionDeltas(clone, c.id, a).deltas }]))[0].hits;
+  const start = await hitsAt(a0);
+  if (start.length) return { start: start.map((x) => `${name(x.a)} / ${name(x.b)}`) };
+  const side = async (s) => {
+    let ok = a0, by = null;
+    for (let k = 1; k * coarse <= range; k++) {
+      const a = a0 + s * k * coarse, hits = await hitsAt(a);
+      if (hits.length) {
+        let lo = ok, hi = a;
+        by = hits[0];
+        while (Math.abs(hi - lo) > refine) { const m = (lo + hi) / 2, hm = await hitsAt(m); if (hm.length) { hi = m; by = hm[0]; } else lo = m; }
+        const r = s > 0 ? Math.floor(lo / refine) * refine : Math.ceil(lo / refine) * refine;
+        return { v: Math.round(r * 1000) / 1000, by: `${name(by.a)} / ${name(by.b)}` };
+      }
+      ok = a;
+    }
+    return { v: null, by: null };
+  };
+  const lo = await side(-1), hi = await side(1);
+  // Drehung ohne Anschlag auf einer Seite: eine Umdrehung von der anderen Seite (wie SolidCraft)
+  let min = lo.v, max = hi.v;
+  if (!slide) { if (min == null && max != null) min = max - 360; if (max == null && min != null) max = min + 360; if (min == null && max == null) { min = a0 - 180; max = a0 + 180; } }
+  return { min, max, minBy: lo.by, maxBy: hi.by };
+}

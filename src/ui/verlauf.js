@@ -4,7 +4,13 @@
 import { h, icon } from "./dom.js";
 import { FICON } from "./tree.js";
 import { FEATURE_NAMES } from "./app.js";
-import { activeCount } from "../core/bauteilende.js";
+import { activeCount, setEnd } from "../core/bauteilende.js";
+
+/** Bauteilende ohne eigenen Rückgängig-Schritt setzen (beim Abspielen) */
+function setEndQuiet(app, part, id) {
+  setEnd(part, id);
+  app.changed?.();
+}
 
 /** Bauteilende-ID für »n Features gerechnet« (0 = vor alle, n = alle) */
 export function endIdFor(part, n) {
@@ -50,7 +56,8 @@ export class Verlauf {
     const track = h("div", { class: "vl-track", role: "list" }, ...items);
     el.replaceChildren(
       h("span", { class: "vl-title" }, "Verlauf"),
-      h("div", { class: "vl-ctls" }, ctl("⏮", "Zum Anfang (vor alle Features)", 0, n === 0), ctl("◀", "Ein Feature zurück", n - 1, n === 0), ctl("▶", "Ein Feature vor", n + 1, n >= fs.length), ctl("⏭", "Ans Ende", fs.length, n >= fs.length)),
+      h("div", { class: "vl-ctls" }, ctl("⏮", "Zum Anfang (vor alle Features)", 0, n === 0), ctl("◀", "Ein Feature zurück", n - 1, n === 0), ctl("▶", "Ein Feature vor", n + 1, n >= fs.length), ctl("⏭", "Ans Ende", fs.length, n >= fs.length),
+        h("button", { class: "vl-ctl" + (this.playing ? " on" : ""), title: this.playing ? "Abspielen anhalten" : "Verlauf abspielen (Feature für Feature aufbauen)", "aria-label": "Verlauf abspielen", disabled: ro || !fs.length, onclick: () => this.play() }, h("span", { "aria-hidden": "true" }, this.playing ? "⏸" : "⏯"))),
       track,
       h("span", { class: "vl-info" }, fs.length ? `${n < fs.length ? `${n} von ${fs.length}` : fs.length} Features · Marke ziehen zum Zurückrollen` : "Noch keine Features"));
     const selEl = track.querySelector(".vl-item.sel");
@@ -66,6 +73,26 @@ export class Verlauf {
     }
     this.track = track;
     this.part = part;
+  }
+  /**
+   * Verlauf abspielen (SolidCraft »Timeline play«): Bauteilende von vorn Schritt für Schritt bis ans Ende setzen.
+   * Nochmal drücken hält an; das Ende bleibt dann an der erreichten Stelle. Alle Schritte zusammen sind ein Rückgängig-Schritt.
+   */
+  async play() {
+    const app = this.app, part = this.part;
+    if (!part) return;
+    if (this.playing) { this.playing = false; this.render(); return; }
+    const fs = part.features || [], start = activeCount(part) >= fs.length ? 0 : activeCount(part);
+    this.playing = true;
+    app.setPartEnd(endIdFor(part, start));
+    for (let k = start + 1; k <= fs.length && this.playing && app.activeDoc() === part; k++) {
+      await new Promise((r) => setTimeout(r, Number(app.prefs.get("oberflaeche.abspielTakt")) || 600));
+      while (app.kernel?.busy && this.playing) await new Promise((r) => setTimeout(r, 60));
+      if (!this.playing || app.activeDoc() !== part) break;
+      setEndQuiet(app, part, endIdFor(part, k));
+    }
+    this.playing = false;
+    this.render();
   }
   /** Marke: ziehen bis zur Lücke zwischen zwei Symbolen, loslassen setzt das Bauteilende */
   marker() {

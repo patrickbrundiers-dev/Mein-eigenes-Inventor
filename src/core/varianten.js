@@ -7,13 +7,24 @@ import { resolveParams } from "./expr.js";
 
 export const emptyVariants = () => ({ columns: [], rows: [] });
 
+// Sonderspalten (SolidCraft-Konfigurationstabelle): Unterdrückung eines Features und Werkstoff je Zeile
+export const SUPPRESS_PREFIX = "~u:";
+export const MATERIAL_COLUMN = "~werkstoff";
+export const isSpecialColumn = (c) => c === MATERIAL_COLUMN || String(c).startsWith(SUPPRESS_PREFIX);
+const truthy = (v) => /^(1|ja|j|x|true|unterdrückt)$/i.test(String(v ?? "").trim());
+const falsy = (v) => /^(0|nein|n|false|aktiv|-)$/i.test(String(v ?? "").trim());
+
 /** Tabelle prüfen: Spalten sind Parameter des Bauteils, Namen eindeutig, Werte rechenbar (mit den übrigen Parametern) */
 export function checkVariants(part) {
   const v = part.variants;
   const errors = [];
   if (!v) return errors;
   const names = new Set((part.params || []).map((p) => p.name));
-  for (const c of v.columns) if (!names.has(c)) errors.push(`Spalte »${c}« ist kein Parameter des Bauteils`);
+  for (const c of v.columns) {
+    if (c === MATERIAL_COLUMN) continue;
+    if (String(c).startsWith(SUPPRESS_PREFIX)) { if (!(part.features || []).some((f) => f.id === c.slice(SUPPRESS_PREFIX.length))) errors.push(`Spalte »${c}«: Feature fehlt`); continue; }
+    if (!names.has(c)) errors.push(`Spalte »${c}« ist kein Parameter des Bauteils`);
+  }
   if (new Set(v.columns).size !== v.columns.length) errors.push("Spalte doppelt");
   const seen = new Set();
   v.rows.forEach((r, i) => {
@@ -23,13 +34,14 @@ export function checkVariants(part) {
     seen.add(r.name?.trim());
     const res = resolveParams(variantParams(part, r));
     for (const c of v.columns) if (res.errors?.[c]) errors.push(`${label}, ${c}: ${res.errors[c]}`);
+    for (const c of v.columns) if (String(c).startsWith(SUPPRESS_PREFIX)) { const x = r.values?.[c]; if (x !== undefined && String(x).trim() !== "" && !truthy(x) && !falsy(x)) errors.push(`${label}: Unterdrückt »ja« oder »nein«`); }
   });
   return errors;
 }
 
 /** Parameter einer Variante: Ausdrücke aus der Zeile ersetzen die des Werksbauteils */
 export function variantParams(part, row) {
-  return (part.params || []).map((p) => (row.values && row.values[p.name] !== undefined && String(row.values[p.name]).trim() !== "" ? { ...p, expr: String(row.values[p.name]) } : { ...p }));
+  return (part.params || []).map((p) => (isSpecialColumn(p.name) ? { ...p } : row.values && row.values[p.name] !== undefined && String(row.values[p.name]).trim() !== "" ? { ...p, expr: String(row.values[p.name]) } : { ...p }));
 }
 
 /** Bauteil einer Variante (neue oder bestehende ID) */
@@ -37,6 +49,15 @@ export function variantPart(factory, row, id) {
   const copy = JSON.parse(JSON.stringify(factory));
   delete copy.variants;
   delete copy.link;
+  for (const c of factory.variants?.columns || []) {
+    const x = row.values?.[c];
+    if (x === undefined || String(x).trim() === "") continue;
+    if (c === MATERIAL_COLUMN) copy.material = String(x).trim();
+    else if (String(c).startsWith(SUPPRESS_PREFIX)) {
+      const f = copy.features.find((g) => g.id === c.slice(SUPPRESS_PREFIX.length));
+      if (f) { if (truthy(x)) f.suppressed = true; else delete f.suppressed; }
+    }
+  }
   return {
     ...copy,
     id,

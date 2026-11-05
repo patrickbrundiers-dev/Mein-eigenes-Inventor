@@ -41,7 +41,8 @@ export function autoDimension(sketch, scope = {}, opts = {}) {
     return true;
   };
 
-  const ents = work.entities.filter((e) => !e.origin);
+  const only = opts.only ? new Set(opts.only) : null; // nur diese Elemente (neue Formen)
+  const ents = work.entities.filter((e) => !e.origin && (!only || only.has(e.id)));
   if (kinds.radius) {
     for (const e of ents) {
       if (e.type === "circle" && !has((c) => c.e === e.id && DIMS.has(c.type))) tryAdd({ type: "diameter", e: e.id, labelAngle: Math.PI / 4 });

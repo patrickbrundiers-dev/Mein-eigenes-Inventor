@@ -1,4 +1,5 @@
 // Modellbrowser: Projekt-Dokumente und Feature-Liste des aktiven Bauteils
+import { planeLabel } from "../core/ebenennamen.js";
 import { h, icon, contextMenu, promptDialog } from "./dom.js";
 import { deleteGrid } from "./achsraster.js";
 import { FEATURE_NAMES } from "./app.js";
@@ -10,7 +11,7 @@ import { syncDrawingTitles } from "../core/eigenschaften.js";
 import { copyDesignDialog, makeIndependent, openDrawingOf, whereUsedDialog } from "./arbeitsablauf.js";
 import { treeEntries, endPosition, featureDetail, matchesQuery, filterEntries, groupFolders, neighbourFolders } from "../core/baum.js";
 
-export const FICON = { freiflaeche: "surface", flaechenkurve: "path3d", auflage: "facepick", kunststoff: "plastic", punktwolke: "point", sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", blechkasten: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", strecken: "stretch", zinkloch: "ventholes", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", huelle: "hull", lochblech: "perforate", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", direkt: "direct", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", kroepfung: "jog", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
+export const FICON = { falten: "fold", freiflaeche: "surface", flaechenkurve: "path3d", auflage: "facepick", kunststoff: "plastic", punktwolke: "point", sketch: "sketch", extrude: "extrude", revolve: "revolve", hole: "hole", profile: "profile", frame: "frame", knickrahmen: "knick", profilzug: "profilzug", biegerohr: "biegerohr", regelkoerper: "regelkoerper", normteil: "normteil", kantteil: "kantteil", blechkasten: "kantteil", platte: "platte", rippe: "rippe", naht: "naht", generator: "gelaender", genteil: "profile", emboss: "emboss", fillet: "fillet", chamfer: "chamfer", shell: "shell", pattern: "pattern", mirror: "mirror", import: "import", arbeitsebene: "plane", arbeitsachse: "axis", arbeitspunkt: "point", sweep: "sweep", loft: "loft", spirale: "coil", endkappe: "endcap", strecken: "stretch", zinkloch: "ventholes", kuerzen: "extend", kombinieren: "combine", trennen: "split", verschieben: "move", huelle: "hull", lochblech: "perforate", aufdicken: "thicken", flaeche: "pushpull", entformung: "draft", direkt: "direct", lasche: "flange", umschlag: "hem", durchzug: "collar", eckeschliessen: "cornerseam", schraubverbindung: "bolt", stanzung: "punch", kroepfung: "jog", konturwalzen: "contourroll", trennfuge: "rip", skizze3d: "path3d", abgeleitet: "derive", schweissbaugruppe: "weldasm", welle: "shaft", zahnrad: "gear", lager: "bearing", feder: "spring", stecksystem: "tabslot", steckzapfen: "tabslot", steckschlitz: "tabslot" };
 
 export class Tree {
   constructor(app) {
@@ -190,7 +191,7 @@ export class Tree {
     oli.append(this.node({ label: "Ursprung", ic: "origin", twist: this.collapsed.has(ok + ":open") ? "▾" : "▸", onTwist: () => this.toggle(ok + ":open"), cls: "group" }));
     if (this.collapsed.has(ok + ":open") || oOpen) {
       const ou = h("ul");
-      for (const [pl, label] of [["XY", "XY-Ebene"], ["XZ", "XZ-Ebene"], ["YZ", "YZ-Ebene"]]) {
+      for (const [pl, label] of ["XY", "XZ", "YZ"].map((x) => [x, planeLabel(x)])) {
         ou.append(h("li", {}, this.node({ label, ic: "plane", onClick: () => {}, onDbl: () => app.createSketch({ ref: pl }), title: label + " – Doppelklick: neue Skizze",
           onMenu: (e) => contextMenu(e.clientX, e.clientY, [{ label: "Neue Skizze auf " + label, icon: "sketch", run: () => app.createSketch({ ref: pl }) }]) })));
       }
@@ -538,6 +539,7 @@ export class Tree {
       ...(d.kind !== "part" ? [] : d.link
         ? ["-", { label: "Aus Datei aktualisieren", icon: "update", run: () => app.files.refreshLinks() },
           app.files.bridge ? { label: "Quelldatei öffnen", icon: "open", run: () => app.files.open(d.link.path) } : null,
+          { label: "Quelle neu verknüpfen …", icon: "open", run: () => app.files.relinkPart(d) },
           { label: "Verknüpfung lösen", icon: "cut", run: () => app.edit("Verknüpfung lösen", () => { delete d.link; }, { link: true, rebuild: false }) }]
         : [{ label: "Als eigene Datei speichern", icon: "save", run: () => app.files.savePartAsFile(d) }]),
       "-",

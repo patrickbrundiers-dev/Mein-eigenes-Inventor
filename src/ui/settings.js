@@ -1,5 +1,6 @@
 // Einstellungscenter: Kategorien links, Suche oben, Optionen rechts. Gültige Änderungen wirken sofort.
 import { slicerEditor, plasticRulesEditor } from "./datenwerkzeuge.js";
+import { THEMES } from "../core/themes.js";
 import { h, modal, toast, confirmDialog, promptDialog } from "./dom.js";
 import { CATEGORIES, SETTINGS, searchSettings, settingDef, defaultSettings, profileSnapshot } from "../core/settings.js";
 import { materialList, validateMaterial, exportMaterialLib, importMaterialLib, usedMaterialKeys } from "../core/materials.js";
@@ -32,6 +33,7 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
     pane.replaceChildren(...[
       h("h3", { class: "set-title" }, c.label),
       c.note ? h("p", { class: "hint" }, c.note) : null,
+      ...(cat === "darstellung" && !query ? [themeCards(app, render)] : []),
       ...list.map((s) => row(s)),
       ...extras(app, cat),
       c.planned?.length ? h("div", { class: "set-planned" }, h("b", {}, "Geplant, noch nicht einstellbar:"), h("ul", {}, ...c.planned.map((t) => h("li", {}, t)))) : null,
@@ -65,6 +67,9 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
       input = h("input", { class: "inp set-folder", value: v, spellcheck: "false", placeholder: "zuletzt benutzter Ordner" });
       input.addEventListener("change", () => commit(input.value));
       if (window.werkcad?.pickFolder) after = h("button", { class: "btn", onclick: async () => { const d = await window.werkcad.pickFolder({ dir: prefs.get(s.key) || undefined }); if (d) { input.value = d; commit(d); } } }, "Wählen…");
+    } else if (s.type === "text") {
+      input = h("input", { class: "inp", value: v, spellcheck: "false" });
+      input.addEventListener("change", () => commit(input.value));
     } else if (s.type === "name") {
       input = h("input", { class: "inp", value: v, spellcheck: "false", placeholder: s.allowEmpty ? "leer = keine" : "" });
       input.addEventListener("change", () => commit(input.value));
@@ -117,6 +122,7 @@ function extras(app, cat) {
     const forget = h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: !Object.keys(memo).length, onclick: (e) => { app.prefs.reset(["werkzeuge.letzte"]); e.currentTarget.disabled = true; toast("Werkzeuge starten wieder mit den Standardwerten"); } }, "Letzte Werkzeugwerte vergessen"));
     return [forget, quickAccessEditor(app), ribbonEditor(app), keymapEditor(app)];
   }
+  if (cat === "maus3d") return [spaceMouseSection(app)];
   if (cat === "material") return [materialsEditor(app), plasticRulesEditor(app)];
   if (cat === "blech") return [sheetRulesEditor(app), bendTablesEditor(app)];
   if (cat === "dateien") {
@@ -283,18 +289,20 @@ function sheetRulesEditor(app) {
       const upd = (v) => { const next = lib(); next[i] = { ...next[i], [key]: kind === "num" ? num(v) : v }; save(next); };
       if (kind === "mat") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...materialList().map((m) => h("option", { value: m.key, selected: m.key === r.material }, m.label)));
       if (kind === "rule") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...BEND_RULES.map((x) => h("option", { value: x.value, selected: x.value === r.rule }, x.label)));
+      if (kind === "angle") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...[["biege", "Biegewinkel"], ["innen", "Eingeschlossen"]].map(([v, l]) => h("option", { value: v, selected: v === (r.angleDisplay || "biege") }, l)));
+      if (kind === "opt") return h("input", { class: "inp num", value: r[key] == null ? "" : String(r[key]).replace(".", ","), placeholder: "–", onchange: (e) => { const v = e.target.value.trim(); const next = lib(); const o = { ...next[i] }; if (v === "") delete o[key]; else o[key] = num(v); next[i] = o; save(next); } });
       if (kind === "relief") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...RELIEFS.map(([v, l]) => h("option", { value: v, selected: v === r.relief }, l)));
       return h("input", { class: "inp" + (kind === "num" ? " num" : ""), value: kind === "num" ? String(r[key]).replace(".", ",") : r[key], onchange: (e) => upd(e.target.value.trim()) });
     };
     const outdated = outdatedSheetRules(app.project?.docs || [], list);
     wrap.replaceChildren(
       h("h3", {}, "Blechregeln"),
-      h("p", { class: "hint" }, "Freischnitt 0 = Breite t, Tiefe t/2. Kantteile speichern eine Kopie der Regel; geänderte Regeln werden am Kantteil oder hier für das ganze Projekt übernommen."),
+      h("p", { class: "hint" }, "Freischnitt 0 = Breite t, Tiefe t/2. Spalt Umschlag und Spalt Ecke gelten für Umschläge und »Ecke schließen« ohne eigenen Wert. Winkel in DXF: Biegewinkel oder eingeschlossener Winkel (180° − Biegewinkel) in den Biegenotizen. Kantteile speichern eine Kopie der Regel; geänderte Regeln werden am Kantteil oder hier für das ganze Projekt übernommen."),
       h("table", { class: "grid" },
-        h("thead", {}, h("tr", {}, ...["Name", "Werkstoff", "Dicke", "Innenradius", "Abwicklung", "K-Faktor", "Freischnitt", "Breite", "Tiefe", ""].map((x) => h("th", {}, x)))),
+        h("thead", {}, h("tr", {}, ...["Name", "Werkstoff", "Dicke", "Innenradius", "Abwicklung", "K-Faktor", "Freischnitt", "Breite", "Tiefe", "Spalt Umschlag", "Spalt Ecke", "Winkel in DXF", ""].map((x) => h("th", {}, x)))),
         h("tbody", {}, ...list.map((r, i) => h("tr", {},
           h("td", {}, cell(r, i, "name", "text")), h("td", {}, cell(r, i, "material", "mat")), h("td", {}, cell(r, i, "t")), h("td", {}, cell(r, i, "ri")),
-          h("td", {}, cell(r, i, "rule", "rule")), h("td", {}, cell(r, i, "k")), h("td", {}, cell(r, i, "relief", "relief")), h("td", {}, cell(r, i, "reliefW")), h("td", {}, cell(r, i, "reliefD")),
+          h("td", {}, cell(r, i, "rule", "rule")), h("td", {}, cell(r, i, "k")), h("td", {}, cell(r, i, "relief", "relief")), h("td", {}, cell(r, i, "reliefW")), h("td", {}, cell(r, i, "reliefD")), h("td", {}, cell(r, i, "hemGap", "opt")), h("td", {}, cell(r, i, "gap", "opt")), h("td", {}, cell(r, i, "angleDisplay", "angle")),
           h("td", {}, h("button", { class: "btn", onclick: () => save(lib().filter((_, k) => k !== i)) }, "Löschen")))))),
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => { const l = lib(); const last = l.at(-1) || DEFAULT_SHEET_RULES[0]; let n = 1; while (l.some((r) => r.name === `${last.name} (${n})`)) n++; save([...l, { ...last, id: newId(l), name: `${last.name} (${n})` }]); } }, "Regel anlegen"),
@@ -445,5 +453,46 @@ export function profileEditor(app) {
         h("button", { class: "btn", onclick: async () => { const text = await pickText(app); if (text == null) return; const n = name.value.trim() || `Profil ${Object.keys(all).length + 1}`; put({ ...all, [n]: text }); } }, "Profil importieren …")));
   };
   render();
+  return box;
+}
+
+/** Farbthemen als Bildkarten (SolidCraft-Abgleich Runde 2, G1): Kopfleiste, Panel, 3D-Hintergrund, Akzent */
+export function themeCards(app, rerender) {
+  const box = h("div", { class: "theme-cards-box" });
+  const BUILTIN = [
+    { id: "hell", name: "Hell", vars: { appbar: "#2b3340", "steel-0": "#ffffff", "stage-a": "#eef1f5", "stage-b": "#dfe5ec", dye: "#1f6fb5", ink: "#1b2430", "steel-3": "#cbd3dd" } },
+    { id: "dunkel", name: "Dunkel", vars: { appbar: "#1c1e21", "steel-0": "#25272b", "stage-a": "#2f333a", "stage-b": "#23262b", dye: "#4aa3d8", ink: "#e0e2e5", "steel-3": "#484d55" } },
+    { id: "system", name: "Wie Windows", vars: null },
+  ];
+  const card = (t) => {
+    const v = t.vars;
+    const pic = v ? h("div", { class: "theme-pic", style: { background: `linear-gradient(180deg, ${v["stage-a"]}, ${v["stage-b"]})` } },
+      h("i", { class: "tp-bar", style: { background: v.appbar } }), h("i", { class: "tp-panel", style: { background: v["steel-0"], borderColor: v["steel-3"] } }, h("b", { style: { background: v.ink } }), h("b", { style: { background: v.ink, width: "60%" } })),
+      h("i", { class: "tp-body", style: { borderColor: v.dye } }), h("i", { class: "tp-accent", style: { background: v.dye } }))
+      : h("div", { class: "theme-pic theme-pic-system" }, h("i", { class: "half-l" }), h("i", { class: "half-r" }));
+    return h("button", { class: "theme-card" + (app.prefs.get("darstellung.schema") === t.id ? " on" : ""), "data-theme-id": t.id, title: t.base ? `${t.name} (${t.base === "dark" ? "dunkel" : "hell"}) – nach SolidCraft` : t.name,
+      onclick: () => { app.prefs.set("darstellung.schema", t.id); rerender ? rerender() : render(); } }, pic, h("span", {}, t.name));
+  };
+  const render = () => box.replaceChildren(h("h3", {}, "Farbthema"), h("p", { class: "hint" }, "Klick wählt das Thema für Menüband, Panels, Dialoge und 3D-Hintergrund. Die Themen ab Graphite übernehmen die Farbwerte von SolidCraft."),
+    h("div", { class: "theme-cards" }, ...BUILTIN.map(card), ...THEMES.map(card)));
+  render();
+  return box;
+}
+
+/** 3D-Maus: Gerätezustand, Verbinden, Kalibrieren (SolidCraft: Einstellungen → 3D-Maus) */
+function spaceMouseSection(app) {
+  const sm = app.spaceMouse;
+  const box = h("div", { class: "mat-editor" });
+  const draw = () => {
+    const st = sm?.status || "nicht-unterstuetzt";
+    const cal = app.prefs.get("maus3d.kalibrierung");
+    const text = { verbunden: `Verbunden: ${sm.name || "3D-Maus"}` + (cal ? " · kalibriert" : " · nicht kalibriert"), gesperrt: "Gefunden, aber nicht lesbar – ein anderes Programm (z. B. der 3Dconnexion-Treiber) belegt das Gerät exklusiv.", keine: "Keine 3D-Maus verbunden. Falls eine angeschlossen ist, bewegen Sie sie kurz und klicken auf »Verbinden«.", "nicht-unterstuetzt": "In dieser Umgebung ist kein Zugriff auf USB-Eingabegeräte möglich." }[st];
+    box.replaceChildren(h("h4", {}, "Gerät"), h("p", { class: "hint" }, text), h("div", { class: "btn-row" },
+      h("button", { class: "btn", disabled: !sm || st === "nicht-unterstuetzt", onclick: async () => { await sm.connect(); draw(); } }, st === "verbunden" ? "Anderes Gerät …" : "Verbinden …"),
+      h("button", { class: "btn", disabled: st !== "verbunden", title: "Kappe loslassen und 2 Sekunden nicht berühren", onclick: async (e) => { e.currentTarget.textContent = "Nicht berühren …"; const ok = await sm.calibrate(); toast(ok ? "3D-Maus kalibriert" : "Kalibrieren fehlgeschlagen", { kind: ok ? "ok" : "err" }); draw(); } }, "Kalibrieren"),
+      h("button", { class: "btn", disabled: !cal, onclick: () => { app.prefs.set("maus3d.kalibrierung", null); draw(); } }, "Kalibrierung verwerfen")));
+  };
+  draw();
+  sm?.onChange(() => { if (box.isConnected) draw(); });
   return box;
 }

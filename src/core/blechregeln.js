@@ -36,7 +36,16 @@ export function validateSheetRule(r) {
   const relief = RELIEFS.some(([v]) => v === r.relief) ? r.relief : "rechteck";
   const reliefW = num(r.reliefW ?? 0), reliefD = num(r.reliefD ?? 0);
   if (!(reliefW >= 0 && reliefD >= 0)) return { ok: false, error: `Blechregel »${name}«: Freischnitt nicht negativ` };
-  return { ok: true, value: { id, name, material, t, ri, rule, k, relief, reliefW, reliefD } };
+  // SolidCraft-Regelfelder: Spalt im Umschlag, Spalt an zusammenstoßenden Laschen, Winkelangabe in der DXF
+  const hemGap = r.hemGap === undefined || r.hemGap === "" ? null : num(r.hemGap);
+  const gap = r.gap === undefined || r.gap === "" ? null : num(r.gap);
+  if ((hemGap != null && !(hemGap >= 0 && hemGap <= 100)) || (gap != null && !(gap >= 0 && gap <= 100))) return { ok: false, error: `Blechregel »${name}«: Spalt 0 bis 100 mm` };
+  const angleDisplay = r.angleDisplay === "innen" ? "innen" : "biege";
+  const out = { id, name, material, t, ri, rule, k, relief, reliefW, reliefD };
+  if (hemGap != null) out.hemGap = hemGap;
+  if (gap != null) out.gap = gap;
+  if (angleDisplay !== "biege") out.angleDisplay = angleDisplay;
+  return { ok: true, value: out };
 }
 
 /** Liste prüfen (Einstellung blech.regeln): Namen und Kennungen eindeutig */
@@ -61,13 +70,13 @@ export function validateSheetRules(v) {
  */
 export function effectiveSheet(f, E, partMaterial) {
   const R = f.sheetRule && typeof f.sheetRule === "object" ? f.sheetRule : null;
-  if (!R) return { t: E(f.t ?? "2", "Blechdicke"), ri: E(f.ri ?? "0", "Innenradius"), k: E(f.k ?? "0.33", "K-Faktor"), rule: f.rule || "k", material: partMaterial, relief: null, ruleName: "" };
+  if (!R) return { t: E(f.t ?? "2", "Blechdicke"), ri: E(f.ri ?? "0", "Innenradius"), k: E(f.k ?? "0.33", "K-Faktor"), rule: f.rule || "k", material: partMaterial, relief: null, ruleName: "", hemGap: null, gap: null, angleDisplay: "biege" };
   return {
     t: f.tFromRule === false ? E(f.t ?? String(R.t), "Blechdicke") : R.t,
     ri: R.ri, k: R.k, rule: R.rule || "k",
     material: f.matFromRule === false ? partMaterial : R.material || partMaterial,
     relief: { relief: R.relief || "rechteck", reliefW: R.reliefW || 0, reliefD: R.reliefD || 0 },
-    ruleName: R.name,
+    ruleName: R.name, hemGap: R.hemGap ?? null, gap: R.gap ?? null, angleDisplay: R.angleDisplay || "biege",
   };
 }
 
@@ -93,3 +102,6 @@ export function outdatedSheetRules(docs, rules) {
   }
   return out;
 }
+
+/** Winkel für Biegenotizen: Biegewinkel oder eingeschlossener Winkel (180° − Biegewinkel) */
+export const noteAngle = (angle, mode) => (mode === "innen" ? 180 - Math.abs(angle) : Math.abs(angle));

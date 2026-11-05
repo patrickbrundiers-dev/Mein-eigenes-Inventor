@@ -1,10 +1,11 @@
 // Werkzeuge Stufe 43 in der Oberfläche: Variantentabelle, Regeln, Makros
 import { h, toast, modal } from "./dom.js";
 import { uid } from "../core/examples.js";
-import { checkVariants, syncVariants, emptyVariants } from "../core/varianten.js";
+import { checkVariants, syncVariants, emptyVariants, isSpecialColumn, SUPPRESS_PREFIX, MATERIAL_COLUMN } from "../core/varianten.js";
 import { RULE_KINDS, defaultRule } from "../core/regeln.js";
 import { COMMANDS, commandDef } from "../core/commands.js";
 import { recordable } from "../core/makros.js";
+import { materialList } from "../core/materials.js";
 
 const activePart = (app) => {
   const d = app.activeDoc();
@@ -51,26 +52,32 @@ export function variantDialog(app) {
   const part = activePart(app);
   if (!part) return;
   if (part.variant) return toast("Das ist eine Variante – die Tabelle gehört zum Werksbauteil", { kind: "err" });
-  if (!part.params?.length) return toast("Erst Parameter anlegen (Verwalten → Parameter) – sie werden die Spalten der Tabelle");
+  if (!part.params?.length && !part.features?.length) return toast("Erst Parameter oder Features anlegen – sie werden die Spalten der Tabelle");
+  part.params = part.params || [];
   const v = JSON.parse(JSON.stringify(part.variants || emptyVariants()));
   if (!v.columns.length) v.columns = part.params.slice(0, 3).map((p) => p.name);
   if (!v.rows.length) v.rows.push({ id: uid("r"), name: part.name + "-1", number: "", values: Object.fromEntries(v.columns.map((c) => [c, part.params.find((p) => p.name === c)?.expr ?? ""])) });
+  // Spalten: Parameter, Werkstoff und Unterdrückung je Feature (wie SolidCraft-Konfigurationen)
+  const colChoices = () => [...part.params.map((p) => [p.name, p.name]), [MATERIAL_COLUMN, "Werkstoff"], ...part.features.filter((f) => f.type !== "sketch").map((f) => [SUPPRESS_PREFIX + f.id, "Unterdrückt: " + f.name])];
   const box = h("div", { class: "var-table" });
   const msg = h("div");
   const draw = () => {
     const head = h("tr", {}, h("th", {}, "Name"), h("th", {}, "Sachnummer"), ...v.columns.map((c, ci) => h("th", {},
-      h("select", { class: "inp", onchange: (e) => { const nc = e.target.value; for (const r of v.rows) { r.values[nc] = r.values[c]; delete r.values[c]; } v.columns[ci] = nc; draw(); } },
-        ...part.params.map((p) => h("option", { value: p.name, selected: p.name === c }, p.name))),
+      h("select", { class: "inp", onchange: (e) => { const nc = e.target.value; for (const r of v.rows) { r.values[nc] = isSpecialColumn(nc) ? "" : r.values[c]; delete r.values[c]; } v.columns[ci] = nc; draw(); } },
+        ...colChoices().map(([val, label]) => h("option", { value: val, selected: val === c }, label))),
       h("button", { class: "icon-btn", title: "Spalte entfernen", onclick: () => { v.columns.splice(ci, 1); draw(); } }, "×"))), h("th"));
     const rows = v.rows.map((r, ri) => h("tr", {},
       h("td", {}, h("input", { class: "inp", value: r.name, onchange: (e) => { r.name = e.target.value.trim(); check(); } })),
       h("td", {}, h("input", { class: "inp", value: r.number || "", onchange: (e) => { r.number = e.target.value.trim(); } })),
-      ...v.columns.map((c) => h("td", {}, h("input", { class: "inp", value: r.values?.[c] ?? "", placeholder: part.params.find((p) => p.name === c)?.expr, onchange: (e) => { r.values = { ...r.values, [c]: e.target.value.trim() }; check(); } }))),
+      ...v.columns.map((c) => h("td", {}, String(c).startsWith(SUPPRESS_PREFIX)
+        ? h("select", { class: "inp", onchange: (e) => { r.values = { ...r.values, [c]: e.target.value }; check(); } }, ...[["", "wie Werksteil"], ["nein", "aktiv"], ["ja", "unterdrückt"]].map(([val, l]) => h("option", { value: val, selected: (r.values?.[c] ?? "") === val }, l)))
+        : c === MATERIAL_COLUMN ? h("select", { class: "inp", onchange: (e) => { r.values = { ...r.values, [c]: e.target.value }; check(); } }, h("option", { value: "" }, "wie Werksteil"), ...materialList().map((m) => h("option", { value: m.key, selected: r.values?.[c] === m.key }, m.label)))
+        : h("input", { class: "inp", value: r.values?.[c] ?? "", placeholder: part.params.find((p) => p.name === c)?.expr, onchange: (e) => { r.values = { ...r.values, [c]: e.target.value.trim() }; check(); } }))),
       h("td", {}, h("button", { class: "icon-btn", title: "Zeile entfernen", onclick: () => { v.rows.splice(ri, 1); draw(); } }, "×"))));
     box.replaceChildren(h("table", { class: "grid" }, h("thead", {}, head), h("tbody", {}, ...rows)),
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => { const last = v.rows.at(-1); v.rows.push({ id: uid("r"), name: `${part.name}-${v.rows.length + 1}`, number: "", values: { ...(last?.values || {}) } }); draw(); } }, "Zeile hinzufügen"),
-        h("button", { class: "btn", disabled: v.columns.length >= part.params.length, onclick: () => { const free = part.params.find((p) => !v.columns.includes(p.name)); if (free) { v.columns.push(free.name); draw(); } } }, "Spalte hinzufügen")));
+        h("button", { class: "btn", disabled: !colChoices().some(([val]) => !v.columns.includes(val)), onclick: () => { const free = colChoices().find(([val]) => !v.columns.includes(val)); if (free) { v.columns.push(free[0]); draw(); } } }, "Spalte hinzufügen")));
     check();
   };
   const check = () => { const e = checkVariants({ ...part, variants: v }); msg.replaceChildren(e.length ? h("div", { class: "msg err" }, e.slice(0, 4).join("; ")) : h("p", { class: "hint" }, `${v.rows.length} Variante(n) – leere Zellen übernehmen den Wert des Werksbauteils.`)); return e; };

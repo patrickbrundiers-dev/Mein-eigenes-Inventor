@@ -65,6 +65,15 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
   });
   Menu.setApplicationMenu(null);
+  // 3D-Maus (SpaceMouse) über WebHID: nur Geräte von 3Dconnexion/Logitech-3D-Mäusen freigeben, ohne Auswahlfenster
+  const SPACE_VENDORS = [0x256f, 0x046d];
+  const isSpace = (d) => SPACE_VENDORS.includes(d.vendorId) && /space|3dconnexion|navigator|cadmouse/i.test(d.name || d.productName || "") || d.vendorId === 0x256f;
+  win.webContents.session.on("select-hid-device", (event, details, callback) => {
+    event.preventDefault();
+    callback(details.deviceList.find(isSpace)?.deviceId || "");
+  });
+  win.webContents.session.setPermissionCheckHandler(() => true); // wie ohne Handler (alles erlaubt), schließt "hid" ausdrücklich ein
+  win.webContents.session.setDevicePermissionHandler((details) => details.deviceType === "hid" && isSpace(details.device));
   win.once("ready-to-show", () => { win.maximize(); win.show(); });
   win.loadURL("app://werkcad/index.html");
   win.webContents.on("before-input-event", (e, input) => {

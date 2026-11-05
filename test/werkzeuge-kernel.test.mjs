@@ -430,6 +430,16 @@ test("Blech: Kröpfung im Kantteil – gültiger Körper, Abwicklung mit vier Bi
   assert.match(bad.status.j1.error, /Versatz zu klein/);
 });
 
+test("Blech: Falten an einer Linie und Lasche mit Biegeposition (SolidCraft)", async () => {
+  const kt = { id: "k1", type: "kantteil", legs: "100", angles: "", ref: "aussen", t: "2", ri: "2", k: "0.5", length: "50" };
+  const build = async (feats) => { const res = await K.buildPart(part(feats)); okAll(res); const b = res.bodies.find((x) => x.meta?.sheet); assert.ok(K.shapeValid(b.shape), "Körper gültig"); return b.meta.sheet; };
+  const fold = await build([kt, { id: "f1", type: "falten", base: "k1", leg: "1", s: "40", angle: "90", dir: "auf" }]);
+  assert.equal(fold.flatModel.bends.length, 1);
+  const l0 = await build([kt, { id: "l1", type: "lasche", base: "k1", edge: "ende", length: "20", angle: "90" }]);
+  const l1 = await build([kt, { id: "l1", type: "lasche", base: "k1", edge: "ende", length: "20", angle: "90", position: "aussen", heightFrom: "innen" }]);
+  near(l1.flatModel.flat - l0.flatModel.flat, 4 + 2, 1e-6, "Biegeposition außen +4, Höhe ab innerer Spitze +2");
+});
+
 test("IGES-Export: Flächen aus dem Kern als NURBS mit Rand (Stufe 49)", async () => {
   const { igesFaces } = await import("../src/kernel/igesocc.js");
   const I = await import("../src/core/iges.js");

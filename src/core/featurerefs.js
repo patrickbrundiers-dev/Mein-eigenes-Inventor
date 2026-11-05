@@ -11,8 +11,9 @@ const datumId = (x) => (typeof x === "string" && x.startsWith("datum:") ? x.slic
 /** Alle Feature-IDs, auf die f verweist */
 export function featureRefs(f) {
   const out = new Set(sketchRefs(f));
-  if (["lasche", "umschlag", "durchzug", "eckeschliessen", "stanzung", "kroepfung", "trennfuge"].includes(f.type) && typeof f.base === "string" && f.base) out.add(f.base);
+  if (["lasche", "umschlag", "durchzug", "eckeschliessen", "stanzung", "kroepfung", "falten", "trennfuge"].includes(f.type) && typeof f.base === "string" && f.base) out.add(f.base);
   for (const k of ["feature", "target", "plate"]) if (typeof f[k] === "string" && f[k]) out.add(f[k]);
+  if (Array.isArray(f.targets)) for (const t of f.targets) if (typeof t === "string" && t) out.add(t);
   for (const k of ["tools", "bodies"]) if (Array.isArray(f[k])) for (const x of f[k]) if (typeof x === "string" && x) out.add(x);
   if (f.type === "sketch" && f.plane?.ref === "datum" && f.plane.id) out.add(f.plane.id);
   for (const k of ["plane", "axis", "dir", "dir2"]) { const d = datumId(f[k]); if (d) out.add(d); }

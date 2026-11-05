@@ -1,5 +1,6 @@
 // Menüband mit kontextabhängigen Registerkarten
 import { plasticDefaults } from "../core/kunststoff.js";
+import { OP_NAMES } from "../core/extrusionop.js";
 import { SURFACE_CHECKS, surfaceCheckDialog, compareBodiesDialog } from "./flaechenpruefung.js";
 import { defaultWelle, defaultZahnrad, defaultLager, defaultFeder } from "../core/assistent.js";
 import { FF_ARTEN } from "../core/freiflaeche.js";
@@ -21,7 +22,7 @@ import { normLibraryDialog } from "./normlib.js";
 import { defaultSchraubverbindung } from "../core/schraubverbindung.js";
 import { defaultKantteil } from "../core/blech.js";
 import { defaultBlechkasten } from "../core/blechkasten.js";
-import { defaultLasche, defaultUmschlag, defaultDurchzug, defaultEckeSchliessen, defaultStanzung, defaultKroepfung, SHEET_FEATURES } from "../core/blechplus.js";
+import { defaultLasche, defaultUmschlag, defaultDurchzug, defaultEckeSchliessen, defaultStanzung, defaultKroepfung, defaultFalten, SHEET_FEATURES } from "../core/blechplus.js";
 import { defaultKonturwalzen, defaultTrennfuge } from "../core/konturwalzen.js";
 import { derivableSources } from "../core/ableiten.js";
 import { t as t_ } from "../core/i18n.js";
@@ -74,7 +75,9 @@ export class Ribbon {
         if (!sk) return;
         const r = app.results.get(app.activeId);
         const hasBody = r?.bodies?.length > 0;
-        app.addFeature({ type: "extrude", sketch: sk, distance: String(app.prefs.get("werkzeuge.std.extrusion") ?? 10), mode: "normal", op: hasBody ? "join" : "join" });
+        const op = hasBody && app.prefs.get("werkzeuge.extrusionAutomatisch") !== false ? app.autoExtrudeOp(sk) : "join";
+        app.addFeature({ type: "extrude", sketch: sk, distance: String(app.prefs.get("werkzeuge.std.extrusion") ?? 10), mode: "normal", op });
+        if (op !== "join") toast(`Vorgang automatisch: ${OP_NAMES[op]}${op === "cut" ? " (Skizze liegt am Körper, Richtung ins Material)" : " (Skizze berührt keinen Körper)"} – rechts umstellbar`, { timeout: 4500 });
       },
       cutExtrude: () => {
         const sk = needSketch();
@@ -139,6 +142,7 @@ export class Ribbon {
       eckeschliessen: () => this.addSheetFeature(defaultEckeSchliessen),
       stanzung: () => this.addSheetFeature(defaultStanzung),
       kroepfung: () => this.addSheetFeature(defaultKroepfung),
+      falten: () => this.addSheetFeature(defaultFalten),
       konturwalzen: () => {
         const sk = app.lastSketchId();
         if (!sk) return toast("Zuerst eine Skizze mit offener Linie neben der Drehachse zeichnen (Skizzen-X- oder Y-Achse)");
@@ -454,7 +458,7 @@ export class Ribbon {
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
           { label: "Profile", big: 5, buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend"), B("zinkloch", "Verzinkungsbohrungen", "ventholes"), B("strecken", "Rohr strecken", "stretch")] },
-          { label: "Blech", big: 1, buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("blechkasten", "Blechkasten", "kantteil"), B("inBlech", "In Blech umwandeln", "kantteil"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar"), B("eckeschliessen", "Ecke schließen", "cornerseam"), B("stanzung", "Stanzwerkzeug", "punch"), B("lochblech", "Lochblech", "perforate"), B("kroepfung", "Kröpfung", "jog"), B("konturwalzen", "Konturwalzen", "contourroll"), B("trennfuge", "Trennfuge", "rip")] },
+          { label: "Blech", big: 1, buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("blechkasten", "Blechkasten", "kantteil"), B("inBlech", "In Blech umwandeln", "kantteil"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar"), B("eckeschliessen", "Ecke schließen", "cornerseam"), B("stanzung", "Stanzwerkzeug", "punch"), B("lochblech", "Lochblech", "perforate"), B("kroepfung", "Kröpfung", "jog"), B("konturwalzen", "Konturwalzen", "contourroll"), B("trennfuge", "Trennfuge", "rip"), B("falten", "Falten", "fold", { iconOnly: true })] },
           { label: "Anschluss", buttons: [B("naht", "Schweißnaht", "naht"), B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("normteil", "Normteil", "normteil")] },
         ] },
         { id: "verwalten", label: "Verwalten", groups: [
@@ -699,11 +703,12 @@ export class Ribbon {
         const btns = h("div", { class: "rb-buttons" });
         // groß: alle (Standard), keine (small) oder die ersten g.big; der Rest klein in Spalten zu je 3
         const nBig = g.small ? 0 : g.big ?? g.buttons.length;
+        const iconsOnly = !!this.app.prefs?.get("oberflaeche.nurSymbole");
         for (const b of g.buttons.slice(0, nBig)) btns.append(h("button", { class: "rb-btn" + (b.on ? " on" : "") + (b.finish ? " rb-finish" : ""), onclick: (e) => this.press(b, e), disabled: b.disabled, ...this.tipAttrs(b) }, icon(b.icon), h("span", {}, ...breakable(t_(b.label)))));
         const rest = g.buttons.slice(nBig);
-        for (let i = 0; i < rest.length; i += 3) {
-          btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + 3).map((b) =>
-            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly ? " icon-only" : ""), ...this.tipAttrs(b), "aria-label": t_(b.label), onclick: (e) => this.press(b, e), disabled: b.disabled }, icon(b.icon), b.iconOnly ? null : t_(b.label)))));
+        for (let i = 0, n = iconsOnly ? 2 : 3; i < rest.length; i += n) {
+          btns.append(h("div", { class: "rb-stack" }, ...rest.slice(i, i + n).map((b) =>
+            h("button", { class: "rb-small" + (b.on ? " on" : "") + (b.iconOnly || iconsOnly ? " icon-only" : ""), ...this.tipAttrs(b), "aria-label": t_(b.label), onclick: (e) => this.press(b, e), disabled: b.disabled }, icon(b.icon), b.iconOnly || iconsOnly ? null : t_(b.label)))));
         }
         // Gruppenname öffnet die Gruppenliste (SolidCraft): alle Befehle mit Kürzel, Nadel heftet an den Schnellzugriff
         panel.append(h("div", { class: "rb-group", "data-group": g.label, oncontextmenu: (e) => { e.preventDefault(); this.groupMenu(e, tab, g.label); } }, btns,

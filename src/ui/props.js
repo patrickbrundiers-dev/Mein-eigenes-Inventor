@@ -1,4 +1,5 @@
 // Eigenschaften-Fenster und Dialoge (Parameter, Stückliste, Zuschnittliste, Einstellungen)
+import { planeLabel } from "../core/ebenennamen.js";
 import { PLASTIC_ARTS, plasticDefaults } from "../core/kunststoff.js";
 import { encodeCloud, decodeCloud, decimateCloud } from "../core/punktwolke.js";
 import { paramUsages, paramGraphSvg, moveParam } from "../core/paramgraph.js";
@@ -65,7 +66,8 @@ import { patternOf } from "../core/sketchshapes.js";
 import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity, massOverride, orderBomRows } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
-import { motionStudyDialog } from "./bewegungsstudie.js";
+import { motionStudyDialog, findJointLimits } from "./bewegungsstudie.js";
+import { presetFrom, applyPreset, holeDiagramSvg } from "../core/bohrvorlagen.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
@@ -379,6 +381,7 @@ export class Props {
     const app = this.app;
     const d = app.activeDoc();
     app.direct?.sync(); // Leiste der Direktbearbeitung folgt dem gewählten Feature
+    if (app.viewer?.cogGroup?.children.length) app.viewer.showPrincipalAxes(null); // Hauptachsen nur bei offenem Abschnitt (L13)
     if (app.viewer.fieldGroup?.children.length) app.viewer.highlightBodies([]); // Feld-Hervorhebung gehört zum alten Feld
     const body = h("div", { class: "props-body" });
     let title = "Eigenschaften";
@@ -471,6 +474,7 @@ export class Props {
       h("div", { class: "btn-row" },
         h("button", { class: "btn primary", onclick: () => app.files.refreshLinks() }, "Aktualisieren"),
         app.files.bridge ? h("button", { class: "btn", onclick: () => app.files.open(l.path) }, "Quelldatei öffnen") : null,
+        h("button", { class: "btn", title: "Datei verschoben oder umbenannt: andere Datei wählen, alle Vorkommen bleiben", onclick: () => app.files.relinkPart(part) }, "Neu verknüpfen…"),
         h("button", { class: "btn", onclick: () => app.edit("Verknüpfung lösen", () => { delete part.link; }, { link: true, rebuild: false }) }, "Verknüpfung lösen")));
   }
 
@@ -481,8 +485,14 @@ export class Props {
     if (!ctx || ctx.part !== part.id) return null;
     return this.section("Im Kontext: " + ctx.label,
       h("div", { class: "hint" }, "Die übrigen Teile der Baugruppe stehen halbdurchsichtig daneben. In einer Skizze holt »Projizieren« auch ihre Kanten."),
+      ctx.linkEdit ? h("div", { class: "msg" }, `Verknüpftes Teil (${part.link?.path?.split(/[\\/]/).pop() || "Datei"}) – »Fertig« schreibt die Änderungen in diese Datei.`) : null,
       this.check("Nachbarteile zeigen", ctx.ghosts, (v) => app.toggleContextGhosts(v)),
-      h("div", { class: "btn-row" }, h("button", { class: "btn primary", "data-act": "leave-context", onclick: () => app.leaveContext() }, "Zurück zur Baugruppe")));
+      h("div", { class: "btn-row" }, h("button", { class: "btn primary", "data-act": "leave-context", onclick: () => app.leaveContext() }, ctx.linkEdit ? "Fertig – zurück zur Baugruppe" : "Zurück zur Baugruppe"),
+        ctx.linkEdit ? h("button", { class: "btn", "data-act": "discard-context", title: "Stand vor dem Bearbeiten wiederherstellen, Datei bleibt unverändert", onclick: () => {
+          const before = JSON.parse(ctx.linkEdit.before);
+          app.edit("Änderungen verwerfen", () => { const link = part.link; for (const k of Object.keys(part)) delete part[k]; Object.assign(part, before, { link }); }, { link: true });
+          app.leaveContext({ discard: true });
+        } }, "Verwerfen") : null));
   }
   partProps(part) {
     const app = this.app;
@@ -587,7 +597,7 @@ export class Props {
       return [dt, dd];
     };
     const list = (...rows) => h("dl", { class: "measure-list" }, ...rows.flat(2).filter(Boolean));
-    const more = (title, ...rows) => h("details", { class: "measure-more" }, h("summary", {}, title), list(...rows));
+    const more = (title, ...rows) => h("details", { class: "measure-more", open: !!app.prefs?.get("messen.achsabstaende") }, h("summary", {}, title), list(...rows));
     const out = [h("p", { class: "hint" }, "Fläche, Kante, Achse oder Fangpunkt anklicken, dann ein zweites Element für Abstand und Winkel. Fangpunkte (Endpunkt, Mitte, Kreismitte) erscheinen beim Überfahren als kleines Symbol; mit Auswahl »Punkte« auch Quadranten und Flächenmitten. Mit Strg oder Umschalt weitere Elemente dazunehmen (Summen). Werte anklicken kopiert sie. Esc beendet."),
       h("div", { class: "measure-filter", title: "Was beim Klicken gewählt wird (Auswahlpriorität)" }, this.seg(null, MEASURE_FILTERS, m.filter || "alle", (v) => { m.filter = v; app.measureFilter = v; app.viewer.clearHover(); this.render(); }))];
     if (m.busy) out.push(h("p", { class: "hint" }, "Messe …"));
@@ -659,7 +669,11 @@ export class Props {
     return this.select("Skizze", [["", "– wählen –"], ...sks.map((s) => [s.id, s.name])], value || "", (v) => onChange(v));
   }
   opSeg(f) {
-    return this.seg("Vorgang", [["join", "Vereinigen"], ["cut", "Differenz"], ["intersect", "Schnitt"], ["new", "Neuer Körper"]], f.op || "join", (v) => this.set(f, "op", v, "Vorgang"));
+    const seg = this.seg("Vorgang", [["join", "Vereinigen"], ["cut", "Differenz"], ["intersect", "Schnitt"], ["new", "Neuer Körper"]], f.op || "join", (v) => this.set(f, "op", v, "Vorgang"));
+    // Zielkörper (SolidCraft »targets«): nur bei mehreren Körpern
+    const part = this.app.activeDoc();
+    if ((f.op || "join") === "new" || part?.kind !== "part" || this.bodyChoices(part).filter(([id]) => id !== f.id).length < 2) return seg;
+    return h("div", {}, seg, this.bodyChecks(part, f, "targets", "Zielkörper (keiner = alle)"));
   }
 
   /** Nahtliste des Bauteils (alle Nähte: Feature „Schweißnaht“, Platten und Rippen mit a-Maß) */
@@ -709,15 +723,38 @@ export class Props {
           ...[["extrude", "Extrusion"], ["revolve", "Drehung"], ["hole", "Bohrung"], ["frame", "Rahmen"]].map(([a, l]) => h("button", { class: "btn", onclick: () => app.ribbon.run(a) }, l)))));
         break;
       }
-      case "extrude":
+      case "extrude": {
+        const fromFace = f.source === "flaeche";
+        const refPick = (key, label) => {
+          const picking = app.pick?.kind === "faces" && app.pick.feature === f.id && app.pick.key === key;
+          return this.field(label, h("div", { class: "btn-row" + (picking ? " picking" : "") },
+            h("span", { class: "hint" }, f[key]?.p ? `(${f[key].p.map((x) => Math.round(x * 10) / 10).join("; ")})` : "nicht gewählt"),
+            h("button", { class: "btn" + (picking ? " primary" : ""), onclick: () => { if (picking) app.cancelPick(); else { app.pick = { kind: "faces", feature: f.id, key }; app.props.render(); } } }, picking ? "Abbrechen" : "Wählen"),
+            f[key] ? h("button", { class: "btn", onclick: () => this.set(f, (x) => { delete x[key]; }, label + " leeren") }, "Leeren") : null), true);
+        };
+        const modes = [["normal", "Normal"], ["reverse", "Umgekehrt"], ["symmetric", "Symmetrisch"], ...(fromFace ? [] : [["twoSided", "Beidseitig"], ["through", "Durch alles"], ["bis", "Bis Fläche"]])];
         out.push(this.section("Extrusion",
-          this.sketchList(part, f.sketch, (v) => this.set(f, "sketch", v, "Skizze")),
-          this.seg("Richtung", [["normal", "Normal"], ["reverse", "Umgekehrt"], ["symmetric", "Symmetrisch"], ["twoSided", "Beidseitig"], ["through", "Durch alles"]], f.mode || "normal", (v) => this.set(f, "mode", v, "Richtung")),
-          f.mode !== "through" ? E("Abstand", "distance", { allowNeg: false, allowZero: false }) : null,
-          f.mode === "twoSided" ? E("Abstand 2", "distance2") : null,
+          this.seg("Quelle", [["skizze", "Skizze"], ["flaeche", "Körperfläche"]], f.source || "skizze", (v) => this.set(f, (x) => { x.source = v; if (v === "flaeche" && ["twoSided", "through", "bis"].includes(x.mode)) x.mode = "normal"; }, "Quelle")),
+          fromFace ? h("div", {}, `${(f.faces || []).length} Fläche(n) gewählt`, h("p", { class: "hint" }, "Ebene Flächen eines Körpers im 3D-Fenster anklicken; sie wachsen entlang ihrer Normale.")) : this.sketchList(part, f.sketch, (v) => this.set(f, "sketch", v, "Skizze")),
+          this.seg("Richtung", modes, f.mode || "normal", (v) => this.set(f, "mode", v, "Richtung")),
+          f.mode !== "through" && f.mode !== "bis" ? E("Abstand", "distance", { allowNeg: false, allowZero: false }) : null,
+          f.mode === "bis" ? refPick("to", "Bis Fläche / Punkt") : null,
+          f.mode === "bis" ? E("Abstand darüber hinaus", "toOffset", { allowEmpty: true, placeholder: "0" }) : null,
+          f.mode === "twoSided" ? this.check("Seite 2 durch alles", f.distance2Through, (v) => this.set(f, "distance2Through", v, "Seite 2 durch alles")) : null,
+          f.mode === "twoSided" && !f.distance2Through ? E("Abstand 2", "distance2") : null,
           this.opSeg(f),
           f.mode !== "through" ? h("p", { class: "hint" }, "Oder den orangen Pfeil im 3D-Fenster ziehen – über null hinaus kippt die Extrusion auf die andere Seite. Doppelklick auf eine Fläche wählt ihr Feature.") : null));
+        if (!fromFace) out.push(this.section("Weitere Optionen",
+          E("Verjüngung", "taper", { unit: "°", allowEmpty: true, placeholder: "0" }),
+          h("p", { class: "hint" }, "Neigt die Seitenwände: positiv wird das Ende größer, negativ kleiner."),
+          f.from ? null : E("Versatz Start", "startOffset", { allowEmpty: true, placeholder: "0" }),
+          refPick("from", "Start ab Fläche / Punkt"),
+          this.check("Dünnwand", f.thin, (v) => this.set(f, "thin", v, "Dünnwand")),
+          f.thin ? E("Wanddicke", "thickness", { allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "1" }) : null,
+          f.thin ? this.seg("Wand liegt", [["innen", "Innen"], ["mitte", "Mittig"], ["aussen", "Außen"], ["beidseitig", "Beidseitig"]], f.side || "innen", (v) => this.set(f, "side", v, "Wand liegt")) : null,
+          f.thin && f.side === "beidseitig" ? E("Wanddicke außen", "thickness2", { allowNeg: false, allowEmpty: true, placeholder: "= Wanddicke" }) : null));
         break;
+      }
       case "revolve": {
         const sk = part.features.find((s) => s.id === f.sketch);
         const lines = sk ? sk.entities.filter((e) => e.type === "line") : [];
@@ -744,7 +781,11 @@ export class Props {
           f.form === "langloch" ? null : this.seg("Senkung", [["none", "Keine"], ["senkung", "Kegel"], ["flach", "Flach"]], f.sink || "none", (v) => this.set(f, (x) => { x.sink = v; if (v !== "none" && !x.sinkDiameter) { x.sinkDiameter = "2*(" + (x.diameter || "8") + ")"; x.sinkAngle = "90"; x.sinkDepth = "5"; } }, "Senkung")),
           f.sink && f.sink !== "none" ? E("Senk-Ø", "sinkDiameter") : null,
           f.sink === "senkung" ? E("Senkwinkel", "sinkAngle", { unit: "°" }) : null,
-          f.sink === "flach" ? E("Senktiefe", "sinkDepth") : null));
+          f.sink === "flach" ? E("Senktiefe", "sinkDepth") : null,
+          f.form !== "langloch" && f.extent === "depth" ? this.seg("Bohrgrund", [["winkel", "Spitze"], ["flach", "Flach"]], f.tip === false || f.tip === "flach" ? "flach" : "winkel", (v) => this.set(f, (x) => { x.tip = v === "flach" ? "flach" : undefined; }, "Bohrgrund")) : null,
+          f.form !== "langloch" && f.extent === "depth" && !(f.tip === false || f.tip === "flach") ? this.expr("Spitzenwinkel", f.tipAngle ?? "118", (v) => this.set(f, "tipAngle", v, "Spitzenwinkel"), { unit: "°", allowZero: false, allowNeg: false }) : null,
+          f.form === "langloch" ? null : this.holeDiagram(part, f)));
+        out.push(this.holePresets(f));
         break;
       case "emboss":
         out.push(this.section("Prägen / Gravieren",
@@ -837,7 +878,8 @@ export class Props {
           h("dl", { class: "kv" }, h("dt", {}, "Volumen"), h("dd", {}, volText)),
           kind === "kegel" ? h("p", { class: "hint" }, "d = 0 ergibt einen Spitzkegel, d > 0 einen Kegelstumpf.") : null));
         out.push(this.section("Lage",
-          this.vec3(kind === "kugel" || kind === "torus" ? "Mittelpunkt" : "Basispunkt (Mitte unten)", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
+          kind === "kugel" || kind === "torus" ? null : this.seg("Punkt ist", [["basis", "Mitte unten"], ["ecke", "Ecke (kleinste)"], ["mitte", "Mitte"]], f.anchor || "basis", (v) => this.set(f, "anchor", v === "basis" ? undefined : v, "Bezugspunkt")),
+          this.vec3(kind === "kugel" || kind === "torus" ? "Mittelpunkt" : "Bezugspunkt", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
           this.seg("Achse", [["Z", "Z"], ["Y", "Y"], ["X", "X"], ["-Z", "−Z"], ["-Y", "−Y"], ["-X", "−X"], ["custom", "frei"]], f.axis || "Z", (v) => this.set(f, "axis", v, "Achse")),
           f.axis === "custom" ? this.vec3("Richtungsvektor", f.dir || ["0", "0", "1"], (v) => this.set(f, "dir", v, "Richtung")) : null,
           this.opSeg(f)));
@@ -966,7 +1008,8 @@ export class Props {
       case "durchzug":
       case "eckeschliessen":
       case "stanzung":
-      case "kroepfung": {
+      case "kroepfung":
+      case "falten": {
         const bases = part.features.filter((g) => g.type === "kantteil");
         const opt = (label, key, placeholder) => this.text(label, f[key] ?? "", (v) => this.set(f, key, v, label), { placeholder });
         const baseSel = this.select("Kantteil", [["", "– wählen –"], ...bases.map((g) => [g.id, g.name])], f.base || "", (v) => this.set(f, "base", v, "Kantteil"));
@@ -976,9 +1019,11 @@ export class Props {
           out.push(this.section("Lasche", baseSel,
             this.select("Kante", LASCHE_EDGES, f.edge || "ende", (v) => this.set(f, "edge", v, "Kante")),
             stirn ? E("Schenkel Nr.", "leg", { unit: "", allowNeg: false, allowZero: false }) : null,
-            E("Länge (außen)", "length", { allowNeg: false, allowZero: false }),
+            E(stirn ? "Länge (außen)" : "Länge (Höhe)", "length", { allowNeg: false, allowZero: false }),
             E("Biegewinkel", "angle", { unit: "°", allowNeg: false, allowZero: false }),
             dirSeg("Richtung"),
+            stirn ? null : this.seg("Höhe gemessen ab", [["aussen", "äußerer Spitze"], ["innen", "innerer Spitze"], ["tangential", "Tangente"]], f.heightFrom || "aussen", (v) => this.set(f, "heightFrom", v === "aussen" ? undefined : v, "Höhe gemessen ab")),
+            stirn || !(f.width === undefined || f.width === "") ? null : this.select("Biegeposition", [["innen", "innen (äußere Spitze auf der Kante)"], ["aussen", "außen (Biegung beginnt an der Kante)"], ["mitte", "Mitte"], ["materialAussen", "Material außen (innere Spitze auf der Kante)"], ["tangential", "tangential"]], f.position || "innen", (v) => this.set(f, "position", v === "innen" ? undefined : v, "Biegeposition")),
             opt("Innenradius (mm)", "ri", "leer = wie Kantteil"),
             stirn ? null : opt("Breite (mm)", "width", "leer = ganze Länge"),
             stirn ? null : E("Versatz ab y = 0", "offset", { allowNeg: false }),
@@ -993,8 +1038,17 @@ export class Props {
             E("Biegung Nr.", "bend", { unit: "", allowNeg: false, allowZero: false }),
             this.seg("Stirnseite", [["vorne", "vorne (y = 0)"], ["hinten", "hinten (y = Länge)"]], f.side === "hinten" ? "hinten" : "vorne", (v) => this.set(f, "side", v, "Stirnseite")),
             this.select("Stoß", CORNER_THROUGH, f.through === "b" ? "b" : "a", (v) => this.set(f, "through", v, "Stoß")),
-            E("Spalt", "gap", { allowNeg: false }),
+            E("Spalt", "gap", { allowNeg: false, allowEmpty: true, placeholder: "leer = Blechregel" }),
             h("p", { class: "hint" }, "Zieht die Stirnlaschen an einer 90°-Biegung bis an den Nachbarschenkel (Kassette, Schale). Die durchlaufende Lasche geht bis auf den Spalt an die Innenfläche des Nachbarschenkels, die andere endet mit dem Spalt an ihr. Steht nur an einem der beiden Schenkel eine Stirnlasche, läuft sie bis an den anderen Schenkel. Die Stirnlaschen brauchen den Eckfreischnitt und müssen nach innen zeigen.")));
+        } else if (f.type === "falten") {
+          out.push(this.section("Falten", baseSel,
+            E("Schenkel Nr.", "leg", { unit: "", allowNeg: false, allowZero: false }),
+            E("Lage der Biegelinie ab Schenkelanfang", "s", { allowNeg: false }),
+            E("Biegewinkel", "angle", { unit: "°", allowNeg: false, allowZero: false }),
+            dirSeg("Richtung"),
+            opt("Innenradius (mm)", "ri", "leer = wie Kantteil"),
+            this.seg("Linie liegt auf", [["mitte", "Mitte Biegung"], ["aussen", "äußerer Spitze"], ["innen", "innerer Spitze"]], f.line || "mitte", (v) => this.set(f, "line", v, "Biegelinie")),
+            h("p", { class: "hint" }, "Teilt den Schenkel an der Linie (längs des Teils) und biegt ihn dort. Abwicklung, Biegetabelle und DXF rechnen die neue Biegung mit.")));
         } else if (f.type === "kroepfung") {
           out.push(this.section("Kröpfung", baseSel,
             E("Schenkel Nr.", "leg", { unit: "", allowNeg: false, allowZero: false }),
@@ -1024,7 +1078,7 @@ export class Props {
             this.seg("Kante", [["ende", "Ende"], ["anfang", "Anfang"]], f.edge === "anfang" ? "anfang" : "ende", (v) => this.set(f, "edge", v, "Kante")),
             this.select("Art", HEM_KINDS, f.kind || "geschlossen", (v) => this.set(f, "kind", v, "Art")),
             E("Länge (außen)", "length", { allowNeg: false, allowZero: false }),
-            f.kind === "offen" ? E("Spalt innen", "gap", { allowNeg: false, allowZero: false }) : null,
+            f.kind === "offen" ? E("Spalt innen", "gap", { allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "leer = Blechregel" }) : null,
             dirSeg("Richtung"),
             h("p", { class: "hint" }, "Umschlag (Falz) um 180° über die ganze Länge, Länge ab der Außenkante der Falz. Geschlossen wird mit fast null Spalt gerechnet; Biegezugabe über den K-Faktor wie bei den anderen Biegungen.")));
         } else {
@@ -1273,9 +1327,16 @@ export class Props {
         const picking = app.pick?.kind === "edges" && app.pick.feature === f.id;
         out.push(this.section(isF ? "Rundung" : "Fase",
           isF ? this.seg("Radius", [["fest", "fest"], ["variabel", "variabel (Anfang → Ende)"]], f.variable ? "variabel" : "fest", (v) => this.set(f, (x) => { if (v === "variabel") { x.variable = true; x.radius2 = x.radius2 || x.radius; } else delete x.variable; }, "Radius")) : null,
-          E(isF ? (f.variable ? "Radius Anfang" : "Radius") : "Abstand", "radius", { allowNeg: false, allowZero: false }),
+          isF ? this.seg("Querschnitt", [["konstant", "Kreis"], ["sehne", "Sehnenbreite"], ["kurve", "Weich (krümmungsstetig)"]], f.kind || "konstant", (v) => this.set(f, "kind", v === "konstant" ? undefined : v, "Querschnitt")) : null,
+          isF ? null : this.seg("Art", [["gleich", "Gleicher Abstand"], ["zwei", "Zwei Abstände"], ["winkel", "Abstand und Winkel"]], f.chamferMode || "gleich", (v) => this.set(f, "chamferMode", v === "gleich" ? undefined : v, "Fasenart")),
+          E(isF ? (f.kind === "sehne" ? (f.variable ? "Sehnenbreite Anfang" : "Sehnenbreite") : f.variable ? "Radius Anfang" : "Radius") : f.chamferMode === "zwei" ? "Abstand 1" : "Abstand", "radius", { allowNeg: false, allowZero: false }),
+          !isF && f.chamferMode === "zwei" ? E("Abstand 2", "distance2", { allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "= Abstand 1" }) : null,
+          !isF && f.chamferMode === "winkel" ? E("Winkel", "chamferAngle", { unit: "°", allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "45" }) : null,
+          !isF && f.chamferMode ? this.check("Seiten tauschen", f.chamferFlip, (v) => this.set(f, "chamferFlip", v || undefined, "Seiten tauschen")) : null,
           isF && f.variable ? E("Radius Ende", "radius2", { allowNeg: false, allowZero: false }) : null,
           isF && f.variable ? this.seg("Anfang", [["", "kleinere Koordinate"], ["1", "größere Koordinate"]], f.flip ? "1" : "", (v) => this.set(f, (x) => { if (v) x.flip = true; else delete x.flip; }, "Anfang")) : null,
+          isF && f.variable ? this.text("Zwischenradien (Lage:Radius; …)", (f.mid || []).map(([t, r]) => `${t}:${r}`).join("; "), (v) => this.set(f, (x) => { const m = String(v).split(";").map((q) => q.trim()).filter(Boolean).map((q) => q.split(":").map((z) => z.trim().replace(",", "."))); if (m.length) x.mid = m; else delete x.mid; }, "Zwischenradien"), { placeholder: "z. B. 0.5:8; 0.8:4" }) : null,
+          isF && f.variable && (f.mid || []).length ? this.check("Weich zwischen den Radien", f.smooth, (v) => this.set(f, "smooth", v || undefined, "Weich")) : null,
           isF && f.variable ? h("p", { class: "hint" }, "Der Radius ändert sich gleichmäßig entlang jeder Kante. Anfang = Kantenende mit der kleineren Koordinate in der Hauptrichtung der Kante (z. B. links bzw. unten).") : null,
           this.seg("Kanten", [["edges", "Gewählte"], ["dir", "Richtung"], ["all", "Alle"]], f.mode || "edges", (v) => { this.set(f, "mode", v, "Modus"); app.selectFeature(f.id); }),
           f.mode === "dir" ? this.seg("Parallel zu", [["X", "X"], ["Y", "Y"], ["Z", "Z"]], f.dir || "Z", (v) => this.set(f, "dir", v, "Richtung")) : null,
@@ -1337,10 +1398,14 @@ export class Props {
         break;
       case "sweep": {
         const sks = part.features.filter((g) => g.type === "sketch");
+        const rohr = f.profil === "rohr";
         out.push(this.section("Sweeping",
-          this.select("Profil", [["", "– wählen –"], ...sks.map((x) => [x.id, x.name])], f.sketch || "", (v) => this.set(f, "sketch", v, "Profil")),
+          this.seg("Querschnitt", [["skizze", "Skizzenprofil"], ["rohr", "Rohr (Ø, Wand)"]], rohr ? "rohr" : "skizze", (v) => this.set(f, "profil", v === "rohr" ? "rohr" : undefined, "Querschnitt")),
+          rohr ? E("Außendurchmesser", "diameter", { allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "20" }) : null,
+          rohr ? E("Wanddicke (leer = voll)", "wall", { allowNeg: false, allowEmpty: true }) : null,
+          rohr ? null : this.select("Profil", [["", "– wählen –"], ...sks.map((x) => [x.id, x.name])], f.sketch || "", (v) => this.set(f, "sketch", v, "Profil")),
           this.select("Pfad", [["", "– wählen –"], ...sks.filter((x) => x.id !== f.sketch).map((x) => [x.id, x.name]), ...part.features.filter((x) => x.type === "skizze3d" || x.type === "flaechenkurve").map((x) => [x.id, x.name + " (3D)"])], f.path || "", (v) => this.set(f, "path", v, "Pfad")),
-          this.seg("Ausrichtung", [["mit", "Profil folgt dem Pfad"], ["fest", "Profil bleibt parallel"]], f.orient === "fest" ? "fest" : "mit", (v) => this.set(f, "orient", v === "fest" ? "fest" : undefined, "Ausrichtung")),
+          rohr ? null : this.seg("Ausrichtung", [["mit", "Profil folgt dem Pfad"], ["fest", "Profil bleibt parallel"]], f.orient === "fest" ? "fest" : "mit", (v) => this.set(f, "orient", v === "fest" ? "fest" : undefined, "Ausrichtung")),
           h("p", { class: "hint" }, "Profil: geschlossene Kontur am Anfang des Pfads, möglichst senkrecht dazu. Pfad: zusammenhängende Linien und Bögen einer anderen Skizze."),
           this.opSeg(f)));
         break;
@@ -1466,6 +1531,7 @@ export class Props {
         out.push(this.section("Import",
           h("dl", { class: "kv" }, h("dt", {}, "Datei"), h("dd", {}, f.fileName || "–"), h("dt", {}, "Größe"), h("dd", {}, f.data ? fmtNum(f.data.length / 1024, 0) + " KB" : "–")),
           this.opSeg(f),
+          this.seg("Aufstellen", [["", "wie Datei"], ["y-oben", "Y oben → Z oben"], ["y-unten", "Y unten"], ["kopf", "Kopfüber"]], f.aufstellen || "", (v) => this.set(f, "aufstellen", v || undefined, "Aufstellen")),
           f.format === "stl" ? this.check("Netz in Volumenkörper wandeln", !!f.convert, (v) => this.set(f, "convert", v, "Netz konvertieren")) : null,
           f.format === "stl" && f.convert ? this.check("Ebene Dreiecke zu Flächen zusammenfassen", f.unify !== false, (v) => this.set(f, "unify", v, "Netz konvertieren")) : null,
           f.format === "stl" ? h("p", { class: "hint" }, "Netz konvertieren: Dreiecke werden genäht und zu einem Volumenkörper geschlossen; danach gehen Bohrung, Rundung und Boolesche Operationen.") : null,
@@ -1495,7 +1561,7 @@ export class Props {
     })), true);
   }
   /** Ebenen- und Achsenwahl mit Arbeitselementen */
-  planeChoices(part, f) { return [["XY", "XY-Ebene"], ["XZ", "XZ-Ebene"], ["YZ", "YZ-Ebene"], ...this.datumsBefore(part, f, "arbeitsebene").map((g) => ["datum:" + g.id, g.name])]; }
+  planeChoices(part, f) { return [...["XY", "XZ", "YZ"].map((x) => [x, planeLabel(x)]), ...this.datumsBefore(part, f, "arbeitsebene").map((g) => ["datum:" + g.id, g.name])]; }
   axisChoices(part, f) { return [["X", "X-Achse"], ["Y", "Y-Achse"], ["Z", "Z-Achse"], ...this.datumsBefore(part, f, "arbeitsachse").map((g) => ["datum:" + g.id, g.name])]; }
   /** Eigenschaften der Körper-Werkzeuge (Stufe 38) */
   bodyToolProps(part, f, E) {
@@ -1605,7 +1671,12 @@ export class Props {
           this.vec3("Verschiebung X/Y/Z", f.move, (v) => this.set(f, "move", v, "Verschiebung")),
           this.select("Drehachse", this.axisChoices(part, f), f.axis || "Z", (v) => this.set(f, "axis", v, "Drehachse")),
           E("Drehwinkel", "angle", { unit: "°" }),
-          this.check("Als Kopie", f.copy, (v) => this.set(f, "copy", v || undefined, "Kopie")))];
+          this.check("Als Kopie", f.copy, (v) => this.set(f, "copy", v || undefined, "Kopie"))),
+          this.section("Skalieren",
+            this.seg("Faktor", [["gleich", "Gleich in X/Y/Z"], ["achsen", "Je Achse"]], f.scaleMode === "achsen" ? "achsen" : "gleich", (v) => this.set(f, "scaleMode", v === "achsen" ? "achsen" : undefined, "Skalieren")),
+            f.scaleMode === "achsen" ? this.vec3("Faktor X/Y/Z", f.scaleXYZ || ["1", "1", "1"], (v) => this.set(f, "scaleXYZ", v, "Faktor X/Y/Z")) : this.expr("Faktor", f.scale || "", (v) => this.set(f, "scale", v, "Faktor"), { unit: "", allowEmpty: true, placeholder: "1" }),
+            this.vec3("Fester Punkt X/Y/Z", f.scaleOrigin, (v) => this.set(f, "scaleOrigin", v, "Fester Punkt")),
+            h("p", { class: "hint" }, "Faktor 1 = unverändert. Der feste Punkt bleibt stehen, alles andere wächst oder schrumpft von ihm weg."))];
       case "aufdicken":
         return [this.section("Aufdicken",
           facePick("Ebene Flächen im 3D-Fenster anklicken (nochmal klicken entfernt)."),
@@ -1875,6 +1946,34 @@ export class Props {
     return this.field("Muster", inp);
   }
 
+  /** Bohrbild (SolidCraft): Halbschnitt mit Ø, Tiefe, Senkung und Spitzenwinkel aus den heutigen Werten */
+  holeDiagram(part, f) {
+    const scope = resolveParams(part.params || []).values;
+    const ev = (x, d) => { try { const v = evaluate(String(x ?? d), scope); return Number.isFinite(v) ? v : d; } catch { return d; } };
+    const d = f.thread && THREADS[f.thread] ? THREADS[f.thread] : ev(f.diameter, 8);
+    const sink = f.sink === "senkung" ? { kind: "kegel", d: ev(f.sinkDiameter, 2 * d), angle: ev(f.sinkAngle, 90) } : f.sink === "flach" ? { kind: "flach", d: ev(f.sinkDiameter, 2 * d) } : null;
+    const box = h("div", { class: "hole-diagram-wrap" });
+    box.innerHTML = holeDiagramSvg({ d, depth: f.extent === "depth" ? ev(f.depth, 10) : null, tip: f.tip === false || f.tip === "flach" ? 0 : ev(f.tipAngle, 118), sink, thread: f.thread || null });
+    return box;
+  }
+  /** Persönliche Bohrungsvorlagen: abrufen, unter Namen speichern, löschen */
+  holePresets(f) {
+    const app = this.app, list = app.prefs.get("werkzeuge.bohrvorlagen") || [];
+    const sel = h("select", { class: "inp" }, h("option", { value: "" }, list.length ? "Vorlage wählen …" : "noch keine Vorlage"), ...list.map((p, i) => h("option", { value: String(i) }, p.name)));
+    sel.addEventListener("change", () => { const p = list[Number(sel.value)]; if (p) app.edit("Bohrungsvorlage", () => applyPreset(f, p)); });
+    const save = async () => {
+      const name = await promptDialog("Bohrungsvorlage speichern", "Name der Vorlage (gleicher Name ersetzt sie)", f.thread ? `${f.thread}${f.extent === "depth" ? " " + f.depth + " tief" : " durch"}` : `Ø${f.diameter}${f.extent === "depth" ? " " + f.depth + " tief" : " durch"}`);
+      if (!name?.trim()) return;
+      const p = presetFrom(f, name);
+      const r = app.prefs.set("werkzeuge.bohrvorlagen", [...list.filter((x) => x.name !== p.name), p]);
+      if (!r.ok) return toast(r.error, { kind: "err" });
+      toast(`Vorlage »${p.name}« gespeichert`, { kind: "ok" }); this.render();
+    };
+    const del = () => { const p = list[Number(sel.value)]; if (!p) return toast("Erst eine Vorlage wählen"); app.prefs.set("werkzeuge.bohrvorlagen", list.filter((x) => x !== p)); this.render(); };
+    return this.section("Persönliche Vorlagen", this.field("Vorlage", sel),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: save }, "Als Vorlage speichern…"), list.length ? h("button", { class: "btn", onclick: del }, "Gewählte löschen") : null),
+      h("p", { class: "hint" }, "Gewinde, Ø, Ende, Richtung, Senkung und Bohrgrund – in jedem Projekt verfügbar."));
+  }
   /** Trägheitsmomente aus dem Darstellungsnetz (Kernel liefert sie nicht) */
   inertiaBlock(r, dens, vol) {
     const meshes = r.bodies.map((b) => b.mesh).filter((m) => m?.positions && m?.indices);
@@ -1886,13 +1985,19 @@ export class Props {
     const f = (v) => fmtNum(v, v >= 100 ? 0 : 2);
     const I = it.atCenter;
     const dev = it.meshDeviation;
-    return h("details", { class: "inertia" }, h("summary", {}, "Trägheitsmomente"),
+    // L13: beim Aufklappen Schwerpunkt und Hauptachsen im Modell zeigen (rot I₁, grün I₂, blau I₃)
+    const box = r.bodies.reduce((b, x) => { const p = x.mesh.positions; for (let i = 0; i < p.length; i += 3) for (let k = 0; k < 3; k++) { b[0][k] = Math.min(b[0][k], p[i + k]); b[1][k] = Math.max(b[1][k], p[i + k]); } return b; }, [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]]);
+    const len = Math.max(10, Math.hypot(...box[1].map((v, k) => v - box[0][k])) * 0.4);
+    const toggle = (ev) => this.app.viewer.showPrincipalAxes(ev.currentTarget.open && this.app.mode === "part" ? { center: it.center, axes: it.axes, len } : null);
+    return h("details", { class: "inertia", ontoggle: toggle }, h("summary", {}, "Trägheitsmomente, Hauptachsen"),
       h("dl", { class: "kv" },
         h("dt", {}, "Haupt-I₁/I₂/I₃"), h("dd", {}, it.principal.map(f).join(" / ") + " kg·mm²"),
         h("dt", {}, "Ixx/Iyy/Izz"), h("dd", {}, [I[0][0], I[1][1], I[2][2]].map(f).join(" / ")),
         h("dt", {}, "Ixy/Ixz/Iyz"), h("dd", {}, [I[0][1], I[0][2], I[1][2]].map(f).join(" / ")),
         h("dt", {}, "um Ursprung Ixx/Iyy/Izz"), h("dd", {}, [it.atOrigin[0][0], it.atOrigin[1][1], it.atOrigin[2][2]].map(f).join(" / "))),
-      h("p", { class: "hint" }, `Bezogen auf den Schwerpunkt, Achsen parallel zum Bauteil. Berechnet aus dem Darstellungsnetz (Qualität „${{ grob: "Schnell", normal: "Normal", fein: "Fein" }[this.app.quality] || this.app.quality}“)` +
+      h("dl", { class: "kv" }, h("dt", {}, "Schwerpunkt"), h("dd", {}, it.center.map((v) => fmtNum(v, 1)).join(" / ") + " mm"),
+        ...it.axes.flatMap((a, i) => [h("dt", {}, `Hauptachse ${i + 1}`), h("dd", {}, a.map((v) => fmtNum(v, 3)).join(" / "))])),
+      h("p", { class: "hint" }, `Bezogen auf den Schwerpunkt, Achsen parallel zum Bauteil; die Hauptachsen stehen im Modell (rot, grün, blau), solange dieser Abschnitt offen ist. Berechnet aus dem Darstellungsnetz (Qualität „${{ grob: "Schnell", normal: "Normal", fein: "Fein" }[this.app.quality] || this.app.quality}“)` +
         (dev != null ? `; Volumen des Netzes weicht ${fmtNum(Math.abs(dev) * 100, 2)} % vom exakten Wert ab – Trägheitswerte ähnlich genau.` : ".")));
   }
 
@@ -1994,6 +2099,12 @@ export class Props {
           out.push(this.section(names[c.type] || c.type,
             c.value !== undefined && !c.driven ? this.expr("Wert", c.value, (v) => app.sketcher.commit("Maß ändern", (s) => { s.constraints.find((k) => k.id === id).value = v; }), { unit: c.type === "angle" ? "°" : "mm" }) : null,
             c.driven ? h("p", { class: "hint" }, "Getriebenes Maß (nur Anzeige). Doppelklick auf das Maß macht es steuernd.") : null,
+            c.type === "radius" || c.type === "diameter" ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.sketcher.commit(c.type === "radius" ? "Als Durchmesser" : "Als Radius", (s) => {
+              // Radius ↔ Durchmesser (SolidCraft »ToggleDiameter«): Typ wechseln, Wert umrechnen
+              const k = s.constraints.find((x) => x.id === id), toD = k.type === "radius", v = String(k.value ?? "");
+              k.type = toD ? "diameter" : "radius";
+              if (v !== "" && k.value !== undefined) k.value = /^\s*\d+([.,]\d+)?\s*$/.test(v) ? String(Math.round(Number(v.replace(",", ".")) * (toD ? 2 : 0.5) * 1e6) / 1e6) : toD ? `(${v})*2` : `(${v})/2`;
+            }) }, c.type === "radius" ? "Als Durchmesser bemaßen" : "Als Radius bemaßen")) : null,
             c.id === "Of" ? null : this.check("Unterdrückt", !!c.disabled, (v) => app.sketcher.commit(v ? "Bedingung unterdrücken" : "Bedingung aktivieren", (s) => { const k = s.constraints.find((x) => x.id === id); if (v) k.disabled = true; else delete k.disabled; })),
             c.disabled ? h("p", { class: "hint" }, "Unterdrückt: bleibt gespeichert, wirkt aber nicht auf die Skizze.") : null,
             h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => app.sketcher.deleteSelection() }, "Löschen"))));
@@ -2127,6 +2238,18 @@ export class Props {
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => this.animateJoints([c.id]) }, "Bewegen"),
         h("button", { class: "btn", onclick: () => this.jointSweepCheck(c) }, "Kollision im Bereich prüfen"),
+        j.kind === "zylinder" ? null : h("button", { class: "btn", title: "Von der heutigen Stellung nach beiden Seiten bis zur ersten Berührung suchen und als Bereich eintragen", onclick: async (ev) => {
+          const b = ev.currentTarget; b.disabled = true; b.textContent = "Suche Grenzen …";
+          try {
+            const P = app.prefs, num = (k) => Number(P.get(k)) || null;
+            const r = await findJointLimits(app, asm, c, { coarse: num(slide ? "ansicht.grenzenSchrittWeg" : "ansicht.grenzenSchrittWinkel"), refine: num(slide ? "ansicht.grenzenGenauWeg" : "ansicht.grenzenGenauWinkel") });
+            if (r.start) return toast(`Grenzen finden: Teile durchdringen sich schon jetzt (${r.start.join(", ")}) – erst trennen`, { kind: "err", timeout: 7000 });
+            app.edit("Grenzen finden", () => { j.min = r.min; j.max = r.max; });
+            const why = (v, by) => `${fmtNum(v, slide ? 2 : 1)} ${u}${by ? ` (${by})` : " (kein Anschlag)"}`;
+            toast(`Bereich ${why(r.min, r.minBy)} bis ${why(r.max, r.maxBy)}`, { kind: "ok", timeout: 8000 });
+          } catch (e) { toast("Grenzen finden: " + e.message, { kind: "err" }); }
+          finally { b.disabled = false; b.textContent = "Grenzen finden"; }
+        } }, "Grenzen finden"),
         h("button", { class: "btn", title: "Diagramm, Bewegungsbahn, Punkt anfahren und Kollisionen über alle Stellungen (mit gekoppelten Gelenken)", onclick: () => motionStudyDialog(app, c) }, "Bewegungsuntersuchung…"),
         h("button", { class: "btn", title: "Gelenkursprung: Punkt und Richtung der Achse ändern", onclick: () => this.jointOriginDialog(c) }, "Gelenkursprung…"),
         h("button", { class: "btn danger", onclick: () => app.edit(jointLabel(j) + " entfernen", () => { delete c.joint; }) }, "Gelenk entfernen")));
@@ -2678,7 +2801,9 @@ export class Props {
     modal({
       title: `Parameter – ${part.name}`, width: "760px",
       body: h("div", {},
-        h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Ausdruck"), sources.length || rows.some((r) => r.link) ? h("th", {}, "Aus Baugruppe") : null, h("th", {}, "Wert"), h("th", {}, "Kommentar"), h("th"))), tbody),
+        // SolidCraft: »Zeilen der Parameterliste« – 0 = so hoch wie der Dialog
+        h("div", { class: "param-scroll", style: (Number(app.prefs?.get("dokument.parameterZeilen")) || 0) > 0 ? { maxHeight: `calc(${Number(app.prefs.get("dokument.parameterZeilen")) + 1} * 2.1em)`, overflow: "auto" } : {} },
+          h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Ausdruck"), sources.length || rows.some((r) => r.link) ? h("th", {}, "Aus Baugruppe") : null, h("th", {}, "Wert"), h("th", {}, "Kommentar"), h("th"))), tbody)),
         h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { let n = rows.length + 1; while (rows.some((r) => r.name === "P" + n)) n++; rows.push({ name: "P" + n, expr: "10", comment: "" }); draw(); } }, icon("plus"), " Parameter"),
           h("button", { class: "btn", title: "Parameter als Tabelle für Excel speichern (CSV)", onclick: () => app.files.saveText(paramsCsv(rows, resolveParams(rows).values), String(part.name || "Bauteil").replace(/[\\/:*?"<>|]+/g, "_") + " Parameter.csv", "text/csv", [{ name: "CSV", extensions: ["csv"] }]) }, icon("export"), " Exportieren"),
           h("button", { class: "btn", title: "Parameter aus CSV übernehmen: gleiche Namen werden geändert, neue angehängt", onclick: async () => {
@@ -2757,18 +2882,31 @@ export class Props {
       rules ? h("details", { class: "hint" }, h("summary", {}, "Regeln der Fertigungsprüfung"), h("ul", {}, ...DFM_RULES.map((t) => h("li", {}, t)))) : null);
   }
   /** Kollisionsprüfung der Baugruppe (Schnittvolumen > 1 mm³; Berührung zählt nicht) */
-  async collisionDialog() {
+  async collisionDialog(opts = null) {
     const app = this.app;
     const asm = app.activeDoc();
     if (asm?.kind !== "assembly") return;
     const comps = asm.components.filter((c) => !c.hidden && app.doc(c.part));
     if (comps.length < 2) return toast("Mindestens zwei sichtbare Komponenten nötig");
+    // Optionen wie SolidCraft »Clearance«: Mindestvolumen, Mindestabstand, nur gegen gewählte Komponenten
+    if (opts === "dialog") {
+      const last = app.collisionOpts || { tol: 1, clearance: 0, against: [] };
+      const tolIn = h("input", { class: "inp", value: fmtNum(last.tol, 2) }), clIn = h("input", { class: "inp", value: fmtNum(last.clearance, 2) });
+      const checks = comps.map((c) => { const i = h("input", { type: "checkbox", checked: last.against.includes(c.id) ? true : undefined }); return [c.id, i, h("label", { class: "check" }, i, " ", c.name || app.doc(c.part)?.name || c.id)]; });
+      const num = (el, d) => { const x = Number(String(el.value).replace(",", ".")); return Number.isFinite(x) && x >= 0 ? x : d; };
+      return modal({ title: "Kollisionsprüfung", width: "460px", body: h("div", {},
+        h("div", { class: "field" }, h("label", {}, "Kleinere Überschneidung zählt als Berührung (mm³)"), tolIn),
+        h("div", { class: "field" }, h("label", {}, "Auch Abstände unter (mm, 0 = aus)"), clIn),
+        h("div", { class: "field" }, h("label", {}, "Nur gegen (keine = alle mit allen)"), h("div", { class: "checks" }, ...checks.map((x) => x[2])))),
+        buttons: [{ label: "Abbrechen" }, { label: "Prüfen", primary: true, run: () => { app.collisionOpts = { tol: num(tolIn, 1), clearance: num(clIn, 0), against: checks.filter((x) => x[1].checked).map((x) => x[0]) }; this.collisionDialog(app.collisionOpts); } }] });
+    }
+    opts = opts || app.collisionOpts || { tol: 1, clearance: 0, against: [] };
     // Unterbaugruppen: alle ihre Bauteile mit dem Schlüssel der Komponente (innere Kollisionen zählen hier nicht)
     const items = comps.flatMap((c) => flattenAssembly({ id: asm.id, components: [c] }, (id) => app.doc(id)).map((o) => ({ key: c.id, part: o.part, ...decomposePlacement(o.matrix), name: c.name })));
     const name = (id) => { const c = asm.components.find((x) => x.id === id); return c?.name || app.doc(c?.part)?.name || id; };
     const busy = toast("Kollisionen werden geprüft …", { timeout: 0 });
     let res;
-    try { res = (await app.kernel.call("collisions", { items })).filter((r) => r.a !== r.b); }
+    try { res = (await app.kernel.call("collisions", { items, tol: opts.tol ?? 1, clearance: opts.clearance ?? 0, against: opts.against?.length ? opts.against : null })).filter((r) => r.a !== r.b); }
     catch (e) { busy.remove(); return toast("Kollisionsprüfung fehlgeschlagen: " + e.message, { kind: "err" }); }
     busy.remove();
     app.collisions = res;
@@ -2777,9 +2915,9 @@ export class Props {
     const body = res.length
       ? h("div", {}, h("p", {}, `${res.length} Kollision(en) – Zeile anklicken, um die beiden Komponenten zu markieren.`),
         h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Komponente"), h("th", {}, "Komponente"), h("th", {}, "Überschneidung"))),
-          h("tbody", {}, ...res.map((r) => h("tr", { style: { cursor: "pointer" }, onclick: () => show(r) }, h("td", {}, name(r.a)), h("td", {}, name(r.b)), h("td", { class: "num" }, r.unsure ? "nicht messbar" : fmtNum(r.volume / 1000, 2) + " cm³"))))))
-      : h("p", {}, `Keine Kollision zwischen ${comps.length} Komponenten. Berührende Flächen zählen nicht als Kollision.`);
-    modal({ title: `Kollisionsprüfung – ${asm.name}`, width: "620px", body, buttons: [{ label: "Schließen", primary: true, run: () => app.refreshSelectionHits() }] });
+          h("tbody", {}, ...res.map((r) => h("tr", { style: { cursor: "pointer" }, onclick: () => show(r) }, h("td", {}, name(r.a)), h("td", {}, name(r.b)), h("td", { class: "num" }, r.unsure ? "nicht messbar" : r.volume > 0 ? fmtNum(r.volume / 1000, 2) + " cm³" : `Abstand ${fmtNum(r.gap, 2)} mm`))))))
+      : h("p", {}, `Keine Kollision zwischen ${comps.length} Komponenten${opts.clearance > 0 ? ` und kein Abstand unter ${fmtNum(opts.clearance, 2)} mm` : ""}. Berührende Flächen zählen nicht als Kollision.`);
+    modal({ title: `Kollisionsprüfung – ${asm.name}`, width: "620px", body, buttons: [{ label: "Optionen …", run: () => { this.collisionDialog("dialog"); } }, { label: "Schließen", primary: true, run: () => app.refreshSelectionHits() }] });
     return res;
   }
   /** Einstellungscenter (src/ui/settings.js); Updates sind dort eine eigene Kategorie */

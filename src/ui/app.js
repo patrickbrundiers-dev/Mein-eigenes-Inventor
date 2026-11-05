@@ -1,4 +1,7 @@
 // Anwendungssteuerung: Projektzustand, Rückgängig, Neuaufbau, Auswahl, Modi
+import { setColorVision } from "../core/farbsehen.js";
+import { setPlaneNames } from "../core/ebenennamen.js";
+import { themeById, themeVars } from "../core/themes.js";
 import { Viewer } from "./viewer.js";
 import { problemsDialog, quickCounts, countText } from "./pruefung.js";
 import { invertSelection } from "../core/boxselect.js";
@@ -20,6 +23,7 @@ import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
+import { SpaceMouse } from "./maus3d.js";
 import { h, icon, toast, modal, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
 import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
@@ -41,6 +45,7 @@ import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCop
 import { resolveParams, evaluate } from "../core/expr.js";
 import { axisDistance, measureFormat, quickMeasure, MAX_MEASURE_ITEMS, measurePickOptions, measureHitLabel, sameMeasureHit } from "../core/messen.js";
 import { resolveDatums, resolvePlane } from "../core/datums.js";
+import { profileInnerPoint, autoOp } from "../core/extrusionop.js";
 import { datumDisplay, datumPickClick, datumHover, datumSelectClick, datumHandleDown, finishDatumPick, toggleAllDatums, datumPicking, featureAtFace } from "./arbeitselemente.js";
 import { sketchRefs, dependents } from "../core/featurerefs.js";
 import { applyPatterns } from "../core/asmmuster.js";
@@ -111,6 +116,9 @@ export class App {
     this.commands = new CommandKeys(this);
     this.applyPrefs();
     this.prefs.onChange((keys) => this.applyPrefs(keys));
+    // 3D-Maus (SolidCraft-Abgleich): freigegebene Geräte gleich verbinden
+    this.spaceMouse = new SpaceMouse(this);
+    this.spaceMouse.autoConnect();
     if (this.prefs.warnings.length) setTimeout(() => toast("Einstellungen: " + this.prefs.warnings[0] + (this.prefs.warnings.length > 1 ? ` (+${this.prefs.warnings.length - 1} weitere)` : ""), { kind: "err", timeout: 8000 }), 300);
     this.buildViewTools();
     this.nextStep = new NextStep(this);
@@ -134,8 +142,12 @@ export class App {
     const prev = this.activeDoc();
     if (prev && prev.id !== id && (this.mode === "part" || this.mode === "assembly")) this.docViews.set(prev.id, this.viewer.viewState());
     if (!this.openIds.includes(id)) this.openIds.push(id);
+    // SolidCraft: »Dialoge und Werkzeuge beim Wechsel zwischen Konstruktionen offen lassen« – gewähltes Feature je Dokument merken
+    this.docSel = this.docSel || new Map();
+    if (prev && prev.id !== id && this.sel?.type === "feature") this.docSel.set(prev.id, this.sel.id); else if (prev && prev.id !== id) this.docSel.delete(prev.id);
+    const keepSel = this.prefs.get("oberflaeche.dialogeOffen") && this.docSel.get(id);
     this.activeId = id;
-    this.sel = null;
+    this.sel = keepSel && d.features?.some((f) => f.id === keepSel) ? { type: "feature", id: keepSel } : null;
     this.selHits = [];
     this.pick = null;
     this.endMeasure();
@@ -417,7 +429,7 @@ export class App {
     this.dirty = false;
     this.undoStack = [];
     this.redoStack = [];
-    if (this.context) this.leaveContext({ reopen: false });
+    if (this.context) this.leaveContext({ reopen: false, discard: true });
     this.results.clear();
     this.activeId = null;
     this.openIds = [];
@@ -482,7 +494,8 @@ export class App {
     const redo = this.redoStack;
     this.checkpoint(label);
     // Verknüpfte Bauteile (M24) sind schreibgeschützt – geändert wird in ihrer Datei
-    const linked = opts?.link ? null : this.project.docs.filter((d) => d.kind === "part" && (d.link || d.variant)).map((d) => [d, partContent(d)]);
+    // L3: das an Ort und Stelle bearbeitete verknüpfte Teil ist freigegeben (wird beim Beenden in seine Datei geschrieben)
+    const linked = opts?.link ? null : this.project.docs.filter((d) => d.kind === "part" && (d.link || d.variant) && d.id !== this.context?.linkEdit?.id).map((d) => [d, partContent(d)]);
     try {
       fn();
       const hit = linked?.find(([d, before]) => this.project.docs.includes(d) && partContent(d) !== before);
@@ -510,7 +523,40 @@ export class App {
   /** Verknüpftes Bauteil (M24)? Dann Hinweis und true – Skizzen/Features dort nur in der Quelldatei */
   linkedReadOnly(part) {
     if (part?.kind !== "part" || !(part.link || part.variant)) return false;
+    if (part.link && this.context?.linkEdit?.id === part.id) return false;
     toast(linkedMessage(part, (id) => this.doc(id)), { kind: "err", timeout: 6000 });
+    return true;
+  }
+  /**
+   * Zwischenstand (SolidCraft »Checkpoint«): Projekt mit Rückgängig-Verlauf merken, später dorthin zurück.
+   * Das Zurückgehen ist selbst ein Rückgängig-Schritt; Zwischenstände gelten für diese Sitzung.
+   */
+  saveCheckpoint(name) {
+    this.checkpoints = this.checkpoints || [];
+    const n = this.checkpoints.length + 1;
+    const cp = { id: "cp" + Date.now().toString(36) + n, name: name || `Zwischenstand ${n}`, at: new Date(), snap: snapshot(this.project, null), activeId: this.activeId, undo: this.undoStack.slice(), redo: this.redoStack.slice() };
+    this.checkpoints.push(cp);
+    if (this.checkpoints.length > 20) this.checkpoints.shift();
+    toast(`»${cp.name}« gemerkt`, { kind: "ok", timeout: 2500 });
+    return cp;
+  }
+  restoreCheckpoint(id, { forget = false } = {}) {
+    const list = this.checkpoints || [];
+    const i = id ? list.findIndex((c) => c.id === id) : list.length - 1;
+    const cp = list[i];
+    if (!cp) { toast("Noch kein Zwischenstand gemerkt"); return false; }
+    if (forget) { this.checkpoints = list.slice(0, i); return true; }
+    if (this.mode === "sketch") this.finishSketch(true);
+    this.checkpoint("Zurück zu »" + cp.name + "«");
+    const undoBack = this.undoStack.pop();
+    this.project = restoreSnapshot(cp.snap);
+    this.undoStack = [...cp.undo, undoBack];
+    this.redoStack = [];
+    if (this.doc(cp.activeId)) this.activeId = cp.activeId;
+    this.checkpoints = list.slice(0, i + 1);
+    this.sel = null;
+    toast(`Zurück zu »${cp.name}«`, { timeout: 2500 });
+    this.changed();
     return true;
   }
   undo() { this.restore(this.undoStack, this.redoStack); }
@@ -593,13 +639,25 @@ export class App {
     const asm = this.doc(asmId);
     const scene = asm && contextScene(asm, compId, (id) => this.doc(id));
     if (!scene) return toast("Nur Bauteile der obersten Ebene lassen sich im Kontext bearbeiten", { kind: "err" });
-    this.context = { asm: asmId, comp: compId, part: scene.part.id, ghosts: true, label: contextLabel(asm, compId, (id) => this.doc(id)) };
+    // L3 (SolidCraft »Edit in place«): ein verknüpftes Teil wird hier bearbeitet und beim Beenden in seine Datei geschrieben
+    const linkEdit = scene.part.link && !scene.part.variant ? { id: scene.part.id, before: partContent(scene.part) } : null;
+    if (linkEdit && !this.files.bridge?.readLinked) return toast("Verknüpfte Teile lassen sich nur in der Desktop-App an Ort und Stelle bearbeiten", { kind: "err" });
+    this.context = { asm: asmId, comp: compId, part: scene.part.id, ghosts: true, label: contextLabel(asm, compId, (id) => this.doc(id)), linkEdit };
     this.openDoc(scene.part.id);
+    if (linkEdit) toast(`»${scene.part.name}« ist verknüpft: Änderungen werden beim Beenden in ${scene.part.link.path.split(/[\\/]/).pop()} gespeichert.`, { timeout: 7000 });
   }
   /** Zurück zur Baugruppe (reopen) oder nur die Nachbarteile wegräumen */
-  leaveContext({ reopen = true } = {}) {
+  leaveContext({ reopen = true, discard = false } = {}) {
     const ctx = this.context;
     this.context = null;
+    // L3: geändertes verknüpftes Teil in seine Quelldatei schreiben (FinishEdit)
+    const part = ctx?.linkEdit && this.doc(ctx.linkEdit.id);
+    if (part && !discard && partContent(part) !== ctx.linkEdit.before) {
+      this.files.writeLinkedBack(part).then((file) => {
+        this.edit("Verknüpfung gespeichert", () => { part.link = { ...part.link, time: new Date().toISOString() }; }, { link: true, rebuild: false });
+        toast(`Gespeichert in ${file.split(/[\\/]/).pop()}`, { kind: "ok" });
+      }).catch((e) => toast(`Quelldatei nicht geschrieben: ${e.message} – die Änderung steht im Projekt, die Verknüpfung zeigt sie als abweichend`, { kind: "err", timeout: 9000 }));
+    }
     this.ghostsShown = null;
     this.viewer.setGhosts([]);
     if (reopen && ctx && this.doc(ctx.asm)) this.openDoc(ctx.asm);
@@ -642,6 +700,8 @@ export class App {
       this.viewer.showPart(res.bodies, { color: this.partColor(part), opacity: 0.35, material: part.material, finish: part.finish });
     } else this.viewer.showPart(res.bodies, { color: this.partColor(part), material: part.material, finish: part.finish });
     if (this.context?.part === part.id) this.showContextGhosts();
+    // SolidCraft: Auflagefläche hervorheben, wenn das Bauteil für den Druck hingelegt ist
+    this.viewer.showBedFaces(this.mode !== "sketch" && this.prefs.get("allgemein.auflageHervorheben") !== false && part.features.some((f, i) => f.type === "auflage" && !f.suppressed && i < nAct));
     this.showSketches3D();
     // Flächen prüfen (E4) läuft weiter: nach dem Neuaufbau wieder anwenden
     if (this.surfaceCheck && this.mode !== "sketch") reapplySurfaceCheck(this);
@@ -839,6 +899,20 @@ export class App {
   }
 
   // ---------- Features ----------
+  /** Vorgang einer neuen Extrusion aus der Lage der Skizze zum Körper (W5) */
+  autoExtrudeOp(skId) {
+    try {
+      const part = this.activeDoc(), sk = part?.features.find((f) => f.id === skId);
+      if (!sk) return "join";
+      const q = profileInnerPoint(sk);
+      if (!q) return "join";
+      const scope = resolveParams(part.params || []).values;
+      const fr = planeFrame(resolvePlane(sk.plane, this.datumMap(part)), (() => { try { return evaluate(String(sk.offset || "0"), scope); } catch { return 0; } })());
+      const w = toWorld(fr, q[0], q[1]), n = fr.normal, e = 0.05;
+      const at = (s) => [w[0] + s * e * n[0], w[1] + s * e * n[1], w[2] + s * e * n[2]];
+      return autoOp({ hasBody: true, front: this.viewer.pointInside(at(1)), back: this.viewer.pointInside(at(-1)) });
+    } catch { return "join"; }
+  }
   lastSketchId(predicate) {
     const part = this.activeDoc();
     const sks = part.features.filter((f) => f.type === "sketch" && (!predicate || predicate(f)));
@@ -869,6 +943,7 @@ export class App {
     if (f && f.type === "naht") this.pick = { kind: "edges", feature: f.id };
     if (f && ["shell", "aufdicken", "flaeche", "entformung", "lochblech", "flaechenkurve", "auflage"].includes(f.type) || (f?.type === "freiflaeche" && ["offset", "kopie", "untrim"].includes(f.art))) this.pick = { kind: "faces", feature: f.id };
     if (f?.type === "direkt" && !(f.faces || []).length) this.pick = { kind: "faces", feature: f.id };
+    if (f?.type === "extrude" && f.source === "flaeche") this.pick = { kind: "faces", feature: f.id };
     const wasEditing = this._editingFeature;
     this._editingFeature = this.pick?.feature || null;
     if (wasEditing !== this._editingFeature) this.rebuild();
@@ -1092,7 +1167,12 @@ export class App {
       const hit = this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true });
       if (hit && hit.info?.type === "PLANE") {
         const n = hit.info.normal || hit.normal;
-        return this.createSketch(planeFromFace(hit.info.point || hit.point, n));
+        const sk = this.createSketch(planeFromFace(hit.info.point || hit.point, n));
+        // SolidCraft: Flächenkanten in neue Skizzen projizieren (immer bzw. nach Rückfrage)
+        const proj = this.prefs.get("skizze.flaecheProjizieren");
+        if (sk && proj === "immer") this.sketcher.projectFaceEdges(hit);
+        else if (sk && proj === "fragen") choiceDialog("Skizze auf Fläche", "Die Randkanten der Fläche in die Skizze projizieren?", [{ label: "Nein", value: null }, { label: "Projizieren", value: "ja", primary: true }]).then((v) => { if (v && this.sketcher.active) this.sketcher.projectFaceEdges(hit); });
+        return sk;
       }
       const pl = this.viewer.pickPlane(e.clientX, e.clientY);
       if (pl?.startsWith("datum:")) return this.createSketch({ ref: "datum", id: pl.slice(6) });
@@ -1101,7 +1181,7 @@ export class App {
     }
     if (datumPicking(this)) return datumPickClick(this, e);
     if (datumSelectClick(this, e)) return;
-    const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
+    let hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
     if (p?.kind === "measure") return this.measurePick(hit, e);
     if (p?.kind === "edges") return this.toggleFeatureEdge(p.feature, hit);
     if (p?.kind === "faces") return this.toggleFeatureFace(p.feature, hit);
@@ -1120,12 +1200,32 @@ export class App {
       return;
     }
     // Bauteil: Kanten/Flächen sammeln (Strg/Umschalt = mehrfach)
+    // L1: erneuter Klick an derselben Stelle wählt das Nächste darunter (Durchschalten)
+    const now = performance.now(), last = this.lastPickClick;
+    const cam = JSON.stringify(this.viewer.viewState());
+    if (hit && !e.ctrlKey && !e.shiftKey && last && now - last.t < 4000 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 4 && last.cam === cam) {
+      const list = this.viewer.pickCandidates(e.clientX, e.clientY, this.pickOptions());
+      if (list.length > 1) {
+        const i = (last.i + 1) % list.length;
+        this.lastPickClick = { ...last, t: now, i };
+        this.setHint(`Durchschalten ${i + 1}/${list.length}: ${measureHitLabel(list[i])} – nochmal klicken für das Nächste`);
+        this.selHits = [list[i]];
+        this.sel = { type: "geometry" };
+        this.viewer.setSelectionHits(this.selHits);
+        this.tree.render(); this.props.render(); this.ribbon.render(); this.updateQuickMeasure();
+        return;
+      }
+    }
+    this.lastPickClick = hit ? { x: e.clientX, y: e.clientY, t: now, i: 0, cam } : null;
     if (!hit) { this.selHits = []; this.sel = null; }
     else {
+      // SolidCraft: »Klick wählt ganze Körper« und »Umschalt fügt nur hinzu; Strg schaltet um«
+      if (this.prefs.get("auswahl.klick") === "koerper" && hit.body !== undefined && (hit.kind === "face" || hit.kind === "edge" || hit.kind === "vertex")) hit = { kind: "body", key: hit.key, body: hit.body };
       const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face) && a.end === hit.end;
-      if (e.ctrlKey || e.shiftKey) {
+      const addOnly = e.shiftKey && !e.ctrlKey && !e.metaKey && this.prefs.get("auswahl.umschalt") === "hinzufuegen";
+      if (e.ctrlKey || e.shiftKey || e.metaKey) {
         const i = this.selHits.findIndex(same);
-        if (i >= 0) this.selHits.splice(i, 1); else this.selHits.push(hit);
+        if (i >= 0) { if (!addOnly) this.selHits.splice(i, 1); } else this.selHits.push(hit);
       } else this.selHits = [hit];
       this.sel = { type: "geometry" };
     }
@@ -1192,12 +1292,16 @@ export class App {
       redo: this.redoStack.length ? { label: "Wiederholen", icon: "redo", kbd: "Strg+Y", run: () => this.redo() } : null,
       search: { label: "Befehl suchen …", icon: "search", kbd: kbd("app.search"), run: () => this.commands.exec("app.search") },
       repeat: this.ribbon.last?.mode === this.mode ? { label: "Nochmal: " + t_(this.ribbon.last.b.label), icon: this.ribbon.last.b.icon, run: () => this.ribbon.press(this.ribbon.last.b) } : null,
+      other: part && !this.pick ? (() => {
+        const list = this.viewer.pickCandidates(e.clientX, e.clientY, this.pickOptions());
+        return list.length > 1 ? { label: `Andere auswählen … (${list.length})`, icon: "selectOther", run: () => this.selectOtherMenu(e.clientX, e.clientY, list) } : null;
+      })() : null,
       datums: part && this.activeDoc()?.features.some((f) => ["arbeitsebene", "arbeitsachse", "arbeitspunkt"].includes(f.type)) ? { label: this.activeDoc().hideDatums ? "Arbeitselemente einblenden" : "Arbeitselemente ausblenden", icon: this.activeDoc().hideDatums ? "eye" : "eyeoff", run: () => toggleAllDatums(this) } : null,
     };
     if (this.prefs.get("ansicht.markierungsmenue") === false) {
       // klassische Liste
       const items = [I.repeat, I.repeat && "-", ...(part ? [I.sketch, I.faceSketch] : asm ? [I.place] : [])].filter(Boolean);
-      items.push("-", I.hide, I.isolate, I.showAll, I.datums, "-", I.fit, I.fitSel, I.normal, I.iso);
+      items.push("-", I.other, I.hide, I.isolate, I.showAll, I.datums, "-", I.fit, I.fitSel, I.normal, I.iso);
       if (I.undo) items.push("-", { ...I.undo, label: "Rückgängig: " + this.undoStack[this.undoStack.length - 1].label });
       return contextMenu(e.clientX, e.clientY, items);
     }
@@ -1206,8 +1310,14 @@ export class App {
       : asm ? [I.place, I.constraint, I.measure, I.normal || I.iso, I.fit, I.isolate, I.hide, I.undo]
       : [null, null, null, I.iso, I.fit, null, null, I.undo];
     const used = new Set(ring.filter(Boolean));
-    const list = [I.repeat, part && I.faceSketch ? I.sketch : null, I.showAll, I.datums, I.fitSel, I.normal, I.iso, I.redo, "-", I.search].filter((x) => x && !used.has(x));
+    const list = [I.repeat, I.other, part && I.faceSketch ? I.sketch : null, I.showAll, I.datums, I.fitSel, I.normal, I.iso, I.redo, "-", I.search].filter((x) => x && !used.has(x));
     markingMenu(e.clientX, e.clientY, ring, list);
+  }
+  /** L1: Liste von allem unter dem Mauszeiger; Überfahren hebt hervor, Klick wählt */
+  selectOtherMenu(x, y, list) {
+    contextMenu(x, y, list.map((hit, i) => ({ label: `${i + 1}. ${measureHitLabel(hit)}${hit.kind === "face" && i > 0 ? " (dahinter)" : ""}`,
+      onhover: () => this.viewer.highlight([hit]),
+      run: () => { this.selHits = [hit]; this.sel = { type: "geometry" }; this.viewer.setSelectionHits(this.selHits); this.tree.render(); this.props.render(); this.ribbon.render(); this.updateQuickMeasure(); } })));
   }
   toggleFeatureEdge(fid, hit) {
     if (!hit || hit.kind !== "edge" || !hit.info?.mid) return;
@@ -1222,6 +1332,13 @@ export class App {
   toggleFeatureFace(fid, hit) {
     if (!hit || hit.kind !== "face") return;
     const f = this.feature(fid);
+    // Einzelner Bezug (z. B. Extrusion »Bis Fläche« / »Start ab Fläche«): Punkt und Normale merken, Auswahl beenden
+    const key = this.pick?.key;
+    if (key) {
+      this.edit("Fläche wählen", () => { f[key] = { p: hit.point.map(r6), n: hit.normal ? hit.normal.map(r6) : null }; });
+      this.cancelPick();
+      return;
+    }
     const ref = f.type === "direkt" ? directFaceRef(this, hit) : { p: hit.point.map(r6) };
     this.edit("Fläche wählen", () => {
       f.faces = f.faces || [];
@@ -1386,12 +1503,40 @@ export class App {
   /** Benutzereinstellungen anwenden. Ändert nie das Modell, nur Anzeige und Bedienung. */
   applyPrefs(keys) {
     const p = this.prefs;
-    if (!keys || keys.includes("darstellung.schema")) this.applyTheme();
+    if (!keys || keys.some((k) => k === "darstellung.schema" || k === "darstellung.eigenerHintergrund" || k === "darstellung.hintergrund" || k === "darstellung.eigenerAkzent" || k === "darstellung.akzent")) this.applyTheme();
+    {
+      // Runde 2, Etappe 2: Meldungen, Statusleiste, Navigationsleiste, Dialogknöpfe, Farbsehschwäche als Attribute am Wurzelelement
+      const d = document.documentElement.dataset;
+      d.meldungen = p.get("oberflaeche.meldungen"); d.navPos = p.get("oberflaeche.navPosition"); d.navGroesse = p.get("oberflaeche.navGroesse");
+      d.navLeerlauf = p.get("oberflaeche.navLeerlauf"); d.dialogKnoepfe = p.get("oberflaeche.dialogKnoepfe"); d.farbsehen = p.get("darstellung.farbsehen");
+      d.statusleiste = p.get("oberflaeche.statusleiste") ? "an" : "aus";
+      d.panels = p.get("oberflaeche.panels") || "deckend";
+      // Schrift der Oberfläche (SolidCraft: Skalierung und Text)
+      const font = { system: "system-ui, sans-serif", segoe: '"Segoe UI", system-ui, sans-serif', arial: "Arial, Helvetica, sans-serif", verdana: "Verdana, Geneva, sans-serif", eigen: p.get("darstellung.schriftEigen") ? `"${p.get("darstellung.schriftEigen")}", system-ui, sans-serif` : "" }[p.get("darstellung.schrift")];
+      if (font) document.documentElement.style.setProperty("--ui", font); else document.documentElement.style.removeProperty("--ui");
+      setColorVision(d.farbsehen);
+      if (!keys || keys.includes("ansicht.ebenennamen")) { setPlaneNames(p.get("ansicht.ebenennamen")); if (keys) { this.tree.render(); this.props?.render?.(); } }
+    }
+    if (!keys || keys.includes("oberflaeche.anordnung") || keys.includes("oberflaeche.nurSymbole")) {
+      document.body.classList.toggle("kompakt", p.get("oberflaeche.anordnung") === "kompakt");
+      document.body.classList.toggle("rb-nur-symbole", !!p.get("oberflaeche.nurSymbole"));
+      if (keys) { this.docking.apply(); this.ribbon.render(); }
+    }
     if (!keys || keys.includes("oberflaeche.layout")) this.docking.apply();
     if (keys?.includes("oberflaeche.verlauf")) this.verlauf.render();
+    if (keys?.includes("allgemein.auflageHervorheben") && this.activeDoc()?.kind === "part") this.rebuild();
     if (keys?.includes("oberflaeche.schnellmessung")) this.updateQuickMeasure();
     if (keys?.some((k) => k.startsWith("baum."))) this.tree.render();
     if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
+    // Grafik-Voreinstellung (SolidCraft): setzt Qualität, Supersampling und Bodenschatten; Änderung von Hand → Benutzerdefiniert
+    if (keys?.includes("grafik.voreinstellung") && !this.presetBusy) {
+      const v = p.get("grafik.voreinstellung"), set = { leistung: { "ansicht.qualitaet": "normal", "grafik.supersampling": "1", "grafik.bodenschatten": false }, qualitaet: { "ansicht.qualitaet": "fein", "grafik.supersampling": "2", "grafik.bodenschatten": true } }[v];
+      if (set) { this.presetBusy = true; try { for (const [k, x] of Object.entries(set)) p.set(k, x); } finally { this.presetBusy = false; } }
+    } else if (!this.presetBusy && keys?.some((k) => k === "ansicht.qualitaet" || k === "grafik.supersampling" || k === "grafik.bodenschatten") && p.get("grafik.voreinstellung") !== "eigen") p.set("grafik.voreinstellung", "eigen");
+    if (this.kernel) {
+      const bc = p.get("kernel.koerperpruefung") || "ende";
+      if (bc !== (this.kernel.bodyCheck || "ende")) { this.kernel.bodyCheck = bc; if (keys && this.activeDoc()) this.rebuild(); }
+    }
     this.viewer.applyPrefs(p.values);
     this.sketcher.applyPrefs(p.values);
     if (!keys || keys.includes("baugruppe.freiheitsgrade")) updateDofGlyph(this);
@@ -1424,8 +1569,18 @@ export class App {
     const mode = this.prefs.get("darstellung.schema");
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
     if (mq && !this.themeListener) { this.themeListener = () => { if (this.prefs.get("darstellung.schema") === "system") { this.applyTheme(); this.viewer.applyPrefs(this.prefs.values); } }; mq.addEventListener?.("change", this.themeListener); }
-    const dark = mode === "dunkel" || (mode === "system" && !!mq?.matches);
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    const theme = themeById(mode), root = document.documentElement;
+    const dark = theme ? theme.base === "dark" : mode === "dunkel" || (mode === "system" && !!mq?.matches);
+    root.dataset.theme = dark ? "dark" : "light";
+    // Thema (G1): Variablen über das Grundschema legen; vorher gesetzte eines anderen Themas entfernen
+    for (const k of this.themeKeys || []) root.style.removeProperty("--" + k);
+    const vars = theme ? themeVars(theme) : {};
+    if (this.prefs.get("darstellung.eigenerHintergrund")) { const c = this.prefs.get("darstellung.hintergrund"); vars["stage-a"] = c; vars["stage-b"] = c; }
+    // SolidCraft: eigene Akzentfarbe über dem Thema (Knöpfe, Auswahl im Menüband, Fokus)
+    if (this.prefs.get("darstellung.eigenerAkzent")) { const c = this.prefs.get("darstellung.akzent"); vars.dye = c; vars["dye-soft"] = `color-mix(in srgb, ${c} 22%, ${dark ? "#1c1f24" : "#ffffff"})`; }
+    for (const [k, v] of Object.entries(vars)) root.style.setProperty("--" + k, v);
+    this.themeKeys = Object.keys(vars);
+    root.dataset.colortheme = theme?.id || mode;
   }
 
   // ---------- Oberfläche ----------
@@ -1648,6 +1803,22 @@ export class App {
     this.renderClipBar();
     this.ribbon.render();
   }
+  /** Schnitt an der gewählten Arbeitsebene oder ebenen Fläche (SolidCraft »Section« mit Ebene) */
+  clipAtSelection() {
+    const v = this.viewer, part = this.activeDoc();
+    let n = null, o = null, name = "Ebene";
+    const f = this.sel?.type === "feature" ? this.feature(this.sel.id) : null;
+    const dm = f?.type === "arbeitsebene" ? this.results.get(part?.id)?.datums?.[f.id] || this.results.get(part?.id)?.datums?.find?.((x) => x.id === f.id) : null;
+    const fr = dm?.frame || dm;
+    if (fr?.normal && fr?.origin) { n = fr.normal; o = fr.origin; name = f.name; }
+    const hit = !n && (this.selHits || []).find((x) => x.kind === "face" && x.normal && x.point);
+    if (hit) { n = hit.normal; o = hit.point; name = "Fläche"; }
+    if (!n) return toast("Erst eine Arbeitsebene im Modellbrowser oder eine ebene Fläche im 3D-Fenster wählen");
+    const bb = v.contentBox(), L = bb.isEmpty() ? 100 : bb.min.distanceTo(bb.max) / 2;
+    v.setClip({ axis: "E", name, n, o, offset: 0, flip: false, min: -L, max: L });
+    this.renderClipBar();
+    this.ribbon.render();
+  }
   renderClipBar() {
     const c = this.viewer.clip;
     this.clipBar.hidden = !c;
@@ -1662,7 +1833,7 @@ export class App {
       num.classList.remove("bad");
       set(o);
     });
-    this.clipBar.replaceChildren(h("b", {}, `Schnitt ${c.axis}`), range, num, h("span", {}, "mm"),
+    this.clipBar.replaceChildren(h("b", {}, c.axis === "E" ? `Schnitt ${c.name || "Ebene"}` : `Schnitt ${c.axis}`), range, num, h("span", {}, "mm"),
       h("button", { title: "Andere Seite zeigen", onclick: () => { this.viewer.setClip({ ...this.viewer.clip, flip: !this.viewer.clip.flip }); } }, "Seite"),
       h("button", { title: "Schnitt aus", onclick: () => this.toggleClip(c.axis) }, "×"));
   }
@@ -1700,7 +1871,7 @@ export const CONSTRAINT_NAMES = CONSTRAINT_TYPES;
 export const FEATURE_NAMES = {
   sketch: "Skizze", blechkasten: "Blechkasten", extrude: "Extrusion", revolve: "Drehung", hole: "Bohrung", profile: "Profil", frame: "Rahmen", knickrahmen: "Knickrahmen", profilzug: "Profilzug 3D", biegerohr: "Rohr gebogen", regelkoerper: "Regelkörper", normteil: "Normteil", kantteil: "Kantteil", platte: "Anschlussplatte", rippe: "Rippe", naht: "Schweißnaht", generator: "Generator", genteil: "Teil aus Generator", emboss: "Prägen",
   fillet: "Rundung", chamfer: "Fase", shell: "Wandung", pattern: "Muster", mirror: "Spiegelung", import: "Import",
-  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", kroepfung: "Kröpfung", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", flaechenkurve: "Kurve auf Fläche", freiflaeche: "Fläche", auflage: "Auflagefläche", kunststoff: "Kunststoffteil", punktwolke: "Punktwolke", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
+  arbeitsebene: "Arbeitsebene", arbeitsachse: "Arbeitsachse", arbeitspunkt: "Arbeitspunkt", sweep: "Sweeping", loft: "Erhebung", spirale: "Spirale", lasche: "Lasche", umschlag: "Umschlag", durchzug: "Durchzug", eckeschliessen: "Ecke schließen", schraubverbindung: "Schraubenverbindung", stanzung: "Stanzung", kroepfung: "Kröpfung", falten: "Falten", konturwalzen: "Konturwalze", trennfuge: "Trennfuge", skizze3d: "3D-Skizze", flaechenkurve: "Kurve auf Fläche", freiflaeche: "Fläche", auflage: "Auflagefläche", kunststoff: "Kunststoffteil", punktwolke: "Punktwolke", abgeleitet: "Abgeleitet", schweissbaugruppe: "Schweißbaugruppe", welle: "Welle", zahnrad: "Stirnrad", lager: "Lager", feder: "Druckfeder",
   endkappe: "Endkappe", strecken: "Rohr gestreckt", zinkloch: "Verzinkungsbohrungen", kuerzen: "Kürzen/Verlängern", kombinieren: "Kombinieren", stecksystem: "Stecksystem", steckzapfen: "Zapfen", steckschlitz: "Schlitze", trennen: "Trennen", verschieben: "Körper verschieben", huelle: "Hüllkörper", lochblech: "Lochblech", aufdicken: "Aufdicken", flaeche: "Fläche verschieben", entformung: "Entformung", direkt: "Direkt",
 };
 

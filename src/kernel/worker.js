@@ -162,11 +162,11 @@ const handlers = {
     return { text: writeIges(faces, { fileName }), faces: faces.length, approx };
   },
 
-  async exportStl({ items, quality = "fein", simplify = null }) {
+  async exportStl({ items, quality = "fein", simplify = null, tolerance = null }) {
     const shapes = await placedShapes(items, simplify);
     if (!shapes.length) throw new Error("Nichts zu exportieren");
     const s = shapes.length === 1 ? shapes[0].shape : R.makeCompound(shapes.map((x) => x.shape));
-    const tol = quality === "fein" ? 0.02 : 0.1;
+    const tol = tolerance > 0 ? tolerance : quality === "fein" ? 0.02 : 0.1;
     const blob = s.blobSTL({ binary: true, tolerance: tol, angularTolerance: 0.1 });
     return await blob.arrayBuffer();
   },
@@ -334,10 +334,10 @@ const handlers = {
   },
 
   /** Kollisionsprüfung einer Baugruppe: items mit key (Komponenten-ID) */
-  async collisions({ items, tol = 1 }) {
+  async collisions({ items, tol = 1, clearance = 0, against = null }) {
     const list = [];
     for (const it of items) for (const s of await placedShapes([it])) list.push({ key: it.key, shape: s.shape });
-    return K.collisions(list, { tol });
+    return K.collisions(list, { tol, clearance, against });
   },
   /**
    * Stecksystem zwischen zwei Komponenten (Stufe 46): beide Bauteile bauen, in die Baugruppe legen, Zapfen und
@@ -378,12 +378,12 @@ const handlers = {
     return { loops };
   },
   /** Flächen prüfen (E4): Isokurven, Kantenstetigkeit, Regelflächen-Radien je Körper des Bauteils */
-  async surfaceAnalysis({ part, what }) {
+  async surfaceAnalysis({ part, what, n }) {
     const res = await getBuilt(part), out = [];
     for (const [bi, b] of res.bodies.entries()) {
       if (b.meta?.huelle || !b.shape?.faces) continue;
       const r = { body: bi, name: b.name };
-      if (what === "iso") r.lines = K.isoCurves(b.shape);
+      if (what === "iso") r.lines = K.isoCurves(b.shape, Math.max(2, Math.min(50, Math.round(n || 5))));
       else if (what === "stetigkeit") r.edges = K.edgeContinuity(b.shape);
       else if (what === "radius") r.radii = K.analyticRadii(b.shape);
       else if (what === "liste") Object.assign(r, K.listTopology(b.shape));
