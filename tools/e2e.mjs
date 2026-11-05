@@ -4565,6 +4565,23 @@ try {
     step("SolidCraft R2: Pfeiltasten drehen/schwenken, Skizzenansicht zurück", Math.abs(nav.ang - 15) < 0.5 && nav.moved > 1 && back.turned && back.back, JSON.stringify({ nav, back }));
     step("SolidCraft R2: Extrusion Vorgang automatisch, Durchschalten", ops.inside === "cut" && ops.away === "new" && cnt >= 2 && k1 !== k2, JSON.stringify({ ops, cnt, k1, k2 }));
   }
+  // SolidCraft R2: Bohrung mit Bohrgrund (Spitzenwinkel/flach), Bohrbild und persönlicher Vorlage
+  {
+    await evalApp(() => { const a = window.__werkcad, p = a.activeDoc(); a.edit("Test", () => {
+      p.features.push({ id: "hp", type: "sketch", name: "Bohrpunkt", plane: { ref: "XY" }, offset: "20", points: [{ id: "hq", x: 20, y: 25 }], entities: [{ id: "hpe", type: "point", p: "hq" }], constraints: [] },
+        { id: "hh", type: "hole", sketch: "hp", diameter: "6", extent: "depth", depth: "10", direction: "reverse", tipAngle: "90" });
+    }); a.sel = { type: "feature", id: "hh" }; a.props.render(); });
+    await idle();
+    const v90 = await evalApp(() => { const a = window.__werkcad; return a.results.get(a.activeId).bodies.reduce((s, b) => s + (b.props?.volume || 0), 0); });
+    const ui = await evalApp(() => ({ svg: !!document.querySelector("#props .hole-diagram"), grund: /Bohrgrund/.test(document.querySelector("#props").textContent), vorl: /Persönliche Vorlagen/.test(document.querySelector("#props").textContent) }));
+    await evalApp(() => { const a = window.__werkcad, f = a.activeDoc().features.find((x) => x.id === "hh"); a.edit("Test", () => { f.tip = "flach"; }); });
+    await idle();
+    const vFlat = await evalApp(() => { const a = window.__werkcad; return a.results.get(a.activeId).bodies.reduce((s, b) => s + (b.props?.volume || 0), 0); });
+    const pre = await evalApp(() => { const a = window.__werkcad; a.prefs.set("werkzeuge.bohrvorlagen", [{ name: "Test", values: { thread: "M8", extent: "through" } }]); a.props.render(); return [...document.querySelectorAll("#props select option")].some((o) => o.textContent === "Test"); });
+    await evalApp(() => window.__werkcad.prefs.set("werkzeuge.bohrvorlagen", []));
+    // Spitze: Bohrgrund 10 tief plus Kegel – nimmt mehr Material weg als flach
+    step("SolidCraft R2: Bohrgrund, Bohrbild, Vorlagen", ui.svg && ui.grund && ui.vorl && pre && vFlat > v90 + 1, JSON.stringify({ ui, pre, v90, vFlat }));
+  }
   // SolidCraft-Abgleich E5: Kunststoffteil (Schraubdom mit Rippen an Skizzenpunkten), Regel aus den Einstellungen
   {
     await evalApp(() => window.__werkcad.newPart("Kunststoff"));

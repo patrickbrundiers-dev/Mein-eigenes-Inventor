@@ -2794,7 +2794,10 @@ export function createKernel(R) {
     // Profil im Halbschnitt (x = Radius, y = Tiefe entlang a) -> Rotation
     const w = v3.norm(Math.abs(a[0]) < 0.9 ? v3.cross(a, [1, 0, 0]) : v3.cross(a, [0, 1, 0]));
     const normal = v3.cross(w, a);
-    const tip = through || f.tip === false ? 0 : r / Math.tan((59 * Math.PI) / 180);
+    // Bohrgrund: Spitze mit Spitzenwinkel (Standard 118°) oder flach
+    const tipA = f.tip === false || f.tip === "flach" ? 0 : E(f.tipAngle || "118", "Spitzenwinkel");
+    if (tipA && !(tipA > 0 && tipA < 180)) throw new Error("Spitzenwinkel muss zwischen 0° und 180° liegen");
+    const tip = through || !tipA ? 0 : r / Math.tan(((tipA / 2) * Math.PI) / 180);
     const pts = [[0, -eps]];
     if (kind === "senkung") {
       const D = E(f.sinkDiameter, "Senkdurchmesser") / 2;

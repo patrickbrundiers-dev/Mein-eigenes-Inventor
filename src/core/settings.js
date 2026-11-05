@@ -9,6 +9,7 @@ import { validateBendTables } from "./bendtable.js";
 import { validateKeymap, commandDef } from "./commands.js";
 import { validateTemplate, DEFAULT_TEMPLATE } from "./zeichnungsvorlage.js";
 import { validatePlasticRules, DEFAULT_PLASTIC_RULES } from "./kunststoff.js";
+import { validateHolePresets } from "./bohrvorlagen.js";
 import { THEMES } from "./themes.js";
 
 // Benutzereinstellungen: Schema, Standardwerte, Prüfung, Migration, Suche.
@@ -126,6 +127,7 @@ export const SETTINGS = [
   { key: "baugruppe.abhaengigkeitFortsetzen", cat: "werkzeuge", label: "Abhängigkeit: Befehl nach dem Setzen aktiv lassen", type: "bool", default: true, help: "Wie Inventor »Anwenden«: Nach jeder Abhängigkeit geht es gleich mit der nächsten Auswahl weiter; Esc oder »Fertig« beendet. Die zuletzt gesetzte lässt sich dabei umkehren, im Versatz ändern oder zurücknehmen." },
   { key: "baugruppe.freiheitsgrade", cat: "werkzeuge", label: "Freiheitsgrade der gewählten Komponente zeigen", type: "bool", default: true, help: "Pfeile für freie Verschiebungen, Bögen für freie Drehungen an der gewählten Komponente." },
   { key: "werkzeuge.letzte", cat: "werkzeuge", label: "Zuletzt verwendete Werkzeugwerte", type: "toolmemo", default: {}, custom: true },
+  { key: "werkzeuge.bohrvorlagen", cat: "werkzeuge", label: "Bohrungsvorlagen", type: "holepresets", default: [], custom: true, help: "Persönliche Vorlagen für Bohrungen (Gewinde, Ø, Tiefe, Senkung, Bohrgrund); speichern und abrufen im Bohrungsdialog." },
   { key: "werkzeuge.makros", cat: "werkzeuge", label: "Makros", type: "macros", default: [], custom: true, help: "Benannte Befehlsfolgen; anlegen und aufzeichnen über die Befehlssuche (»Makros verwalten«, »Makro aufzeichnen«)." },
   { key: "werkzeuge.kuerzel", cat: "werkzeuge", label: "Tastaturkürzel", type: "keymap", default: {}, custom: true, help: "Abweichungen von der Standardbelegung; Konflikte werden abgelehnt." },
 
@@ -255,6 +257,8 @@ export function validateValue(def, v) {
     }
     case "drawtemplate":
       return validateTemplate(v);
+    case "holepresets":
+      return validateHolePresets(v);
     case "slicers": {
       if (!Array.isArray(v) || v.length > 8) return { ok: false, error: "Liste von höchstens 8 Slicern erwartet" };
       const bad = (t, n) => typeof t !== "string" || !t.trim() || t.length > n || /[\u0000-\u001f]/.test(t);

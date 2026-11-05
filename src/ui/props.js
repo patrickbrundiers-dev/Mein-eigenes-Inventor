@@ -67,6 +67,7 @@ import { inertiaFromMeshes } from "../core/inertia.js";
 import { bodiesMass, hasOwnDensity, massOverride, orderBomRows } from "../core/mass.js";
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { motionStudyDialog, findJointLimits } from "./bewegungsstudie.js";
+import { presetFrom, applyPreset, holeDiagramSvg } from "../core/bohrvorlagen.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
@@ -747,7 +748,11 @@ export class Props {
           f.form === "langloch" ? null : this.seg("Senkung", [["none", "Keine"], ["senkung", "Kegel"], ["flach", "Flach"]], f.sink || "none", (v) => this.set(f, (x) => { x.sink = v; if (v !== "none" && !x.sinkDiameter) { x.sinkDiameter = "2*(" + (x.diameter || "8") + ")"; x.sinkAngle = "90"; x.sinkDepth = "5"; } }, "Senkung")),
           f.sink && f.sink !== "none" ? E("Senk-Ø", "sinkDiameter") : null,
           f.sink === "senkung" ? E("Senkwinkel", "sinkAngle", { unit: "°" }) : null,
-          f.sink === "flach" ? E("Senktiefe", "sinkDepth") : null));
+          f.sink === "flach" ? E("Senktiefe", "sinkDepth") : null,
+          f.form !== "langloch" && f.extent === "depth" ? this.seg("Bohrgrund", [["winkel", "Spitze"], ["flach", "Flach"]], f.tip === false || f.tip === "flach" ? "flach" : "winkel", (v) => this.set(f, (x) => { x.tip = v === "flach" ? "flach" : undefined; }, "Bohrgrund")) : null,
+          f.form !== "langloch" && f.extent === "depth" && !(f.tip === false || f.tip === "flach") ? this.expr("Spitzenwinkel", f.tipAngle ?? "118", (v) => this.set(f, "tipAngle", v, "Spitzenwinkel"), { unit: "°", allowZero: false, allowNeg: false }) : null,
+          f.form === "langloch" ? null : this.holeDiagram(part, f)));
+        out.push(this.holePresets(f));
         break;
       case "emboss":
         out.push(this.section("Prägen / Gravieren",
@@ -1879,6 +1884,34 @@ export class Props {
     return this.field("Muster", inp);
   }
 
+  /** Bohrbild (SolidCraft): Halbschnitt mit Ø, Tiefe, Senkung und Spitzenwinkel aus den heutigen Werten */
+  holeDiagram(part, f) {
+    const scope = resolveParams(part.params || []).values;
+    const ev = (x, d) => { try { const v = evaluate(String(x ?? d), scope); return Number.isFinite(v) ? v : d; } catch { return d; } };
+    const d = f.thread && THREADS[f.thread] ? THREADS[f.thread] : ev(f.diameter, 8);
+    const sink = f.sink === "senkung" ? { kind: "kegel", d: ev(f.sinkDiameter, 2 * d), angle: ev(f.sinkAngle, 90) } : f.sink === "flach" ? { kind: "flach", d: ev(f.sinkDiameter, 2 * d) } : null;
+    const box = h("div", { class: "hole-diagram-wrap" });
+    box.innerHTML = holeDiagramSvg({ d, depth: f.extent === "depth" ? ev(f.depth, 10) : null, tip: f.tip === false || f.tip === "flach" ? 0 : ev(f.tipAngle, 118), sink, thread: f.thread || null });
+    return box;
+  }
+  /** Persönliche Bohrungsvorlagen: abrufen, unter Namen speichern, löschen */
+  holePresets(f) {
+    const app = this.app, list = app.prefs.get("werkzeuge.bohrvorlagen") || [];
+    const sel = h("select", { class: "inp" }, h("option", { value: "" }, list.length ? "Vorlage wählen …" : "noch keine Vorlage"), ...list.map((p, i) => h("option", { value: String(i) }, p.name)));
+    sel.addEventListener("change", () => { const p = list[Number(sel.value)]; if (p) app.edit("Bohrungsvorlage", () => applyPreset(f, p)); });
+    const save = async () => {
+      const name = await promptDialog("Bohrungsvorlage speichern", "Name der Vorlage (gleicher Name ersetzt sie)", f.thread ? `${f.thread}${f.extent === "depth" ? " " + f.depth + " tief" : " durch"}` : `Ø${f.diameter}${f.extent === "depth" ? " " + f.depth + " tief" : " durch"}`);
+      if (!name?.trim()) return;
+      const p = presetFrom(f, name);
+      const r = app.prefs.set("werkzeuge.bohrvorlagen", [...list.filter((x) => x.name !== p.name), p]);
+      if (!r.ok) return toast(r.error, { kind: "err" });
+      toast(`Vorlage »${p.name}« gespeichert`, { kind: "ok" }); this.render();
+    };
+    const del = () => { const p = list[Number(sel.value)]; if (!p) return toast("Erst eine Vorlage wählen"); app.prefs.set("werkzeuge.bohrvorlagen", list.filter((x) => x !== p)); this.render(); };
+    return this.section("Persönliche Vorlagen", this.field("Vorlage", sel),
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: save }, "Als Vorlage speichern…"), list.length ? h("button", { class: "btn", onclick: del }, "Gewählte löschen") : null),
+      h("p", { class: "hint" }, "Gewinde, Ø, Ende, Richtung, Senkung und Bohrgrund – in jedem Projekt verfügbar."));
+  }
   /** Trägheitsmomente aus dem Darstellungsnetz (Kernel liefert sie nicht) */
   inertiaBlock(r, dens, vol) {
     const meshes = r.bodies.map((b) => b.mesh).filter((m) => m?.positions && m?.indices);

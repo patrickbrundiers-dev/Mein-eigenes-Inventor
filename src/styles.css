@@ -1161,3 +1161,13 @@ body.kompakt #props .sec { margin: 0; }
 /* W7 Bildrate */
 .fps-meter { position: absolute; left: 10px; top: 10px; z-index: 4; padding: 2px 8px; border-radius: var(--radius-m); background: color-mix(in srgb, var(--steel-0) 85%, transparent); border: 1px solid var(--steel-2); font: 500 var(--fs-xs) var(--ui); color: var(--ink-soft); font-variant-numeric: tabular-nums; pointer-events: none; }
 .fps-meter[hidden] { display: none; }
+
+/* Bohrbild im Bohrungsdialog (SolidCraft) */
+.hole-diagram-wrap { display: flex; justify-content: center; margin: 6px 0 2px; }
+.hole-diagram .hd-body { fill: color-mix(in srgb, var(--ink-soft) 14%, transparent); stroke: var(--ink-soft); stroke-width: 1; }
+.hole-diagram .hd-hole { fill: var(--surface, #fff); stroke: var(--ink); stroke-width: 1.4; }
+.hole-diagram .hd-axis { stroke: var(--ink-soft); stroke-width: 0.8; stroke-dasharray: 6 2 1 2; }
+.hole-diagram .hd-dim { stroke: var(--dye); stroke-width: 1; }
+.hole-diagram .hd-thread { stroke: var(--ink-soft); stroke-width: 0.8; stroke-dasharray: 2 2; }
+.hole-diagram .hd-t { fill: var(--ink); font-size: 10px; text-anchor: middle; }
+.hole-diagram .hd-l { text-anchor: start; }
