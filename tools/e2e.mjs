@@ -4585,6 +4585,36 @@ try {
     // Spitze: Bohrgrund 10 tief plus Kegel – nimmt mehr Material weg als flach
     step("SolidCraft R2: Bohrgrund, Bohrbild, Vorlagen", ui.svg && ui.grund && ui.vorl && pre && vFlat > v90 + 1, JSON.stringify({ ui, pre, v90, vFlat }));
   }
+  // SolidCraft-Optionen: Einstellungsseiten Navigation, Grafik, Auswahl, Skizze (Flächenkanten projizieren, neue Formen bemaßen)
+  {
+    await evalApp(() => window.__werkcad.newPart("Einstellungen"));
+    await idle();
+    await evalApp(() => { const a = window.__werkcad, p = a.activeDoc(); a.edit("Test", () => {
+      p.features.push({ id: "eb", type: "sketch", name: "Grund", plane: { ref: "XY" }, offset: "0", points: [{ id: "a", x: 0, y: 0 }, { id: "b", x: 80, y: 0 }, { id: "c", x: 80, y: 50 }, { id: "d", x: 0, y: 50 }], entities: [{ id: "l1", type: "line", p1: "a", p2: "b" }, { id: "l2", type: "line", p1: "b", p2: "c" }, { id: "l3", type: "line", p1: "c", p2: "d" }, { id: "l4", type: "line", p1: "d", p2: "a" }], constraints: [] },
+        { id: "ee", type: "extrude", sketch: "eb", distance: "20", op: "join" });
+    }); });
+    await idle();
+    const es = await evalApp(() => { const a = window.__werkcad, v = a.viewer, P = a.prefs, r = {};
+      P.set("grafik.voreinstellung", "qualitaet"); r.preset = P.get("ansicht.qualitaet") === "fein" && P.get("grafik.supersampling") === "2" && v.stage.children.length === 1;
+      P.set("grafik.voreinstellung", "leistung"); r.leistung = P.get("grafik.supersampling") === "1" && v.stage.children.length === 0;
+      P.set("grafik.rasterSeite", true); v.setView("front", { animate: false }); r.grid = v.gridPlane === "xz"; P.set("grafik.rasterSeite", false); v.setView("iso", { animate: false });
+      v.setView("front", { animate: false }); const t0 = v.controls.target.x; v.controls._pan(40, 0); const d1 = v.controls.target.x - t0; P.set("ansicht.schwenkenUmkehrenH", true); const t1 = v.controls.target.x; v.controls._pan(40, 0); r.pan = Math.sign(d1) === -Math.sign(v.controls.target.x - t1) && d1 !== 0; P.set("ansicht.schwenkenUmkehrenH", false);
+      P.set("ansicht.einpassenGroesse", 100); v.fit(); const h1 = v.visibleHalf(); P.set("ansicht.einpassenGroesse", 50); v.fit(); r.fit = Math.abs(v.visibleHalf() / h1 - 2) < 0.01; P.set("ansicht.einpassenGroesse", 80);
+      P.set("auswahl.klick", "koerper"); v.setView("iso", { animate: false }); v.fit(); const c = v.worldToScreen([40, 25, 20]), rc = v.renderer.domElement.getBoundingClientRect(); a.viewerClick({ clientX: rc.left + c[0], clientY: rc.top + c[1], button: 0 }); r.body = a.selHits[0]?.kind === "body"; P.set("auswahl.klick", "elemente");
+      return r; });
+    const ep = await evalApp(async () => { const a = window.__werkcad, v = a.viewer;
+      a.prefs.set("skizze.flaecheProjizieren", "immer"); a.prefs.set("skizze.vollBemassen", true);
+      v.setView("iso", { animate: false }); v.fit(); a.pick = { kind: "sketchPlane" };
+      const c = v.worldToScreen([40, 25, 20]), rc = v.renderer.domElement.getBoundingClientRect(); a.viewerClick({ clientX: rc.left + c[0], clientY: rc.top + c[1], button: 0 }); await new Promise((r) => setTimeout(r, 400));
+      const sk = a.sketcher.sk, proj = sk?.entities.filter((e) => e.projected).length, n0 = sk.constraints.length;
+      a.sketcher.tool = "line"; a.sketcher.commit("Linie", (s) => { s.points.push({ id: "pp1", x: 10, y: 10 }, { id: "pp2", x: 30, y: 15 }); s.entities.push({ id: "ll", type: "line", p1: "pp1", p2: "pp2" }); });
+      const dims = sk.constraints.slice(n0).filter((c) => c.type === "length").length;
+      a.sketcher.tool = "select"; a.finishSketch(true); a.prefs.set("skizze.flaecheProjizieren", "aus"); a.prefs.set("skizze.vollBemassen", false);
+      return { proj, dims }; });
+    await idle();
+    step("SolidCraft-Optionen: Grafik-Voreinstellung, Raster seitlich, Schwenken umkehren, Einpassen, ganze Körper wählen, Flächenkanten projizieren, neue Formen bemaßen",
+      Object.values(es).every(Boolean) && ep.proj === 4 && ep.dims === 1, JSON.stringify({ es, ep }));
+  }
   // SolidCraft-Abgleich E5: Kunststoffteil (Schraubdom mit Rippen an Skizzenpunkten), Regel aus den Einstellungen
   {
     await evalApp(() => window.__werkcad.newPart("Kunststoff"));

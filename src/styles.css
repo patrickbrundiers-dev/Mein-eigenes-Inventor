@@ -307,6 +307,7 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .sk-dyn.err rect { stroke: var(--err); }
 .sk-grid { stroke: rgba(29, 59, 120, .08); stroke-width: 1; }
 .dim-input { position: absolute; z-index: 20; display: flex; gap: 4px; align-items: center; background: var(--surface); border: 1px solid var(--dye); border-radius: var(--radius-s); padding: 3px; box-shadow: 0 4px 14px rgba(28, 39, 51, .2); }
+.dim-input.im-fenster { padding: 8px 10px; gap: 6px; box-shadow: 0 8px 28px rgba(28, 39, 51, .28); }
 .dim-input input { width: 130px; border: 1px solid var(--steel-3); padding: 2px 6px; font-family: var(--din); font-size: var(--fs-l); }
 
 /* ---------- Startbildschirm ---------- */
@@ -517,8 +518,8 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .tube-cut-head b { flex: 1; font-family: var(--din); font-weight: 600; }
 .btn.small { padding: 1px 6px; font-size: var(--fs-s); }
 .tube-cut .seg button { padding-left: 5px; padding-right: 5px; }
-.sk-dim.err { stroke: var(--err); }
-.sk-dim-text.err { fill: var(--err); }
+.sk-dim.err { stroke: var(--sk-konflikt, var(--err)); }
+.sk-dim-text.err { fill: var(--sk-konflikt, var(--err)); }
 .sk-dof { stroke: #2e9d4a; stroke-width: 1.4; fill: none; stroke-linecap: round; pointer-events: none; }
 .sk-dim.preview { stroke: var(--laser); stroke-dasharray: 4 2; }
 .sk-dim-text.sel.preview, .sk-dim-text.preview { fill: var(--laser); pointer-events: none; }
@@ -528,7 +529,7 @@ table.grid tr.sum td { border-top: 1px solid var(--steel-3); }
 .view-box { position: absolute; z-index: 5; background: rgba(45, 98, 196, 0.08); border: 1px solid #2d62c4; pointer-events: none; }
 .view-box.cross { background: rgba(46, 157, 74, 0.08); border: 1px dashed #2e9d4a; }
 .sk-box.cross { fill: rgba(46, 157, 74, 0.08); stroke: #2e9d4a; stroke-dasharray: 4 3; }
-.sk-glyph.err rect { stroke: var(--err); fill: var(--err-soft); stroke-width: 1.5; }
+.sk-glyph.err rect { stroke: var(--sk-konflikt, var(--err)); fill: var(--err-soft); stroke-width: 1.5; }
 
 /* Maßbild je Konturart (wie massbild.py im Rohr-Editor) */
 .massbild-wrap { display: flex; justify-content: center; }
@@ -1171,3 +1172,7 @@ body.kompakt #props .sec { margin: 0; }
 .hole-diagram .hd-thread { stroke: var(--ink-soft); stroke-width: 0.8; stroke-dasharray: 2 2; }
 .hole-diagram .hd-t { fill: var(--ink); font-size: 10px; text-anchor: middle; }
 .hole-diagram .hd-l { text-anchor: start; }
+
+/* SolidCraft: Seitenleisten durchscheinend */
+:root[data-panels="durchscheinend"] .dock:not(.empty), :root[data-panels="durchscheinend"] .dock .pane-head { background: color-mix(in srgb, var(--steel-0) 74%, transparent); }
+:root[data-panels="durchscheinend"] .dock:not(.empty) { backdrop-filter: blur(12px) saturate(1.2); }

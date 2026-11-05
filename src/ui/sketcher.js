@@ -133,6 +133,7 @@ export class Sketcher {
     this.prefs = v;
     this.snapR = v["skizze.fangradius"];
     this.gridFixed = v["skizze.rasterweite"] || 0;
+    document.documentElement.style.setProperty("--sk-konflikt", v["skizze.konfliktfarbe"] || "#d93025");
     if (this.active) this.render();
   }
 
@@ -243,7 +244,18 @@ export class Sketcher {
   }
   commit(label, fn) {
     this.app.checkpoint(label);
+    const before = new Set(this.sk.entities.map((e) => e.id));
     fn(this.sk);
+    // SolidCraft: »Neue Formen vollständig bemaßen« (optional »vom Skizzenursprung aus positionieren«)
+    if (this.prefs?.["skizze.vollBemassen"] && this.tool !== "select") {
+      const fresh = this.sk.entities.filter((e) => !before.has(e.id) && !e.projected && !e.construction).map((e) => e.id);
+      if (fresh.length) {
+        try {
+          const r0 = autoDimension(this.sk, this.scope(), { only: fresh, uid, kinds: { radius: true, length: true, angle: true, position: !!this.prefs["skizze.vonUrsprung"] } });
+          this.sk.constraints.push(...r0.constraints);
+        } catch { /* Bemaßen ist eine Zugabe */ }
+      }
+    }
     const r = this.solve();
     if (r && !r.ok) toast("Skizze nicht vollständig lösbar – Bemaßung prüfen", { kind: "err" });
     this.app.changed({ rebuild: false });
@@ -1072,11 +1084,24 @@ export class Sketcher {
       this.commit("Bemaßung", (sk) => sk.constraints.push(c));
     });
   }
-  askValue(sx, sy, initial, onOk, { allowList = false } = {}) {
+  askValue(sx, sy, initial, onOk, { allowList = false, angle = false } = {}) {
     this.cancelInput();
     const scope = this.scope();
     const inp = h("input", { value: String(initial).replace(".", ","), spellcheck: "false" });
-    const box = h("div", { class: "dim-input", style: { left: sx + 12 + "px", top: sy - 14 + "px" } }, inp, h("button", { class: "btn primary", onclick: () => ok() }, "OK"));
+    // SolidCraft: Schritte für Pfeile, Auf/Ab und Mausrad; Bemaßungswerte in der Ansicht oder in einem Fenster
+    const stepBy = (dir) => {
+      const step = Number(this.prefs?.[angle ? "skizze.schrittWinkel" : "skizze.schrittLaenge"]) || (angle ? 5 : 1);
+      let cur; try { cur = evaluate(inp.value.trim().replace(",", "."), scope); } catch { return; }
+      if (!Number.isFinite(cur)) return;
+      const nx = Math.round((cur + dir * step) * 1e6) / 1e6;
+      if (!angle && nx <= 0) return;
+      inp.value = String(nx).replace(".", ",");
+    };
+    const inWindow = this.prefs?.["skizze.bemassungEingabe"] === "fenster";
+    const arrows = inWindow ? [h("button", { class: "btn", title: "Kleiner", onclick: () => stepBy(-1) }, "−"), h("button", { class: "btn", title: "Größer", onclick: () => stepBy(1) }, "+")] : [];
+    const pos = inWindow ? { left: "50%", top: "30%", transform: "translateX(-50%)" } : { left: sx + 12 + "px", top: sy - 14 + "px" };
+    const box = h("div", { class: "dim-input" + (inWindow ? " im-fenster" : ""), style: pos }, ...(inWindow ? [h("span", { class: "hint" }, angle ? "Winkel" : "Maß")] : []), inp, ...arrows, h("button", { class: "btn primary", onclick: () => ok() }, "OK"));
+    inp.addEventListener("wheel", (e) => { e.preventDefault(); stepBy(e.deltaY < 0 ? 1 : -1); }, { passive: false });
     const ok = () => {
       const v = inp.value.trim();
       try {
@@ -1095,6 +1120,7 @@ export class Sketcher {
       e.stopPropagation();
       if (e.key === "Enter") ok();
       if (e.key === "Escape") this.cancelInput();
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); stepBy(e.key === "ArrowUp" ? 1 : -1); }
     });
     this.stage.append(box);
     this.inputBox = box;
@@ -1188,10 +1214,18 @@ export class Sketcher {
       });
       return;
     }
-    this.askValue(sx, sy, c.value, (val) => this.commit("Maß ändern", (sk) => { sk.constraints.find((k) => k.id === id).value = val; }));
+    this.askValue(sx, sy, c.value, (val) => this.commit("Maß ändern", (sk) => { sk.constraints.find((k) => k.id === id).value = val; }), { angle: ["angle", "lineAngle", "axisAngle"].includes(c.type) });
   }
 
   // ---------- Projektion von Modellkanten ----------
+  /** Einstellung »Flächenkanten in neue Skizzen projizieren«: alle Randkanten der Fläche, auf der die Skizze entsteht */
+  projectFaceEdges(hit) {
+    const pk = this.viewer.findPickable(hit);
+    if (!pk) return 0;
+    const list = this.viewer.faceEdgeIndices(hit);
+    for (const ei of list) this.projectEdge({ kind: "edge", key: hit.key, body: hit.body, edge: ei, info: pk.lines.userData.edges?.[ei] });
+    return list.length;
+  }
   projectEdge(hit) {
     const info = hit.info;
     if (!info) return;
@@ -1279,7 +1313,8 @@ export class Sketcher {
         return;
       }
       const key = hit.kind === "point" ? "p:" + hit.id : hit.kind === "entity" ? "e:" + hit.id : "c:" + hit.id;
-      if (e.shiftKey) { if (this.sel.has(key)) this.sel.delete(key); else this.sel.add(key); }
+      const addOnly = e.shiftKey && !e.ctrlKey && !e.metaKey && this.prefs?.["auswahl.umschalt"] === "hinzufuegen";
+      if (e.shiftKey || e.ctrlKey || e.metaKey) { if (this.sel.has(key)) { if (!addOnly) this.sel.delete(key); } else this.sel.add(key); }
       else if (!this.sel.has(key)) { this.sel.clear(); this.sel.add(key); }
       this.app.selectSketchItems([...this.sel]);
       // Ziehen vorbereiten
@@ -1451,7 +1486,7 @@ export class Sketcher {
     const sn = this.snap(sx, sy);
     switch (t) {
       case "line":
-        if (!this.state) this.state = { start: sn, dyn: createDynInput(["len", { key: "ang", signed: true }]) };
+        if (!this.state) this.state = { start: sn, dyn: createDynInput(["len", { key: "ang", signed: true }]), downAt: [sx, sy] };
         else this.finishLine(sn);
         break;
       case "rect": case "rectc":
@@ -2101,6 +2136,12 @@ export class Sketcher {
   }
   pointerUp(e) {
     if (!this.active) return;
+    // SolidCraft: »Drücken und Ziehen zeichnet eine Linie« – Loslassen nach Ziehen setzt den Endpunkt
+    if (this.tool === "line" && this.state?.downAt && this.prefs?.["skizze.ziehenLinie"] && e.button === 0) {
+      const [sx, sy] = this.eventPos(e), [dx, dy] = this.state.downAt;
+      this.state.downAt = null;
+      if (Math.hypot(sx - dx, sy - dy) > 6) { this.finishLine(this.snap(sx, sy)); this.render(); return; }
+    }
     if (this.trimPath) {
       const tp = this.trimPath;
       this.trimPath = null;
@@ -2384,7 +2425,7 @@ export class Sketcher {
     for (const c of sk.constraints) {
       if (DIMENSION_TYPES.has(c.type) && !c.hidden) this.renderDim(g, c, P);
     }
-    if (this.showGlyphs) this.renderGlyphs(g, P);
+    if (this.showGlyphs && !this.glyphsTooSmall()) this.renderGlyphs(g, P);
     // Vorschau
     this.renderPreview(g, P);
   }
@@ -2562,6 +2603,13 @@ export class Sketcher {
     grp.append(textEl(text, tx + nx, ty + ny, rot, "sk-dim-text" + (c.driven ? " driven" : "") + (c.disabled ? " off" : "") + (sel ? " sel" : "") + (bad ? " err" : "") + (preview ? " preview" : ""), "middle"));
     g.append(grp);
     this.dimBoxes.push({ id: c.id, ...estimateBox(text, tx + nx, ty + ny - 4, "middle") });
+  }
+  /** Einstellung »Symbole beim Herauszoomen ausblenden«: Skizze kleiner als 160 Bildpunkte → keine Bedingungssymbole */
+  glyphsTooSmall() {
+    if (!this.prefs?.["skizze.symboleZoom"] || !this.sk?.points?.length) return false;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of this.sk.points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    return Math.max(x1 - x0, y1 - y0) * (this.M?.scale || 1) < 160;
   }
   renderGlyphs(g, P) {
     const sk = this.sk;

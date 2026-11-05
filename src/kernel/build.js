@@ -619,6 +619,9 @@ export function createKernel(R) {
 
   async function buildPart(part0, { useCache = true, validate = true } = {}) {
     // Regeln (Stufe 43): Parameter setzen, Features unterdrücken, Prüfmeldungen – vor dem Aufbau
+    // Körperprüfung (Einstellung kernel.koerperpruefung): »ende« = einmal am Ende, »feature« = nach jedem Feature, »aus«
+    const check = part0._koerperpruefung || "ende";
+    if (check === "aus") validate = false;
     const ruled = applyRules(part0);
     const part = ruled.part;
     const { values, errors: paramErrors } = resolveParams(part.params || []);
@@ -977,6 +980,7 @@ export function createKernel(R) {
       state.status[f.id] = st;
       if (f.suppressed) { st.suppressed = true; newCache.push({ key: keys[i], state: null }); continue; }
       const t0 = Date.now(); // Leistungsprofil (SolidCraft-Abgleich E6): Rechenzeit je Feature
+      const shapesBefore = check === "feature" ? new Set(state.bodies.map((b) => b.shape)) : null;
       try {
         switch (f.type) {
           case "sketch": {
@@ -2742,6 +2746,15 @@ export function createKernel(R) {
         st.ok = false;
         st.error = errorText(e, R);
       }
+      if (shapesBefore && st.ok) {
+        for (const b of state.bodies) {
+          if (shapesBefore.has(b.shape)) continue;
+          let ok;
+          try { ok = shapeValid(b.shape); } catch { ok = false; }
+          b.invalid = !ok;
+          if (!ok && !st.warning?.includes(INVALID_BODY)) st.warning = st.warning ? st.warning + "; " + INVALID_BODY : INVALID_BODY;
+        }
+      }
       st.ms = Date.now() - t0;
       if (useCache) newCache.push({ key: keys[i], state: null });
       if (useCache && i >= feats.length - 3) newCache[newCache.length - 1].state = cloneState(state);
@@ -2755,7 +2768,7 @@ export function createKernel(R) {
     for (const [k, msg] of Object.entries(paramErrors)) state.status["param:" + k] = { ok: false, error: msg };
     // Körperprüfung des Endergebnisses: nur Hinweis am erzeugenden Feature, blockiert nichts.
     // Statusobjekt ersetzen statt ändern – es kann mit dem Zwischenspeicher geteilt sein.
-    if (validate) {
+    if (validate && check !== "feature") {
       for (const b of state.bodies) {
         let ok;
         try { ok = shapeValid(b.shape); } catch { ok = false; }

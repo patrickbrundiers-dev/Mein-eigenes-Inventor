@@ -67,6 +67,9 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
       input = h("input", { class: "inp set-folder", value: v, spellcheck: "false", placeholder: "zuletzt benutzter Ordner" });
       input.addEventListener("change", () => commit(input.value));
       if (window.werkcad?.pickFolder) after = h("button", { class: "btn", onclick: async () => { const d = await window.werkcad.pickFolder({ dir: prefs.get(s.key) || undefined }); if (d) { input.value = d; commit(d); } } }, "Wählen…");
+    } else if (s.type === "text") {
+      input = h("input", { class: "inp", value: v, spellcheck: "false" });
+      input.addEventListener("change", () => commit(input.value));
     } else if (s.type === "name") {
       input = h("input", { class: "inp", value: v, spellcheck: "false", placeholder: s.allowEmpty ? "leer = keine" : "" });
       input.addEventListener("change", () => commit(input.value));
@@ -119,6 +122,7 @@ function extras(app, cat) {
     const forget = h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: !Object.keys(memo).length, onclick: (e) => { app.prefs.reset(["werkzeuge.letzte"]); e.currentTarget.disabled = true; toast("Werkzeuge starten wieder mit den Standardwerten"); } }, "Letzte Werkzeugwerte vergessen"));
     return [forget, quickAccessEditor(app), ribbonEditor(app), keymapEditor(app)];
   }
+  if (cat === "maus3d") return [spaceMouseSection(app)];
   if (cat === "material") return [materialsEditor(app), plasticRulesEditor(app)];
   if (cat === "blech") return [sheetRulesEditor(app), bendTablesEditor(app)];
   if (cat === "dateien") {
@@ -472,5 +476,23 @@ export function themeCards(app, rerender) {
   const render = () => box.replaceChildren(h("h3", {}, "Farbthema"), h("p", { class: "hint" }, "Klick wählt das Thema für Menüband, Panels, Dialoge und 3D-Hintergrund. Die Themen ab Graphite übernehmen die Farbwerte von SolidCraft."),
     h("div", { class: "theme-cards" }, ...BUILTIN.map(card), ...THEMES.map(card)));
   render();
+  return box;
+}
+
+/** 3D-Maus: Gerätezustand, Verbinden, Kalibrieren (SolidCraft: Einstellungen → 3D-Maus) */
+function spaceMouseSection(app) {
+  const sm = app.spaceMouse;
+  const box = h("div", { class: "mat-editor" });
+  const draw = () => {
+    const st = sm?.status || "nicht-unterstuetzt";
+    const cal = app.prefs.get("maus3d.kalibrierung");
+    const text = { verbunden: `Verbunden: ${sm.name || "3D-Maus"}` + (cal ? " · kalibriert" : " · nicht kalibriert"), gesperrt: "Gefunden, aber nicht lesbar – ein anderes Programm (z. B. der 3Dconnexion-Treiber) belegt das Gerät exklusiv.", keine: "Keine 3D-Maus verbunden. Falls eine angeschlossen ist, bewegen Sie sie kurz und klicken auf »Verbinden«.", "nicht-unterstuetzt": "In dieser Umgebung ist kein Zugriff auf USB-Eingabegeräte möglich." }[st];
+    box.replaceChildren(h("h4", {}, "Gerät"), h("p", { class: "hint" }, text), h("div", { class: "btn-row" },
+      h("button", { class: "btn", disabled: !sm || st === "nicht-unterstuetzt", onclick: async () => { await sm.connect(); draw(); } }, st === "verbunden" ? "Anderes Gerät …" : "Verbinden …"),
+      h("button", { class: "btn", disabled: st !== "verbunden", title: "Kappe loslassen und 2 Sekunden nicht berühren", onclick: async (e) => { e.currentTarget.textContent = "Nicht berühren …"; const ok = await sm.calibrate(); toast(ok ? "3D-Maus kalibriert" : "Kalibrieren fehlgeschlagen", { kind: ok ? "ok" : "err" }); draw(); } }, "Kalibrieren"),
+      h("button", { class: "btn", disabled: !cal, onclick: () => { app.prefs.set("maus3d.kalibrierung", null); draw(); } }, "Kalibrierung verwerfen")));
+  };
+  draw();
+  sm?.onChange(() => { if (box.isConnected) draw(); });
   return box;
 }

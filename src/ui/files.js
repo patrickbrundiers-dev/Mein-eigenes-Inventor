@@ -195,9 +195,10 @@ export class Files {
   async pickProjectFile() {
     if (this.bridge) {
       const r = await this.bridge.openFile({ filters: PROJECT_FILTERS });
-      return r ? { path: r.path, text: r.data } : null;
+      return r && (await this.sizeOk(r.name || r.path, r.data?.length || 0, "dateien.maxProjektMB")) ? { path: r.path, text: r.data } : null;
     }
     const f = await pickFile(".wcad,application/json");
+    if (f && !(await this.sizeOk(f.name, f.size, "dateien.maxProjektMB"))) return null;
     return f ? { path: f.name, text: await f.text() } : null;
   }
   /** Bauteil-Datei schreiben (Speichern-Dialog) → Pfad oder null */
@@ -998,11 +999,25 @@ export class Files {
 
   // ---------- Import ----------
   async pickStep() {
-    if (this.bridge) return await this.bridge.openFile({ filters: [{ name: "STEP / STL", extensions: ["step", "stp", "stl"] }] });
+    if (this.bridge) { const r = await this.bridge.openFile({ filters: [{ name: "STEP / STL", extensions: ["step", "stp", "stl"] }] }); return r && (await this.sizeOk(r.name, (r.data?.length || 0) * (r.binary ? 0.75 : 1), "dateien.maxImportMB")) ? r : null; }
     const f = await pickFile(".step,.stp,.stl");
     if (!f) return null;
+    if (!(await this.sizeOk(f.name, f.size, "dateien.maxImportMB"))) return null;
     const isStl = /\.stl$/i.test(f.name);
     return { name: f.name, data: isStl ? bytesToBase64(new Uint8Array(await f.arrayBuffer())) : await f.text(), binary: isStl };
+  }
+  /** SolidCraft: »Maximale Dateigröße zum Öffnen« – größere Dateien nur nach Rückfrage (0 = keine Grenze) */
+  async sizeOk(name, bytes, key) {
+    const max = Number(this.app.prefs.get(key)) || 0;
+    if (!max || !(bytes > max * 1048576)) return true;
+    const mb = (bytes / 1048576).toLocaleString("de-DE", { maximumFractionDigits: 1 });
+    return !!(await choiceDialog("Große Datei", `»${name}« ist ${mb} MB groß, die Grenze steht auf ${max} MB (Einstellungen → Dateien). Öffnen kann lange dauern und viel Speicher brauchen.`, [{ label: "Abbrechen", value: null }, { label: "Trotzdem öffnen", value: true, primary: true }]));
+  }
+  /** SolidCraft: »Dateien aus unbekannten Programmen« – Y-oben-Modelle aufstellen: fragen, immer oder nie */
+  importUpright(feat, onAsk) {
+    const mode = this.app.prefs.get("dateien.importAusrichtung") || "fragen";
+    if (mode === "aufstellen") feat.aufstellen = "y-oben";
+    else if (mode === "fragen") onAsk?.();
   }
   /**
    * Bild für die Skizze wählen (FU2) → { name, src (data-URL), px: [Breite, Höhe] } oder null.
@@ -1059,7 +1074,9 @@ export class Files {
     const f = await this.pickStep();
     if (!f) return;
     const p = this.app.withPartDefaults(newPart(f.name.replace(/\.(step|stp|stl)$/i, "")));
-    p.features.push(importFeature(f));
+    const feat = importFeature(f);
+    this.importUpright(feat);
+    p.features.push(feat);
     this.app.addDoc(p);
   }
   async importStepIntoPart() {
@@ -1067,9 +1084,10 @@ export class Files {
     const f = await this.pickStep();
     if (!f) return;
     const feat = importFeature(f);
+    this.importUpright(feat);
     app.addFeature(feat);
     // W8: viele Programme speichern mit Y nach oben – Aufstellen gleich anbieten
-    toast(`»${f.name}« eingefügt. Liegt das Modell auf der Seite (Y nach oben)?`, { timeout: 9000, action: { label: "Aufstellen", run: () => app.edit("Aufstellen", () => { const g = app.activeDoc()?.features.find((x) => x.id === feat.id); if (g) g.aufstellen = "y-oben"; }) } });
+    if ((app.prefs.get("dateien.importAusrichtung") || "fragen") === "fragen") toast(`»${f.name}« eingefügt. Liegt das Modell auf der Seite (Y nach oben)?`, { timeout: 9000, action: { label: "Aufstellen", run: () => app.edit("Aufstellen", () => { const g = app.activeDoc()?.features.find((x) => x.id === feat.id); if (g) g.aufstellen = "y-oben"; }) } });
   }
   async replaceImport(feat) {
     const f = await this.pickStep();

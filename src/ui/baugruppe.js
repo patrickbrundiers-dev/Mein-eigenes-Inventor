@@ -215,13 +215,18 @@ export function bindAssemblyDrag(app) {
       app.viewer.camera.getWorldDirection(dir);
       // bei mehreren freien Drehungen die Achse, die am meisten zum Betrachter zeigt
       const ax = st.dof.rAxes.reduce((b, a) => (Math.abs(v3.dot(a, dir.toArray())) > Math.abs(v3.dot(b, dir.toArray())) ? a : b));
-      const ang = Math.round(dx * 0.5);
+      // SolidCraft: grober Schritt nahe der Ausgangshöhe, feiner Schritt, wenn weiter nach oben/unten weggezogen wird
+      const far = Math.abs(e.clientY - st.y) > 60;
+      const stepA = Number(app.prefs?.get(far ? "baugruppe.drehSchrittFern" : "baugruppe.drehSchrittNah")) || 1;
+      const ang = Math.round((dx * 0.5) / stepA) * stepA;
       D = rotationAbout(st.dof.rPoint || st.box?.c || st.p0, ax, -ang);
-      st.label = `Drehen ${ang}°`;
+      st.label = `Drehen ${ang}° (Schritt ${String(stepA).replace(".", ",")}°${far ? ", fein" : ""})`;
     } else {
       const p = onPlane(e, st.plane);
       if (!p) return;
-      const m = projectFree(v3.sub(p, st.p0), st.dof.tDirs);
+      let m = projectFree(v3.sub(p, st.p0), st.dof.tDirs);
+      const stepT = Number(app.prefs?.get("baugruppe.schiebeSchritt")) || 0;
+      if (stepT > 0 && v3.len(m) > 1e-9) { const L = Math.round(v3.len(m) / stepT) * stepT; m = v3.mul(m, L / v3.len(m)); }
       D = placementMatrix(m, [0, 0, 0]);
       st.label = `Verschieben ${Math.round(v3.len(m) * 10) / 10} mm`;
     }

@@ -30,6 +30,7 @@ export const CATEGORIES = [
   { id: "allgemein", label: "Allgemein", status: "teilweise", planned: ["Englisch auch für Eigenschaften, Meldungen und Zeichnungstexte", "Zahlenformat"], note: "Sprache: Englisch gilt in dieser Ausbaustufe für Menüband, Befehlssuche und Befehlsnamen; Eigenschaften, Meldungen und Zeichnungstexte bleiben deutsch." },
   { id: "ansicht", label: "3D-Ansicht", status: "aktiv", note: "Schnittebene: Menüband Ansicht → Schnitt (gilt nur für die Sitzung)." },
   { id: "skizze", label: "Skizzen", status: "aktiv" },
+  { id: "maus3d", label: "3D-Maus", status: "aktiv", note: "SpaceMouse und SpaceNavigator von 3Dconnexion über USB oder Empfänger. Ansicht gleichzeitig verschieben und drehen; in Skizzen nur Schwenken und Zoomen." },
   { id: "werkzeuge", label: "Werkzeuge und Tastatur", status: "teilweise", note: "Befehlssuche: Strg+K. Fest belegt bleiben Esc (abbrechen), Entf (löschen) sowie Ziffern, Komma und Tab für die Maßeingabe." },
   { id: "darstellung", label: "Darstellung", status: "aktiv", note: "Tooltips im Menüband erscheinen nach knapp einer halben Sekunde mit Kurzbeschreibung; beim Weiterfahren sofort." },
   { id: "dokument", label: "Dokument und Modell", status: "aktiv", note: "Gilt für neu angelegte Dokumente; vorhandene bleiben, wie sie sind. Toleranz am einzelnen Maß: in der Zeichnung Doppelklick auf das Maß. Platzhalter: {n} laufende Nummer ({n:3} = dreistellig), {projekt}, {datum}, bei Zeichnungen {quelle}." },
@@ -65,6 +66,7 @@ export const SETTINGS = [
   { key: "messen.zweiteinheit", cat: "allgemein", label: "Zweiteinheit beim Messen", type: "enum", default: "", options: [{ value: "", label: "Kein(e)" }, { value: "in", label: "Zoll (in)" }, { value: "cm", label: "cm" }, { value: "m", label: "m" }], help: "Messwerte zusätzlich in dieser Einheit anzeigen, z. B. »88,000 mm (3,465 in)«." },
   { key: "messen.fangradius", cat: "allgemein", label: "Fangradius beim Messen", unit: "px", type: "int", default: 9, min: 3, max: 30, help: "Abstand, ab dem Endpunkte, Mitten, Kreismitten, Quadranten und Flächenmitten beim Messen gefangen werden." },
   { key: "messen.anzeige3d", cat: "allgemein", label: "Maß beim Messen im 3D-Fenster zeigen", type: "bool", default: true },
+  { key: "messen.achsabstaende", cat: "allgemein", label: "Achsabstände beim Messen aufgeklappt zeigen", type: "bool", default: false, help: "X-, Y- und Z-Abstand zwischen zwei gemessenen Elementen gleich offen statt eingeklappt unter »Delta«." },
 
   { key: "ansicht.qualitaet", cat: "ansicht", label: "Darstellungsqualität beim Start", type: "enum", default: "normal", options: QUAL, help: "Feinheit der Dreiecksvernetzung. Wirkt nur auf die Anzeige, nicht auf Export oder Masse." },
   { key: "ansicht.projektion", cat: "ansicht", label: "Projektion", type: "enum", default: "orthogonal", options: [{ value: "orthogonal", label: "Orthogonal" }, { value: "perspektive", label: "Perspektive" }], help: "Skizzieren ist immer orthogonal." },
@@ -87,9 +89,22 @@ export const SETTINGS = [
   { key: "ansicht.zoomZumCursor", cat: "ansicht", label: "Zum Mauszeiger zoomen", type: "bool", default: true },
   { key: "ansicht.zoomGeschwindigkeit", cat: "ansicht", label: "Zoomgeschwindigkeit", type: "number", default: 1.2, min: 0.2, max: 5 },
   { key: "ansicht.drehGeschwindigkeit", cat: "ansicht", label: "Drehgeschwindigkeit", type: "number", default: 0.9, min: 0.1, max: 5 },
+  { key: "ansicht.schwenkenUmkehrenH", cat: "ansicht", label: "Horizontale Schwenkrichtung umkehren", type: "bool", default: false, help: "Beim Schwenken mit der Maus bewegt sich die Ansicht statt das Modell (links/rechts)." },
+  { key: "ansicht.schwenkenUmkehrenV", cat: "ansicht", label: "Vertikale Schwenkrichtung umkehren", type: "bool", default: false, help: "Wie oben, für auf/ab." },
+  { key: "ansicht.sanftZoomen", cat: "ansicht", label: "Sanftes Zoomen mit dem Rad", type: "bool", default: false, help: "Ein Radschritt zoomt über einige Bilder verteilt statt in einem Sprung." },
+  { key: "ansicht.trackpadSchwenken", cat: "ansicht", label: "Zwei-Finger-Scrollen schwenkt", type: "bool", default: false, help: "Für Trackpads: Scrollen mit zwei Fingern schwenkt die Ansicht, Kneifen oder Strg + Scrollen zoomt." },
+  { key: "ansicht.zoomStopp", cat: "ansicht", label: "Zoom am Modell stoppen", type: "bool", default: false, help: "Beim Heranzoomen nicht durch das Modell hindurch: kurz vor seiner Hüllkugel ist Schluss." },
+  { key: "ansicht.animTempo", cat: "ansicht", label: "Animationsgeschwindigkeit", type: "enum", default: "normal", options: [{ value: "langsam", label: "Langsam" }, { value: "normal", label: "Normal" }, { value: "schnell", label: "Schnell" }], help: "Wie schnell Ansichtswechsel (Würfel, Home, Skizzenansicht) ablaufen. Ganz aus: Darstellung → Ansichtswechsel animieren." },
+  { key: "ansicht.einpassenGroesse", cat: "ansicht", label: "Größe bei Home und Einpassen", unit: "%", type: "number", default: 80, min: 30, max: 100, help: "Wie viel der Ansicht das Modell beim Einpassen füllt. 100 % = randlos." },
+  { key: "ansicht.einpassenWuerfel", cat: "ansicht", label: "Modell nach einem Ansichtswechsel am Würfel einpassen", type: "bool", default: false, help: "Ein Klick auf den Ansichtswürfel blickt auch auf die Modellmitte und passt ein. Aus: Die Ansicht dreht sich an Ort und Stelle." },
+  { key: "ansicht.drehpfeileUmkehren", cat: "ansicht", label: "Drehrichtung der Pfeiltasten umkehren", type: "bool", default: false, help: "Pfeiltasten drehen die Kamera statt das Modell." },
   { key: "ansicht.ebenennamen", cat: "ansicht", label: "Namen der Ursprungsebenen", type: "enum", default: "xyz", options: [{ value: "xyz", label: "XY-Ebene, XZ-Ebene, YZ-Ebene" }, { value: "ansicht", label: "Oben, Vorne, Rechts" }], help: "Z zeigt nach oben: XY = Oben, XZ = Vorne, YZ = Rechts." },
   { key: "ansicht.bildrate", cat: "ansicht", label: "Bildrate anzeigen", type: "bool", default: false, help: "Bilder je Sekunde und Zeichenzeit in der Ecke der 3D-Ansicht – zum Prüfen großer Modelle." },
   { key: "ansicht.raster", cat: "ansicht", label: "Bodenraster anzeigen", type: "bool", default: true },
+  { key: "grafik.voreinstellung", cat: "ansicht", label: "Grafik-Voreinstellung", type: "enum", default: "eigen", options: [{ value: "leistung", label: "Leistung – am schnellsten" }, { value: "qualitaet", label: "Qualität – am schärfsten" }, { value: "eigen", label: "Benutzerdefiniert" }], help: "Leistung: normale Qualität, kein Supersampling, kein Bodenschatten. Qualität: feine Darstellung, 2× Supersampling, Bodenschatten. Eine Änderung von Hand stellt auf Benutzerdefiniert." },
+  { key: "grafik.supersampling", cat: "ansicht", label: "Supersampling", type: "enum", default: "1", options: [{ value: "1", label: "Aus" }, { value: "1.5", label: "1,5×" }, { value: "2", label: "2×" }], help: "Zeichnet die Ansicht in höherer Auflösung und rechnet herunter: glattere Kanten. Kostet Grafikleistung (1,5× ≈ 2,25-mal so viele Pixel)." },
+  { key: "grafik.bodenschatten", cat: "ansicht", label: "Bodenschatten", type: "bool", default: false, help: "Weicher Schatten unter dem Modell auf Höhe seiner Unterkante." },
+  { key: "grafik.rasterSeite", cat: "ansicht", label: "Raster in Seitenansichten aufrecht", type: "bool", default: false, help: "Bei Blick von vorne/hinten bzw. links/rechts liegt das Raster in der zugewandten senkrechten Ebene statt am Boden." },
   { key: "ansicht.schnittFuellen", cat: "ansicht", label: "Schnittflächen füllen", type: "bool", default: true, help: "Beim Schnitt X/Y/Z wird das geschnittene Material als geschlossene, abgedunkelte Fläche gezeigt statt hohl." },
   { key: "ansicht.viewcube", cat: "ansicht", label: "ViewCube anzeigen", type: "bool", default: true },
   { key: "ansicht.beleuchtung", cat: "ansicht", label: "Beleuchtung", type: "enum", default: "standard", options: [{ value: "standard", label: "Standard" }, { value: "kontrast", label: "Kontrastreich (Kanten und Rundungen deutlicher)" }, { value: "weich", label: "Weich (wenig Schatten)" }], help: "Gilt für die normale Darstellung; die Fotodarstellung hat ihr eigenes Licht." },
@@ -111,6 +126,17 @@ export const SETTINGS = [
   { key: "skizze.auto.parallel", cat: "skizze", label: "Automatisch: parallel/senkrecht", type: "bool", default: true },
   { key: "skizze.auto.tangential", cat: "skizze", label: "Automatisch: tangential am Bogenende", type: "bool", default: true },
   { key: "skizze.auto.gleich", cat: "skizze", label: "Automatisch: gleich lang / gleicher Radius", type: "bool", default: true, help: "Greift, wenn Länge bzw. Radius bis auf wenige Pixel getroffen wird." },
+  { key: "skizze.ziehenLinie", cat: "skizze", label: "Drücken und Ziehen zeichnet eine Linie", type: "bool", default: false, help: "Mit dem Linienwerkzeug Maustaste drücken, ziehen und loslassen: eine Linie, ohne zweiten Klick." },
+  { key: "skizze.vollBemassen", cat: "skizze", label: "Neue Formen vollständig bemaßen", type: "bool", default: false, help: "Jede neu gezeichnete Form bekommt gleich ihre Maße (Längen, Durchmesser, Winkel), soweit noch frei." },
+  { key: "skizze.vonUrsprung", cat: "skizze", label: "Neue Formen vom Skizzenursprung aus positionieren", type: "bool", default: false, help: "Zusätzlich zu »vollständig bemaßen«: waagrechter und senkrechter Abstand zum Skizzenursprung." },
+  { key: "skizze.flaecheProjizieren", cat: "skizze", label: "Flächenkanten in neue Skizzen projizieren", type: "enum", default: "aus", options: [{ value: "aus", label: "Nein" }, { value: "immer", label: "Immer" }, { value: "fragen", label: "Zuerst fragen" }], help: "Skizze auf einer ebenen Körperfläche: deren Randkanten als feste, projizierte Geometrie übernehmen." },
+  { key: "skizze.symboleZoom", cat: "skizze", label: "Symbole beim Herauszoomen ausblenden", type: "bool", default: false, help: "Ist die Skizze auf dem Bildschirm kleiner als etwa 160 Bildpunkte, werden die Bedingungssymbole ausgeblendet." },
+  { key: "skizze.konfliktfarbe", cat: "skizze", label: "Konfliktfarbe", type: "color", default: "#d93025", help: "Farbe für widersprüchliche Maße und Bedingungen." },
+  { key: "skizze.bemassungEingabe", cat: "skizze", label: "Bemaßungswerte eingeben", type: "enum", default: "ansicht", options: [{ value: "ansicht", label: "In der Ansicht" }, { value: "fenster", label: "In einem Fenster" }], help: "In der Ansicht: Eingabefeld am Maß. In einem Fenster: festes Feld oben in der Mitte mit − / + Knöpfen." },
+  { key: "skizze.schrittLaenge", cat: "skizze", label: "Schritt für Längen", unit: "mm", type: "number", default: 1, min: 0.001, max: 1000, help: "Was Pfeil auf/ab, Mausrad und − / + im Maßfeld zu einer Länge addieren." },
+  { key: "skizze.schrittWinkel", cat: "skizze", label: "Schritt für Winkel", unit: "°", type: "number", default: 5, min: 0.01, max: 90, help: "Was Pfeil auf/ab, Mausrad und − / + zu einem Winkel addieren." },
+  { key: "auswahl.klick", cat: "skizze", label: "Klick wählt", type: "enum", default: "elemente", options: [{ value: "elemente", label: "Flächen und Kanten" }, { value: "koerper", label: "Ganze Körper" }], help: "Im Bauteil: ein Klick wählt die Fläche/Kante unter dem Mauszeiger oder gleich den ganzen Körper." },
+  { key: "auswahl.umschalt", cat: "skizze", label: "Umschalt und Strg bei der Auswahl", type: "enum", default: "umschalten", options: [{ value: "umschalten", label: "Umschalt oder Strg: hinzufügen oder wieder entfernen" }, { value: "hinzufuegen", label: "Umschalt fügt nur hinzu, Strg schaltet um" }] },
 
   { key: "werkzeuge.menueband", cat: "werkzeuge", label: "Menüband anordnen", type: "ribbon", default: {}, custom: true, help: "Gruppen je Registerkarte aus- und einblenden und umsortieren. Rechtsklick auf eine Gruppe im Menüband oder hier im Einstellungscenter. Ausgeblendete Befehle bleiben über die Befehlssuche (Strg+K) erreichbar." },
   { key: "werkzeuge.schnellzugriff", cat: "werkzeuge", label: "Schnellzugriff", type: "cmdlist", default: [], custom: true, help: "Befehle in der Leiste oben neben Rückgängig. Anheften in der Befehlssuche (Strg+K) über die Stecknadel." },
@@ -126,6 +152,9 @@ export const SETTINGS = [
   { key: "baugruppe.fuegepunkte", cat: "werkzeuge", label: "Beim Platzieren über Fügepunkte automatisch fügen", type: "bool", default: true, help: "Hat ein Bauteil gemerkte Fügepunkte (Komponente → Eigenschaften → Fügepunkte), fügt es sich beim Absetzen an das nächstliegende passende Gegenstück." },
   { key: "baugruppe.abhaengigkeitFortsetzen", cat: "werkzeuge", label: "Abhängigkeit: Befehl nach dem Setzen aktiv lassen", type: "bool", default: true, help: "Wie Inventor »Anwenden«: Nach jeder Abhängigkeit geht es gleich mit der nächsten Auswahl weiter; Esc oder »Fertig« beendet. Die zuletzt gesetzte lässt sich dabei umkehren, im Versatz ändern oder zurücknehmen." },
   { key: "baugruppe.freiheitsgrade", cat: "werkzeuge", label: "Freiheitsgrade der gewählten Komponente zeigen", type: "bool", default: true, help: "Pfeile für freie Verschiebungen, Bögen für freie Drehungen an der gewählten Komponente." },
+  { key: "baugruppe.drehSchrittNah", cat: "werkzeuge", label: "Baugruppe drehen: Schritt nahe der Achse", unit: "°", type: "number", default: 15, min: 0.1, max: 90, help: "Drehen einer Komponente mit Umschalt + Ziehen rastet in diesem Winkel ein." },
+  { key: "baugruppe.drehSchrittFern", cat: "werkzeuge", label: "Baugruppe drehen: Schritt fern der Achse", unit: "°", type: "number", default: 1, min: 0.01, max: 90, help: "Für den feinen Schritt beim Drehen weiter als etwa 60 Bildpunkte nach oben oder unten wegziehen." },
+  { key: "baugruppe.schiebeSchritt", cat: "werkzeuge", label: "Baugruppe verschieben: Schritt", unit: "mm", type: "number", default: 0, min: 0, max: 1000, help: "Verschieben einer Komponente rastet in diesem Abstand ein. 0 = stufenlos." },
   { key: "werkzeuge.letzte", cat: "werkzeuge", label: "Zuletzt verwendete Werkzeugwerte", type: "toolmemo", default: {}, custom: true },
   { key: "werkzeuge.bohrvorlagen", cat: "werkzeuge", label: "Bohrungsvorlagen", type: "holepresets", default: [], custom: true, help: "Persönliche Vorlagen für Bohrungen (Gewinde, Ø, Tiefe, Senkung, Bohrgrund); speichern und abrufen im Bohrungsdialog." },
   { key: "werkzeuge.makros", cat: "werkzeuge", label: "Makros", type: "macros", default: [], custom: true, help: "Benannte Befehlsfolgen; anlegen und aufzeichnen über die Befehlssuche (»Makros verwalten«, »Makro aufzeichnen«)." },
@@ -178,6 +207,7 @@ export const SETTINGS = [
   { key: "darstellung.animation", cat: "darstellung", label: "Ansichtswechsel animieren", type: "bool", default: true, help: "Aus = reduzierte Bewegung." },
   { key: "kernel.automatisch", cat: "kernel", label: "Automatisch neu berechnen", type: "bool", default: true, help: "Aus = Änderungen sammeln und erst mit F5 (»Neu berechnen«) rechnen – hilfreich bei großen Bauteilen. Beim Öffnen und Wechseln eines Dokuments wird immer gerechnet." },
   { key: "kernel.protokoll", cat: "kernel", label: "Berechnungsprotokoll führen", type: "bool", default: false, help: "Merkt sich für die letzten 200 Berechnungen Dauer, Features und Meldungen (nur im Speicher, nicht im Fehlerprotokoll). Ansehen und kopieren: Befehlssuche → »Berechnungsprotokoll«." },
+  { key: "kernel.koerperpruefung", cat: "kernel", label: "Körperprüfung", type: "enum", default: "ende", options: [{ value: "ende", label: "Einmal am Ende" }, { value: "feature", label: "Nach jedem Feature" }, { value: "aus", label: "Aus (schneller)" }], help: "Prüft die Körper mit OpenCascade auf gültige Geometrie. Nach jedem Feature: die Warnung steht am Feature, das den Fehler erzeugt hat – dauert länger." },
   { key: "dateien.slicer", cat: "dateien", label: "Installierte Slicer", type: "slicers", default: [], custom: true, help: "Programme für »An Slicer senden«. Leer = 3MF mit dem Programm öffnen, das Windows für .3mf kennt." },
   { key: "allgemein.profile", cat: "allgemein", label: "Einstellungsprofile", type: "profiles", default: {}, custom: true, help: "Benannte Stände aller Einstellungen, z. B. »Werkstatt« und »Büro«." },
   { key: "ansicht.grenzenSchrittWinkel", cat: "ansicht", label: "Grenzen finden: Schritt Drehgelenk (°)", type: "number", default: 5, min: 0.1, max: 90, help: "Grob-Schritt beim Suchen der Anschläge eines Drehgelenks. Kleiner findet dünne Hindernisse sicherer, dauert länger." },
@@ -189,7 +219,24 @@ export const SETTINGS = [
   { key: "dateien.urdfKraft", cat: "dateien", label: "URDF: Kraft-/Momentgrenze je Gelenk", type: "number", default: 100, min: 0.001, max: 1e6, help: "effort-Grenze in N bzw. Nm für alle Gelenke." },
   { key: "dateien.urdfGeschw", cat: "dateien", label: "URDF: Geschwindigkeitsgrenze je Gelenk", type: "number", default: 1, min: 0.001, max: 1e6, help: "velocity-Grenze in m/s bzw. rad/s für alle Gelenke." },
   { key: "dateien.sicherungen", cat: "dateien", label: "Sicherungen beim Speichern", type: "int", default: 1, min: 0, max: 9, help: "So viele frühere Fassungen bleiben neben der Datei: ».wcad.bak« ist die jüngste, dann ».bak2«, ».bak3« … 0 = keine neue Sicherung. Nur in der Desktop-Version." },
+  { key: "dateien.maxImportMB", cat: "dateien", label: "Größte Datei ohne Rückfrage: STEP und Import", unit: "MB", type: "number", default: 200, min: 0, max: 100000, help: "Größere Dateien werden erst nach Rückfrage geöffnet. 0 = keine Grenze." },
+  { key: "dateien.maxProjektMB", cat: "dateien", label: "Größte Datei ohne Rückfrage: Projekt", unit: "MB", type: "number", default: 500, min: 0, max: 100000, help: "0 = keine Grenze." },
+  { key: "dateien.importAusrichtung", cat: "dateien", label: "Dateien aus unbekannten Programmen", type: "enum", default: "fragen", options: [{ value: "fragen", label: "Nach dem Einfügen »Aufstellen« anbieten" }, { value: "aufstellen", label: "Immer aufstellen (Y oben → Z oben)" }, { value: "standard", label: "So lassen, nicht fragen" }], help: "Viele Programme speichern mit Y nach oben, PBCAD hat Z oben." },
   { key: "darstellung.skalierung", cat: "darstellung", label: "Oberflächengröße", unit: "%", type: "enum", default: 100, options: [80, 90, 100, 110, 125, 150].map((v) => ({ value: v, label: v + " %" })), help: "Nur in der Desktop-Version; im Browser die Zoomfunktion des Browsers verwenden." },
+  { key: "maus3d.aktiv", cat: "maus3d", label: "3D-Maus verwenden", type: "bool", default: true, help: "Freigegebene 3D-Mäuse werden beim Start und beim Einstecken automatisch verbunden." },
+  { key: "maus3d.empfindlichkeit", cat: "maus3d", label: "Empfindlichkeit", type: "number", default: 1, min: 0.1, max: 5 },
+  { key: "maus3d.totzone", cat: "maus3d", label: "Totzone", unit: "%", type: "number", default: 8, min: 0, max: 50, help: "Kleine Auslenkungen um die Ruhelage zählen nicht – gegen Wandern der Ansicht." },
+  { key: "maus3d.modus", cat: "maus3d", label: "Bewegung", type: "enum", default: "alles", options: [{ value: "alles", label: "Verschieben und Drehen" }, { value: "drehen", label: "Nur Drehen" }, { value: "schwenken", label: "Nur Verschieben und Zoomen" }] },
+  { key: "maus3d.dominant", cat: "maus3d", label: "Nur die stärkste Achse", type: "bool", default: false, help: "Es wirkt jeweils nur die Achse mit der größten Auslenkung – für gerade Bewegungen." },
+  { key: "maus3d.schwenkenUmkehren", cat: "maus3d", label: "Verschieben umkehren", type: "bool", default: false },
+  { key: "maus3d.zoomUmkehren", cat: "maus3d", label: "Zoomen umkehren", type: "bool", default: false },
+  { key: "maus3d.drehenUmkehren", cat: "maus3d", label: "Drehen umkehren", type: "bool", default: false },
+  { key: "maus3d.tasteLinks", cat: "maus3d", label: "Linke Taste", type: "enum", default: "view.fit", options: [{ value: "", label: "Nichts" }, { value: "view.fit", label: "Einpassen" }, { value: "view.iso", label: "Iso-Ansicht" }, { value: "view.front", label: "Vorne" }, { value: "view.top", label: "Oben" }, { value: "view.right", label: "Rechts" }, { value: "view.normal", label: "Senkrecht auf Auswahl" }, { value: "view.perspective", label: "Perspektive an/aus" }] },
+  { key: "maus3d.tasteRechts", cat: "maus3d", label: "Rechte Taste", type: "enum", default: "view.iso", options: [{ value: "", label: "Nichts" }, { value: "view.fit", label: "Einpassen" }, { value: "view.iso", label: "Iso-Ansicht" }, { value: "view.front", label: "Vorne" }, { value: "view.top", label: "Oben" }, { value: "view.right", label: "Rechts" }, { value: "view.normal", label: "Senkrecht auf Auswahl" }, { value: "view.perspective", label: "Perspektive an/aus" }] },
+  { key: "maus3d.kalibrierung", cat: "maus3d", label: "Kalibrierung", type: "cal3d", default: null, custom: true },
+  { key: "darstellung.schrift", cat: "darstellung", label: "Schrift der Oberfläche", type: "enum", default: "standard", options: [{ value: "standard", label: "Standard (IBM Plex Sans / Segoe UI)" }, { value: "system", label: "Systemschrift" }, { value: "segoe", label: "Segoe UI" }, { value: "arial", label: "Arial" }, { value: "verdana", label: "Verdana" }, { value: "eigen", label: "Eigene (Name unten)" }] },
+  { key: "darstellung.schriftEigen", cat: "darstellung", label: "Eigene Schrift (Name einer installierten Schrift)", type: "text", default: "", help: "Wird bei »Schrift der Oberfläche: Eigene« verwendet, z. B. »Calibri«. Fehlt die Schrift, gilt die Standardschrift." },
+  { key: "oberflaeche.panels", cat: "darstellung", label: "Seitenleisten", type: "enum", default: "deckend", options: [{ value: "deckend", label: "Undurchsichtig" }, { value: "durchscheinend", label: "Durchscheinend" }], help: "Durchscheinend: Modellbrowser und Eigenschaften lassen den Hintergrund leicht durchscheinen (vor allem im schwebenden Fensteraufbau)." },
 ];
 
 /** Werkzeuge, deren letzte Eingabe gemerkt wird (werkzeuge.letzte) */
@@ -238,6 +285,16 @@ export function validateValue(def, v) {
     case "folder":
       if (typeof v !== "string") return { ok: false, error: "Ordner erwartet" };
       if (v.length > 500 || /[\u0000-\u001f]/.test(v)) return { ok: false, error: "Ungültiger Ordnerpfad" };
+      return { ok: true, value: v.trim() };
+    case "cal3d": {
+      if (v === null) return { ok: true, value: null };
+      const ok3 = (a) => Array.isArray(a) && a.length === 3 && a.every((x) => Number.isFinite(x) && Math.abs(x) <= 2000);
+      if (!v || !ok3(v.t) || !ok3(v.r)) return { ok: false, error: "Kalibrierung ungültig" };
+      return { ok: true, value: { t: v.t.map(Math.round), r: v.r.map(Math.round) } };
+    }
+    case "text":
+      if (typeof v !== "string") return { ok: false, error: "Text erwartet" };
+      if (v.length > 200 || /[\u0000-\u001f"';{}<>]/.test(v)) return { ok: false, error: "Ungültige Zeichen" };
       return { ok: true, value: v.trim() };
     case "name":
       return validateNameTemplate(v, def.placeholders, { allowEmpty: !!def.allowEmpty });

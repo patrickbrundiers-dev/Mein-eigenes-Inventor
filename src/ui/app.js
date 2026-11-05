@@ -23,6 +23,7 @@ import { Prefs } from "./prefs.js";
 import { CommandKeys } from "./commands.js";
 import { constraintLabel } from "../core/sketchshapes.js";
 import { entityFree } from "../core/solver.js";
+import { SpaceMouse } from "./maus3d.js";
 import { h, icon, toast, modal, confirmDialog, promptDialog, choiceDialog, contextMenu, markingMenu, fmtNum } from "./dom.js";
 import { gridDisplay } from "./achsraster.js";
 import { newProject, newPart, newAssembly, newDrawing, exampleProject, uid } from "../core/examples.js";
@@ -115,6 +116,9 @@ export class App {
     this.commands = new CommandKeys(this);
     this.applyPrefs();
     this.prefs.onChange((keys) => this.applyPrefs(keys));
+    // 3D-Maus (SolidCraft-Abgleich): freigegebene Geräte gleich verbinden
+    this.spaceMouse = new SpaceMouse(this);
+    this.spaceMouse.autoConnect();
     if (this.prefs.warnings.length) setTimeout(() => toast("Einstellungen: " + this.prefs.warnings[0] + (this.prefs.warnings.length > 1 ? ` (+${this.prefs.warnings.length - 1} weitere)` : ""), { kind: "err", timeout: 8000 }), 300);
     this.buildViewTools();
     this.nextStep = new NextStep(this);
@@ -1143,7 +1147,12 @@ export class App {
       const hit = this.viewer.pick(e.clientX, e.clientY, { edges: false, faces: true });
       if (hit && hit.info?.type === "PLANE") {
         const n = hit.info.normal || hit.normal;
-        return this.createSketch(planeFromFace(hit.info.point || hit.point, n));
+        const sk = this.createSketch(planeFromFace(hit.info.point || hit.point, n));
+        // SolidCraft: Flächenkanten in neue Skizzen projizieren (immer bzw. nach Rückfrage)
+        const proj = this.prefs.get("skizze.flaecheProjizieren");
+        if (sk && proj === "immer") this.sketcher.projectFaceEdges(hit);
+        else if (sk && proj === "fragen") choiceDialog("Skizze auf Fläche", "Die Randkanten der Fläche in die Skizze projizieren?", [{ label: "Nein", value: null }, { label: "Projizieren", value: "ja", primary: true }]).then((v) => { if (v && this.sketcher.active) this.sketcher.projectFaceEdges(hit); });
+        return sk;
       }
       const pl = this.viewer.pickPlane(e.clientX, e.clientY);
       if (pl?.startsWith("datum:")) return this.createSketch({ ref: "datum", id: pl.slice(6) });
@@ -1152,7 +1161,7 @@ export class App {
     }
     if (datumPicking(this)) return datumPickClick(this, e);
     if (datumSelectClick(this, e)) return;
-    const hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
+    let hit = this.viewer.pick(e.clientX, e.clientY, this.pickOptions());
     if (p?.kind === "measure") return this.measurePick(hit, e);
     if (p?.kind === "edges") return this.toggleFeatureEdge(p.feature, hit);
     if (p?.kind === "faces") return this.toggleFeatureFace(p.feature, hit);
@@ -1190,10 +1199,13 @@ export class App {
     this.lastPickClick = hit ? { x: e.clientX, y: e.clientY, t: now, i: 0, cam } : null;
     if (!hit) { this.selHits = []; this.sel = null; }
     else {
+      // SolidCraft: »Klick wählt ganze Körper« und »Umschalt fügt nur hinzu; Strg schaltet um«
+      if (this.prefs.get("auswahl.klick") === "koerper" && hit.body !== undefined && (hit.kind === "face" || hit.kind === "edge" || hit.kind === "vertex")) hit = { kind: "body", key: hit.key, body: hit.body };
       const same = (a) => a.kind === hit.kind && a.key === hit.key && a.body === hit.body && (a.edge ?? a.face) === (hit.edge ?? hit.face) && a.end === hit.end;
-      if (e.ctrlKey || e.shiftKey) {
+      const addOnly = e.shiftKey && !e.ctrlKey && !e.metaKey && this.prefs.get("auswahl.umschalt") === "hinzufuegen";
+      if (e.ctrlKey || e.shiftKey || e.metaKey) {
         const i = this.selHits.findIndex(same);
-        if (i >= 0) this.selHits.splice(i, 1); else this.selHits.push(hit);
+        if (i >= 0) { if (!addOnly) this.selHits.splice(i, 1); } else this.selHits.push(hit);
       } else this.selHits = [hit];
       this.sel = { type: "geometry" };
     }
@@ -1478,6 +1490,10 @@ export class App {
       d.meldungen = p.get("oberflaeche.meldungen"); d.navPos = p.get("oberflaeche.navPosition"); d.navGroesse = p.get("oberflaeche.navGroesse");
       d.navLeerlauf = p.get("oberflaeche.navLeerlauf"); d.dialogKnoepfe = p.get("oberflaeche.dialogKnoepfe"); d.farbsehen = p.get("darstellung.farbsehen");
       d.statusleiste = p.get("oberflaeche.statusleiste") ? "an" : "aus";
+      d.panels = p.get("oberflaeche.panels") || "deckend";
+      // Schrift der Oberfläche (SolidCraft: Skalierung und Text)
+      const font = { system: "system-ui, sans-serif", segoe: '"Segoe UI", system-ui, sans-serif', arial: "Arial, Helvetica, sans-serif", verdana: "Verdana, Geneva, sans-serif", eigen: p.get("darstellung.schriftEigen") ? `"${p.get("darstellung.schriftEigen")}", system-ui, sans-serif` : "" }[p.get("darstellung.schrift")];
+      if (font) document.documentElement.style.setProperty("--ui", font); else document.documentElement.style.removeProperty("--ui");
       setColorVision(d.farbsehen);
       if (!keys || keys.includes("ansicht.ebenennamen")) { setPlaneNames(p.get("ansicht.ebenennamen")); if (keys) { this.tree.render(); this.props?.render?.(); } }
     }
@@ -1491,6 +1507,15 @@ export class App {
     if (keys?.includes("oberflaeche.schnellmessung")) this.updateQuickMeasure();
     if (keys?.some((k) => k.startsWith("baum."))) this.tree.render();
     if (!keys || keys.includes("material.eigene") || keys.includes("blech.biegetabellen")) { this.syncMaterials(); if (keys && this.activeDoc()) this.rebuild(); } // Farbe/Dichte/Abwicklung neu
+    // Grafik-Voreinstellung (SolidCraft): setzt Qualität, Supersampling und Bodenschatten; Änderung von Hand → Benutzerdefiniert
+    if (keys?.includes("grafik.voreinstellung") && !this.presetBusy) {
+      const v = p.get("grafik.voreinstellung"), set = { leistung: { "ansicht.qualitaet": "normal", "grafik.supersampling": "1", "grafik.bodenschatten": false }, qualitaet: { "ansicht.qualitaet": "fein", "grafik.supersampling": "2", "grafik.bodenschatten": true } }[v];
+      if (set) { this.presetBusy = true; try { for (const [k, x] of Object.entries(set)) p.set(k, x); } finally { this.presetBusy = false; } }
+    } else if (!this.presetBusy && keys?.some((k) => k === "ansicht.qualitaet" || k === "grafik.supersampling" || k === "grafik.bodenschatten") && p.get("grafik.voreinstellung") !== "eigen") p.set("grafik.voreinstellung", "eigen");
+    if (this.kernel) {
+      const bc = p.get("kernel.koerperpruefung") || "ende";
+      if (bc !== (this.kernel.bodyCheck || "ende")) { this.kernel.bodyCheck = bc; if (keys && this.activeDoc()) this.rebuild(); }
+    }
     this.viewer.applyPrefs(p.values);
     this.sketcher.applyPrefs(p.values);
     if (!keys || keys.includes("baugruppe.freiheitsgrade")) updateDofGlyph(this);

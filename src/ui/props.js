@@ -591,7 +591,7 @@ export class Props {
       return [dt, dd];
     };
     const list = (...rows) => h("dl", { class: "measure-list" }, ...rows.flat(2).filter(Boolean));
-    const more = (title, ...rows) => h("details", { class: "measure-more" }, h("summary", {}, title), list(...rows));
+    const more = (title, ...rows) => h("details", { class: "measure-more", open: !!app.prefs?.get("messen.achsabstaende") }, h("summary", {}, title), list(...rows));
     const out = [h("p", { class: "hint" }, "Fläche, Kante, Achse oder Fangpunkt anklicken, dann ein zweites Element für Abstand und Winkel. Fangpunkte (Endpunkt, Mitte, Kreismitte) erscheinen beim Überfahren als kleines Symbol; mit Auswahl »Punkte« auch Quadranten und Flächenmitten. Mit Strg oder Umschalt weitere Elemente dazunehmen (Summen). Werte anklicken kopiert sie. Esc beendet."),
       h("div", { class: "measure-filter", title: "Was beim Klicken gewählt wird (Auswahlpriorität)" }, this.seg(null, MEASURE_FILTERS, m.filter || "alle", (v) => { m.filter = v; app.measureFilter = v; app.viewer.clearHover(); this.render(); }))];
     if (m.busy) out.push(h("p", { class: "hint" }, "Messe …"));
