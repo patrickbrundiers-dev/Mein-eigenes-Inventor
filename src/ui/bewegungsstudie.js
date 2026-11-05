@@ -134,7 +134,7 @@ const showKept = (app, asm) => app.viewer.showMotionPaths((asm.motionPaths || []
  * schieben, bis ein bewegtes Teil ein anderes durchdringt; die Grenze wird auf `refine` genau eingegabelt und Richtung
  * heutiger Stellung gerundet. Eigene Grenzen des Gelenks zählen nicht. Rückgabe { min, max, minBy, maxBy, start }.
  */
-export async function findJointLimits(app, asm, c, { coarse = null, refine = null } = {}) {
+export async function findJointLimits(app, asm, c, { coarse = null, refine = null, contact = asm.components.filter((x) => x.contact).map((x) => x.id) } = {}) {
   const j = c.joint, slide = isSlide(j);
   const a0 = Number(j.angle) || 0;
   const range = slide ? 2000 : 360;
@@ -145,7 +145,10 @@ export async function findJointLimits(app, asm, c, { coarse = null, refine = nul
   cj.min = a0 - range; cj.max = a0 + range;
   if (slide) { cj.smin = a0 - range; cj.smax = a0 + range; }
   const name = (id) => asm.components.find((x) => x.id === id)?.name || id;
-  const hitsAt = async (a) => (await studyCollisions(app, clone, [{ a, deltas: motionDeltas(clone, c.id, a).deltas }]))[0].hits;
+  // Kontaktsatz (SolidCraft »contact set«, Komponenten mit c.contact): nur Berührungen zwischen ihnen zählen; die bewegte
+  // Komponente und ihre mitgehenden Teile gehören immer dazu
+  const set = contact?.length ? new Set([...contact, c.id, ...jointFollowers(asm, c.id)]) : null;
+  const hitsAt = async (a) => (await studyCollisions(app, clone, [{ a, deltas: motionDeltas(clone, c.id, a).deltas }]))[0].hits.filter((x) => !set || (set.has(x.a) && set.has(x.b)));
   const start = await hitsAt(a0);
   if (start.length) return { start: start.map((x) => `${name(x.a)} / ${name(x.b)}`) };
   const side = async (s) => {

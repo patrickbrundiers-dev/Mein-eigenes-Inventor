@@ -2238,13 +2238,14 @@ export class Props {
       lim("von", "min"), lim("bis", "max"),
       slideRow,
       this.field("Hängt an", par),
+
       h("dl", { class: "kv" }, slide ? null : h("dt", {}, "Achse durch"), slide ? null : h("dd", {}, f(j.p)), h("dt", {}, "Richtung"), h("dd", {}, f(j.d)),
         movers.length > 1 ? h("dt", {}, "Geht mit") : null, movers.length > 1 ? h("dd", {}, movers.slice(1).map((id) => asm.components.find((x) => x.id === id)?.name).join(", ")) : null),
       h("p", { class: "hint" }, "Abhängigkeiten verschieben diese Komponente nicht mehr; daran hängende Teile gehen mit. Im Modell am Teil ziehen bewegt das Gelenk im Bereich."),
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => this.animateJoints([c.id]) }, "Bewegen"),
         h("button", { class: "btn", onclick: () => this.jointSweepCheck(c) }, "Kollision im Bereich prüfen"),
-        j.kind === "zylinder" ? null : h("button", { class: "btn", title: "Von der heutigen Stellung nach beiden Seiten bis zur ersten Berührung suchen und als Bereich eintragen", onclick: async (ev) => {
+        j.kind === "zylinder" ? null : h("button", { class: "btn", title: "Von der heutigen Stellung nach beiden Seiten bis zur ersten Berührung suchen und als Bereich eintragen. Ist ein Kontaktsatz gesetzt, zählen nur Berührungen zwischen dessen Komponenten.", onclick: async (ev) => {
           const b = ev.currentTarget; b.disabled = true; b.textContent = "Suche Grenzen …";
           try {
             const P = app.prefs, num = (k) => Number(P.get(k)) || null;
