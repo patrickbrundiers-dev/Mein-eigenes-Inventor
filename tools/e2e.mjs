@@ -4542,7 +4542,7 @@ try {
       const ang = Math.acos(Math.max(-1, Math.min(1, d0.reduce((s, x, i) => s + x * d1[i], 0)))) * 180 / Math.PI; return { ang, moved: Math.hypot(...t0.map((x, i) => x - t1[i])) }; });
     // Skizze öffnen und beenden: »zurück zur Ansicht davor«
     const back = await evalApp(async () => { const a = window.__werkcad, v = a.viewer; a.prefs.set("skizze.ansichtZurueck", "zurueck"); v.setView("iso", { animate: false }); const d0 = v.viewState().dir;
-      a.editSketch("rb"); await new Promise((r) => setTimeout(r, 400)); const inSk = v.viewState().dir; a.finishSketch(true); await new Promise((r) => setTimeout(r, 500)); const d1 = v.viewState().dir; a.prefs.set("skizze.ansichtZurueck", "bleiben");
+      a.editSketch("rb"); for (let i = 0; i < 30 && Math.abs(v.viewState().dir[2]) <= 0.99; i++) await new Promise((r) => setTimeout(r, 100)); const inSk = v.viewState().dir; a.finishSketch(true); await new Promise((r) => setTimeout(r, 500)); const d1 = v.viewState().dir; a.prefs.set("skizze.ansichtZurueck", "bleiben");
       return { turned: Math.abs(inSk[2]) > 0.99, back: Math.hypot(...d0.map((x, i) => x - d1[i])) < 0.02 }; });
     await idle();
     // Extrusion automatisch: Skizze auf XY (Unterseite), Richtung ins Material → Differenz; Skizze abseits → neuer Körper
