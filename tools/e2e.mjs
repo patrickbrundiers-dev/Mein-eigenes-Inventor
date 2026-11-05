@@ -4666,7 +4666,7 @@ try {
       const a = window.__werkcad, v = a.viewer, wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const first = document.querySelector(".view-tools [data-field]")?.dataset.field;
       a.prefs.set("oberflaeche.navFelder", ""); const reset = document.querySelector(".view-tools [data-field]")?.dataset.field;
-      a.prefs.set("ansicht.trackpadDrehen", true); const p0 = v.camera.position.clone();
+      v.setView("iso", { animate: false }); a.prefs.set("ansicht.trackpadDrehen", true); const p0 = v.camera.position.clone(); // nicht von oben: dort dreht die Kamera nur um sich selbst
       v.container.dispatchEvent(new WheelEvent("wheel", { deltaX: 40, bubbles: true, cancelable: true, clientX: 500, clientY: 400 })); await wait(100);
       const turned = v.camera.position.distanceTo(p0) > 1; a.prefs.set("ansicht.trackpadDrehen", false);
       let got = null; const orig = a.kernel.call, origSave = a.files.saveText;
