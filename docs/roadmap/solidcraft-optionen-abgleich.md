@@ -21,7 +21,7 @@ Stand: 05.11.2026, PR #204. Grundlage ist das Inventar aus Handbuch und Quellcod
 | bom | Bom | `component`, `levels`, `group_by`, `group_children`, `path`, `format` | vorhanden | Stückliste: flach/oberste Ebene, Gruppierung, Unterteile unter Baugruppe, Export CSV/JSON/XLSX. |
 | browser | Repair | `body`, `gap`, `patch_holes` | vorhanden | Reparieren: Spaltweite und Löcher schließen (Nähen in OCC). Nur für Skripte: `common`. |
 | browser | DocumentUnits | `units` | vorhanden | Einheit der Konstruktion mm/cm/m/in/ft (Einstellungen → Allgemein). |
-| clearance | Clearance | `bodies`, `against`, `min_volume`, `clearance`, `tolerance`, `nearest`, `skip_within` | neu eingebaut | Mindestabstand, Toleranz und »Nur gegen« neu (Dialog »Optionen …« an der Kollisionsprüfung). `nearest` (die n nächsten) und `min_volume` nicht einzeln einstellbar – Kontakt/Überlappung wird nach Volumen > Toleranz entschieden. |
+| clearance | Clearance | `bodies`, `against`, `min_volume`, `clearance`, `tolerance`, `nearest`, `skip_within` | neu eingebaut | Mindestabstand, Toleranz und »Nur gegen« neu (Dialog »Optionen …« an der Kollisionsprüfung). »Je Komponente nur die n nächsten« (`nearest`, PR #206); `min_volume` = »Kleinere Überschneidung zählt als Berührung (mm³)«. |
 | compare | Compare | `a`, `b`, `tolerance`, `spacing`, `max_points`, `max_regions`, `color` | neu eingebaut | Toleranz neu im Dialog »Körper vergleichen«. Abtastdichte/Höchstzahlen fest (aus der Netzgenauigkeit). |
 | component | EditInPlace | `component`, `path` | neu eingebaut | L3: »Im Kontext bearbeiten« geht jetzt auch für verknüpfte Teile (Desktop-App). |
 | component | FinishEdit |  | neu eingebaut | »Fertig« schreibt das Teil in seine Quelldatei (atomar, mit Sicherungen), »Verwerfen« stellt den Stand davor her. Nur für Skripte: `queued`, `param_warnings`. |
@@ -95,7 +95,7 @@ Stand: 05.11.2026, PR #204. Grundlage ist das Inventar aus Handbuch und Quellcod
 | metadata | Metadata | `metadata`, `properties` | vorhanden | iProperties/Eigenschaften (PR #194). |
 | metadata | MetadataSet | `key`, `value`, `values` | vorhanden |  |
 | metadata | MetadataRemove | `key`, `keys` | vorhanden |  |
-| motion | FindLimits | `joint`, `index`, `refine`, `step`, `occurrences`, `against`, `contact_sets` | neu eingebaut | Grenzen finden mit einstellbaren Schritten und Genauigkeit (Einstellungen → 3D-Ansicht). Kontaktmengen nicht einzeln wählbar. |
+| motion | FindLimits | `joint`, `index`, `refine`, `step`, `occurrences`, `against`, `contact_sets` | neu eingebaut | Grenzen finden mit einstellbaren Schritten und Genauigkeit (Einstellungen → 3D-Ansicht). Beachtet den Kontaktsatz (nur Berührungen zwischen dessen Komponenten zählen, PR #206). |
 | parameter_sweep | ParameterSweep | `parameter`, `values`, `from`, `to`, `steps` | neu eingebaut | Parameterstudie: Parameter, Werte oder von/bis/Schritte, Ergebnis Masse/Volumen/Hülle. |
 | parts | PartsLibrary | `family` | vorhanden | Normteile. |
 | parts | PartsInsert | `family`, `size`, `length`, `at`, `point`, `direction` | vorhanden | Nur für Skripte: `name`. |
@@ -207,7 +207,7 @@ Stand: 05.11.2026, PR #204. Grundlage ist das Inventar aus Handbuch und Quellcod
 | Navigation | Horizontale / vertikale Schwenkrichtung umkehren | 3D-Ansicht → Schwenkrichtung umkehren | neu eingebaut |
 | Navigation | Sanftes Zoomen mit dem Rad | 3D-Ansicht → Sanftes Zoomen | neu eingebaut |
 | Navigation | Zwei-Finger-Scrollen schwenkt, Zoomen mit Taste | 3D-Ansicht → Zwei-Finger-Scrollen schwenkt (Kneifen/Strg zoomt) | neu eingebaut |
-| Navigation | Drehrichtung am Touchpad umkehren | über Schwenken umkehren und Drehpfeile | teilweise |
+| Navigation | Drehrichtung am Touchpad umkehren | 3D-Ansicht → Zwei-Finger-Scrollen dreht, Trackpad: Drehrichtung umkehren (PR #206) | neu eingebaut |
 | Navigation | Zoom am Modell stoppen | 3D-Ansicht → Zoom am Modell stoppen | neu eingebaut |
 | Navigation | Ansicht: Achsen / Würfel | 3D-Ansicht → Navigator | neu eingebaut |
 | Navigation | Animationsgeschwindigkeit | 3D-Ansicht → Animationsgeschwindigkeit | neu eingebaut |
@@ -215,7 +215,7 @@ Stand: 05.11.2026, PR #204. Grundlage ist das Inventar aus Handbuch und Quellcod
 | Navigation | Modell nach Ansichtswechsel am Navigator einpassen | 3D-Ansicht → Modell nach einem Ansichtswechsel am Würfel einpassen | neu eingebaut |
 | Navigation | Drehpfeile des Ansichtswürfels umkehren | 3D-Ansicht → Drehrichtung der Pfeiltasten umkehren | neu eingebaut |
 | Navigationsleiste | Lage, Größe, ausblenden bis Maus darüber | Darstellung → Navigationsleiste: Lage, Größe, ohne Maus darüber | vorhanden |
-| Navigationsleiste | Felder per Ziehen anordnen | feste Felder | teilweise |
+| Navigationsleiste | Felder per Ziehen anordnen | Felder in der Leiste ziehen; Reihenfolge unter Darstellung → Navigationsleiste: Reihenfolge (PR #206) | neu eingebaut |
 | Grafik | Voreinstellung Leistung / Qualität / Benutzerdefiniert | 3D-Ansicht → Grafik-Voreinstellung | neu eingebaut |
 | Grafik | Supersampling | 3D-Ansicht → Supersampling (aus / 1,5× / 2×) | neu eingebaut |
 | Grafik | Gekrümmte Flächen (Vernetzung) | 3D-Ansicht → Darstellungsqualität | vorhanden |
@@ -225,7 +225,7 @@ Stand: 05.11.2026, PR #204. Grundlage ist das Inventar aus Handbuch und Quellcod
 | Grafik | Bodenschatten | 3D-Ansicht → Bodenschatten | neu eingebaut |
 | Grafik | Umgebungsverdeckung, lineares Licht | Bildeffekte des Renderns | weggelassen (Rendern) |
 | Grafik | Ansichtswinkel-Anzeige, Schnellmessung, Bildrate | Darstellung/3D-Ansicht | vorhanden |
-| Grafik | Status-Chips, Live-Details, Elemente einklappen | Analyse-Legenden am Eintrag | teilweise |
+| Grafik | Status-Chips, Live-Details, Elemente einklappen | Statuszeile: Chips für Filter, Navigationswerkzeug, Schnitt, Ausgeblendete, Fehler – Klick schaltet zurück (PR #206); Analyse-Legenden am Eintrag | neu eingebaut |
 | Grafik | Kosmetische Gewindemarkierungen | 3D-Ansicht → Bohrungsangaben und Gewinde am 3D-Modell | vorhanden |
 | Grafik | Geometrie-Obergrenze | fest | weggelassen |
 | 3D-Maus | Gerät verbinden, Status, Kalibrieren, Kalibrierung verwerfen | 3D-Maus (neue Seite) | neu eingebaut |
@@ -238,9 +238,16 @@ Stand: 05.11.2026, PR #204. Grundlage ist das Inventar aus Handbuch und Quellcod
 - Verknüpftes Teil an Ort und Stelle bearbeiten (L3) schreibt nur in der Desktop-App zurück; im Browser bleibt es schreibgeschützt.
 - Extrusion »Bis Fläche« an gekrümmten Flächen nimmt die Tangentialebene am angeklickten Punkt.
 - Rundung: Eck-Rücksprünge (setbacks) nicht einstellbar; Spline-Radienverlauf über Zwischenradien.
-- Skalieren je Achse geht über ein Netz (facettierte Rundungen, Hinweis erscheint).
-- Kollision: »n nächste Körper« und Mindestvolumen nicht einzeln einstellbar.
+- Skalieren je Achse geht über ein Netz (facettierte Rundungen, Hinweis erscheint). Der Kern in PBCAD (OpenCascade-Übersetzung von replicad) enthält die allgemeine Transformation für Körper nicht; ohne eigene Kern-Übersetzung bleibt es so.
 - Gleichungskurve: Variable immer ohne Einheit bzw. Winkel in Grad.
-- STEP-Export einzelner Körper: über Ausblenden.
-- Grenzen finden: Kontaktmengen nicht einzeln wählbar.
 - 3D-Maus ist ohne Gerät getestet (Berichtsauswertung und Umrechnung mit Tests); mit echter SpaceMouse noch zu prüfen. Läuft der 3Dconnexion-Treiber, kann er das Gerät exklusiv belegen – dann zeigt PBCAD »gefunden, aber nicht lesbar«.
+
+## Nachtrag PR #206 – weitere Punkte aus dem Inventar
+
+| Punkt | SolidCraft | PBCAD | Stand |
+|---|---|---|---|
+| L8 | Mehrere Tastenkürzel je Befehl, Modelltasten in der Skizze | Tastenkürzel-Editor »+ Taste« (bis 4 je Befehl); Werkzeuge → Modelltasten in der Skizze | neu eingebaut |
+| L10 | Teil ziehen mit Gelenkbegrenzung und Ketten | Komponente mit Gelenk im Modell ziehen: Wert im Bereich, Rasterschritt, gekoppelte Gelenke gehen mit; Gelenk »Hängt an« (Kette, Achse wandert mit) | neu eingebaut |
+| L11 | Stücklistentyp untrennbar/Kaufteil, Unterteile unter Schraube | Stücklistenstruktur Untrennbar / Kaufteil; Scheiben und Muttern einer Garnitur als Unterpositionen 3.1, 3.2 (abschaltbar im Stücklisten-Dialog) | neu eingebaut |
+| L12 | 3MF je Komponente ein Objekt, an Slicer senden mit Auswahl | Dialog: je Komponente / je Körper / alles ein Objekt, Komponenten wählen, Slicer wählen; Dateien → 3MF / Slicer: Objekte | neu eingebaut |
+| – | Export einzelner Körper | STEP, IGES, STL: ist etwas gewählt, fragt der Export »Nur Auswahl« oder »Alles« | neu eingebaut |

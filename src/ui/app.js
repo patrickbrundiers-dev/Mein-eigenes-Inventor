@@ -1655,7 +1655,10 @@ export class App {
     }
     if (this.viewer?.hidden.size && (this.mode === "part" || this.mode === "assembly")) parts.push(h("button", { class: "status-btn", title: "Alle einblenden", onclick: () => this.showAllBodies() }, `${this.viewer.hidden.size} ausgeblendet`));
     if (this.mode === "part" && this.selHits?.length > 1) parts.push(h("span", {}, `${this.selHits.length} gewählt`));
-    if (this.selFilter !== "alles" && this.mode === "part") parts.push(h("span", {}, "Filter: " + (this.selFilter === "flaechen" ? "nur Flächen" : "nur Kanten")));
+    // Status-Chips (SolidCraft): aktive Zustände, Klick schaltet zurück
+    if (this.selFilter !== "alles" && this.mode === "part") parts.push(h("button", { class: "status-btn chip", title: "Filter aufheben", onclick: () => this.setSelFilter("alles") }, "Filter: " + (this.selFilter === "flaechen" ? "nur Flächen" : "nur Kanten") + " ×"));
+    if (this.viewer?.navTool) parts.push(h("button", { class: "status-btn chip", title: "Navigationswerkzeug beenden (Esc)", onclick: () => { this.viewer.setNavTool(null); this.viewer.onNavTool?.(null); } }, ({ orbit: "Drehen", pan: "Verschieben", zoom: "Zoomen" }[this.viewer.navTool] || this.viewer.navTool) + " ×"));
+    if (this.viewer?.clip) parts.push(h("button", { class: "status-btn chip", title: "Schnitt aufheben", onclick: () => { this.viewer.setClip(null); this.renderClipBar(); this.ribbon.render(); } }, "Schnitt ×"));
     parts.push(h("span", {}, "mm · Grad"));
     this.statusEl.replaceChildren(...parts);
     this.nextStep?.update();
@@ -1687,7 +1690,7 @@ export class App {
     const mk = (ic, label, run, title) => h("button", { onclick: run, title: title || label, "aria-label": label, "data-view": label }, icon(ic));
     // Navigationswerkzeuge wie SolidCraft: linke Maustaste dreht/verschiebt/zoomt, bis Esc oder erneuter Klick
     const nav = (ic, kind, label) => { const b = mk(ic, label, () => { const k = this.viewer.navTool === kind ? null : kind; this.viewer.setNavTool(k); syncNav(); }, label + " (linke Maustaste, Esc beendet)"); b.dataset.nav = kind; return b; };
-    const syncNav = () => { for (const b of this.viewTools.querySelectorAll("[data-nav]")) b.classList.toggle("on", b.dataset.nav === this.viewer.navTool); };
+    const syncNav = () => { for (const b of this.viewTools.querySelectorAll("[data-nav]")) b.classList.toggle("on", b.dataset.nav === this.viewer.navTool); this.updateStatus(); };
     this.viewer.onNavTool = syncNav;
     const views = (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu(r.left, r.top - 4, [["iso", "Isometrisch", "viewIso"], ["front", "Vorne", "viewFront"], ["back", "Hinten", "viewFront"], ["left", "Links", "viewRight"], ["right", "Rechts", "viewRight"], ["top", "Oben", "viewTop"], ["bottom", "Unten", "viewTop"]].map(([v, label, ic]) => ({ label, icon: ic, run: () => this.viewer.setView(v) }))); };
     // Felder per Ziehen anordnen (SolidCraft »Navigationsleiste anpassen«), Reihenfolge in oberflaeche.navFelder
@@ -1844,6 +1847,7 @@ export class App {
   renderClipBar() {
     const c = this.viewer.clip;
     this.clipBar.hidden = !c;
+    queueMicrotask(() => this.updateStatus());
     if (!c) return this.clipBar.replaceChildren();
     const num = h("input", { class: "inp num", value: String(c.offset).replace(".", ","), title: "Lage der Schnittebene in mm", style: { width: "70px" } });
     const range = h("input", { type: "range", min: String(c.min), max: String(c.max), step: String(Math.max(0.01, (c.max - c.min) / 500)), value: String(c.offset), title: "Schnittebene verschieben" });

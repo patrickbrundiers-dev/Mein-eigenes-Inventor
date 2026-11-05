@@ -203,11 +203,11 @@ Abgeglichen mit dem PBCAD-Quellcode (Stand Zweig Runde 2). „Teilweise“ heiß
 | L5 | Kantenflansch: Höhe gemessen ab außen/innen/tangential, Biegeposition (5 Arten) | teilweise (Maßbezug beim Kantteil) | einbauen |
 | L6 | Persönliche Blechregeln im Benutzerprofil | vorhanden (Blechregeln in den Einstellungen, Kopie im Bauteil) | – |
 | L7 | L/R/C starten zuletzt benutzte Variante, erneut drücken schaltet weiter | **erledigt (Runde 2)** | – |
-| L8 | Tastenkürzel-Editor mit mehreren Tasten je Befehl, „Modelltasten aus Skizzen heraus“ | teilweise | ausbauen |
+| L8 | Tastenkürzel-Editor mit mehreren Tasten je Befehl, „Modelltasten aus Skizzen heraus“ | erledigt (PR #206) | – |
 | L9 | Pfeiltasten drehen Ansicht 15°, Strg+Pfeile schwenken, Strg+1…8 Ansichten | **erledigt (Runde 2)** | – |
-| L10 | Teil ziehen mit Gelenkbegrenzung und Ketten | teilweise (Gelenk-Ziehen) | ausbauen |
-| L11 | Stücklistentyp untrennbar, Unterteile unter Schraube gruppiert | teilweise (Phantom/Referenz da) | ausbauen |
-| L12 | 3MF je Komponente ein Objekt, an Slicer senden mit Auswahl | teilweise | prüfen |
+| L10 | Teil ziehen mit Gelenkbegrenzung und Ketten | erledigt (PR #206) | – |
+| L11 | Stücklistentyp untrennbar, Unterteile unter Schraube gruppiert | erledigt (PR #206) | – |
+| L12 | 3MF je Komponente ein Objekt, an Slicer senden mit Auswahl | erledigt (PR #206) | – |
 | L13 | Schwerpunkt mit Hauptachsen im Fenster Eigenschaften | **erledigt (Runde 2):** Abschnitt »Trägheitsmomente, Hauptachsen« zeigt sie im Modell | – |
 | L14 | Runde 2 Etappe 3: Skizze drehen/zurück, Hilfslinien aus Mitten, Kreuzungsfang, Alt unterdrückt Fang | **erledigt** | – |
 | L15 | Runde 2: Navigation (Drehteller, Zoomrichtung, Doppelklick Mitte, Drehpunkt), Extrusion Vorgang automatisch, STEP aufstellen | **erledigt** | – |
