@@ -10,7 +10,7 @@ const TAG = 86400000;
 // Öffentlicher Schlüssel (Ed25519, roh, base64url). Der passende private Schlüssel liegt nur im Lizenz-Werkzeug.
 const PUBLIC_KEY = "FNxd_pdkIC0pfFaAM3CBd0NzhdE-lLXxNwKe3M7mX-I";
 // Gesperrte Lizenznummern (z. B. weitergegebene Schlüssel). Wirkt ab dem nächsten Update.
-const SPERRLISTE = [];
+const SPERRLISTE = ["0002"]; // 0002 gesperrt am 05.11.2026 (Patrick)
 
 const keyObject = (x) => crypto.createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x }, format: "jwk" });
 const b64 = (s) => Buffer.from(s, "base64url");
