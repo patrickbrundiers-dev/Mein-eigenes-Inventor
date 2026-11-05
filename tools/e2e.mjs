@@ -4555,11 +4555,14 @@ try {
     await evalApp(() => { const v = window.__werkcad.viewer; v.setView("top", { animate: false }); v.fit(); });
     await page.waitForTimeout(300);
     const vb = await page.locator("#viewer canvas").boundingBox();
-    const cnt = await evalApp(([x, y]) => window.__werkcad.viewer.pickCandidates(x, y, { edges: true, faces: true }).length, [vb.x + vb.width / 2, vb.y + vb.height / 2]);
-    await page.mouse.click(vb.x + vb.width / 2, vb.y + vb.height / 2);
+    // Punkt auf dem Körper (nicht Bildmitte: die Skizze »Weg« liegt abseits und verschiebt die Mitte)
+    const [sx, sy] = await evalApp(() => window.__werkcad.viewer.worldToScreen([20, 15, 20]));
+    const px = vb.x + sx, py = vb.y + sy;
+    const cnt = await evalApp(([x, y]) => window.__werkcad.viewer.pickCandidates(x, y, { edges: true, faces: true }).length, [px, py]);
+    await page.mouse.click(px, py);
     await page.waitForTimeout(150);
     const k1 = await evalApp(() => JSON.stringify(window.__werkcad.selHits.map((h) => [h.kind, h.face ?? h.edge])));
-    await page.mouse.click(vb.x + vb.width / 2, vb.y + vb.height / 2);
+    await page.mouse.click(px, py);
     await page.waitForTimeout(150);
     const k2 = await evalApp(() => JSON.stringify(window.__werkcad.selHits.map((h) => [h.kind, h.face ?? h.edge])));
     step("SolidCraft R2: Pfeiltasten drehen/schwenken, Skizzenansicht zurück", Math.abs(nav.ang - 15) < 0.5 && nav.moved > 1 && back.turned && back.back, JSON.stringify({ nav, back }));
