@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' app:; script-src 'self' app:; style-src 'self' app: 'unsafe-inline'; img-src 'self' app: data:" />
+  <title>PBCAD – Lizenz</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root { --bg: #e8edf1; --card: #fff; --fg: #1d2833; --muted: #5b6875; --line: #c9d3dc; --accent: #2f6fdf; --err: #b3261e; --ok: #1e7a45; color-scheme: light; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #161b21; --card: #1f262e; --fg: #e3e8ee; --muted: #9aa7b4; --line: #34404c; --accent: #6b9cf0; --err: #f4b4aa; --ok: #8fd6a8; color-scheme: dark; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+    main { width: min(620px, calc(100vw - 32px)); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 28px 30px; box-shadow: 0 12px 40px rgba(0,0,0,.12); }
+    h1 { margin: 0 0 4px; font-size: 22px; display: flex; gap: 10px; align-items: center; }
+    h1 svg { width: 28px; height: 28px; }
+    p { margin: 8px 0; }
+    .muted { color: var(--muted); }
+    textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.4 Consolas, monospace; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+    button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .id { font: 15px Consolas, monospace; letter-spacing: .5px; padding: 4px 8px; border: 1px dashed var(--line); border-radius: 6px; user-select: all; }
+    #msg { min-height: 20px; margin-top: 10px; }
+    #msg.err { color: var(--err); } #msg.ok { color: var(--ok); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4f86e8" d="M3 7.5 12 2.5l9 5-9 5z"/><path fill="#2f5fb3" d="M3 7.5v9l9 5v-9z"/><path fill="#3a70cc" d="M21 7.5v9l-9 5v-9z"/></svg>PBCAD-Lizenz erforderlich</h1>
+    <p id="grund" class="muted">Der Testzeitraum ist abgelaufen. Zum Weiterarbeiten bitte einen Lizenzschlüssel eingeben.</p>
+    <p>Rechner-ID: <span id="rid" class="id">…</span> <button id="kopieren" type="button">Kopieren</button></p>
+    <p class="muted">Für eine an diesen Rechner gebundene Lizenz die Rechner-ID an Patrick Brundiers schicken. Deine Projektdateien bleiben unverändert erhalten.</p>
+    <label for="key">Lizenzschlüssel</label>
+    <textarea id="key" spellcheck="false" placeholder="PBCAD1.…"></textarea>
+    <div class="row">
+      <button id="aktivieren" class="primary" type="button">Aktivieren</button>
+      <button id="datei" type="button">Lizenzdatei öffnen …</button>
+      <span style="flex:1"></span>
+      <button id="beenden" type="button">Beenden</button>
+    </div>
+    <div id="msg" role="status"></div>
+  </main>
+  <script src="lizenz.js"></script>
+</body>
+</html>

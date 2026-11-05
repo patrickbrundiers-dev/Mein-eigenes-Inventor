@@ -28,7 +28,7 @@ const common = {
 await esbuild.build({ ...common, entryPoints: ["src/ui/main.js"], outfile: path.join(out, "app.js") });
 await esbuild.build({ ...common, entryPoints: ["src/kernel/worker.js"], outfile: path.join(out, "worker.js") });
 
-for (const f of ["index.html", "styles.css"]) fs.copyFileSync(path.join("src", f), path.join(out, f));
+for (const f of ["index.html", "styles.css", "lizenz.html", "lizenz.js"]) fs.copyFileSync(path.join("src", f), path.join(out, f));
 fs.copyFileSync(require.resolve("replicad-opencascadejs/wasm"), path.join(out, "replicad_single.wasm"));
 
 // Lizenztexte der mitgelieferten Bibliotheken (landen über dist/** im Installer).
