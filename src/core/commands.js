@@ -15,7 +15,7 @@ export const COMMANDS = [
   { id: "file.versions", label: "Versionen", group: "Datei", scope: "global", keywords: "version stand notiz historie wiederherstellen revision verlauf" },
   { id: "file.newPart", label: "Neues Bauteil", group: "Datei", scope: "global" },
   { id: "file.newAssembly", label: "Neue Baugruppe", group: "Datei", scope: "global" },
-  { id: "file.importStep", label: "STEP als Bauteil importieren", group: "Datei", scope: "global" },
+  { id: "file.importStep", label: "STEP, STL oder OBJ als Bauteil importieren", group: "Datei", scope: "global" },
   { id: "app.crashReports", label: "Absturzberichte (Fehler dieser Sitzung)", group: "Programm", scope: "global", keywords: "absturz fehler bericht protokoll crash log" },
   { id: "app.units", label: "Einheiten der Konstruktion ändern", group: "Programm", scope: "global", keywords: "einheit mm cm meter zoll inch units" },
   { id: "app.settings", label: "Einstellungen", group: "Programm", scope: "global", key: "Strg+,", typing: true, keywords: "optionen konfiguration" },
@@ -190,7 +190,7 @@ export const COMMANDS = [
   { id: "part.datumPoint", label: "Arbeitspunkt", group: "3D-Modell", scope: "part", keywords: "bezugspunkt hilfspunkt arbeitselement datum mittelpunkt ecke kreismitte schnittpunkt" },
   { id: "part.params", label: "Parameter", group: "3D-Modell", scope: "part", keywords: "variablen formeln" },
   { id: "part.paramStudy", label: "Parameterstudie …", group: "3D-Modell", scope: "part", keywords: "parameter sweep durchlaufen werte prüfen robust" },
-  { id: "part.importStep", label: "STEP einfügen", group: "3D-Modell", scope: "part" },
+  { id: "part.importStep", label: "STEP / STL / OBJ einfügen", group: "3D-Modell", scope: "part" },
   { id: "doc.newDrawing", label: "Zeichnung ableiten", group: "3D-Modell", scope: "3d" },
   { id: "doc.partDrawings", label: "Einzelteilzeichnungen erzeugen", group: "3D-Modell", scope: "assembly", keywords: "zeichnung positionen alle bauteile fertigungszeichnung" },
 

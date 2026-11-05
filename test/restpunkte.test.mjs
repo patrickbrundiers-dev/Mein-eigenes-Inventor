@@ -106,3 +106,11 @@ test("Kollision: je Komponente nur die n nächsten", async () => {
   assert.ok(r.some((x) => x.b === "F"));
   assert.equal(nearestCollisions(res, 0).length, 4);
 });
+
+test("OBJ lesen: Vierecke, v/vt/vn, negative Indizes, Fehler", async () => {
+  const { parseObj } = await import("../src/core/stl.js");
+  const m = parseObj("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1/1/1 2/2/2 3/3/3 4/4/4\nf -4 -3 -1\n");
+  assert.equal(m.vertices.length, 4); assert.equal(m.triangles.length, 3); assert.equal(m.objects, 1);
+  assert.throws(() => parseObj("v 0 0 0\nf 1 2 3\n"), /gibt/);
+  assert.throws(() => parseObj("v 0 0 0\n"), /keine Flächen/);
+});

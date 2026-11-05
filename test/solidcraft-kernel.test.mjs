@@ -193,6 +193,19 @@ test("Flächen prüfen (E4): Isokurven, Kantenstetigkeit, Radien, Körper vergle
   assert.ok(c.meshA?.positions.length > 0); assert.equal(c.meshB, null);
 });
 
+test("OBJ-Import: Würfel aus Vierecken → Volumenkörper, offenes Netz bleibt Fläche", async () => {
+  // Quader 20 × 10 × 5 mit Vierecken, Indizes v/vt/vn und negativ
+  const obj = ["# Test", "o Quader", "v 0 0 0", "v 20 0 0", "v 20 10 0", "v 0 10 0", "v 0 0 5", "v 20 0 5", "v 20 10 5", "v 0 10 5", "vn 0 0 1",
+    "f 1//1 4//1 3//1 2//1", "f 5/1/1 6/1/1 7/1/1 8/1/1", "f 1 2 6 5", "f 2 3 7 6", "f 3 4 8 7", "f -4 -8 -5 -1"].join("\n");
+  const res = await K.buildPart(part([{ id: "i", type: "import", format: "obj", data: obj, op: "new", convert: true }]));
+  okAll(res);
+  assert.match(res.status.i.info, /Volumenkörper, 6 Flächen \(aus 12 Dreiecken\)/);
+  near(vol(res), 1000, 1e-3);
+  const open = obj.split("\n").slice(0, -1).join("\n"); // eine Seite fehlt
+  const r2 = await K.buildPart(part([{ id: "i", type: "import", format: "obj", data: open, op: "new", convert: true }]));
+  assert.match(r2.status.i.info, /Fläche \(nicht geschlossen\)/);
+});
+
 test("Netz konvertieren (E5): STL-Würfel → Volumenkörper mit 6 Flächen", async () => {
   const V = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0], [0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]];
   const T = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];

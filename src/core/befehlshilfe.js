@@ -86,7 +86,7 @@ export const BEFEHLSHILFE = {
   // ---------- Verwalten ----------
   params: "Parameter mit Namen und Formeln anlegen und in allen Maßfeldern verwenden.",
   variants: "Variantentabelle: mehrere Größen eines Bauteils aus einer Tabelle von Parameterwerten.",
-  importStep: "STEP-Datei als Körper in dieses Bauteil einfügen.",
+  importStep: "STEP-Datei als Körper einfügen; STL und OBJ werden dabei aus Dreiecken zu einem Volumenkörper genäht.",
   punktwolke: "Scan-Punkte (XYZ, CSV, PTS, PLY als Text) als Bezug einfügen: verschieben, skalieren, ausdünnen.",
   abgeleitet: "Bauteil aus einem anderen Bauteil ableiten, verknüpft, gespiegelt oder skaliert.",
   rules: "Regeln (wenn … dann …), die Parameter setzen oder Features unterdrücken.",
