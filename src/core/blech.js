@@ -126,14 +126,14 @@ export function kantteilOutline(plan, t) {
 }
 
 /** Abwicklung als DXF-Inhalt: Kontur (Lf × L), Biegelinien gestrichelt mit Winkel und Richtung */
-export function kantteilFlatDxf(DxfWriter, plan, L, { name = "", t = 0 } = {}) {
+export function kantteilFlatDxf(DxfWriter, plan, L, { name = "", t = 0, angleDisplay = "biege" } = {}) {
   const w = new DxfWriter().layer("KONTUR", 7).layer("BIEGUNG", 1, "DASHED").layer("TEXT", 3);
   const Lf = plan.flat;
   w.line(0, 0, Lf, 0, "KONTUR").line(Lf, 0, Lf, L, "KONTUR").line(Lf, L, 0, L, "KONTUR").line(0, L, 0, 0, "KONTUR");
   plan.bendLines.forEach((x, i) => {
     const b = plan.bends[i];
     w.line(x, 0, x, L, "BIEGUNG");
-    w.text(x + 2, Math.min(20, L / 4), 5, `${fmt(Math.abs(b.angle))}° ${b.sgn > 0 ? "auf" : "ab"} R${fmt(b.rm - t / 2)}`, "TEXT", { rot: 90 });
+    w.text(x + 2, Math.min(20, L / 4), 5, `${fmt(angleDisplay === "innen" ? 180 - Math.abs(b.angle) : Math.abs(b.angle))}° ${b.sgn > 0 ? "auf" : "ab"} R${fmt(b.rm - t / 2)}`, "TEXT", { rot: 90 });
   });
   if (name) w.text(5, L - 10, 5, name, "TEXT");
   return w.toString();

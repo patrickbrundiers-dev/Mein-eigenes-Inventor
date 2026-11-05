@@ -1287,10 +1287,12 @@ export class Viewer {
   setClip(c) {
     if (!c) this.clip = null;
     else {
-      const n = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] }[c.axis] || [0, 0, 1];
+      // Achse X/Y/Z oder beliebige Ebene (SolidCraft »Section« an Arbeitsebene/Fläche): Normale n, Lage = n·o + offset
+      const n = c.n ? new THREE.Vector3(...c.n).normalize().toArray() : { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] }[c.axis] || [0, 0, 1];
+      const off = (c.o ? n[0] * c.o[0] + n[1] * c.o[1] + n[2] * c.o[2] : 0) + c.offset;
       const v = new THREE.Vector3(...n).multiplyScalar(c.flip ? 1 : -1);
       // sichtbar bleibt, was auf der positiven Seite liegt: n·p + d ≥ 0
-      this.clip = { ...c, plane: new THREE.Plane(v, c.flip ? -c.offset : c.offset) };
+      this.clip = { ...c, plane: new THREE.Plane(v, c.flip ? -off : off) };
     }
     const planes = this.clipPlanes();
     for (const pk of this.pickables) {

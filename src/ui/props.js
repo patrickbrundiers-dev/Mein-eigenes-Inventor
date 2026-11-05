@@ -1032,7 +1032,7 @@ export class Props {
             E("Biegung Nr.", "bend", { unit: "", allowNeg: false, allowZero: false }),
             this.seg("Stirnseite", [["vorne", "vorne (y = 0)"], ["hinten", "hinten (y = Länge)"]], f.side === "hinten" ? "hinten" : "vorne", (v) => this.set(f, "side", v, "Stirnseite")),
             this.select("Stoß", CORNER_THROUGH, f.through === "b" ? "b" : "a", (v) => this.set(f, "through", v, "Stoß")),
-            E("Spalt", "gap", { allowNeg: false }),
+            E("Spalt", "gap", { allowNeg: false, allowEmpty: true, placeholder: "leer = Blechregel" }),
             h("p", { class: "hint" }, "Zieht die Stirnlaschen an einer 90°-Biegung bis an den Nachbarschenkel (Kassette, Schale). Die durchlaufende Lasche geht bis auf den Spalt an die Innenfläche des Nachbarschenkels, die andere endet mit dem Spalt an ihr. Steht nur an einem der beiden Schenkel eine Stirnlasche, läuft sie bis an den anderen Schenkel. Die Stirnlaschen brauchen den Eckfreischnitt und müssen nach innen zeigen.")));
         } else if (f.type === "falten") {
           out.push(this.section("Falten", baseSel,
@@ -1072,7 +1072,7 @@ export class Props {
             this.seg("Kante", [["ende", "Ende"], ["anfang", "Anfang"]], f.edge === "anfang" ? "anfang" : "ende", (v) => this.set(f, "edge", v, "Kante")),
             this.select("Art", HEM_KINDS, f.kind || "geschlossen", (v) => this.set(f, "kind", v, "Art")),
             E("Länge (außen)", "length", { allowNeg: false, allowZero: false }),
-            f.kind === "offen" ? E("Spalt innen", "gap", { allowNeg: false, allowZero: false }) : null,
+            f.kind === "offen" ? E("Spalt innen", "gap", { allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "leer = Blechregel" }) : null,
             dirSeg("Richtung"),
             h("p", { class: "hint" }, "Umschlag (Falz) um 180° über die ganze Länge, Länge ab der Außenkante der Falz. Geschlossen wird mit fast null Spalt gerechnet; Biegezugabe über den K-Faktor wie bei den anderen Biegungen.")));
         } else {
@@ -2093,6 +2093,12 @@ export class Props {
           out.push(this.section(names[c.type] || c.type,
             c.value !== undefined && !c.driven ? this.expr("Wert", c.value, (v) => app.sketcher.commit("Maß ändern", (s) => { s.constraints.find((k) => k.id === id).value = v; }), { unit: c.type === "angle" ? "°" : "mm" }) : null,
             c.driven ? h("p", { class: "hint" }, "Getriebenes Maß (nur Anzeige). Doppelklick auf das Maß macht es steuernd.") : null,
+            c.type === "radius" || c.type === "diameter" ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.sketcher.commit(c.type === "radius" ? "Als Durchmesser" : "Als Radius", (s) => {
+              // Radius ↔ Durchmesser (SolidCraft »ToggleDiameter«): Typ wechseln, Wert umrechnen
+              const k = s.constraints.find((x) => x.id === id), toD = k.type === "radius", v = String(k.value ?? "");
+              k.type = toD ? "diameter" : "radius";
+              if (v !== "" && k.value !== undefined) k.value = /^\s*\d+([.,]\d+)?\s*$/.test(v) ? String(Math.round(Number(v.replace(",", ".")) * (toD ? 2 : 0.5) * 1e6) / 1e6) : toD ? `(${v})*2` : `(${v})/2`;
+            }) }, c.type === "radius" ? "Als Durchmesser bemaßen" : "Als Radius bemaßen")) : null,
             c.id === "Of" ? null : this.check("Unterdrückt", !!c.disabled, (v) => app.sketcher.commit(v ? "Bedingung unterdrücken" : "Bedingung aktivieren", (s) => { const k = s.constraints.find((x) => x.id === id); if (v) k.disabled = true; else delete k.disabled; })),
             c.disabled ? h("p", { class: "hint" }, "Unterdrückt: bleibt gespeichert, wirkt aber nicht auf die Skizze.") : null,
             h("div", { class: "btn-row" }, h("button", { class: "btn danger", onclick: () => app.sketcher.deleteSelection() }, "Löschen"))));
@@ -2229,7 +2235,8 @@ export class Props {
         j.kind === "zylinder" ? null : h("button", { class: "btn", title: "Von der heutigen Stellung nach beiden Seiten bis zur ersten Berührung suchen und als Bereich eintragen", onclick: async (ev) => {
           const b = ev.currentTarget; b.disabled = true; b.textContent = "Suche Grenzen …";
           try {
-            const r = await findJointLimits(app, asm, c);
+            const P = app.prefs, num = (k) => Number(P.get(k)) || null;
+            const r = await findJointLimits(app, asm, c, { coarse: num(slide ? "ansicht.grenzenSchrittWeg" : "ansicht.grenzenSchrittWinkel"), refine: num(slide ? "ansicht.grenzenGenauWeg" : "ansicht.grenzenGenauWinkel") });
             if (r.start) return toast(`Grenzen finden: Teile durchdringen sich schon jetzt (${r.start.join(", ")}) – erst trennen`, { kind: "err", timeout: 7000 });
             app.edit("Grenzen finden", () => { j.min = r.min; j.max = r.max; });
             const why = (v, by) => `${fmtNum(v, slide ? 2 : 1)} ${u}${by ? ` (${by})` : " (kein Anschlag)"}`;
@@ -2867,18 +2874,31 @@ export class Props {
       rules ? h("details", { class: "hint" }, h("summary", {}, "Regeln der Fertigungsprüfung"), h("ul", {}, ...DFM_RULES.map((t) => h("li", {}, t)))) : null);
   }
   /** Kollisionsprüfung der Baugruppe (Schnittvolumen > 1 mm³; Berührung zählt nicht) */
-  async collisionDialog() {
+  async collisionDialog(opts = null) {
     const app = this.app;
     const asm = app.activeDoc();
     if (asm?.kind !== "assembly") return;
     const comps = asm.components.filter((c) => !c.hidden && app.doc(c.part));
     if (comps.length < 2) return toast("Mindestens zwei sichtbare Komponenten nötig");
+    // Optionen wie SolidCraft »Clearance«: Mindestvolumen, Mindestabstand, nur gegen gewählte Komponenten
+    if (opts === "dialog") {
+      const last = app.collisionOpts || { tol: 1, clearance: 0, against: [] };
+      const tolIn = h("input", { class: "inp", value: fmtNum(last.tol, 2) }), clIn = h("input", { class: "inp", value: fmtNum(last.clearance, 2) });
+      const checks = comps.map((c) => { const i = h("input", { type: "checkbox", checked: last.against.includes(c.id) ? true : undefined }); return [c.id, i, h("label", { class: "check" }, i, " ", c.name || app.doc(c.part)?.name || c.id)]; });
+      const num = (el, d) => { const x = Number(String(el.value).replace(",", ".")); return Number.isFinite(x) && x >= 0 ? x : d; };
+      return modal({ title: "Kollisionsprüfung", width: "460px", body: h("div", {},
+        h("div", { class: "field" }, h("label", {}, "Kleinere Überschneidung zählt als Berührung (mm³)"), tolIn),
+        h("div", { class: "field" }, h("label", {}, "Auch Abstände unter (mm, 0 = aus)"), clIn),
+        h("div", { class: "field" }, h("label", {}, "Nur gegen (keine = alle mit allen)"), h("div", { class: "checks" }, ...checks.map((x) => x[2])))),
+        buttons: [{ label: "Abbrechen" }, { label: "Prüfen", primary: true, run: () => { app.collisionOpts = { tol: num(tolIn, 1), clearance: num(clIn, 0), against: checks.filter((x) => x[1].checked).map((x) => x[0]) }; this.collisionDialog(app.collisionOpts); } }] });
+    }
+    opts = opts || app.collisionOpts || { tol: 1, clearance: 0, against: [] };
     // Unterbaugruppen: alle ihre Bauteile mit dem Schlüssel der Komponente (innere Kollisionen zählen hier nicht)
     const items = comps.flatMap((c) => flattenAssembly({ id: asm.id, components: [c] }, (id) => app.doc(id)).map((o) => ({ key: c.id, part: o.part, ...decomposePlacement(o.matrix), name: c.name })));
     const name = (id) => { const c = asm.components.find((x) => x.id === id); return c?.name || app.doc(c?.part)?.name || id; };
     const busy = toast("Kollisionen werden geprüft …", { timeout: 0 });
     let res;
-    try { res = (await app.kernel.call("collisions", { items })).filter((r) => r.a !== r.b); }
+    try { res = (await app.kernel.call("collisions", { items, tol: opts.tol ?? 1, clearance: opts.clearance ?? 0, against: opts.against?.length ? opts.against : null })).filter((r) => r.a !== r.b); }
     catch (e) { busy.remove(); return toast("Kollisionsprüfung fehlgeschlagen: " + e.message, { kind: "err" }); }
     busy.remove();
     app.collisions = res;
@@ -2887,9 +2907,9 @@ export class Props {
     const body = res.length
       ? h("div", {}, h("p", {}, `${res.length} Kollision(en) – Zeile anklicken, um die beiden Komponenten zu markieren.`),
         h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Komponente"), h("th", {}, "Komponente"), h("th", {}, "Überschneidung"))),
-          h("tbody", {}, ...res.map((r) => h("tr", { style: { cursor: "pointer" }, onclick: () => show(r) }, h("td", {}, name(r.a)), h("td", {}, name(r.b)), h("td", { class: "num" }, r.unsure ? "nicht messbar" : fmtNum(r.volume / 1000, 2) + " cm³"))))))
-      : h("p", {}, `Keine Kollision zwischen ${comps.length} Komponenten. Berührende Flächen zählen nicht als Kollision.`);
-    modal({ title: `Kollisionsprüfung – ${asm.name}`, width: "620px", body, buttons: [{ label: "Schließen", primary: true, run: () => app.refreshSelectionHits() }] });
+          h("tbody", {}, ...res.map((r) => h("tr", { style: { cursor: "pointer" }, onclick: () => show(r) }, h("td", {}, name(r.a)), h("td", {}, name(r.b)), h("td", { class: "num" }, r.unsure ? "nicht messbar" : r.volume > 0 ? fmtNum(r.volume / 1000, 2) + " cm³" : `Abstand ${fmtNum(r.gap, 2)} mm`))))))
+      : h("p", {}, `Keine Kollision zwischen ${comps.length} Komponenten${opts.clearance > 0 ? ` und kein Abstand unter ${fmtNum(opts.clearance, 2)} mm` : ""}. Berührende Flächen zählen nicht als Kollision.`);
+    modal({ title: `Kollisionsprüfung – ${asm.name}`, width: "620px", body, buttons: [{ label: "Optionen …", run: () => { this.collisionDialog("dialog"); } }, { label: "Schließen", primary: true, run: () => app.refreshSelectionHits() }] });
     return res;
   }
   /** Einstellungscenter (src/ui/settings.js); Updates sind dort eine eigene Kategorie */

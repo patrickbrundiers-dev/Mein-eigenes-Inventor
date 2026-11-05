@@ -1922,6 +1922,7 @@ export class Sketcher {
       body: h("div", { style: { minWidth: "360px" } }, seg, rowsParam, rowsFx,
         h("div", { class: "field" }, h("label", {}, st.mode === "fx" ? "x von … bis" : "t von … bis"), h("div", { style: { display: "flex", gap: "6px" } }, inp("from"), inp("to"))),
         h("div", { class: "field" }, h("label", {}, "Punkte"), inp("n")),
+        h("label", { class: "chk" }, h("input", { type: "checkbox", checked: st.construction ?? !!(editing ? this.entity(editId)?.construction : this.construction), onchange: (e) => { st.construction = e.target.checked; } }), "Als Konstruktionslinie"),
         out,
         h("p", { class: "hint" }, "Winkel in Grad (sin, cos, tan), Parameter der Skizze und des Bauteils sind erlaubt. Beispiele: Kreis 50*cos(t), 50*sin(t) mit t 0…360; Evolvente r*(cos(t)+t*pi/180*sin(t)); Kettenlinie a*cosh(x/a). Die Kurve wird ein Spline durch die Punkte.")),
       buttons: [{ label: "Abbrechen", value: null }, { label: editing ? "Übernehmen" : "Einfügen", primary: true, run: () => {
@@ -1931,8 +1932,8 @@ export class Sketcher {
         const ctrl = fitSplineCtrl(pts);
         if (editing) {
           const old = this.entity(editId);
-          this.commit("Gleichungskurve bearbeiten", (sk) => { deleteEntities(sk, [editId]); addSplineFromCtrl(sk, ctrl, { uid, construction: !!old.construction, meta: { equation: { ...st } } }); });
-        } else this.commit("Gleichungskurve", (sk) => addSplineFromCtrl(sk, ctrl, { uid, construction: !!this.construction, meta: { equation: { ...st } } }));
+          this.commit("Gleichungskurve bearbeiten", (sk) => { deleteEntities(sk, [editId]); addSplineFromCtrl(sk, ctrl, { uid, construction: st.construction ?? !!old.construction, meta: { equation: { ...st } } }); });
+        } else this.commit("Gleichungskurve", (sk) => addSplineFromCtrl(sk, ctrl, { uid, construction: st.construction ?? !!this.construction, meta: { equation: { ...st } } }));
         this.render();
       } }],
     });

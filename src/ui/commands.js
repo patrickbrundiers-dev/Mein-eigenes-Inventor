@@ -1,7 +1,8 @@
 // Befehle ausführen, Tastaturkürzel verteilen, Befehlssuche (Strg+K) und Kürzel-Editor
 import { regionDialog, draftDialog } from "./analyse.js";
 import { extractDialog as ifeatExtractDialog, insertDialog as ifeatInsertDialog } from "./ifeatures.js";
-import { h, toast, choiceDialog, promptDialog } from "./dom.js";
+import { h, toast, choiceDialog, promptDialog, modal } from "./dom.js";
+import { parameterStudyDialog } from "./parameterstudie.js";
 import { familyTool } from "../core/werkzeugfamilien.js";
 import { motionStudyDialog } from "./bewegungsstudie.js";
 import { topologyDialog, performanceDialog, crashReportsDialog } from "./datenwerkzeuge.js";
@@ -68,6 +69,17 @@ export function commandRunners(app) {
     "app.macros": () => app.props.macroDialog(),
     "app.macroRecord": () => app.commands.toggleRecording(),
     "edit.undo": () => app.undo(),
+    "edit.checkpoint": () => app.saveCheckpoint(),
+    "edit.restoreCheckpoint": () => {
+      const list = app.checkpoints || [];
+      if (!list.length) return toast("Noch kein Zwischenstand gemerkt – »Zwischenstand merken« (Befehlssuche)");
+      const time = (d) => d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const body = h("div", {}, h("p", { class: "hint" }, "Zurück setzt das Projekt mit Rückgängig-Verlauf auf den Zwischenstand; das lässt sich mit Strg+Z wieder aufheben. Spätere Zwischenstände entfallen."),
+        h("table", { class: "grid" }, h("tbody", {}, ...list.slice().reverse().map((c) => h("tr", {}, h("td", {}, c.name), h("td", {}, time(c.at)),
+          h("td", {}, h("button", { class: "btn primary", onclick: (e) => { e.target.closest(".dialog")?.querySelector("header .icon-btn")?.click(); app.restoreCheckpoint(c.id); } }, "Zurück"),
+            h("button", { class: "btn", onclick: (e) => { app.restoreCheckpoint(c.id, { forget: true }); e.target.closest("tr").remove(); } }, "Vergessen")))))));
+      modal({ title: "Zwischenstände", width: "520px", body, buttons: [{ label: "Schließen", primary: true }] });
+    },
     "model.rebuild": () => app.rebuildNow(),
     "model.problems": () => problemsDialog(app),
     "model.buildLog": () => app.props.buildLogDialog(),
@@ -163,6 +175,8 @@ export function commandRunners(app) {
     "asm.explode": () => app.props.explodeDialog(),
     "asm.positionSave": () => savePosition(app, app.activeDoc()),
     "asm.params": () => app.props.paramsDialog(),
+    "part.paramStudy": () => parameterStudyDialog(app),
+    "view.clipPlane": () => app.clipAtSelection(),
     "asm.inContext": () => (app.sel?.type === "component" ? app.editInContext(app.activeId, app.sel.id) : toast("Erst eine Komponente wählen")),
   };
   for (const v of ["iso", "front", "back", "left", "right", "top", "bottom"]) run["view." + v] = () => app.viewer.setView(v);

@@ -517,6 +517,38 @@ export class App {
     toast(linkedMessage(part, (id) => this.doc(id)), { kind: "err", timeout: 6000 });
     return true;
   }
+  /**
+   * Zwischenstand (SolidCraft »Checkpoint«): Projekt mit Rückgängig-Verlauf merken, später dorthin zurück.
+   * Das Zurückgehen ist selbst ein Rückgängig-Schritt; Zwischenstände gelten für diese Sitzung.
+   */
+  saveCheckpoint(name) {
+    this.checkpoints = this.checkpoints || [];
+    const n = this.checkpoints.length + 1;
+    const cp = { id: "cp" + Date.now().toString(36) + n, name: name || `Zwischenstand ${n}`, at: new Date(), snap: snapshot(this.project, null), activeId: this.activeId, undo: this.undoStack.slice(), redo: this.redoStack.slice() };
+    this.checkpoints.push(cp);
+    if (this.checkpoints.length > 20) this.checkpoints.shift();
+    toast(`»${cp.name}« gemerkt`, { kind: "ok", timeout: 2500 });
+    return cp;
+  }
+  restoreCheckpoint(id, { forget = false } = {}) {
+    const list = this.checkpoints || [];
+    const i = id ? list.findIndex((c) => c.id === id) : list.length - 1;
+    const cp = list[i];
+    if (!cp) { toast("Noch kein Zwischenstand gemerkt"); return false; }
+    if (forget) { this.checkpoints = list.slice(0, i); return true; }
+    if (this.mode === "sketch") this.finishSketch(true);
+    this.checkpoint("Zurück zu »" + cp.name + "«");
+    const undoBack = this.undoStack.pop();
+    this.project = restoreSnapshot(cp.snap);
+    this.undoStack = [...cp.undo, undoBack];
+    this.redoStack = [];
+    if (this.doc(cp.activeId)) this.activeId = cp.activeId;
+    this.checkpoints = list.slice(0, i + 1);
+    this.sel = null;
+    toast(`Zurück zu »${cp.name}«`, { timeout: 2500 });
+    this.changed();
+    return true;
+  }
   undo() { this.restore(this.undoStack, this.redoStack); }
   redo() { this.restore(this.redoStack, this.undoStack); }
   restore(from, to) {
@@ -1723,6 +1755,22 @@ export class App {
     this.renderClipBar();
     this.ribbon.render();
   }
+  /** Schnitt an der gewählten Arbeitsebene oder ebenen Fläche (SolidCraft »Section« mit Ebene) */
+  clipAtSelection() {
+    const v = this.viewer, part = this.activeDoc();
+    let n = null, o = null, name = "Ebene";
+    const f = this.sel?.type === "feature" ? this.feature(this.sel.id) : null;
+    const dm = f?.type === "arbeitsebene" ? this.results.get(part?.id)?.datums?.[f.id] || this.results.get(part?.id)?.datums?.find?.((x) => x.id === f.id) : null;
+    const fr = dm?.frame || dm;
+    if (fr?.normal && fr?.origin) { n = fr.normal; o = fr.origin; name = f.name; }
+    const hit = !n && (this.selHits || []).find((x) => x.kind === "face" && x.normal && x.point);
+    if (hit) { n = hit.normal; o = hit.point; name = "Fläche"; }
+    if (!n) return toast("Erst eine Arbeitsebene im Modellbrowser oder eine ebene Fläche im 3D-Fenster wählen");
+    const bb = v.contentBox(), L = bb.isEmpty() ? 100 : bb.min.distanceTo(bb.max) / 2;
+    v.setClip({ axis: "E", name, n, o, offset: 0, flip: false, min: -L, max: L });
+    this.renderClipBar();
+    this.ribbon.render();
+  }
   renderClipBar() {
     const c = this.viewer.clip;
     this.clipBar.hidden = !c;
@@ -1737,7 +1785,7 @@ export class App {
       num.classList.remove("bad");
       set(o);
     });
-    this.clipBar.replaceChildren(h("b", {}, `Schnitt ${c.axis}`), range, num, h("span", {}, "mm"),
+    this.clipBar.replaceChildren(h("b", {}, c.axis === "E" ? `Schnitt ${c.name || "Ebene"}` : `Schnitt ${c.axis}`), range, num, h("span", {}, "mm"),
       h("button", { title: "Andere Seite zeigen", onclick: () => { this.viewer.setClip({ ...this.viewer.clip, flip: !this.viewer.clip.flip }); } }, "Seite"),
       h("button", { title: "Schnitt aus", onclick: () => this.toggleClip(c.axis) }, "×"));
   }

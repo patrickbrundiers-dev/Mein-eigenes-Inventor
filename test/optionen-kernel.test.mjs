@@ -106,3 +106,15 @@ test("Rundung: Sehnenbreite, weich, Zwischenradien; Fase zwei Abstände und Wink
   near(await removed({ type: "chamfer", chamferMode: "zwei", radius: "4", distance2: "10", edges: edge }), 100 * 4 * 10 / 2, 0.5, "zwei Abstände");
   near(await removed({ type: "chamfer", chamferMode: "winkel", radius: "6", chamferAngle: "45", edges: edge }), 100 * 6 * 6 / 2, 0.5, "Winkel");
 });
+
+test("Kollision: Mindestabstand und nur gegen", () => {
+  const a = R.makeBaseBox(10, 10, 10), b = R.makeBaseBox(10, 10, 10).translate([12, 0, 0]), c = R.makeBaseBox(10, 10, 10).translate([5, 0, 0]);
+  const list = [{ key: "a", shape: a }, { key: "b", shape: b }, { key: "c", shape: c }];
+  const plain = K.collisions(list);
+  assert.deepEqual(plain.map((x) => [x.a, x.b].sort().join()).sort(), ["a,c", "b,c"]);
+  const near = K.collisions(list, { clearance: 3 });
+  const ab = near.find((x) => [x.a, x.b].sort().join() === "a,b");
+  assert.ok(ab && Math.abs(ab.gap - 2) < 1e-6, JSON.stringify(near));
+  const only = K.collisions(list, { against: ["a"] });
+  assert.deepEqual(only.map((x) => [x.a, x.b].sort().join()), ["a,c"]);
+});

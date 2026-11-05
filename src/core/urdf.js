@@ -52,7 +52,7 @@ export function urdfModel(asm) {
 }
 
 /** URDF-Text; meshFile(link) → Dateiname des Netzes oder null */
-export function writeUrdf(name, model, meshFile) {
+export function writeUrdf(name, model, meshFile, { effort = 100, velocity = 1 } = {}) {
   const at = new Map(model.joints.map((j) => [j.child, j.xyz]));
   const L = model.links.map((l) => {
     const f = meshFile(l);
@@ -62,7 +62,7 @@ export function writeUrdf(name, model, meshFile) {
     return `  <link name="${xml(l.name)}">${vis}\n  </link>`;
   });
   const J = model.joints.map((j) => `  <joint name="${xml(j.name)}" type="${j.type}">\n    <parent link="${xml(j.parent)}"/>\n    <child link="${xml(j.child)}"/>\n    <origin xyz="${(j.xyzRel || j.xyz).map(n6).join(" ")}" rpy="0 0 0"/>\n    <axis xyz="${j.axis.map(n6).join(" ")}"/>`
-    + (j.type === "continuous" ? "" : `\n    <limit lower="${n6(j.lower)}" upper="${n6(j.upper)}" effort="100" velocity="1"/>`) + "\n  </joint>");
+    + (j.type === "continuous" ? "" : `\n    <limit lower="${n6(j.lower)}" upper="${n6(j.upper)}" effort="${n6(effort)}" velocity="${n6(velocity)}"/>`) + "\n  </joint>");
   return `<?xml version="1.0"?>\n<!-- PBCAD: Baugruppe ${xml(name)} -->\n<robot name="${xml(linkName(name))}">\n${[...L, ...J].join("\n")}\n</robot>\n`;
 }
 
@@ -86,16 +86,16 @@ export function stlBinary(meshes) {
 }
 
 /** Paket als ZIP: <name>/urdf/<name>.urdf und <name>/meshes/<glied>.stl; meshesOf(compId) → [{pos, idx}] */
-export function urdfPackage(name, asm, meshesOf) {
+export function urdfPackage(name, asm, meshesOf, { prefix = "paket", effort = 100, velocity = 1 } = {}) {
   const model = urdfModel(asm);
   const pkg = linkName(name), files = [];
   const meshFile = (l) => {
     const ms = l.comps.flatMap((id) => meshesOf(id) || []);
     if (!ms.length) return null;
     files.push([`${pkg}/meshes/${l.name}.stl`, stlBinary(ms)]);
-    return `package://${pkg}/meshes/${l.name}.stl`;
+    return prefix === "relativ" ? `../meshes/${l.name}.stl` : `package://${pkg}/meshes/${l.name}.stl`;
   };
-  const text = writeUrdf(name, model, meshFile);
+  const text = writeUrdf(name, model, meshFile, { effort, velocity });
   files.unshift([`${pkg}/urdf/${pkg}.urdf`, text]);
   return { zip: zipFiles(files), text, model, files: files.map((f) => f[0]) };
 }

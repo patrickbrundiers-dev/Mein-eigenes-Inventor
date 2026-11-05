@@ -450,7 +450,7 @@ export function contourLegs(chain, side = "links") {
 }
 
 /** Abwicklung als DXF: Umriss und Löcher (KONTUR), Vorlöcher der Durchzüge, Biegelinien gestrichelt mit Winkel */
-export function sheetFlatDxf(DxfWriter, fm, { name = "" } = {}) {
+export function sheetFlatDxf(DxfWriter, fm, { name = "", angleDisplay = "biege" } = {}) {
   const w = new DxfWriter().layer("KONTUR", 7).layer("BIEGUNG", 1, "DASHED").layer("TEXT", 3);
   w.polyline(fm.outer, "KONTUR", true);
   for (const hl of fm.holes) w.polyline(hl, "KONTUR", true);
@@ -458,7 +458,7 @@ export function sheetFlatDxf(DxfWriter, fm, { name = "" } = {}) {
   for (const b of fm.bends) {
     w.line(b.x0, b.y0, b.x1, b.y1, "BIEGUNG");
     const vert = Math.abs(b.x1 - b.x0) < 1e-9;
-    const note = `${fmt(b.angle)}° ${b.up ? "auf" : "ab"} R${fmt(b.ri)}`;
+    const note = `${fmt(angleDisplay === "innen" ? 180 - Math.abs(b.angle) : b.angle)}° ${b.up ? "auf" : "ab"} R${fmt(b.ri)}`;
     if (vert) w.text(b.x0 + 2, b.y0 + Math.min(20, (b.y1 - b.y0) / 4), 5, note, "TEXT", { rot: 90 });
     else w.text(b.x0 + Math.min(20, (b.x1 - b.x0) / 4), b.y0 + 2, 5, note, "TEXT");
   }

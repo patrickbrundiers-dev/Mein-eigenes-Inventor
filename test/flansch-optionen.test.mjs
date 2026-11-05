@@ -28,3 +28,14 @@ test("Falten: Schenkel an einer Linie biegen", () => {
   assert.deepEqual(S.legs, [40, 60]);
   assert.throws(() => planSheet(spec, [{ type: "falten", leg: 1, s: 1, angle: 90, dir: 1 }]), /zu nah am Anfang/);
 });
+
+import { validateSheetRule, effectiveSheet, noteAngle } from "../src/core/blechregeln.js";
+test("Blechregel: Spalt Umschlag, Spalt Ecke, Winkel in DXF", () => {
+  const r = validateSheetRule({ id: "x1", name: "X", material: "S235", t: 2, ri: 2, rule: "k", k: 0.33, hemGap: "0,5", gap: 1, angleDisplay: "innen" });
+  assert.ok(r.ok, r.error);
+  assert.equal(r.value.hemGap, 0.5); assert.equal(r.value.gap, 1); assert.equal(r.value.angleDisplay, "innen");
+  const e = effectiveSheet({ sheetRule: r.value }, Number, "S235");
+  assert.equal(e.hemGap, 0.5); assert.equal(e.gap, 1);
+  assert.equal(noteAngle(90, "innen"), 90); assert.equal(noteAngle(60, "innen"), 120); assert.equal(noteAngle(-60, "biege"), 60);
+  assert.ok(!validateSheetRule({ id: "x1", name: "X", material: "S235", t: 2, ri: 2, hemGap: -1 }).ok);
+});

@@ -711,21 +711,21 @@ export function createKernel(R) {
         let O = v3.add(toWorld(fr, c.start[0], c.start[1]), v3.mul(V, c.offset * h));
         if (dirMode === "normal") O = v3.add(O, v3.mul(N, L));
         else if (dirMode === "symmetrisch") O = v3.add(O, v3.mul(N, L / 2));
-        return { legs: c.legs, angles: c.angles, ref: c.ref, t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, frame: { O, U, V, W: v3.mul(N, -1) }, flatFrame: { origin: v3.sub(fr.origin, v3.mul(fr.normal, h)), xDir: fr.xDir, normal: fr.normal } };
+        return { legs: c.legs, angles: c.angles, ref: c.ref, t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, hemGap: eff.hemGap, cornerGap: eff.gap, frame: { O, U, V, W: v3.mul(N, -1) }, flatFrame: { origin: v3.sub(fr.origin, v3.mul(fr.normal, h)), xDir: fr.xDir, normal: fr.normal } };
       }
       const pos = (f.pos || ["0", "0", "0"]).map((x, k) => E(x, "Lage " + "XYZ"[k]));
-      return { legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), ref: f.ref || "aussen", t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, frame: { O: pos, U: X, V: Z, W: Y }, flatFrame: { origin: v3.add(pos, [0, 0, -t / 2]), xDir: X, normal: Z } };
+      return { legs: list(f.legs, "Schenkel"), angles: list(f.angles, "Winkel"), ref: f.ref || "aussen", t, ri, k: K0, kOf: br.kOf, br, L, rule: eff.rule, relief: eff.relief, ruleName: eff.ruleName, hemGap: eff.hemGap, cornerGap: eff.gap, frame: { O: pos, U: X, V: Z, W: Y }, flatFrame: { origin: v3.add(pos, [0, 0, -t / 2]), xDir: X, normal: Z } };
     };
     /** Zahlen eines Blech-Features */
     const sheetExtra = (f, spec) => {
       const opt = (x, label) => (x === undefined || x === null || String(x).trim() === "" ? null : E(x, label));
       const sg = f.dir === "ab" ? "ab" : "auf";
-      if (f.type === "umschlag") return { type: "umschlag", edge: f.edge === "anfang" ? "anfang" : "ende", kind: f.kind || "geschlossen", length: E(f.length ?? "15", "Länge"), gap: opt(f.gap, "Spalt") ?? 0, dir: sg };
+      if (f.type === "umschlag") return { type: "umschlag", edge: f.edge === "anfang" ? "anfang" : "ende", kind: f.kind || "geschlossen", length: E(f.length ?? "15", "Länge"), gap: opt(f.gap, "Spalt") ?? spec?.hemGap ?? 0, dir: sg };
       if (f.type === "durchzug") {
         const lst = (x, label) => splitList(String(x ?? "")).map((v, k) => E(v, `${label} ${k + 1}`));
         return { type: "durchzug", leg: E(f.leg ?? "1", "Schenkel"), s: lst(f.s ?? "20", "Lage entlang"), y: lst(f.y ?? "50", "Lage längs"), d: E(f.d ?? "8", "Innendurchmesser"), height: E(f.height ?? "6", "Kragenhöhe"), dir: sg, d0: opt(f.d0, "Vorloch") };
       }
-      if (f.type === "eckeschliessen") return { type: "eckeschliessen", bend: E(f.bend ?? "1", "Biegung"), side: f.side === "hinten" ? "hinten" : "vorne", through: f.through === "b" ? "b" : "a", gap: opt(f.gap, "Spalt") ?? 0 };
+      if (f.type === "eckeschliessen") return { type: "eckeschliessen", bend: E(f.bend ?? "1", "Biegung"), side: f.side === "hinten" ? "hinten" : "vorne", through: f.through === "b" ? "b" : "a", gap: opt(f.gap, "Spalt") ?? spec?.cornerGap ?? 0 };
       if (f.type === "falten") return { type: "falten", leg: E(f.leg ?? "1", "Schenkel"), s: E(f.s ?? "50", "Lage der Biegelinie"), angle: E(f.angle ?? "90", "Biegewinkel"), dir: sg, ri: opt(f.ri, "Innenradius"), line: ["aussen", "innen"].includes(f.line) ? f.line : "mitte" };
       if (f.type === "kroepfung") return { type: "kroepfung", leg: E(f.leg ?? "1", "Schenkel"), s: E(f.s ?? "50", "Lage der Kröpflinie"), h: E(f.h ?? "10", "Versatz"), ref: ["gesamt", "innen"].includes(f.ref) ? f.ref : "flaeche", angle: E(f.angle ?? "90", "Kröpfwinkel"), dir: sg, pos: ["vor", "hinter"].includes(f.pos) ? f.pos : "mitte", fixed: f.fixed === "ende" ? "ende" : "anfang", keep: f.keep !== false, ri: opt(f.ri, "Innenradius") };
       if (f.type === "stanzung") {
@@ -4073,16 +4073,27 @@ export function createKernel(R) {
    * tol: Mindestvolumen in mm³ – fachlich: Rundungs- und Tessellierungsfehler der Booleschen Operation liegen weit
    * darunter, eine echte Überschneidung von 0,1 mm auf 10 × 10 mm ergibt bereits 10 mm³.
    */
-  function collisions(list, { tol = 1 } = {}) {
+  /**
+   * Kollisionen (und mit clearance > 0 zu knappe Abstände) zwischen Körpern verschiedener Komponenten.
+   * tol: kleinere Überschneidung zählt als Berührung (mm³); against: nur Paare mit genau einer Seite in dieser Liste
+   */
+  function collisions(list, { tol = 1, clearance = 0, against = null } = {}) {
     const out = [];
     const boxes = list.map((x) => x.shape.boundingBox);
+    const ag = against?.length ? new Set(against) : null;
     for (let i = 0; i < list.length; i++)
       for (let j = i + 1; j < list.length; j++) {
         if (list[i].key === list[j].key) continue;
-        if (!bboxOverlap(boxes[i], boxes[j], 1e-3)) continue;
+        if (ag && ag.has(list[i].key) === ag.has(list[j].key)) continue;
+        if (!bboxOverlap(boxes[i], boxes[j], Math.max(1e-3, clearance))) continue;
         let vol = 0;
         try { vol = R.measureVolume(list[i].shape.clone().intersect(list[j].shape.clone())); } catch { vol = NaN; }
-        if (!(vol <= tol)) out.push({ a: list[i].key, b: list[j].key, volume: vol });
+        if (!(vol <= tol)) { out.push({ a: list[i].key, b: list[j].key, volume: vol }); continue; }
+        if (clearance > 0) {
+          let d = Infinity;
+          try { d = R.measureDistanceBetween(list[i].shape, list[j].shape); } catch { /* ohne */ }
+          if (d < clearance) out.push({ a: list[i].key, b: list[j].key, volume: 0, gap: d });
+        }
       }
     // je Komponentenpaar zusammenfassen
     const pairs = new Map();
@@ -4090,6 +4101,7 @@ export function createKernel(R) {
       const k = [c.a, c.b].sort().join("|");
       const p = pairs.get(k) || { a: c.a, b: c.b, volume: 0 };
       p.volume += Number.isFinite(c.volume) ? c.volume : 0;
+      if (c.gap != null) p.gap = Math.min(p.gap ?? Infinity, c.gap);
       if (!Number.isFinite(c.volume)) p.unsure = true;
       pairs.set(k, p);
     }

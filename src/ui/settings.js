@@ -285,18 +285,20 @@ function sheetRulesEditor(app) {
       const upd = (v) => { const next = lib(); next[i] = { ...next[i], [key]: kind === "num" ? num(v) : v }; save(next); };
       if (kind === "mat") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...materialList().map((m) => h("option", { value: m.key, selected: m.key === r.material }, m.label)));
       if (kind === "rule") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...BEND_RULES.map((x) => h("option", { value: x.value, selected: x.value === r.rule }, x.label)));
+      if (kind === "angle") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...[["biege", "Biegewinkel"], ["innen", "Eingeschlossen"]].map(([v, l]) => h("option", { value: v, selected: v === (r.angleDisplay || "biege") }, l)));
+      if (kind === "opt") return h("input", { class: "inp num", value: r[key] == null ? "" : String(r[key]).replace(".", ","), placeholder: "–", onchange: (e) => { const v = e.target.value.trim(); const next = lib(); const o = { ...next[i] }; if (v === "") delete o[key]; else o[key] = num(v); next[i] = o; save(next); } });
       if (kind === "relief") return h("select", { class: "inp", onchange: (e) => upd(e.target.value) }, ...RELIEFS.map(([v, l]) => h("option", { value: v, selected: v === r.relief }, l)));
       return h("input", { class: "inp" + (kind === "num" ? " num" : ""), value: kind === "num" ? String(r[key]).replace(".", ",") : r[key], onchange: (e) => upd(e.target.value.trim()) });
     };
     const outdated = outdatedSheetRules(app.project?.docs || [], list);
     wrap.replaceChildren(
       h("h3", {}, "Blechregeln"),
-      h("p", { class: "hint" }, "Freischnitt 0 = Breite t, Tiefe t/2. Kantteile speichern eine Kopie der Regel; geänderte Regeln werden am Kantteil oder hier für das ganze Projekt übernommen."),
+      h("p", { class: "hint" }, "Freischnitt 0 = Breite t, Tiefe t/2. Spalt Umschlag und Spalt Ecke gelten für Umschläge und »Ecke schließen« ohne eigenen Wert. Winkel in DXF: Biegewinkel oder eingeschlossener Winkel (180° − Biegewinkel) in den Biegenotizen. Kantteile speichern eine Kopie der Regel; geänderte Regeln werden am Kantteil oder hier für das ganze Projekt übernommen."),
       h("table", { class: "grid" },
-        h("thead", {}, h("tr", {}, ...["Name", "Werkstoff", "Dicke", "Innenradius", "Abwicklung", "K-Faktor", "Freischnitt", "Breite", "Tiefe", ""].map((x) => h("th", {}, x)))),
+        h("thead", {}, h("tr", {}, ...["Name", "Werkstoff", "Dicke", "Innenradius", "Abwicklung", "K-Faktor", "Freischnitt", "Breite", "Tiefe", "Spalt Umschlag", "Spalt Ecke", "Winkel in DXF", ""].map((x) => h("th", {}, x)))),
         h("tbody", {}, ...list.map((r, i) => h("tr", {},
           h("td", {}, cell(r, i, "name", "text")), h("td", {}, cell(r, i, "material", "mat")), h("td", {}, cell(r, i, "t")), h("td", {}, cell(r, i, "ri")),
-          h("td", {}, cell(r, i, "rule", "rule")), h("td", {}, cell(r, i, "k")), h("td", {}, cell(r, i, "relief", "relief")), h("td", {}, cell(r, i, "reliefW")), h("td", {}, cell(r, i, "reliefD")),
+          h("td", {}, cell(r, i, "rule", "rule")), h("td", {}, cell(r, i, "k")), h("td", {}, cell(r, i, "relief", "relief")), h("td", {}, cell(r, i, "reliefW")), h("td", {}, cell(r, i, "reliefD")), h("td", {}, cell(r, i, "hemGap", "opt")), h("td", {}, cell(r, i, "gap", "opt")), h("td", {}, cell(r, i, "angleDisplay", "angle")),
           h("td", {}, h("button", { class: "btn", onclick: () => save(lib().filter((_, k) => k !== i)) }, "Löschen")))))),
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => { const l = lib(); const last = l.at(-1) || DEFAULT_SHEET_RULES[0]; let n = 1; while (l.some((r) => r.name === `${last.name} (${n})`)) n++; save([...l, { ...last, id: newId(l), name: `${last.name} (${n})` }]); } }, "Regel anlegen"),

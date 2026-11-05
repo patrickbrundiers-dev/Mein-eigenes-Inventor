@@ -395,7 +395,8 @@ export class Files {
     if (!items?.length) return toast("Nichts zu exportieren");
     const d = this.app.activeDoc();
     await this.withBusy("STL-Export", async () => {
-      const buf = await this.app.kernel.call("exportStl", { items, simplify: simplifyOf(d) });
+      const acc = Number(this.app.prefs.get("dateien.netzgenauigkeit")) || 0;
+      const buf = await this.app.kernel.call("exportStl", { items, simplify: simplifyOf(d), tolerance: acc > 0 ? acc : null });
       await this.saveBinary(buf, safeName(d.number || d.name) + ".stl", [{ name: "STL", extensions: ["stl"] }]);
     });
   }
@@ -426,6 +427,16 @@ export class Files {
     });
   }
   /** Sichtbare Netze in mm (Z oben) für OBJ/3MF – gleiche Auswahl wie GLB */
+  /** Netze für OBJ/3MF: mit eingestellter Netzgenauigkeit aus dem Kern, sonst wie in der Ansicht */
+  async meshListExact() {
+    const acc = Number(this.app.prefs.get("dateien.netzgenauigkeit")) || 0;
+    if (!(acc > 0)) return this.meshList();
+    const d = this.app.activeDoc(), items = this.exportItems(d);
+    if (!items?.length) { toast("OBJ/3MF gibt es für Bauteile und Baugruppen"); return null; }
+    const list = await this.app.kernel.call("ifcData", { items, tolerance: acc, simplify: simplifyOf(d) });
+    const rgb = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || "")); const n = m ? parseInt(m[1], 16) : 0xb4b9c0; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+    return { d, meshes: list.filter((x) => x.vertices?.length).map((x) => ({ name: x.name, pos: x.vertices, idx: x.triangles, color: rgb(x.color) })) };
+  }
   meshList() {
     const app = this.app, d = app.activeDoc();
     if (d?.kind !== "part" && d?.kind !== "assembly") { toast("OBJ/3MF gibt es für Bauteile und Baugruppen"); return null; }
@@ -454,7 +465,7 @@ export class Files {
   }
   /** OBJ (SolidCraft-Abgleich F6): Netz mit Farben für Blender, Render- und Druckprogramme */
   async exportObj() {
-    const r = this.meshList();
+    const r = await this.meshListExact();
     if (!r) return;
     await this.withBusy("OBJ-Export", async () => {
       await this.saveText(writeObj(r.meshes), safeName(r.d.number || r.d.name) + ".obj", "model/obj", [{ name: "OBJ", extensions: ["obj"] }]);
@@ -462,7 +473,7 @@ export class Files {
   }
   /** An Slicer senden (SolidCraft-Abgleich E5): 3MF im eingestellten Slicer öffnen (Desktop), sonst 3MF speichern */
   async sendToSlicer(slicer = null) {
-    const r = this.meshList();
+    const r = await this.meshListExact();
     if (!r) return;
     const data = write3mf(r.meshes, { title: r.d.name });
     const list = this.app.prefs.get("dateien.slicer") || [];
@@ -495,7 +506,8 @@ export class Files {
       if (!by.has(c.name)) by.set(c.name, []);
       by.get(c.name).push({ pos, idx: g.index ? Array.from(g.index.array) : null });
     }
-    const p = urdfPackage(d.name, d, (id) => by.get(id));
+    const P = app.prefs;
+    const p = urdfPackage(d.name, d, (id) => by.get(id), { prefix: P.get("dateien.urdfPfad"), effort: Number(P.get("dateien.urdfKraft")) || 100, velocity: Number(P.get("dateien.urdfGeschw")) || 1 });
     await this.withBusy("URDF-Export", async () => {
       const r = await this.saveBinary(p.zip, safeName(d.number || d.name) + "_urdf.zip", [{ name: "URDF-Paket (ZIP)", extensions: ["zip"] }]);
       if (r) toast(`URDF: ${p.model.links.length} Glieder, ${p.model.joints.length} Gelenke`, { kind: "ok", timeout: 5000 });
@@ -504,7 +516,7 @@ export class Files {
   }
   /** 3MF (F6): 3D-Druck mit Einheit mm und Farben, öffnet in PrusaSlicer, Cura, Bambu Studio */
   async export3mf() {
-    const r = this.meshList();
+    const r = await this.meshListExact();
     if (!r) return;
     await this.withBusy("3MF-Export", async () => {
       await this.saveBinary(write3mf(r.meshes, { title: r.d.name }), safeName(r.d.number || r.d.name) + ".3mf", [{ name: "3MF (3D-Druck)", extensions: ["3mf"] }]);
@@ -711,7 +723,7 @@ export class Files {
     const sh = app.results.get(part?.id)?.bodies?.find((b) => b.fid === f.id)?.meta?.sheet;
     if (!sh?.flatModel) return toast("Kantteil hat Fehler – erst korrigieren", { kind: "err" });
     const name = `${safeName(part.number || part.name)}_${safeName(f.name || "Kantteil")}_${String(sh.t).replace(".", ",")}mm.dxf`.replace(/\s+/g, "_");
-    await this.saveText(sheetFlatDxf(DxfWriter, sh.flatModel, { name: f.name || part.name }), name, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
+    await this.saveText(sheetFlatDxf(DxfWriter, sh.flatModel, { name: f.name || part.name, angleDisplay: f.sheetRule?.angleDisplay }), name, "application/dxf", [{ name: "DXF", extensions: ["dxf"] }]);
     toast(`Abwicklung ${fmtNum(sh.flat, 1)} × ${fmtNum(sh.length, 1)} mm gespeichert`, { kind: "ok" });
   }
   /** Bild der 3D-Ansicht als PNG (doppelte Auflösung, weißer Hintergrund) */

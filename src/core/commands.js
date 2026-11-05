@@ -28,6 +28,8 @@ export const COMMANDS = [
   { id: "app.tour", label: "Rundgang starten", group: "Programm", scope: "global", keywords: "einführung tour erste schritte oberfläche lernen" },
   { id: "edit.undo", label: "Rückgängig", group: "Bearbeiten", scope: "global", key: "Strg+Z" },
   { id: "edit.redo", label: "Wiederholen", group: "Bearbeiten", scope: "global", key: "Strg+Y" },
+  { id: "edit.checkpoint", label: "Zwischenstand merken", group: "Bearbeiten", scope: "global", keywords: "checkpoint sicherungspunkt merken" },
+  { id: "edit.restoreCheckpoint", label: "Zu Zwischenstand zurück …", group: "Bearbeiten", scope: "global", keywords: "checkpoint wiederherstellen zurück" },
 
   { id: "model.problems", label: "Problemliste", group: "Modell", scope: "3d", keywords: "prüfen prüfung fehler warnungen hinweise freigabe vollständig" },
   { id: "model.profile", label: "Leistungsprofil (Rechenzeit je Feature)", group: "Modell", scope: "part", keywords: "leistung profil langsam zeit performance rechenzeit" },
@@ -35,6 +37,7 @@ export const COMMANDS = [
   { id: "model.buildLog", label: "Berechnungsprotokoll", group: "Modell", scope: "global", keywords: "debug kernel dauer fehler protokoll" },
 
   { id: "view.fit", label: "Alles zeigen", group: "Ansicht", scope: "3d", key: "F6", keywords: "zoom einpassen" },
+  { id: "view.clipPlane", label: "Schnitt an gewählter Ebene/Fläche", group: "Ansicht", scope: "3d", keywords: "schnitt section ebene fläche arbeitsebene" },
   { id: "view.spin", label: "Ansicht kontinuierlich drehen (ein/aus)", group: "Ansicht", scope: "3d", keywords: "drehen drehteller präsentation rundum spin automatisch" },
   { id: "view.fov", label: "Ansichtswinkel (Perspektive)", group: "Ansicht", scope: "3d", keywords: "blickwinkel fov brennweite weitwinkel tele perspektive kamera" },
   { id: "view.side", label: "Zeichnung daneben (Modell und Zeichnung nebeneinander)", group: "Ansicht", scope: "3d", keywords: "nebeneinander geteilt split zeichnung blatt zwei fenster" },
@@ -186,6 +189,7 @@ export const COMMANDS = [
   { id: "part.datumAxis", label: "Arbeitsachse", group: "3D-Modell", scope: "part", keywords: "bezugsachse hilfsachse arbeitselement datum zylinderachse bohrungsachse kante schnitt kreismitte" },
   { id: "part.datumPoint", label: "Arbeitspunkt", group: "3D-Modell", scope: "part", keywords: "bezugspunkt hilfspunkt arbeitselement datum mittelpunkt ecke kreismitte schnittpunkt" },
   { id: "part.params", label: "Parameter", group: "3D-Modell", scope: "part", keywords: "variablen formeln" },
+  { id: "part.paramStudy", label: "Parameterstudie …", group: "3D-Modell", scope: "part", keywords: "parameter sweep durchlaufen werte prüfen robust" },
   { id: "part.importStep", label: "STEP einfügen", group: "3D-Modell", scope: "part" },
   { id: "doc.newDrawing", label: "Zeichnung ableiten", group: "3D-Modell", scope: "3d" },
   { id: "doc.partDrawings", label: "Einzelteilzeichnungen erzeugen", group: "3D-Modell", scope: "assembly", keywords: "zeichnung positionen alle bauteile fertigungszeichnung" },
