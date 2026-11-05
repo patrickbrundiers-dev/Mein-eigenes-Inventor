@@ -1,6 +1,6 @@
 // Einstiegspunkt
 import { App } from "./app.js";
-import { h, modal } from "./dom.js";
+import { h, modal, toast } from "./dom.js";
 
 let app;
 try {
@@ -73,6 +73,13 @@ if (bridge) {
     }
     // Fehler der Update-Suche zeigt die Einstellungsseite selbst an (Startprüfung nur im Protokoll) – kein Toast, sonst stapeln sie sich
   });
+  // Lizenz: Hinweis in der Testversion und kurz vor Ablauf einer befristeten Lizenz
+  bridge.licenseStatus?.().then((s) => {
+    app.license = s;
+    const open = () => app.props.settingsDialog({ category: "lizenz" });
+    if (s.state === "test") toast(`Testversion: noch ${s.restTage} ${s.restTage === 1 ? "Tag" : "Tage"}. Lizenz eingeben: Einstellungen → Lizenz`, { timeout: 9000, action: { label: "Lizenz …", run: open } });
+    else if (s.state === "lizenziert" && s.restTage != null && s.restTage <= 14) toast(`Deine PBCAD-Lizenz läuft in ${s.restTage} ${s.restTage === 1 ? "Tag" : "Tagen"} ab.`, { timeout: 9000, action: { label: "Lizenz …", run: open } });
+  }).catch(() => {});
   const initial = bridge.initialFile?.();
   Promise.resolve(initial).then((p) => { if (p) app.files.open(p); });
 }

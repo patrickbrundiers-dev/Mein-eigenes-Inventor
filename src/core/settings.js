@@ -39,6 +39,7 @@ export const CATEGORIES = [
   { id: "dateien", label: "Dateien und Datensicherheit", status: "aktiv", note: "Speichern ist immer atomar: erst vollständig schreiben, dann umbenennen. Datei → Schreibgeschützt öffnen bzw. Projekt paketieren." },
   { id: "blech", label: "Blechparameter", status: "aktiv", note: "Blechregeln bündeln Werkstoff, Dicke, Radius und Abwicklung für Kantteile. Biegetabellen gelten für Kantteil und Knickrahmen, wenn dort als Biegeregel »Biegetabelle des Werkstoffs« gewählt ist. Benutzte Tabellen werden als Kopie in der Projektdatei gespeichert." },
   { id: "fertigung", label: "Rohrlaser und Fertigung", status: "teilweise", planned: ["mehrere Maschinenprofile (getrennt von den CAD-Einstellungen gespeichert)"], note: "Fertigungsprüfung der Zuschnittliste (Bauteil und Zuschnittliste). Startwerte aus den Beispielmaschinen der Rohrlaser-Kalkulation – bitte an die eigene Maschine anpassen. 0 = Regel aus." },
+  { id: "lizenz", label: "Lizenz", status: "aktiv", note: "Ohne Lizenz läuft PBCAD 30 Tage als Testversion. Lizenzschlüssel vergibt Patrick Brundiers; für eine an den Rechner gebundene Lizenz die Rechner-ID mitschicken." },
   { id: "updates", label: "Updates", status: "aktiv" },
   { id: "datenschutz", label: "Datenschutz und Diagnose", status: "teilweise", note: "PBCAD sendet keine Diagnosedaten. Das Fehlerprotokoll bleibt lokal und enthält keine Projektdaten." },
 ];

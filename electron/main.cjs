@@ -9,6 +9,7 @@ const { rotateBackups, backupCount } = require("./backups.cjs");
 const recent = require("./recent.cjs");
 const versionen = require("./versionen.cjs");
 const teilebibliothek = require("./teilebibliothek.cjs");
+const lizenz = require("./lizenz.cjs");
 
 // Benutzerdaten bleiben nach der Umbenennung WerkCAD → PBCAD im bisherigen Ordner %APPDATA%\WerkCAD
 // (Einstellungen, Token, automatische Sicherung, Fehlerprotokoll). Muss vor allem anderen gesetzt werden.
@@ -56,6 +57,37 @@ function findProjectArg(argv) {
   return argv.slice(1).find((a) => /\.wcad$/i.test(a) && fs.existsSync(a)) || null;
 }
 
+// ---------- Lizenz (ADR-0009) ----------
+// Lizenzschlüssel und Testbeginn stehen in einstellungen.json, der Testbeginn zusätzlich in %LOCALAPPDATA%\PBCAD,
+// damit Löschen der Einstellungen den Testzeitraum nicht neu startet. Ohne Installation (npm start) gilt keine Sperre,
+// außer PBCAD_LIZENZ_TEST=1 ist gesetzt.
+const lizenzAktiv = () => app.isPackaged || process.env.PBCAD_LIZENZ_TEST === "1";
+const testMarkFile = () => path.join(process.env.LOCALAPPDATA || app.getPath("home"), "PBCAD", "pbcad-start.dat");
+function readTestMark() {
+  try { const t = Number(fs.readFileSync(testMarkFile(), "utf8").trim()); return Number.isFinite(t) && t > 0 ? t : NaN; } catch { return NaN; }
+}
+function lizenzStatus() {
+  if (!lizenzAktiv()) return { state: "entwicklung", rechnerId: lizenz.rechnerId() };
+  const s = readSettings();
+  const now = Date.now();
+  const zuletzt = Math.max(Number(s.zuletztGesehen) || 0, now);
+  const known = [Number(s.testBeginn), readTestMark()].filter((t) => Number.isFinite(t) && t > 0 && t <= zuletzt + 86400000);
+  const testBeginn = known.length ? Math.min(...known) : now;
+  if (s.testBeginn !== testBeginn || s.zuletztGesehen !== zuletzt) {
+    s.testBeginn = testBeginn;
+    s.zuletztGesehen = zuletzt;
+    try { writeSettings(s); } catch (e) { log.write("warn", "lizenz", e.message); }
+  }
+  if (readTestMark() !== testBeginn) {
+    try { fs.mkdirSync(path.dirname(testMarkFile()), { recursive: true }); fs.writeFileSync(testMarkFile(), String(testBeginn)); } catch { /* nicht schlimm */ }
+  }
+  return lizenz.status({ key: s.lizenz, testBeginn, zuletzt: Number(s.zuletztGesehen) || 0, now, rechnerId: lizenz.rechnerId() });
+}
+let gesperrt = false;
+const startPage = () => (gesperrt ? "app://werkcad/lizenz.html" : "app://werkcad/index.html");
+// im Sperrzustand liefert app:// nur den Lizenz-Bildschirm (auch nicht über die Entwicklerwerkzeuge erreichbar)
+const LIZENZ_DATEIEN = new Set(["lizenz.html", "lizenz.js"]);
+
 // ---------- Fenster ----------
 function createWindow() {
   win = new BrowserWindow({
@@ -75,7 +107,7 @@ function createWindow() {
   win.webContents.session.setPermissionCheckHandler(() => true); // wie ohne Handler (alles erlaubt), schließt "hid" ausdrücklich ein
   win.webContents.session.setDevicePermissionHandler((details) => details.deviceType === "hid" && isSpace(details.device));
   win.once("ready-to-show", () => { win.maximize(); win.show(); });
-  win.loadURL("app://werkcad/index.html");
+  win.loadURL(startPage());
   win.webContents.on("before-input-event", (e, input) => {
     if (input.type === "keyDown" && (input.key === "F12" || (input.control && input.shift && input.key.toLowerCase() === "i"))) win.webContents.toggleDevTools();
   });
@@ -84,7 +116,7 @@ function createWindow() {
     return { action: "deny" };
   });
   win.on("close", (e) => {
-    if (allowClose) return;
+    if (allowClose || gesperrt) return;
     e.preventDefault();
     win.webContents.send("app:close-request");
   });
@@ -157,6 +189,7 @@ else {
       let rel = decodeURIComponent(url.pathname).replace(/^\/+/, "") || "index.html";
       const file = path.normalize(path.join(DIST, rel));
       if (!file.startsWith(DIST)) return new Response("Verboten", { status: 403 });
+      if (gesperrt && !LIZENZ_DATEIEN.has(rel)) return new Response("Lizenz erforderlich", { status: 403 });
       try {
         const data = await fs.promises.readFile(file);
         return new Response(data, { headers: { "content-type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream" } });
@@ -164,6 +197,9 @@ else {
         return new Response("Nicht gefunden", { status: 404 });
       }
     });
+    const lz = lizenzStatus();
+    gesperrt = lz.state === "abgelaufen";
+    log.write("info", "lizenz", lz.state === "lizenziert" ? `lizenziert (Nr. ${lz.daten.nr})` : lz.state === "test" ? `Testversion, noch ${lz.restTage} Tage` : lz.state);
     createWindow();
   });
   app.on("window-all-closed", () => app.quit());
@@ -408,6 +444,36 @@ ipcMain.handle("pdf:render", async (_e, html) => {
     fs.rm(tmp, () => {});
   }
 });
+
+// Lizenz
+ipcMain.handle("lizenz:status", () => lizenzStatus());
+ipcMain.handle("lizenz:aktivieren", (_e, text) => {
+  if (typeof text !== "string" || text.length > 20000) return { ok: false, fehler: "Ungültige Eingabe." };
+  const r = lizenz.verify(text, { rechnerId: lizenz.rechnerId() });
+  if (!r.ok) return r;
+  const s = readSettings();
+  s.lizenz = lizenz.normalize(text);
+  writeSettings(s);
+  log.write("info", "lizenz", `Lizenz ${r.daten.nr} aktiviert`);
+  if (gesperrt) {
+    gesperrt = false;
+    setTimeout(() => win && !win.isDestroyed() && win.loadURL(startPage()), 600);
+  }
+  return { ok: true, status: lizenzStatus() };
+});
+ipcMain.handle("lizenz:entfernen", () => {
+  const s = readSettings();
+  delete s.lizenz;
+  writeSettings(s);
+  return lizenzStatus();
+});
+ipcMain.handle("lizenz:datei", async () => {
+  const r = await dialog.showOpenDialog(win, { title: "Lizenzdatei öffnen", properties: ["openFile"], filters: [{ name: "PBCAD-Lizenz", extensions: ["pbcadlizenz", "txt"] }] });
+  if (r.canceled || !r.filePaths[0]) return null;
+  const st = fs.statSync(r.filePaths[0]);
+  return st.size > 20000 ? "" : fs.readFileSync(r.filePaths[0], "utf8");
+});
+ipcMain.on("lizenz:beenden", () => { allowClose = true; app.quit(); });
 
 // Einstellungen + Updates
 ipcMain.handle("settings:get", () => {

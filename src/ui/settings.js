@@ -116,6 +116,7 @@ export function settingsCenter(app, { category = "allgemein" } = {}) {
 /** Zusatzinhalte je Kategorie, die keine einfachen Optionen sind */
 function extras(app, cat) {
   if (cat === "updates") return [updatesSection(app)];
+  if (cat === "lizenz") return [licenseSection(app)];
   if (cat === "allgemein") return [profileEditor(app)];
   if (cat === "werkzeuge") {
     const memo = app.prefs.get("werkzeuge.letzte") || {};
@@ -172,6 +173,45 @@ function ribbonEditor(app) {
       h("p", { class: "hint" }, "Auch im Menüband: Rechtsklick auf eine Gruppe. Ausgeblendete Befehle bleiben über die Befehlssuche (Strg+K) erreichbar."));
   };
   render();
+  return box;
+}
+
+const deDate = (iso) => (typeof iso === "string" ? iso.slice(0, 10).split("-").reverse().join(".") : "");
+/** Lizenzstand, Rechner-ID, Schlüssel eingeben (Prüfung im Hauptprozess, electron/lizenz.cjs) */
+export function licenseSection(app) {
+  const bridge = window.werkcad;
+  if (!bridge?.licenseStatus) return h("p", {}, "Die Lizenz wird nur in der installierten Windows-Version geprüft.");
+  const box = h("div", { class: "lizenz-box" }, h("p", { class: "hint" }, "Lade …"));
+  const render = (s) => {
+    const key = h("textarea", { class: "inp", rows: 4, spellcheck: false, placeholder: "PBCAD1.…", "aria-label": "Lizenzschlüssel", style: { width: "100%", fontFamily: "Consolas, monospace", fontSize: "12px" } });
+    const msg = h("div", { class: "hint", role: "status" });
+    const d = s.daten;
+    const state = s.state === "lizenziert"
+      ? h("p", {}, h("b", {}, `Lizenziert für ${d.name}${d.firma ? " (" + d.firma + ")" : ""}`), ` · Lizenz-Nr. ${d.nr}`,
+        h("br"), d.bis ? `gültig bis ${deDate(d.bis)} (noch ${s.restTage} Tage)` : "unbefristet", d.rechner ? " · an diesen Rechner gebunden" : "")
+      : s.state === "test" ? h("p", {}, h("b", {}, `Testversion: noch ${s.restTage} von ${s.testTage} Tagen.`), " Danach startet PBCAD nur mit Lizenzschlüssel.")
+        : s.state === "entwicklung" ? h("p", {}, "Entwicklungsstart (nicht installiert): keine Lizenzprüfung.")
+          : h("p", {}, h("b", {}, "Keine gültige Lizenz."));
+    const activate = async (text) => {
+      const r = await bridge.activateLicense(text);
+      if (!r.ok) { msg.textContent = r.fehler; msg.style.color = "var(--danger, #b3261e)"; return; }
+      toast(`Lizenz ${r.status.daten.nr} aktiviert`, { kind: "ok" });
+      app.license = r.status;
+      render(r.status);
+    };
+    box.replaceChildren(...[state,
+      s.fehler ? h("p", { class: "hint" }, "Gespeicherter Schlüssel: " + s.fehler) : null,
+      h("p", {}, "Rechner-ID: ", h("code", { style: { userSelect: "all", fontSize: "14px" } }, s.rechnerId || "unbekannt"), " ",
+        h("button", { class: "btn", onclick: async () => { try { await navigator.clipboard.writeText(s.rechnerId); toast("Rechner-ID kopiert"); } catch { toast("Bitte markieren und Strg+C"); } } }, "Kopieren")),
+      h("h3", {}, s.state === "lizenziert" ? "Andere Lizenz eingeben" : "Lizenzschlüssel eingeben"),
+      key,
+      h("div", { class: "btn-row" },
+        h("button", { class: "btn primary", onclick: () => activate(key.value) }, "Aktivieren"),
+        h("button", { class: "btn", onclick: async () => { const t = await bridge.readLicenseFile(); if (t !== null) { key.value = t.trim(); activate(t); } } }, "Lizenzdatei öffnen …"),
+        s.state === "lizenziert" ? h("button", { class: "btn danger", onclick: async () => { app.license = await bridge.removeLicense(); render(app.license); toast("Lizenz von diesem Rechner entfernt"); } }, "Lizenz entfernen") : null),
+      msg].filter(Boolean));
+  };
+  bridge.licenseStatus().then(render);
   return box;
 }
 
