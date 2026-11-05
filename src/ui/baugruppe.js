@@ -14,6 +14,7 @@ import { solveAssembly, endFaceFor, worldToLocal } from "../core/asmsolve.js";
 import { flattenAssembly, canInsert } from "../core/subasm.js";
 import { placementMatrix, rotationAbout, matApply, matApplyDir, v3 } from "../core/geom.js";
 import { classifyHit, buildConstraint, placeState } from "./abhaengigkeit.js";
+import { dragJointValue, jointDelta, slideDelta, jointFollowers, coupledJointValues, setJointAngle, setJointSlide, isCylinder, jointUnit } from "../core/kinematik.js";
 import { listLibrary, insertFromLibrary } from "./teilebibliothek.js";
 import { filterEntries } from "../core/teilebibliothek.js";
 
@@ -183,7 +184,7 @@ export function bindAssemblyDrag(app) {
     if (!c) return (st = null);
     if (c.pat) { toast("Musterkopien folgen ihrer Quelle – bitte die Quelle ziehen"); return (st = null); }
     if (c.fixed) { toast(`${c.name} ist fixiert – im Baum »Fixierung lösen«`); return (st = null); }
-    if (c.joint && !st.alt) { toast(`${c.name} bewegt sich über sein Gelenk – Bewegen im Menüband oder Schieberegler in den Eigenschaften`); return (st = null); }
+    if (c.joint && !st.alt) return startJoint(c);
     st.comp = c;
     st.base = { pos: [...c.pos], rot: [...c.rot] };
     st.dof = componentDof(asm, c.id);
@@ -202,10 +203,77 @@ export function bindAssemblyDrag(app) {
     app.sel = { type: "component", id: c.id };
     app.refreshSelectionHits();
   };
+  // L10 (SolidCraft): Komponente mit Gelenk am Gelenk ziehen – Wert im Bereich min … max, Kette und gekoppelte Gelenke gehen mit
+  const startJoint = (c) => {
+    const asm = asmOf(app), j = c.joint;
+    st.comp = c;
+    st.joint = { slide: j.kind === "schiebe" || (isCylinder(j) && st.shift), a0: (isCylinder(j) && st.shift) ? (j.s || 0) : (j.angle || 0) };
+    const dir = new THREE.Vector3();
+    app.viewer.camera.getWorldDirection(dir);
+    const d = v3.norm(j.d);
+    // Drehung: Ebene senkrecht zur Achse durch den Griffpunkt, außer man schaut fast seitlich auf die Achse
+    st.joint.edgeOn = !st.joint.slide && Math.abs(v3.dot(d, dir.toArray())) < 0.15;
+    st.plane = st.joint.slide || st.joint.edgeOn ? viewPlane(st.hit.point) : new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(...d), new THREE.Vector3(...st.hit.point));
+    st.p0 = st.hit.point;
+    st.movers = [c.id, ...jointFollowers(asm, c.id)];
+    st.active = true;
+    app.dragState = st;
+    app.viewer.showDofGlyph(null);
+    app.sel = { type: "component", id: c.id };
+    app.refreshSelectionHits();
+  };
+  const moveJoint = (e) => {
+    const asm = asmOf(app), c = st.comp, j = c.joint;
+    let r;
+    if (st.joint.edgeOn) {
+      const raw = st.joint.a0 - (e.clientX - st.x) * 0.5;
+      const v = Math.min(Math.max(raw, Math.min(j.min, j.max)), Math.max(j.min, j.max));
+      r = { value: v, raw, atLimit: Math.abs(v - raw) > 1e-9 };
+    } else {
+      const p = onPlane(e, st.plane);
+      if (!p) return;
+      r = dragJointValue(j, st.p0, p, st.joint.a0, { slide: st.joint.slide });
+    }
+    const step = Number(app.prefs?.get(st.joint.slide ? "baugruppe.schiebeSchritt" : "baugruppe.drehSchrittNah")) || 0;
+    let v = step > 0 ? Math.round(r.value / step) * step : r.value;
+    if (isCylinder(j) && st.joint.slide) v = Math.min(Math.max(v, Math.min(j.smin, j.smax)), Math.max(j.smin, j.smax));
+    else v = Math.min(Math.max(v, Math.min(j.min, j.max)), Math.max(j.min, j.max));
+    st.joint.value = v;
+    const map = new Map();
+    const others = [];
+    if (isCylinder(j) && st.joint.slide) { const D = slideDelta(j, v); for (const id of st.movers) map.set(id, D); }
+    else {
+      const cv = asm.motions?.length ? coupledJointValues(asm, c.id, v) : { values: new Map([[c.id, v]]), clamped: [] };
+      for (const [id, val] of cv.values) {
+        const X = compOf(asm, id), D = jointDelta(X.joint, val);
+        for (const m of id === c.id ? st.movers : [id, ...jointFollowers(asm, id)]) map.set(m, D);
+        if (id !== c.id) others.push(X.name);
+      }
+      st.joint.coupled = cv.values;
+      if (cv.clamped?.length) others.push(`Anschlag: ${cv.clamped.join(", ")}`);
+    }
+    app.viewer.setComponentDeltas(map);
+    const u = st.joint.slide ? "mm" : jointUnit(j);
+    st.label = `${st.joint.slide ? "Gelenkweg" : "Gelenkwinkel"} ${Math.round(v * 10) / 10} ${u}`;
+    const lim = st.joint.slide && isCylinder(j) ? [j.smin, j.smax] : [j.min, j.max];
+    app.setHint(`${c.name}: ${st.label} (Bereich ${lim[0]} … ${lim[1]} ${u}${r.atLimit ? ", am Anschlag" : ""})${st.movers.length > 1 ? ` – mit ${st.movers.length - 1} Teil(en)` : ""}${others.length ? " · " + others.join(", ") : ""} – Esc bricht ab`);
+  };
+  const commitJoint = (s) => {
+    const asm = asmOf(app), c = compOf(asm, s.cid), v = s.joint.value;
+    if (v === undefined || !c?.joint) return updateDofGlyph(app);
+    const comps = (ids) => ids.map((id) => compOf(asm, id)).filter(Boolean);
+    app.edit(s.joint.slide ? "Gelenkweg" : "Gelenkwinkel", () => {
+      if (isCylinder(c.joint) && s.joint.slide) return void setJointSlide(c, v, comps(s.movers.slice(1)));
+      for (const [id, val] of s.joint.coupled || new Map([[c.id, v]])) setJointAngle(compOf(asm, id), val, comps(id === c.id ? s.movers.slice(1) : jointFollowers(asm, id)));
+    });
+    app.refreshSelectionHits();
+    app.props.render();
+  };
   const move = (e) => {
     const asm = asmOf(app);
     if (!asm || !st?.active) return;
     let D = null;
+    if (st.joint) return moveJoint(e);
     if (st.alt) return quickPreview(app, st, e);
     const dx = e.clientX - st.x;
     const rotate = st.shift || !st.dof.trans;
@@ -257,6 +325,7 @@ export function bindAssemblyDrag(app) {
     const asm = asmOf(app);
     if (!commit || !asm) return updateDofGlyph(app);
     if (s.alt) return commitQuick(app, s);
+    if (s.joint) return commitJoint(s);
     if (!s.D) return updateDofGlyph(app);
     const c = compOf(asm, s.cid);
     app.edit(s.label?.startsWith("Drehen") ? "Komponente drehen" : "Komponente ziehen", () => { Object.assign(c, applyDelta(s.base, s.D)); });

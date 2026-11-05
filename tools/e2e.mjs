@@ -4615,6 +4615,35 @@ try {
     step("SolidCraft-Optionen: Grafik-Voreinstellung, Raster seitlich, Schwenken umkehren, Einpassen, ganze Körper wählen, Flächenkanten projizieren, neue Formen bemaßen",
       Object.values(es).every(Boolean) && ep.proj === 4 && ep.dims === 1, JSON.stringify({ es, ep }));
   }
+  // SolidCraft-Restpunkt L10: Komponente mit Gelenk im Modell ziehen (Bereich, Kette mit Kind-Gelenk)
+  {
+    await evalApp(() => { const a = window.__werkcad; a.dirty = false; return a.openExample(); });
+    await idle(120000);
+    await evalApp(() => window.__werkcad.openDoc("beispiel_bg"));
+    await idle(120000);
+    await page.waitForTimeout(1500);
+    await idle(120000);
+    const prep = await evalApp(() => {
+      const a = window.__werkcad, asm = a.activeDoc(), v = a.viewer;
+      const free = asm.components.filter((x) => !x.fixed && !x.joint && !x.pat);
+      const top = (c) => v.componentBox(c.id)?.[1][2] ?? -1e9;
+      const c = free.sort((p, q) => top(q) - top(p))[0], other = free.find((x) => x !== c);
+      const b = v.componentBox(c.id);
+      a.edit("Gelenk", () => { c.joint = { p: [b[0][0], b[0][1], 0], d: [0, 0, 1], angle: 0, min: -90, max: 90 }; if (other) other.joint = { p: [...other.pos], d: [0, 0, 1], angle: 0, min: 0, max: 45, parent: c.id }; });
+      v.setView("top", { animate: false }); v.fit();
+      return { id: c.id, other: other?.id, otherPos: other ? [...other.pos] : null };
+    });
+    await idle();
+    const R = await page.locator("#viewer canvas").first().boundingBox();
+    const s0 = await evalApp((id) => { const a = window.__werkcad, b = a.viewer.componentBox(id), c = b[0].map((x, i) => (x + b[1][i]) / 2); c[2] = b[1][2]; return a.viewer.worldToScreen(c); }, prep.id);
+    await page.mouse.move(R.x + s0[0], R.y + s0[1]); await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(R.x + s0[0] - i * 8, R.y + s0[1] + i * 12);
+    await page.mouse.up();
+    await idle();
+    const jd = await evalApp(([id, oid]) => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === id), o = asm.components.find((x) => x.id === oid); return { angle: c.joint.angle, otherPos: o ? [...o.pos] : null, undo: a.undoStack.at(-1)?.label || a.undoStack.at(-1)?.[0] || null }; }, [prep.id, prep.other]);
+    step("Gelenk im Modell ziehen: Wert im Bereich, Kind-Gelenk geht mit",
+      Math.abs(jd.angle) > 5 && jd.angle >= -90 && jd.angle <= 90 && jd.undo === "Gelenkwinkel" && (!prep.other || Math.hypot(jd.otherPos[0] - prep.otherPos[0], jd.otherPos[1] - prep.otherPos[1]) > 1), JSON.stringify({ prep, jd }));
+  }
   // SolidCraft-Abgleich E5: Kunststoffteil (Schraubdom mit Rippen an Skizzenpunkten), Regel aus den Einstellungen
   {
     await evalApp(() => window.__werkcad.newPart("Kunststoff"));

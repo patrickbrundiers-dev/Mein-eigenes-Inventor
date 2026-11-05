@@ -68,7 +68,7 @@ import { bodiesMass, hasOwnDensity, massOverride, orderBomRows } from "../core/m
 import { decomposePlacement, matMul, placementMatrix, matApply, matApplyDir, rotationAbout } from "../core/geom.js";
 import { motionStudyDialog, findJointLimits } from "./bewegungsstudie.js";
 import { presetFrom, applyPreset, holeDiagramSvg } from "../core/bohrvorlagen.js";
-import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat } from "../core/kinematik.js";
+import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat, canChainTo } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
 import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
 import { linkedPart, asmParamValues } from "../core/baugruppenparameter.js";
@@ -2228,13 +2228,18 @@ export class Props {
       ss.addEventListener("change", () => app.edit("Gelenkweg", () => { setJointSlide(c, Number(ss.value), movers.slice(1).map((id) => asm.components.find((x) => x.id === id)).filter(Boolean)); }));
       slideRow = [this.field("Weg", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, ss, so)), h("p", { class: "hint" }, `Weg ${fmtNum(j.smin, 0)} … ${fmtNum(j.smax, 0)} mm entlang der Achse`)];
     }
+    // Gelenkkette (L10): Gelenk hängt an einer anderen Komponente und geht samt Achse mit, wenn diese sich bewegt
+    const par = h("select", { class: "inp joint-parent" }, h("option", { value: "" }, "– (steht fest)"),
+      ...asm.components.filter((x) => x.id !== c.id && !x.pat && canChainTo(asm, c.id, x.id)).map((x) => h("option", { value: x.id, selected: j.parent === x.id ? true : undefined }, x.name)));
+    par.addEventListener("change", () => app.edit("Gelenk hängt an", () => { if (par.value) j.parent = par.value; else delete j.parent; }));
     return this.section(jointLabel(j),
       this.field(slide ? "Weg" : "Winkel", h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, slider, out)),
       lim("von", "min"), lim("bis", "max"),
       slideRow,
+      this.field("Hängt an", par),
       h("dl", { class: "kv" }, slide ? null : h("dt", {}, "Achse durch"), slide ? null : h("dd", {}, f(j.p)), h("dt", {}, "Richtung"), h("dd", {}, f(j.d)),
         movers.length > 1 ? h("dt", {}, "Geht mit") : null, movers.length > 1 ? h("dd", {}, movers.slice(1).map((id) => asm.components.find((x) => x.id === id)?.name).join(", ")) : null),
-      h("p", { class: "hint" }, "Abhängigkeiten verschieben diese Komponente nicht mehr; daran hängende Teile gehen mit."),
+      h("p", { class: "hint" }, "Abhängigkeiten verschieben diese Komponente nicht mehr; daran hängende Teile gehen mit. Im Modell am Teil ziehen bewegt das Gelenk im Bereich."),
       h("div", { class: "btn-row" },
         h("button", { class: "btn", onclick: () => this.animateJoints([c.id]) }, "Bewegen"),
         h("button", { class: "btn", onclick: () => this.jointSweepCheck(c) }, "Kollision im Bereich prüfen"),

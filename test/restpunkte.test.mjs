@@ -30,3 +30,32 @@ test("L8: Modelltasten aus Skizzen heraus nur mit Einstellung", () => {
   if (inSketch) assert.equal(withPref.id, inSketch.id);
   else assert.equal(withPref.id, "part.extrude");
 });
+
+test("L10: Ziehen am Gelenk – Wert aus Mausweg, im Bereich", async () => {
+  const K = await import("../src/core/kinematik.js");
+  const j = K.defaultJoint([0, 0, 0], [0, 0, 1], { min: -30, max: 90 });
+  let r = K.dragJointValue(j, [100, 0, 0], [0, 100, 0]);
+  assert.ok(Math.abs(r.value - 90) < 1e-9 && !r.atLimit);
+  r = K.dragJointValue(j, [100, 0, 0], [0, -100, 0]);
+  assert.equal(r.value, -30); assert.ok(r.atLimit);
+  const s = K.defaultJoint([0, 0, 0], [1, 0, 0], { kind: "schiebe", min: 0, max: 50 });
+  assert.equal(K.dragJointValue(s, [0, 0, 0], [20, 7, 0]).value, 20);
+  assert.equal(K.dragJointValue(s, [0, 0, 0], [80, 0, 0]).value, 50);
+});
+
+test("L10: Gelenkkette – Kind-Gelenk geht samt Achse mit, Vorfahren bleiben", async () => {
+  const K = await import("../src/core/kinematik.js");
+  const arm = { id: "a", name: "Arm", pos: [0, 0, 0], rot: [0, 0, 0], joint: K.defaultJoint([0, 0, 0], [0, 0, 1], { min: -180, max: 180 }) };
+  const hand = { id: "b", name: "Hand", pos: [100, 0, 0], rot: [0, 0, 0], joint: { ...K.defaultJoint([100, 0, 0], [0, 0, 1], { min: -90, max: 90 }), parent: "a" } };
+  const asm = { components: [arm, hand], constraints: [] };
+  assert.deepEqual(K.jointFollowers(asm, "a"), ["b"]);
+  assert.deepEqual(K.jointFollowers(asm, "b"), []);
+  assert.equal(K.canChainTo(asm, "a", "b"), false);
+  K.setJointAngle(arm, 90, [hand]);
+  assert.ok(Math.abs(hand.pos[0]) < 1e-6 && Math.abs(hand.pos[1] - 100) < 1e-6);
+  assert.ok(Math.abs(hand.joint.p[1] - 100) < 1e-6);
+  // Hand dreht jetzt um die mitgewanderte Achse
+  const before = [...hand.pos];
+  K.setJointAngle(hand, 45, []);
+  assert.ok(Math.hypot(hand.pos[0] - before[0], hand.pos[1] - before[1]) < 1e-6);
+});
