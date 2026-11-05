@@ -1,15 +1,27 @@
-**Neu in 0.41.0**
+**Neu in 0.42.0**
 
-PBCAD bringt Bewegungsuntersuchung, Flächenprüfung, Kunststoffteile und weitere Datenfunktionen.
+PBCAD lässt sich jetzt viel freier einstellen, und die Befehle haben mehr Optionen.
 
-- **Baugruppe und Bewegung:**
-  - Neue Bewegungen: Zahnrad, Zahnstange, Schraube, Nocken und Bewegungsverknüpfung.
-  - Bewegungsuntersuchung mit Diagramm, Bewegungsbahn, Punkt anfahren, Kollisionsprüfung und Abspielen.
-  - Den Gelenkursprung kannst du ändern, und ein Feature lässt sich in ein anderes Bauteil verschieben.
-- **Flächen prüfen:** Zebra, Umgebung, Krümmungskarte, Krümmungskamm, Isokurven, Silhouette, Kantenstetigkeit und Zugänglichkeit. Neu ist auch »Körper vergleichen«.
-- **Kunststoffteile:** Schraubdom mit Rippen, Rastnase, Lippe/Nut und Stützfuß, jeweils mit Kunststoffregeln.
-- **Datei und Daten:**
-  - An Slicer senden, Auflagefläche und URDF-Paket.
-  - STL als Volumenkörper, Kanten und Flächen auflisten.
-  - Bild nachzeichnen, Punktwolke und Anzeigeeinheit.
-- **Oberfläche:** Einstellungsprofile, Absturzberichte, Leistungsprofil, Blickwinkel, Dauerdrehen und Parametergraph. Parameter lassen sich verschieben, und ihre Verwendungen werden angezeigt.
+- **Oberfläche:**
+  - 14 Farbthemen, darunter Nord, Tokyo Night, Gruvbox, Solarized, Blueprint und Hoher Kontrast.
+  - Ein kompakter Fensteraufbau, ein Menüband nur mit Symbolen und eine eigene Hintergrundfarbe.
+  - Die Navigationsleiste steht wahlweise links, mittig oder rechts, kompakt oder blass. Die Statusleiste lässt sich ausblenden.
+  - Weitere Optionen: Farben für Farbsehschwäche, Schrift, Akzentfarbe und durchscheinende Leisten.
+- **Navigation:**
+  - Die Pfeiltasten drehen um 15° (mit Umschalt um 90°), Strg+Pfeile schwenken, und Strg+1 bis 7 öffnen die Standardansichten.
+  - Neu sind auch Drehteller, umkehrbare Zoomrichtung und sanftes Zoomen. Ein Doppelklick mit der mittleren Taste zeigt alles.
+  - 3D-Maus (SpaceMouse) mit eigener Einstellungsseite.
+- **Skizze:**
+  - Die Ansicht dreht sich beim Öffnen senkrecht auf die Skizze (abschaltbar) und kehrt beim Beenden zurück. Strg+8 öffnet die Skizzenansicht.
+  - Hilfslinien gehen auch von Linienmitten aus, und an der Kreuzung zweier Hilfslinien wird gefangen. Mit gedrückter Alt-Taste fängt nichts.
+  - L, R und C starten die zuletzt benutzte Variante.
+- **Mehr Befehlsoptionen:**
+  - Extrusion mit Verjüngung, Versatz, Start ab Fläche, Bis Fläche und Dünnwand. Den Vorgang (Differenz, Vereinigen oder neuer Körper) wählt sie selbst.
+  - Bohrung mit Bohrgrund, Bohrbild und eigenen Vorlagen.
+  - Rundung mit Sehne oder Zwischenradien, Fase mit zwei Abständen oder Winkel, Skalieren je Achse und Rohr entlang Pfad.
+  - Blech: Falten an einer Skizzenlinie, Lasche mit »Höhe gemessen ab«, Blechregeln mit Spalt und Winkel in der DXF.
+- **Auswahl und Baugruppe:**
+  - Ein erneuter Klick an derselben Stelle wählt das Nächste darunter, und per Rechtsklick gibt es »Andere auswählen…«.
+  - Gelenk »Grenzen finden«. Verknüpfte Teile lassen sich an Ort und Stelle bearbeiten und neu verknüpfen.
+  - Kollision mit Mindestabstand und ein Schwerpunkt mit Hauptachsen.
+- **Weiteres:** Variantentabelle mit Werkstoff, Parameterstudie, Zwischenstände, Schnitt an beliebiger Ebene und STEP-Import »Aufstellen« (Y oben → Z oben).
