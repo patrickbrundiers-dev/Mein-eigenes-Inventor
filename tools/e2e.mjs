@@ -4646,6 +4646,20 @@ try {
     const jd = await evalApp(([id, oid]) => { const a = window.__werkcad, asm = a.activeDoc(), c = asm.components.find((x) => x.id === id), o = asm.components.find((x) => x.id === oid); return { angle: c.joint.angle, otherPos: o ? [...o.pos] : null, undo: a.undoStack.at(-1)?.label || a.undoStack.at(-1)?.[0] || null }; }, [prep.id, prep.other]);
     step("Gelenk im Modell ziehen: Wert im Bereich, Kind-Gelenk geht mit",
       Math.abs(jd.angle) > 5 && jd.angle >= -90 && jd.angle <= 90 && jd.undo === "Gelenkwinkel" && (!prep.other || Math.hypot(jd.otherPos[0] - prep.otherPos[0], jd.otherPos[1] - prep.otherPos[1]) > 1), JSON.stringify({ prep, jd }));
+    // L12: 3MF je Komponente ein Objekt, Auswahl im Dialog
+    const tm = await evalApp(async () => {
+      const a = window.__werkcad, wait = (ms) => new Promise((r) => setTimeout(r, ms)), orig = a.files.saveBinary;
+      let saved = null; a.files.saveBinary = async (data) => { saved = data; return true; };
+      try {
+        const p = a.files.export3mf(); await wait(1500);
+        const groups = document.querySelectorAll(".dialog .print-groups input").length;
+        document.querySelectorAll(".dialog .print-groups input")[0]?.click();
+        [...document.querySelectorAll(".dialog footer .btn")].find((b) => b.textContent === "Speichern")?.click();
+        await p; await wait(300);
+        return { groups, comps: a.activeDoc().components.filter((c) => !c.hidden).length, objects: saved ? (new TextDecoder().decode(saved).match(/<object /g) || []).length : -1 };
+      } finally { a.files.saveBinary = orig; }
+    });
+    step("3MF: je Komponente ein Objekt, Komponenten wählbar", tm.groups === tm.comps && tm.objects === tm.comps - 1, JSON.stringify(tm));
   }
   // SolidCraft-Abgleich E5: Kunststoffteil (Schraubdom mit Rippen an Skizzenpunkten), Regel aus den Einstellungen
   {

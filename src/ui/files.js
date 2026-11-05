@@ -20,7 +20,7 @@ import { orderRows, orderCsv, orderPages, ORDER_GROUPS } from "../core/bestellli
 import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
 import { decomposePlacement } from "../core/geom.js";
 import { buildXlsx, zipFiles } from "../core/xlsx.js";
-import { writeObj, write3mf } from "../core/meshexport.js";
+import { writeObj, write3mf, groupMeshes, meshGroups } from "../core/meshexport.js";
 import { mappeHtml, listPages, mappeName } from "../core/mappe.js";
 import { checkBeforeMappe, openPointsPage } from "./pruefung.js";
 import { partTextVars } from "../core/schrift.js";
@@ -459,7 +459,7 @@ export class Files {
     if (!items?.length) { toast("OBJ/3MF gibt es für Bauteile und Baugruppen"); return null; }
     const list = await this.app.kernel.call("ifcData", { items, tolerance: acc, simplify: simplifyOf(d) });
     const rgb = (c) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || "")); const n = m ? parseInt(m[1], 16) : 0xb4b9c0; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
-    return { d, meshes: list.filter((x) => x.vertices?.length).map((x) => ({ name: x.name, pos: x.vertices, idx: x.triangles, color: rgb(x.color) })) };
+    return { d, meshes: list.filter((x) => x.vertices?.length).map((x) => ({ name: x.name, group: x.item || x.name, groupName: x.item || x.name, pos: x.vertices, idx: x.triangles, color: rgb(x.color) })) };
   }
   meshList() {
     const app = this.app, d = app.activeDoc();
@@ -481,8 +481,9 @@ export class Files {
         pos[i * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
         pos[i * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
       }
-      const col = c.material.color;
-      out.push({ name: c.name, pos, idx: g.index ? Array.from(g.index.array) : null, color: [col.r, col.g, col.b] });
+      const col = c.material.color, key = c.userData.key;
+      const comp = d.kind === "assembly" && String(key).startsWith("comp:");
+      out.push({ name: c.name, group: comp ? key : c.name, groupName: comp ? comps.get(key.slice(5)) || c.name : c.name, pos, idx: g.index ? Array.from(g.index.array) : null, color: [col.r, col.g, col.b] });
     }
     if (!out.length) { toast("Nichts zu exportieren"); return null; }
     return { d, meshes: out };
@@ -495,13 +496,44 @@ export class Files {
       await this.saveText(writeObj(r.meshes), safeName(r.d.number || r.d.name) + ".obj", "model/obj", [{ name: "OBJ", extensions: ["obj"] }]);
     });
   }
+  /**
+   * 3MF / An Slicer (SolidCraft-Abgleich L12): Objekte je Komponente, je Körper oder als eins; Auswahl der Komponenten,
+   * bei mehreren Slicern welcher. Ein einzelnes Objekt mit einem Slicer geht ohne Rückfrage. Rückgabe { meshes, slicer } | null.
+   */
+  async printDialog(r, { slicers = [], send = false } = {}) {
+    const P = this.app.prefs;
+    const groups = meshGroups(r.meshes);
+    let mode = P.get("dateien.dreiMfObjekte") || "komponente";
+    if (groups.length <= 1 && slicers.length <= 1) return { meshes: groupMeshes(r.meshes, mode, { title: r.d.name }), slicer: slicers[0] || null };
+    const chosen = new Set(groups.map((g) => g.key));
+    let slicer = slicers[0] || null;
+    const info = h("p", { class: "hint" });
+    const upd = () => { const n = groupMeshes(r.meshes, mode, { only: chosen, title: r.d.name }).length; info.textContent = `${n} Objekt${n === 1 ? "" : "e"} im 3MF${send ? " – der Slicer legt sie einzeln aufs Druckbett" : ""}`; };
+    const modeSel = h("select", { class: "inp print-mode" }, ...[["komponente", r.d.kind === "assembly" ? "je Komponente ein Objekt" : "je Körper ein Objekt"], ["koerper", "je Körper ein Objekt (auch in Komponenten)"], ["eins", "alles ein Objekt"]]
+      .filter(([v], i, a) => r.d.kind === "assembly" || v !== "koerper").map(([v, l]) => h("option", { value: v, selected: v === mode ? true : undefined }, l)));
+    modeSel.addEventListener("change", () => { mode = modeSel.value; P.set("dateien.dreiMfObjekte", mode); upd(); });
+    const boxes = groups.length > 1 ? h("div", { class: "print-groups", style: { maxHeight: "260px", overflow: "auto" } }, ...groups.map((g) => h("label", { class: "chk", style: { display: "block" } },
+      h("input", { type: "checkbox", checked: true, "data-key": g.key, onchange: (e) => { if (e.target.checked) chosen.add(g.key); else chosen.delete(g.key); upd(); } }), `${g.name}${g.bodies > 1 ? ` (${g.bodies} Körper)` : ""}`))) : null;
+    const slSel = slicers.length > 1 ? h("select", { class: "inp print-slicer" }, ...slicers.map((x, i) => h("option", { value: String(i) }, x.name))) : null;
+    slSel?.addEventListener("change", () => { slicer = slicers[Number(slSel.value)]; });
+    upd();
+    const ok = await new Promise((res) => modal({ title: send ? "An Slicer senden" : "3MF (3D-Druck)", width: "520px", onClose: res,
+      body: h("div", {}, h("label", { class: "row" }, "Objekte ", modeSel), boxes ? h("h4", {}, "Komponenten") : null, boxes,
+        boxes ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => { boxes.querySelectorAll("input").forEach((x) => { x.checked = true; chosen.add(x.dataset.key); }); upd(); } }, "Alle"), h("button", { class: "btn", onclick: () => { boxes.querySelectorAll("input").forEach((x) => { x.checked = false; }); chosen.clear(); upd(); } }, "Keine")) : null,
+        slSel ? h("label", { class: "row" }, "Slicer ", slSel) : null, info),
+      buttons: [{ label: "Abbrechen" }, { label: send ? "Senden" : "Speichern", primary: true, value: true, run: () => (chosen.size ? true : (toast("Mindestens eine Komponente wählen"), false)) }] }));
+    if (!ok) return null;
+    return { meshes: groupMeshes(r.meshes, mode, { only: chosen, title: r.d.name }), slicer };
+  }
   /** An Slicer senden (SolidCraft-Abgleich E5): 3MF im eingestellten Slicer öffnen (Desktop), sonst 3MF speichern */
-  async sendToSlicer(slicer = null) {
+  async sendToSlicer(slicer = null, { ask = true } = {}) {
     const r = await this.meshListExact();
     if (!r) return;
-    const data = write3mf(r.meshes, { title: r.d.name });
     const list = this.app.prefs.get("dateien.slicer") || [];
-    const s = slicer || list[0] || null;
+    const pick = ask ? await this.printDialog(r, { slicers: slicer ? [] : list, send: true }) : { meshes: groupMeshes(r.meshes, this.app.prefs.get("dateien.dreiMfObjekte") || "komponente", { title: r.d.name }), slicer: null };
+    if (!pick) return;
+    const data = write3mf(pick.meshes, { title: r.d.name });
+    const s = slicer || pick.slicer || list[0] || null;
     if (!this.bridge?.openInSlicer) {
       await this.saveBinary(data, safeName(r.d.number || r.d.name) + ".3mf", [{ name: "3MF (3D-Druck)", extensions: ["3mf"] }]);
       return toast("3MF gespeichert – im Slicer öffnen (direkt senden geht in der Desktop-Version)", { timeout: 6000 });
@@ -539,11 +571,13 @@ export class Files {
     return p;
   }
   /** 3MF (F6): 3D-Druck mit Einheit mm und Farben, öffnet in PrusaSlicer, Cura, Bambu Studio */
-  async export3mf() {
+  async export3mf({ ask = true } = {}) {
     const r = await this.meshListExact();
     if (!r) return;
+    const pick = ask ? await this.printDialog(r) : { meshes: groupMeshes(r.meshes, this.app.prefs.get("dateien.dreiMfObjekte") || "komponente", { title: r.d.name }) };
+    if (!pick) return;
     await this.withBusy("3MF-Export", async () => {
-      await this.saveBinary(write3mf(r.meshes, { title: r.d.name }), safeName(r.d.number || r.d.name) + ".3mf", [{ name: "3MF (3D-Druck)", extensions: ["3mf"] }]);
+      await this.saveBinary(write3mf(pick.meshes, { title: r.d.name }), safeName(r.d.number || r.d.name) + ".3mf", [{ name: "3MF (3D-Druck)", extensions: ["3mf"] }]);
     });
   }
   /** Jedes Profil/Rohr als eigene STEP-Datei – direkt für die Rohrlaser-Software */

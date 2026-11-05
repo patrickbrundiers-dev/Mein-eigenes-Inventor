@@ -82,3 +82,17 @@ test("L11: Stücklistentyp untrennbar/Kaufteil und Garnituren", async () => {
   const g = S.garniturGroups(occ, (d) => ["s", "w", "n"].includes(d.id) ? d.id.toUpperCase() : null);
   assert.deepEqual([...g.get("S")], [["W", 2], ["N", 1]]);
 });
+
+test("L12: 3MF-Objekte je Komponente, Auswahl", async () => {
+  const M = await import("../src/core/meshexport.js");
+  const tri = (x, g) => ({ name: "K", group: g, groupName: g.toUpperCase(), pos: [x, 0, 0, x + 1, 0, 0, x, 1, 0], idx: null, color: [1, 0, 0] });
+  const ms = [tri(0, "a"), tri(5, "a"), tri(10, "b")];
+  assert.deepEqual(M.meshGroups(ms).map((g) => [g.key, g.bodies]), [["a", 2], ["b", 1]]);
+  const per = M.groupMeshes(ms, "komponente");
+  assert.equal(per.length, 2); assert.equal(per[0].name, "A"); assert.deepEqual(per[0].idx, [0, 1, 2, 3, 4, 5]);
+  assert.equal(M.groupMeshes(ms, "koerper").length, 3);
+  assert.equal(M.groupMeshes(ms, "eins", { title: "T" })[0].name, "T");
+  assert.equal(M.groupMeshes(ms, "komponente", { only: new Set(["b"]) }).length, 1);
+  const z = M.write3mf(per, { title: "x" });
+  assert.ok(z.length > 100);
+});

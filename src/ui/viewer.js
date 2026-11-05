@@ -783,6 +783,7 @@ export class Viewer {
       c.matrixAutoUpdate = false;
       c.matrix.copy(m.matrixWorld);
       c.name = nameOf(p.key, p.body) || `${p.key} ${p.body + 1}`;
+      c.userData.key = p.key;
       root.add(c);
     }
     return root;
