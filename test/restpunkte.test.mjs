@@ -59,3 +59,26 @@ test("L10: Gelenkkette – Kind-Gelenk geht samt Achse mit, Vorfahren bleiben", 
   K.setJointAngle(hand, 45, []);
   assert.ok(Math.hypot(hand.pos[0] - before[0], hand.pos[1] - before[1]) < 1e-6);
 });
+
+test("L11: Stücklistentyp untrennbar/Kaufteil und Garnituren", async () => {
+  const S = await import("../src/core/subasm.js");
+  const p = (id) => ({ id, kind: "part", name: id });
+  const docs = { a: p("a"), b: p("b"), s: p("s"), w: p("w"), n: p("n"),
+    weld: { id: "weld", kind: "assembly", name: "Rahmen", bomStructure: "untrennbar", components: [{ id: "x1", part: "a", pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "x2", part: "b", pos: [0, 0, 0], rot: [0, 0, 0] }] },
+    buy: { id: "buy", kind: "assembly", name: "Motor", bomStructure: "kaufteil", components: [{ id: "y1", part: "a", pos: [0, 0, 0], rot: [0, 0, 0] }] } };
+  const docOf = (id) => docs[id];
+  const top = { id: "top", kind: "assembly", components: [
+    { id: "c1", part: "weld", pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "c2", part: "buy", pos: [0, 0, 0], rot: [0, 0, 0] },
+    { id: "g1", part: "s", garnitur: "G", garniturLead: true, pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "g2", part: "w", garnitur: "G", pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "g3", part: "w", garnitur: "G", pos: [0, 0, 0], rot: [0, 0, 0] }, { id: "g4", part: "n", garnitur: "G", pos: [0, 0, 0], rot: [0, 0, 0] },
+    { id: "w9", part: "w", pos: [0, 0, 0], rot: [0, 0, 0] }] };
+  const occ = S.flattenAssembly(top, docOf, { bom: true, units: true });
+  assert.deepEqual(occ.filter((o) => o.unit).map((o) => o.part.id), ["weld", "buy"]);
+  assert.equal(S.flattenAssembly(top, docOf, { bom: true }).filter((o) => o.part.id === "a").length, 2);
+  const st = S.structureBom(top, docOf);
+  assert.ok(st.some((r) => r.level === "1.1")); // untrennbar: Inhalt in der Struktur
+  assert.ok(!st.some((r) => r.level.startsWith("2."))); // Kaufteil: nicht aufgelöst
+  assert.equal(st.find((r) => r.doc.id === "buy").bom, "kaufteil");
+  assert.equal(S.modularBom(top, docOf).length, 2);
+  const g = S.garniturGroups(occ, (d) => ["s", "w", "n"].includes(d.id) ? d.id.toUpperCase() : null);
+  assert.deepEqual([...g.get("S")], [["W", 2], ["N", 1]]);
+});

@@ -869,6 +869,9 @@ try {
   const solved = await evalApp(() => { const a = window.__werkcad, asm = a.activeDoc(); a.solveAssemblyConstraints(asm); return Object.keys(a.asmErrors || {}).filter((id) => asm.constraints.find((k) => k.id === id)?.type === "einfuegen").length; });
   await evalApp(() => { const a = window.__werkcad; a.sel = { type: "component", id: "cLoch" }; a.viewer.fit?.(); });
   await shot("normteil-an-bohrung");
+  // L11: Scheiben und Mutter stehen in der Stückliste unter der Schraube
+  const gar = await evalApp(() => { const a = window.__werkcad; a.props.bomDialog(); const sub = [...document.querySelectorAll(".dialog tr.bom-sub")].map((tr) => tr.children[0].textContent + " " + tr.children[3].textContent); document.querySelector(".dialog footer .btn:not(.primary)")?.click(); return sub; });
+  step("Stückliste: Garniturteile unter der Schraube", gar.length === 2 && gar.every((x) => /^\d+\.\d /.test(x)) && gar.some((x) => / 2$/.test(x)), JSON.stringify(gar));
   step("Normteil-Bibliothek: Suche, Vorschau, Garnitur an Bohrung", lib.title === "Zylinderschraube mit Innensechskant" && lib.svg > 2 && holePlate === "normHole"
     && hole.names?.join("|") === "Scheibe ISO 7089 - 12 - 200 HV|Sechskantschraube ISO 4017 - M12 x 30 - 8.8|Scheibe ISO 7089 - 12 - 200 HV|Sechskantmutter ISO 4032 - M12 - 8" && solved === 0,
     JSON.stringify({ lib, hole, solved }));

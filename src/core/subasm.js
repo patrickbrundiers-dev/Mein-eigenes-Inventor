@@ -12,7 +12,7 @@ export const MAX_DEPTH = 8;
  * Rückgabe [{ part, matrix (Welt), inner (Bauteil im System der obersten Komponente), top (Komponente der
  * obersten Ebene), path: [Komponentennamen] }]
  */
-export function flattenAssembly(asm, docOf, { includeHidden = false, bom = false } = {}) {
+export function flattenAssembly(asm, docOf, { includeHidden = false, bom = false, units = false } = {}) {
   const out = [];
   const walk = (a, M, top, inner, path, stack) => {
     if (stack.length > MAX_DEPTH) return;
@@ -25,7 +25,9 @@ export function flattenAssembly(asm, docOf, { includeHidden = false, bom = false
       const Mw = matMul(M, P);
       const t = top || c;
       const inn = top ? matMul(inner, P) : null; // auf oberster Ebene: Einheitsmatrix (null)
-      if (d.kind === "part") out.push({ part: d, matrix: Mw, inner: inn, top: t, path: [...path, c.name || d.name] });
+      if (d.kind === "part") out.push({ part: d, matrix: Mw, inner: inn, top: t, comp: c, path: [...path, c.name || d.name] });
+      // units: untrennbare und Kauf-Baugruppen als ein Vorkommen (Mengenstückliste, L11)
+      else if (units && isBomUnit(d)) out.push({ part: d, unit: true, matrix: Mw, inner: inn, top: t, comp: c, path: [...path, c.name || d.name] });
       else if (d.kind === "assembly" && !stack.includes(d.id)) walk(d, Mw, t, top ? inn : IDENT, [...path, c.name || d.name], [...stack, d.id]);
     }
   };
@@ -44,9 +46,15 @@ export const COMPONENT_BOM = [
 export const ASSEMBLY_BOM = [
   { value: "normal", label: "Normal" },
   { value: "phantom", label: "Phantom (Teile eine Ebene höher)" },
+  { value: "untrennbar", label: "Untrennbar (in der Mengenstückliste eine Zeile)" },
+  { value: "kaufteil", label: "Kaufteil (eine Zeile, Inhalt nicht aufgelöst)" },
 ];
 export const isReference = (c) => c?.bom === "referenz";
 export const isPhantom = (d) => d?.kind === "assembly" && d.bomStructure === "phantom";
+// SolidCraft-Abgleich L11: untrennbar (geschweißt, genietet) = in der Strukturstückliste mit Inhalt, in der
+// Mengenstückliste als eine Zeile; Kaufteil = überall eine Zeile, Inhalt wird nicht aufgelöst.
+export const isBomUnit = (d) => d?.kind === "assembly" && (d.bomStructure === "untrennbar" || d.bomStructure === "kaufteil");
+export const isBoughtAsm = (d) => d?.kind === "assembly" && d.bomStructure === "kaufteil";
 
 /** Enthält Baugruppe a (direkt oder tiefer) das Dokument id? – verhindert Zyklen beim Einfügen */
 export function containsDoc(a, id, docOf, depth = 0) {
@@ -94,8 +102,8 @@ export function structureBom(asm, docOf) {
   const walk = (a, prefix, depth, mult, stack) => {
     directChildren(a, docOf).forEach((ch, i) => {
       const level = prefix ? `${prefix}.${i + 1}` : String(i + 1);
-      rows.push({ level, depth, doc: ch.doc, qty: ch.qty, total: ch.qty * mult, kind: ch.doc.kind });
-      if (ch.doc.kind === "assembly" && depth < MAX_DEPTH && !stack.includes(ch.doc.id)) walk(ch.doc, level, depth + 1, ch.qty * mult, [...stack, ch.doc.id]);
+      rows.push({ level, depth, doc: ch.doc, qty: ch.qty, total: ch.qty * mult, kind: ch.doc.kind, ...(ch.doc.bomStructure && ch.doc.kind === "assembly" ? { bom: ch.doc.bomStructure } : {}) });
+      if (ch.doc.kind === "assembly" && !isBoughtAsm(ch.doc) && depth < MAX_DEPTH && !stack.includes(ch.doc.id)) walk(ch.doc, level, depth + 1, ch.qty * mult, [...stack, ch.doc.id]);
     });
   };
   walk(asm, "", 0, 1, [asm.id]);
@@ -110,7 +118,7 @@ export function modularBom(asm, docOf) {
     seen.add(a.id);
     const rows = directChildren(a, docOf).map((ch, i) => ({ pos: i + 1, doc: ch.doc, qty: ch.qty, kind: ch.doc.kind }));
     out.push({ asm: a, rows });
-    for (const r of rows) if (r.kind === "assembly") visit(r.doc, depth + 1);
+    for (const r of rows) if (r.kind === "assembly" && !isBoughtAsm(r.doc)) visit(r.doc, depth + 1);
   };
   visit(asm, 0);
   return out;
@@ -143,4 +151,30 @@ export function replaceComponents(asm, ids, newDoc, docOf) {
 export function sameOccurrences(asm, id) {
   const c = (asm.components || []).find((x) => x.id === id);
   return c ? asm.components.filter((x) => x.part === c.part).map((x) => x.id) : [];
+}
+
+/**
+ * Garnituren (L11, SolidCraft »Unterteile unter Schraube«): Komponenten mit gleichem c.garnitur bilden eine Garnitur,
+ * c.garniturLead ist die Schraube. occ = Vorkommen aus flattenAssembly, desig(part) → Normbezeichnung oder null.
+ * Rückgabe Map leadDesignation → Map memberDesignation → Anzahl (nur Mitglieder, ohne die Schraube selbst).
+ */
+export function garniturGroups(occ, desig) {
+  const sets = new Map();
+  for (const o of occ) {
+    const g = o.comp?.garnitur;
+    if (!g || o.unit) continue;
+    const key = o.path.slice(0, -1).join("/") + "|" + g;
+    if (!sets.has(key)) sets.set(key, { lead: null, members: [] });
+    const d = desig(o.part);
+    if (!d) continue;
+    if (o.comp.garniturLead) sets.get(key).lead = d; else sets.get(key).members.push(d);
+  }
+  const out = new Map();
+  for (const { lead, members } of sets.values()) {
+    if (!lead || !members.length) continue;
+    const m = out.get(lead) || new Map();
+    for (const d of members) m.set(d, (m.get(d) || 0) + 1);
+    out.set(lead, m);
+  }
+  return out;
 }

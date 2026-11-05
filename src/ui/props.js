@@ -70,7 +70,7 @@ import { motionStudyDialog, findJointLimits } from "./bewegungsstudie.js";
 import { presetFrom, applyPreset, holeDiagramSvg } from "../core/bohrvorlagen.js";
 import { defaultJoint, jointDelta, setJointAngle, swingAngle, sweepAngles, jointFollowers, isSlide, isCylinder, slideDelta, setJointSlide, jointUnit, jointLabel, coupledJointValues, contactRange, videoFormat, canChainTo } from "../core/kinematik.js";
 import { placeDialog, mirrorDialog, fuegepunkteSection, beginPlacing } from "./baugruppe.js";
-import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc } from "../core/subasm.js";
+import { flattenAssembly, partCounts, canInsert, structureBom, modularBom, replaceComponents, sameOccurrences, containsDoc, garniturGroups } from "../core/subasm.js";
 import { linkedPart, asmParamValues } from "../core/baugruppenparameter.js";
 import { pushParamsDialog, invalidateLinked, explosionDialog, positionsSection, explosionSection, asmParamsSection } from "./darstellungen.js";
 import { materialOf, materialList } from "../core/materials.js";
@@ -2861,6 +2861,7 @@ export class Props {
           h("button", { class: "btn", onclick: () => sortBy("number") }, "Nach Teilenummer"),
           h("button", { class: "btn", onclick: () => sortBy("name") }, "Nach Benennung"),
           asm.bomOrder?.length ? h("button", { class: "btn", onclick: () => { app.edit("Stückliste Reihenfolge", () => { delete asm.bomOrder; }, { rebuild: false }); show("menge"); } }, "Wie eingefügt") : null),
+          flattenAssembly(asm, docOf, { bom: true }).some((o) => o.comp?.garnitur) ? h("label", { class: "chk bom-garnitur" }, h("input", { type: "checkbox", checked: asm.bomGarnitur !== false ? true : undefined, onchange: (e) => { app.edit("Garnituren in der Stückliste", () => { if (e.target.checked) delete asm.bomGarnitur; else asm.bomGarnitur = false; }, { rebuild: false }); show("menge"); } }), "Scheiben und Muttern unter der Schraube (Garnitur)") : null,
           h("p", { class: "hint" }, "Die Reihenfolge bleibt gespeichert und bestimmt die Positionsnummern in Zeichnung, Listen und Excel. Normteile stehen immer am Ende. Masse von Hand (z. B. Kaufteil) im Bauteil unter Masse-Eigenschaften."));
       }
     };
@@ -2983,10 +2984,18 @@ export function unionBox(boxes) {
 /** Mengenstückliste: alle Bauteile der Baugruppe einschließlich der Unterbaugruppen, summiert */
 const resolvedOrNull = (fn) => { try { return fn(); } catch { return null; } };
 
-export function bomRows(app, asm) {
+export function bomRows(app, asm, depth = 0) {
   const map = new Map(), norm = [];
-  for (const o of flattenAssembly(asm, (id) => app.doc(id), { bom: true })) {
+  const occ = flattenAssembly(asm, (id) => app.doc(id), { bom: true, units: true });
+  for (const o of occ) {
     const p = o.part;
+    if (o.unit) {
+      // untrennbare/Kauf-Baugruppe (L11): eine Zeile, Masse = Summe ihres Inhalts
+      const row = map.get(p.id) || { part: p, name: p.name, number: p.number || "", material: "", finish: "", qty: 0, mass: depth < 8 ? bomRows(app, p, depth + 1).reduce((s, r) => s + (r.mass || 0) * r.qty, 0) : NaN, unit: p.bomStructure };
+      row.qty++;
+      map.set(p.id, row);
+      continue;
+    }
     const r = app.results.get(p.id);
     // Normteile (M20) zählen als eigene Zeilen mit Normbezeichnung; ein Bauteil nur aus Normteilen entfällt selbst
     const own = (r?.bodies || []).filter((b) => !b.meta?.norm);
@@ -2998,17 +3007,43 @@ export function bomRows(app, asm) {
     map.set(p.id, row);
   }
   const normRows = collectNorm(norm).map((x) => ({ name: x.name, number: "", material: x.material, qty: x.qty, mass: x.mass, norm: true }));
-  return orderBomRows([...map.values(), ...normRows], asm.bomOrder).map((r, i) => ({ ...r, pos: i + 1 }));
+  const main = orderBomRows([...map.values(), ...normRows], asm.bomOrder);
+  // Garnituren (L11): Scheiben und Muttern einer Schraubengarnitur als Unterzeilen unter der Schraube
+  const groups = asm.bomGarnitur === false ? new Map() : garniturGroups(occ, (p) => p.normDesignation || null);
+  if (!groups.size) return main.map((r, i) => ({ ...r, pos: i + 1 }));
+  const byName = new Map(normRows.map((r) => [r.name, r]));
+  const subs = new Map();
+  for (const [lead, members] of groups) {
+    if (!byName.has(lead)) continue;
+    for (const [d, n] of members) {
+      const r = byName.get(d);
+      if (!r) continue;
+      const take = Math.min(n, r.qty);
+      if (!take) continue;
+      r.qty -= take;
+      if (!subs.has(lead)) subs.set(lead, []);
+      subs.get(lead).push({ ...r, qty: take, sub: true, parent: lead });
+    }
+  }
+  const out = [];
+  let pos = 0;
+  for (const r of main) {
+    if (r.norm && r.qty <= 0) continue;
+    const row = { ...r, pos: ++pos };
+    out.push(row);
+    (subs.get(r.name) || []).forEach((s, k) => out.push({ ...s, pos: `${row.pos}.${k + 1}` }));
+  }
+  return out;
 }
 function bomTable(rows, compact = false) {
   return h("table", { class: "grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Benennung"), compact ? null : h("th", {}, "Nummer"), h("th", {}, "Menge"), compact ? null : h("th", {}, "Werkstoff"), h("th", {}, "Masse kg"))),
-    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", { class: "num" }, String(r.pos)), h("td", {}, r.name), compact ? null : h("td", {}, r.number), h("td", { class: "num" }, String(r.qty)), compact ? null : h("td", {}, [r.material, finishLabel({ finish: r.part?.finish }, { short: true })].filter(Boolean).join(" · ")), h("td", { class: "num" }, fmtNum(r.mass, 3))))));
+    h("tbody", {}, ...rows.map((r) => h("tr", { class: r.sub ? "bom-sub" : null }, h("td", { class: "num" }, String(r.pos)), h("td", { style: r.sub ? { paddingLeft: "18px" } : null }, r.name, r.unit ? h("span", { class: "hint" }, r.unit === "kaufteil" ? " (Kaufteil)" : " (untrennbar)") : null), compact ? null : h("td", {}, r.number), h("td", { class: "num" }, String(r.qty)), compact ? null : h("td", {}, [r.material, finishLabel({ finish: r.part?.finish }, { short: true })].filter(Boolean).join(" · ")), h("td", { class: "num" }, fmtNum(r.mass, 3))))));
 }
 function structureTable(rows, app) {
   return h("table", { class: "grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Ebene"), h("th", {}, "Benennung"), h("th", {}, "Nummer"), h("th", {}, "Menge"), h("th", {}, "Gesamt"), h("th", {}, "Art"))),
-    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, r.level), h("td", { style: { paddingLeft: 6 + r.depth * 14 + "px" } }, r.doc.name), h("td", {}, r.doc.number || ""), h("td", { class: "num" }, String(r.qty)), h("td", { class: "num" }, String(r.total)), h("td", {}, r.kind === "assembly" ? "Baugruppe" : "Bauteil")))));
+    h("tbody", {}, ...rows.map((r) => h("tr", {}, h("td", {}, r.level), h("td", { style: { paddingLeft: 6 + r.depth * 14 + "px" } }, r.doc.name), h("td", {}, r.doc.number || ""), h("td", { class: "num" }, String(r.qty)), h("td", { class: "num" }, String(r.total)), h("td", {}, r.kind === "assembly" ? (r.bom === "kaufteil" ? "Kaufteil" : r.bom === "untrennbar" ? "Baugruppe, untrennbar" : "Baugruppe") : "Bauteil")))));
 }
 function modularTable(rows) {
   return h("table", { class: "grid" },
