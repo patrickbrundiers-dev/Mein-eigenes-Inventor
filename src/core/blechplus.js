@@ -7,7 +7,7 @@
 import { planKantteil, bendCut, kantteilOutline } from "./blech.js";
 
 const fmt = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
-export const SHEET_FEATURES = ["lasche", "umschlag", "durchzug", "eckeschliessen", "stanzung", "kroepfung"];
+export const SHEET_FEATURES = ["lasche", "umschlag", "durchzug", "eckeschliessen", "stanzung", "kroepfung", "falten"];
 const DEG = Math.PI / 180;
 export const JOG_REFS = [["flaeche", "Fläche zu Fläche (Oberseite–Oberseite)"], ["gesamt", "über alles (außen)"], ["innen", "lichtes Maß (zwischen den Flächen)"]];
 export const JOG_POS = [["vor", "vor der Linie"], ["mitte", "mittig auf der Linie"], ["hinter", "hinter der Linie"]];
@@ -20,6 +20,7 @@ export const defaultLasche = (base) => ({ type: "lasche", base, edge: "ende", le
 export const defaultUmschlag = (base) => ({ type: "umschlag", base, edge: "ende", kind: "geschlossen", length: "15", gap: "1", dir: "auf" });
 export const defaultDurchzug = (base) => ({ type: "durchzug", base, leg: "1", s: "20", y: "50", d: "8", height: "4", dir: "auf", d0: "" });
 export const defaultEckeSchliessen = (base) => ({ type: "eckeschliessen", base, bend: "1", side: "vorne", through: "a", gap: "0.5" });
+export const defaultFalten = (base) => ({ type: "falten", base, leg: "1", s: "50", angle: "90", dir: "auf", ri: "", line: "mitte" });
 export const defaultKroepfung = (base) => ({ type: "kroepfung", base, leg: "2", s: "50", h: "10", ref: "flaeche", angle: "90", dir: "auf", pos: "mitte", fixed: "anfang", keep: true, ri: "" });
 export const defaultStanzung = (base) => ({ type: "stanzung", base, leg: "2", s: "40", y: "50", form: "langloch", d: "10", a: "30", b: "10" });
 
@@ -55,6 +56,23 @@ export function durchzugVorloch(di, H, t) {
 }
 
 /**
+ * Flansch-Optionen (SolidCraft »Height From« / »Bend Position«) als Längenkorrektur.
+ * heightFrom: aussen (äußere virtuelle Spitze, Standard) | innen (innere Spitze) | tangential (über 90°: R + T vor dem Schenkel).
+ * position: innen (äußere Spitze auf der Kante, Standard) | aussen (Biegung beginnt an der Kante) | mitte | materialAussen
+ * (innere Spitze auf der Kante) | tangential. Rückgabe { flange: Zuschlag zur Laschenlänge, base: Zuschlag zum Grundschenkel }
+ * bezogen auf den Rücksprung cutUsed, mit dem das Kantteil sonst rechnet.
+ */
+export function flangeAdjust({ angle, r, t, cutUsed, heightFrom = "aussen", position = "innen", length }) {
+  const th = Math.abs(angle) * DEG, half = Math.tan(th / 2);
+  const outer = (r + t) * half, inner = r * half;
+  const tangent = th > Math.PI / 2 + 1e-9 ? r + t : outer;
+  const before = heightFrom === "innen" ? inner : heightFrom === "tangential" ? tangent : outer;
+  if (length != null && !(length > before - 1e-9)) throw new Error(`Lasche: Länge zu kurz – mindestens ${fmt(before)} mm (${{ innen: "ab innerer Spitze", tangential: "ab Tangente" }[heightFrom] || "ab äußerer Spitze"})`);
+  const cutBack = { aussen: 0, mitte: outer / 2, materialAussen: inner, tangential: th > Math.PI / 2 + 1e-9 ? r + t : (r + t) * Math.sin(th) }[position] ?? outer;
+  return { flange: cutUsed - before, base: cutUsed - cutBack };
+}
+
+/**
  * Kantteil mit Blech-Features planen. base: Zahlen des Kantteils {legs, angles, t, ri, k, kOf, ref, L};
  * extras: Zahlen der Features in Baumreihenfolge ({type, edge, …}). Laschen über die ganze Länge und Umschläge
  * werden Schenkel am Anfang oder Ende; Teil-Laschen, Stirnlaschen und Durchzüge kommen auf den fertigen Querschnitt.
@@ -80,6 +98,16 @@ export function planSheet(base, extras = []) {
       if (e.fixed === "ende") jogs.push({ leg: j, ...r });
       continue;
     }
+    if (e.type === "falten") {
+      // Falten (SolidCraft »Fold«): Schenkel an einer Linie längs des Teils teilen und dort biegen
+      const j = Math.round(e.leg) - 1;
+      applyFold(e, j, { legs, angles, ris, refs, t, ri });
+      const shiftLeg = (x) => (Math.round(x.leg) - 1 > j ? { ...x, leg: Math.round(x.leg) + 1 } : x);
+      for (const arr of [holes, stanz, stirn]) arr.forEach((x, q) => { arr[q] = shiftLeg(x); });
+      closes.forEach((x, q) => { if (Math.round(x.bend) - 1 >= j) closes[q] = { ...x, bend: Math.round(x.bend) + 1 }; });
+      for (const g of jogs) if (g.leg > j) g.leg += 1;
+      continue;
+    }
     if (e.type === "durchzug") { holes.push(e); continue; }
     if (e.type === "eckeschliessen") { closes.push(e); continue; }
     if (e.type === "stanzung") { stanz.push(e); continue; }
@@ -94,6 +122,13 @@ export function planSheet(base, extras = []) {
     } else {
       if (!(e.length > 0)) throw new Error("Lasche: Länge > 0 angeben");
       len = e.length; ang = sg * e.angle; r = e.ri ?? ri; rf = ref === "links" || ref === "rechts" ? "aussen" : ref;
+      if ((e.heightFrom && e.heightFrom !== "aussen") || (e.position && e.position !== "innen")) {
+        const adj = flangeAdjust({ angle: ang, r, t, cutUsed: bendCut(ang, r, t, rf), heightFrom: e.heightFrom, position: e.position, length: len });
+        len += adj.flange;
+        const bi = e.edge === "anfang" ? 0 : legs.length - 1;
+        legs[bi] += adj.base;
+        if (!(legs[bi] > 0)) throw new Error("Lasche: Biegeposition schneidet den Schenkel ganz weg");
+      }
     }
     if (e.edge === "anfang") { legs.unshift(len); angles.unshift(ang); ris.unshift(r); refs.unshift(rf); anchorLeg++; for (const g of jogs) g.leg++; }
     else { legs.push(len); angles.push(ang); ris.push(r); refs.push(rf); }
@@ -217,6 +252,28 @@ export function planSheet(base, extras = []) {
   }
 
   return { plan, legs, angles, parts, ends, pierce, punch, flat: flatModel(plan, L, t, { k, kOf }, parts, ends, pierce, punch) };
+}
+
+/**
+ * Falten in Schenkel j: Biegelinie bei s (ab Schenkelanfang, Schenkelmaß). line: mitte (Biegelinie = Mitte der Biegezone
+ * auf der Mittellinie), aussen/innen (äußere bzw. innere Spitze auf der Linie). Ändert legs, angles, ris, refs.
+ */
+export function applyFold(e, j, { legs, angles, ris, refs, t, ri }) {
+  if (!(j >= 0 && j < legs.length)) throw new Error(`Falten: Schenkel ${j + 1} gibt es nicht (1 bis ${legs.length})`);
+  const a = e.angle ?? 90;
+  if (!(a >= 0.5 && a <= 179)) throw new Error("Falten: Biegewinkel zwischen 0,5° und 179° angeben");
+  const r = e.ri ?? ri, sg = e.dir === "ab" || e.dir === -1 ? -1 : 1;
+  if (!(r >= 0)) throw new Error("Falten: Innenradius ≥ 0 angeben");
+  const ref = e.line === "aussen" ? "aussen" : e.line === "innen" ? "innen" : "mitte";
+  const c = bendCut(sg * a, r, t, ref);
+  const prev = j > 0 ? bendCut(angles[j - 1], ris[j - 1], t, refs[j - 1]) : 0, next = j < angles.length ? bendCut(angles[j], ris[j], t, refs[j]) : 0;
+  const A = e.s, B = legs[j] - e.s;
+  if (A - c - prev < -1e-6) throw new Error(`Falten: Linie zu nah am Anfang von Schenkel ${j + 1} – Lage mindestens ${fmt(prev + c)} mm`);
+  if (B - c - next < -1e-6) throw new Error(`Falten: Linie zu nah am Ende von Schenkel ${j + 1} – Lage höchstens ${fmt(legs[j] - next - c)} mm`);
+  legs.splice(j, 1, A, B);
+  angles.splice(j, 0, sg * a);
+  ris.splice(j, 0, r);
+  refs.splice(j, 0, ref);
 }
 
 /**

@@ -707,13 +707,14 @@ export function createKernel(R) {
         return { type: "durchzug", leg: E(f.leg ?? "1", "Schenkel"), s: lst(f.s ?? "20", "Lage entlang"), y: lst(f.y ?? "50", "Lage längs"), d: E(f.d ?? "8", "Innendurchmesser"), height: E(f.height ?? "6", "Kragenhöhe"), dir: sg, d0: opt(f.d0, "Vorloch") };
       }
       if (f.type === "eckeschliessen") return { type: "eckeschliessen", bend: E(f.bend ?? "1", "Biegung"), side: f.side === "hinten" ? "hinten" : "vorne", through: f.through === "b" ? "b" : "a", gap: opt(f.gap, "Spalt") ?? 0 };
+      if (f.type === "falten") return { type: "falten", leg: E(f.leg ?? "1", "Schenkel"), s: E(f.s ?? "50", "Lage der Biegelinie"), angle: E(f.angle ?? "90", "Biegewinkel"), dir: sg, ri: opt(f.ri, "Innenradius"), line: ["aussen", "innen"].includes(f.line) ? f.line : "mitte" };
       if (f.type === "kroepfung") return { type: "kroepfung", leg: E(f.leg ?? "1", "Schenkel"), s: E(f.s ?? "50", "Lage der Kröpflinie"), h: E(f.h ?? "10", "Versatz"), ref: ["gesamt", "innen"].includes(f.ref) ? f.ref : "flaeche", angle: E(f.angle ?? "90", "Kröpfwinkel"), dir: sg, pos: ["vor", "hinter"].includes(f.pos) ? f.pos : "mitte", fixed: f.fixed === "ende" ? "ende" : "anfang", keep: f.keep !== false, ri: opt(f.ri, "Innenradius") };
       if (f.type === "stanzung") {
         const lst = (x, label) => splitList(String(x ?? "")).map((v, k) => E(v, `${label} ${k + 1}`));
         const form = ["rechteck", "langloch"].includes(f.form) ? f.form : "rund";
         return { type: "stanzung", leg: E(f.leg ?? "1", "Schenkel"), s: lst(f.s ?? "30", "Lage entlang"), y: lst(f.y ?? "50", "Lage längs"), form, d: form === "rund" ? E(f.d ?? "10", "Durchmesser") : 0, a: form === "rund" ? 0 : E(f.a ?? "30", "Länge entlang"), b: form === "rund" ? 0 : E(f.b ?? "10", "Breite längs") };
       }
-      return { type: "lasche", edge: f.edge || "ende", length: E(f.length ?? "30", "Länge"), angle: E(f.angle ?? "90", "Winkel"), dir: sg, ri: opt(f.ri, "Innenradius"), width: opt(f.width, "Breite"), offset: opt(f.offset, "Versatz") ?? 0, relief: f.relief || spec?.relief?.relief || "rechteck", reliefW: opt(f.reliefW, "Freischnitt-Breite") ?? (spec?.relief?.reliefW || null), reliefD: opt(f.reliefD, "Freischnitt-Tiefe") ?? (spec?.relief?.reliefD || null), leg: opt(f.leg, "Schenkel") ?? 1 };
+      return { type: "lasche", edge: f.edge || "ende", length: E(f.length ?? "30", "Länge"), angle: E(f.angle ?? "90", "Winkel"), dir: sg, ri: opt(f.ri, "Innenradius"), width: opt(f.width, "Breite"), offset: opt(f.offset, "Versatz") ?? 0, relief: f.relief || spec?.relief?.relief || "rechteck", reliefW: opt(f.reliefW, "Freischnitt-Breite") ?? (spec?.relief?.reliefW || null), reliefD: opt(f.reliefD, "Freischnitt-Tiefe") ?? (spec?.relief?.reliefD || null), leg: opt(f.leg, "Schenkel") ?? 1, heightFrom: f.heightFrom || "aussen", position: f.position || "innen" };
     };
     /** Körper eines Kantteils mit allen Blech-Features bis hierher */
     const sheetBuild = (f, spec, extras) => {
@@ -1488,7 +1489,8 @@ export function createKernel(R) {
           case "durchzug":
           case "eckeschliessen":
           case "stanzung":
-          case "kroepfung": {
+          case "kroepfung":
+          case "falten": {
             const bi = feats.findIndex((g) => g.id === f.base);
             const tool = state.tools.get(f.base);
             if (bi < 0 || bi > i || !tool?.sheet) throw new Error(missingRef(f.base, "Kantteil", f));

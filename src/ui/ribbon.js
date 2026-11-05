@@ -22,7 +22,7 @@ import { normLibraryDialog } from "./normlib.js";
 import { defaultSchraubverbindung } from "../core/schraubverbindung.js";
 import { defaultKantteil } from "../core/blech.js";
 import { defaultBlechkasten } from "../core/blechkasten.js";
-import { defaultLasche, defaultUmschlag, defaultDurchzug, defaultEckeSchliessen, defaultStanzung, defaultKroepfung, SHEET_FEATURES } from "../core/blechplus.js";
+import { defaultLasche, defaultUmschlag, defaultDurchzug, defaultEckeSchliessen, defaultStanzung, defaultKroepfung, defaultFalten, SHEET_FEATURES } from "../core/blechplus.js";
 import { defaultKonturwalzen, defaultTrennfuge } from "../core/konturwalzen.js";
 import { derivableSources } from "../core/ableiten.js";
 import { t as t_ } from "../core/i18n.js";
@@ -142,6 +142,7 @@ export class Ribbon {
       eckeschliessen: () => this.addSheetFeature(defaultEckeSchliessen),
       stanzung: () => this.addSheetFeature(defaultStanzung),
       kroepfung: () => this.addSheetFeature(defaultKroepfung),
+      falten: () => this.addSheetFeature(defaultFalten),
       konturwalzen: () => {
         const sk = app.lastSketchId();
         if (!sk) return toast("Zuerst eine Skizze mit offener Linie neben der Drehachse zeichnen (Skizzen-X- oder Y-Achse)");
@@ -457,7 +458,7 @@ export class Ribbon {
         ] },
         { id: "metallbau", label: "Metallbau", groups: [
           { label: "Profile", big: 5, buttons: [B("profile", "Rohr / Profil", "profile"), B("frame", "Rahmen aus Skizze", "frame"), B("profilzug", "Profilzug 3D", "profilzug"), B("biegerohr", "Rohr gebogen", "biegerohr"), B("knickrahmen", "Knickrahmen", "knick"), B("gestellInsert", "Gestell einfügen", "frame"), B("endkappe", "Endkappe", "endcap"), B("kuerzen", "Kürzen/Verlängern", "extend"), B("zinkloch", "Verzinkungsbohrungen", "ventholes"), B("strecken", "Rohr strecken", "stretch")] },
-          { label: "Blech", big: 1, buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("blechkasten", "Blechkasten", "kantteil"), B("inBlech", "In Blech umwandeln", "kantteil"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar"), B("eckeschliessen", "Ecke schließen", "cornerseam"), B("stanzung", "Stanzwerkzeug", "punch"), B("lochblech", "Lochblech", "perforate"), B("kroepfung", "Kröpfung", "jog"), B("konturwalzen", "Konturwalzen", "contourroll"), B("trennfuge", "Trennfuge", "rip")] },
+          { label: "Blech", big: 1, buttons: [B("kantteil", "Kantteil", "kantteil"), B("konturlasche", "Konturlasche", "contourflange"), B("blechkasten", "Blechkasten", "kantteil"), B("inBlech", "In Blech umwandeln", "kantteil"), B("lasche", "Lasche", "flange"), B("umschlag", "Umschlag", "hem"), B("durchzug", "Durchzug", "collar"), B("eckeschliessen", "Ecke schließen", "cornerseam"), B("stanzung", "Stanzwerkzeug", "punch"), B("lochblech", "Lochblech", "perforate"), B("kroepfung", "Kröpfung", "jog"), B("falten", "Falten", "fold"), B("konturwalzen", "Konturwalzen", "contourroll"), B("trennfuge", "Trennfuge", "rip")] },
           { label: "Anschluss", buttons: [B("naht", "Schweißnaht", "naht"), B("platte", "Stirn-/Fußplatte", "platte"), B("rippe", "Rippe", "rippe"), B("normteil", "Normteil", "normteil")] },
         ] },
         { id: "verwalten", label: "Verwalten", groups: [

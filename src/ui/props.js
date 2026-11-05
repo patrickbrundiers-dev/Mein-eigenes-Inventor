@@ -974,7 +974,8 @@ export class Props {
       case "durchzug":
       case "eckeschliessen":
       case "stanzung":
-      case "kroepfung": {
+      case "kroepfung":
+      case "falten": {
         const bases = part.features.filter((g) => g.type === "kantteil");
         const opt = (label, key, placeholder) => this.text(label, f[key] ?? "", (v) => this.set(f, key, v, label), { placeholder });
         const baseSel = this.select("Kantteil", [["", "– wählen –"], ...bases.map((g) => [g.id, g.name])], f.base || "", (v) => this.set(f, "base", v, "Kantteil"));
@@ -984,9 +985,11 @@ export class Props {
           out.push(this.section("Lasche", baseSel,
             this.select("Kante", LASCHE_EDGES, f.edge || "ende", (v) => this.set(f, "edge", v, "Kante")),
             stirn ? E("Schenkel Nr.", "leg", { unit: "", allowNeg: false, allowZero: false }) : null,
-            E("Länge (außen)", "length", { allowNeg: false, allowZero: false }),
+            E(stirn ? "Länge (außen)" : "Länge (Höhe)", "length", { allowNeg: false, allowZero: false }),
             E("Biegewinkel", "angle", { unit: "°", allowNeg: false, allowZero: false }),
             dirSeg("Richtung"),
+            stirn ? null : this.seg("Höhe gemessen ab", [["aussen", "äußerer Spitze"], ["innen", "innerer Spitze"], ["tangential", "Tangente"]], f.heightFrom || "aussen", (v) => this.set(f, "heightFrom", v === "aussen" ? undefined : v, "Höhe gemessen ab")),
+            stirn || !(f.width === undefined || f.width === "") ? null : this.select("Biegeposition", [["innen", "innen (äußere Spitze auf der Kante)"], ["aussen", "außen (Biegung beginnt an der Kante)"], ["mitte", "Mitte"], ["materialAussen", "Material außen (innere Spitze auf der Kante)"], ["tangential", "tangential"]], f.position || "innen", (v) => this.set(f, "position", v === "innen" ? undefined : v, "Biegeposition")),
             opt("Innenradius (mm)", "ri", "leer = wie Kantteil"),
             stirn ? null : opt("Breite (mm)", "width", "leer = ganze Länge"),
             stirn ? null : E("Versatz ab y = 0", "offset", { allowNeg: false }),
@@ -1003,6 +1006,15 @@ export class Props {
             this.select("Stoß", CORNER_THROUGH, f.through === "b" ? "b" : "a", (v) => this.set(f, "through", v, "Stoß")),
             E("Spalt", "gap", { allowNeg: false }),
             h("p", { class: "hint" }, "Zieht die Stirnlaschen an einer 90°-Biegung bis an den Nachbarschenkel (Kassette, Schale). Die durchlaufende Lasche geht bis auf den Spalt an die Innenfläche des Nachbarschenkels, die andere endet mit dem Spalt an ihr. Steht nur an einem der beiden Schenkel eine Stirnlasche, läuft sie bis an den anderen Schenkel. Die Stirnlaschen brauchen den Eckfreischnitt und müssen nach innen zeigen.")));
+        } else if (f.type === "falten") {
+          out.push(this.section("Falten", baseSel,
+            E("Schenkel Nr.", "leg", { unit: "", allowNeg: false, allowZero: false }),
+            E("Lage der Biegelinie ab Schenkelanfang", "s", { allowNeg: false }),
+            E("Biegewinkel", "angle", { unit: "°", allowNeg: false, allowZero: false }),
+            dirSeg("Richtung"),
+            opt("Innenradius (mm)", "ri", "leer = wie Kantteil"),
+            this.seg("Linie liegt auf", [["mitte", "Mitte Biegung"], ["aussen", "äußerer Spitze"], ["innen", "innerer Spitze"]], f.line || "mitte", (v) => this.set(f, "line", v, "Biegelinie")),
+            h("p", { class: "hint" }, "Teilt den Schenkel an der Linie (längs des Teils) und biegt ihn dort. Abwicklung, Biegetabelle und DXF rechnen die neue Biegung mit.")));
         } else if (f.type === "kroepfung") {
           out.push(this.section("Kröpfung", baseSel,
             E("Schenkel Nr.", "leg", { unit: "", allowNeg: false, allowZero: false }),

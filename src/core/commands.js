@@ -143,6 +143,7 @@ export const COMMANDS = [
   { id: "part.durchzug", label: "Durchzug (Blech)", group: "3D-Modell", scope: "part", keywords: "blech durchzug kragen collar gewindeformer vorloch" },
   { id: "part.schraubverbindung", label: "Schraubenverbindung", group: "3D-Modell", scope: "part", keywords: "schraube schraubenverbindung verschraubung bolt mutter scheibe klemmlänge durchsteck gewinde konstruktions-assistent" },
   { id: "part.eckeschliessen", label: "Ecke schließen (Blech)", group: "3D-Modell", scope: "part", keywords: "blech ecke schließen eckenverbindung corner seam stirnlasche kassette stoß spalt" },
+  { id: "part.falten", label: "Falten (Blech an einer Linie biegen)", group: "3D-Modell", scope: "part", keywords: "blech falten fold biegen abkanten biegelinie kante zusätzlich" },
   { id: "part.kroepfung", label: "Kröpfung (Blech)", group: "3D-Modell", scope: "part", keywords: "blech kröpfung kroepfung kröpfen jog z-kantung abkantung versatz stufe absatz" },
   { id: "part.stanzung", label: "Stanzwerkzeug (Blech)", group: "3D-Modell", scope: "part", keywords: "blech stanzen stanzung stanzwerkzeug punch langloch rechteck loch durchbruch" },
   { id: "part.konturwalzen", label: "Konturwalzen (Blech)", group: "3D-Modell", scope: "part", keywords: "blech konturwalzen walzen rollen contour roll zylinder kegel trichter mantel rund" },
