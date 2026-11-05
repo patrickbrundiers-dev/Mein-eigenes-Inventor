@@ -887,6 +887,7 @@ export class App {
     if (f && f.type === "naht") this.pick = { kind: "edges", feature: f.id };
     if (f && ["shell", "aufdicken", "flaeche", "entformung", "lochblech", "flaechenkurve", "auflage"].includes(f.type) || (f?.type === "freiflaeche" && ["offset", "kopie", "untrim"].includes(f.art))) this.pick = { kind: "faces", feature: f.id };
     if (f?.type === "direkt" && !(f.faces || []).length) this.pick = { kind: "faces", feature: f.id };
+    if (f?.type === "extrude" && f.source === "flaeche") this.pick = { kind: "faces", feature: f.id };
     const wasEditing = this._editingFeature;
     this._editingFeature = this.pick?.feature || null;
     if (wasEditing !== this._editingFeature) this.rebuild();
@@ -1267,6 +1268,13 @@ export class App {
   toggleFeatureFace(fid, hit) {
     if (!hit || hit.kind !== "face") return;
     const f = this.feature(fid);
+    // Einzelner Bezug (z. B. Extrusion »Bis Fläche« / »Start ab Fläche«): Punkt und Normale merken, Auswahl beenden
+    const key = this.pick?.key;
+    if (key) {
+      this.edit("Fläche wählen", () => { f[key] = { p: hit.point.map(r6), n: hit.normal ? hit.normal.map(r6) : null }; });
+      this.cancelPick();
+      return;
+    }
     const ref = f.type === "direkt" ? directFaceRef(this, hit) : { p: hit.point.map(r6) };
     this.edit("Fläche wählen", () => {
       f.faces = f.faces || [];

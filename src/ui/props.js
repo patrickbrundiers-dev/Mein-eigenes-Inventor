@@ -663,7 +663,11 @@ export class Props {
     return this.select("Skizze", [["", "– wählen –"], ...sks.map((s) => [s.id, s.name])], value || "", (v) => onChange(v));
   }
   opSeg(f) {
-    return this.seg("Vorgang", [["join", "Vereinigen"], ["cut", "Differenz"], ["intersect", "Schnitt"], ["new", "Neuer Körper"]], f.op || "join", (v) => this.set(f, "op", v, "Vorgang"));
+    const seg = this.seg("Vorgang", [["join", "Vereinigen"], ["cut", "Differenz"], ["intersect", "Schnitt"], ["new", "Neuer Körper"]], f.op || "join", (v) => this.set(f, "op", v, "Vorgang"));
+    // Zielkörper (SolidCraft »targets«): nur bei mehreren Körpern
+    const part = this.app.activeDoc();
+    if ((f.op || "join") === "new" || part?.kind !== "part" || this.bodyChoices(part).filter(([id]) => id !== f.id).length < 2) return seg;
+    return h("div", {}, seg, this.bodyChecks(part, f, "targets", "Zielkörper (keiner = alle)"));
   }
 
   /** Nahtliste des Bauteils (alle Nähte: Feature „Schweißnaht“, Platten und Rippen mit a-Maß) */
@@ -713,15 +717,38 @@ export class Props {
           ...[["extrude", "Extrusion"], ["revolve", "Drehung"], ["hole", "Bohrung"], ["frame", "Rahmen"]].map(([a, l]) => h("button", { class: "btn", onclick: () => app.ribbon.run(a) }, l)))));
         break;
       }
-      case "extrude":
+      case "extrude": {
+        const fromFace = f.source === "flaeche";
+        const refPick = (key, label) => {
+          const picking = app.pick?.kind === "faces" && app.pick.feature === f.id && app.pick.key === key;
+          return this.field(label, h("div", { class: "btn-row" + (picking ? " picking" : "") },
+            h("span", { class: "hint" }, f[key]?.p ? `(${f[key].p.map((x) => Math.round(x * 10) / 10).join("; ")})` : "nicht gewählt"),
+            h("button", { class: "btn" + (picking ? " primary" : ""), onclick: () => { if (picking) app.cancelPick(); else { app.pick = { kind: "faces", feature: f.id, key }; app.props.render(); } } }, picking ? "Abbrechen" : "Wählen"),
+            f[key] ? h("button", { class: "btn", onclick: () => this.set(f, (x) => { delete x[key]; }, label + " leeren") }, "Leeren") : null), true);
+        };
+        const modes = [["normal", "Normal"], ["reverse", "Umgekehrt"], ["symmetric", "Symmetrisch"], ...(fromFace ? [] : [["twoSided", "Beidseitig"], ["through", "Durch alles"], ["bis", "Bis Fläche"]])];
         out.push(this.section("Extrusion",
-          this.sketchList(part, f.sketch, (v) => this.set(f, "sketch", v, "Skizze")),
-          this.seg("Richtung", [["normal", "Normal"], ["reverse", "Umgekehrt"], ["symmetric", "Symmetrisch"], ["twoSided", "Beidseitig"], ["through", "Durch alles"]], f.mode || "normal", (v) => this.set(f, "mode", v, "Richtung")),
-          f.mode !== "through" ? E("Abstand", "distance", { allowNeg: false, allowZero: false }) : null,
-          f.mode === "twoSided" ? E("Abstand 2", "distance2") : null,
+          this.seg("Quelle", [["skizze", "Skizze"], ["flaeche", "Körperfläche"]], f.source || "skizze", (v) => this.set(f, (x) => { x.source = v; if (v === "flaeche" && ["twoSided", "through", "bis"].includes(x.mode)) x.mode = "normal"; }, "Quelle")),
+          fromFace ? h("div", {}, `${(f.faces || []).length} Fläche(n) gewählt`, h("p", { class: "hint" }, "Ebene Flächen eines Körpers im 3D-Fenster anklicken; sie wachsen entlang ihrer Normale.")) : this.sketchList(part, f.sketch, (v) => this.set(f, "sketch", v, "Skizze")),
+          this.seg("Richtung", modes, f.mode || "normal", (v) => this.set(f, "mode", v, "Richtung")),
+          f.mode !== "through" && f.mode !== "bis" ? E("Abstand", "distance", { allowNeg: false, allowZero: false }) : null,
+          f.mode === "bis" ? refPick("to", "Bis Fläche / Punkt") : null,
+          f.mode === "bis" ? E("Abstand darüber hinaus", "toOffset", { allowEmpty: true, placeholder: "0" }) : null,
+          f.mode === "twoSided" ? this.check("Seite 2 durch alles", f.distance2Through, (v) => this.set(f, "distance2Through", v, "Seite 2 durch alles")) : null,
+          f.mode === "twoSided" && !f.distance2Through ? E("Abstand 2", "distance2") : null,
           this.opSeg(f),
           f.mode !== "through" ? h("p", { class: "hint" }, "Oder den orangen Pfeil im 3D-Fenster ziehen – über null hinaus kippt die Extrusion auf die andere Seite. Doppelklick auf eine Fläche wählt ihr Feature.") : null));
+        if (!fromFace) out.push(this.section("Weitere Optionen",
+          E("Verjüngung", "taper", { unit: "°", allowEmpty: true, placeholder: "0" }),
+          h("p", { class: "hint" }, "Neigt die Seitenwände: positiv wird das Ende größer, negativ kleiner."),
+          f.from ? null : E("Versatz Start", "startOffset", { allowEmpty: true, placeholder: "0" }),
+          refPick("from", "Start ab Fläche / Punkt"),
+          this.check("Dünnwand", f.thin, (v) => this.set(f, "thin", v, "Dünnwand")),
+          f.thin ? E("Wanddicke", "thickness", { allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "1" }) : null,
+          f.thin ? this.seg("Wand liegt", [["innen", "Innen"], ["mitte", "Mittig"], ["aussen", "Außen"], ["beidseitig", "Beidseitig"]], f.side || "innen", (v) => this.set(f, "side", v, "Wand liegt")) : null,
+          f.thin && f.side === "beidseitig" ? E("Wanddicke außen", "thickness2", { allowNeg: false, allowEmpty: true, placeholder: "= Wanddicke" }) : null));
         break;
+      }
       case "revolve": {
         const sk = part.features.find((s) => s.id === f.sketch);
         const lines = sk ? sk.entities.filter((e) => e.type === "line") : [];
@@ -845,7 +872,8 @@ export class Props {
           h("dl", { class: "kv" }, h("dt", {}, "Volumen"), h("dd", {}, volText)),
           kind === "kegel" ? h("p", { class: "hint" }, "d = 0 ergibt einen Spitzkegel, d > 0 einen Kegelstumpf.") : null));
         out.push(this.section("Lage",
-          this.vec3(kind === "kugel" || kind === "torus" ? "Mittelpunkt" : "Basispunkt (Mitte unten)", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
+          kind === "kugel" || kind === "torus" ? null : this.seg("Punkt ist", [["basis", "Mitte unten"], ["ecke", "Ecke (kleinste)"], ["mitte", "Mitte"]], f.anchor || "basis", (v) => this.set(f, "anchor", v === "basis" ? undefined : v, "Bezugspunkt")),
+          this.vec3(kind === "kugel" || kind === "torus" ? "Mittelpunkt" : "Bezugspunkt", f.pos, (v) => this.set(f, "pos", v, "Basispunkt")),
           this.seg("Achse", [["Z", "Z"], ["Y", "Y"], ["X", "X"], ["-Z", "−Z"], ["-Y", "−Y"], ["-X", "−X"], ["custom", "frei"]], f.axis || "Z", (v) => this.set(f, "axis", v, "Achse")),
           f.axis === "custom" ? this.vec3("Richtungsvektor", f.dir || ["0", "0", "1"], (v) => this.set(f, "dir", v, "Richtung")) : null,
           this.opSeg(f)));
@@ -1293,9 +1321,16 @@ export class Props {
         const picking = app.pick?.kind === "edges" && app.pick.feature === f.id;
         out.push(this.section(isF ? "Rundung" : "Fase",
           isF ? this.seg("Radius", [["fest", "fest"], ["variabel", "variabel (Anfang → Ende)"]], f.variable ? "variabel" : "fest", (v) => this.set(f, (x) => { if (v === "variabel") { x.variable = true; x.radius2 = x.radius2 || x.radius; } else delete x.variable; }, "Radius")) : null,
-          E(isF ? (f.variable ? "Radius Anfang" : "Radius") : "Abstand", "radius", { allowNeg: false, allowZero: false }),
+          isF ? this.seg("Querschnitt", [["konstant", "Kreis"], ["sehne", "Sehnenbreite"], ["kurve", "Weich (krümmungsstetig)"]], f.kind || "konstant", (v) => this.set(f, "kind", v === "konstant" ? undefined : v, "Querschnitt")) : null,
+          isF ? null : this.seg("Art", [["gleich", "Gleicher Abstand"], ["zwei", "Zwei Abstände"], ["winkel", "Abstand und Winkel"]], f.chamferMode || "gleich", (v) => this.set(f, "chamferMode", v === "gleich" ? undefined : v, "Fasenart")),
+          E(isF ? (f.kind === "sehne" ? (f.variable ? "Sehnenbreite Anfang" : "Sehnenbreite") : f.variable ? "Radius Anfang" : "Radius") : f.chamferMode === "zwei" ? "Abstand 1" : "Abstand", "radius", { allowNeg: false, allowZero: false }),
+          !isF && f.chamferMode === "zwei" ? E("Abstand 2", "distance2", { allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "= Abstand 1" }) : null,
+          !isF && f.chamferMode === "winkel" ? E("Winkel", "chamferAngle", { unit: "°", allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "45" }) : null,
+          !isF && f.chamferMode ? this.check("Seiten tauschen", f.chamferFlip, (v) => this.set(f, "chamferFlip", v || undefined, "Seiten tauschen")) : null,
           isF && f.variable ? E("Radius Ende", "radius2", { allowNeg: false, allowZero: false }) : null,
           isF && f.variable ? this.seg("Anfang", [["", "kleinere Koordinate"], ["1", "größere Koordinate"]], f.flip ? "1" : "", (v) => this.set(f, (x) => { if (v) x.flip = true; else delete x.flip; }, "Anfang")) : null,
+          isF && f.variable ? this.text("Zwischenradien (Lage:Radius; …)", (f.mid || []).map(([t, r]) => `${t}:${r}`).join("; "), (v) => this.set(f, (x) => { const m = String(v).split(";").map((q) => q.trim()).filter(Boolean).map((q) => q.split(":").map((z) => z.trim().replace(",", "."))); if (m.length) x.mid = m; else delete x.mid; }, "Zwischenradien"), { placeholder: "z. B. 0.5:8; 0.8:4" }) : null,
+          isF && f.variable && (f.mid || []).length ? this.check("Weich zwischen den Radien", f.smooth, (v) => this.set(f, "smooth", v || undefined, "Weich")) : null,
           isF && f.variable ? h("p", { class: "hint" }, "Der Radius ändert sich gleichmäßig entlang jeder Kante. Anfang = Kantenende mit der kleineren Koordinate in der Hauptrichtung der Kante (z. B. links bzw. unten).") : null,
           this.seg("Kanten", [["edges", "Gewählte"], ["dir", "Richtung"], ["all", "Alle"]], f.mode || "edges", (v) => { this.set(f, "mode", v, "Modus"); app.selectFeature(f.id); }),
           f.mode === "dir" ? this.seg("Parallel zu", [["X", "X"], ["Y", "Y"], ["Z", "Z"]], f.dir || "Z", (v) => this.set(f, "dir", v, "Richtung")) : null,
@@ -1357,10 +1392,14 @@ export class Props {
         break;
       case "sweep": {
         const sks = part.features.filter((g) => g.type === "sketch");
+        const rohr = f.profil === "rohr";
         out.push(this.section("Sweeping",
-          this.select("Profil", [["", "– wählen –"], ...sks.map((x) => [x.id, x.name])], f.sketch || "", (v) => this.set(f, "sketch", v, "Profil")),
+          this.seg("Querschnitt", [["skizze", "Skizzenprofil"], ["rohr", "Rohr (Ø, Wand)"]], rohr ? "rohr" : "skizze", (v) => this.set(f, "profil", v === "rohr" ? "rohr" : undefined, "Querschnitt")),
+          rohr ? E("Außendurchmesser", "diameter", { allowNeg: false, allowZero: false, allowEmpty: true, placeholder: "20" }) : null,
+          rohr ? E("Wanddicke (leer = voll)", "wall", { allowNeg: false, allowEmpty: true }) : null,
+          rohr ? null : this.select("Profil", [["", "– wählen –"], ...sks.map((x) => [x.id, x.name])], f.sketch || "", (v) => this.set(f, "sketch", v, "Profil")),
           this.select("Pfad", [["", "– wählen –"], ...sks.filter((x) => x.id !== f.sketch).map((x) => [x.id, x.name]), ...part.features.filter((x) => x.type === "skizze3d" || x.type === "flaechenkurve").map((x) => [x.id, x.name + " (3D)"])], f.path || "", (v) => this.set(f, "path", v, "Pfad")),
-          this.seg("Ausrichtung", [["mit", "Profil folgt dem Pfad"], ["fest", "Profil bleibt parallel"]], f.orient === "fest" ? "fest" : "mit", (v) => this.set(f, "orient", v === "fest" ? "fest" : undefined, "Ausrichtung")),
+          rohr ? null : this.seg("Ausrichtung", [["mit", "Profil folgt dem Pfad"], ["fest", "Profil bleibt parallel"]], f.orient === "fest" ? "fest" : "mit", (v) => this.set(f, "orient", v === "fest" ? "fest" : undefined, "Ausrichtung")),
           h("p", { class: "hint" }, "Profil: geschlossene Kontur am Anfang des Pfads, möglichst senkrecht dazu. Pfad: zusammenhängende Linien und Bögen einer anderen Skizze."),
           this.opSeg(f)));
         break;
@@ -1626,7 +1665,12 @@ export class Props {
           this.vec3("Verschiebung X/Y/Z", f.move, (v) => this.set(f, "move", v, "Verschiebung")),
           this.select("Drehachse", this.axisChoices(part, f), f.axis || "Z", (v) => this.set(f, "axis", v, "Drehachse")),
           E("Drehwinkel", "angle", { unit: "°" }),
-          this.check("Als Kopie", f.copy, (v) => this.set(f, "copy", v || undefined, "Kopie")))];
+          this.check("Als Kopie", f.copy, (v) => this.set(f, "copy", v || undefined, "Kopie"))),
+          this.section("Skalieren",
+            this.seg("Faktor", [["gleich", "Gleich in X/Y/Z"], ["achsen", "Je Achse"]], f.scaleMode === "achsen" ? "achsen" : "gleich", (v) => this.set(f, "scaleMode", v === "achsen" ? "achsen" : undefined, "Skalieren")),
+            f.scaleMode === "achsen" ? this.vec3("Faktor X/Y/Z", f.scaleXYZ || ["1", "1", "1"], (v) => this.set(f, "scaleXYZ", v, "Faktor X/Y/Z")) : this.expr("Faktor", f.scale || "", (v) => this.set(f, "scale", v, "Faktor"), { unit: "", allowEmpty: true, placeholder: "1" }),
+            this.vec3("Fester Punkt X/Y/Z", f.scaleOrigin, (v) => this.set(f, "scaleOrigin", v, "Fester Punkt")),
+            h("p", { class: "hint" }, "Faktor 1 = unverändert. Der feste Punkt bleibt stehen, alles andere wächst oder schrumpft von ihm weg."))];
       case "aufdicken":
         return [this.section("Aufdicken",
           facePick("Ebene Flächen im 3D-Fenster anklicken (nochmal klicken entfernt)."),

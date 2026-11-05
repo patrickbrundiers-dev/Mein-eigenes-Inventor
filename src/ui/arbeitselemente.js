@@ -486,6 +486,7 @@ export function datumPropsPanel(props, part, f, E) {
     body.push(props.check("Umkehren (Normale zur Gegenseite)", !!f.flip, (v) => props.set(f, "flip", v || undefined, "Umkehren")));
   } else if (f.type === "arbeitspunkt") {
     if (mode === "koordinaten") body.push(props.vec3("Koordinaten", [f.x ?? "0", f.y ?? "0", f.z ?? "0"], (a) => props.set(f, (x) => { x.x = a[0]; x.y = a[1]; x.z = a[2]; }, "Koordinaten")));
+    if (mode === "kurve") body.push(E("Stelle (0 = Anfang, 100 = Ende)", "pos", { unit: "%", allowNeg: false }));
     if (mode === "versatz") body.push(props.vec3("Versatz ΔX ΔY ΔZ", [f.dx ?? "0", f.dy ?? "0", f.dz ?? "0"], (a) => props.set(f, (x) => { x.dx = a[0]; x.dy = a[1]; x.dz = a[2]; }, "Versatz")));
   }
   if (def?.refs?.some((s) => /:(cyl|curve)$/.test(s) || s.startsWith("ref:")) || Object.values(f).some((x) => snapLabel(x)))

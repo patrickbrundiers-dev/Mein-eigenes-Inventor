@@ -18,6 +18,7 @@ export const PLANE_MODES = Object.freeze([
   { value: "normal", label: "Senkrecht zu Achse", refs: ["axis:axis", "point:point"] },
   { value: "kurve", label: "Senkrecht zu Kante/Pfad", refs: ["curve:curve"] },
   { value: "tangential", label: "Tangential an Zylinder", refs: ["cyl:cyl"] },
+  { value: "senkrecht", label: "Durch Achse, senkrecht zu Ebene", refs: ["axis:axis", "base:plane"] },
   { value: "flaeche", label: "Versatz zu Fläche (alt)", legacy: true },
 ]);
 export const AXIS_MODES = Object.freeze([
@@ -36,6 +37,8 @@ export const POINT_MODES = Object.freeze([
   { value: "versatz", label: "Versatz von Punkt", refs: ["point:point"] },
   { value: "schnitt", label: "Schnitt Achse mit Ebene", refs: ["axis:axis", "plane:plane"] },
   { value: "dreiEbenen", label: "Schnitt dreier Ebenen", refs: ["plane1:plane", "plane2:plane", "plane3:plane"] },
+  { value: "zweiAchsen", label: "Schnitt zweier Achsen/Kanten", refs: ["axis:axis", "axis2:axis"] },
+  { value: "kurve", label: "Auf Kante/Pfad", refs: ["curve:curve"] },
 ]);
 export const MODES_OF = Object.freeze({ arbeitsebene: PLANE_MODES, arbeitsachse: AXIS_MODES, arbeitspunkt: POINT_MODES });
 export const DEFAULT_MODE = Object.freeze({ arbeitsebene: "versatz", arbeitsachse: "punkte", arbeitspunkt: "koordinaten" });
@@ -253,6 +256,13 @@ function workplane(f, { plane, axis, point, ev }) {
     }
     return frameOf(v3.add(c.p, v3.mul(rad, c.r)), rad, k);
   }
+  if (mode === "senkrecht") {
+    // hält die Achse und steht senkrecht auf der Ebene (SolidCraft »PlanePerpendicular«)
+    const a = axis(f.axis || "Z"), b = plane(f.base || "XY");
+    const n = v3.cross(a.d, b.normal);
+    if (v3.len(n) < 1e-6) throw new Error("Die Achse steht senkrecht auf der Ebene");
+    return frameOf(a.p, n, a.d);
+  }
   throw new Error("Unbekannte Art: " + mode);
 }
 
@@ -303,6 +313,21 @@ function workpoint(f, { plane, axis, point, ev }) {
     if (Math.abs(den) < EPS) throw new Error("Achse liegt parallel zur Ebene");
     const t = v3.dot(P.normal, v3.sub(P.origin, a.p)) / den;
     return v3.add(a.p, v3.mul(a.d, t));
+  }
+  if (mode === "zweiAchsen") {
+    // Schnittpunkt zweier Geraden bzw. Mitte ihrer nächsten Punkte (SolidCraft »PointTwoEdges«)
+    const A = axis(f.axis || "X"), B = axis(f.axis2 || "Y");
+    const w0 = v3.sub(A.p, B.p), a = v3.dot(A.d, A.d), b = v3.dot(A.d, B.d), c = v3.dot(B.d, B.d), d = v3.dot(A.d, w0), e = v3.dot(B.d, w0);
+    const den = a * c - b * b;
+    if (Math.abs(den) < 1e-12) throw new Error("Die Achsen sind parallel");
+    const s = (b * e - c * d) / den, t = (a * e - b * d) / den;
+    return v3.mul(v3.add(v3.add(A.p, v3.mul(A.d, s)), v3.add(B.p, v3.mul(B.d, t))), 0.5);
+  }
+  if (mode === "kurve") {
+    if (!isCurveSnap(f.curve)) throw new Error("Kante oder Pfad wählen");
+    const t = ev(String(f.pos ?? "50")) / 100;
+    if (!(t >= 0 && t <= 1)) throw new Error("Stelle zwischen 0 und 100 %");
+    return alongPolyline(f.curve.pts, t).p;
   }
   if (mode === "dreiEbenen") {
     const [A, B, C] = [plane(f.plane1 || "XY"), plane(f.plane2 || "XZ"), plane(f.plane3 || "YZ")];

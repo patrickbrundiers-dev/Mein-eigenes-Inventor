@@ -17,9 +17,9 @@ export function featureHandles(f, ctx) {
   const out = [];
   const ev = ctx.ev || num;
   try {
-    if (f.type === "extrude" && ctx.frame && ctx.center && f.mode !== "through") {
-      if (!isPlainNumber(f.distance)) return [];
-      const N = ctx.frame.normal, c = ctx.center, d = num(f.distance);
+    if (f.type === "extrude" && ctx.frame && ctx.center && f.mode !== "through" && f.mode !== "bis" && f.source !== "flaeche" && !f.from) {
+      if (!isPlainNumber(f.distance) || !isPlainNumber(f.startOffset || "0")) return [];
+      const N = ctx.frame.normal, c = add(ctx.center, N, num(f.startOffset || "0")), d = num(f.distance);
       const mode = f.mode || "normal";
       if (mode === "normal") out.push({ which: "a", p: add(c, N, d), d: N, field: "distance", value: d });
       else if (mode === "reverse") out.push({ which: "a", p: add(c, N, -d), d: neg(N), field: "distance", value: d });
