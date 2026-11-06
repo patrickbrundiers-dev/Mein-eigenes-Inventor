@@ -236,16 +236,27 @@ export function planAutoDims(views, used = {}) {
       const at = (x) => (kind === "h" ? [x, b.y0] : [b.x0, x]);
       const vals = list.map((c) => c[coord]);
       const n = vals.length;
-      if (!n) return;
+      if (!n || (v.onlyAxis && v.onlyAxis !== kind)) return; // Baugruppe: nur Teilung längs der Hauptrichtung
       const mid = (lo + hi) / 2;
       const sym = vals.every((x, i) => Math.abs(x - mid - (mid - vals[n - 1 - i])) < 1e-3);
       const step = n >= 3 ? (vals[n - 1] - vals[0]) / (n - 1) : 0;
       const even = n >= 3 && vals.every((x, i) => Math.abs(x - vals[0] - i * step) < 1e-3);
       if (n === 1 && Math.abs(vals[0] - mid) < 1e-3) return; // auf der Mittellinie: Lage ist durch die Symmetrie bestimmt
+      // Abstände in Läufen gleicher Teilung (Stäbe zwischen Pfosten): Kettenmaß in einer Reihe statt gestaffelter Maße
+      const runs = [];
+      for (let i = 0; i + 1 < n; i++) {
+        const g = vals[i + 1] - vals[i], r = runs[runs.length - 1];
+        if (r && Math.abs(r.g - g) < 0.05) r.k++; else runs.push({ i, k: 1, g });
+      }
+      const chain = `${v.id}:${kind}:${coord}`;
       if (even) {
-        // Lochreihe mit gleicher Teilung (DIN 406-11): „n× Teilung (=Gesamt)“, bei Mittellage ohne Randmaß
-        if (!sym && vals[0] - lo > EPS) out.push({ view: v.id, kind, p1: at(lo), p2: pt(list[0]), off: sgn * 8 });
-        out.push({ view: v.id, kind, p1: pt(list[0]), p2: pt(list[n - 1]), off: sgn * 15, pitch: { n: n - 1, p: step } });
+        // Lochreihe mit gleicher Teilung (DIN 406-11): „n× Teilung (=Gesamt)“, bei Mittellage ohne Randmaß; Randmaß und Teilung in einer Reihe
+        if (!sym && vals[0] - lo > EPS) out.push({ view: v.id, kind, p1: at(lo), p2: pt(list[0]), off: sgn * 8, chain });
+        out.push({ view: v.id, kind, p1: pt(list[0]), p2: pt(list[n - 1]), off: sgn * 8, pitch: { n: n - 1, p: step }, chain, pitchTotal: true });
+      } else if (n >= 4 && runs.length <= Math.ceil((n - 1) / 2)) {
+        // Kettenmaß: Randmaß, dann je Lauf »k× Teilung« oder ein Einzelmaß – alles auf einer Maßlinie
+        if (vals[0] - lo > EPS) out.push({ view: v.id, kind, p1: at(lo), p2: pt(list[0]), off: sgn * 8, chain });
+        for (const r of runs) out.push({ view: v.id, kind, p1: pt(list[r.i]), p2: pt(list[r.i + r.k]), off: sgn * 8, chain, ...(r.k > 1 ? { pitch: { n: r.k, p: r.g } } : {}) });
       } else if (sym && n >= 2) {
         // symmetrisch zur Mitte: Abstände der Paare statt Lagemaße vom Rand
         for (let i = 0; i < Math.floor(n / 2); i++) out.push({ view: v.id, kind, p1: pt(list[i]), p2: pt(list[n - 1 - i]), off: sgn * (8 + 7 * i) });
@@ -332,7 +343,8 @@ export function dimLabel(m) {
   if (m.kind === "ang") return angleLabel(m) + (m.suffix || "");
   if (m.kind === "dia" && m.hole) return holeText(m.hole, m.count) + (m.suffix || "");
   if (m.kind === "dia" && m.pcd) return "LK Ø" + fmt(m.circle.r * 2) + ", " + m.pcd.n + "× " + fmt(360 / m.pcd.n) + "°" + (m.suffix || "");
-  if (m.pitch) return m.pitch.n + "× " + fmt(m.pitch.p) + " (=" + fmt(m.pitch.n * m.pitch.p) + ")" + (m.suffix || "");
+  // im Kettenmaß ohne Gesamtlänge (sie ergibt sich aus der Kette), sonst DIN 406-11 »n× t (=Gesamt)«
+  if (m.pitch) return m.pitch.n + "× " + fmt(m.pitch.p) + (m.chain && !m.pitchTotal ? "" : " (=" + fmt(m.pitch.n * m.pitch.p) + ")") + (m.suffix || "");
   const val = m.kind === "dia" ? m.circle.r * 2 : m.kind === "rad" ? m.circle.r : m.kind === "h" ? Math.abs(m.p2[0] - m.p1[0]) : Math.abs(m.p2[1] - m.p1[1]);
   return (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + String(Math.round(val * 10) / 10).replace(".", ",") + (m.suffix || "");
 }
@@ -364,7 +376,9 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null, note
       // Koordinatenmaße teilen sich eine Reihe; ihr senkrechter Text braucht Platz wie zwei Reihen
       const ordW = Math.max(0, ...items.filter((it) => it.m.ord).map((it) => textWidth(dimLabel(it.m))));
       const ordRows = ordW ? Math.ceil((ordW + (kind === "h" ? 2 : 2 - TEXT_H)) / ROW_STEP) + 1 : 0;
-      const rowsOf = (list) => (list.some((it) => it.m.ord) ? ordRows : 0) + list.filter((it) => !it.m.ord).length;
+      // Kettenmaße (m.chain) teilen sich eine Reihe
+      const rowKey = (it) => it.m.chain ?? it.m;
+      const rowsOf = (list) => (list.some((it) => it.m.ord) ? ordRows : 0) + new Set(list.filter((it) => !it.m.ord).map(rowKey)).size;
       const band = (list, side) => {
         // enge Maße: der Text steht neben der Maßlinie und braucht dort Platz
         const extra = Math.max(0, ...list.filter((it) => !it.m.ord && it.len < textWidth(dimLabel(it.m)) + 7).map((it) => textWidth(dimLabel(it.m)) + 3));
@@ -374,6 +388,10 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null, note
         const q = side === "max" ? [R[c + 2], R[c + 2] + depth] : [R[c] - depth, R[c]];
         return kind === "h" ? [lo, q[0], hi, q[1]] : [q[0], lo, q[1], hi];
       };
+      // eine Kette bleibt zusammen auf der Seite ihres ersten Maßes und zählt mit ihrer Gesamtlänge
+      const chainSide = new Map(), chainLen = new Map();
+      for (const it of items) if (it.m.chain) { if (!chainSide.has(it.m.chain)) chainSide.set(it.m.chain, it.side); it.side = chainSide.get(it.m.chain); chainLen.set(it.m.chain, (chainLen.get(it.m.chain) || 0) + it.len); }
+      for (const it of items) if (it.m.chain) it.len = chainLen.get(it.m.chain);
       const sides = { min: items.filter((it) => it.side === "min"), max: items.filter((it) => it.side === "max") };
       // größere Gruppe zuerst, sie darf ihre Seite behalten oder auf die freie Gegenseite wechseln
       for (const s of ["min", "max"].sort((a, b) => sides[b].length - sides[a].length)) {
@@ -387,8 +405,10 @@ export function layoutAutoDims(dims, views, { obstacles = [], frame = null, note
         const grp = sides[s].sort((a, b) => (b.m.ord ? 1 : 0) - (a.m.ord ? 1 : 0) || a.len - b.len);
         const first = grp.some((it) => it.m.ord) ? ordRows : 0;
         let k = 0;
+        const rowOf = new Map();
         grp.forEach((it) => {
-          const dist = it.m.ord ? ROW_FIRST : ROW_FIRST + ROW_STEP * (first + k++);
+          if (!it.m.ord && !rowOf.has(rowKey(it))) rowOf.set(rowKey(it), k++);
+          const dist = it.m.ord ? ROW_FIRST : ROW_FIRST + ROW_STEP * (first + rowOf.get(rowKey(it)));
           it.m.off = s === "max" ? R[c + 2] + dist - Math.max(it.A[c], it.B[c]) : R[c] - dist - Math.min(it.A[c], it.B[c]);
         });
         if (grp.length) placed.push(band(grp, s));

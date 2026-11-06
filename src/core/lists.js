@@ -3,6 +3,7 @@
 
 import { cutListTotals, partsText, endsText } from "./cutlist.js";
 import { WELD_KINDS, WELD_SIDES, prepText } from "./weld.js";
+import { barText } from "./stangen.js";
 
 const r = (x, d) => (Number.isFinite(x) ? Math.round(x * 10 ** d) / 10 ** d : null);
 
@@ -11,7 +12,7 @@ const r = (x, d) => (Number.isFinite(x) ? Math.round(x * 10 ** d) / 10 ** d : nu
  * Mit Unterbaugruppen (M19) zusätzlich structure: [{level, name, number, kind, qty, total}] und
  * modular: [{name, number, rows: [{pos, name, number, kind, qty}]}].
  */
-export function listSheets({ cut = [], welds = [], bom = [], structure = [], modular = [] }) {
+export function listSheets({ cut = [], welds = [], bom = [], structure = [], modular = [], bars = null }) {
   const sheets = [];
   const art = (k) => (k === "assembly" ? "Baugruppe" : "Bauteil");
   if (bom.length) {
@@ -38,6 +39,15 @@ export function listSheets({ cut = [], welds = [], bom = [], structure = [], mod
     sheets.push({ name: "Summen je Profil", rows: [["Profil", "Werkstoff", "Stück", "Länge gesamt m", "kg/m", "kg gesamt"],
       ...t.groups.map((g) => [g.profileId, g.material, g.qty, r(g.length / 1000, 3), r(g.kgm, 3), r(g.mass, 3)]),
       [], ["Summe", null, t.qty, r(t.length / 1000, 3), null, r(t.mass, 3)]] });
+  }
+  if (bars?.groups.length) {
+    const rows = [["Profil", "Werkstoff", "Stange mm", "Stange Nr.", "Belegung", "Rest mm", "Verschnitt %", "Verschnitt kg"]];
+    for (const g of bars.groups) {
+      g.bars.forEach((b, i) => rows.push([g.profileId, g.material, g.stock, i + 1, barText(b), r(b.rest, 1), i === 0 ? r(g.wastePct, 1) : null, i === 0 ? r(g.wasteKg, 2) : null]));
+      for (const t of g.tooLong) rows.push([g.profileId, g.material, g.stock, null, `passt nicht: ${t.qty} × ${t.length} (Pos ${t.pos})`, null, null, null]);
+    }
+    rows.push([], ["Summe", null, null, bars.bars, null, null, null, r(bars.wasteKg, 2)]);
+    sheets.push({ name: "Stangenplan", rows });
   }
   if (welds.length) {
     sheets.push({ name: "Nahtliste", rows: [["Pos", "Nahtart", "Maß", "Seite", "Umlaufend", "Montage", "Anzahl", "Länge gesamt mm", "Schweißgut kg", "Bauteil", "Nahtvorbereitung"],

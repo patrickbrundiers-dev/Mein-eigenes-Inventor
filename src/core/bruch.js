@@ -220,3 +220,24 @@ export function autoBreaks(lo, hi, features = [], margin = 50, { max = 4, minLen
   for (let i = 0; i + 1 < merged.length; i++) if (merged[i + 1][0] - merged[i][1] >= minLen) free.push({ a: merged[i][1], b: merged[i + 1][0] });
   return free.sort((p, q) => (q.b - q.a) - (p.b - p.a)).slice(0, max).sort((p, q) => p.a - q.a);
 }
+
+/**
+ * Bruchstelle für lange Baugruppen (R6, Geländer, Zaun): in der längsten Folge gleicher Teilung (Pfosten, Stäbe) mit
+ * mindestens minFields Feldern bleiben das erste und das letzte Feld sichtbar, die Felder dazwischen werden herausgebrochen.
+ * positions: Lage der Bauteile längs der Ansicht. Rückgabe [{a, b}] oder leer.
+ */
+export function fieldBreaks(positions, { minFields = 4, tol = 0.01, keep = 0.3 } = {}) {
+  const p = [...new Set(positions.map((x) => Math.round(x * 10) / 10))].sort((a, b) => a - b);
+  let best = null;
+  for (let i = 0; i + 1 < p.length; i++) {
+    const g = p[i + 1] - p[i];
+    if (!(g > 1)) continue;
+    let j = i + 1;
+    while (j + 1 < p.length && Math.abs(p[j + 1] - p[j] - g) <= Math.max(1, tol * g)) j++;
+    const k = j - i;
+    if (k >= minFields && (!best || k * g > best.k * best.g)) best = { i, j, k, g };
+  }
+  if (!best) return [];
+  const a = p[best.i + 1] + keep * best.g, b = p[best.j - 1] - keep * best.g;
+  return b - a > 0.5 * best.g ? [{ a, b }] : [];
+}

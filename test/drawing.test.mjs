@@ -782,3 +782,73 @@ test("Mehrere Blätter: wechseln, anlegen, Ansicht mit Maßen verschieben, lösc
   B.removeSheet(d);
   assert.equal(B.sheetCount(d), 1); assert.equal(d.sheetStore, undefined); assert.deepEqual(d.views.map((v) => v.id), ["v1", "v2"]);
 });
+
+test("Zeichnungssatz: jedes Blatt mit eigener Quelle und Schriftfeld, Verwendung findet alle Quellen", async () => {
+  const B = await import("../src/core/blaetter.js");
+  const { whereUsed } = await import("../src/core/verwendung.js");
+  const { syncDrawingTitles } = await import("../src/core/eigenschaften.js");
+  const d = { kind: "drawing", id: "z", source: { kind: "assembly", id: "bg" }, title: { benennung: "Tor", nummer: "T-1", massstab: "1:20", werkstoff: "", firma: "PB" }, sheet: { format: "A2" }, views: [{ id: "v1" }], dims: [], notes: [] };
+  B.addSheet(d, { format: "A3", orientation: "quer" }, { source: { kind: "part", id: "p1" }, title: { benennung: "Pfosten", nummer: "T-1-01", massstab: "1:5" } });
+  assert.equal(d.source.id, "p1");
+  assert.equal(d.title.benennung, "Pfosten");
+  assert.equal(d.title.firma, "PB", "gemeinsame Felder bleiben");
+  d.pendingAutoViews = true;
+  B.switchSheet(d, 0);
+  assert.equal(d.source.id, "bg");
+  assert.equal(d.title.benennung, "Tor");
+  assert.equal(d.title.massstab, "1:20");
+  assert.equal(d.pendingAutoViews, undefined, "Ausstehende Ansichten gehören zum Blatt");
+  B.switchSheet(d, 1);
+  assert.equal(d.pendingAutoViews, true);
+  assert.equal(d.title.massstab, "1:5");
+  B.switchSheet(d, 0);
+  assert.deepEqual(B.drawingSources(d).map((s) => s.id), ["bg", "p1"]);
+  assert.ok(B.drawsDoc(d, "p1", "part") && !B.drawsDoc(d, "p1", "assembly") && !B.drawsDoc(d, "x"));
+  const docs = [{ kind: "part", id: "p1", name: "Pfosten", number: "T-1-01" }, { kind: "assembly", id: "bg", name: "Tor", components: [{ part: "p1" }] }, d];
+  assert.deepEqual(whereUsed({ docs }, "p1").drawings.map((x) => x.id), ["z"]);
+  // Umbenennen des Pfostens erreicht das Schriftfeld seines Blatts
+  docs[0].name = "Pfosten 60";
+  assert.equal(syncDrawingTitles({ docs }, docs[0], { name: "Pfosten" }), 1);
+  B.switchSheet(d, 1);
+  assert.equal(d.title.benennung, "Pfosten 60");
+  // ältere Blätter ohne eigene Quelle behalten die bisherige
+  const old = { kind: "drawing", source: { kind: "part", id: "a" }, title: { benennung: "A" }, views: [], dims: [], notes: [], sheetStore: [null, { sheet: {}, views: [], dims: [], notes: [] }], sheetNo: 0 };
+  B.switchSheet(old, 1);
+  assert.equal(old.source.id, "a");
+  assert.equal(old.title.benennung, "A");
+});
+
+test("Bemaßung per Kante: ganze Kante, Abstand paralleler Kanten, Kettenmaß statt Treppe", async () => {
+  const { edgeRun, parallelEdgeDim } = await import("../src/core/zeichnung.js");
+  const pl = [[0, 0], [40, 0], [100, 0], [100, 50], [0, 50]];
+  assert.deepEqual(edgeRun([pl], { a: pl[1], b: pl[2] }), { a: [0, 0], b: [100, 0] }, "gleichgerichtete Stücke zusammen");
+  const e1 = { a: [0, 0], b: [100, 0] }, e2 = { a: [20, 30], b: [200, 30] };
+  const m = parallelEdgeDim(e1, e2);
+  assert.equal(m.kind, "v");
+  assert.equal(Math.abs(m.p2[1] - m.p1[1]), 30);
+  assert.equal(m.p1[0], 60, "Mitte des gemeinsamen Bereichs");
+  assert.equal(parallelEdgeDim(e1, { a: [0, 0], b: [0, 10] }), null, "nicht parallel");
+  const s = parallelEdgeDim({ a: [0, 0], b: [10, 10] }, { a: [0, 10], b: [10, 20] });
+  assert.equal(s.kind, "a");
+  assert.ok(Math.abs(Math.hypot(s.p2[0] - s.p1[0], s.p2[1] - s.p1[1]) - 10 / Math.SQRT2) < 1e-9);
+  // Stäbe zwischen Pfosten: 3 Läufe gleicher Teilung → eine Kette statt verschachtelter Paarmaße
+  const { planAutoDims, layoutAutoDims, dimLabel } = await import("../src/core/autodims.js");
+  const xs = [10, 20, 30, 40, 60, 70, 80, 90];
+  const views = [{ id: "v", axes: [null, null], bbox: { x0: 0, y0: 0, x1: 100, y1: 20 }, arcs: xs.map((x) => ({ cx: x, cy: 10, r: 0.01, full: true })), lines: [], holes: [] }];
+  const out = planAutoDims(views, { wall: true, noRadii: true }).filter((x) => x.kind === "h");
+  assert.ok(out.every((x) => x.chain), "alle Maße in einer Kette");
+  assert.deepEqual(out.map(dimLabel), ["10", "3× 10", "20", "3× 10"]);
+  layoutAutoDims(out, { v: { to: (u, w) => [u, w], rect: [0, 0, 100, 20], scale: 1 } });
+  assert.equal(new Set(out.map((x) => x.off)).size, 1, "eine Reihe");
+});
+
+test("fieldBreaks: lange Baugruppe behält erstes und letztes Feld, Ecke bleibt", async () => {
+  const { fieldBreaks } = await import("../src/core/bruch.js");
+  // 6 Felder à 1333,3, danach Ecklauf (alle Pfosten bei 8000)
+  const posts = [0, 1333.3, 2666.7, 4000, 5333.3, 6666.7, 8000, 8000, 8000];
+  const br = fieldBreaks(posts);
+  assert.equal(br.length, 1);
+  assert.ok(Math.abs(br[0].a - (1333.3 + 400)) < 1 && Math.abs(br[0].b - (6666.7 - 400)) < 1);
+  assert.deepEqual(fieldBreaks([0, 1000, 2000, 3000]), []);
+  assert.deepEqual(fieldBreaks([0, 500, 1700, 2100, 3900]), []);
+});

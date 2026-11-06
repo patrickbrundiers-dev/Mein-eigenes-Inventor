@@ -1157,7 +1157,22 @@ try {
     try { await a.files.exportListsXlsx(); } finally { a.files.saveBinary = orig; }
     return got && { n: got.n, name: got.name, pk: got.head.join(), sheets: [...got.text.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1]) };
   });
-  step("Listen als Excel", !!xl && xl.pk === "80,75" && /_Listen\.xlsx$/.test(xl.name) && /^(Stückliste,)?Zuschnitt,Summen je Profil$/.test(xl.sheets.join()), JSON.stringify(xl));
+  step("Listen als Excel", !!xl && xl.pk === "80,75" && /_Listen\.xlsx$/.test(xl.name) && /^(Stückliste,)?Zuschnitt,Summen je Profil,Stangenplan$/.test(xl.sheets.join()), JSON.stringify(xl));
+  // Stangenplan (R2) in der Zuschnittliste: Lagerlänge je Profil ändern → höchstens so viele Stangen, Wert bleibt in den Einstellungen
+  {
+    await evalApp(() => window.__werkcad.props.cutListDialog());
+    const plan = page.locator("#modal-root .bar-plan");
+    const before = await plan.locator("h4").textContent();
+    const pid = await plan.locator("tbody tr").first().getAttribute("data-profile");
+    const n0 = Number(await plan.locator("tbody tr").first().locator("td").nth(2).textContent());
+    await plan.locator("tbody tr").first().locator("input.bar-stock").fill("12000");
+    await plan.locator("tbody tr").first().locator("input.bar-stock").dispatchEvent("change");
+    const n1 = Number(await plan.locator("tbody tr").first().locator("td").nth(2).textContent());
+    const stored = await evalApp((id) => window.__werkcad.prefs.get("fertigung.stangenJeProfil")[id], pid);
+    await page.keyboard.press("Escape");
+    await evalApp(() => window.__werkcad.prefs.reset(["fertigung.stangenJeProfil"]));
+    step("Stangenplan", /Stangenplan: \d+ Stange/.test(before) && n0 > 0 && n1 > 0 && n1 <= n0 && stored === 12000, JSON.stringify({ before, pid, n0, n1, stored }));
+  }
 
   // Treppe L-Form mit Podest und Spindeltreppe (MegaCAD-Abgleich M14)
   await page.locator("#props .field", { hasText: "Form" }).first().locator(".tile", { hasText: "L-Form" }).click();

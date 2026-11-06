@@ -1,4 +1,5 @@
 // Problemliste (FU15) und Freigabe (FU13): Oberfläche zu src/core/pruefung.js
+import { drawsDoc } from "../core/blaetter.js";
 import { h, modal, toast, confirmDialog } from "./dom.js";
 import { projectProblems, releaseCheck, releaseState, releaseLabel, releaseText, makeRelease, countLevels, missingNumbers, featureProblems, partsOf, RELEASE_STATES, FEHLER, WARNUNG, HINWEIS } from "../core/pruefung.js";
 import { checkCutList, dfmLimits } from "../core/dfm.js";
@@ -15,7 +16,7 @@ export function dfmFor(app) {
 }
 
 const docOfApp = (app) => (id) => app.doc(id);
-const drawingsOf = (app) => (id) => app.project.docs.filter((x) => x.kind === "drawing" && x.source?.id === id);
+const drawingsOf = (app) => (id) => app.project.docs.filter((x) => drawsDoc(x, id));
 
 /** Eintrag der Liste anspringen: Dokument öffnen, Feature wählen */
 export function goToProblem(app, it) {

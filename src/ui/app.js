@@ -1,4 +1,5 @@
 // Anwendungssteuerung: Projektzustand, Rückgängig, Neuaufbau, Auswahl, Modi
+import { drawsDoc, addSheet, switchSheet } from "../core/blaetter.js";
 import { setColorVision } from "../core/farbsehen.js";
 import { setPlaneNames } from "../core/ebenennamen.js";
 import { themeById, themeVars } from "../core/themes.js";
@@ -38,7 +39,8 @@ import { classText } from "../core/tolerance.js";
 import { setUserBendTables, adoptProjectBendTables, projectBendTableCopies } from "../core/bendtable.js";
 import { newSketch, holeCenters } from "../core/sketch.js";
 import { v3, planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir, toWorld } from "../core/geom.js";
-import { flattenAssembly } from "../core/subasm.js";
+import { flattenAssembly, structureBom } from "../core/subasm.js";
+import { planWelds } from "../core/genwelds.js";
 import { contextScene, contextLabel } from "../core/kontext.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
@@ -271,12 +273,36 @@ export class App {
    * Einzelteile einer Generator-Baugruppe an die Einstellungen anpassen: Bauteile wiederverwenden (gleiche Geometrie,
    * sonst gleicher Name), angehängte Features behalten, fehlende anlegen, nicht mehr gebrauchte entfernen.
    */
+  /** Bauplan einer Generator-Baugruppe (Zahlen aus den Parametern der Baugruppe aufgelöst) */
+  genPlan(asm) {
+    const g = asm.generator, gen = GENERATORS[g.gen];
+    const scope = resolveParams(asm.params || []).values;
+    const params = g.gen === "gestell" ? JSON.parse(JSON.stringify(g.params)) : Object.fromEntries(Object.entries(g.params).map(([k, v]) => [k, gen.schema.find((s) => s.key === k)?.type === "num" ? String(evaluate(String(v), scope)) : JSON.parse(JSON.stringify(v))]));
+    return g.gen === "gestell" ? gestellPlan(params.input) : gen.plan(resolveGenParams(g.gen, params, (x) => evaluate(String(x), scope)));
+  }
+  /** Schweißnähte einer Generator-Baugruppe aus ihrem Bauplan (R3), zwischengespeichert je Einstellung */
+  genWelds(asm) {
+    if (!asm?.generator || GENERATORS[asm.generator.gen]?.weldFree) return [];
+    const key = JSON.stringify([asm.generator, asm.params || []]);
+    const c = (this._genWeldCache ||= new Map()).get(asm.id);
+    if (c?.key === key) return c.welds;
+    let welds = [];
+    try { welds = planWelds(this.genPlan(asm)); } catch { welds = []; }
+    this._genWeldCache.set(asm.id, { key, welds });
+    return welds;
+  }
+  /** Nahtquellen der Baugruppen (Generator-Nähte), mit Anzahl über alle Ebenen – für collectWelds neben den Bauteilen */
+  assemblyWeldSources(d) {
+    if (d?.kind !== "assembly") return [];
+    const list = [{ doc: d, total: 1 }, ...structureBom(d, (id) => this.doc(id)).filter((r) => r.kind === "assembly").map((r) => ({ doc: r.doc, total: r.total }))];
+    return list.map(({ doc, total }) => ({ part: { name: doc.name, material: doc.genMaterial?.material }, result: { bodies: [], welds: this.genWelds(doc) }, qty: total })).filter((s) => s.result.welds.length);
+  }
   syncGenAssembly(asm) {
     const g = asm.generator, gen = GENERATORS[g.gen];
     // Zahlen auflösen: die Bauteile rechnen ohne die Parameter der Baugruppe (Gestell: Eingabe liegt fertig vor)
     const scope = resolveParams(asm.params || []).values;
     const params = g.gen === "gestell" ? JSON.parse(JSON.stringify(g.params)) : Object.fromEntries(Object.entries(g.params).map(([k, v]) => [k, gen.schema.find((s) => s.key === k)?.type === "num" ? String(evaluate(String(v), scope)) : JSON.parse(JSON.stringify(v))]));
-    const groups = groupParts(g.gen === "gestell" ? gestellPlan(params.input) : gen.plan(resolveGenParams(g.gen, params, (x) => evaluate(String(x), scope))));
+    const groups = groupParts(this.genPlan(asm));
     const old = this.project.docs.filter((d) => d.kind === "part" && d.genAsm === asm.id), used = new Set();
     const take = (pred) => { const p = old.find((d) => !used.has(d) && pred(d)); if (p) used.add(p); return p; };
     const parts = groups.map((gr) => {
@@ -329,7 +355,7 @@ export class App {
     const asm = this.doc(asmId);
     if (asm?.kind !== "assembly" && asm?.kind !== "part") return [];
     await this.builtParts(asm);
-    const has = (id) => this.project.docs.some((x) => x.kind === "drawing" && x.source?.kind === "part" && x.source.id === id);
+    const has = (id) => this.project.docs.some((x) => drawsDoc(x, id, "part"));
     const todo = (asm.kind === "part" ? [{ part: asm }] : bomRows(this, asm)).filter((r) => r.part && !has(r.part.id));
     if (!todo.length) { if (!quiet) toast("Alle Positionen haben schon eine Zeichnung"); return []; }
     this.checkpoint("Einzelteilzeichnungen");
@@ -353,10 +379,39 @@ export class App {
     if (!quiet) toast(`${made.length} Einzelteilzeichnung${made.length === 1 ? "" : "en"} erzeugt`, { kind: "ok" });
     return made;
   }
+  /**
+   * Zeichnungssatz (R1): eine Zeichnung mit der Baugruppe auf Blatt 1 (Ansichten, Maße, Positionsnummern, Stückliste)
+   * und je Position ein Einzelteilblatt mit eigener Quelle, Grundansichten, Hauptmaßen und Schriftfeld. Normteile ohne
+   * Bauteil bleiben aus. Gibt die neue Zeichnung zurück.
+   */
+  async drawingSet(asmId, { open = true, quiet = false } = {}) {
+    const asm = this.doc(asmId);
+    if (asm?.kind !== "assembly") { if (!quiet) toast("Zeichnungssatz gibt es für Baugruppen"); return null; }
+    await this.builtParts(asm);
+    const rows = bomRows(this, asm).filter((r) => r.part);
+    this.checkpoint("Zeichnungssatz");
+    const d = this.withDrawingDefaults(newDrawing(this.docName("drawing", { quelle: asm.name }) + " – Satz", { kind: "assembly", id: asm.id }));
+    d.title.benennung = asm.name;
+    d.title.nummer = asm.number || "";
+    d.pendingAutoViews = true;
+    for (const r of rows) {
+      addSheet(d, { format: "A3", orientation: "quer" }, { source: { kind: r.part.kind, id: r.part.id }, title: { benennung: r.part.name, nummer: r.part.number || "", massstab: "1:1", werkstoff: "" } });
+      d.pendingAutoViews = true;
+      d.pendingAutoDims = true;
+    }
+    switchSheet(d, 0);
+    this.project.docs.push(d);
+    const t = quiet ? null : toast(`Zeichnungssatz: ${rows.length + 1} Blätter …`, { timeout: 0 });
+    try { await this.drawing.sheetExports(d); } finally { t?.remove(); }
+    this.changed({ rebuild: false });
+    if (open) this.openDoc(d.id);
+    if (!quiet) toast(`Zeichnungssatz mit ${rows.length + 1} Blättern erzeugt (Baugruppe + ${rows.length} Einzelteile)`, { kind: "ok" });
+    return d;
+  }
   async deleteDoc(id) {
     const d = this.doc(id);
     if (!d) return;
-    const users = this.project.docs.filter((x) => (x.kind === "assembly" && x.components.some((c) => c.part === id)) || (x.kind === "drawing" && x.source?.id === id));
+    const users = this.project.docs.filter((x) => (x.kind === "assembly" && x.components.some((c) => c.part === id)) || drawsDoc(x, id));
     const extra = users.length ? ` Es wird verwendet in: ${users.map((u) => u.name).join(", ")}.` : "";
     if ((this.prefs.get("allgemein.loeschenBestaetigen") || users.length) && !(await confirmDialog("Dokument löschen", `»${d.name}« wirklich löschen?${extra}`, { ok: "Löschen", danger: true }))) return;
     this.checkpoint("Löschen");

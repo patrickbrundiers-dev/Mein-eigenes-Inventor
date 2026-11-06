@@ -894,3 +894,70 @@ test("Rollbiegeliste: Bohrungen eines Wendelhandlaufs mit Abstand ab Anfang und 
   assert.equal(pages.length, 1);
   assert.ok(pages[0].html.includes("Rollbiegeliste") && pages[0].html.includes("Langloch"));
 });
+
+test("Fertigungsmappe: Stangenplan mit Bestellung und Belegung (R2)", async () => {
+  const { planBars } = await import("../src/core/stangen.js");
+  const { listPages } = await import("../src/core/mappe.js");
+  const cut = [{ pos: 1, profileId: "RR 42,4x2,6", material: "S235JR", length: 2500, qty: 5, kgm: 2.55, section: "Rohr", miters: [0, 0], mass: 6.4, parts: "Pfosten" }];
+  const bars = planBars(cut, { stock: 6000, trim: 10, rest: 142 });
+  assert.equal(bars.bars, 3, "2+2+1");
+  const pages = listPages({ cut, bars });
+  const p = pages.find((x) => x.html.includes("Stangenplan"));
+  assert.ok(p && p.html.includes("Bestellung") && p.html.includes("2 × 2500 (Pos 1)"), "Bestellung und Belegung");
+  assert.ok(!listPages({ cut }).some((x) => x.html.includes("Stangenplan")), "ohne Plan keine Seite");
+});
+
+test("Generator-Nähte: Pfosten auf Fußplatte, Stab am Gurt, Gehrungsecke, freie Enden ohne Naht (R3)", async () => {
+  const { planWelds, weldKey } = await import("../src/core/genwelds.js");
+  const { weldSymbol } = await import("../src/core/weld.js");
+  const rohr = { kind: "rohr", dims: { D: 42.4, t: 2.6 } }, rund = { kind: "rund", dims: { D: 12 } };
+  const plan = {
+    members: [
+      { name: "Pfosten", section: rohr, a: [0, 0, 8], b: [0, 0, 1000] },
+      { name: "Stab", section: rund, a: [100, 0, 121.2], b: [100, 0, 878.8] }, // zwischen Untergurt (z 100) und Obergurt (z 900), Rohr 42,4
+      { name: "Frei", section: rund, a: [3000, 0, 0], b: [3000, 0, 500] },
+    ],
+    chains: [{ name: "Rahmen", section: { kind: "vierkant", dims: { B: 40, t: 3 } }, points: [[0, 500, 0], [1000, 500, 0], [1000, 500, 1000]] }],
+    plates: [{ name: "Fußplatte", center: [0, 0, 4], xDir: [1, 0, 0], normal: [0, 0, 1], W: 120, H: 120, t: 8 }],
+  };
+  plan.members.push({ name: "Untergurt", section: rohr, a: [0, 0, 100], b: [1000, 0, 100] }, { name: "Obergurt", section: rohr, a: [0, 0, 900], b: [1000, 0, 900] });
+  const w = planWelds(plan);
+  const names = w.map((x) => x.name);
+  assert.ok(names.includes("Pfosten an Fußplatte"), names.join("; "));
+  assert.ok(names.includes("Stab an Untergurt") && names.includes("Stab an Obergurt"));
+  assert.ok(!names.some((n) => n.startsWith("Frei")), "freies Ende ohne Naht");
+  const post = w.find((x) => x.name === "Pfosten an Fußplatte");
+  assert.equal(post.kind, "kehl");
+  assert.ok(post.around && Math.abs(post.length - Math.PI * 42.4) < 1e-6);
+  assert.equal(post.a, 2, "0,7 × 2,6 → 2");
+  const corner = w.filter((x) => x.kind === "i");
+  assert.equal(corner.length, 1, "eine Gehrungsecke");
+  assert.ok(Math.abs(corner[0].length - 160) < 1e-6);
+  // Gurte enden am Pfosten: Kehlnaht an beiden Gurten
+  assert.ok(names.includes("Untergurt an Pfosten") && names.includes("Obergurt an Pfosten"));
+  // gleiche Nähte bündeln: Symbol mit Gabel und Anzahl
+  const stab = w.filter((x) => x.name.startsWith("Stab"));
+  assert.equal(weldKey(stab[0]), weldKey(stab[1]));
+  const sym = weldSymbol({ ...stab[0], count: 12 }, [0, 0], [20, -20]);
+  assert.ok(sym.texts.some((t) => t.text === "12×"));
+});
+
+test("Kalkulation: Material über den Stangenplan, Zeiten, Oberfläche, Zuschläge (R4)", async () => {
+  const { calculate, materialFamily, surfaceOf } = await import("../src/core/kalkulation.js");
+  assert.equal(materialFamily("Edelstahl 1.4301"), "edelstahl");
+  assert.equal(materialFamily("Aluminium EN AW-6060"), "alu");
+  assert.equal(materialFamily("Stahl S235JR"), "stahl");
+  const cut = [{ qty: 4, mass: 5, material: "Stahl S235JR", miters: [45, 0], coped: false }, { qty: 6, mass: 1, material: "Stahl S235JR", miters: [0, 0] }];
+  const bars = { groups: [{ material: "Stahl S235JR", buyKg: 30 }] };
+  const bom = [{ part: {}, qty: 4, mass: 5, material: "Stahl S235JR" }, { part: {}, qty: 6, mass: 1, material: "Stahl S235JR" }, { part: {}, qty: 2, mass: 3, material: "Stahl S235JR" }, { qty: 8, mass: 0.02 }];
+  const c = calculate({ bom, cut, bars, welds: [{ length: 2000 }], holes: 10, plates: 2, surface: { verzinken: true } }, { stundensatz: 60 });
+  // Material: 30 kg Stangen + 6 kg Platten × 1,15 = 36,9 kg × 1,4 €
+  assert.ok(Math.abs(c.material - (30 + 6 * 1.15) * 1.4) < 0.01, String(c.material));
+  // Zeit: 10 Schnitte × 3 + 4 Gehrungen × 2 + 10 Löcher × 1,5 + 2 Platten × 4 + 2 m × 15 + 12 Teile × 3 = 127 min
+  assert.equal(c.minutes, 127);
+  assert.ok(Math.abs(c.labour - (127 / 60) * 60) < 0.01);
+  assert.ok(Math.abs(c.surface - 32.16 * 0.6) < 0.01, "Masse inkl. Normteile × Verzinken");
+  assert.ok(Math.abs(c.norms - 4) < 1e-9);
+  assert.ok(Math.abs(c.net - c.base * 1.15 * 1.1) < 0.02);
+  assert.deepEqual(surfaceOf(["feuerverzinkt", "RAL 7016"]), { verzinken: true, pulvern: true });
+});

@@ -1,4 +1,5 @@
 // Öffnen, Speichern, Import/Export – über die Electron-Brücke oder im Browser per Download
+import { drawsDoc } from "../core/blaetter.js";
 import { pruneImages } from "../core/skizzenbild.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { toast, choiceDialog, downloadBlob, h, modal } from "./dom.js";
@@ -11,6 +12,8 @@ import { serializeProject, loadProject, validateProject, parseProject } from "..
 import { linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, baseName, packProject } from "../core/links.js";
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
+import { planBars, barOptions } from "../core/stangen.js";
+import { calculate, surfaceOf, CALC_DEFAULTS } from "../core/kalkulation.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
 import { bendSheetPage } from "../core/biegefolge.js";
 import { simplifyOf, simplifyAction, ENVELOPES } from "../core/vereinfachen.js";
@@ -717,7 +720,7 @@ export class Files {
   /** Nahtliste (Schweißnähte aus Bauteil bzw. allen Bauteilen der Baugruppe × Anzahl) */
   async exportWeldList() {
     const d = this.app.activeDoc();
-    const rows = weldRows(collectWelds(collectCutSources(this.app, d)));
+    const rows = weldRows(collectWelds([...collectCutSources(this.app, d), ...this.app.assemblyWeldSources(d)]));
     if (!rows.length) return toast("Keine Schweißnähte vorhanden – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
     await this.saveText(weldCsv(rows, d.name), safeName(d.number || d.name) + "_Nahtliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
   }
@@ -766,7 +769,7 @@ export class Files {
     if (plan.wps.length) mem(plan.wps);
     if (out === "save") return toast("Schweißplan gespeichert", { kind: "ok" });
     await app.builtParts(d);
-    const rows = weldPlanRows(collectWelds(collectCutSources(app, d)), plan);
+    const rows = weldPlanRows(collectWelds([...collectCutSources(app, d), ...app.assemblyWeldSources(d)]), plan);
     if (!rows.length) return toast("Keine Schweißnähte vorhanden – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
     const base = safeName(d.number || d.name);
     if (out === "csv") return this.saveText(weldPlanCsv(rows, plan, d.name), base + "_Schweissplan.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
@@ -850,8 +853,9 @@ export class Files {
     const docOf = (id) => app.doc(id);
     // Struktur- und Baukastenliste nur, wenn es Unterbaugruppen gibt – sonst wären sie gleich der Stückliste
     const nested = asm && d.components.some((c) => app.doc(c.part)?.kind === "assembly");
+    const cutRows = cutListRows(src);
     return listSheets({
-      cut: cutListRows(src), welds: weldRows(collectWelds(src)),
+      cut: cutRows, bars: cutRows.length ? planBars(cutRows, barOptions((k) => app.prefs.get(k))) : null, welds: weldRows(collectWelds([...src, ...app.assemblyWeldSources(d)])),
       bom: asm ? bomRows(app, d) : collectNorm(src.map((s) => ({ bodies: s.result.bodies, qty: s.qty }))).map((x, i) => ({ ...x, pos: i + 1, number: "" })),
       structure: nested ? structureBom(d, docOf).map((x) => ({ level: x.level, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty, total: x.total })) : [],
       modular: nested ? modularBom(d, docOf).map((m) => ({ name: m.asm.name, number: m.asm.number, rows: m.rows.map((x) => ({ pos: x.pos, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty })) })) : [],
@@ -914,6 +918,25 @@ export class Files {
       if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
       else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
     });
+  }
+  /** Kalkulation (R4) für Bauteil oder Baugruppe: Mengen aus Stückliste, Zuschnitt, Stangenplan und Nahtliste */
+  async calcFor(d, surface = null) {
+    const app = this.app;
+    await app.builtParts(d);
+    const src = collectCutSources(app, d);
+    const cut = cutListRows(src);
+    // Bauteil: wie eine Baugruppe mit nur diesem Teil, damit Masse, Werkstoff und Normteile gleich gerechnet werden
+    const asm = d.kind === "assembly" ? d : { kind: "assembly", id: "_kalk", name: d.name, components: [{ id: "_c", part: d.id, name: d.name, pos: [0, 0, 0], rot: [0, 0, 0] }] };
+    const bom = bomRows(app, asm);
+    const welds = weldRows(collectWelds([...src, ...app.assemblyWeldSources(d)]));
+    let holes = 0, plates = 0;
+    for (const s of src) for (const b of s.result?.bodies || []) {
+      holes += ((b.meta?.drills || 0) + (b.meta?.plate?.holes || 0)) * (s.qty || 1);
+      if (b.meta?.plate || b.meta?.sheet) plates += s.qty || 1;
+    }
+    const rates = Object.fromEntries(Object.keys(CALC_DEFAULTS).map((k) => [k, app.prefs.get("kalkulation." + k)]));
+    const surf = surface || d.kalkulation || surfaceOf(bom.map((r) => r.finish));
+    return { calc: calculate({ bom, cut, bars: cut.length ? planBars(cut, barOptions((k) => app.prefs.get(k))) : null, welds, holes, plates, surface: surf }, rates), surface: surf };
   }
   async exportAngebot() {
     const app = this.app, d = app.activeDoc();
@@ -1013,7 +1036,8 @@ export class Files {
       // Bauteil: Stückliste = seine Normteile (wie im Excel), Baugruppe: Positionen
       const bom = d.kind === "assembly" ? bomRows(app, d) : collectNorm(cutSrc.map((s) => ({ bodies: s.result.bodies, qty: s.qty }))).map((x, i) => ({ ...x, pos: i + 1, number: "" }));
       const order = [d.id, ...bom.filter((r) => r.part).map((r) => r.part.id), ...parts.map((p) => p.id)];
-      const drawings = [...new Set(order)].flatMap((id) => app.project.docs.filter((x) => x.kind === "drawing" && x.source?.id === id));
+      // Zeichnungssatz (mehrere Quellen) nur einmal, an der Stelle seiner ersten Quelle
+      const drawings = [...new Set([...new Set(order)].flatMap((id) => app.project.docs.filter((x) => drawsDoc(x, id))))];
       const sheets = [];
       for (const dr of drawings) sheets.push(...(await app.drawing.sheetExports(dr)));
       const cut = cutListRows(cutSrc);
@@ -1022,9 +1046,9 @@ export class Files {
       const base = mappeName(d.number || d.name);
       const status = open.length ? "nicht freigegeben" : releaseText(d, (id) => app.doc(id));
       // Schweißplan (W11), sobald es Nähte gibt
-      const wRows = weldPlanRows(collectWelds(cutSrc), weldPlanOf(app.project));
+      const wRows = weldPlanRows(collectWelds([...cutSrc, ...app.assemblyWeldSources(d)]), weldPlanOf(app.project));
       const wPage = wRows.length ? [weldPlanPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", plan: weldPlanOf(app.project), rows: wRows })] : [];
-      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends, rolls }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
+      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends, rolls, bars: cut.length && opt.listen !== false ? planBars(cut, barOptions((k) => app.prefs.get(k))) : null }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
       const files = [];
       const pdf = this.bridge?.renderPdf ? await this.bridge.renderPdf(html) : null;
       files.push(pdf ? [base + "_Fertigungsmappe.pdf", new Uint8Array(pdf)] : [base + "_Fertigungsmappe.html", html]);

@@ -1,6 +1,7 @@
 // Wo verwendet (Arbeitsabläufe AW1, wie Inventor »Wo verwendet« / SolidWorks »Verwendungsnachweis«):
 // In welchen Baugruppen steckt ein Bauteil oder eine Baugruppe, welche Zeichnungen zeigen es, welche Bauteile leiten davon ab.
 // Reine Rechnung über die Dokumentliste des Projekts, ohne Oberfläche.
+import { drawsDoc } from "./blaetter.js";
 
 /**
  * Verwendung eines Dokuments. Rückgabe
@@ -17,7 +18,7 @@ export function whereUsed(project, id) {
     const count = (d.components || []).filter((c) => c.part === id).length;
     if (count) assemblies.push({ doc: d, count });
   }
-  const drawings = docs.filter((d) => d.kind === "drawing" && d.source?.id === id);
+  const drawings = docs.filter((d) => drawsDoc(d, id));
   const derived = docs.filter((d) => d.kind === "part" && d.id !== id && (d.features || []).some((f) => f.type === "abgeleitet" && f.source === id));
   // nach oben weiterlaufen bis zu Baugruppen, die selbst nirgends eingebaut sind
   const parents = (x) => docs.filter((d) => d.kind === "assembly" && d.id !== x && (d.components || []).some((c) => c.part === x)).map((d) => d.id);

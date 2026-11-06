@@ -39,6 +39,7 @@ export const CATEGORIES = [
   { id: "dateien", label: "Dateien und Datensicherheit", status: "aktiv", note: "Speichern ist immer atomar: erst vollständig schreiben, dann umbenennen. Datei → Schreibgeschützt öffnen bzw. Projekt paketieren." },
   { id: "blech", label: "Blechparameter", status: "aktiv", note: "Blechregeln bündeln Werkstoff, Dicke, Radius und Abwicklung für Kantteile. Biegetabellen gelten für Kantteil und Knickrahmen, wenn dort als Biegeregel »Biegetabelle des Werkstoffs« gewählt ist. Benutzte Tabellen werden als Kopie in der Projektdatei gespeichert." },
   { id: "fertigung", label: "Rohrlaser und Fertigung", status: "teilweise", planned: ["mehrere Maschinenprofile (getrennt von den CAD-Einstellungen gespeichert)"], note: "Fertigungsprüfung der Zuschnittliste (Bauteil und Zuschnittliste). Startwerte aus den Beispielmaschinen der Rohrlaser-Kalkulation – bitte an die eigene Maschine anpassen. 0 = Regel aus." },
+  { id: "kalkulation", label: "Kalkulation", status: "aktiv", note: "Vorkalkulation aus Stückliste, Zuschnitt, Stangenplan und Nahtliste (Baugruppe → Kalkulation, Fertigungsmappe, Angebotsblatt). Startwerte sind Beispiele – bitte an den eigenen Betrieb anpassen." },
   { id: "lizenz", label: "Lizenz", status: "aktiv", note: "Ohne Lizenz läuft PBCAD 30 Tage als Testversion. Lizenzschlüssel vergibt Patrick Brundiers; für eine an den Rechner gebundene Lizenz die Rechner-ID mitschicken." },
   { id: "updates", label: "Updates", status: "aktiv" },
   { id: "datenschutz", label: "Datenschutz und Diagnose", status: "teilweise", note: "PBCAD sendet keine Diagnosedaten. Das Fehlerprotokoll bleibt lokal und enthält keine Projektdaten." },
@@ -169,6 +170,26 @@ export const SETTINGS = [
   { key: "fertigung.stange", cat: "fertigung", label: "Max. Stangenlänge", unit: "mm", type: "number", default: 6500, min: 0, max: 20000, help: "Nutzbar ist die Stange minus Endbeschnitt und Greiferrest. 0 = nicht prüfen." },
   { key: "fertigung.endbeschnitt", cat: "fertigung", label: "Endbeschnitt", unit: "mm", type: "number", default: 10, min: 0, max: 2000, help: "Anschnitt am Stangenanfang." },
   { key: "fertigung.greiferrest", cat: "fertigung", label: "Greiferrest", unit: "mm", type: "number", default: 142, min: 0, max: 2000, help: "Nicht nutzbares Ende im Greifer." },
+  { key: "fertigung.lagerlaenge", cat: "fertigung", label: "Lagerlänge (Stangenplan)", unit: "mm", type: "number", default: 6000, min: 100, max: 30000, help: "Handelslänge der gekauften Stangen für den Stangenplan; je Profil abweichend in der Zuschnittliste einstellbar." },
+  { key: "fertigung.schnittfuge", cat: "fertigung", label: "Schnittfuge (Stangenplan)", unit: "mm", type: "number", default: 0, min: 0, max: 20, help: "Materialverlust je Trennschnitt zwischen zwei Teilen im Stangenplan; Laser ≈ 0–1 mm, Säge ≈ 2–4 mm." },
+  { key: "fertigung.stangenJeProfil", cat: "fertigung", label: "Stangenlänge je Profil", type: "stocklist", default: {}, custom: true, help: "Abweichende Lagerlänge je Profil-ID, im Stangenplan der Zuschnittliste einstellbar." },
+  { key: "kalkulation.stundensatz", cat: "kalkulation", label: "Stundensatz Werkstatt", unit: "€/h", type: "number", default: 65, min: 0, max: 1000 },
+  { key: "kalkulation.stahl", cat: "kalkulation", label: "Stahl", unit: "€/kg", type: "number", default: 1.4, min: 0, max: 100 },
+  { key: "kalkulation.edelstahl", cat: "kalkulation", label: "Edelstahl", unit: "€/kg", type: "number", default: 5.5, min: 0, max: 100 },
+  { key: "kalkulation.alu", cat: "kalkulation", label: "Aluminium", unit: "€/kg", type: "number", default: 5, min: 0, max: 100 },
+  { key: "kalkulation.sonst", cat: "kalkulation", label: "Sonstige Werkstoffe", unit: "€/kg", type: "number", default: 3, min: 0, max: 100 },
+  { key: "kalkulation.blechVerschnitt", cat: "kalkulation", label: "Blechverschnitt", unit: "%", type: "number", default: 15, min: 0, max: 200, help: "Zuschlag auf die Masse von Blechen, Platten und übrigen Teilen (Profile rechnen über den Stangenplan)." },
+  { key: "kalkulation.schnitt", cat: "kalkulation", label: "Zuschnitt je Profilteil", unit: "min", type: "number", default: 3, min: 0, max: 120 },
+  { key: "kalkulation.gehrung", cat: "kalkulation", label: "Zuschlag Gehrung/Ausklinkung", unit: "min", type: "number", default: 2, min: 0, max: 120 },
+  { key: "kalkulation.loch", cat: "kalkulation", label: "Bohren je Loch", unit: "min", type: "number", default: 1.5, min: 0, max: 60 },
+  { key: "kalkulation.plattenTeil", cat: "kalkulation", label: "Platte/Blech je Stück", unit: "min", type: "number", default: 4, min: 0, max: 240, help: "Schneiden oder Lasern lassen, Entgraten, Handhaben." },
+  { key: "kalkulation.nahtM", cat: "kalkulation", label: "Schweißen je Meter Naht", unit: "min", type: "number", default: 15, min: 0, max: 600 },
+  { key: "kalkulation.teil", cat: "kalkulation", label: "Heften, Richten, Handhaben je Teil", unit: "min", type: "number", default: 3, min: 0, max: 240 },
+  { key: "kalkulation.verzinken", cat: "kalkulation", label: "Feuerverzinken", unit: "€/kg", type: "number", default: 0.6, min: 0, max: 50 },
+  { key: "kalkulation.pulvern", cat: "kalkulation", label: "Pulverbeschichten", unit: "€/kg", type: "number", default: 1.4, min: 0, max: 50 },
+  { key: "kalkulation.normteil", cat: "kalkulation", label: "Normteil pauschal", unit: "€/Stk", type: "number", default: 0.5, min: 0, max: 1000 },
+  { key: "kalkulation.gemein", cat: "kalkulation", label: "Gemeinkosten", unit: "%", type: "number", default: 15, min: 0, max: 300 },
+  { key: "kalkulation.gewinn", cat: "kalkulation", label: "Gewinn", unit: "%", type: "number", default: 10, min: 0, max: 300 },
   { key: "fertigung.kuerzestesTeil", cat: "fertigung", label: "Kürzestes Teil", unit: "mm", type: "number", default: 0, min: 0, max: 20000, help: "Kürzere Teile kann die Maschine nicht entladen. 0 = keine Grenze." },
   { key: "fertigung.huellkreis", cat: "fertigung", label: "Max. Hüllkreis-Ø", unit: "mm", type: "number", default: 255, min: 0, max: 2000, help: "Größter Querschnitt, den das Spannfutter fasst. 0 = nicht prüfen." },
   { key: "fertigung.metergewicht", cat: "fertigung", label: "Max. Metergewicht", unit: "kg/m", type: "number", default: 36, min: 0, max: 1000, help: "0 = nicht prüfen." },
@@ -350,6 +371,17 @@ export function validateValue(def, v) {
       if (e.length > 20) return { ok: false, error: "Höchstens 20 Profile" };
       if (e.some(([k, t]) => !k.trim() || k.length > 60 || typeof t !== "string" || t.length > 400000)) return { ok: false, error: "Ungültiges Profil" };
       return { ok: true, value: { ...v } };
+    }
+    case "stocklist": { // {Profil-ID: Stangenlänge mm}
+      if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: "Stangenlängen erwartet" };
+      const out = {};
+      for (const [k, x] of Object.entries(v)) {
+        const n = Number(x);
+        if (typeof k !== "string" || !k || k.length > 60 || !(n >= 100 && n <= 30000)) return { ok: false, error: `Stangenlänge für ${k}: 100 … 30000 mm` };
+        out[k] = n;
+      }
+      if (Object.keys(out).length > 300) return { ok: false, error: "Höchstens 300 Profile" };
+      return { ok: true, value: out };
     }
     case "color":
       return typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? { ok: true, value: v.toLowerCase() } : { ok: false, error: "Farbe als #rrggbb erwartet" };

@@ -18,6 +18,7 @@ import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, placeBalloonsEdges, assignBalloonViews, projectPoint, partCenter } from "../core/balloons.js";
 import { gridViewSvg } from "./achsraster.js";
 import { weldSymbol } from "../core/weld.js";
+import { weldKey } from "../core/genwelds.js";
 import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
 import { angleValue, cleanupDrawing, angleFromSegments } from "../core/aufraeumen.js";
@@ -29,8 +30,8 @@ import { bendRule } from "../core/bendtable.js";
 import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
 import { mappeHtml } from "../core/mappe.js";
 import { sheetCount, currentSheet, switchSheet, addSheet, removeSheet, moveViewToSheet, eachSheet, sheetLabel } from "../core/blaetter.js";
-import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange, autoBreaks } from "../core/bruch.js";
-import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat, parseScale } from "../core/zeichnung.js";
+import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange, autoBreaks, fieldBreaks } from "../core/bruch.js";
+import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, edgeRun, parallelEdgeDim, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat, parseScale } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
 export const CAMS = {
@@ -202,6 +203,8 @@ export class DrawingEditor {
         // Gesamtmaße und Teilungen (B3), danach Positionsnummern an die freien Seiten
         await this.autoDims({ silent: true });
         this.autoBalloons({ silent: true });
+        // Schweißnähte (R3): gleiche Nähte als ein Symbol mit Anzahl
+        this.autoWelds({ silent: true });
       }
       return;
     }
@@ -269,9 +272,12 @@ export class DrawingEditor {
     // langer Stab (Einzelteil): Bruchansicht, wenn der Maßstab dadurch größer wird; Enden und Bohrungen bleiben sichtbar
     let brk = null;
     const mprof = autoFormat && src?.kind === "part" ? this.profileOf(d) : null;
-    if (mprof?.member && (mprof.axis === "X" || mprof.axis === "Z")) {
-      const plan = await this.memberBreakPlan(d, res.auto_front, mprof.axis === "X" ? "u" : "v");
-      if (plan) for (const s of SCALES) {
+    // lange Baugruppe (Geländer, Zaun): mittlere Felder gleicher Teilung herausbrechen, wenn der Maßstab dadurch größer wird
+    const asmBreak = autoFormat && src?.kind === "assembly" && W(fw) > 2 * H(fw);
+    if ((mprof?.member && (mprof.axis === "X" || mprof.axis === "Z")) || asmBreak) {
+      const plan = asmBreak ? this.assemblyBreakPlan(src) : await this.memberBreakPlan(d, res.auto_front, mprof.axis === "X" ? "u" : "v");
+      // Baugruppe: zusätzlich 1:25 (Stahlbau üblich), damit lange Geländer nicht gleich auf 1:50 springen
+      if (plan) for (const s of asmBreak ? [...SCALES.filter((x) => x > 0.04), 0.04, ...SCALES.filter((x) => x < 0.04)] : SCALES) {
         if (lay && s <= lay.scale + 1e-12) break;
         const cut = plan.breaks.reduce((t, b) => t + (b.b - b.a), 0) - plan.breaks.length * (8 / s);
         const k = plan.axis === "u" ? "w" : "h", shared = plan.axis === "u" ? "top" : "left";
@@ -1418,7 +1424,10 @@ export class DrawingEditor {
     const dx = B1[0] - A1[0], dy = B1[1] - A1[1], L = Math.hypot(dx, dy) || 1;
     const ux = dx / L, uy = dy / L;
     // enge Maße (DIN 406-11): Pfeile von außen, Text neben die Maßlinie
-    const tight = L < 7, tw = textWidth(txt) * ((this.dimText || 3.5) / 3.5), outside = L < tw + 7;
+    // im Kettenmaß (m.chain) steht der Text über der Maßlinie, solange er zwischen die Hilfslinien passt; sonst darüber
+    // versetzt statt daneben, damit er nicht auf dem Nachbarmaß der Kette landet
+    const tw = textWidth(txt) * ((this.dimText || 3.5) / 3.5), tight = L < 7;
+    const raise = !!m.chain && L < tw + 1, outside = !m.chain && L < tw + 7;
     const tail = tight ? 4 : 0, far = outside ? tw + 3 : 0;
     const P0 = [A1[0] - ux * tail, A1[1] - uy * tail], P1 = [B1[0] + ux * Math.max(tail, far), B1[1] + uy * Math.max(tail, far)];
     g.append(svgEl("path", { d: ext(A, A1) + ext(B, B1) + `M${r3(P0[0])} ${r3(P0[1])}L${r3(P1[0])} ${r3(P1[1])}` }));
@@ -1429,7 +1438,8 @@ export class DrawingEditor {
     if (rot <= -90) rot += 180;
     const mx = outside ? B1[0] + ux * (Math.max(tail, 1) + tw / 2 + 1) : (A1[0] + B1[0]) / 2, my = outside ? B1[1] + uy * (Math.max(tail, 1) + tw / 2 + 1) : (A1[1] + B1[1]) / 2;
     const nrm = [Math.sin((rot * Math.PI) / 180), -Math.cos((rot * Math.PI) / 180)];
-    g.append(text(mx + nrm[0] * 1.2, my + nrm[1] * 1.2, rot));
+    const lift = raise ? 5.6 : 1.2;
+    g.append(text(mx + nrm[0] * lift, my + nrm[1] * lift, rot));
     return g;
   }
   // ---------- Positionsnummern und Stückliste (nur Baugruppen) ----------
@@ -1473,8 +1483,22 @@ export class DrawingEditor {
     const cands = (picked ? [v] : d.views.filter((x) => this.proj.get(x.id) && x.type !== "detail")).map((x) => {
       const cam = this.viewCam(d, x), xf = this.viewXf(x);
       const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
-      const at = new Map(anchors.map((a) => [a.part, xf.to(...projectPoint(a.p3, cam.dir, cam.up))]));
-      return { id: x.id, iso: x.type === "iso" || picked, box: { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) }, at };
+      // Bruchansicht: ein Exemplar außerhalb der Bruchbereiche anzeigen
+      const bm = this.breakMapOf(x), p3 = new Map();
+      for (const a of anchors) {
+        const vis = (q) => { const [u, w] = projectPoint(q, cam.dir, cam.up), t = bm?.axis === "v" ? w : u; return !bm?.overlaps(t - 1, t + 1); };
+        let q = bm && (a.alts || []).find(vis);
+        if (bm && !q) {
+          // ein langes Teil (Handlauf) mit der Mitte im Bruch: Anker 10 mm vor die nächste Bruchkante schieben
+          const i = bm.axis === "v" ? 1 : 0, t = projectPoint(a.p3, cam.dir, cam.up)[i];
+          const br = (x.breaks || []).find((b) => t >= b.a && t <= b.b);
+          const e = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((k) => [k, projectPoint(k, cam.dir, cam.up)[i]]).find(([, f]) => Math.abs(Math.abs(f) - 1) < 1e-6);
+          if (br && e) { const to = t - br.a < br.b - t ? br.a - 10 / x.scale : br.b + 10 / x.scale, k = (to - t) * e[1]; q = a.p3.map((c, j) => c + k * e[0][j]); }
+        }
+        p3.set(a.part, q || a.p3);
+      }
+      const at = new Map(anchors.map((a) => [a.part, xf.to(...projectPoint(p3.get(a.part), cam.dir, cam.up))]));
+      return { p3, id: x.id, iso: x.type === "iso" || picked, box: { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) }, at };
     });
     const [W, H] = this.sheetSize(d);
     const tbH0 = 46 + (this.template().extra.length ? 9 : 0) + 6 * (this.bomRowsOf(d).length + 1);
@@ -1513,38 +1537,69 @@ export class DrawingEditor {
       pos.set(k, [x, y]);
     }
     const apply = () => {
-      d.balloons = anchors.filter((a) => pos.has(a.part)).map((a) => ({ id: uid("b"), view: viewOf.get(a.part) || v.id, part: a.part, p3: a.p3, at: pos.get(a.part) }));
+      d.balloons = anchors.filter((a) => pos.has(a.part)).map((a) => ({ id: uid("b"), view: viewOf.get(a.part) || v.id, part: a.part, p3: cands.find((c) => c.id === viewOf.get(a.part))?.p3.get(a.part) || a.p3, at: pos.get(a.part) }));
       d.bomTable = { show: true };
     };
     if (silent) { apply(); this.app.changed({ rebuild: false }); }
     else this.app.edit("Positionsnummern", apply, { rebuild: false });
     this.render();
   }
-  /** Schweißnaht-Symbole (ISO 2553) für alle Nähte der Quelle in der gewählten Ansicht (sonst Vorderansicht) */
-  autoWelds() {
+  /**
+   * Schweißnaht-Symbole (ISO 2553) für alle Nähte der Quelle in der gewählten Ansicht (sonst Vorderansicht). Nähte aus
+   * Bauteilen und aus Generator-Baugruppen (R3); gleiche Nähte als ein Symbol mit Anzahl in der Gabel (»12×«).
+   */
+  autoWelds({ silent = false } = {}) {
     const d = this.doc;
     const src = d?.source && this.app.doc(d.source.id);
-    if (!src) return toast("Zuerst Ansichten erzeugen");
-    const v = (this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "front") || d.views[0];
-    if (!v || !this.proj.get(v.id)) return toast("Zuerst Ansichten erzeugen");
-    // Nähte je Bauteil; in Baugruppen an der ersten Komponente des Bauteils
+    if (!src) return silent ? 0 : toast("Zuerst Ansichten erzeugen");
+    const v = (!silent && this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "front") || d.views[0];
+    if (!v || !this.proj.get(v.id)) return silent ? 0 : toast("Zuerst Ansichten erzeugen");
+    // Nähte je Bauteil (in Baugruppen an der ersten Komponente des Bauteils) und Nähte der Generator-Baugruppen
     const anchors = [];
-    const add = (pid, M) => (this.app.results.get(pid)?.welds || []).forEach((w, i) => anchors.push({ key: `${pid}:${w.fid}:${i}`, p3: M ? matApply(M, w.p3) : w.p3, w }));
-    if (src.kind === "part") add(src.id, null);
-    else { const seen = new Set(); for (const o of flattenAssembly(src, (id) => this.app.doc(id))) if (!seen.has(o.part.id)) { seen.add(o.part.id); add(o.part.id, o.matrix); } }
-    if (!anchors.length) return toast("Keine Schweißnähte im Modell – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
+    const add = (key, list, M) => (list || []).forEach((w, i) => anchors.push({ key: `${key}:${w.fid || ""}:${i}`, p3: M ? matApply(M, w.p3) : w.p3, w }));
+    if (src.kind === "part") add(src.id, this.app.results.get(src.id)?.welds, null);
+    else {
+      const seen = new Set();
+      for (const o of flattenAssembly(src, (id) => this.app.doc(id))) if (!seen.has(o.part.id)) { seen.add(o.part.id); add(o.part.id, this.app.results.get(o.part.id)?.welds, o.matrix); }
+      add(src.id, this.app.genWelds?.(src), null);
+      for (const c of src.components || []) { const sub = this.app.doc(c.part); if (sub?.kind === "assembly" && sub.generator) add(c.id, this.app.genWelds(sub), placementMatrix(c.pos, c.rot)); }
+    }
+    if (!anchors.length) return silent ? 0 : toast("Keine Schweißnähte im Modell – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
+    // gleiche Nähte zusammenfassen: ein Symbol je Nahtart und -maß an der ersten Stelle, Anzahl in der Gabel
+    const groups = new Map();
+    for (const a of anchors) { const k = weldKey(a.w); if (!groups.has(k)) groups.set(k, { ...a, key: k, count: 0 }); groups.get(k).count++; }
+    const reps = [...groups.values()];
     const cam = this.viewCam(d, v);
     const xf = this.viewXf(v);
-    const at = anchors.map((a) => ({ key: a.key, at: xf.to(...projectPoint(a.p3, cam.dir, cam.up)) }));
+    const at = reps.map((a) => ({ key: a.key, at: xf.to(...projectPoint(a.p3, cam.dir, cam.up)) }));
     const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
-    const pos = placeBalloons(at, { x0, y0, x1, y1 }, { r: 8, gap: 6 });
+    // Symbole über (sonst unter) der Ansicht, hinter den Maßlinien, 36 mm auseinander, damit Bezugslinie und Gabel passen
+    const box = { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
+    const gap = (d.dims || []).some((m) => m.view === v.id) ? 30 : 12;
     const [W, H] = this.sheetSize(d);
-    for (const [k, [x, y]] of pos) pos.set(k, [Math.min(W - 40, Math.max(45, x)), Math.min(H - 60, Math.max(20, y))]);
-    this.app.edit("Schweißnähte", () => {
-      d.welds = anchors.map((a) => ({ id: uid("w"), view: v.id, p3: a.p3, at: pos.get(a.key), w: { kind: a.w.kind, a: a.w.a, side: a.w.side, around: a.w.around, field: a.w.field, ...(a.w.prep ? { prep: a.w.prep } : {}) } }));
-    }, { rebuild: false });
+    const others = d.views.filter((o) => o.id !== v.id && this.proj.get(o.id)).map((o) => { const t = this.viewXf(o), [a0, b0] = t.to(t.bb.x0, t.bb.y1), [a1, b1] = t.to(t.bb.x1, t.bb.y0); return { x0: Math.min(a0, a1), y0: Math.min(b0, b1), x1: Math.max(a0, a1), y1: Math.max(b0, b1) }; });
+    // freie Seite wie bei den Positionsnummern: keine andere Ansicht, nicht das Schriftfeld, Platz bis zum Rahmen.
+    // Oben/unten braucht die Bezugslinie Höhe, links/rechts ihre Länge (≈ 40 mm)
+    const tbH = 46 + (this.template().extra.length ? 9 : 0) + 6 * (this.bomRowsOf(d).length + 1);
+    others.push({ x0: W - 10 - 180, y0: H - 10 - tbH, x1: W - 10, y1: H - 10 });
+    const need = { t: gap + 12, b: gap + 12, l: gap + 42, r: gap + 42 };
+    const free = (sd) => others.every((o) => {
+      const ov = sd === "t" || sd === "b" ? o.x0 < box.x1 && o.x1 > box.x0 : o.y0 < box.y1 && o.y1 > box.y0;
+      if (!ov) return true;
+      const dist = sd === "t" ? box.y0 - o.y1 : sd === "b" ? o.y0 - box.y1 : sd === "l" ? box.x0 - o.x1 : o.x0 - box.x1;
+      return dist < -1 || dist > need[sd];
+    }) && (sd === "t" ? box.y0 > 10 + need.t : sd === "b" ? box.y1 < H - 10 - need.b : sd === "l" ? box.x0 > 20 + need.l : box.x1 < W - 10 - need.r);
+    const side = [..."tblr"].find(free);
+    const pos = !side || reps.length > 12 ? placeBalloons(at, box, { r: 8, gap: 6 }) : placeBalloonsEdges(at, box, side === "t" || side === "b" ? { r: 18, gap, sides: side } : { r: 6, gap: gap + 6, sides: side });
+    for (const [k, [x, y]] of pos) pos.set(k, [Math.min(W - 45, Math.max(55, x)), Math.min(H - 60, Math.max(20, y))]);
+    const apply = () => {
+      d.welds = reps.map((a) => ({ id: uid("w"), view: v.id, p3: a.p3, at: pos.get(a.key), w: { kind: a.w.kind, a: a.w.a, side: a.w.side, around: a.w.around, field: a.w.field, ...(a.w.prep ? { prep: a.w.prep } : {}), ...(a.count > 1 ? { count: a.count } : {}) } }));
+    };
+    if (silent) { apply(); return reps.length; }
+    this.app.edit("Schweißnähte", apply, { rebuild: false });
     this.render();
-    toast(`${anchors.length} Nahtsymbol(e) gesetzt – ziehen zum Verschieben, Entf löscht`);
+    toast(`${reps.length} Nahtsymbol(e) für ${anchors.length} Nähte gesetzt – ziehen zum Verschieben, Entf löscht`);
+    return reps.length;
   }
   renderWeld(d, m, interactive) {
     const v = d.views.find((x) => x.id === m.view);
@@ -1747,7 +1802,7 @@ export class DrawingEditor {
     if (t !== "aux") this.pendingAux = null;
     if (t !== "breakout") this.pendingBo = null;
     if (t !== "proj") { this.pendingProj = null; this.projGhost = null; }
-    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : t === "chain" ? "Kettenmaß: Punkte der Reihe nach anklicken, nach dem zweiten Punkt die Lage der Maßreihe; Esc beendet" : t === "base" ? "Bezugsmaß: Bezugspunkt, dann weitere Punkte anklicken, nach dem zweiten Punkt die Lage; Esc beendet" : t === "arclen" ? "Bogenlänge: Bogen in einer Ansicht anklicken" : t === "angle" ? "Winkelmaß: zwei Kanten derselben Ansicht anklicken" : t === "center" ? "Mittelpunkt: Kreis oder Bogen anklicken (nochmal klicken entfernt)" : "");
+    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten), einen Kreis oder eine Kante anklicken (zweite Kante: Abstand oder Winkel), dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : t === "chain" ? "Kettenmaß: Punkte der Reihe nach anklicken, nach dem zweiten Punkt die Lage der Maßreihe; Esc beendet" : t === "base" ? "Bezugsmaß: Bezugspunkt, dann weitere Punkte anklicken, nach dem zweiten Punkt die Lage; Esc beendet" : t === "arclen" ? "Bogenlänge: Bogen in einer Ansicht anklicken" : t === "angle" ? "Winkelmaß: zwei Kanten derselben Ansicht anklicken" : t === "center" ? "Mittelpunkt: Kreis oder Bogen anklicken (nochmal klicken entfernt)" : "");
     this.app.ribbon.render();
     this.render();
   }
@@ -2077,6 +2132,22 @@ export class DrawingEditor {
   dimClick(sx, sy) {
     const d = this.doc;
     const pd = this.pendingDim;
+    // nach einer Kante: zweite Kante → Abstand (parallel) oder Winkel; sonst setzt der Klick die Lage
+    if (pd?.ready && pd.edge && !this.snapAt(sx, sy)) {
+      const e2 = this.edgeHit(sx, sy);
+      if (e2 && e2.view === pd.edge.view && (e2.run.a !== pd.edge.run.a || e2.run.b !== pd.edge.run.b)) {
+        const pe = parallelEdgeDim(pd.edge.run, e2.run);
+        if (pe) { this.pendingDim = { ready: true, m: { id: uid("m"), view: e2.view, ...pe, off: 8, fixedKind: pe.kind !== "a" } }; this.render(); return; }
+        const g = angleFromSegments(pd.edge.seg, pd.edge.q, e2.seg, e2.q);
+        if (g) {
+          const m = { id: uid("m"), view: e2.view, kind: "ang", ...g, off: 12 };
+          this.app.edit("Winkelmaß", () => { d.dims.push(m); }, { rebuild: false });
+          this.pendingDim = null;
+          this.render();
+          return;
+        }
+      }
+    }
     if (pd?.ready) {
       const m = pd.m;
       const v = d.views.find((x) => x.id === m.view);
@@ -2099,7 +2170,15 @@ export class DrawingEditor {
     const s = this.snapAt(sx, sy);
     if (!s) {
       const c = this.circleAt(sx, sy);
-      if (c) { this.pendingDim = { ready: true, m: { id: uid("m"), view: c.view, kind: c.full ? "dia" : "rad", circle: c.circle, angle: -Math.PI / 4 } }; this.render(); }
+      if (c) { this.pendingDim = { ready: true, m: { id: uid("m"), view: c.view, kind: c.full ? "dia" : "rad", circle: c.circle, angle: -Math.PI / 4 } }; this.render(); return; }
+      // Kante: ihre Länge folgt der Maus; zweite Kante gibt Abstand oder Winkel
+      const e = !pd && this.edgeHit(sx, sy);
+      if (e) {
+        this.pendingDim = { ready: true, edge: e, m: { id: uid("m"), view: e.view, kind: "a", p1: e.run.a, p2: e.run.b, off: 8 } };
+        this.previewDim(sx, sy);
+        this.app.setHint("Kante gewählt: Lage klicken für ihre Länge – oder zweite Kante: parallel = Abstand, schräg = Winkel");
+        this.render();
+      }
       return;
     }
     if (!pd) { this.pendingDim = { first: s, p1s: s.s }; this.render(); return; }
@@ -2118,9 +2197,22 @@ export class DrawingEditor {
       const A = xf.to(...m.p1), B = xf.to(...m.p2);
       const x0 = Math.min(A[0], B[0]), x1 = Math.max(A[0], B[0]), y0 = Math.min(A[1], B[1]), y1 = Math.max(A[1], B[1]);
       const outX = sx < x0 || sx > x1, outY = sy < y0 || sy > y1;
-      m.kind = Math.abs(A[1] - B[1]) < 1e-6 ? "h" : Math.abs(A[0] - B[0]) < 1e-6 ? "v" : outY && !outX ? "h" : outX && !outY ? "v" : "a";
+      if (!m.fixedKind) m.kind = Math.abs(A[1] - B[1]) < 1e-6 ? "h" : Math.abs(A[0] - B[0]) < 1e-6 ? "v" : outY && !outX ? "h" : outX && !outY ? "v" : "a";
       m.off = this.offsetFor(m, xf, sx, sy);
     }
+  }
+  /** Getroffene gerade Kante einer Normalansicht: { view, seg, q, run } (run = ganze Kante) oder null */
+  edgeHit(sx, sy) {
+    const d = this.doc, rects = this.sheetRects(d);
+    for (const v of d.views) {
+      const r = rects[v.id]?.rect;
+      if (v.type === "iso" || !r || sx < r[0] - 3 || sx > r[2] + 3 || sy < r[1] - 3 || sy > r[3] + 3) continue;
+      const p = this.viewGeom(v);
+      if (!p) continue;
+      const q = this.viewXf(v).from(sx, sy), seg = nearestSegment(p.visible, q, 1.5 / (v.scale * this.zoom));
+      if (seg) return { view: v.id, seg, q, run: edgeRun(p.visible, seg) };
+    }
+    return null;
   }
   async textClick(sx, sy) {
     const text = await promptDialog("Text", "Hinweistext", "");
@@ -2252,6 +2344,26 @@ export class DrawingEditor {
     const axis = "XYZ"[i];
     return { text: member.meta.section + " – L = " + fmtNum(Math.round(member.meta.length * 10) / 10, 1), axis, cross: [..."XYZ"].filter((a) => a !== axis), member: true };
   }
+  /** Bruchstelle der Vorderansicht einer langen Baugruppe: in der Bauteilart mit der längsten gleichmäßigen Teilung */
+  assemblyBreakPlan(src) {
+    let flat = [];
+    try { flat = flattenAssembly(src, (id) => this.app.doc(id), { bom: true }); } catch { return null; }
+    const groups = new Map();
+    for (const o of flat) {
+      const c = partCenter(this.app.results.get(o.part.id));
+      if (!c) continue;
+      const gk = String(o.part.genName || o.part.name).replace(/\s*\(\d+\)$/, "");
+      if (!groups.has(gk)) groups.set(gk, []);
+      groups.get(gk).push(projectPoint(matApply(o.matrix, c), CAMS.front.dir, CAMS.front.up)[0]);
+    }
+    let best = null;
+    for (const u of groups.values()) {
+      const br = fieldBreaks(u);
+      const cut = br.reduce((t, b) => t + b.b - b.a, 0);
+      if (cut > (best?.cut || 0)) best = { breaks: br, cut };
+    }
+    return best ? { axis: "u", breaks: best.breaks } : null;
+  }
   /** Bruchstellen der Vorderansicht eines langen Stabs (Achse "u" waagerecht, "v" senkrecht) oder null */
   async memberBreakPlan(d, proj, axis) {
     const src = d.source && this.app.doc(d.source.id);
@@ -2284,24 +2396,40 @@ export class DrawingEditor {
     for (const o of flat) {
       const c = partCenter(this.app.results.get(o.part.id));
       if (!c) continue;
-      if (!groups.has(o.part.id)) groups.set(o.part.id, []);
-      groups.get(o.part.id).push(matApply(o.matrix, c));
+      // gleiche Bauteilart zusammen, auch wenn sie sich im Detail unterscheiden (»Pfosten«, »Pfosten (2)« – End- und Mittelpfosten)
+      const gk = String(o.part.genName || o.part.name).replace(/\s*\(\d+\)$/, "");
+      if (!groups.has(gk)) groups.set(gk, []);
+      groups.get(gk).push(matApply(o.matrix, c));
     }
-    for (const w of views) {
+    // je Ansicht ein anderes Bauteil (Vorderansicht Stäbe, Draufsicht Pfosten), Vorderansicht zuerst
+    const usedGroups = new Set();
+    const rank = { front: 0, top: 1, left: 2 };
+    const order = [...views].sort((a, b) => (rank[cands.find((x) => x.id === a.id)?.type] ?? 9) - (rank[cands.find((x) => x.id === b.id)?.type] ?? 9));
+    for (const w of order) {
       const v = cands.find((x) => x.id === w.id), cam = this.viewCam(d, v), bb = w.bbox;
       w.lines = []; w.holes = []; w.arcs = [];
       const horiz = bb.x1 - bb.x0 >= bb.y1 - bb.y0;
       let best = null;
-      for (const pts of groups.values()) {
-        if (pts.length < 2) continue;
+      for (const [gid, pts] of groups) {
+        if (pts.length < 2 || usedGroups.has(gid)) continue;
         const q = pts.map((p) => projectPoint(p, cam.dir, cam.up)), u = q.map((x) => (horiz ? x[0] : x[1]));
         const span = Math.max(...u) - Math.min(...u), distinct = new Set(u.map((x) => Math.round(x))).size;
         if (distinct < 2 || span < 0.3 * (horiz ? bb.x1 - bb.x0 : bb.y1 - bb.y0)) continue;
-        if (!best || distinct > best.distinct) best = { u: [...new Set(u.map((x) => Math.round(x * 10) / 10))], distinct };
+        // gleiche Lage zusammenfassen, ohne zu runden: Teilungen wie 1333,33 bleiben gleich (Kettenmaß »n× Teilung«)
+        // quer dazu das Exemplar am Rand der Maße (unten bzw. links), damit die Hilfslinien kurz bleiben
+        const pairs = q.map((x, i) => [u[i], horiz ? x[1] : x[0]]).sort((a, c) => a[0] - c[0]);
+        const uu = [];
+        for (const [x, y] of pairs) { const l = uu[uu.length - 1]; if (l && x - l[0] <= 0.5) l[1] = Math.min(l[1], y); else uu.push([x, y]); }
+        if (!best || distinct > best.distinct) best = { gid, u: uu, distinct };
       }
       if (!best) continue;
-      const mid = horiz ? (bb.y0 + bb.y1) / 2 : (bb.x0 + bb.x1) / 2;
-      w.arcs = best.u.map((x) => ({ cx: horiz ? x : mid, cy: horiz ? mid : x, r: 0.01, full: true }));
+      usedGroups.add(best.gid);
+      // Ersatzkreise je Ansicht mit eigenem Mini-Radius: planAutoDims bemaßt jeden Radius nur einmal im Blatt
+      const rr = 0.01 * (1 + usedGroups.size);
+      // alle auf einer Höhe (sonst entstünden Quermaße): die des Exemplars am Rand
+      const edge = Math.min(...best.u.map((p) => p[1]));
+      w.onlyAxis = horiz ? "h" : "v";
+      w.arcs = best.u.map(([x]) => ({ cx: horiz ? x : edge, cy: horiz ? edge : x, r: rr, full: true }));
     }
     return true;
   }

@@ -297,3 +297,47 @@ export function parseScale(text) {
   else return null;
   return Number.isFinite(k) && k >= 1e-4 - 1e-12 && k <= 100 ? k : null;
 }
+
+/**
+ * Ganze gerade Kante um ein getroffenes Stück (Bemaßung per Klick auf die Kante): im selben Linienzug über
+ * gleichgerichtete Nachbarstücke verlängert. Rückgabe { a, b }.
+ */
+export function edgeRun(polylines, seg) {
+  // alle Stücke auf derselben Geraden, die sich lückenlos an das getroffene anschließen (auch aus anderen Linienzügen:
+  // die verdeckte Kantenrechnung teilt Kanten an Tangentenkanten von Rundungen)
+  const dx = seg.b[0] - seg.a[0], dy = seg.b[1] - seg.a[1], L = Math.hypot(dx, dy) || 1, u = [dx / L, dy / L];
+  const tol = 1e-4 * Math.max(1, L);
+  const t = (p) => (p[0] - seg.a[0]) * u[0] + (p[1] - seg.a[1]) * u[1];
+  const off = (p) => Math.abs((p[0] - seg.a[0]) * u[1] - (p[1] - seg.a[1]) * u[0]);
+  const spans = [];
+  for (const pl of polylines || []) for (let k = 1; k < pl.length; k++) {
+    const p = pl[k - 1], q = pl[k];
+    if (off(p) < tol && off(q) < tol) spans.push([Math.min(t(p), t(q)), Math.max(t(p), t(q))]);
+  }
+  let lo = 0, hi = L;
+  for (let grown = true; grown;) {
+    grown = false;
+    for (const [a, b] of spans) if (a <= hi + tol && b >= lo - tol && (a < lo - tol || b > hi + tol)) { lo = Math.min(lo, a); hi = Math.max(hi, b); grown = true; }
+  }
+  return { a: [seg.a[0] + u[0] * lo, seg.a[1] + u[1] * lo], b: [seg.a[0] + u[0] * hi, seg.a[1] + u[1] * hi] };
+}
+
+/**
+ * Abstand zweier paralleler Kanten als Maß { kind, p1, p2 } (waagerechte Kanten → senkrechtes Maß und umgekehrt,
+ * schräge → ausgerichtet); null, wenn die Kanten nicht parallel sind oder aufeinander liegen.
+ */
+export function parallelEdgeDim(e1, e2) {
+  const unit = (e) => { const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], L = Math.hypot(dx, dy) || 1; return { d: [dx / L, dy / L], L }; };
+  const u1 = unit(e1), u2 = unit(e2);
+  if (Math.abs(u1.d[0] * u2.d[1] - u1.d[1] * u2.d[0]) > 0.01) return null;
+  const t = (p) => (p[0] - e1.a[0]) * u1.d[0] + (p[1] - e1.a[1]) * u1.d[1];
+  const lo = Math.max(0, Math.min(t(e2.a), t(e2.b))), hi = Math.min(u1.L, Math.max(t(e2.a), t(e2.b)));
+  // Mitte des gemeinsamen Bereichs, ohne Überdeckung das Ende von e1, das e2 am nächsten liegt
+  const tm = hi >= lo ? (lo + hi) / 2 : Math.abs(lo - u1.L) < Math.abs(hi) ? u1.L : 0;
+  const p1 = [e1.a[0] + u1.d[0] * tm, e1.a[1] + u1.d[1] * tm];
+  const s = (p1[0] - e2.a[0]) * u2.d[0] + (p1[1] - e2.a[1]) * u2.d[1];
+  const p2 = [e2.a[0] + u2.d[0] * s, e2.a[1] + u2.d[1] * s];
+  if (Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) < 1e-6) return null;
+  const kind = Math.abs(u1.d[1]) < 1e-6 ? "v" : Math.abs(u1.d[0]) < 1e-6 ? "h" : "a";
+  return { kind, p1, p2 };
+}
