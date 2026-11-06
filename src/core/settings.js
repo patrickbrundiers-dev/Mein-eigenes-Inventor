@@ -169,6 +169,9 @@ export const SETTINGS = [
   { key: "fertigung.stange", cat: "fertigung", label: "Max. Stangenlänge", unit: "mm", type: "number", default: 6500, min: 0, max: 20000, help: "Nutzbar ist die Stange minus Endbeschnitt und Greiferrest. 0 = nicht prüfen." },
   { key: "fertigung.endbeschnitt", cat: "fertigung", label: "Endbeschnitt", unit: "mm", type: "number", default: 10, min: 0, max: 2000, help: "Anschnitt am Stangenanfang." },
   { key: "fertigung.greiferrest", cat: "fertigung", label: "Greiferrest", unit: "mm", type: "number", default: 142, min: 0, max: 2000, help: "Nicht nutzbares Ende im Greifer." },
+  { key: "fertigung.lagerlaenge", cat: "fertigung", label: "Lagerlänge (Stangenplan)", unit: "mm", type: "number", default: 6000, min: 100, max: 30000, help: "Handelslänge der gekauften Stangen für den Stangenplan; je Profil abweichend in der Zuschnittliste einstellbar." },
+  { key: "fertigung.schnittfuge", cat: "fertigung", label: "Schnittfuge (Stangenplan)", unit: "mm", type: "number", default: 0, min: 0, max: 20, help: "Materialverlust je Trennschnitt zwischen zwei Teilen im Stangenplan; Laser ≈ 0–1 mm, Säge ≈ 2–4 mm." },
+  { key: "fertigung.stangenJeProfil", cat: "fertigung", label: "Stangenlänge je Profil", type: "stocklist", default: {}, custom: true, help: "Abweichende Lagerlänge je Profil-ID, im Stangenplan der Zuschnittliste einstellbar." },
   { key: "fertigung.kuerzestesTeil", cat: "fertigung", label: "Kürzestes Teil", unit: "mm", type: "number", default: 0, min: 0, max: 20000, help: "Kürzere Teile kann die Maschine nicht entladen. 0 = keine Grenze." },
   { key: "fertigung.huellkreis", cat: "fertigung", label: "Max. Hüllkreis-Ø", unit: "mm", type: "number", default: 255, min: 0, max: 2000, help: "Größter Querschnitt, den das Spannfutter fasst. 0 = nicht prüfen." },
   { key: "fertigung.metergewicht", cat: "fertigung", label: "Max. Metergewicht", unit: "kg/m", type: "number", default: 36, min: 0, max: 1000, help: "0 = nicht prüfen." },
@@ -350,6 +353,17 @@ export function validateValue(def, v) {
       if (e.length > 20) return { ok: false, error: "Höchstens 20 Profile" };
       if (e.some(([k, t]) => !k.trim() || k.length > 60 || typeof t !== "string" || t.length > 400000)) return { ok: false, error: "Ungültiges Profil" };
       return { ok: true, value: { ...v } };
+    }
+    case "stocklist": { // {Profil-ID: Stangenlänge mm}
+      if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: "Stangenlängen erwartet" };
+      const out = {};
+      for (const [k, x] of Object.entries(v)) {
+        const n = Number(x);
+        if (typeof k !== "string" || !k || k.length > 60 || !(n >= 100 && n <= 30000)) return { ok: false, error: `Stangenlänge für ${k}: 100 … 30000 mm` };
+        out[k] = n;
+      }
+      if (Object.keys(out).length > 300) return { ok: false, error: "Höchstens 300 Profile" };
+      return { ok: true, value: out };
     }
     case "color":
       return typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? { ok: true, value: v.toLowerCase() } : { ok: false, error: "Farbe als #rrggbb erwartet" };

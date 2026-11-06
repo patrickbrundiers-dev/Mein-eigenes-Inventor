@@ -12,6 +12,7 @@ import { serializeProject, loadProject, validateProject, parseProject } from "..
 import { linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, baseName, packProject } from "../core/links.js";
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
+import { planBars, barOptions } from "../core/stangen.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
 import { bendSheetPage } from "../core/biegefolge.js";
 import { simplifyOf, simplifyAction, ENVELOPES } from "../core/vereinfachen.js";
@@ -851,8 +852,9 @@ export class Files {
     const docOf = (id) => app.doc(id);
     // Struktur- und Baukastenliste nur, wenn es Unterbaugruppen gibt – sonst wären sie gleich der Stückliste
     const nested = asm && d.components.some((c) => app.doc(c.part)?.kind === "assembly");
+    const cutRows = cutListRows(src);
     return listSheets({
-      cut: cutListRows(src), welds: weldRows(collectWelds(src)),
+      cut: cutRows, bars: cutRows.length ? planBars(cutRows, barOptions((k) => app.prefs.get(k))) : null, welds: weldRows(collectWelds(src)),
       bom: asm ? bomRows(app, d) : collectNorm(src.map((s) => ({ bodies: s.result.bodies, qty: s.qty }))).map((x, i) => ({ ...x, pos: i + 1, number: "" })),
       structure: nested ? structureBom(d, docOf).map((x) => ({ level: x.level, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty, total: x.total })) : [],
       modular: nested ? modularBom(d, docOf).map((m) => ({ name: m.asm.name, number: m.asm.number, rows: m.rows.map((x) => ({ pos: x.pos, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty })) })) : [],
@@ -1026,7 +1028,7 @@ export class Files {
       // Schweißplan (W11), sobald es Nähte gibt
       const wRows = weldPlanRows(collectWelds(cutSrc), weldPlanOf(app.project));
       const wPage = wRows.length ? [weldPlanPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", plan: weldPlanOf(app.project), rows: wRows })] : [];
-      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends, rolls }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
+      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends, rolls, bars: cut.length && opt.listen !== false ? planBars(cut, barOptions((k) => app.prefs.get(k))) : null }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
       const files = [];
       const pdf = this.bridge?.renderPdf ? await this.bridge.renderPdf(html) : null;
       files.push(pdf ? [base + "_Fertigungsmappe.pdf", new Uint8Array(pdf)] : [base + "_Fertigungsmappe.html", html]);

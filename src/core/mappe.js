@@ -1,5 +1,6 @@
 // Fertigungsmappe (Erweiterung E3): alle Zeichnungen und Listen einer Position als ein druckfertiges Dokument.
 // Reine Texterzeugung; das PDF entsteht in Electron aus demselben HTML (pdf:render), im Browser über Drucken.
+import { barText } from "./stangen.js";
 import { fmt as fmtNum } from "./expr.js";
 import { holeText } from "./biegerohr.js";
 
@@ -51,7 +52,7 @@ const ROWS_PER_PAGE = 42;
  * bends = [{ name, bends: [{ straight, rotation, angle, arc }], last, length }] je Biegerohr.
  * Gibt Seiten für mappeHtml zurück; leere Listen entfallen.
  */
-export function listPages({ title = "", number = "", status = "", bom = [], cut = [], bends = [], rolls = [] } = {}) {
+export function listPages({ title = "", number = "", status = "", bom = [], cut = [], bends = [], rolls = [], bars = null } = {}) {
   const head = (name, part, of) => `<h1>${esc(name)}${of > 1 ? ` (${part}/${of})` : ""}</h1><div class="sub">${esc([title, number, status && "Stand: " + status].filter(Boolean).join(" · "))}</div>`;
   const pages = [];
   const chunked = (rows, name, render) => {
@@ -72,6 +73,16 @@ export function listPages({ title = "", number = "", status = "", bom = [], cut 
       [["Pos", 1], ["Profil"], ["Länge mm", 1], ["Menge", 1], ["Gehrung"], ["Werkstoff"], ["kg gesamt", 1], ["Bauteil"]],
       rows.map((r) => [r.pos, r.section, fmtNum(r.length, 1), r.qty, miter(r), r.material, fmtNum(r.mass * r.qty, 2), r.parts]),
       last ? ["", "Summe", "", cut.reduce((a, r) => a + r.qty, 0), "", "", fmtNum(total, 2), ""] : null));
+  }
+  // Stangenplan (R2): Bestellung je Profil und Belegung der Stangen
+  if (bars?.groups.length) {
+    const order = bars.groups.map((g) => [g.profileId, g.material, fmtNum(g.stock, 0), g.bars.length, fmtNum(g.buyKg, 1), `${fmtNum(g.wastePct, 1)} %`]);
+    const lines = bars.groups.flatMap((g) => [...g.bars.map((b, i) => [g.profileId, i + 1, barText(b), fmtNum(b.rest, 0)]), ...g.tooLong.map((t) => [g.profileId, "–", `passt nicht: ${t.qty} × ${fmtNum(t.length, 1)} (Pos ${t.pos})`, ""])]);
+    const orderHtml = `<h2>Bestellung</h2>${table([["Profil"], ["Werkstoff"], ["Stange mm", 1], ["Stangen", 1], ["kg", 1], ["Verschnitt", 1]], order, ["Summe", "", "", bars.bars, fmtNum(bars.buyKg, 1), ""])}<h2>Belegung</h2>`;
+    // erste Seite: Bestellung oben, darunter so viele Belegungszeilen wie Platz ist; danach volle Seiten
+    const chunks = [lines.slice(0, Math.max(1, ROWS_PER_PAGE - order.length - 6))];
+    for (let at = chunks[0].length; at < lines.length; at += ROWS_PER_PAGE) chunks.push(lines.slice(at, at + ROWS_PER_PAGE));
+    chunks.forEach((part, i) => pages.push({ html: `<div class="lst">${head("Stangenplan", i + 1, chunks.length)}${i === 0 ? orderHtml : ""}${table([["Profil"], ["Stange", 1], ["Belegung"], ["Rest mm", 1]], part)}</div>`, width: A4[0], height: A4[1] }));
   }
   if (bends.length) {
     // Biegeliste je Rohr: Gerade vor der Biegung, Drehung, Biegewinkel (L-R-A); mehrere Rohre auf einer Seite

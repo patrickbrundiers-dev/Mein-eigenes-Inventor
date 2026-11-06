@@ -894,3 +894,15 @@ test("Rollbiegeliste: Bohrungen eines Wendelhandlaufs mit Abstand ab Anfang und 
   assert.equal(pages.length, 1);
   assert.ok(pages[0].html.includes("Rollbiegeliste") && pages[0].html.includes("Langloch"));
 });
+
+test("Fertigungsmappe: Stangenplan mit Bestellung und Belegung (R2)", async () => {
+  const { planBars } = await import("../src/core/stangen.js");
+  const { listPages } = await import("../src/core/mappe.js");
+  const cut = [{ pos: 1, profileId: "RR 42,4x2,6", material: "S235JR", length: 2500, qty: 5, kgm: 2.55, section: "Rohr", miters: [0, 0], mass: 6.4, parts: "Pfosten" }];
+  const bars = planBars(cut, { stock: 6000, trim: 10, rest: 142 });
+  assert.equal(bars.bars, 3, "2+2+1");
+  const pages = listPages({ cut, bars });
+  const p = pages.find((x) => x.html.includes("Stangenplan"));
+  assert.ok(p && p.html.includes("Bestellung") && p.html.includes("2 × 2500 (Pos 1)"), "Bestellung und Belegung");
+  assert.ok(!listPages({ cut }).some((x) => x.html.includes("Stangenplan")), "ohne Plan keine Seite");
+});

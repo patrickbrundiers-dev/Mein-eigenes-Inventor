@@ -115,3 +115,39 @@ test("Excel-Export: gültiges ZIP mit Blättern, Zahlen als Zahlen (MegaCAD-Abgl
   assert.ok(names.includes("[Content_Types].xml") && names.includes("xl/worksheets/sheet3.xml"));
   assert.equal(dv.getUint32(bytes.length - 22, true), 0x06054b50, "Endsatz");
 });
+
+test("Stangenplan: Best Fit Decreasing, Fuge, Reste, zu lange Teile (E1)", async () => {
+  const { planBars, barText } = await import("../src/core/stangen.js");
+  const { listSheets } = await import("../src/core/lists.js");
+  const { validateValue, settingDef } = await import("../src/core/settings.js");
+  const rows = [
+    { pos: 1, profileId: "QR 40x40x3", material: "S235", length: 2500, qty: 3, kgm: 3.41 },
+    { pos: 2, profileId: "QR 40x40x3", material: "S235", length: 1000, qty: 3, kgm: 3.41 },
+    { pos: 3, profileId: "QR 40x40x3", material: "S235", length: 7000, qty: 1, kgm: 3.41 },
+    { pos: 4, profileId: "FL 40x5", material: "S235", length: 1500, qty: 2, kgm: 1.57 },
+  ];
+  const p = planBars(rows, { stock: 6000, trim: 10, rest: 140, kerf: 3 });
+  const qr = p.groups.find((g) => g.profileId === "QR 40x40x3");
+  assert.equal(qr.usable, 5850);
+  // 2500 + 3 + 2500 = 5003, Rest 847 → kein 1000er; dritte 2500 + 3×1000 (+3×3) = 5509 → 3 Stück 1000 passen
+  assert.equal(qr.bars.length, 2);
+  assert.equal(qr.bars[0].pieces.length, 2);
+  assert.equal(qr.bars[1].pieces.length, 4);
+  assert.equal(qr.bars[0].rest, 847);
+  assert.equal(qr.bars[1].rest, 5850 - 2500 - 3000 - 9);
+  assert.deepEqual(qr.tooLong, [{ pos: 3, length: 7000, qty: 1 }]);
+  assert.equal(qr.partLength, 10500);
+  assert.ok(Math.abs(qr.wastePct - (100 * 1500) / 12000) < 1e-9);
+  assert.ok(Math.abs(qr.wasteKg - 1.5 * 3.41) < 1e-9);
+  assert.equal(barText(qr.bars[1]), "2500 (Pos 1) + 3 × 1000 (Pos 2)");
+  const fl = planBars(rows, { stock: 6000, stockBy: { "FL 40x5": 3000 } }).groups.find((g) => g.profileId === "FL 40x5");
+  assert.equal(fl.stock, 3000);
+  assert.equal(fl.bars.length, 1, "2 × 1500 genau auf 3000 ohne Fuge und Reste");
+  assert.equal(fl.bars[0].rest, 0);
+  const sh = listSheets({ cut: [], bars: p }).find((s) => s.name === "Stangenplan");
+  assert.ok(sh.rows.some((r) => /passt nicht: 1 × 7000 \(Pos 3\)/.test(r[4] || "")));
+  assert.equal(sh.rows.at(-1)[3], 3, "Summe Stangen");
+  const def = settingDef("fertigung.stangenJeProfil");
+  assert.ok(validateValue(def, { "QR 40x40x3": 12000 }).ok);
+  assert.ok(!validateValue(def, { "QR 40x40x3": 50 }).ok);
+});

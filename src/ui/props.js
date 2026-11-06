@@ -38,6 +38,7 @@ import { variantDialog, rulesDialog, macroDialog, variantSection, rulesSection }
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
+import { planBars, barText, barOptions, BAR_RULES } from "../core/stangen.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { releaseSection } from "./pruefung.js";
 import { whereUsedSection, propertiesSection, renameDoc, componentBomField, assemblyBomField, makeIndependent } from "./arbeitsablauf.js";
@@ -2877,7 +2878,38 @@ export class Props {
     const app = this.app;
     const d = app.activeDoc();
     const rows = cutListRows(collectCutSources(app, d));
-    modal({ title: `Zuschnittliste – ${d.name}`, width: "820px", body: rows.length ? h("div", {}, cutListTable(rows), cutListTotalsTable(cutListTotals(rows)), this.dfmList(rows, true), h("details", { class: "hint" }, h("summary", {}, "Regeln der Zuschnittliste"), h("ul", {}, ...CUT_RULES.map((t) => h("li", {}, t))))) : h("p", {}, "Keine Profile (Rohr / Rahmen) enthalten."), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportCutList() }] });
+    modal({ title: `Zuschnittliste – ${d.name}`, width: "820px", body: rows.length ? h("div", {}, cutListTable(rows), cutListTotalsTable(cutListTotals(rows)), this.barPlan(rows), this.dfmList(rows, true), h("details", { class: "hint" }, h("summary", {}, "Regeln der Zuschnittliste"), h("ul", {}, ...CUT_RULES.map((t) => h("li", {}, t))))) : h("p", {}, "Keine Profile (Rohr / Rahmen) enthalten."), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportCutList() }] });
+  }
+  /** Stangenplan (E1): Teile je Profil auf Lagerstangen verteilt; Stangenlänge je Profil hier änderbar */
+  barPlan(rows) {
+    const app = this.app, box = h("div", { class: "bar-plan" });
+    const render = () => {
+      const plan = planBars(rows, barOptions((k) => app.prefs.get(k)));
+      const setStock = (pid, v) => {
+        const by = { ...(app.prefs.get("fertigung.stangenJeProfil") || {}) };
+        const n = Number(String(v).replace(",", "."));
+        if (!v || !(n > 0)) delete by[pid]; else by[pid] = n;
+        const r = app.prefs.set("fertigung.stangenJeProfil", by);
+        if (!r.ok) toast(r.error, { kind: "err" });
+        render();
+      };
+      box.replaceChildren(
+        h("h4", {}, `Stangenplan: ${plan.bars} Stange(n), Verschnitt ${fmtNum(plan.wasteKg, 1)} kg von ${fmtNum(plan.buyKg, 1)} kg`),
+        h("table", { class: "grid" },
+          h("thead", {}, h("tr", {}, h("th", {}, "Profil"), h("th", {}, "Stange mm"), h("th", {}, "Stangen"), h("th", {}, "Teile"), h("th", {}, "Verschnitt"), h("th", {}, "kg kaufen"))),
+          h("tbody", {}, ...plan.groups.map((g) => {
+            const inp = h("input", { class: "inp num bar-stock", value: String(g.stock), style: { width: "80px" }, title: "Lagerlänge dieses Profils" });
+            inp.addEventListener("change", () => setStock(g.profileId, inp.value));
+            return h("tr", { "data-profile": g.profileId }, h("td", { style: { whiteSpace: "nowrap" } }, g.profileId), h("td", {}, inp), h("td", { class: "num" }, String(g.bars.length)), h("td", { class: "num" }, String(g.pieces)),
+              h("td", { class: "num" }, `${fmtNum(g.wastePct, 1)} % · ${fmtNum(g.wasteKg, 1)} kg`), h("td", { class: "num" }, fmtNum(g.buyKg, 1)));
+          }))),
+        ...plan.groups.filter((g) => g.tooLong.length).map((g) => h("div", { class: "msg err" }, `${g.profileId}: passt nicht auf ${g.stock} mm – ${g.tooLong.map((t) => `${t.qty} × ${fmtNum(t.length, 1)} (Pos ${t.pos})`).join(", ")}`)),
+        h("details", {}, h("summary", {}, "Belegung je Stange"),
+          ...plan.groups.map((g) => h("div", {}, h("b", {}, g.profileId), h("ol", {}, ...g.bars.map((b) => h("li", {}, `${barText(b)} – Rest ${fmtNum(b.rest, 0)} mm`)))))),
+        h("details", { class: "hint" }, h("summary", {}, "Regeln des Stangenplans"), h("ul", {}, ...BAR_RULES.map((t) => h("li", {}, t)))));
+    };
+    render();
+    return box;
   }
   /** Fertigungsprüfung Rohrlaser (src/core/dfm.js) unter der Zuschnittliste; Grenzen im Einstellungscenter */
   dfmList(rows, rules = false) {
