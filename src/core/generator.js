@@ -15,7 +15,8 @@
 //              poly = Umriss [[x, y]…] in der Plattenebene statt Rechteck W × H)
 //            norms?: [{ kind, size, length?, grade?, pos, dir, name? } | { bolt: true, size, clamp, pos, dir, grade? }],
 //              – Normteile bzw. Verschraubungen (Schraube, Scheiben, Mutter; Klemmpaket ab pos in Richtung dir)
-//            drills?: [{ target, p, dir, d | w, h, xDir, len }], – Bohrung Ø d bzw. Durchbruch w × h (w entlang xDir)
+//            drills?: [{ target, p, dir, d | w, h, xDir, len, slotL? }], – Bohrung Ø d bzw. Durchbruch w × h (w entlang xDir);
+//              slotL: Langloch Ø d, um slotL entlang xDir verlängert
 //              ab p in Richtung dir (Länge len) im Stab bzw. Zug
 //              namens target, nur im Stück, durch dessen Achse p geht (z. B. Handlaufhalter im Handlauf)
 //            info, issues: [{ level, message }] }

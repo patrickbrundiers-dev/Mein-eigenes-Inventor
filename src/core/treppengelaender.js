@@ -16,8 +16,11 @@
 import { holderDrop, holderParts, innerReach, entryDepth } from "./handlaufhalter.js";
 import { fieldError } from "./generror.js";
 import { bentChain } from "./biegeteil.js";
+import { squareDrill } from "./senkrechtbohrung.js";
 
 const ROUND = new Set(["rohr", "rund"]);
+/** Wanddicke eines Hohlprofils, sonst 0 (Vollprofil: keine senkrechte Ersatzbohrung) */
+const wallOf = (sec) => (["rohr", "vierkant", "rechteck"].includes(sec?.kind) && Number(sec.dims?.t) > 0 ? Number(sec.dims.t) : 0);
 /** Bohrung für ein Profil (rund: Ø, sonst Rechteck quer zur Richtung, w entlang xDir) mit Aufmaß */
 const holeFor = (sec, allow, xDir) => (ROUND.has(sec.kind) ? { d: sec.geom.width + allow } : { w: sec.geom.width + allow, h: sec.geom.height + allow, xDir });
 
@@ -127,7 +130,7 @@ export function railAlong(path, o, label) {
     } else members.push({ section: o.post, a: [p.q[0], p.q[1], p.q[2] - o.postDown], b: top, name, up: [p.d[0], p.d[1], 0] });
     if (!o.holder) return;
     if (offCorner(p.q)) { freeCorners++; return; }
-    const hp = holderParts({ q: top, along: p.d, axisZ: p.q[2] + o.H - railH / 2, post: o.post, railH, d: o.holderD, slope: p.slope, name: `${label} Pfosten ${i + 1}`, target: `${label} Handlauf` });
+    const hp = holderParts({ q: top, along: p.d, axisZ: p.q[2] + o.H - railH / 2, post: o.post, railH, d: o.holderD, slope: p.slope, name: `${label} Pfosten ${i + 1}`, target: `${label} Handlauf`, perpWall: o.perp ? wallOf(o.rail) : 0 });
     members.push(...hp.members); plates.push(...hp.plates); drills.push(...hp.drills);
   });
   // Handlauf; mit Haltern an beiden Enden 50 mm über den Endpfosten hinaus, damit die Bohrung ganz im Rohr liegt
@@ -244,7 +247,12 @@ function through(segs, o, label, { top, half, railAxis, postName }) {
           const target = postName(sg.ps[k]), dk = dirAt(ts[k]), kk = Math.hypot(1, slopeAt(ts[k]));
           // schräger Durchbruch: um den Versatz der Bohrungskante (r · Neigung) länger, damit er die Pfostenwand ganz trennt
           const ex = ((hole.d ?? Math.max(hole.w, hole.h)) / 2) * Math.abs(slopeAt(ts[k])) + 1;
-          if (k > from && k < to) drills.push({ target, p: at(ts[k] - half - 1 - ex, h), dir: dk, len: (2 * half + 2 + 2 * ex) * kk, ...hole });
+          const tp = o.perp ? wallOf(o.post) : 0;
+          if (tp && Math.abs(slopeAt(ts[k])) > 1e-6) {
+            // je Pfostenwand ein Langloch senkrecht zur Wand (Gurt geht schräg hindurch)
+            const hz = unit([dk[0], dk[1], 0]);
+            for (const sg2 of k > from && k < to ? [-1, 1] : [k === from ? 1 : -1]) drills.push(squareDrill(target, at(ts[k] + sg2 * (half - tp / 2), h), dk, hz.map((x) => sg2 * x), tp, hole));
+          } else if (k > from && k < to) drills.push({ target, p: at(ts[k] - half - 1 - ex, h), dir: dk, len: (2 * half + 2 + 2 * ex) * kk, ...hole });
           else drills.push({ target, p: at(ts[k], h), dir: k === from ? dk : dk.map((x) => -x), len: (half + 1 + ex) * kk, ...hole });
         }
         if (o.fill !== "staketen") return;
@@ -273,7 +281,9 @@ function through(segs, o, label, { top, half, railAxis, postName }) {
               copes: [copeAt(o.rail, at(sb, railAxis), dd),
                 // nah am Knick: auch das anschließende Handlaufstück (gegehrt) aussparen
                 ...(next && Math.abs(sg.L - sb) < 100 ? [copeAt(o.rail, at(sg.L, railAxis), next, 100)] : []), ...(prev && Math.abs(sb) < 100 ? [copeAt(o.rail, at(0, railAxis), prev, 100)] : [])] });
-            drills.push({ target: name, p: at(sb, h + rv + ext), dir: [0, 0, -1], len: wd + 2 * ext + 1, ...sh });
+            const tr = o.perp ? wallOf(rail) : 0;
+            if (tr && Math.abs(sl) > 1e-6) drills.push(squareDrill(name, at(sb, h + (rail.geom.height / 2 - tr / 2) * Math.hypot(1, sl)), [0, 0, 1], nUp, tr, sh));
+            else drills.push({ target: name, p: at(sb, h + rv + ext), dir: [0, 0, -1], len: wd + 2 * ext + 1, ...sh });
           }
           bars += m;
         }

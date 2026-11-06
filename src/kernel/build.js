@@ -1387,7 +1387,16 @@ export function createKernel(R) {
               return v3.dist(d.p, v3.add(A, v3.mul(ab, t))) <= size / 2 + 5;
             });
             // rund (d) oder rechteckig (w quer entlang xDir × h), z. B. Durchbruch für einen Gurt im Pfosten
-            const drillTool = (d) => (d.w ? R.drawRectangle(d.w, d.h).sketchOnPlane(new R.Plane(d.p, d.xDir, v3.norm(d.dir))).extrude(d.len) : R.makeCylinder(d.d / 2, d.len, d.p, v3.norm(d.dir)));
+            const drillTool = (d) => {
+              if (d.w) return R.drawRectangle(d.w, d.h).sketchOnPlane(new R.Plane(d.p, d.xDir, v3.norm(d.dir))).extrude(d.len);
+              // Langloch (senkrechte Bohrung für einen schrägen Stab): Ø d, um slotL entlang xDir verlängert
+              if (d.slotL > 1e-3) {
+                const a = d.slotL / 2, r = d.d / 2;
+                const sk = R.draw([-a, -r]).lineTo([a, -r]).threePointsArcTo([a, r], [a + r, 0]).lineTo([-a, r]).threePointsArcTo([-a, -r], [-a - r, 0]).close();
+                return sk.sketchOnPlane(new R.Plane(d.p, d.xDir, v3.norm(d.dir))).extrude(d.len);
+              }
+              return R.makeCylinder(d.d / 2, d.len, d.p, v3.norm(d.dir));
+            };
             const drill = (solid, list) => cutMany(R, solid, list.map(drillTool));
             for (const ch of plan.chains) {
               const segs = ch.points.slice(1).map((b, i) => ({ id: "s" + (i + 1), a: ch.points[i], b }));

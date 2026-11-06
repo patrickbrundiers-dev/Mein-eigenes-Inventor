@@ -838,3 +838,31 @@ test("Beschläge: Größenlisten, Bezeichnung, Prüfung (E11)", async () => {
   assert.throws(() => checkNorm("kugelkappe", "M12", 0), /Unbekannte Größe/);
   assert.equal(normDensity("Kunststoff"), 0.95);
 });
+
+test("Treppe: Bohrungen senkrecht zum Rohr – keine schrägen Bohrungen mehr, Langlöcher in Neigungsrichtung", async () => {
+  const g = await import("../src/core/generator.js");
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  for (const fill of ["quer", "staketen"]) {
+    const f = g.defaultGenerator("treppe");
+    const p = g.resolveGenParams("treppe", { ...f.params, gelFill: fill, gelSenkrecht: true, gel: "rechts", wand: "links" }, (x) => evaluate(String(x), {}));
+    const plan = g.GENERATORS.treppe.plan(p);
+    // Achse des Stabs bzw. Kettenstücks, das der Bohrung am nächsten liegt
+    const dist = (q, a, b) => { const ab = b.map((x, k) => x - a[k]), t = Math.max(0, Math.min(1, dot(q.map((x, k) => x - a[k]), ab) / dot(ab, ab))); return Math.hypot(...q.map((x, k) => x - a[k] - t * ab[k])); };
+    const axisOf = (d) => {
+      const segs = [...plan.members.filter((x) => x.name === d.target || x.target === d.target).map((m) => [m.a, m.b]),
+        ...plan.chains.filter((x) => x.name === d.target).flatMap((c) => c.points.slice(1).map((b, i) => [c.points[i], b]))];
+      if (!segs.length) return null;
+      const [a, b] = segs.reduce((best, sg) => (dist(d.p, ...sg) < dist(d.p, ...best) ? sg : best));
+      return b.map((x, k) => x - a[k]);
+    };
+    const slots = plan.drills.filter((d) => d.slotL > 0);
+    assert.ok(slots.length > 0, fill + ": Langlöcher");
+    for (const d of plan.drills) {
+      const ax = axisOf(d);
+      if (!ax) continue;
+      const L = Math.hypot(...ax), c = Math.abs(dot(ax, d.dir)) / (L * Math.hypot(...d.dir));
+      assert.ok(c < 1e-6 || c > 1 - 1e-6, `${fill}: ${d.target} senkrecht oder längs (cos ${c})`);
+      if (d.slotL > 0) assert.ok(Math.abs(Math.abs(dot(d.xDir, ax)) / L - 1) < 1e-6 || Math.abs(dot(d.xDir, d.dir)) < 1e-6, "Langloch in der Wand");
+    }
+  }
+});

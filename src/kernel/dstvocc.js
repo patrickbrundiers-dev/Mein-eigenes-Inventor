@@ -217,3 +217,78 @@ function arcExtremes(s) {
   }
   return out;
 }
+
+/**
+ * Stab mit Ausklinkung: Außenkontur (AK) und eckige Innenkonturen (IK) je Seite aus der äußeren ebenen Fläche der Seite.
+ * Seiten wie bei den Bohrungen (v −u, h +u, o +v, u −v; Flachstahl nur v quer über die Breite). Bei Hohlprofilen und
+ * Walzprofilen ist die ebene Fläche schmaler als die Seite (Eckradien, Ausrundungen): Kanten am Rand der ebenen Fläche
+ * werden auf die volle Seitenbreite gezogen. Rückgabe { ak: [{ face, pts }], ik: [{ face, pts }] }; Seiten, die nur ein
+ * Rechteck über die ganze Länge sind, entfallen.
+ */
+export function memberContours(shape, ax, { flat = false } = {}) {
+  const { origin, z, u, v, lo, hi, width: B, height: H } = ax;
+  const L = hi - lo;
+  const neg = (a) => a.map((x) => -x);
+  const sides = flat ? [{ face: "v", n: v, W: B, half: H / 2 }]
+    : [{ face: "v", n: neg(u), W: H, half: B / 2 }, { face: "h", n: u, W: H, half: B / 2 }, { face: "o", n: v, W: B, half: H / 2 }, { face: "u", n: neg(v), W: B, half: H / 2 }];
+  const planes = [];
+  for (const f of shape.faces) {
+    if (f.geomType !== "PLANE") continue;
+    let n;
+    try { n = norm(tup(f.normalAt())); } catch { continue; }
+    planes.push({ f, n, c: sub(tup(f.center), origin) });
+  }
+  const ak = [], ik = [];
+  for (const s of sides) {
+    const cand = planes.filter((p) => Math.abs(dot(p.n, s.n)) > 0.999).map((p) => ({ ...p, off: dot(p.c, s.n) }));
+    if (!cand.length) continue;
+    const top = Math.max(...cand.map((p) => p.off));
+    if (Math.abs(top - s.half) > 0.5) continue; // Seite ganz weggeschnitten oder kein Außenmaß
+    const onSide = cand.filter((p) => p.off > top - 0.01);
+    // mehrere Teilflächen (Seite durch die Ausklinkung getrennt): die größte
+    let face = onSide[0].f, best = -1;
+    for (const p of onSide) { const ar = areaOf(p.f); if (ar > best) { best = ar; face = p.f; } }
+    const to2 = (p) => {
+      const q = sub(p, origin), cu = dot(q, u), cv = dot(q, v);
+      return [dot(q, z) - lo, faceY(s.face, cu, cv, B, H, flat)];
+    };
+    const flat2 = (segs) => segs.map((g) => ({ P: to2(g.P), Q: to2(g.Q), M: g.M ? to2(g.M) : null, arc: g.arc }));
+    const outer = flat2(loopSegments(face.clone().outerWire()));
+    const ys = outer.flatMap((g) => [g.P[1], g.Q[1]]);
+    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    // ebene Fläche schmaler als die Seite: Rand auf die volle Breite ziehen (nur gerade Kanten am Rand)
+    // Eckpunkt am Rand: entlang der schrägen Nachbarkante (Gehrung, Schrägschnitt) bis zur vollen Breite verlängern
+    const target = (y) => (Math.abs(y - y0) < 1e-3 && y0 > 1e-3 && y0 < s.W / 4 ? 0 : Math.abs(y - y1) < 1e-3 && y1 < s.W - 1e-3 && y1 > (3 * s.W) / 4 ? s.W : null);
+    const n = outer.length;
+    const moved = outer.map((g, i) => {
+      const p = g.P, t = target(p[1]);
+      if (t == null) return p;
+      const prev = outer[(i - 1 + n) % n];
+      const along = (a, b) => !a.arc && target(a.P[1]) === t && target(a.Q[1]) === t;
+      const other = along(g) ? prev : g; // die Kante, die vom Rand weg führt
+      if (other.arc) return [p[0], t];
+      const far = other === g ? g.Q : prev.P;
+      const dy = far[1] - p[1];
+      if (Math.abs(dy) < 1e-9) return [p[0], t];
+      return [p[0] + ((far[0] - p[0]) * (t - p[1])) / dy, t];
+    });
+    const o2 = outer.map((g, i) => ({ ...g, P: moved[i], Q: moved[(i + 1) % n], M: g.M && target(g.M[1]) != null ? [g.M[0], target(g.M[1])] : g.M }))
+      .filter((g) => g.arc || Math.hypot(g.Q[0] - g.P[0], g.Q[1] - g.P[1]) > 1e-6);
+    const pts = toPoints(o2, true);
+    const isRect = pts.length === 4 && pts.every(([x, y, r]) => !r && (Math.abs(x) < 0.05 || Math.abs(x - L) < 0.05) && (Math.abs(y) < 0.05 || Math.abs(y - s.W) < 0.05));
+    if (!isRect) ak.push({ face: s.face, pts });
+    for (const w of face.clone().innerWires()) {
+      const segs = flat2(loopSegments(w));
+      if (segs.length === 2 && segs.every((g) => g.arc)) continue; // Bohrung (steht im BO-Block)
+      if (segs.length === 4 && segs.every((g) => g.arc)) continue;
+      // Langloch: zwei Halbkreise und zwei Geraden – steht ebenfalls im BO-Block
+      if (segs.length === 4 && segs.filter((g) => g.arc).length === 2) continue;
+      ik.push({ face: s.face, pts: toPoints(segs, false) });
+    }
+  }
+  return { ak, ik };
+}
+function areaOf(f) {
+  // Größe ohne Kernel-Messung: halbe Oberfläche der Hüllbox reicht zum Vergleichen von Teilflächen einer Seite
+  try { const b = f.boundingBox; return (b.bounds[1][0] - b.bounds[0][0]) * (b.bounds[1][1] - b.bounds[0][1]) + (b.bounds[1][0] - b.bounds[0][0]) * (b.bounds[1][2] - b.bounds[0][2]) + (b.bounds[1][1] - b.bounds[0][1]) * (b.bounds[1][2] - b.bounds[0][2]); } catch { return 0; }
+}

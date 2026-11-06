@@ -17,6 +17,7 @@ import { windingPlan } from "./verzogen.js";
 import { normSchema, railingIssues } from "./gelaendernorm.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { holderSchema } from "./handlaufhalter.js";
+import { squareDrill } from "./senkrechtbohrung.js";
 import { mountSchema, mountConfig, topMount, sideMount, sideOffset, findSideFace, planeFace, findMemberFace, findPlateFace, faceCoords, applyTargetHoles, overrideFor, mountCollisions, mountInfo, collisions, plateBox } from "./pfostenbefestigung.js";
 
 const podest = (p) => p.form === "L" || p.form === "U";
@@ -66,6 +67,7 @@ export const TREPPE = {
     { key: "gelBeltMode", label: "Knieleisten / Untergurt", type: "select", options: [["durch", "durch die Pfosten gesteckt (Stäbe durch den Gurt)"], ["zwischen", "zwischen den Pfosten"]], default: "durch", missing: "zwischen", group: "Geländer", when: (p) => gel(p) && p.gelFill !== "keine" },
     { key: "gelBeltMax", label: "Am Stück bis (sonst Stoß im Pfosten)", type: "num", default: "5800", group: "Geländer", when: (p) => gelThrough(p) },
     { key: "gelAllow", label: "Aufmaß der Bohrungen (auf Ø bzw. Maß)", type: "num", default: "1", group: "Geländer", when: (p) => gelThrough(p) },
+    { key: "gelSenkrecht", label: "Bohrungen senkrecht zum Rohr (Langloch statt Schrägbohrung, für DSTV/Bohranlage)", type: "check", default: false, missing: false, group: "Geländer", when: (p) => (gel(p) && (gelThrough(p) || p.gelHolder !== "keine")) || (p.wand && p.wand !== "keine") },
     { key: "gelBar", label: "Knieleiste / Stab", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => gel(p) && (p.gelFill === "quer" || (p.gelFill === "staketen" && !gelThrough(p))) },
     { key: "gelStab", label: "Stab (durch den Untergurt)", type: "section", default: { kind: "rund", size: "12" }, group: "Geländer", when: (p) => gelThrough(p) && p.gelFill === "staketen" },
     { key: "gelBelt", label: "Untergurt", type: "section", default: { kind: "rohr", size: "26.9x2.3" }, group: "Geländer", when: (p) => gel(p) && p.gelFill === "staketen" },
@@ -489,7 +491,8 @@ function wallRail(p, { flights, s, a, u, B, x1, wt, rotZ, form, alpha }) {
       members.push({ section: { kind: "rund", dims: { D: 12 }, geom: sectionGeometry("rund", { D: 12 }), size: "12" }, a: P(x, yAx, zArm + 8), b: P(x, yAx, zTop), name: `Wandkonsole ${nK} Stütze`, plain: true });
       // senkrechte Bohrung durch die geneigte Wand: um die halbe Bohrung × Neigung tiefer ansetzen und länger bohren
       const dz = 6.05 * Math.tan(alpha);
-      drills.push({ target: name, p: P(x, yAx, zA - D / 2 / cosA - 2 - dz), dir: [0, 0, 1], len: (tw + 4) / cosA + 2 * dz, d: 12.1 });
+      if (p.gelSenkrecht && Number(rail.dims?.t) > 0) drills.push(squareDrill(name, P(x, yAx, zA - (D / 2 - tw / 2) / cosA), [0, 0, 1], Md(f.T.d([Math.sin(alpha), 0, -cosA])), tw, { d: 12.1 }));
+      else drills.push({ target: name, p: P(x, yAx, zA - D / 2 / cosA - 2 - dz), dir: [0, 0, 1], len: (tw + 4) / cosA + 2 * dz, d: 12.1 });
     }
   });
   if (p.wandH < 800 || p.wandH > 1000) issues.push({ key: "wandH", level: "Hinweis", message: "Handlaufhöhe üblich 800 … 1000 mm über Stufenvorderkante (DIN 18065)" });
@@ -550,7 +553,7 @@ function railing(p, { flights, s, a, u, B, x1, D, zP, tanA, off, rotZ, supports 
   if (left ? wantRight : wantLeft) sides.push([left ? "rechts" : "links", outer]);
   if (left ? wantLeft : wantRight) sides.push([left ? "links" : "rechts", inner]);
   const o = { H: p.gelH, post: p.gelPost, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100, holder: p.gelHolder !== "keine", holderGap: p.gelHolderGap, holderD: p.gelHolderD,
-    railBend: p.gelRailBend === "bogen" ? p.gelRailR : 0,
+    railBend: p.gelRailBend === "bogen" ? p.gelRailR : 0, perp: !!p.gelSenkrecht,
     through: gelThrough(p), allow: p.gelAllow || 0, beltMax: p.gelBeltMax, stab: p.gelStab, keys: { bar: "gelBar", belt: "gelBelt", stab: "gelStab", beltMax: "gelBeltMax" } };
   // Pfosten im Stufenrhythmus: Zwischenpfosten der Läufe genau mittig zwischen zwei Stufen (Lücke zwischen den
   // Bohrgruppen der Stufenbefestigung), alle im gleichen Abstand von n Stufen; Endfelder höchstens so lang wie erlaubt
