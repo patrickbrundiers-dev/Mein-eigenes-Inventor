@@ -1,7 +1,7 @@
 // Problemliste und Freigabe (FU13/FU15)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectProblems, featureProblems, releaseCheck, docSignature, releaseState, makeRelease, releaseText, countLevels, partsOf, FEHLER, WARNUNG, HINWEIS } from "../src/core/pruefung.js";
+import { projectProblems, featureProblems, missingNumbers, releaseCheck, docSignature, releaseState, makeRelease, releaseText, countLevels, partsOf, FEHLER, WARNUNG, HINWEIS } from "../src/core/pruefung.js";
 import { listPages } from "../src/core/mappe.js";
 
 const part = (id, extra = {}) => ({ id, kind: "part", name: "Teil " + id, material: "S235", number: "T-" + id, features: [{ id: id + "f1", type: "extrude", name: "Platte" }], ...extra });
@@ -116,4 +116,16 @@ test("partsOf: Bauteil selbst, Baugruppe mit ausgeblendeten Komponenten, jedes B
 test("Fertigungsmappe: Stand in der Kopfzeile der Listen", () => {
   const pages = listPages({ title: "Tor", number: "T1", status: "nicht freigegeben", bom: [{ pos: 1, name: "Pfosten", qty: 2, mass: 3 }] });
   assert.match(pages[0].html, /Tor · T1 · Stand: nicht freigegeben/);
+});
+
+test("Fehlende Nummern: Baugruppe aus dem Namen, Positionen Baugruppe-Pos, vorhandene bleiben", () => {
+  const asm = { id: "a", name: "Geländer 1" };
+  const p1 = { id: "p1" }, p2 = { id: "p2", number: "X-7" }, p3 = { id: "p3" };
+  const rows = [{ pos: 1, part: p1 }, { pos: 2, part: p2 }, { pos: 3, part: p3 }, { pos: 4, norm: true }, { pos: 5, part: p1 }];
+  const out = missingNumbers(asm, rows, ["GELAENDER-1-03"]);
+  assert.deepEqual(out.map(([d, n]) => [d.id, n]), [["a", "GELAENDER-1"], ["p1", "GELAENDER-1-01"], ["p3", "GELAENDER-1-03-2"]]);
+  // Baugruppe mit Nummer: nur Positionen
+  assert.deepEqual(missingNumbers({ id: "b", name: "x", number: "BG-100" }, [{ pos: 12, part: { id: "q" } }]).map(([, n]) => n), ["BG-100-12"]);
+  // belegter Name bekommt Zusatz
+  assert.equal(missingNumbers({ id: "c", name: "Tor" }, [], ["TOR"])[0][1], "TOR-2");
 });

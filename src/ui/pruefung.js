@@ -1,8 +1,10 @@
 // Problemliste (FU15) und Freigabe (FU13): Oberfläche zu src/core/pruefung.js
 import { h, modal, toast, confirmDialog } from "./dom.js";
-import { projectProblems, releaseCheck, releaseState, releaseLabel, releaseText, makeRelease, countLevels, featureProblems, partsOf, RELEASE_STATES, FEHLER, WARNUNG, HINWEIS } from "../core/pruefung.js";
+import { projectProblems, releaseCheck, releaseState, releaseLabel, releaseText, makeRelease, countLevels, missingNumbers, featureProblems, partsOf, RELEASE_STATES, FEHLER, WARNUNG, HINWEIS } from "../core/pruefung.js";
 import { checkCutList, dfmLimits } from "../core/dfm.js";
 import { cutListRows } from "../core/cutlist.js";
+import { bomRows } from "./props.js";
+import { syncDrawingTitles } from "../core/eigenschaften.js";
 
 const CLS = { [FEHLER]: "err", [WARNUNG]: "warn", [HINWEIS]: "info" };
 
@@ -95,10 +97,29 @@ export async function checkBeforeMappe(app, d) {
   const open = items.filter((x) => x.level !== HINWEIS);
   if (!open.length) return { go: true, items };
   const c = countLevels(open);
+  // fehlende Nummern mit einem Klick vergeben (Generator-Teile haben anfangs keine)
+  const noNum = open.some((x) => x.field === "number");
   const go = await checkDialog(app, "Fertigungsmappe – offene Punkte",
-    `${countText(c)}. Die Mappe kann trotzdem entstehen; die offenen Punkte stehen dann auf einer eigenen Seite und der Stand heißt »nicht freigegeben«.`,
-    items, [{ label: "Abbrechen", value: false }, { label: "Trotzdem erstellen", value: true, primary: !c[FEHLER] }]);
+    `${countText(c)}. Die Mappe kann trotzdem entstehen; die offenen Punkte stehen dann auf einer eigenen Seite und der Stand heißt »nicht freigegeben«.` +
+    (noNum ? " »Nummern vergeben« trägt fehlende Nummern nach dem Muster Baugruppe-Pos ein (z. B. GELAENDER-1-03)." : ""),
+    items, [{ label: "Abbrechen", value: false }, ...(noNum ? [{ label: "Nummern vergeben", value: "num" }] : []), { label: "Trotzdem erstellen", value: true, primary: !c[FEHLER] && !noNum }]);
+  if (go === "num") {
+    assignMissingNumbers(app, d);
+    return checkBeforeMappe(app, d);
+  }
   return { go: !!go, items };
+}
+
+/** Fehlende Nummern von Baugruppe und Positionen eintragen (ein Rückgängig-Schritt) */
+export function assignMissingNumbers(app, d) {
+  const rows = d.kind === "assembly" ? bomRows(app, d) : [];
+  const list = d.kind === "assembly" ? missingNumbers(d, rows, app.project.docs.map((x) => x.number)) : d.number ? [] : missingNumbers(d, [], app.project.docs.map((x) => x.number)).slice(0, 1);
+  if (!list.length) return 0;
+  app.edit("Nummern vergeben", () => {
+    for (const [doc, n] of list) { const old = { number: doc.number }; doc.number = n; syncDrawingTitles(app.project, doc, old); }
+  }, { rebuild: false });
+  toast(`${list.length} Nummer${list.length === 1 ? "" : "n"} vergeben`, { kind: "ok" });
+  return list.length;
 }
 
 /** Status setzen: Freigeben nur ohne Fehler, Warnungen mit Rückfrage */
