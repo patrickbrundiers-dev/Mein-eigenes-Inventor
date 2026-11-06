@@ -272,6 +272,19 @@ export function layoutBaseViews({ front, top, left, iso }, sheet, scales, { tb =
 }
 
 /**
+ * Blattgröße für eine neue Zeichnung: das kleinste Querformat ab A3, auf dem die Stückliste über dem Schriftfeld höchstens
+ * gut die Hälfte der Zeichenfläche hoch wird und die Grundansichten mit einem Normmaßstab passen. sheets {A3: [W, H], …}.
+ */
+export function autoSheetFormat(boxes, tbH, sheets, scales, { order = ["A3", "A2", "A1"], gap = 22 } = {}) {
+  for (const f of order) {
+    const [W, H] = sheets[f];
+    if (tbH > 0.55 * (H - 20)) continue;
+    if (layoutBaseViews(boxes, { W, H }, scales, { tb: { w: 180, h: tbH }, gap })) return f;
+  }
+  return order[order.length - 1];
+}
+
+/**
  * Eigener Maßstab (Inventor »Maßstab« frei eintippen): "1:25", "1 : 2,5", "3:1" oder ein Faktor ("0,04").
  * Rückgabe Faktor (Blatt-mm je Modell-mm) oder null bei ungültiger Eingabe; erlaubt 1:10000 bis 100:1.
  */
