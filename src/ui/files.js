@@ -13,6 +13,7 @@ import { linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, base
 import { bomRows, collectCutSources } from "./props.js";
 import { cutListRows, cutListCsv } from "../core/cutlist.js";
 import { planBars, barOptions } from "../core/stangen.js";
+import { calculate, surfaceOf, CALC_DEFAULTS } from "../core/kalkulation.js";
 import { collectWelds, weldRows, weldCsv } from "../core/weld.js";
 import { bendSheetPage } from "../core/biegefolge.js";
 import { simplifyOf, simplifyAction, ENVELOPES } from "../core/vereinfachen.js";
@@ -917,6 +918,25 @@ export class Files {
       if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
       else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
     });
+  }
+  /** Kalkulation (R4) für Bauteil oder Baugruppe: Mengen aus Stückliste, Zuschnitt, Stangenplan und Nahtliste */
+  async calcFor(d, surface = null) {
+    const app = this.app;
+    await app.builtParts(d);
+    const src = collectCutSources(app, d);
+    const cut = cutListRows(src);
+    // Bauteil: wie eine Baugruppe mit nur diesem Teil, damit Masse, Werkstoff und Normteile gleich gerechnet werden
+    const asm = d.kind === "assembly" ? d : { kind: "assembly", id: "_kalk", name: d.name, components: [{ id: "_c", part: d.id, name: d.name, pos: [0, 0, 0], rot: [0, 0, 0] }] };
+    const bom = bomRows(app, asm);
+    const welds = weldRows(collectWelds([...src, ...app.assemblyWeldSources(d)]));
+    let holes = 0, plates = 0;
+    for (const s of src) for (const b of s.result?.bodies || []) {
+      holes += ((b.meta?.drills || 0) + (b.meta?.plate?.holes || 0)) * (s.qty || 1);
+      if (b.meta?.plate || b.meta?.sheet) plates += s.qty || 1;
+    }
+    const rates = Object.fromEntries(Object.keys(CALC_DEFAULTS).map((k) => [k, app.prefs.get("kalkulation." + k)]));
+    const surf = surface || d.kalkulation || surfaceOf(bom.map((r) => r.finish));
+    return { calc: calculate({ bom, cut, bars: cut.length ? planBars(cut, barOptions((k) => app.prefs.get(k))) : null, welds, holes, plates, surface: surf }, rates), surface: surf };
   }
   async exportAngebot() {
     const app = this.app, d = app.activeDoc();

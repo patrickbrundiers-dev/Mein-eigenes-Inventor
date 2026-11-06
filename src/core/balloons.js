@@ -30,11 +30,14 @@ export function balloonAnchors(asm, resultOf) {
   const out = [];
   const seen = new Set();
   for (const c of asm.components || []) {
-    if (c.hidden || seen.has(c.part)) continue;
+    if (c.hidden) continue;
     const ctr = partCenter(resultOf(c.part));
     if (!ctr) continue;
+    const p3 = matApply(placementMatrix(c.pos, c.rot), ctr);
+    // weitere Exemplare als Ausweich-Anker (Bruchansicht: das erste kann im herausgebrochenen Bereich liegen)
+    if (seen.has(c.part)) { out.find((a) => a.part === c.part)?.alts.push(p3); continue; }
     seen.add(c.part);
-    out.push({ part: c.part, p3: matApply(placementMatrix(c.pos, c.rot), ctr) });
+    out.push({ part: c.part, p3, alts: [p3] });
   }
   return out;
 }

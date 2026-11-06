@@ -941,3 +941,23 @@ test("Generator-Nähte: Pfosten auf Fußplatte, Stab am Gurt, Gehrungsecke, frei
   const sym = weldSymbol({ ...stab[0], count: 12 }, [0, 0], [20, -20]);
   assert.ok(sym.texts.some((t) => t.text === "12×"));
 });
+
+test("Kalkulation: Material über den Stangenplan, Zeiten, Oberfläche, Zuschläge (R4)", async () => {
+  const { calculate, materialFamily, surfaceOf } = await import("../src/core/kalkulation.js");
+  assert.equal(materialFamily("Edelstahl 1.4301"), "edelstahl");
+  assert.equal(materialFamily("Aluminium EN AW-6060"), "alu");
+  assert.equal(materialFamily("Stahl S235JR"), "stahl");
+  const cut = [{ qty: 4, mass: 5, material: "Stahl S235JR", miters: [45, 0], coped: false }, { qty: 6, mass: 1, material: "Stahl S235JR", miters: [0, 0] }];
+  const bars = { groups: [{ material: "Stahl S235JR", buyKg: 30 }] };
+  const bom = [{ part: {}, qty: 4, mass: 5, material: "Stahl S235JR" }, { part: {}, qty: 6, mass: 1, material: "Stahl S235JR" }, { part: {}, qty: 2, mass: 3, material: "Stahl S235JR" }, { qty: 8, mass: 0.02 }];
+  const c = calculate({ bom, cut, bars, welds: [{ length: 2000 }], holes: 10, plates: 2, surface: { verzinken: true } }, { stundensatz: 60 });
+  // Material: 30 kg Stangen + 6 kg Platten × 1,15 = 36,9 kg × 1,4 €
+  assert.ok(Math.abs(c.material - (30 + 6 * 1.15) * 1.4) < 0.01, String(c.material));
+  // Zeit: 10 Schnitte × 3 + 4 Gehrungen × 2 + 10 Löcher × 1,5 + 2 Platten × 4 + 2 m × 15 + 12 Teile × 3 = 127 min
+  assert.equal(c.minutes, 127);
+  assert.ok(Math.abs(c.labour - (127 / 60) * 60) < 0.01);
+  assert.ok(Math.abs(c.surface - 32.16 * 0.6) < 0.01, "Masse inkl. Normteile × Verzinken");
+  assert.ok(Math.abs(c.norms - 4) < 1e-9);
+  assert.ok(Math.abs(c.net - c.base * 1.15 * 1.1) < 0.02);
+  assert.deepEqual(surfaceOf(["feuerverzinkt", "RAL 7016"]), { verzinken: true, pulvern: true });
+});

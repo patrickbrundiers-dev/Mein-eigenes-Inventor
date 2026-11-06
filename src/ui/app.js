@@ -282,7 +282,7 @@ export class App {
   }
   /** Schweißnähte einer Generator-Baugruppe aus ihrem Bauplan (R3), zwischengespeichert je Einstellung */
   genWelds(asm) {
-    if (!asm?.generator) return [];
+    if (!asm?.generator || GENERATORS[asm.generator.gen]?.weldFree) return [];
     const key = JSON.stringify([asm.generator, asm.params || []]);
     const c = (this._genWeldCache ||= new Map()).get(asm.id);
     if (c?.key === key) return c.welds;

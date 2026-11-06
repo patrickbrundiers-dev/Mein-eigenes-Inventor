@@ -193,6 +193,7 @@ export const COMMANDS = [
   { id: "part.importStep", label: "STEP / STL / OBJ einfügen", group: "3D-Modell", scope: "part" },
   { id: "doc.newDrawing", label: "Zeichnung ableiten", group: "3D-Modell", scope: "3d" },
   { id: "doc.partDrawings", label: "Einzelteilzeichnungen erzeugen", group: "3D-Modell", scope: "assembly", keywords: "zeichnung positionen alle bauteile fertigungszeichnung" },
+  { id: "doc.kalkulation", label: "Kalkulation", group: "Export", scope: "3d", keywords: "kalkulation preis kosten angebot stundensatz material" },
   { id: "doc.drawingSet", label: "Zeichnungssatz erzeugen", group: "3D-Modell", scope: "assembly", keywords: "zeichnungssatz blätter baugruppe einzelteile werkstatt satz" },
 
   { id: "sketch.select", label: "Skizze: Auswählen", group: "Skizze", scope: "sketch", key: "S" },

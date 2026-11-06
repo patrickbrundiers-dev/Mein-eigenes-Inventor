@@ -18,6 +18,8 @@ const SIZES = [26.9, 33.7, 42.4, 48.3];
 
 export const KLEMMGELAENDER = {
   label: "Klemmgeländer",
+  // geschraubt, keine Schweißnähte (R3): Endkappen sind eingesteckte Stopfen
+  weldFree: true,
   schema: [
     { key: "runs", label: "Läufe (Längen)", type: "list", default: "3000; 2000", group: "Lauflinie" },
     { key: "turn", label: "Ecken", type: "select", options: [["links", "90° nach links"], ["rechts", "90° nach rechts"]], default: "links", group: "Lauflinie" },

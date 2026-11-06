@@ -30,7 +30,7 @@ import { bendRule } from "../core/bendtable.js";
 import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
 import { mappeHtml } from "../core/mappe.js";
 import { sheetCount, currentSheet, switchSheet, addSheet, removeSheet, moveViewToSheet, eachSheet, sheetLabel } from "../core/blaetter.js";
-import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange, autoBreaks } from "../core/bruch.js";
+import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange, autoBreaks, fieldBreaks } from "../core/bruch.js";
 import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, edgeRun, parallelEdgeDim, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat, parseScale } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
@@ -272,9 +272,12 @@ export class DrawingEditor {
     // langer Stab (Einzelteil): Bruchansicht, wenn der Maßstab dadurch größer wird; Enden und Bohrungen bleiben sichtbar
     let brk = null;
     const mprof = autoFormat && src?.kind === "part" ? this.profileOf(d) : null;
-    if (mprof?.member && (mprof.axis === "X" || mprof.axis === "Z")) {
-      const plan = await this.memberBreakPlan(d, res.auto_front, mprof.axis === "X" ? "u" : "v");
-      if (plan) for (const s of SCALES) {
+    // lange Baugruppe (Geländer, Zaun): mittlere Felder gleicher Teilung herausbrechen, wenn der Maßstab dadurch größer wird
+    const asmBreak = autoFormat && src?.kind === "assembly" && W(fw) > 2 * H(fw);
+    if ((mprof?.member && (mprof.axis === "X" || mprof.axis === "Z")) || asmBreak) {
+      const plan = asmBreak ? this.assemblyBreakPlan(src) : await this.memberBreakPlan(d, res.auto_front, mprof.axis === "X" ? "u" : "v");
+      // Baugruppe: zusätzlich 1:25 (Stahlbau üblich), damit lange Geländer nicht gleich auf 1:50 springen
+      if (plan) for (const s of asmBreak ? [...SCALES.filter((x) => x > 0.04), 0.04, ...SCALES.filter((x) => x < 0.04)] : SCALES) {
         if (lay && s <= lay.scale + 1e-12) break;
         const cut = plan.breaks.reduce((t, b) => t + (b.b - b.a), 0) - plan.breaks.length * (8 / s);
         const k = plan.axis === "u" ? "w" : "h", shared = plan.axis === "u" ? "top" : "left";
@@ -1480,8 +1483,22 @@ export class DrawingEditor {
     const cands = (picked ? [v] : d.views.filter((x) => this.proj.get(x.id) && x.type !== "detail")).map((x) => {
       const cam = this.viewCam(d, x), xf = this.viewXf(x);
       const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
-      const at = new Map(anchors.map((a) => [a.part, xf.to(...projectPoint(a.p3, cam.dir, cam.up))]));
-      return { id: x.id, iso: x.type === "iso" || picked, box: { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) }, at };
+      // Bruchansicht: ein Exemplar außerhalb der Bruchbereiche anzeigen
+      const bm = this.breakMapOf(x), p3 = new Map();
+      for (const a of anchors) {
+        const vis = (q) => { const [u, w] = projectPoint(q, cam.dir, cam.up), t = bm?.axis === "v" ? w : u; return !bm?.overlaps(t - 1, t + 1); };
+        let q = bm && (a.alts || []).find(vis);
+        if (bm && !q) {
+          // ein langes Teil (Handlauf) mit der Mitte im Bruch: Anker 10 mm vor die nächste Bruchkante schieben
+          const i = bm.axis === "v" ? 1 : 0, t = projectPoint(a.p3, cam.dir, cam.up)[i];
+          const br = (x.breaks || []).find((b) => t >= b.a && t <= b.b);
+          const e = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((k) => [k, projectPoint(k, cam.dir, cam.up)[i]]).find(([, f]) => Math.abs(Math.abs(f) - 1) < 1e-6);
+          if (br && e) { const to = t - br.a < br.b - t ? br.a - 10 / x.scale : br.b + 10 / x.scale, k = (to - t) * e[1]; q = a.p3.map((c, j) => c + k * e[0][j]); }
+        }
+        p3.set(a.part, q || a.p3);
+      }
+      const at = new Map(anchors.map((a) => [a.part, xf.to(...projectPoint(p3.get(a.part), cam.dir, cam.up))]));
+      return { p3, id: x.id, iso: x.type === "iso" || picked, box: { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) }, at };
     });
     const [W, H] = this.sheetSize(d);
     const tbH0 = 46 + (this.template().extra.length ? 9 : 0) + 6 * (this.bomRowsOf(d).length + 1);
@@ -1520,7 +1537,7 @@ export class DrawingEditor {
       pos.set(k, [x, y]);
     }
     const apply = () => {
-      d.balloons = anchors.filter((a) => pos.has(a.part)).map((a) => ({ id: uid("b"), view: viewOf.get(a.part) || v.id, part: a.part, p3: a.p3, at: pos.get(a.part) }));
+      d.balloons = anchors.filter((a) => pos.has(a.part)).map((a) => ({ id: uid("b"), view: viewOf.get(a.part) || v.id, part: a.part, p3: cands.find((c) => c.id === viewOf.get(a.part))?.p3.get(a.part) || a.p3, at: pos.get(a.part) }));
       d.bomTable = { show: true };
     };
     if (silent) { apply(); this.app.changed({ rebuild: false }); }
@@ -2327,6 +2344,26 @@ export class DrawingEditor {
     const axis = "XYZ"[i];
     return { text: member.meta.section + " – L = " + fmtNum(Math.round(member.meta.length * 10) / 10, 1), axis, cross: [..."XYZ"].filter((a) => a !== axis), member: true };
   }
+  /** Bruchstelle der Vorderansicht einer langen Baugruppe: in der Bauteilart mit der längsten gleichmäßigen Teilung */
+  assemblyBreakPlan(src) {
+    let flat = [];
+    try { flat = flattenAssembly(src, (id) => this.app.doc(id), { bom: true }); } catch { return null; }
+    const groups = new Map();
+    for (const o of flat) {
+      const c = partCenter(this.app.results.get(o.part.id));
+      if (!c) continue;
+      const gk = String(o.part.genName || o.part.name).replace(/\s*\(\d+\)$/, "");
+      if (!groups.has(gk)) groups.set(gk, []);
+      groups.get(gk).push(projectPoint(matApply(o.matrix, c), CAMS.front.dir, CAMS.front.up)[0]);
+    }
+    let best = null;
+    for (const u of groups.values()) {
+      const br = fieldBreaks(u);
+      const cut = br.reduce((t, b) => t + b.b - b.a, 0);
+      if (cut > (best?.cut || 0)) best = { breaks: br, cut };
+    }
+    return best ? { axis: "u", breaks: best.breaks } : null;
+  }
   /** Bruchstellen der Vorderansicht eines langen Stabs (Achse "u" waagerecht, "v" senkrecht) oder null */
   async memberBreakPlan(d, proj, axis) {
     const src = d.source && this.app.doc(d.source.id);
@@ -2378,14 +2415,21 @@ export class DrawingEditor {
         const q = pts.map((p) => projectPoint(p, cam.dir, cam.up)), u = q.map((x) => (horiz ? x[0] : x[1]));
         const span = Math.max(...u) - Math.min(...u), distinct = new Set(u.map((x) => Math.round(x))).size;
         if (distinct < 2 || span < 0.3 * (horiz ? bb.x1 - bb.x0 : bb.y1 - bb.y0)) continue;
-        if (!best || distinct > best.distinct) best = { gid, u: [...new Set(u.map((x) => Math.round(x * 10) / 10))], distinct };
+        // gleiche Lage zusammenfassen, ohne zu runden: Teilungen wie 1333,33 bleiben gleich (Kettenmaß »n× Teilung«)
+        // quer dazu das Exemplar am Rand der Maße (unten bzw. links), damit die Hilfslinien kurz bleiben
+        const pairs = q.map((x, i) => [u[i], horiz ? x[1] : x[0]]).sort((a, c) => a[0] - c[0]);
+        const uu = [];
+        for (const [x, y] of pairs) { const l = uu[uu.length - 1]; if (l && x - l[0] <= 0.5) l[1] = Math.min(l[1], y); else uu.push([x, y]); }
+        if (!best || distinct > best.distinct) best = { gid, u: uu, distinct };
       }
       if (!best) continue;
       usedGroups.add(best.gid);
-      const mid = horiz ? (bb.y0 + bb.y1) / 2 : (bb.x0 + bb.x1) / 2;
       // Ersatzkreise je Ansicht mit eigenem Mini-Radius: planAutoDims bemaßt jeden Radius nur einmal im Blatt
       const rr = 0.01 * (1 + usedGroups.size);
-      w.arcs = best.u.map((x) => ({ cx: horiz ? x : mid, cy: horiz ? mid : x, r: rr, full: true }));
+      // alle auf einer Höhe (sonst entstünden Quermaße): die des Exemplars am Rand
+      const edge = Math.min(...best.u.map((p) => p[1]));
+      w.onlyAxis = horiz ? "h" : "v";
+      w.arcs = best.u.map(([x]) => ({ cx: horiz ? x : edge, cy: horiz ? edge : x, r: rr, full: true }));
     }
     return true;
   }

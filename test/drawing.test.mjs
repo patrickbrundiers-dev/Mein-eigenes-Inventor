@@ -841,3 +841,14 @@ test("Bemaßung per Kante: ganze Kante, Abstand paralleler Kanten, Kettenmaß st
   layoutAutoDims(out, { v: { to: (u, w) => [u, w], rect: [0, 0, 100, 20], scale: 1 } });
   assert.equal(new Set(out.map((x) => x.off)).size, 1, "eine Reihe");
 });
+
+test("fieldBreaks: lange Baugruppe behält erstes und letztes Feld, Ecke bleibt", async () => {
+  const { fieldBreaks } = await import("../src/core/bruch.js");
+  // 6 Felder à 1333,3, danach Ecklauf (alle Pfosten bei 8000)
+  const posts = [0, 1333.3, 2666.7, 4000, 5333.3, 6666.7, 8000, 8000, 8000];
+  const br = fieldBreaks(posts);
+  assert.equal(br.length, 1);
+  assert.ok(Math.abs(br[0].a - (1333.3 + 400)) < 1 && Math.abs(br[0].b - (6666.7 - 400)) < 1);
+  assert.deepEqual(fieldBreaks([0, 1000, 2000, 3000]), []);
+  assert.deepEqual(fieldBreaks([0, 500, 1700, 2100, 3900]), []);
+});

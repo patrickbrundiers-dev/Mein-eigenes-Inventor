@@ -236,7 +236,7 @@ export function planAutoDims(views, used = {}) {
       const at = (x) => (kind === "h" ? [x, b.y0] : [b.x0, x]);
       const vals = list.map((c) => c[coord]);
       const n = vals.length;
-      if (!n) return;
+      if (!n || (v.onlyAxis && v.onlyAxis !== kind)) return; // Baugruppe: nur Teilung längs der Hauptrichtung
       const mid = (lo + hi) / 2;
       const sym = vals.every((x, i) => Math.abs(x - mid - (mid - vals[n - 1 - i])) < 1e-3);
       const step = n >= 3 ? (vals[n - 1] - vals[0]) / (n - 1) : 0;
