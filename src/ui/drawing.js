@@ -27,7 +27,7 @@ import { bendNote, bendTableCells } from "../core/blech.js";
 import { sheetFlatView } from "../core/blechplus.js";
 import { bendRule } from "../core/bendtable.js";
 import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
-import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange } from "../core/bruch.js";
+import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange, autoBreaks } from "../core/bruch.js";
 import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat, parseScale } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
@@ -150,7 +150,7 @@ export class DrawingEditor {
     if (d.pendingAutoViews) {
       delete d.pendingAutoViews;
       await this.autoViews({ silentUndo: true, autoFormat: true });
-      if (d.pendingAutoDims) { delete d.pendingAutoDims; this.autoDims({ silent: true }); }
+      if (d.pendingAutoDims) { delete d.pendingAutoDims; await this.autoDims({ silent: true }); }
       // Baugruppe: Positionsnummern und Stückliste gleich mit (Platz dafür hält autoViews über dem Schriftfeld frei)
       else if (this.app.doc(d.source.id)?.kind === "assembly" && !d.balloons?.length) this.autoBalloons({ silent: true });
       return;
@@ -214,16 +214,33 @@ export class DrawingEditor {
     // neue Zeichnung im Standardblatt A3 quer: bei langer Stückliste oder großem Modell A2/A1
     let format = d.sheet.format;
     if (autoFormat && format === "A3" && d.sheet.orientation !== "hoch") { format = autoSheetFormat(boxes, tbH, SHEETS, SCALES, { gap }); [sw, sh] = SHEETS[format]; }
-    const lay = layoutBaseViews(boxes, { W: sw, H: sh }, SCALES, { tb: { w: 180, h: tbH }, gap });
+    let lay = layoutBaseViews(boxes, { W: sw, H: sh }, SCALES, { tb: { w: 180, h: tbH }, gap });
+    const S = { front: box(fw), top: box(tp), left: box(lf) };
+    // langer Stab (Einzelteil): Bruchansicht, wenn der Maßstab dadurch größer wird; Enden und Bohrungen bleiben sichtbar
+    let brk = null;
+    const mprof = autoFormat && src?.kind === "part" ? this.profileOf(d) : null;
+    if (mprof?.member && (mprof.axis === "X" || mprof.axis === "Z")) {
+      const plan = await this.memberBreakPlan(d, res.auto_front, mprof.axis === "X" ? "u" : "v");
+      if (plan) for (const s of SCALES) {
+        if (lay && s <= lay.scale + 1e-12) break;
+        const cut = plan.breaks.reduce((t, b) => t + (b.b - b.a), 0) - plan.breaks.length * (8 / s);
+        const k = plan.axis === "u" ? "w" : "h", shared = plan.axis === "u" ? "top" : "left";
+        const b2 = { ...boxes, front: { ...boxes.front, [k]: boxes.front[k] - cut }, [shared]: boxes[shared] ? { ...boxes[shared], [k]: boxes[shared][k] - cut } : null };
+        // die Isometrie eines gebrochenen Stabs zeigt nur die Lage, sie darf deutlich kleiner sein
+        const l2 = layoutBaseViews(b2, { W: sw, H: sh }, [s], { tb: { w: 180, h: tbH }, gap, isoMin: 20, isoScales: SCALES });
+        if (l2) { lay = l2; brk = { ...plan, shared }; S.front[k] -= cut; S[shared][k] -= cut; break; }
+      }
+    }
     const scale = lay?.scale || SCALES[SCALES.length - 1];
-    const fx = lay ? lay.front.x : 20 + 10 + gap + (W(fw) * scale) / 2;
-    const fy = lay ? lay.front.y : 10 + 10 + gap + (H(fw) * scale) / 2;
+    const fx = lay ? lay.front.x : 20 + 10 + gap + (S.front.w * scale) / 2;
+    const fy = lay ? lay.front.y : 10 + 10 + gap + (S.front.h * scale) / 2;
     const fid = uid("v");
     const nv = [
       { id: fid, type: "front", x: fx, y: fy, scale, hidden: true },
-      { id: uid("v"), type: "top", x: fx, y: fy + (H(fw) * scale) / 2 + gap + (H(tp) * scale) / 2, scale, hidden: true, parent: fid },
-      { id: uid("v"), type: "left", x: fx + (W(fw) * scale) / 2 + gap + (W(lf) * scale) / 2, y: fy, scale, hidden: true, parent: fid },
+      { id: uid("v"), type: "top", x: fx, y: fy + (S.front.h * scale) / 2 + gap + (S.top.h * scale) / 2, scale, hidden: true, parent: fid },
+      { id: uid("v"), type: "left", x: fx + (S.front.w * scale) / 2 + gap + (S.left.w * scale) / 2, y: fy, scale, hidden: true, parent: fid },
     ].filter((v) => keep.has(v.type));
+    if (brk) for (const v of nv) if (v.type === "front" || v.type === brk.shared) { v.breaks = brk.breaks.map((b) => ({ ...b })); v.breakAxis = brk.axis; }
     const isoScale = lay?.isoScale || scale * 0.6;
     const ic = lay?.iso || { x: sw - 10 - 15 - (W(iso) * isoScale) / 2, y: 10 + 10 + 15 + (H(iso) * isoScale) / 2 };
     nv.push({ id: uid("v"), type: "iso", x: ic.x, y: ic.y, scale: isoScale, hidden: false });
@@ -2071,7 +2088,7 @@ export class DrawingEditor {
         } }],
     });
   }
-  autoDims({ silent = false } = {}) {
+  async autoDims({ silent = false } = {}) {
     const d = this.doc;
     // Vorderansicht zuerst, damit Breite und Höhe dort stehen; jede Raumrichtung und jeder Bohrungs-Ø nur einmal
     const order = (v) => (v.type === "front" ? 0 : v.type === "section" ? 2 : 1);
@@ -2099,14 +2116,17 @@ export class DrawingEditor {
     used.profile = this.profileOf(d);
     // Wandstärke nur bei einem einzelnen Hohlkörper, nicht bei Rahmen/Schweißbaugruppen aus mehreren Profilen
     const profiled = src?.kind !== "part" || src.features.some((f) => !f.suppressed && ["frame", "profilzug", "biegerohr", "knickrahmen", "profile"].includes(f.type));
-    if (profiled) used.wall = true;
+    if (profiled || used.profile) used.wall = true;
     // Eckradien von Profilen gehören zur Profilangabe und werden nicht als Rundung bemaßt
-    if (profiled) used.noRadii = true;
+    if (profiled || used.profile) used.noRadii = true;
     const views = cands.filter((v) => !keep.some((m) => m.view === v.id && m.auto)).map((v) => {
       const c = this.viewCam(d, v), p = this.proj.get(v.id);
       return { id: v.id, axes: v.type === "flat" ? ["F1", "F2"] : viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, lines: p.visible, holes };
     });
     const planned = planAutoDims(views, used);
+    // Stab aus Generator/Gestell: Bohrungen längs des Stabs in der Vorderansicht bemaßen
+    const front = used.profile?.member && cands.find((v) => v.type === "front" && views.some((x) => x.id === v.id));
+    if (front) planned.push(...(await this.memberHoleDims(d, front)));
     const add = planned.filter((m) => m.kind !== "fase").map((m) => ({ id: uid("m"), ...m, auto: true }));
     const fasen = planned.filter((m) => m.kind === "fase");
     const keepNotes = (d.notes || []).filter((n) => !(n.auto && !n.touched));
@@ -2140,8 +2160,61 @@ export class DrawingEditor {
     const src = d?.source && this.app.doc(d.source.id);
     if (src?.kind !== "part") return null;
     const scope = resolveParams(src.params || []).values;
-    const member = this.app.results.get(src.id)?.bodies?.find((b) => b.kind === "member" && b.meta?.length);
-    return profileSpec(src.features, (x) => evaluate(String(x), scope), member?.meta.length);
+    const bodies = this.app.results.get(src.id)?.bodies || [];
+    const member = bodies.find((b) => b.kind === "member" && b.meta?.length);
+    const spec = profileSpec(src.features, (x) => evaluate(String(x), scope), member?.meta.length);
+    if (spec || !member) return spec;
+    // Stab ohne Profil-Feature (Generator, Gestell): Profil aus dem Körper, wenn er das einzige Teil ist und achsparallel liegt
+    const z = member.meta.axis?.z;
+    const i = z ? z.findIndex((c) => Math.abs(Math.abs(c) - 1) < 1e-6) : -1;
+    if (bodies.filter((b) => !b.meta?.weld).length !== 1 || i < 0 || !member.meta.section) return null;
+    const axis = "XYZ"[i];
+    return { text: member.meta.section + " – L = " + fmtNum(Math.round(member.meta.length * 10) / 10, 1), axis, cross: [..."XYZ"].filter((a) => a !== axis), member: true };
+  }
+  /** Bruchstellen der Vorderansicht eines langen Stabs (Achse "u" waagerecht, "v" senkrecht) oder null */
+  async memberBreakPlan(d, proj, axis) {
+    const src = d.source && this.app.doc(d.source.id);
+    const bb = proj?.bbox;
+    if (!bb || src?.kind !== "part") return null;
+    const [lo, hi] = axis === "u" ? [bb.x0, bb.x1] : [bb.y0, bb.y1];
+    const cross = axis === "u" ? bb.y1 - bb.y0 : bb.x1 - bb.x0;
+    if (!(cross > 0) || (hi - lo) / cross < 20) return null;
+    let data = [];
+    try { data = await this.app.kernel.call("dstvData", { part: src }); } catch { /* ohne Bohrungen */ }
+    const m = (data || []).find((x) => x.kind === "member");
+    const cam = CAMS.front, i = axis === "u" ? 0 : 1;
+    const feats = (m?.centers || []).map((c) => projectPoint(c.p, cam.dir, cam.up)[i]);
+    const breaks = autoBreaks(lo, hi, feats, Math.max(3 * cross, 50));
+    return breaks.length ? { axis, breaks } : null;
+  }
+  /**
+   * Bohrbild eines Stabs, dessen Bohrungen die Ansicht von der Seite zeigt (Rohr mit Bohrungen für Stäbe): Lagemaße der
+   * Bohrungsachsen längs des Stabs (Teilung oder Bezugsmaße wie bei Kreisen) und je Ø ein Hinweis »n× Ø d«.
+   */
+  async memberHoleDims(d, v) {
+    const src = d.source && this.app.doc(d.source.id);
+    if (src?.kind !== "part") return [];
+    let data;
+    try { data = await this.app.kernel.call("dstvData", { part: src }); } catch { return []; }
+    const m = (data || []).find((x) => x.kind === "member" && x.centers?.length);
+    if (!m) return [];
+    const cam = this.viewCam(d, v), p = this.proj.get(v.id);
+    if (!p?.bbox) return [];
+    const side = m.centers.filter((c) => Math.abs(v3.dot(v3.norm(c.dir), v3.norm(cam.dir))) < 0.01 && !c.slot);
+    if (!side.length) return [];
+    // nur die Lage längs des Stabs zählt: quer dazu auf die Mitte (keine Quermaße), kleiner Radius (berührt nie den Umriss)
+    const [lx, ly] = projectPoint(m.dirZ, cam.dir, cam.up), horiz = Math.abs(lx) >= Math.abs(ly);
+    const midX = (p.bbox.x0 + p.bbox.x1) / 2, midY = (p.bbox.y0 + p.bbox.y1) / 2;
+    const circles = side.map((c) => { const [cx, cy] = projectPoint(c.p, cam.dir, cam.up); return { cx: horiz ? cx : midX, cy: horiz ? midY : cy, r: 0.01, d: c.d, full: true }; });
+    const plan = planAutoDims([{ id: v.id, axes: [null, null], bbox: p.bbox, arcs: circles, lines: [], holes: [] }], { axes: new Set(), radii: new Set(), wall: true, noRadii: true });
+    const out = plan.filter((x) => x.kind !== "dia" && x.kind !== "fase");
+    const byD = new Map();
+    side.forEach((c, i) => { const k = Math.round(c.d * 100) / 100; if (!byD.has(k)) byD.set(k, []); byD.get(k).push(circles[i]); });
+    for (const [dd, list] of byD) {
+      const c = list.reduce((a, b) => (horiz ? b.cx > a.cx : b.cy > a.cy) ? b : a);
+      out.push({ view: v.id, kind: "fase", p: [c.cx, c.cy], text: (list.length > 1 ? list.length + "× " : "") + "Ø" + fmtNum(dd, 1) });
+    }
+    return out;
   }
   /** Ansichten als Rechtecke auf dem Blatt (für die Platzierung der Maße) */
   sheetRects(d) {

@@ -231,7 +231,7 @@ export function camType(cams, cam, tol = 1e-6) {
  * den Block, mit eigenem (kleinerem) Normmaßstab. Größen in mm am Modell; sheet {W, H}; tb {w, h} Schriftfeld.
  * Rückgabe {scale, isoScale, iso: {x, y} Mitte, front: {x, y}} oder null.
  */
-export function layoutBaseViews({ front, top, left, iso }, sheet, scales, { tb = { w: 180, h: 46 }, gap = 22, frame = { x0: 20, y0: 10, x1: sheet.W - 10, y1: sheet.H - 10 } } = {}) {
+export function layoutBaseViews({ front, top, left, iso }, sheet, scales, { tb = { w: 180, h: 46 }, gap = 22, frame = { x0: 20, y0: 10, x1: sheet.W - 10, y1: sheet.H - 10 }, isoMin = 5, isoScales = scales } = {}) {
   const fw = front, tp = top || { w: 0, h: 0 }, lf = left || { w: 0, h: 0 };
   const m = 10; // Abstand Rahmen
   const X0 = frame.x0 + m, Y0 = frame.y0 + m, X1 = frame.x1 - m, Y1 = frame.y1 - m;
@@ -253,13 +253,13 @@ export function layoutBaseViews({ front, top, left, iso }, sheet, scales, { tb =
     ].filter((r) => r.x1 > r.x0 && r.y1 > r.y0);
     let best = null;
     if (iso) {
-      for (const k of scales) {
+      for (const k of isoScales) {
         if (k > s + 1e-12) continue;
         const r = regions.find((q) => iso.w * k <= q.x1 - q.x0 && iso.h * k <= q.y1 - q.y0);
         if (r) { best = { k, r }; break; }
       }
-      // Isometrie nicht kleiner als ein Fünftel des Hauptmaßstabs, sonst lieber alles kleiner zeichnen
-      if (!best || best.k < s / 5 - 1e-12) continue;
+      // Isometrie nicht kleiner als ein Fünftel des Hauptmaßstabs (isoMin), sonst lieber alles kleiner zeichnen
+      if (!best || best.k < s / isoMin - 1e-12) continue;
     }
     return {
       scale: s,

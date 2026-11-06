@@ -708,3 +708,26 @@ test("Blattgröße: A3 bleibt bei kurzer Stückliste, lange Stückliste oder gro
   // sehr lange Stückliste: A1
   assert.equal(autoSheetFormat(tr, 46 + 6 * 45, SH, SC), "A1");
 });
+
+test("autoBreaks: Bruchstellen eines langen Stabs lassen Enden und Bohrungen stehen", async () => {
+  const { autoBreaks } = await import("../src/core/bruch.js");
+  // Handlauf 3100 mit Bohrungen alle 1000 mm ab 50
+  assert.deepEqual(autoBreaks(0, 3100, [50, 1050, 2050, 3050], 60), [{ a: 110, b: 990 }, { a: 1110, b: 1990 }, { a: 2110, b: 2990 }]);
+  // ohne Merkmale: ein Bruch zwischen den Enden
+  assert.deepEqual(autoBreaks(0, 1000, [], 50), [{ a: 50, b: 950 }]);
+  // kurzer Stab oder dicht gebohrt: kein Bruch
+  assert.deepEqual(autoBreaks(0, 150, [], 50), []);
+  assert.deepEqual(autoBreaks(0, 1000, [100, 250, 400, 550, 700, 850], 50), []);
+  // höchstens max Brüche, die längsten gewinnen, sortiert
+  const b = autoBreaks(0, 6000, [1000, 1500, 3000, 5000], 50, { max: 2 });
+  assert.deepEqual(b, [{ a: 1550, b: 2950 }, { a: 3050, b: 4950 }]);
+});
+
+test("layoutBaseViews: isoMin erlaubt eine kleinere Isometrie", () => {
+  const sheet = { W: 420, H: 297 };
+  const boxes = { front: { w: 900, h: 43 }, top: null, left: { w: 43, h: 43 }, iso: { w: 2700, h: 1500 } };
+  assert.equal(layoutBaseViews(boxes, sheet, [0.2]), null);
+  const l = layoutBaseViews(boxes, sheet, [0.2], { isoMin: 20, isoScales: [0.2, 0.1, 0.05, 0.02] });
+  assert.equal(l.scale, 0.2);
+  assert.ok(l.isoScale <= 0.05);
+});
