@@ -741,6 +741,7 @@ export class Props {
           f.mode !== "through" && f.mode !== "bis" ? E("Abstand", "distance", { allowNeg: false, allowZero: false }) : null,
           f.mode === "bis" ? refPick("to", "Bis Fläche / Punkt") : null,
           f.mode === "bis" ? E("Abstand darüber hinaus", "toOffset", { allowEmpty: true, placeholder: "0" }) : null,
+          f.mode === "bis" ? h("p", { class: "hint" }, "Gekrümmte Fläche eines Körpers (Rohr, Kugel …): die Extrusion endet genau an der Fläche. Ebene Fläche oder Punkt: Ebene durch den Punkt.") : null,
           f.mode === "twoSided" ? this.check("Seite 2 durch alles", f.distance2Through, (v) => this.set(f, "distance2Through", v, "Seite 2 durch alles")) : null,
           f.mode === "twoSided" && !f.distance2Through ? E("Abstand 2", "distance2") : null,
           this.opSeg(f),

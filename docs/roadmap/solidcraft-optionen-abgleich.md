@@ -67,7 +67,7 @@ Stand: 05.11.2026, PR #204. Grundlage ist das Inventar aus Handbuch und Quellcod
 | edit | Checkpoint | `checkpoint`, `restored` | neu eingebaut | Zwischenstand speichern (Bearbeiten → Zwischenstand). Nur für Skripte: `param_warnings`. |
 | edit | RestoreCheckpoint | `checkpoint`, `forget` | neu eingebaut | Zwischenstand wiederherstellen / vergessen. |
 | features | Box | `length`, `width`, `height`, `corner`, `center`, `operation`, `targets` | vorhanden | Ecke/Mitte über »Punkt ist« (neu), Zielkörper (neu). Nur für Skripte: `touching`, `participants`, `name`, `body_name`, `body_names`. |
-| features | Extrude | `distance`, `sketch`, `profiles`, `face`, `faces`, `face_body`, `body`, `through_all`, `extent`, `taper`, `direction`, `distance2`, `start_offset`, `to`, `to_offset`, `from`, `operation`, `targets`, `thin`, `curves`, `thickness`, `side`, `thickness2` | neu eingebaut | Verjüngung, Versatz Start, Start ab Fläche, Bis Fläche + Abstand darüber hinaus, Seite 2 durch alles, Dünnwand (innen/mitte/außen/beidseitig, zweite Dicke), Körperfläche als Quelle, Zielkörper. Gekrümmte »Bis Fläche« nimmt die Tangentialebene; offene Kurvenzüge als Dünnwand nur über geschlossene Profile. Nur für Skripte: `exact_regions`, `convention`, `touching`, `participants`, `name`, `body_name`, `body_names`. |
+| features | Extrude | `distance`, `sketch`, `profiles`, `face`, `faces`, `face_body`, `body`, `through_all`, `extent`, `taper`, `direction`, `distance2`, `start_offset`, `to`, `to_offset`, `from`, `operation`, `targets`, `thin`, `curves`, `thickness`, `side`, `thickness2` | neu eingebaut | Verjüngung, Versatz Start, Start ab Fläche, Bis Fläche + Abstand darüber hinaus, Seite 2 durch alles, Dünnwand (innen/mitte/außen/beidseitig, zweite Dicke), Körperfläche als Quelle, Zielkörper. »Bis Fläche« an gekrümmten Flächen (Rohr, Kugel, Freiform) endet genau an der Fläche (PR nach 0.45.0); offene Kurvenzüge als Dünnwand nur über geschlossene Profile. Nur für Skripte: `exact_regions`, `convention`, `touching`, `participants`, `name`, `body_name`, `body_names`. |
 | features | Cylinder | `radius`, `diameter`, `height`, `base`, `axis`, `references`, `operation`, `targets` | vorhanden | Mit Zielkörper. Nur für Skripte: `common`. |
 | features | Sphere | `radius`, `diameter`, `center`, `operation`, `targets` | vorhanden | Nur für Skripte: `common`. |
 | features | Torus | `major`, `minor`, `center`, `operation`, `targets` | vorhanden | Nur für Skripte: `common`. |
@@ -236,7 +236,7 @@ Stand: 05.11.2026, PR #204. Grundlage ist das Inventar aus Handbuch und Quellcod
 ## Teilweise und offen – was noch fehlt
 
 - Verknüpftes Teil an Ort und Stelle bearbeiten (L3) schreibt nur in der Desktop-App zurück; im Browser bleibt es schreibgeschützt.
-- Extrusion »Bis Fläche« an gekrümmten Flächen nimmt die Tangentialebene am angeklickten Punkt.
+- Extrusion »Bis Fläche« an gekrümmten Flächen: »Abstand darüber hinaus« gilt dort nicht (endet genau an der Fläche).
 - Rundung: Eck-Rücksprünge (setbacks) nicht einstellbar; Spline-Radienverlauf über Zwischenradien.
 - Skalieren je Achse geht über ein Netz (facettierte Rundungen, Hinweis erscheint). Der Kern in PBCAD (OpenCascade-Übersetzung von replicad) enthält die allgemeine Transformation für Körper nicht; ohne eigene Kern-Übersetzung bleibt es so.
 - Gleichungskurve: Variable immer ohne Einheit bzw. Winkel in Grad.
