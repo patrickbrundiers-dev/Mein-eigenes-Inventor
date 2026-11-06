@@ -1,3 +1,4 @@
-**Neu in 0.45.1**
+**Neu in 0.46.0**
 
-- **Bis Fläche an Rundungen:** Eine Extrusion »Bis Fläche« endet an gekrümmten Flächen (Rohr, Kugel, Kegel, Freiform) jetzt genau an der Fläche statt an der Tangentialebene, zum Beispiel ein Steg bis ans Rohr.
+- **Zeichnungen schneller:** Vorder-, Drauf- und Seitenansicht werden viel schneller gerechnet, bei einem Geländer 4–8 Sekunden statt bis zu 5 Minuten. Dadurch läuft auch die Fertigungsmappe durch.
+- **Baugruppenzeichnung:** Eine neue Zeichnung einer Baugruppe bekommt gleich Positionsnummern und Stückliste. Steht nur die Seitenansicht über dem Schriftfeld, wird der Maßstab größer gewählt (Geländer 1:20 statt 1:50).
