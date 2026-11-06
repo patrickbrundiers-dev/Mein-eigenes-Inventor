@@ -663,6 +663,23 @@ test("Grundansichten: größerer Maßstab, Isometrie in die freie Ecke mit Normm
   assert.equal(layoutBaseViews({ front: { w: 1e6, h: 1e6 }, iso: { w: 1, h: 1 } }, { W: 420, H: 297 }, SC), null);
 });
 
+test("Grundansichten: nur die niedrige Seitenansicht über dem Schriftfeld mit Stückliste kostet keinen Maßstab", () => {
+  const SC = [10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01];
+  // Geländer 3200 × 2100 × 1100 als Baugruppe (Schriftfeld mit Stückliste 112 mm hoch): früher 1:50, jetzt 1:20
+  const v = { front: { w: 3200, h: 1100 }, top: { w: 3200, h: 2100 }, left: { w: 2100, h: 1100 }, iso: { w: 3800, h: 2600 } };
+  const lay = layoutBaseViews(v, { W: 420, H: 297 }, SC, { tb: { w: 180, h: 112 } });
+  assert.equal(lay.scale, 0.05);
+  // Vorder- und Draufsicht bleiben links vom Schriftfeld, die Seitenansicht endet über der Stückliste
+  assert.ok(lay.front.x + (3200 * 0.05) / 2 <= 420 - 10 - 180 - 10 + 1e-9);
+  assert.ok(lay.front.y + (1100 * 0.05) / 2 + 22 <= 297 - 10 - 112 - 10 + 1e-9);
+  // Isometrie außerhalb von Block und Schriftfeld
+  const i = { x0: lay.iso.x - (3800 * lay.isoScale) / 2, y1: lay.iso.y + (2600 * lay.isoScale) / 2 };
+  assert.ok(i.y1 <= 297 - 10 - 112 - 10 + 1e-9 && i.x0 >= lay.front.x + 80 + 22 + 105 - 1e-9);
+  // hohe Seitenansicht über dem Schriftfeld bleibt verboten
+  const tall = layoutBaseViews({ ...v, left: { w: 2100, h: 3000 } }, { W: 420, H: 297 }, SC, { tb: { w: 180, h: 112 } });
+  assert.ok(tall.scale < 0.05);
+});
+
 test("Detailausschnitt schneidet auch die Achsen zu", () => {
   const p = { visible: [], hidden: [], arcs: [], hiddenArcs: [], axes: [[[-50, 0], [50, 0]], [[100, 100], [120, 100]]] };
   const c = clipProjection(p, [0, 0], 10);

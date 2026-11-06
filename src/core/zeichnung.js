@@ -238,9 +238,12 @@ export function layoutBaseViews({ front, top, left, iso }, sheet, scales, { tb =
   for (const s of scales) {
     const bw = (fw.w + lf.w) * s + gap * (left ? 1 : 0), bh = (fw.h + tp.h) * s + gap * (top ? 1 : 0);
     const bx0 = X0 + gap, by0 = Y0 + gap, bx1 = bx0 + bw, by1 = by0 + bh;
-    // Block rechts über dem Schriftfeld: dann endet er über dessen Oberkante
-    const bottom = bx1 > frame.x1 - tb.w - m ? frame.y1 - tb.h - m : Y1;
-    if (bx1 + gap > X1 || by1 + gap > bottom) continue;
+    // Was rechts über das Schriftfeld (mit Stückliste) ragt, muss über dessen Oberkante enden. Spalte Vorder-/Draufsicht und
+    // Seitenansicht getrennt prüfen: oft liegt nur die niedrige Seitenansicht über dem Schriftfeld.
+    const tbX = frame.x1 - tb.w - m, tbTop = frame.y1 - tb.h - m;
+    const fits = (x1, y1) => y1 + gap <= (x1 > tbX ? tbTop : Y1);
+    const colX1 = bx0 + Math.max(fw.w, tp.w) * s;
+    if (bx1 + gap > X1 || !fits(colX1, by1) || (left && !fits(bx1, by0 + lf.h * s))) continue;
     // freie Bereiche für die Isometrie: rechts neben dem Block (über dem Schriftfeld), darunter (links vom Schriftfeld) oder neben der Draufsicht
     const regions = [
       { x0: bx1 + gap, y0: Y0, x1: X1, y1: frame.y1 - tb.h - m },
