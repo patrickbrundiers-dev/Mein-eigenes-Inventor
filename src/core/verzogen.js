@@ -226,7 +226,7 @@ export function windingPlan(p, { n, s, a, issues }) {
     if (!(p.gelH > 300)) throw fieldError("Geländerhöhe zu klein", "gelH");
     if (!(p.gelPostMax > post.geom.width)) throw fieldError("Pfostenabstand zu klein", "gelPostMax");
     const o = { H: p.gelH, post, postMax: p.gelPostMax, postDown: p.gelDown, rail: p.gelRail, fill: p.gelFill, bar: p.gelBar, bars: p.gelBars, gap: p.gelGap, belt: p.gelBelt, bottomZ: 100, holder: p.gelHolder !== "keine", holderGap: p.gelHolderGap, holderD: p.gelHolderD,
-      railBend: p.gelRailBend === "bogen" ? p.gelRailR : 0, through: false, allow: 0, beltMax: p.gelBeltMax, stab: p.gelStab, keys: { bar: "gelBar", belt: "gelBelt", stab: "gelStab", beltMax: "gelBeltMax" } };
+      railBend: p.gelRailBend === "bogen" ? p.gelRailR : 0, perp: !!p.gelSenkrecht, through: false, allow: 0, beltMax: p.gelBeltMax, stab: p.gelStab, keys: { bar: "gelBar", belt: "gelBelt", stab: "gelStab", beltMax: "gelBeltMax" } };
     rail = { chains: [], members: [], plates: [], drills: [], tubes: [], posts: 0, bars: 0, gapMax: 0, sides: [] };
     for (const side of want) {
       const pl = side === "innen" ? inner : outer, ts = side === "innen" ? ed.ti : ed.to;

@@ -731,3 +731,54 @@ test("layoutBaseViews: isoMin erlaubt eine kleinere Isometrie", () => {
   assert.equal(l.scale, 0.2);
   assert.ok(l.isoScale <= 0.05);
 });
+
+test("Positionsnummern über alle Ansichten verteilt, an den freien Seiten der Normalansichten", async () => {
+  const { assignBalloonViews, placeBalloonsEdges } = await import("../src/core/balloons.js");
+  // Isometrie: alle Anker dicht beieinander; Vorderansicht: Pfosten 1–3 weit auseinander
+  const iso = { id: "iso", cap: 20, at: new Map([["p1", [300, 100]], ["p2", [302, 101]], ["p3", [304, 102]], ["g", [303, 100]]]) };
+  const front = { id: "front", cap: 20, at: new Map([["p1", [50, 80]], ["p2", [100, 80]], ["p3", [150, 80]], ["g", [100, 81]]]) };
+  const a = assignBalloonViews([iso, front], ["p1", "p2", "p3", "g"], { prefer: "iso" });
+  assert.equal(a.get("p1"), "front"); assert.equal(a.get("p3"), "front");
+  assert.equal(a.size, 4);
+  // Kapazität: volle Ansicht wird gemieden
+  const b = assignBalloonViews([{ ...front, cap: 1 }, { ...iso, cap: 10 }], ["p1", "p2", "p3"]);
+  assert.ok([...b.values()].filter((x) => x === "front").length <= 2);
+  // Kreise an den Seiten oben und links, mit Mindestabstand
+  const box = { x0: 40, y0: 60, x1: 160, y1: 100 };
+  const pos = placeBalloonsEdges([{ key: "a", at: [50, 65] }, { key: "b", at: [52, 66] }, { key: "c", at: [45, 90] }], box, { sides: "tl" });
+  const [pa, pb, pc] = ["a", "b", "c"].map((k) => pos.get(k));
+  assert.ok(pa[1] < box.y0 && pb[1] < box.y0, "oben");
+  assert.ok(Math.abs(pb[0] - pa[0]) >= 10 - 1e-9, "Abstand");
+  assert.ok(pc[0] < box.x0, "links");
+});
+
+test("Mehrere Blätter: wechseln, anlegen, Ansicht mit Maßen verschieben, löschen", async () => {
+  const B = await import("../src/core/blaetter.js");
+  const d = { sheet: { format: "A3", orientation: "quer" }, views: [{ id: "v1", type: "front" }, { id: "v2", type: "top", parent: "v1" }, { id: "v3", type: "iso" }],
+    dims: [{ id: "m1", view: "v1" }, { id: "m2", view: "v3" }], notes: [], balloons: [{ id: "b1", view: "v3" }], title: { benennung: "X" } };
+  assert.equal(B.sheetCount(d), 1); assert.equal(B.sheetLabel(d), "1/1");
+  assert.equal(B.addSheet(d), 1);
+  assert.equal(B.sheetLabel(d), "2/2"); assert.equal(d.views.length, 0); assert.equal(d.sheet.format, "A3");
+  B.switchSheet(d, 0);
+  assert.equal(d.views.length, 3);
+  // Isometrie mit Maß und Positionsnummer auf Blatt 2
+  assert.ok(B.moveViewToSheet(d, "v3", 1));
+  assert.deepEqual(d.views.map((v) => v.id), ["v1", "v2"]);
+  assert.deepEqual(d.dims.map((m) => m.id), ["m1"]); assert.equal(d.balloons.length, 0);
+  // Vorderansicht nimmt die abhängige Draufsicht mit
+  B.addSheet(d); B.switchSheet(d, 0);
+  B.moveViewToSheet(d, "v1", 2);
+  assert.equal(d.views.length, 0);
+  B.switchSheet(d, 2);
+  assert.deepEqual(d.views.map((v) => v.id), ["v1", "v2"]); assert.deepEqual(d.dims.map((m) => m.id), ["m1"]);
+  B.switchSheet(d, 1);
+  assert.deepEqual(d.views.map((v) => v.id), ["v3"]); assert.equal(d.balloons.length, 1);
+  // eachSheet kehrt zum Ausgangsblatt zurück
+  const seen = await B.eachSheet(d, (k) => `${k}:${d.views.length}`);
+  assert.deepEqual(seen, ["0:0", "1:1", "2:2"]); assert.equal(B.currentSheet(d), 1);
+  // Blatt 1 (leer) löschen: aktuelles Blatt bleibt die Isometrie, jetzt Blatt 1 von 2
+  B.removeSheet(d, 0);
+  assert.equal(B.sheetCount(d), 2); assert.equal(B.currentSheet(d), 0); assert.deepEqual(d.views.map((v) => v.id), ["v3"]);
+  B.removeSheet(d);
+  assert.equal(B.sheetCount(d), 1); assert.equal(d.sheetStore, undefined); assert.deepEqual(d.views.map((v) => v.id), ["v1", "v2"]);
+});

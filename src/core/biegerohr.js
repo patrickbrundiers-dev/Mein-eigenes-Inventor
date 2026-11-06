@@ -96,3 +96,23 @@ export function bendListCsv(plan, title = "") {
 
 const round1 = (x) => Math.round(x * 10) / 10 || 0;
 const fmt = (x) => String(Math.round(x * 10) / 10);
+
+/**
+ * Rollbiegeliste eines gewendelten/gewalzten Teils als CSV. roll = { name, section, r, radius, angle, rise, length, holes }
+ * (holes wie rollHoles in biegeteil.js).
+ */
+export function rollListCsv(roll, title = "") {
+  const f = (x) => fmt(x).replace(/\./g, ",");
+  const pitch = roll.angle > 0 ? (roll.rise * 360) / roll.angle : 0;
+  const rows = [["Profil", roll.section], ["Radius Mittellinie (Grundriss) mm", f(roll.r)], ["Biegeradius mm", f(roll.radius)], ["Drehwinkel °", f(roll.angle)],
+    ["Höhe mm", f(roll.rise)], ["Steigung je Umdrehung mm", f(pitch)], ["Zuschnitt gestreckt mm", f(roll.length)], [],
+    ["Nr", "Abstand ab Anfang mm", "Bohrung", "Lage"], ...(roll.holes || []).map((h, i) => [i + 1, f(h.s), holeText(h), h.side])];
+  if (title) rows.unshift([title]);
+  return "\ufeff" + rows.map((r) => r.join(";")).join("\r\n") + "\r\n";
+}
+/** Bohrung als Text: Ø 12,1, Langloch 12,1 × 15,9, Durchbruch 30 × 20 */
+export function holeText(h) {
+  const c = (x) => fmt(x).replace(".", ",");
+  if (h.w) return `${c(h.w)} × ${c(h.h)}`;
+  return h.slotL > 0.05 ? `Langloch ${c(h.d)} × ${c(h.d + h.slotL)}` : `Ø ${c(h.d)}`;
+}

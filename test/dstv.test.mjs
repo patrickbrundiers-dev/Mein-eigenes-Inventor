@@ -1,7 +1,7 @@
 // DSTV-NC (Stahlbau-Lücken ST1): Kopf, Text, Gleichteile, Flächen – ohne Geometrie-Kern
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dstvProfile, dstvProfileName, dstvText, parseDstv, groupPieces, dstvFileName, dstvCuts, faceOf, faceY, steelGrade, withSignature, piecesOf } from "../src/core/dstv.js";
+import { dstvProfile, dstvProfileName, dstvText, parseDstv, groupPieces, dstvFileName, dstvCuts, faceOf, faceY, steelGrade, withSignature, piecesOf, pieceSignature } from "../src/core/dstv.js";
 import { catalogToDims } from "../src/core/sections.js";
 
 const num = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Number(v)]));
@@ -110,4 +110,16 @@ test("Einzelteil-Positionen bleiben stabil: neue Stücke hinten anhängen, versc
   // Bohrung macht ein anderes Stück
   assert.notEqual(signatureKey(a), signatureKey(st("QRO40x3", 1000, [{ face: "o", x: 50, y: 20, d: 13 }])));
   assert.match(piecesCsv(r2.pieces), /^﻿Pos;Stk;Profil/);
+});
+
+test("DSTV: Stab mit Ausklinkung – AK je Seite mit Flächenkennung, Signatur unterscheidet", () => {
+  const base = { order: "A", drawing: "Z", pos: "1", material: "S235JR", qty: 1, profile: "QRO40x3", code: "M", length: 1000, H: 40, B: 40, tf: 3, tw: 3, r: 6, kgm: 3.4, paint: 0.16, cuts: {}, holes: [] };
+  const pts = [[100, 40, 0], [100, 25, 0], [0, 25, 0], [0, 0, 0], [1000, 0, 0], [1000, 40, 0]];
+  const p = { ...base, akFaces: [{ face: "v", pts }, { face: "o", pts: [[100, 40, 0], [100, 0, 0], [1000, 0, 0], [1000, 40, 0]] }] };
+  const text = dstvText(p);
+  const bl = parseDstv(text).blocks;
+  assert.equal(bl.AK.length, 2);
+  assert.equal(bl.AK[0].length, 7, "geschlossen");
+  assert.ok(/^\s+o\s/.test(text.split("\r\n").find((l, i, a) => a[i - 1] === "AK" && l.trim().startsWith("o")) || ""), "Fläche o");
+  assert.notEqual(pieceSignature(p), pieceSignature(base));
 });

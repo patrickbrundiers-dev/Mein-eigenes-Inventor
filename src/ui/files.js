@@ -27,7 +27,7 @@ import { partTextVars } from "../core/schrift.js";
 import { releaseText } from "../core/pruefung.js";
 import { angebotPage } from "../core/angebot.js";
 import { LABEL_FORMATS, labelItems, labelPages, shippingPage, boxDims } from "../core/etiketten.js";
-import { bendListCsv } from "../core/biegerohr.js";
+import { bendListCsv, rollListCsv } from "../core/biegerohr.js";
 import { partMass } from "../core/mass.js";
 import { materialOf } from "../core/materials.js";
 import { finishLabel } from "../core/oberflaeche.js";
@@ -37,6 +37,9 @@ import { piecesOf, groupPieces, withSignature, dstvText, dstvFileName, stablePos
 import { writeIfc, ifcElements, ifcCounts } from "../core/ifc.js";
 import { urdfPackage } from "../core/urdf.js";
 import { parsePointCloud, encodeCloud, cloudBounds } from "../core/punktwolke.js";
+
+/** Inhalt der Fertigungsmappe (A5), Vorgabe: alles */
+const MAPPE_DEFAULT = { listen: true, step: true, positionen: true, laser: true, nc: true, dxf: true };
 
 const PROJECT_FILTERS = [{ name: "PBCAD-Projekt", extensions: ["wcad"] }];
 const AUTOSAVE_KEY = "werkcad.autosave";
@@ -973,10 +976,33 @@ export class Files {
    * Zuschnittliste; dazu Excel-Listen, Zuschnitt-CSV, STEP gesamt und je Position, Profil-STEPs für den Rohrlaser und
    * die Zeichnungen als DXF. Im Browser steht statt des PDFs eine druckfertige HTML-Datei im ZIP.
    */
+  /**
+   * Inhalt der Fertigungsmappe wählen (A5): PDF immer, dazu wahlweise Listen, STEP gesamt, STEP je Position, Laser-STEP,
+   * DSTV-NC und Zeichnungen als DXF. Die Wahl bleibt am Dokument gespeichert.
+   */
+  async mappeOptions(d) {
+    const app = this.app;
+    const s = { ...MAPPE_DEFAULT, ...(d.mappe || {}) };
+    const items = [["listen", "Listen (Excel, Zuschnitt- und Biegelisten als CSV)"], ["step", "STEP gesamt"], ...(d.kind === "assembly" ? [["positionen", "STEP je Position"]] : []),
+      ["laser", "Laser-STEP je Profil (Rohrlaser)"], ["nc", "DSTV-NC (Säge-/Bohranlage)"], ["dxf", "Zeichnungen als DXF"]];
+    const chk = (k, label) => { const el = h("input", { type: "checkbox", "data-key": k }); el.checked = s[k] !== false; el.addEventListener("change", () => { s[k] = el.checked; }); return h("label", { class: "chk" }, el, " ", label); };
+    const ok = await new Promise((res) => modal({
+      title: "Fertigungsmappe", width: "460px", onClose: (r) => res(!!r),
+      body: h("div", {}, h("p", { class: "hint" }, "Die Mappe als PDF mit allen Zeichnungen und Listen ist immer dabei. Zusätzlich ins ZIP:"),
+        ...items.map(([k, l]) => chk(k, l))),
+      buttons: [{ label: "Abbrechen" }, { label: "Erstellen", primary: true, value: true }],
+    }));
+    if (!ok) return null;
+    const changed = Object.keys(MAPPE_DEFAULT).some((k) => (d.mappe?.[k] ?? MAPPE_DEFAULT[k]) !== s[k]);
+    if (changed) app.edit("Inhalt der Fertigungsmappe", () => { d.mappe = { ...s }; }, { rebuild: false });
+    return s;
+  }
   async exportMappe(d = this.app.activeDoc()) {
     const app = this.app;
     if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Fertigungsmappe gibt es für Bauteile und Baugruppen");
     // Vollständigkeit vorher prüfen (FU13); offene Punkte kommen auf eine eigene Seite
+    const opt = await this.mappeOptions(d);
+    if (!opt) return;
     const check = await checkBeforeMappe(app, d);
     if (!check.go) return;
     const open = check.items.filter((x) => x.level !== "Hinweis");
@@ -989,30 +1015,36 @@ export class Files {
       const order = [d.id, ...bom.filter((r) => r.part).map((r) => r.part.id), ...parts.map((p) => p.id)];
       const drawings = [...new Set(order)].flatMap((id) => app.project.docs.filter((x) => x.kind === "drawing" && x.source?.id === id));
       const sheets = [];
-      for (const dr of drawings) sheets.push(await app.drawing.sheetExport(dr));
+      for (const dr of drawings) sheets.push(...(await app.drawing.sheetExports(dr)));
       const cut = cutListRows(cutSrc);
       const bends = parts.flatMap((p) => (app.results.get(p.id)?.bodies || []).filter((b) => b.meta?.bends?.length).map((b) => ({ name: `${p.name} – ${b.name}`, bends: b.meta.bends, last: b.meta.lastStraight || 0, length: b.meta.length })));
+      const rolls = parts.flatMap((p) => (app.results.get(p.id)?.bodies || []).filter((b) => b.meta?.rolled && b.meta.center?.path).map((b) => ({ name: `${p.name} – ${b.name}`, section: b.meta.section, length: b.meta.length, ...b.meta.rolled })));
       const base = mappeName(d.number || d.name);
       const status = open.length ? "nicht freigegeben" : releaseText(d, (id) => app.doc(id));
       // Schweißplan (W11), sobald es Nähte gibt
       const wRows = weldPlanRows(collectWelds(cutSrc), weldPlanOf(app.project));
       const wPage = wRows.length ? [weldPlanPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", plan: weldPlanOf(app.project), rows: wRows })] : [];
-      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
+      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends, rolls }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
       const files = [];
       const pdf = this.bridge?.renderPdf ? await this.bridge.renderPdf(html) : null;
       files.push(pdf ? [base + "_Fertigungsmappe.pdf", new Uint8Array(pdf)] : [base + "_Fertigungsmappe.html", html]);
       const used = new Set();
       const unique = (dir, name, ext) => { let n = `${dir}/${mappeName(name)}`, k = 2; while (used.has(n + ext)) n = `${dir}/${mappeName(name)}_${k++}`; used.add(n + ext); return n + ext; };
-      for (const s of sheets) files.push([unique("Zeichnungen", s.name, ".dxf"), s.dxf]);
-      const xl = this.listSheetsFor(d);
-      if (xl.length) files.push([base + "_Listen.xlsx", buildXlsx(xl)]);
-      if (cut.length) files.push([base + "_Zuschnitt.csv", cutListCsv(cut)]);
-      for (const b of bends) files.push([unique("Biegelisten", b.name, ".csv"), bendListCsv(b, b.name)]);
-      files.push([base + ".step", await app.kernel.call("exportStep", { items: this.exportItems(d) })]);
-      if (d.kind === "assembly") for (const r of bom.filter((x) => x.part)) files.push([unique("Positionen", `${String(r.pos).padStart(2, "0")}_${r.number || r.name}`, ".step"), await app.kernel.call("exportStep", { items: [{ part: r.part, name: r.part.name }] })]);
-      for (const p of parts) for (const x of await app.kernel.call("bodySteps", { part: p, onlyMembers: true })) files.push([unique("Laser", x.name, ".step"), x.text]);
-      const nc = await this.dstvFiles(d);
-      if (nc.files.length) { for (const f of nc.files) files.push(["NC/" + f.name, f.data]); files.push(["NC/DSTV_Protokoll.txt", nc.log]); }
+      if (opt.dxf) for (const s of sheets) files.push([unique("Zeichnungen", s.name, ".dxf"), s.dxf]);
+      if (opt.listen) {
+        const xl = this.listSheetsFor(d);
+        if (xl.length) files.push([base + "_Listen.xlsx", buildXlsx(xl)]);
+        if (cut.length) files.push([base + "_Zuschnitt.csv", cutListCsv(cut)]);
+        for (const b of bends) files.push([unique("Biegelisten", b.name, ".csv"), bendListCsv(b, b.name)]);
+        for (const r of rolls) files.push([unique("Biegelisten", r.name + "_Rollbiegen", ".csv"), rollListCsv(r, r.name)]);
+      }
+      if (opt.step) files.push([base + ".step", await app.kernel.call("exportStep", { items: this.exportItems(d) })]);
+      if (opt.positionen && d.kind === "assembly") for (const r of bom.filter((x) => x.part)) files.push([unique("Positionen", `${String(r.pos).padStart(2, "0")}_${r.number || r.name}`, ".step"), await app.kernel.call("exportStep", { items: [{ part: r.part, name: r.part.name }] })]);
+      if (opt.laser) for (const p of parts) for (const x of await app.kernel.call("bodySteps", { part: p, onlyMembers: true })) files.push([unique("Laser", x.name, ".step"), x.text]);
+      if (opt.nc) {
+        const nc = await this.dstvFiles(d);
+        if (nc.files.length) { for (const f of nc.files) files.push(["NC/" + f.name, f.data]); files.push(["NC/DSTV_Protokoll.txt", nc.log]); }
+      }
       await this.saveBinary(zipFiles(files), base + "_Fertigungsmappe.zip", [{ name: "ZIP-Archiv", extensions: ["zip"] }]);
       toast(`Fertigungsmappe: ${sheets.length} Zeichnung${sheets.length === 1 ? "" : "en"}${made.length ? ` (${made.length} neu)` : ""}, ${files.length} Dateien`, { kind: "ok", timeout: 6000 });
     });

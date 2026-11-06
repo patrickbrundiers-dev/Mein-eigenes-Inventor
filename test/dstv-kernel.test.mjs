@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createKernel } from "../src/kernel/build.js";
-import { memberHoles, plateNc } from "../src/kernel/dstvocc.js";
+import { memberHoles, memberContours, plateNc } from "../src/kernel/dstvocc.js";
 import { piecesOf, dstvText, parseDstv, groupPieces, withSignature } from "../src/core/dstv.js";
 import { catalogToDims } from "../src/core/sections.js";
 
@@ -91,4 +91,37 @@ test("DSTV: Platte mit Eckradien – Bögen mit Radius, Außenkontur gegen den U
   assert.ok(area > 0, "gegen den Uhrzeiger");
   assert.ok(arcs.every((p) => p[2] > 0), "konvexe Ecken: Bogen gegen den Uhrzeiger = positiver Radius");
   near(Math.min(...pn.ak.map((p) => p[0])), 0, 1e-6); near(Math.min(...pn.ak.map((p) => p[1])), 0, 1e-6);
+});
+
+test("DSTV: Ausklinkung am Stab – Außenkontur je Seite (AK), volle Seitenbreite trotz Eckradien", async () => {
+  const shoelace = (pts) => { let a = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
+  // Flachstahl 60×10, am Anfang 50 × 20 ausgeklinkt
+  const fl = await K.buildPart(part([{ id: "f", type: "profile", section: "flach", dims: { B: "60", t: "10" }, length: "500", start: ["0", "0", "0"], axis: "X" }]));
+  okAll(fl);
+  const fb = fl.bodies[0];
+  const bb = fb.shape.boundingBox.bounds;
+  // Ecke am Stabanfang: Kasten über die ganze Dicke, 20 mm in die Breite
+  const wide = bb[1][1] - bb[0][1] > bb[1][2] - bb[0][2]; // Breite in Y oder Z
+  const box = R.makeBox([bb[0][0] - 1, wide ? bb[1][1] - 20 : bb[0][1] - 1, wide ? bb[0][2] - 1 : bb[1][2] - 20], [bb[0][0] + 50, bb[1][1] + 1, bb[1][2] + 1]);
+  const fc = memberContours(fb.shape.cut(box), fb.meta.axis, { flat: true });
+  console.log("[info] flach", JSON.stringify(fc));
+  assert.equal(fc.ak.length, 1); assert.equal(fc.ak[0].face, "v");
+  assert.equal(fc.ak[0].pts.length, 6, "Rechteck mit einer Ecke ausgeklinkt");
+  near(Math.abs(shoelace(fc.ak[0].pts)), 500 * 60 - 50 * 20, 0.5, "Fläche");
+  // Rechteckrohr 60×40 r 6: oben 15 mm auf 100 mm Länge weggeschnitten
+  const rh = await K.buildPart(part([{ id: "r", type: "profile", section: "rechteck", dims: { B: "60", H: "40", t: "3", r: "6" }, length: "1000", start: ["0", "0", "0"], axis: "X" }]));
+  okAll(rh);
+  const rb = rh.bodies[0], rbb = rb.shape.boundingBox.bounds;
+  const cut = R.makeBox([rbb[0][0] - 1, rbb[0][1] - 1, rbb[1][2] - 15], [rbb[0][0] + 100, rbb[1][1] + 1, rbb[1][2] + 1]);
+  const rc = memberContours(rb.shape.cut(cut), rb.meta.axis);
+  console.log("[info] rohr", JSON.stringify(rc));
+  const W = rb.meta.axis.width, H = rb.meta.axis.height;
+  // zwei Seiten zeigen die Stufe (Fläche L × Seitenbreite − 100 × 15), die Oberseite beginnt erst bei x = 100
+  const steps = rc.ak.filter((c) => c.pts.length === 6);
+  assert.equal(steps.length, 2, JSON.stringify(rc.ak.map((c) => c.face)));
+  for (const c of steps) { const side = c.face === "v" || c.face === "h" ? H : W; near(Math.abs(shoelace(c.pts)), 1000 * side - 100 * 15, 1, "Fläche " + c.face); }
+  const topSide = rc.ak.find((c) => c.pts.length === 4);
+  assert.ok(topSide, "Oberseite kürzer");
+  near(Math.min(...topSide.pts.map((p) => p[0])), 100, 0.01);
+  near(Math.max(...topSide.pts.map((p) => p[1])) - Math.min(...topSide.pts.map((p) => p[1])), (topSide.face === "v" || topSide.face === "h") ? H : W, 0.01, "volle Seitenbreite");
 });

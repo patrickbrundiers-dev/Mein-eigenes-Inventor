@@ -838,3 +838,59 @@ test("Beschläge: Größenlisten, Bezeichnung, Prüfung (E11)", async () => {
   assert.throws(() => checkNorm("kugelkappe", "M12", 0), /Unbekannte Größe/);
   assert.equal(normDensity("Kunststoff"), 0.95);
 });
+
+test("Treppe: Bohrungen senkrecht zum Rohr – keine schrägen Bohrungen mehr, Langlöcher in Neigungsrichtung", async () => {
+  const g = await import("../src/core/generator.js");
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  for (const fill of ["quer", "staketen"]) {
+    const f = g.defaultGenerator("treppe");
+    const p = g.resolveGenParams("treppe", { ...f.params, gelFill: fill, gelSenkrecht: true, gel: "rechts", wand: "links" }, (x) => evaluate(String(x), {}));
+    const plan = g.GENERATORS.treppe.plan(p);
+    // Achse des Stabs bzw. Kettenstücks, das der Bohrung am nächsten liegt
+    const dist = (q, a, b) => { const ab = b.map((x, k) => x - a[k]), t = Math.max(0, Math.min(1, dot(q.map((x, k) => x - a[k]), ab) / dot(ab, ab))); return Math.hypot(...q.map((x, k) => x - a[k] - t * ab[k])); };
+    const axisOf = (d) => {
+      const segs = [...plan.members.filter((x) => x.name === d.target || x.target === d.target).map((m) => [m.a, m.b]),
+        ...plan.chains.filter((x) => x.name === d.target).flatMap((c) => c.points.slice(1).map((b, i) => [c.points[i], b]))];
+      if (!segs.length) return null;
+      const [a, b] = segs.reduce((best, sg) => (dist(d.p, ...sg) < dist(d.p, ...best) ? sg : best));
+      return b.map((x, k) => x - a[k]);
+    };
+    const slots = plan.drills.filter((d) => d.slotL > 0);
+    assert.ok(slots.length > 0, fill + ": Langlöcher");
+    for (const d of plan.drills) {
+      const ax = axisOf(d);
+      if (!ax) continue;
+      const L = Math.hypot(...ax), c = Math.abs(dot(ax, d.dir)) / (L * Math.hypot(...d.dir));
+      assert.ok(c < 1e-6 || c > 1 - 1e-6, `${fill}: ${d.target} senkrecht oder längs (cos ${c})`);
+      if (d.slotL > 0) assert.ok(Math.abs(Math.abs(dot(d.xDir, ax)) / L - 1) < 1e-6 || Math.abs(dot(d.xDir, d.dir)) < 1e-6, "Langloch in der Wand");
+    }
+  }
+});
+
+test("Rollbiegeliste: Bohrungen eines Wendelhandlaufs mit Abstand ab Anfang und Lage, Mappe-Seite und CSV", async () => {
+  const { rollHoles, pathPoint, pathLength } = await import("../src/core/biegeteil.js");
+  const { rollListCsv, holeText } = await import("../src/core/biegerohr.js");
+  const { listPages } = await import("../src/core/mappe.js");
+  const near = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
+  const path = { c: [0, 0, 1000], r: 800, a0: 0, sweep: 270, rise: 2000 };
+  const L = pathLength(path);
+  // Halter von unten (Bohrung in der unteren Wand) bei 1/3 und 2/3, eine Durchgangsbohrung bei der Hälfte
+  const at = (t) => pathPoint(path, t);
+  const drills = [
+    { p: at(2 / 3), dir: [0, 0, -1], len: 25, d: 12.1 },
+    { p: at(1 / 3), dir: [0, 0, -1], len: 25, d: 12.1, slotL: 3.8 },
+    { p: [at(0.5)[0], at(0.5)[1], at(0.5)[2] + 30], dir: [0, 0, -1], len: 60, d: 8 },
+  ];
+  const h = rollHoles(path, drills);
+  assert.equal(h.length, 3);
+  near(h[0].s, L / 3, 0.5); near(h[1].s, L / 2, 0.5); near(h[2].s, (2 * L) / 3, 0.5);
+  assert.deepEqual(h.map((x) => x.side), ["unten", "durchgehend", "unten"]);
+  assert.equal(holeText(h[0]), "Langloch 12,1 × 15,9");
+  assert.equal(holeText(h[2]), "Ø 12,1");
+  const roll = { name: "Spindel – Handlauf", section: "Rohr 42,4x2,6", r: 800, radius: 900, angle: 270, rise: 2000, length: L, holes: h };
+  const csv = rollListCsv(roll, roll.name);
+  assert.ok(csv.includes("Steigung je Umdrehung mm;2666,7") && csv.includes("1;" + String(Math.round((L / 3) * 10) / 10).replace(".", ",")), csv);
+  const pages = listPages({ title: "Spindel", rolls: [roll] });
+  assert.equal(pages.length, 1);
+  assert.ok(pages[0].html.includes("Rollbiegeliste") && pages[0].html.includes("Langloch"));
+});

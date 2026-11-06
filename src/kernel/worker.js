@@ -10,7 +10,7 @@ import { segmentsToDxf } from "../core/dxf.js";
 import { writeIges } from "../core/iges.js";
 import { igesFaces } from "./igesocc.js";
 import { simplifyAction } from "../core/vereinfachen.js";
-import { memberHoles, plateNc, plateInfo } from "./dstvocc.js";
+import { memberHoles, memberContours, plateNc, plateInfo } from "./dstvocc.js";
 import { v3, placementMatrix, matInvertRigid, matApply, matApplyDir } from "../core/geom.js";
 
 let K = null, OCM = null;
@@ -200,10 +200,14 @@ const handlers = {
       try {
         if (b.kind === "member") {
           if (m.bends?.length || m.knicks) return { index, name, kind: "skip", reason: "gebogen – Abwicklung über die Biegeliste" };
+          if (m.rolled) return { index, name, kind: "skip", reason: "gewendelt/gewalzt – Rollbiegeliste in der Fertigungsmappe" };
           if (!m.axis || !m.sec) return { index, name, kind: "skip", reason: "ohne Stabachse" };
           const flat = m.sec.kind === "flach";
           const { holes, skipped, centers } = memberHoles(K, b.shape, m.axis, { flat });
-          return { index, name, kind: "member", sec: m.sec, section: m.section, area: m.area, length: m.length, perimeter: m.axis.perimeter, miterStart: m.miterStart, miterEnd: m.miterEnd, miterParts: m.miterParts, coped: !!m.coped || !!m.contours?.length, holes, skipped, width: m.axis.width, height: m.axis.height, centers, start: m.axis.origin.map((o, k) => o + m.axis.z[k] * m.axis.lo), dirZ: m.axis.z };
+          const coped = !!m.coped || !!m.contours?.length;
+          let contours = null;
+          if (coped) { try { contours = memberContours(b.shape, m.axis, { flat }); } catch { /* bleibt beim Hinweis aufs STEP */ } }
+          return { index, name, kind: "member", contours, sec: m.sec, section: m.section, area: m.area, length: m.length, perimeter: m.axis.perimeter, miterStart: m.miterStart, miterEnd: m.miterEnd, miterParts: m.miterParts, coped, holes, skipped, width: m.axis.width, height: m.axis.height, centers, start: m.axis.origin.map((o, k) => o + m.axis.z[k] * m.axis.lo), dirZ: m.axis.z };
         }
         if (m.norm || m.weld || m.assist) return { index, name, kind: "skip", reason: "Normteil/Naht" };
         if (m.sheet?.bends?.length) return { index, name, kind: "skip", reason: "Kantteil – Abwicklung als DXF" };

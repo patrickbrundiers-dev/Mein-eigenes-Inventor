@@ -221,6 +221,7 @@ export const BEFEHLSHILFE = {
   dd_bom: "Stückliste als Tabelle auf das Blatt setzen.",
   dd_fit: "Ganzes Blatt ins Fenster einpassen.",
   dd_tpl: "Blattformat, Rahmen und Schriftfeld wählen.",
+  dd_sheet: "Weiteres Blatt in dieser Zeichnung anlegen (z. B. Übersicht auf Blatt 1, Details auf Blatt 2). Ansichten wandern über »Auf Blatt …« in ihren Eigenschaften.",
 
   // ---------- Ansicht ----------
   v_iso: "Isometrische Ansicht.",

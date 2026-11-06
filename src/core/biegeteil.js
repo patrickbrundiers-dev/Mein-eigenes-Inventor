@@ -56,6 +56,43 @@ export function splitPath(path, maxLen = STANGE_MAX) {
   return Array.from({ length: n }, (_, k) => ({ ...path, a0: path.a0 + (path.sweep * k) / n, sweep: path.sweep / n, rise: (path.rise || 0) / n, c: v3.add(path.c, v3.mul(pathAxes(path).n, ((path.rise || 0) * k) / n)) }));
 }
 
+/** Parameter t ∈ [0, 1] des Punkts der Mittellinie, der p am nächsten liegt */
+export function pathParam(path, p, steps = 180) {
+  let best = Infinity, bt = 0;
+  for (let k = 0; k <= steps; k++) { const d = v3.dist(pathPoint(path, k / steps), p); if (d < best) { best = d; bt = k / steps; } }
+  let lo = Math.max(0, bt - 1 / steps), hi = Math.min(1, bt + 1 / steps);
+  for (let i = 0; i < 40; i++) {
+    const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+    if (v3.dist(pathPoint(path, m1), p) < v3.dist(pathPoint(path, m2), p)) hi = m2; else lo = m1;
+  }
+  const tm = (lo + hi) / 2;
+  return v3.dist(pathPoint(path, tm), p) < best ? tm : bt;
+}
+
+/**
+ * Rollbiegeliste eines gewendelten/gewalzten Teils (Wendeltreppen-Handlauf, Ring): Bohrungen mit Abstand ab Anfang auf
+ * der gestreckten Mittellinie und Lage am Querschnitt (oben/unten = entlang der Drehachse, außen/innen = radial,
+ * durchgehend = durch beide Wände). drills: [{ p, dir, len, d | w, h, slotL? }] wie im Bauplan.
+ */
+export function rollHoles(path, drills = []) {
+  const L = pathLength(path);
+  return drills.map((d) => {
+    const dir = v3.norm(d.dir), mid = v3.add(d.p, v3.mul(dir, (d.len || 0) / 2));
+    // Stelle auf der Mittellinie: vom Bohrungsanfang oder der Bohrungsmitte aus, was näher an der Achse liegt
+    const t1 = pathParam(path, d.p), t2 = pathParam(path, mid);
+    const t = v3.dist(pathPoint(path, t1), d.p) <= v3.dist(pathPoint(path, t2), mid) ? t1 : t2;
+    const c = pathPoint(path, t), tg = pathTangent(path, t), rad = pathRadial(path, t), { n } = pathAxes(path);
+    let v = v3.sub(mid, c);
+    v = v3.sub(v, v3.mul(tg, v3.dot(v, tg)));
+    let side = "durchgehend";
+    if (v3.len(v) > 1) {
+      const up = v3.dot(v, n), out = v3.dot(v, rad);
+      side = Math.abs(up) >= Math.abs(out) ? (up > 0 ? "oben" : "unten") : (out > 0 ? "außen" : "innen");
+    }
+    return { s: t * L, d: d.d ?? null, w: d.w ?? null, h: d.h ?? null, slotL: d.slotL || 0, side };
+  }).sort((a, b) => a.s - b.s);
+}
+
 /** kürzester Abstand eines Punkts zur Mittellinie (Bohrungen dem richtigen Stück zuordnen) */
 export function pathDistance(path, p, steps = 180) {
   let best = Infinity, bt = 0;

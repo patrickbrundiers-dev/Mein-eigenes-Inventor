@@ -3,6 +3,7 @@
 // Bohrung Stift-Ø + 0,1 mm (z. B. 12,1 mm) durch die untere Wand. Reine Rechnung; Bauplan-Format siehe generator.js.
 
 import { sectionGeometry } from "./sections.js";
+import { squareDrill } from "./senkrechtbohrung.js";
 
 const HOLLOW = new Set(["rohr", "vierkant", "rechteck"]);
 export const CAP_T = 4;
@@ -58,8 +59,9 @@ export function holderDrop(on, post, gap) {
 /**
  * Teile eines Halters: q = Pfostenende (Mitte, ohne Kappe), along = Laufrichtung [dx, dy], axisZ = Höhe der
  * Handlaufachse über q, railH = Handlaufhöhe, slope = Neigung des Handlaufs (tan), target = Name des Handlaufs.
+ * perpWall > 0 (Wanddicke des Handlaufs): Bohrung senkrecht zur Wand als Langloch statt lotrecht schräg (DSTV-fähig).
  */
-export function holderParts({ q, along, axisZ, post, railH, d, slope = 0, name, target }) {
+export function holderParts({ q, along, axisZ, post, railH, d, slope = 0, name, target, perpWall = 0 }) {
   const members = [], plates = [], drills = [];
   let z = q[2];
   if (HOLLOW.has(post.kind)) {
@@ -74,6 +76,11 @@ export function holderParts({ q, along, axisZ, post, railH, d, slope = 0, name, 
   members.push({ section: { kind: "rund", dims, geom: sectionGeometry("rund", dims) }, a: [q[0], q[1], z], b: [q[0], q[1], axisZ], name: `${name} Handlaufhalter`, up: [along[0], along[1], 0] });
   const hole = Math.round((d + 0.1) * 100) / 100;
   // schräger Handlauf: die Bohrung reicht um r · Neigung weiter, sonst bleibt am unteren Bohrungsrand Wand stehen
-  drills.push({ target, p: [q[0], q[1], axisZ], dir: [0, 0, -1], d: hole, len: (railH / 2) * Math.hypot(1, slope) + (hole / 2) * Math.abs(slope) + 1 });
+  if (perpWall > 0 && Math.abs(slope) > 1e-6) {
+    // senkrecht zur Handlaufwand (Langloch in Neigungsrichtung) statt lotrecht schräg durch die Wand
+    const kk = Math.hypot(1, slope), h = Math.hypot(along[0], along[1]) || 1, dx = along[0] / h, dy = along[1] / h;
+    const C = [q[0], q[1], axisZ - (railH / 2 - perpWall / 2) * kk];
+    drills.push(squareDrill(target, C, [0, 0, 1], [(dx * slope) / kk, (dy * slope) / kk, -1 / kk], perpWall, { d: hole }));
+  } else drills.push({ target, p: [q[0], q[1], axisZ], dir: [0, 0, -1], d: hole, len: (railH / 2) * Math.hypot(1, slope) + (hole / 2) * Math.abs(slope) + 1 });
   return { members, plates, drills };
 }

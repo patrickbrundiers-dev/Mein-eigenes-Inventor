@@ -68,7 +68,8 @@ const txt = (s, max = 40) => {
  * NC1-Text eines Stücks.
  * piece = { order, drawing, phase, pos, material, qty, profile, code, length, H, B, tf, tw, r, kgm, paint,
  *           cuts: { webA, webB, flA, flB }, holes: [{ face, x, y, d, slot?: { l, angle } }],
- *           ak: [[x, y, r] …] (Außenkontur, Fläche v), ik: [[[x, y, r] …] …], si?: { face, x, y, h, text }, texts?: [4 Zeilen] }
+ *           ak: [[x, y, r] …] (Außenkontur, Fläche v), ik: [[[x, y, r] …] …],
+ *           akFaces/ikFaces: [{ face, pts: [[x, y, r] …] }] (Stab mit Ausklinkung, Kontur je Seite), si?: { face, x, y, h, text }, texts?: [4 Zeilen] }
  */
 export function dstvText(piece, { by = "PBCAD" } = {}) {
   const p = piece, L = [];
@@ -91,6 +92,12 @@ export function dstvText(piece, { by = "PBCAD" } = {}) {
     if (!loop.length) continue;
     L.push("IK");
     for (const [x, y, r] of closeLoop(loop)) L.push(point("v", x, y) + pad(num(r || 0), 12));
+  }
+  // Stab: Konturen je Seite (Ausklinkungen), erst alle AK, dann IK
+  for (const blk of ["AK", "IK"]) for (const c of (blk === "AK" ? p.akFaces : p.ikFaces) || []) {
+    if (!c.pts?.length) continue;
+    L.push(blk);
+    for (const [x, y, r] of closeLoop(c.pts)) L.push(point(c.face, x, y) + pad(num(r || 0), 12));
   }
   if (p.holes?.length) {
     L.push("BO");
@@ -123,7 +130,8 @@ export function pieceSignature(p) {
   const r = (x) => Math.round((x || 0) * 10) / 10;
   return JSON.stringify([p.code, p.profile, p.material, r(p.length), p.cuts && [p.cuts.webA, p.cuts.webB, p.cuts.flA, p.cuts.flB].map(r),
     (p.holes || []).map((h) => [h.face, r(h.x), r(h.y), r(h.d), h.slot ? [r(h.slot.l), r(h.slot.angle)] : 0]).sort(),
-    (p.ak || []).map((q) => q.map(r)), (p.ik || []).map((l) => l.map((q) => q.map(r)))]);
+    (p.ak || []).map((q) => q.map(r)), (p.ik || []).map((l) => l.map((q) => q.map(r))),
+    ...(p.akFaces?.length || p.ikFaces?.length ? [[...(p.akFaces || []), ...(p.ikFaces || [])].map((c) => [c.face, c.pts.map((q) => q.map(r))])] : [])]);
 }
 
 /**
@@ -216,8 +224,10 @@ export function piecesOf(src, mat, { order = "", drawing = "" } = {}) {
     const base = { name, key, order, drawing: drawing || src.part.number || src.part.name, material: grade, qty: src.qty || 1, texts: [src.part.name, b.name, src.part.number || "", ""] };
     if (b.kind === "member") {
       const pr = dstvProfile(b.sec.kind, b.sec.dims);
-      if (b.coped) skipped.push({ name, reason: "Ausklinkung/Kontur am Stab – Kontur aus dem STEP" });
-      const piece = { ...base, profile: dstvProfileName(b.sec.kind, b.sec.dims, b.section), code: pr.code, length: b.length, H: pr.H, B: pr.B, tf: pr.tf, tw: pr.tw, r: pr.r,
+      const ctr = b.contours;
+      const hasCtr = !!(ctr?.ak?.length || ctr?.ik?.length);
+      if (b.coped && !hasCtr) skipped.push({ name, reason: "Ausklinkung/Kontur am Stab – Kontur aus dem STEP" });
+      const piece = { ...base, ...(hasCtr ? { akFaces: ctr.ak, ikFaces: ctr.ik } : {}), profile: dstvProfileName(b.sec.kind, b.sec.dims, b.section), code: pr.code, length: b.length, H: pr.H, B: pr.B, tf: pr.tf, tw: pr.tw, r: pr.r,
         kgm: (b.area * mat.density) / 1000, paint: (b.perimeter || 0) / 1000, cuts: dstvCuts(b), holes: b.holes || [] };
       piece.si = { face: "v", x: Math.min(50, b.length / 4), y: (pr.code === "B" ? b.width : pr.H) / 2, h: 10 };
       pieces.push(piece);

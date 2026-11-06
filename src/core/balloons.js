@@ -62,3 +62,75 @@ export function placeBalloons(anchors, box, { r = 4, gap = 10 } = {}) {
   }
   return new Map(items.map((a) => [a.key, [cx + R * Math.cos(a.ang), cy + R * Math.sin(a.ang)]]));
 }
+
+/**
+ * Positionsnummern auf mehrere Ansichten verteilen (B1). views: [{ id, box: {x0,y0,x1,y1}, at: Map key → [x,y], cap }]
+ * (cap = wie viele Kreise um die Ansicht passen). Jedes Bauteil kommt in die Ansicht, in der sein Anker am weitesten von
+ * den anderen Ankern entfernt liegt (dort ist die Hinweislinie eindeutig), Ansichten mit wenig Platz werden gemieden.
+ * prefer: Id der Ansicht, die bei Gleichstand gewinnt (Isometrie). Rückgabe Map key → view id.
+ */
+export function assignBalloonViews(views, keys, { prefer = null, cap = 30 } = {}) {
+  const load = new Map(views.map((v) => [v.id, 0]));
+  const sep = (v, k) => {
+    const p = v.at.get(k);
+    if (!p) return -1;
+    let m = cap;
+    for (const [k2, q] of v.at) if (k2 !== k) m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1]));
+    return m;
+  };
+  // schwer zuzuordnende zuerst (kleinster bester Abstand)
+  const best = (k) => Math.max(...views.map((v) => sep(v, k)));
+  const order = [...keys].sort((a, b) => best(a) - best(b));
+  const out = new Map();
+  for (const k of order) {
+    let bv = null, bs = -Infinity;
+    for (const v of views) {
+      const s0 = sep(v, k);
+      if (s0 < 0) continue;
+      const full = load.get(v.id) / Math.max(1, v.cap);
+      const s = s0 * (full >= 1 ? 0.1 : 1 - 0.5 * full) * (v.id === prefer ? 1.15 : 1);
+      if (s > bs) { bs = s; bv = v; }
+    }
+    if (!bv) continue;
+    out.set(k, bv.id);
+    load.set(bv.id, load.get(bv.id) + 1);
+  }
+  return out;
+}
+
+/**
+ * Kreise an den freien Seiten einer Normalansicht (B1): jeder Kreis an die nächste erlaubte Seite (sides ⊂ "tblr",
+ * t = oben, b = unten, l = links, r = rechts), Abstand gap; auf einer Seite gleichmäßig auseinandergeschoben.
+ */
+export function placeBalloonsEdges(anchors, box, { r = 4, gap = 8, sides = "tblr" } = {}) {
+  const off = gap + r, min = 2 * r + 2;
+  const bySide = { t: [], b: [], l: [], r: [] };
+  for (const a of anchors) {
+    const [x, y] = a.at;
+    const d = { t: y - box.y0, b: box.y1 - y, l: x - box.x0, r: box.x1 - x };
+    const s = [...sides].sort((p, q) => d[p] - d[q])[0];
+    bySide[s].push({ key: a.key, u: s === "t" || s === "b" ? x : y });
+  }
+  const out = new Map();
+  for (const s of "tblr") {
+    const list = bySide[s].sort((a, b) => a.u - b.u);
+    if (!list.length) continue;
+    const lo = (s === "t" || s === "b" ? box.x0 : box.y0) - off, hi = (s === "t" || s === "b" ? box.x1 : box.y1) + off;
+    // auseinanderschieben, dann in den Bereich der Seite holen
+    for (let it = 0; it < 50; it++) {
+      let moved = false;
+      for (let i = 0; i + 1 < list.length; i++) {
+        const dd = list[i + 1].u - list[i].u;
+        if (dd < min - 1e-9) { const p = (min - dd) / 2; list[i].u -= p; list[i + 1].u += p; moved = true; }
+      }
+      if (list[0].u < lo) { const p = lo - list[0].u; for (const q of list) q.u += p; moved = true; }
+      if (list[list.length - 1].u > hi && list[0].u > lo) { const p = Math.min(list[list.length - 1].u - hi, list[0].u - lo); for (const q of list) q.u -= p; moved = true; }
+      if (!moved) break;
+    }
+    for (const q of list) {
+      const pt = s === "t" ? [q.u, box.y0 - off] : s === "b" ? [q.u, box.y1 + off] : s === "l" ? [box.x0 - off, q.u] : [box.x1 + off, q.u];
+      out.set(q.key, pt);
+    }
+  }
+  return out;
+}
