@@ -1,4 +1,5 @@
 // Öffnen, Speichern, Import/Export – über die Electron-Brücke oder im Browser per Download
+import { drawsDoc } from "../core/blaetter.js";
 import { pruneImages } from "../core/skizzenbild.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { toast, choiceDialog, downloadBlob, h, modal } from "./dom.js";
@@ -1013,7 +1014,8 @@ export class Files {
       // Bauteil: Stückliste = seine Normteile (wie im Excel), Baugruppe: Positionen
       const bom = d.kind === "assembly" ? bomRows(app, d) : collectNorm(cutSrc.map((s) => ({ bodies: s.result.bodies, qty: s.qty }))).map((x, i) => ({ ...x, pos: i + 1, number: "" }));
       const order = [d.id, ...bom.filter((r) => r.part).map((r) => r.part.id), ...parts.map((p) => p.id)];
-      const drawings = [...new Set(order)].flatMap((id) => app.project.docs.filter((x) => x.kind === "drawing" && x.source?.id === id));
+      // Zeichnungssatz (mehrere Quellen) nur einmal, an der Stelle seiner ersten Quelle
+      const drawings = [...new Set([...new Set(order)].flatMap((id) => app.project.docs.filter((x) => drawsDoc(x, id))))];
       const sheets = [];
       for (const dr of drawings) sheets.push(...(await app.drawing.sheetExports(dr)));
       const cut = cutListRows(cutSrc);

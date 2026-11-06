@@ -90,10 +90,15 @@ export function removeCustomProp(doc, name) {
 export function syncDrawingTitles(project, doc, old) {
   let n = 0;
   for (const d of project?.docs || []) {
-    if (d.kind !== "drawing" || d.source?.id !== doc.id || !d.title) continue;
+    if (d.kind !== "drawing") continue;
+    // aktuelles Blatt und weitere Blätter mit eigener Quelle (Zeichnungssatz)
+    const sheets = [{ source: d.source, title: d.title }, ...(d.sheetStore || []).filter(Boolean).map((s) => ({ source: s.source || d.source, title: s.title }))];
     let changed = false;
-    if (old.name !== undefined && old.name !== doc.name && d.title.benennung === old.name) { d.title.benennung = doc.name; changed = true; }
-    if (old.number !== undefined && old.number !== doc.number && (d.title.nummer || "") === (old.number || "") && (old.number || doc.number)) { d.title.nummer = doc.number || ""; changed = true; }
+    for (const sh of sheets) {
+      if (sh.source?.id !== doc.id || !sh.title) continue;
+      if (old.name !== undefined && old.name !== doc.name && sh.title.benennung === old.name) { sh.title.benennung = doc.name; changed = true; }
+      if (old.number !== undefined && old.number !== doc.number && (sh.title.nummer || "") === (old.number || "") && (old.number || doc.number)) { sh.title.nummer = doc.number || ""; changed = true; }
+    }
     if (changed) n++;
   }
   return n;

@@ -2,6 +2,7 @@
 // »Unabhängig machen«): eine Baugruppe samt gewählter Bauteile, Unterbaugruppen und Zeichnungen als neue Dokumente im
 // Projekt anlegen. Verweise (Komponenten, abgeleitete Features, Generator-Einzelteile, Zeichnungsquellen, Stücklisten-
 // Reihenfolge) zeigen danach auf die Kopien; nicht kopierte Teile werden weiterverwendet. Reine Rechnung ohne Oberfläche.
+import { drawingSources, mapSheetSources } from "./blaetter.js";
 
 import { uid } from "./examples.js";
 
@@ -38,7 +39,7 @@ export function designItems(project, rootId) {
   visit(root, 0);
   // Generator-Einzelteile: Aktion der Generator-Baugruppe
   for (const it of out) if (it.locked && it.doc.genAsm) it.action = out.find((x) => x.doc.id === it.doc.genAsm)?.action || REUSE;
-  for (const d of docs) if (d.kind === "drawing" && d.source && seen.has(d.source.id)) out.push({ doc: d, depth: 0, action: COPY, locked: null, drawing: true });
+  for (const d of docs) if (d.kind === "drawing" && drawingSources(d).some((s) => seen.has(s.id))) out.push({ doc: d, depth: 0, action: COPY, locked: null, drawing: true });
   return out;
 }
 
@@ -68,7 +69,7 @@ export function copyDesign(project, rootId, { actions = {}, naming = {}, numbers
   const chosen = new Map();
   for (const it of items) if (!it.drawing) chosen.set(it.doc.id, act(it));
   for (const it of items) if (!it.drawing && it.locked && it.doc.genAsm) chosen.set(it.doc.id, chosen.get(it.doc.genAsm) || REUSE);
-  for (const it of items) if (it.drawing) chosen.set(it.doc.id, chosen.get(it.doc.source.id) === COPY ? (actions[it.doc.id] || it.action) : REUSE);
+  for (const it of items) if (it.drawing) chosen.set(it.doc.id, drawingSources(it.doc).some((s) => chosen.get(s.id) === COPY) ? (actions[it.doc.id] || it.action) : REUSE);
 
   const map = new Map();
   for (const it of items) if (chosen.get(it.doc.id) === COPY) map.set(it.doc.id, uid(it.doc.kind[0]));
@@ -92,14 +93,18 @@ export function copyDesign(project, rootId, { actions = {}, naming = {}, numbers
       for (const f of d.features || []) if (f.type === "abgeleitet" && f.source) f.source = to(f.source);
     }
     if (d.kind === "drawing") {
-      d.source = { ...d.source, id: to(d.source.id) };
+      mapSheetSources(d, (s) => ({ ...s, id: to(s.id) }));
       if (Array.isArray(d.posOrder)) d.posOrder = d.posOrder.map(to);
       for (const b of d.balloons || []) if (b.part) b.part = to(b.part);
-      if (d.title) {
-        const src = project.docs.find((x) => x.id === old.source.id);
-        if (src && d.title.benennung === src.name) d.title.benennung = renamed(src.name, naming);
-        if (src && numbers && src.number && d.title.nummer === src.number) d.title.nummer = renamed(src.number, naming);
+      // Schriftfeld je Blatt (Zeichnungssatz): Benennung/Nummer der Quelle mit umbenennen
+      const sheets = [{ source: old.source, title: d.title }, ...(d.sheetStore || []).map((s, k) => s && { source: old.sheetStore[k]?.source || old.source, title: s.title })];
+      for (const sh of sheets) {
+        if (!sh?.title || !sh.source) continue;
+        const src = project.docs.find((x) => x.id === sh.source.id);
+        if (src && sh.title.benennung === src.name) sh.title.benennung = renamed(src.name, naming);
+        if (src && numbers && src.number && sh.title.nummer === src.number) sh.title.nummer = renamed(src.number, naming);
       }
+      for (const b of (d.sheetStore || []).flatMap((s) => s?.balloons || [])) if (b.part) b.part = to(b.part);
     }
     docs.push(d);
   }

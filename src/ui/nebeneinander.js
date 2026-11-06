@@ -1,6 +1,7 @@
 // »Nebeneinander« (Q5, wie Inventor »Nebeneinander anordnen«): links das 3D-Modell, rechts seine Zeichnung, live.
 // Nach jeder Neuberechnung des Modells zeichnet das Blatt neu (Projektion im Hintergrund, ohne die Zeichnung zu öffnen).
 // Doppelklick oder »Öffnen« wechselt in die Zeichnung zum Bearbeiten. Breite per Trennleiste, gemerkt je Rechner.
+import { drawsDoc } from "../core/blaetter.js";
 import { h, icon } from "./dom.js";
 
 const WIDTH_KEY = "pbcad.nebeneinander.breite";
@@ -9,7 +10,7 @@ const writeWidth = (v) => { try { localStorage.setItem(WIDTH_KEY, String(v)); } 
 
 /** Zeichnungen, deren Quelle das Dokument ist (Blattquelle oder eine Ansicht) */
 export function drawingsOf(project, docId) {
-  return (project?.docs || []).filter((d) => d.kind === "drawing" && (d.source?.id === docId || (d.views || []).some((v) => v.source?.id === docId)));
+  return (project?.docs || []).filter((d) => d.kind === "drawing" && (drawsDoc(d, docId) || (d.views || []).some((v) => v.source?.id === docId)));
 }
 
 export class SideBySide {

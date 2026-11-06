@@ -1,10 +1,14 @@
 // Mehrere Blätter je Zeichnung (Paket B2): Übersicht auf Blatt 1, Details auf weiteren Blättern.
 // Das aktuelle Blatt liegt wie bisher direkt am Dokument (sheet, views, dims, …), damit alle Werkzeuge unverändert
-// arbeiten; die übrigen Blätter liegen in d.sheetStore[k] (am Platz des aktuellen Blatts steht null). Gemeinsam für alle
-// Blätter bleiben Quelle, Schriftfeld (außer »Blatt«) und Änderungen.
+// arbeiten; die übrigen Blätter liegen in d.sheetStore[k] (am Platz des aktuellen Blatts steht null). Jedes Blatt kann eine
+// eigene Quelle und eigene Schriftfeld-Felder (Benennung, Nummer, Maßstab, Werkstoff) haben (Zeichnungssatz: Baugruppe
+// auf Blatt 1, je Position ein Einzelteilblatt). Fehlen sie an einem Blatt (ältere Dateien), gelten die des aktuellen
+// Blatts weiter. Gemeinsam bleiben die übrigen Schriftfeld-Felder und die Änderungen.
 
 /** Felder, die zu einem Blatt gehören */
-export const SHEET_KEYS = ["sheet", "views", "dims", "leaders", "balloons", "symbols", "notes", "holeTables", "centerMarks", "welds", "bomTable"];
+export const SHEET_KEYS = ["sheet", "views", "dims", "leaders", "balloons", "symbols", "notes", "holeTables", "centerMarks", "welds", "bomTable", "pendingAutoViews", "pendingAutoDims"];
+/** Schriftfeld-Felder je Blatt */
+export const SHEET_TITLE_KEYS = ["benennung", "nummer", "massstab", "werkstoff"];
 /** Felder mit Bezug auf eine Ansicht (Eintrag.view) – wandern mit der Ansicht auf ein anderes Blatt */
 const VIEW_KEYS = ["dims", "leaders", "balloons", "symbols", "notes", "holeTables", "centerMarks", "welds"];
 
@@ -14,10 +18,15 @@ export const currentSheet = (d) => (d.sheetStore?.length ? d.sheetNo || 0 : 0);
 const take = (d) => {
   const o = {};
   for (const k of SHEET_KEYS) if (d[k] !== undefined) o[k] = d[k];
+  if (d.source !== undefined) o.source = d.source;
+  if (d.title) o.title = Object.fromEntries(SHEET_TITLE_KEYS.map((k) => [k, d.title[k] ?? ""]));
   return o;
 };
 const put = (d, o) => {
   for (const k of SHEET_KEYS) { if (o[k] !== undefined) d[k] = o[k]; else delete d[k]; }
+  // Quelle und Schriftfeld-Felder: ohne eigene Angabe gelten die bisherigen weiter
+  if (o.source !== undefined) d.source = o.source;
+  if (o.title) d.title = { ...(d.title || {}), ...o.title };
   if (!d.views) d.views = [];
   if (!d.dims) d.dims = [];
   if (!d.notes) d.notes = [];
@@ -34,11 +43,17 @@ export function switchSheet(d, k) {
   return true;
 }
 
-/** neues leeres Blatt am Ende (Format wie das aktuelle) und dorthin wechseln; gibt seine Nummer zurück */
-export function addSheet(d, sheet = null) {
+/**
+ * neues leeres Blatt am Ende (Format wie das aktuelle) und dorthin wechseln; gibt seine Nummer zurück.
+ * source/title: eigene Quelle und Schriftfeld-Felder des Blatts (sonst wie das aktuelle Blatt)
+ */
+export function addSheet(d, sheet = null, { source, title } = {}) {
   if (!d.sheetStore?.length) { d.sheetStore = [null]; d.sheetNo = 0; }
   const k = d.sheetStore.length;
-  d.sheetStore.push({ sheet: { ...(sheet || d.sheet || { format: "A3", orientation: "quer" }) }, views: [], dims: [], notes: [] });
+  const o = { sheet: { ...(sheet || d.sheet || { format: "A3", orientation: "quer" }) }, views: [], dims: [], notes: [] };
+  if (source !== undefined) o.source = source;
+  if (title) o.title = { ...Object.fromEntries(SHEET_TITLE_KEYS.map((x) => [x, d.title?.[x] ?? ""])), ...title };
+  d.sheetStore.push(o);
   switchSheet(d, k);
   return k;
 }
@@ -86,3 +101,17 @@ export async function eachSheet(d, fn) {
 
 /** Text im Feld »Blatt« des Schriftfelds */
 export const sheetLabel = (d) => `${currentSheet(d) + 1}/${sheetCount(d)}`;
+
+/** Alle Quellen einer Zeichnung über alle Blätter (ohne doppelte) */
+export function drawingSources(d) {
+  const out = [], seen = new Set();
+  for (const s of [d?.source, ...(d?.sheetStore || []).map((x) => x?.source)]) if (s?.id && !seen.has(s.id)) { seen.add(s.id); out.push(s); }
+  return out;
+}
+/** Zeigt die Zeichnung (auf irgendeinem Blatt) das Dokument id? kind: nur Quellen dieser Art */
+export const drawsDoc = (d, id, kind = null) => d?.kind === "drawing" && drawingSources(d).some((s) => s.id === id && (!kind || s.kind === kind));
+/** Quellen aller Blätter umschreiben (Kopie konstruieren): fn(source) → neue Quelle */
+export function mapSheetSources(d, fn) {
+  if (d.source) d.source = fn(d.source);
+  for (const s of d.sheetStore || []) if (s?.source) s.source = fn(s.source);
+}

@@ -157,6 +157,7 @@ export const BEFEHLSHILFE = {
   contactSet: "Gewählte Komponente in den Kontaktsatz aufnehmen oder herausnehmen.",
   motionVideo: "Bewegungsablauf als Video aufnehmen.",
   partDrawings: "Für alle Positionen der Baugruppe Einzelteilzeichnungen mit Maßen erzeugen.",
+  drawingSet: "Eine Zeichnung mit mehreren Blättern: Blatt 1 die Baugruppe mit Stückliste, danach je Position ein Einzelteilblatt mit Maßen.",
   collide: "Überschneidungen zwischen Komponenten finden und hervorheben.",
 
   // ---------- Generatoren und Stahlbau ----------

@@ -782,3 +782,38 @@ test("Mehrere Blätter: wechseln, anlegen, Ansicht mit Maßen verschieben, lösc
   B.removeSheet(d);
   assert.equal(B.sheetCount(d), 1); assert.equal(d.sheetStore, undefined); assert.deepEqual(d.views.map((v) => v.id), ["v1", "v2"]);
 });
+
+test("Zeichnungssatz: jedes Blatt mit eigener Quelle und Schriftfeld, Verwendung findet alle Quellen", async () => {
+  const B = await import("../src/core/blaetter.js");
+  const { whereUsed } = await import("../src/core/verwendung.js");
+  const { syncDrawingTitles } = await import("../src/core/eigenschaften.js");
+  const d = { kind: "drawing", id: "z", source: { kind: "assembly", id: "bg" }, title: { benennung: "Tor", nummer: "T-1", massstab: "1:20", werkstoff: "", firma: "PB" }, sheet: { format: "A2" }, views: [{ id: "v1" }], dims: [], notes: [] };
+  B.addSheet(d, { format: "A3", orientation: "quer" }, { source: { kind: "part", id: "p1" }, title: { benennung: "Pfosten", nummer: "T-1-01", massstab: "1:5" } });
+  assert.equal(d.source.id, "p1");
+  assert.equal(d.title.benennung, "Pfosten");
+  assert.equal(d.title.firma, "PB", "gemeinsame Felder bleiben");
+  d.pendingAutoViews = true;
+  B.switchSheet(d, 0);
+  assert.equal(d.source.id, "bg");
+  assert.equal(d.title.benennung, "Tor");
+  assert.equal(d.title.massstab, "1:20");
+  assert.equal(d.pendingAutoViews, undefined, "Ausstehende Ansichten gehören zum Blatt");
+  B.switchSheet(d, 1);
+  assert.equal(d.pendingAutoViews, true);
+  assert.equal(d.title.massstab, "1:5");
+  B.switchSheet(d, 0);
+  assert.deepEqual(B.drawingSources(d).map((s) => s.id), ["bg", "p1"]);
+  assert.ok(B.drawsDoc(d, "p1", "part") && !B.drawsDoc(d, "p1", "assembly") && !B.drawsDoc(d, "x"));
+  const docs = [{ kind: "part", id: "p1", name: "Pfosten", number: "T-1-01" }, { kind: "assembly", id: "bg", name: "Tor", components: [{ part: "p1" }] }, d];
+  assert.deepEqual(whereUsed({ docs }, "p1").drawings.map((x) => x.id), ["z"]);
+  // Umbenennen des Pfostens erreicht das Schriftfeld seines Blatts
+  docs[0].name = "Pfosten 60";
+  assert.equal(syncDrawingTitles({ docs }, docs[0], { name: "Pfosten" }), 1);
+  B.switchSheet(d, 1);
+  assert.equal(d.title.benennung, "Pfosten 60");
+  // ältere Blätter ohne eigene Quelle behalten die bisherige
+  const old = { kind: "drawing", source: { kind: "part", id: "a" }, title: { benennung: "A" }, views: [], dims: [], notes: [], sheetStore: [null, { sheet: {}, views: [], dims: [], notes: [] }], sheetNo: 0 };
+  B.switchSheet(old, 1);
+  assert.equal(old.source.id, "a");
+  assert.equal(old.title.benennung, "A");
+});

@@ -1,4 +1,5 @@
 // Modellbrowser: Projekt-Dokumente und Feature-Liste des aktiven Bauteils
+import { drawsDoc } from "../core/blaetter.js";
 import { planeLabel } from "../core/ebenennamen.js";
 import { h, icon, contextMenu, promptDialog } from "./dom.js";
 import { deleteGrid } from "./achsraster.js";
@@ -530,10 +531,11 @@ export class Tree {
       { label: "Umbenennen", icon: "edit", kbd: "F2", run: () => this.rename(d) },
       { label: "Duplizieren", icon: "copy", run: () => app.duplicateDoc(d.id) },
       d.kind !== "drawing" ? { label: "Zeichnung ableiten", icon: "drawing", run: () => app.newDrawing({ kind: d.kind, id: d.id }) } : null,
-      d.kind !== "drawing" && app.project.docs.some((x) => x.kind === "drawing" && x.source?.id === d.id) ? { label: "Zeichnung öffnen", icon: "drawing", run: () => openDrawingOf(app, d.id) } : null,
+      d.kind !== "drawing" && app.project.docs.some((x) => drawsDoc(x, d.id)) ? { label: "Zeichnung öffnen", icon: "drawing", run: () => openDrawingOf(app, d.id) } : null,
       d.kind !== "drawing" ? { label: "Wo verwendet …", icon: "search", run: () => whereUsedDialog(app, d.id) } : null,
       d.kind === "assembly" ? { label: "Kopie konstruieren …", icon: "copy", run: () => copyDesignDialog(app, d.id) } : null,
       d.kind === "assembly" ? { label: "Einzelteilzeichnungen", icon: "drawing", run: () => app.partDrawings(d.id) } : null,
+      d.kind === "assembly" ? { label: "Zeichnungssatz (alles in einer Zeichnung)", icon: "drawing", run: () => app.drawingSet(d.id) } : null,
       d.kind !== "drawing" ? { label: "Fertigungsmappe", icon: "pdf", run: () => app.files.exportMappe(d) } : null,
       // Bauteile als eigene Dateien (M24, V3)
       ...(d.kind !== "part" ? [] : d.link

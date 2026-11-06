@@ -105,6 +105,7 @@ export function commandRunners(app) {
     "part.sketch": () => app.beginSketchCreation(),
     "doc.newDrawing": r("newDrawing"),
     "doc.partDrawings": () => app.partDrawings(app.activeId),
+    "doc.drawingSet": () => app.drawingSet(app.activeId),
     "sketch.construction": () => app.sketcher.toggleConstruction(),
     "sketch.gridsnap": () => { app.sketcher.gridSnap = !app.sketcher.gridSnap; app.sketcher.render(); app.ribbon.render(); },
     "sketch.finish": () => app.finishSketch(),

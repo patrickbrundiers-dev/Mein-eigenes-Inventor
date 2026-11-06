@@ -1,4 +1,5 @@
 // Projektdatei (.wcad): Lesen, Prüfen, Migrieren und Schreiben ohne Oberfläche – damit es ohne Electron testbar ist
+import { drawingSources } from "./blaetter.js";
 
 /** Formatversion, die diese Programmversion schreibt */
 export const FORMAT_VERSION = 1;
@@ -96,7 +97,7 @@ export function validateProject(prj) {
         if (k !== "part" && !(k === "assembly" && c.part !== d.id)) issues.push(issue("komponente-verweis", "warning", d.id, `Baugruppe »${d.name || d.id}«: Komponente »${c?.name || c?.id}« verweist auf ein fehlendes Bauteil.`));
       }
     }
-    if (d?.kind === "drawing" && d.source && !byId.has(d.source.id)) {
+    if (d?.kind === "drawing" && drawingSources(d).some((s) => !byId.has(s.id))) {
       issues.push(issue("zeichnung-quelle", "warning", d.id, `Zeichnung »${d.name || d.id}«: das gezeichnete Dokument fehlt.`));
     }
   }
