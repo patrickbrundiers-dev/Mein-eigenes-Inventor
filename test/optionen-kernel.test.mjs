@@ -118,3 +118,20 @@ test("Kollision: Mindestabstand und nur gegen", () => {
   const only = K.collisions(list, { against: ["a"] });
   assert.deepEqual(only.map((x) => [x.a, x.b].sort().join()), ["a,c"]);
 });
+
+test("Extrusion: Bis an gekrümmte Fläche (Zylinder) endet genau an der Fläche", async () => {
+  const rohr = { id: "z", type: "regelkoerper", kind: "zylinder", dims: { D: "40", H: "200" }, pos: ["-50", "30", "60"], axis: "X", op: "new" };
+  const s2 = rectSketchFeature("s2", "XY", 0, 0, 20, "100", "20");
+  const res = await K.buildPart(part([rohr, s2, { id: "e", type: "extrude", sketch: "s2", mode: "bis", to: { p: [50, 30, 40], n: [0, 0, -1] }, op: "new" }]));
+  okAll(res);
+  assert.match(res.status.e.info, /gekrümmte Fläche \(Zylinder\)/);
+  const steg = res.bodies.at(-1).shape;
+  // Höhe 60 − √(400 − (y−30)²) über y 20…40, x 0…100
+  const seg = 2 * (5 * Math.sqrt(300) + 200 * Math.asin(0.5));
+  near(R.measureVolume(steg), 100 * (60 * 20 - seg), 2, "Volumen bis Zylinder");
+  near(steg.boundingBox.bounds[1][2], 60 - Math.sqrt(300), 0.05, "höchster Punkt am Rand");
+  // Zusammenfügen mit dem Rohr ergibt einen Körper
+  const j = await K.buildPart(part([rohr, s2, { id: "e", type: "extrude", sketch: "s2", mode: "bis", to: { p: [50, 30, 40], n: [0, 0, -1] }, op: "join" }]));
+  okAll(j);
+  assert.equal(j.bodies.length, 1);
+});

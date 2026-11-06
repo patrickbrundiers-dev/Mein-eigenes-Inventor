@@ -1031,6 +1031,9 @@ export function createKernel(R) {
               const sg = Math.sign(dz);
               toCut = { sg, P: v3.add(f.to.p, v3.mul(N0, sg * extra)), n: f.to.n && Math.abs(v3.dot(v3.norm(f.to.n), N0)) > 1e-3 ? v3.norm(f.to.n) : N0, len: Math.abs(dz) + sg * extra };
               if (!(toCut.len > 1e-6)) throw new Error("Abstand darüber hinaus hebt die Länge auf");
+              // Gekrümmte Zielfläche (Rohr, Kugel, Freiform): bis genau an die Fläche des Körpers statt an die Tangentialebene
+              const hitF = curvedTarget(state.bodies, f.to.p);
+              if (hitF) toCut.curved = hitF;
             }
             const d = f.mode === "through" ? 0 : f.mode === "bis" ? toCut.len : E(f.distance, "Abstand");
             if (f.mode !== "through" && !(d > 0)) throw new Error("Abstand muss > 0 sein");
@@ -1059,8 +1062,14 @@ export function createKernel(R) {
               t2: f.side === "beidseitig" ? E(f.thickness2 || f.thickness || "1", "Wanddicke außen") : 0,
             } : null;
             if (thin && !(thin.t > 0)) throw new Error("Wanddicke muss > 0 sein");
+            if (toCut?.curved) { start = (toCut.sg > 0 ? 0 : -BIG / 4) + off0; len = BIG / 4; }
             let tool = thin ? extrudeThin(regions, s.frame, start, len, thin) : extrudeRegions(regions, s.frame, start, len);
-            if (toCut) {
+            if (toCut?.curved) {
+              tool = cutToCurved(tool, toCut.curved.body.shape, s.frame, off0, toCut.sg);
+              const extra = E(f.toOffset || "0", "Abstand darüber hinaus");
+              if (Math.abs(extra) > 1e-9) st.warning = "»Abstand darüber hinaus« gilt nur bei ebenen Bis-Flächen – an gekrümmten endet die Extrusion genau an der Fläche";
+              st.info = `bis an gekrümmte Fläche (${toCut.curved.type === "CYLINDRE" || toCut.curved.type === "CYLINDER" ? "Zylinder" : toCut.curved.type === "SPHERE" ? "Kugel" : toCut.curved.type === "CONE" ? "Kegel" : toCut.curved.type === "TORUS" ? "Torus" : "Freiform"})`;
+            } else if (toCut) {
               const m = v3.dot(toCut.n, N0) * toCut.sg > 0 ? toCut.n : v3.mul(toCut.n, -1);
               tool = tool.cut(halfSpace(toCut.P, m, BIG));
             }
@@ -3651,6 +3660,35 @@ export function createKernel(R) {
     });
     return { faces, edges };
   }
+  /** Gekrümmte Fläche eines Körpers am Punkt p (≤ 0,01 mm) → { body, face, type } oder null (eben oder kein Körper) */
+  function curvedTarget(bodies, p) {
+    const vx = R.makeVertex(p);
+    for (const b of bodies) {
+      if (b.kind !== "solid" && b.kind !== "member") continue;
+      for (const fc of b.shape.faces) {
+        let d;
+        try { d = R.measureDistanceBetween(vx, fc); } catch { continue; }
+        if (d < 0.01) return fc.geomType === "PLANE" ? null : { body: b, face: fc, type: fc.geomType };
+      }
+    }
+    return null;
+  }
+  /**
+   * Extrusion bis an einen gekrümmten Körper: das lange Werkzeug am Zielkörper aufteilen und nur die Stücke behalten,
+   * die an der Skizzenebene (Start off0) beginnen – sie enden genau an der Fläche.
+   */
+  function cutToCurved(tool, target, frame, off0, sg) {
+    const rest = tool.cut(target);
+    const N = frame.normal, o = v3.add(frame.origin, v3.mul(N, off0));
+    const keep = (rest.solids?.length ? rest.solids : [rest]).filter((so) => {
+      const bb = so.boundingBox.bounds, cs = [0, 1].flatMap((i) => [0, 1].flatMap((j) => [0, 1].map((k) => [bb[i][0], bb[j][1], bb[k][2]])));
+      const zs = cs.map((c) => v3.dot(v3.sub(c, o), N) * sg);
+      return Math.min(...zs) < 1e-3; // reicht bis an die Startebene
+    });
+    if (!keep.length) throw new Error("Bis Fläche: die Extrusion trifft die gekrümmte Fläche nicht");
+    return keep.length === 1 ? keep[0] : keep.slice(1).reduce((a, b) => a.fuse(b), keep[0]);
+  }
+
   /** Netz (STL-Dreiecke) → Volumenkörper: nähen, schließen, ebene Nachbarflächen zusammenfassen */
   function meshToSolid({ vertices, triangles }, { unify = true } = {}) {
     const oc = R.getOC(), before = triangles.length;
