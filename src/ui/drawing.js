@@ -151,6 +151,8 @@ export class DrawingEditor {
       delete d.pendingAutoViews;
       await this.autoViews({ silentUndo: true });
       if (d.pendingAutoDims) { delete d.pendingAutoDims; this.autoDims({ silent: true }); }
+      // Baugruppe: Positionsnummern und Stückliste gleich mit (Platz dafür hält autoViews über dem Schriftfeld frei)
+      else if (this.app.doc(d.source.id)?.kind === "assembly" && !d.balloons?.length) this.autoBalloons({ silent: true });
       return;
     }
     this.deriveFlats(d);
@@ -1381,17 +1383,18 @@ export class DrawingEditor {
     return map;
   }
   /** Ein Kreis je Stücklisten-Position in der gewählten Ansicht (sonst Isometrie), rund um die Ansicht verteilt */
-  autoBalloons() {
+  autoBalloons({ silent = false } = {}) {
     const d = this.doc;
     const src = d?.source && this.app.doc(d.source.id);
-    if (src?.kind !== "assembly") return toast("Positionsnummern gibt es nur in Zeichnungen von Baugruppen");
+    const say = (t) => (silent ? null : toast(t));
+    if (src?.kind !== "assembly") return say("Positionsnummern gibt es nur in Zeichnungen von Baugruppen");
     const v = (this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "iso") || d.views[0];
-    if (!v || !this.proj.get(v.id)) return toast("Zuerst Ansichten erzeugen");
+    if (!v || !this.proj.get(v.id)) return say("Zuerst Ansichten erzeugen");
     // Positionsnummern je Bauteil der Mengenstückliste, auch aus Unterbaugruppen
     const st = this.viewState(d, v);
     const flat = { components: flattenAssembly(st ? assemblyForView(src, { state: st }) : src, (id) => this.app.doc(id), { bom: true }).map((o) => ({ part: o.part.id, ...decomposePlacement(o.matrix) })) };
     const anchors = balloonAnchors(flat, (pid) => this.app.results.get(pid));
-    if (!anchors.length) return toast("Die Bauteile sind noch nicht berechnet – bitte kurz warten");
+    if (!anchors.length) return say("Die Bauteile sind noch nicht berechnet – bitte kurz warten");
     const cam = this.viewCam(d, v);
     const xf = this.viewXf(v);
     const at = anchors.map((a) => ({ key: a.part, at: xf.to(...projectPoint(a.p3, cam.dir, cam.up)) }));
@@ -1399,10 +1402,12 @@ export class DrawingEditor {
     const pos = placeBalloons(at, { x0, y0, x1, y1 });
     const [W, H] = this.sheetSize(d);
     for (const [k, [x, y]] of pos) pos.set(k, [Math.min(W - 15, Math.max(25, x)), Math.min(H - 15, Math.max(15, y))]); // im Zeichnungsrahmen halten
-    this.app.edit("Positionsnummern", () => {
+    const apply = () => {
       d.balloons = anchors.map((a) => ({ id: uid("b"), view: v.id, part: a.part, p3: a.p3, at: pos.get(a.part) }));
       d.bomTable = { show: true };
-    }, { rebuild: false });
+    };
+    if (silent) { apply(); this.app.changed({ rebuild: false }); }
+    else this.app.edit("Positionsnummern", apply, { rebuild: false });
     this.render();
   }
   /** Schweißnaht-Symbole (ISO 2553) für alle Nähte der Quelle in der gewählten Ansicht (sonst Vorderansicht) */

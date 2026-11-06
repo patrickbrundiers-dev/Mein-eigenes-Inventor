@@ -3956,8 +3956,20 @@ export function createKernel(R) {
    * Hidden-Line-Projektion für Zeichnungsansichten.
    * view: {dir: Blickrichtung (vom Betrachter in die Szene), up}
    */
+  /**
+   * Blick genau längs einer Achse kippt Open Cascades Verdeckt-Rechnung (HLRBRep) in Sonderfälle: Rohre mit Bohrungen von
+   * der Seite brauchen dann bis zu Minuten statt Sekunden. Um 1e-5 rad gekippt ist es rund 30-mal schneller; der Versatz
+   * (Tiefe × 1e-5, bei 5 m Tiefe 0,05 mm) liegt weit unter Strichbreite und Maßrundung.
+   */
+  function hlrCamera(view) {
+    const d = v3.norm(view.dir);
+    const tilt = globalThis.__HLR_TILT ?? HLR_TILT;
+    if (!tilt || Math.max(...d.map(Math.abs)) < 1 - 1e-9) return camera(view);
+    const up = v3.norm(view.up), right = v3.cross(d, up);
+    return camera({ ...view, dir: v3.add(d, v3.add(v3.mul(right, tilt), v3.mul(up, tilt * 0.7))) });
+  }
   function projectView(shape, view) {
-    const { visible, hidden } = R.drawProjection(shape, camera(view));
+    const { visible, hidden } = R.drawProjection(shape, hlrCamera(view));
     const parse = (drw) => {
       const polylines = [];
       const arcs = [];
@@ -4169,12 +4181,31 @@ export function createKernel(R) {
 }
 
 // verdeckte Segmente entfernen, die auf sichtbaren liegen
+const HLR_TILT = 1e-5; // globalThis.__HLR_TILT = 0 schaltet es für Vergleiche ab
+
 function removeCovered(hidden, visible) {
   const segs = [];
   for (const pl of visible) for (let i = 0; i + 1 < pl.length; i++) segs.push([pl[i], pl[i + 1]]);
+  // Raster über die sichtbaren Strecken: je Mittelpunkt nur die Strecken seiner Zelle prüfen (sonst n × m, Sekunden bei Baugruppen)
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [a, b] of segs) { x0 = Math.min(x0, a[0], b[0]); y0 = Math.min(y0, a[1], b[1]); x1 = Math.max(x1, a[0], b[0]); y1 = Math.max(y1, a[1], b[1]); }
+  const N = 64, cw = Math.max((x1 - x0) / N, 1e-6), ch = Math.max((y1 - y0) / N, 1e-6), e = 0.01;
+  const cx = (x) => Math.min(N - 1, Math.max(0, Math.floor((x - x0) / cw))), cy = (y) => Math.min(N - 1, Math.max(0, Math.floor((y - y0) / ch)));
+  const grid = new Map();
+  for (const sg of segs) {
+    const [a, b] = sg;
+    for (let i = cx(Math.min(a[0], b[0]) - e); i <= cx(Math.max(a[0], b[0]) + e); i++)
+      for (let j = cy(Math.min(a[1], b[1]) - e); j <= cy(Math.max(a[1], b[1]) + e); j++) {
+        const k = i * N + j;
+        let l = grid.get(k);
+        if (!l) grid.set(k, (l = []));
+        l.push(sg);
+      }
+  }
   const onVisible = (p, q) => {
     const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
-    for (const [a, b] of segs) {
+    if (mx < x0 - e || mx > x1 + e || my < y0 - e || my > y1 + e) return false;
+    for (const [a, b] of grid.get(cx(mx) * N + cy(my)) || []) {
       const dx = b[0] - a[0], dy = b[1] - a[1];
       const L2 = dx * dx + dy * dy;
       if (L2 < 1e-18) continue;
