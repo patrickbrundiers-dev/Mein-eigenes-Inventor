@@ -205,3 +205,18 @@ export function depthRange(bboxes, n) {
   }
   return Number.isFinite(min) ? { min, max } : null;
 }
+
+/**
+ * Bruchstellen für lange Stäbe (Einzelteilzeichnung): zwischen lo und hi bleiben die Enden und jede Stelle mit Merkmal
+ * (Bohrung) je ±margin sichtbar; die längsten freien Stücke (mindestens minLen) werden herausgebrochen, höchstens max.
+ * Rückgabe [{a, b}] aufsteigend, leer wenn nichts lohnt.
+ */
+export function autoBreaks(lo, hi, features = [], margin = 50, { max = 4, minLen = 4 * margin } = {}) {
+  const keep = [[lo, lo + margin], [hi - margin, hi], ...features.map((x) => [x - margin, x + margin])]
+    .map(([a, b]) => [Math.max(lo, a), Math.min(hi, b)]).sort((p, q) => p[0] - q[0]);
+  const merged = [];
+  for (const k of keep) { const l = merged[merged.length - 1]; if (l && k[0] <= l[1]) l[1] = Math.max(l[1], k[1]); else merged.push([...k]); }
+  const free = [];
+  for (let i = 0; i + 1 < merged.length; i++) if (merged[i + 1][0] - merged[i][1] >= minLen) free.push({ a: merged[i][1], b: merged[i + 1][0] });
+  return free.sort((p, q) => (q.b - q.a) - (p.b - p.a)).slice(0, max).sort((p, q) => p.a - q.a);
+}

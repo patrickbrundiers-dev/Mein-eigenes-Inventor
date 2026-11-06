@@ -37,10 +37,13 @@ export function memberHoles(K, shape, ax, { flat = false } = {}) {
     const pt = { x: along[2], cu: isU ? cu : along[0], cv: isU ? along[1] : cv, r: cyl.radius, isU, span, xRaw: x };
     (span > TWO_PI - 0.05 ? full : half).push(pt);
   }
-  const holes = [];
+  const holes = [], centers = [];
   const push = (q, slot) => {
     const face = faceOf(q.isU ? 1 : 0, q.isU ? 0 : 1, q.cu, q.cv, flat);
     holes.push({ face, x: q.x, y: faceY(face, q.cu, q.cv, B, H, flat), d: holeDia(2 * q.r), ...(slot ? { slot } : {}) });
+    // Lage im Bauteil (für Bohrbild-Maße in Einzelteilzeichnungen)
+    const p = [0, 1, 2].map((k) => origin[k] + u[k] * q.cu + v[k] * q.cv + z[k] * (q.x + lo));
+    centers.push({ p, d: holeDia(2 * q.r), dir: q.isU ? u : v, ...(slot ? { slot } : {}) });
   };
   for (const q of full) push(q);
   // Halbschalen paaren: gleicher Radius, gleiche Richtung, gleiche Wand → Langloch (oder geteilte Bohrung)
@@ -70,7 +73,7 @@ export function memberHoles(K, shape, ax, { flat = false } = {}) {
       push(mid, { l: bd, angle: Math.round(ang * 100) / 100 });
     }
   }
-  return { holes, skipped };
+  return { holes, skipped, centers };
 }
 
 /** Ebene Platte? Größte ebene Fläche, Dicke und Prüfung Volumen = Fläche × Dicke (gerade Kanten, durchgehende Löcher) */
