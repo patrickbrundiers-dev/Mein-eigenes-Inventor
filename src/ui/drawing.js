@@ -28,7 +28,7 @@ import { sheetFlatView } from "../core/blechplus.js";
 import { bendRule } from "../core/bendtable.js";
 import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
 import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange } from "../core/bruch.js";
-import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, parseScale } from "../core/zeichnung.js";
+import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat, parseScale } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
 export const CAMS = {
@@ -149,7 +149,7 @@ export class DrawingEditor {
     if (!items || !items.length) { this.render(); return; }
     if (d.pendingAutoViews) {
       delete d.pendingAutoViews;
-      await this.autoViews({ silentUndo: true });
+      await this.autoViews({ silentUndo: true, autoFormat: true });
       if (d.pendingAutoDims) { delete d.pendingAutoDims; this.autoDims({ silent: true }); }
       // Baugruppe: Positionsnummern und Stückliste gleich mit (Platz dafür hält autoViews über dem Schriftfeld frei)
       else if (this.app.doc(d.source.id)?.kind === "assembly" && !d.balloons?.length) this.autoBalloons({ silent: true });
@@ -187,7 +187,7 @@ export class DrawingEditor {
     this.loading = false;
     this.render();
   }
-  async autoViews({ silentUndo = false } = {}) {
+  async autoViews({ silentUndo = false, autoFormat = false } = {}) {
     const d = this.doc;
     const items = this.sourceItems(d);
     if (!items?.length) return this.chooseSource();
@@ -197,7 +197,7 @@ export class DrawingEditor {
     try { res = await this.app.kernel.call("project", { items, views }); } catch (e) { return toast("Ansichten konnten nicht berechnet werden: " + e.message, { kind: "err" }); }
     const bb = (t) => res["auto_" + t]?.bbox || { x0: 0, y0: 0, x1: 100, y1: 100 };
     const W = (b) => b.x1 - b.x0, H = (b) => b.y1 - b.y0;
-    const [sw, sh] = this.sheetSize(d);
+    let [sw, sh] = this.sheetSize(d);
     // nur die nötigen Ansichten: was eine Ansicht nicht zusätzlich zeigt, entfällt (z. B. Seitenansicht einer Platte)
     const src = d.source && this.app.doc(d.source.id);
     const profile = src?.kind === "part" ? profileSpec(src.features, (x) => evaluate(String(x), resolveParams(src.params || []).values)) : null;
@@ -210,7 +210,11 @@ export class DrawingEditor {
     // Schriftfeld, bei Baugruppen mit Platz für die Stückliste darüber
     let tbH = 46 + (this.template().extra.length ? 9 : 0);
     if (src?.kind === "assembly") { try { tbH += 6 * (this.bomRowsOf(d).length + 1); } catch { /* ohne Stückliste */ } }
-    const lay = layoutBaseViews({ front: box(fw), top: keep.has("top") ? box(tp) : null, left: keep.has("left") ? box(lf) : null, iso: box(iso) }, { W: sw, H: sh }, SCALES, { tb: { w: 180, h: tbH }, gap });
+    const boxes = { front: box(fw), top: keep.has("top") ? box(tp) : null, left: keep.has("left") ? box(lf) : null, iso: box(iso) };
+    // neue Zeichnung im Standardblatt A3 quer: bei langer Stückliste oder großem Modell A2/A1
+    let format = d.sheet.format;
+    if (autoFormat && format === "A3" && d.sheet.orientation !== "hoch") { format = autoSheetFormat(boxes, tbH, SHEETS, SCALES, { gap }); [sw, sh] = SHEETS[format]; }
+    const lay = layoutBaseViews(boxes, { W: sw, H: sh }, SCALES, { tb: { w: 180, h: tbH }, gap });
     const scale = lay?.scale || SCALES[SCALES.length - 1];
     const fx = lay ? lay.front.x : 20 + 10 + gap + (W(fw) * scale) / 2;
     const fy = lay ? lay.front.y : 10 + 10 + gap + (H(fw) * scale) / 2;
@@ -227,10 +231,12 @@ export class DrawingEditor {
       const r = res["auto_" + v.type];
       if (r) this.proj.set(v.id, r);
     }
-    const apply = () => { d.views = nv; d.dims = []; d.title.massstab = scaleLabel(scale); };
+    const apply = () => { d.views = nv; d.dims = []; d.title.massstab = scaleLabel(scale); d.sheet.format = format; };
+    const refit = format !== d.sheet.format;
     if (silentUndo) { apply(); this.app.changed({ rebuild: false }); }
     else this.app.edit("Grundansichten", apply, { rebuild: false });
     this.render();
+    if (refit) this.fitSheet();
   }
   async chooseSource() {
     const app = this.app;

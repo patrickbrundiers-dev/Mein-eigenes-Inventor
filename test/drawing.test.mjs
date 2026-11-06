@@ -589,7 +589,7 @@ test("Fasen: 45°-Kanten mit Länge a·√2 bekommen einen Hinweis „2 × 45°�
 });
 
 // ---------- Zeichnungsprüfung (Inventor-Abgleich): Mittellinien, Schnittschraffur, Feldeinteilung, projizierte Ansicht, Anordnung ----------
-import { axisLines, hatchStyle, HATCH_STYLES, sheetZones, projectedCamera, camType, layoutBaseViews } from "../src/core/zeichnung.js";
+import { axisLines, hatchStyle, HATCH_STYLES, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat } from "../src/core/zeichnung.js";
 
 const CAMS_T = {
   front: { dir: [0, 1, 0], up: [0, 0, 1] }, top: { dir: [0, 0, -1], up: [0, 1, 0] }, left: { dir: [1, 0, 0], up: [0, 0, 1] },
@@ -695,4 +695,16 @@ test("Eigener Maßstab: 1:25, 3:1, Faktor, Unsinn abgelehnt", async () => {
   assert.equal(parseScale("M 1:3"), 1 / 3);
   assert.equal(parseScale("0,04"), 0.04);
   for (const bad of ["", "abc", "1:0", "0", "-1:2", "1:100000", "1000:1"]) assert.equal(parseScale(bad), null, bad);
+});
+
+test("Blattgröße: A3 bleibt bei kurzer Stückliste, lange Stückliste oder großes Modell nimmt A2/A1", () => {
+  const SC = [10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01];
+  const SH = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
+  const gel = { front: { w: 3200, h: 1100 }, top: { w: 3200, h: 2100 }, left: { w: 2100, h: 1100 }, iso: { w: 3800, h: 2600 } };
+  assert.equal(autoSheetFormat(gel, 46 + 6 * 12, SH, SC), "A3");
+  // Treppe mit 24 Positionen: Stückliste wäre auf A3 höher als die halbe Zeichenfläche
+  const tr = { front: { w: 4600, h: 3800 }, top: { w: 4600, h: 1200 }, left: { w: 1200, h: 3800 }, iso: { w: 5000, h: 4500 } };
+  assert.equal(autoSheetFormat(tr, 46 + 6 * 25, SH, SC), "A2");
+  // sehr lange Stückliste: A1
+  assert.equal(autoSheetFormat(tr, 46 + 6 * 45, SH, SC), "A1");
 });
