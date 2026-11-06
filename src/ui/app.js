@@ -39,7 +39,8 @@ import { classText } from "../core/tolerance.js";
 import { setUserBendTables, adoptProjectBendTables, projectBendTableCopies } from "../core/bendtable.js";
 import { newSketch, holeCenters } from "../core/sketch.js";
 import { v3, planeFromFace, planeFrame, BASE_PLANES, placementMatrix, decomposePlacement, matMul, alignFaces, matApply, matApplyDir, toWorld } from "../core/geom.js";
-import { flattenAssembly } from "../core/subasm.js";
+import { flattenAssembly, structureBom } from "../core/subasm.js";
+import { planWelds } from "../core/genwelds.js";
 import { contextScene, contextLabel } from "../core/kontext.js";
 import { bodiesMass } from "../core/mass.js";
 import { materialOf, setUserMaterials, adoptProjectMaterials, projectMaterialCopies } from "../core/materials.js";
@@ -272,12 +273,36 @@ export class App {
    * Einzelteile einer Generator-Baugruppe an die Einstellungen anpassen: Bauteile wiederverwenden (gleiche Geometrie,
    * sonst gleicher Name), angehängte Features behalten, fehlende anlegen, nicht mehr gebrauchte entfernen.
    */
+  /** Bauplan einer Generator-Baugruppe (Zahlen aus den Parametern der Baugruppe aufgelöst) */
+  genPlan(asm) {
+    const g = asm.generator, gen = GENERATORS[g.gen];
+    const scope = resolveParams(asm.params || []).values;
+    const params = g.gen === "gestell" ? JSON.parse(JSON.stringify(g.params)) : Object.fromEntries(Object.entries(g.params).map(([k, v]) => [k, gen.schema.find((s) => s.key === k)?.type === "num" ? String(evaluate(String(v), scope)) : JSON.parse(JSON.stringify(v))]));
+    return g.gen === "gestell" ? gestellPlan(params.input) : gen.plan(resolveGenParams(g.gen, params, (x) => evaluate(String(x), scope)));
+  }
+  /** Schweißnähte einer Generator-Baugruppe aus ihrem Bauplan (R3), zwischengespeichert je Einstellung */
+  genWelds(asm) {
+    if (!asm?.generator) return [];
+    const key = JSON.stringify([asm.generator, asm.params || []]);
+    const c = (this._genWeldCache ||= new Map()).get(asm.id);
+    if (c?.key === key) return c.welds;
+    let welds = [];
+    try { welds = planWelds(this.genPlan(asm)); } catch { welds = []; }
+    this._genWeldCache.set(asm.id, { key, welds });
+    return welds;
+  }
+  /** Nahtquellen der Baugruppen (Generator-Nähte), mit Anzahl über alle Ebenen – für collectWelds neben den Bauteilen */
+  assemblyWeldSources(d) {
+    if (d?.kind !== "assembly") return [];
+    const list = [{ doc: d, total: 1 }, ...structureBom(d, (id) => this.doc(id)).filter((r) => r.kind === "assembly").map((r) => ({ doc: r.doc, total: r.total }))];
+    return list.map(({ doc, total }) => ({ part: { name: doc.name, material: doc.genMaterial?.material }, result: { bodies: [], welds: this.genWelds(doc) }, qty: total })).filter((s) => s.result.welds.length);
+  }
   syncGenAssembly(asm) {
     const g = asm.generator, gen = GENERATORS[g.gen];
     // Zahlen auflösen: die Bauteile rechnen ohne die Parameter der Baugruppe (Gestell: Eingabe liegt fertig vor)
     const scope = resolveParams(asm.params || []).values;
     const params = g.gen === "gestell" ? JSON.parse(JSON.stringify(g.params)) : Object.fromEntries(Object.entries(g.params).map(([k, v]) => [k, gen.schema.find((s) => s.key === k)?.type === "num" ? String(evaluate(String(v), scope)) : JSON.parse(JSON.stringify(v))]));
-    const groups = groupParts(g.gen === "gestell" ? gestellPlan(params.input) : gen.plan(resolveGenParams(g.gen, params, (x) => evaluate(String(x), scope))));
+    const groups = groupParts(this.genPlan(asm));
     const old = this.project.docs.filter((d) => d.kind === "part" && d.genAsm === asm.id), used = new Set();
     const take = (pred) => { const p = old.find((d) => !used.has(d) && pred(d)); if (p) used.add(p); return p; };
     const parts = groups.map((gr) => {

@@ -906,3 +906,38 @@ test("Fertigungsmappe: Stangenplan mit Bestellung und Belegung (R2)", async () =
   assert.ok(p && p.html.includes("Bestellung") && p.html.includes("2 × 2500 (Pos 1)"), "Bestellung und Belegung");
   assert.ok(!listPages({ cut }).some((x) => x.html.includes("Stangenplan")), "ohne Plan keine Seite");
 });
+
+test("Generator-Nähte: Pfosten auf Fußplatte, Stab am Gurt, Gehrungsecke, freie Enden ohne Naht (R3)", async () => {
+  const { planWelds, weldKey } = await import("../src/core/genwelds.js");
+  const { weldSymbol } = await import("../src/core/weld.js");
+  const rohr = { kind: "rohr", dims: { D: 42.4, t: 2.6 } }, rund = { kind: "rund", dims: { D: 12 } };
+  const plan = {
+    members: [
+      { name: "Pfosten", section: rohr, a: [0, 0, 8], b: [0, 0, 1000] },
+      { name: "Stab", section: rund, a: [100, 0, 121.2], b: [100, 0, 878.8] }, // zwischen Untergurt (z 100) und Obergurt (z 900), Rohr 42,4
+      { name: "Frei", section: rund, a: [3000, 0, 0], b: [3000, 0, 500] },
+    ],
+    chains: [{ name: "Rahmen", section: { kind: "vierkant", dims: { B: 40, t: 3 } }, points: [[0, 500, 0], [1000, 500, 0], [1000, 500, 1000]] }],
+    plates: [{ name: "Fußplatte", center: [0, 0, 4], xDir: [1, 0, 0], normal: [0, 0, 1], W: 120, H: 120, t: 8 }],
+  };
+  plan.members.push({ name: "Untergurt", section: rohr, a: [0, 0, 100], b: [1000, 0, 100] }, { name: "Obergurt", section: rohr, a: [0, 0, 900], b: [1000, 0, 900] });
+  const w = planWelds(plan);
+  const names = w.map((x) => x.name);
+  assert.ok(names.includes("Pfosten an Fußplatte"), names.join("; "));
+  assert.ok(names.includes("Stab an Untergurt") && names.includes("Stab an Obergurt"));
+  assert.ok(!names.some((n) => n.startsWith("Frei")), "freies Ende ohne Naht");
+  const post = w.find((x) => x.name === "Pfosten an Fußplatte");
+  assert.equal(post.kind, "kehl");
+  assert.ok(post.around && Math.abs(post.length - Math.PI * 42.4) < 1e-6);
+  assert.equal(post.a, 2, "0,7 × 2,6 → 2");
+  const corner = w.filter((x) => x.kind === "i");
+  assert.equal(corner.length, 1, "eine Gehrungsecke");
+  assert.ok(Math.abs(corner[0].length - 160) < 1e-6);
+  // Gurte enden am Pfosten: Kehlnaht an beiden Gurten
+  assert.ok(names.includes("Untergurt an Pfosten") && names.includes("Obergurt an Pfosten"));
+  // gleiche Nähte bündeln: Symbol mit Gabel und Anzahl
+  const stab = w.filter((x) => x.name.startsWith("Stab"));
+  assert.equal(weldKey(stab[0]), weldKey(stab[1]));
+  const sym = weldSymbol({ ...stab[0], count: 12 }, [0, 0], [20, -20]);
+  assert.ok(sym.texts.some((t) => t.text === "12×"));
+});

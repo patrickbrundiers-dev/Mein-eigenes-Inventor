@@ -18,6 +18,7 @@ import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, placeBalloonsEdges, assignBalloonViews, projectPoint, partCenter } from "../core/balloons.js";
 import { gridViewSvg } from "./achsraster.js";
 import { weldSymbol } from "../core/weld.js";
+import { weldKey } from "../core/genwelds.js";
 import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
 import { angleValue, cleanupDrawing, angleFromSegments } from "../core/aufraeumen.js";
@@ -202,6 +203,8 @@ export class DrawingEditor {
         // Gesamtmaße und Teilungen (B3), danach Positionsnummern an die freien Seiten
         await this.autoDims({ silent: true });
         this.autoBalloons({ silent: true });
+        // Schweißnähte (R3): gleiche Nähte als ein Symbol mit Anzahl
+        this.autoWelds({ silent: true });
       }
       return;
     }
@@ -1520,31 +1523,62 @@ export class DrawingEditor {
     else this.app.edit("Positionsnummern", apply, { rebuild: false });
     this.render();
   }
-  /** Schweißnaht-Symbole (ISO 2553) für alle Nähte der Quelle in der gewählten Ansicht (sonst Vorderansicht) */
-  autoWelds() {
+  /**
+   * Schweißnaht-Symbole (ISO 2553) für alle Nähte der Quelle in der gewählten Ansicht (sonst Vorderansicht). Nähte aus
+   * Bauteilen und aus Generator-Baugruppen (R3); gleiche Nähte als ein Symbol mit Anzahl in der Gabel (»12×«).
+   */
+  autoWelds({ silent = false } = {}) {
     const d = this.doc;
     const src = d?.source && this.app.doc(d.source.id);
-    if (!src) return toast("Zuerst Ansichten erzeugen");
-    const v = (this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "front") || d.views[0];
-    if (!v || !this.proj.get(v.id)) return toast("Zuerst Ansichten erzeugen");
-    // Nähte je Bauteil; in Baugruppen an der ersten Komponente des Bauteils
+    if (!src) return silent ? 0 : toast("Zuerst Ansichten erzeugen");
+    const v = (!silent && this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "front") || d.views[0];
+    if (!v || !this.proj.get(v.id)) return silent ? 0 : toast("Zuerst Ansichten erzeugen");
+    // Nähte je Bauteil (in Baugruppen an der ersten Komponente des Bauteils) und Nähte der Generator-Baugruppen
     const anchors = [];
-    const add = (pid, M) => (this.app.results.get(pid)?.welds || []).forEach((w, i) => anchors.push({ key: `${pid}:${w.fid}:${i}`, p3: M ? matApply(M, w.p3) : w.p3, w }));
-    if (src.kind === "part") add(src.id, null);
-    else { const seen = new Set(); for (const o of flattenAssembly(src, (id) => this.app.doc(id))) if (!seen.has(o.part.id)) { seen.add(o.part.id); add(o.part.id, o.matrix); } }
-    if (!anchors.length) return toast("Keine Schweißnähte im Modell – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
+    const add = (key, list, M) => (list || []).forEach((w, i) => anchors.push({ key: `${key}:${w.fid || ""}:${i}`, p3: M ? matApply(M, w.p3) : w.p3, w }));
+    if (src.kind === "part") add(src.id, this.app.results.get(src.id)?.welds, null);
+    else {
+      const seen = new Set();
+      for (const o of flattenAssembly(src, (id) => this.app.doc(id))) if (!seen.has(o.part.id)) { seen.add(o.part.id); add(o.part.id, this.app.results.get(o.part.id)?.welds, o.matrix); }
+      add(src.id, this.app.genWelds?.(src), null);
+      for (const c of src.components || []) { const sub = this.app.doc(c.part); if (sub?.kind === "assembly" && sub.generator) add(c.id, this.app.genWelds(sub), placementMatrix(c.pos, c.rot)); }
+    }
+    if (!anchors.length) return silent ? 0 : toast("Keine Schweißnähte im Modell – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
+    // gleiche Nähte zusammenfassen: ein Symbol je Nahtart und -maß an der ersten Stelle, Anzahl in der Gabel
+    const groups = new Map();
+    for (const a of anchors) { const k = weldKey(a.w); if (!groups.has(k)) groups.set(k, { ...a, key: k, count: 0 }); groups.get(k).count++; }
+    const reps = [...groups.values()];
     const cam = this.viewCam(d, v);
     const xf = this.viewXf(v);
-    const at = anchors.map((a) => ({ key: a.key, at: xf.to(...projectPoint(a.p3, cam.dir, cam.up)) }));
+    const at = reps.map((a) => ({ key: a.key, at: xf.to(...projectPoint(a.p3, cam.dir, cam.up)) }));
     const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
-    const pos = placeBalloons(at, { x0, y0, x1, y1 }, { r: 8, gap: 6 });
+    // Symbole über (sonst unter) der Ansicht, hinter den Maßlinien, 36 mm auseinander, damit Bezugslinie und Gabel passen
+    const box = { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
+    const gap = (d.dims || []).some((m) => m.view === v.id) ? 30 : 12;
     const [W, H] = this.sheetSize(d);
-    for (const [k, [x, y]] of pos) pos.set(k, [Math.min(W - 40, Math.max(45, x)), Math.min(H - 60, Math.max(20, y))]);
-    this.app.edit("Schweißnähte", () => {
-      d.welds = anchors.map((a) => ({ id: uid("w"), view: v.id, p3: a.p3, at: pos.get(a.key), w: { kind: a.w.kind, a: a.w.a, side: a.w.side, around: a.w.around, field: a.w.field, ...(a.w.prep ? { prep: a.w.prep } : {}) } }));
-    }, { rebuild: false });
+    const others = d.views.filter((o) => o.id !== v.id && this.proj.get(o.id)).map((o) => { const t = this.viewXf(o), [a0, b0] = t.to(t.bb.x0, t.bb.y1), [a1, b1] = t.to(t.bb.x1, t.bb.y0); return { x0: Math.min(a0, a1), y0: Math.min(b0, b1), x1: Math.max(a0, a1), y1: Math.max(b0, b1) }; });
+    // freie Seite wie bei den Positionsnummern: keine andere Ansicht, nicht das Schriftfeld, Platz bis zum Rahmen.
+    // Oben/unten braucht die Bezugslinie Höhe, links/rechts ihre Länge (≈ 40 mm)
+    const tbH = 46 + (this.template().extra.length ? 9 : 0) + 6 * (this.bomRowsOf(d).length + 1);
+    others.push({ x0: W - 10 - 180, y0: H - 10 - tbH, x1: W - 10, y1: H - 10 });
+    const need = { t: gap + 12, b: gap + 12, l: gap + 42, r: gap + 42 };
+    const free = (sd) => others.every((o) => {
+      const ov = sd === "t" || sd === "b" ? o.x0 < box.x1 && o.x1 > box.x0 : o.y0 < box.y1 && o.y1 > box.y0;
+      if (!ov) return true;
+      const dist = sd === "t" ? box.y0 - o.y1 : sd === "b" ? o.y0 - box.y1 : sd === "l" ? box.x0 - o.x1 : o.x0 - box.x1;
+      return dist < -1 || dist > need[sd];
+    }) && (sd === "t" ? box.y0 > 10 + need.t : sd === "b" ? box.y1 < H - 10 - need.b : sd === "l" ? box.x0 > 20 + need.l : box.x1 < W - 10 - need.r);
+    const side = [..."tblr"].find(free);
+    const pos = !side || reps.length > 12 ? placeBalloons(at, box, { r: 8, gap: 6 }) : placeBalloonsEdges(at, box, side === "t" || side === "b" ? { r: 18, gap, sides: side } : { r: 6, gap: gap + 6, sides: side });
+    for (const [k, [x, y]] of pos) pos.set(k, [Math.min(W - 45, Math.max(55, x)), Math.min(H - 60, Math.max(20, y))]);
+    const apply = () => {
+      d.welds = reps.map((a) => ({ id: uid("w"), view: v.id, p3: a.p3, at: pos.get(a.key), w: { kind: a.w.kind, a: a.w.a, side: a.w.side, around: a.w.around, field: a.w.field, ...(a.w.prep ? { prep: a.w.prep } : {}), ...(a.count > 1 ? { count: a.count } : {}) } }));
+    };
+    if (silent) { apply(); return reps.length; }
+    this.app.edit("Schweißnähte", apply, { rebuild: false });
     this.render();
-    toast(`${anchors.length} Nahtsymbol(e) gesetzt – ziehen zum Verschieben, Entf löscht`);
+    toast(`${reps.length} Nahtsymbol(e) für ${anchors.length} Nähte gesetzt – ziehen zum Verschieben, Entf löscht`);
+    return reps.length;
   }
   renderWeld(d, m, interactive) {
     const v = d.views.find((x) => x.id === m.view);

@@ -719,7 +719,7 @@ export class Files {
   /** Nahtliste (Schweißnähte aus Bauteil bzw. allen Bauteilen der Baugruppe × Anzahl) */
   async exportWeldList() {
     const d = this.app.activeDoc();
-    const rows = weldRows(collectWelds(collectCutSources(this.app, d)));
+    const rows = weldRows(collectWelds([...collectCutSources(this.app, d), ...this.app.assemblyWeldSources(d)]));
     if (!rows.length) return toast("Keine Schweißnähte vorhanden – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
     await this.saveText(weldCsv(rows, d.name), safeName(d.number || d.name) + "_Nahtliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
   }
@@ -768,7 +768,7 @@ export class Files {
     if (plan.wps.length) mem(plan.wps);
     if (out === "save") return toast("Schweißplan gespeichert", { kind: "ok" });
     await app.builtParts(d);
-    const rows = weldPlanRows(collectWelds(collectCutSources(app, d)), plan);
+    const rows = weldPlanRows(collectWelds([...collectCutSources(app, d), ...app.assemblyWeldSources(d)]), plan);
     if (!rows.length) return toast("Keine Schweißnähte vorhanden – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
     const base = safeName(d.number || d.name);
     if (out === "csv") return this.saveText(weldPlanCsv(rows, plan, d.name), base + "_Schweissplan.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
@@ -854,7 +854,7 @@ export class Files {
     const nested = asm && d.components.some((c) => app.doc(c.part)?.kind === "assembly");
     const cutRows = cutListRows(src);
     return listSheets({
-      cut: cutRows, bars: cutRows.length ? planBars(cutRows, barOptions((k) => app.prefs.get(k))) : null, welds: weldRows(collectWelds(src)),
+      cut: cutRows, bars: cutRows.length ? planBars(cutRows, barOptions((k) => app.prefs.get(k))) : null, welds: weldRows(collectWelds([...src, ...app.assemblyWeldSources(d)])),
       bom: asm ? bomRows(app, d) : collectNorm(src.map((s) => ({ bodies: s.result.bodies, qty: s.qty }))).map((x, i) => ({ ...x, pos: i + 1, number: "" })),
       structure: nested ? structureBom(d, docOf).map((x) => ({ level: x.level, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty, total: x.total })) : [],
       modular: nested ? modularBom(d, docOf).map((m) => ({ name: m.asm.name, number: m.asm.number, rows: m.rows.map((x) => ({ pos: x.pos, name: x.doc.name, number: x.doc.number, kind: x.kind, qty: x.qty })) })) : [],
@@ -1026,7 +1026,7 @@ export class Files {
       const base = mappeName(d.number || d.name);
       const status = open.length ? "nicht freigegeben" : releaseText(d, (id) => app.doc(id));
       // Schweißplan (W11), sobald es Nähte gibt
-      const wRows = weldPlanRows(collectWelds(cutSrc), weldPlanOf(app.project));
+      const wRows = weldPlanRows(collectWelds([...cutSrc, ...app.assemblyWeldSources(d)]), weldPlanOf(app.project));
       const wPage = wRows.length ? [weldPlanPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", plan: weldPlanOf(app.project), rows: wRows })] : [];
       const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends, rolls, bars: cut.length && opt.listen !== false ? planBars(cut, barOptions((k) => app.prefs.get(k))) : null }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
       const files = [];

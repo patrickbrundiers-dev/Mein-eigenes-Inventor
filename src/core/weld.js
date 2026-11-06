@@ -189,6 +189,11 @@ export function weldSymbol(w, anchor, at) {
   if (side === "pfeil" || both) draw(ky, 1);
   if (side === "gegen" && !both) draw(ky - gapD, -1);
   if (both) draw(ky, -1);
+  // Anzahl gleicher Nähte (R3) in der Gabel am Ende der Bezugslinie: »12×«
+  if (w.count > 1) {
+    out.lines.push({ x1: xe, y1: ky, x2: xe + dirX * 2, y2: ky - 1.5 }, { x1: xe, y1: ky, x2: xe + dirX * 2, y2: ky + 1.5 });
+    out.texts.push({ x: xe + dirX * 2.8, y: ky + 1, text: `${w.count}×`, anchor: dirX > 0 ? "start" : "end" });
+  }
   // umlaufend: Kreis im Knick; Montagenaht: Fahne nach oben am Knick
   if (w.around) out.circles.push({ cx: kx, cy: ky, r: 1.5 });
   if (w.field) {
