@@ -1401,7 +1401,14 @@ export class DrawingEditor {
     const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
     const pos = placeBalloons(at, { x0, y0, x1, y1 });
     const [W, H] = this.sheetSize(d);
-    for (const [k, [x, y]] of pos) pos.set(k, [Math.min(W - 15, Math.max(25, x)), Math.min(H - 15, Math.max(15, y))]); // im Zeichnungsrahmen halten
+    // Schriftfeld mit Stückliste rechts unten freihalten: Kreise darin nach oben oder links heraus, je nachdem was näher ist
+    const tbH = 46 + (this.template().extra.length ? 9 : 0) + 6 * (this.bomRowsOf(d).length + 1);
+    const tbX = W - 10 - 180 - 6, tbY = H - 10 - tbH - 6;
+    for (const [k, [x0, y0]] of pos) {
+      let x = Math.min(W - 15, Math.max(25, x0)), y = Math.min(H - 15, Math.max(15, y0)); // im Zeichnungsrahmen halten
+      if (x > tbX && y > tbY) { if (y - tbY < x - tbX) y = tbY; else x = tbX; }
+      pos.set(k, [x, y]);
+    }
     const apply = () => {
       d.balloons = anchors.map((a) => ({ id: uid("b"), view: v.id, part: a.part, p3: a.p3, at: pos.get(a.part) }));
       d.bomTable = { show: true };

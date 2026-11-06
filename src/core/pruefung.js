@@ -174,3 +174,34 @@ export function releaseText(doc, docOf) {
   const when = d && !isNaN(d) ? ` ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` : "";
   return releaseLabel(st) + (st === "entwurf" ? "" : when);
 }
+
+/**
+ * Fehlende Nummern vergeben (Werkstattweg): Baugruppe ohne Nummer bekommt eine aus ihrem Namen (GELAENDER-1), jedes
+ * Bauteil ohne Teilenummer »<Baugruppennummer>-<Pos>« in Stücklisten-Reihenfolge (zweistellig). Vorhandene Nummern
+ * bleiben, belegte werden übersprungen. rows: Stücklistenzeilen {pos, part}; gibt [[doc, nummer], …] zurück, ändert nichts.
+ */
+export function missingNumbers(asm, rows, taken = []) {
+  const used = new Set(taken.filter(Boolean));
+  const out = [];
+  let base = asm.number;
+  if (!base) {
+    base = String(asm.name || "BG").replace(/ä/gi, "ae").replace(/ö/gi, "oe").replace(/ü/gi, "ue").replace(/ß/g, "ss")
+      .toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "BG";
+    let b = base, k = 2;
+    while (used.has(b)) b = `${base}-${k++}`;
+    base = b;
+    used.add(base);
+    out.push([asm, base]);
+  }
+  const seen = new Set();
+  for (const r of rows) {
+    const p = r.part;
+    if (!p || p.number || seen.has(p.id)) continue;
+    seen.add(p.id);
+    let n = `${base}-${String(r.pos).padStart(2, "0")}`, k = 2;
+    while (used.has(n)) n = `${base}-${String(r.pos).padStart(2, "0")}-${k++}`;
+    used.add(n);
+    out.push([p, n]);
+  }
+  return out;
+}
