@@ -31,7 +31,7 @@ import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, val
 import { mappeHtml } from "../core/mappe.js";
 import { sheetCount, currentSheet, switchSheet, addSheet, removeSheet, moveViewToSheet, eachSheet, sheetLabel } from "../core/blaetter.js";
 import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange, autoBreaks } from "../core/bruch.js";
-import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat, parseScale } from "../core/zeichnung.js";
+import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, edgeRun, parallelEdgeDim, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat, parseScale } from "../core/zeichnung.js";
 
 export const SHEETS = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
 export const CAMS = {
@@ -1785,7 +1785,7 @@ export class DrawingEditor {
     if (t !== "aux") this.pendingAux = null;
     if (t !== "breakout") this.pendingBo = null;
     if (t !== "proj") { this.pendingProj = null; this.projGhost = null; }
-    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten) oder einen Kreis anklicken, dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : t === "chain" ? "Kettenmaß: Punkte der Reihe nach anklicken, nach dem zweiten Punkt die Lage der Maßreihe; Esc beendet" : t === "base" ? "Bezugsmaß: Bezugspunkt, dann weitere Punkte anklicken, nach dem zweiten Punkt die Lage; Esc beendet" : t === "arclen" ? "Bogenlänge: Bogen in einer Ansicht anklicken" : t === "angle" ? "Winkelmaß: zwei Kanten derselben Ansicht anklicken" : t === "center" ? "Mittelpunkt: Kreis oder Bogen anklicken (nochmal klicken entfernt)" : "");
+    this.app.setHint(t === "dim" ? "Bemaßung: zwei Fangpunkte (Ecken, Kreismitten), einen Kreis oder eine Kante anklicken (zweite Kante: Abstand oder Winkel), dann Lage klicken" : t === "text" ? "Text: Position auf dem Blatt anklicken" : t === "leader" ? "Hinweis: Stelle in einer Ansicht anklicken (Bohrung, Fase oder Kante) – der Text wird vorgeschlagen" : t === "aux" ? "Hilfsansicht: schräge Kante anklicken" : t === "breakout" ? "Ausbruch: Mitte des Bereichs klicken, dann den Rand" : t === "surface" ? "Oberfläche: Kante in einer Ansicht anklicken" : t === "gdt" ? "Form- und Lagetoleranz: Element in einer Ansicht anklicken" : t === "datum" ? "Bezug: Bezugsfläche (Kante) in einer Ansicht anklicken" : t === "chain" ? "Kettenmaß: Punkte der Reihe nach anklicken, nach dem zweiten Punkt die Lage der Maßreihe; Esc beendet" : t === "base" ? "Bezugsmaß: Bezugspunkt, dann weitere Punkte anklicken, nach dem zweiten Punkt die Lage; Esc beendet" : t === "arclen" ? "Bogenlänge: Bogen in einer Ansicht anklicken" : t === "angle" ? "Winkelmaß: zwei Kanten derselben Ansicht anklicken" : t === "center" ? "Mittelpunkt: Kreis oder Bogen anklicken (nochmal klicken entfernt)" : "");
     this.app.ribbon.render();
     this.render();
   }
@@ -2115,6 +2115,22 @@ export class DrawingEditor {
   dimClick(sx, sy) {
     const d = this.doc;
     const pd = this.pendingDim;
+    // nach einer Kante: zweite Kante → Abstand (parallel) oder Winkel; sonst setzt der Klick die Lage
+    if (pd?.ready && pd.edge && !this.snapAt(sx, sy)) {
+      const e2 = this.edgeHit(sx, sy);
+      if (e2 && e2.view === pd.edge.view && (e2.run.a !== pd.edge.run.a || e2.run.b !== pd.edge.run.b)) {
+        const pe = parallelEdgeDim(pd.edge.run, e2.run);
+        if (pe) { this.pendingDim = { ready: true, m: { id: uid("m"), view: e2.view, ...pe, off: 8, fixedKind: pe.kind !== "a" } }; this.render(); return; }
+        const g = angleFromSegments(pd.edge.seg, pd.edge.q, e2.seg, e2.q);
+        if (g) {
+          const m = { id: uid("m"), view: e2.view, kind: "ang", ...g, off: 12 };
+          this.app.edit("Winkelmaß", () => { d.dims.push(m); }, { rebuild: false });
+          this.pendingDim = null;
+          this.render();
+          return;
+        }
+      }
+    }
     if (pd?.ready) {
       const m = pd.m;
       const v = d.views.find((x) => x.id === m.view);
@@ -2137,7 +2153,15 @@ export class DrawingEditor {
     const s = this.snapAt(sx, sy);
     if (!s) {
       const c = this.circleAt(sx, sy);
-      if (c) { this.pendingDim = { ready: true, m: { id: uid("m"), view: c.view, kind: c.full ? "dia" : "rad", circle: c.circle, angle: -Math.PI / 4 } }; this.render(); }
+      if (c) { this.pendingDim = { ready: true, m: { id: uid("m"), view: c.view, kind: c.full ? "dia" : "rad", circle: c.circle, angle: -Math.PI / 4 } }; this.render(); return; }
+      // Kante: ihre Länge folgt der Maus; zweite Kante gibt Abstand oder Winkel
+      const e = !pd && this.edgeHit(sx, sy);
+      if (e) {
+        this.pendingDim = { ready: true, edge: e, m: { id: uid("m"), view: e.view, kind: "a", p1: e.run.a, p2: e.run.b, off: 8 } };
+        this.previewDim(sx, sy);
+        this.app.setHint("Kante gewählt: Lage klicken für ihre Länge – oder zweite Kante: parallel = Abstand, schräg = Winkel");
+        this.render();
+      }
       return;
     }
     if (!pd) { this.pendingDim = { first: s, p1s: s.s }; this.render(); return; }
@@ -2156,9 +2180,22 @@ export class DrawingEditor {
       const A = xf.to(...m.p1), B = xf.to(...m.p2);
       const x0 = Math.min(A[0], B[0]), x1 = Math.max(A[0], B[0]), y0 = Math.min(A[1], B[1]), y1 = Math.max(A[1], B[1]);
       const outX = sx < x0 || sx > x1, outY = sy < y0 || sy > y1;
-      m.kind = Math.abs(A[1] - B[1]) < 1e-6 ? "h" : Math.abs(A[0] - B[0]) < 1e-6 ? "v" : outY && !outX ? "h" : outX && !outY ? "v" : "a";
+      if (!m.fixedKind) m.kind = Math.abs(A[1] - B[1]) < 1e-6 ? "h" : Math.abs(A[0] - B[0]) < 1e-6 ? "v" : outY && !outX ? "h" : outX && !outY ? "v" : "a";
       m.off = this.offsetFor(m, xf, sx, sy);
     }
+  }
+  /** Getroffene gerade Kante einer Normalansicht: { view, seg, q, run } (run = ganze Kante) oder null */
+  edgeHit(sx, sy) {
+    const d = this.doc, rects = this.sheetRects(d);
+    for (const v of d.views) {
+      const r = rects[v.id]?.rect;
+      if (v.type === "iso" || !r || sx < r[0] - 3 || sx > r[2] + 3 || sy < r[1] - 3 || sy > r[3] + 3) continue;
+      const p = this.viewGeom(v);
+      if (!p) continue;
+      const q = this.viewXf(v).from(sx, sy), seg = nearestSegment(p.visible, q, 1.5 / (v.scale * this.zoom));
+      if (seg) return { view: v.id, seg, q, run: edgeRun(p.visible, seg) };
+    }
+    return null;
   }
   async textClick(sx, sy) {
     const text = await promptDialog("Text", "Hinweistext", "");

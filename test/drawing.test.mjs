@@ -817,3 +817,27 @@ test("Zeichnungssatz: jedes Blatt mit eigener Quelle und Schriftfeld, Verwendung
   assert.equal(old.source.id, "a");
   assert.equal(old.title.benennung, "A");
 });
+
+test("Bemaßung per Kante: ganze Kante, Abstand paralleler Kanten, Kettenmaß statt Treppe", async () => {
+  const { edgeRun, parallelEdgeDim } = await import("../src/core/zeichnung.js");
+  const pl = [[0, 0], [40, 0], [100, 0], [100, 50], [0, 50]];
+  assert.deepEqual(edgeRun([pl], { a: pl[1], b: pl[2] }), { a: [0, 0], b: [100, 0] }, "gleichgerichtete Stücke zusammen");
+  const e1 = { a: [0, 0], b: [100, 0] }, e2 = { a: [20, 30], b: [200, 30] };
+  const m = parallelEdgeDim(e1, e2);
+  assert.equal(m.kind, "v");
+  assert.equal(Math.abs(m.p2[1] - m.p1[1]), 30);
+  assert.equal(m.p1[0], 60, "Mitte des gemeinsamen Bereichs");
+  assert.equal(parallelEdgeDim(e1, { a: [0, 0], b: [0, 10] }), null, "nicht parallel");
+  const s = parallelEdgeDim({ a: [0, 0], b: [10, 10] }, { a: [0, 10], b: [10, 20] });
+  assert.equal(s.kind, "a");
+  assert.ok(Math.abs(Math.hypot(s.p2[0] - s.p1[0], s.p2[1] - s.p1[1]) - 10 / Math.SQRT2) < 1e-9);
+  // Stäbe zwischen Pfosten: 3 Läufe gleicher Teilung → eine Kette statt verschachtelter Paarmaße
+  const { planAutoDims, layoutAutoDims, dimLabel } = await import("../src/core/autodims.js");
+  const xs = [10, 20, 30, 40, 60, 70, 80, 90];
+  const views = [{ id: "v", axes: [null, null], bbox: { x0: 0, y0: 0, x1: 100, y1: 20 }, arcs: xs.map((x) => ({ cx: x, cy: 10, r: 0.01, full: true })), lines: [], holes: [] }];
+  const out = planAutoDims(views, { wall: true, noRadii: true }).filter((x) => x.kind === "h");
+  assert.ok(out.every((x) => x.chain), "alle Maße in einer Kette");
+  assert.deepEqual(out.map(dimLabel), ["10", "3× 10", "20", "3× 10"]);
+  layoutAutoDims(out, { v: { to: (u, w) => [u, w], rect: [0, 0, 100, 20], scale: 1 } });
+  assert.equal(new Set(out.map((x) => x.off)).size, 1, "eine Reihe");
+});
