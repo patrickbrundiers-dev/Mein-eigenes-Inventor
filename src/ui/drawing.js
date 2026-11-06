@@ -1421,7 +1421,10 @@ export class DrawingEditor {
     const dx = B1[0] - A1[0], dy = B1[1] - A1[1], L = Math.hypot(dx, dy) || 1;
     const ux = dx / L, uy = dy / L;
     // enge Maße (DIN 406-11): Pfeile von außen, Text neben die Maßlinie
-    const tight = L < 7, tw = textWidth(txt) * ((this.dimText || 3.5) / 3.5), outside = L < tw + 7;
+    // im Kettenmaß (m.chain) steht der Text über der Maßlinie, solange er zwischen die Hilfslinien passt; sonst darüber
+    // versetzt statt daneben, damit er nicht auf dem Nachbarmaß der Kette landet
+    const tw = textWidth(txt) * ((this.dimText || 3.5) / 3.5), tight = L < 7;
+    const raise = !!m.chain && L < tw + 1, outside = !m.chain && L < tw + 7;
     const tail = tight ? 4 : 0, far = outside ? tw + 3 : 0;
     const P0 = [A1[0] - ux * tail, A1[1] - uy * tail], P1 = [B1[0] + ux * Math.max(tail, far), B1[1] + uy * Math.max(tail, far)];
     g.append(svgEl("path", { d: ext(A, A1) + ext(B, B1) + `M${r3(P0[0])} ${r3(P0[1])}L${r3(P1[0])} ${r3(P1[1])}` }));
@@ -1432,7 +1435,8 @@ export class DrawingEditor {
     if (rot <= -90) rot += 180;
     const mx = outside ? B1[0] + ux * (Math.max(tail, 1) + tw / 2 + 1) : (A1[0] + B1[0]) / 2, my = outside ? B1[1] + uy * (Math.max(tail, 1) + tw / 2 + 1) : (A1[1] + B1[1]) / 2;
     const nrm = [Math.sin((rot * Math.PI) / 180), -Math.cos((rot * Math.PI) / 180)];
-    g.append(text(mx + nrm[0] * 1.2, my + nrm[1] * 1.2, rot));
+    const lift = raise ? 5.6 : 1.2;
+    g.append(text(mx + nrm[0] * lift, my + nrm[1] * lift, rot));
     return g;
   }
   // ---------- Positionsnummern und Stückliste (nur Baugruppen) ----------
@@ -2318,24 +2322,33 @@ export class DrawingEditor {
     for (const o of flat) {
       const c = partCenter(this.app.results.get(o.part.id));
       if (!c) continue;
-      if (!groups.has(o.part.id)) groups.set(o.part.id, []);
-      groups.get(o.part.id).push(matApply(o.matrix, c));
+      // gleiche Bauteilart zusammen, auch wenn sie sich im Detail unterscheiden (»Pfosten«, »Pfosten (2)« – End- und Mittelpfosten)
+      const gk = String(o.part.genName || o.part.name).replace(/\s*\(\d+\)$/, "");
+      if (!groups.has(gk)) groups.set(gk, []);
+      groups.get(gk).push(matApply(o.matrix, c));
     }
-    for (const w of views) {
+    // je Ansicht ein anderes Bauteil (Vorderansicht Stäbe, Draufsicht Pfosten), Vorderansicht zuerst
+    const usedGroups = new Set();
+    const rank = { front: 0, top: 1, left: 2 };
+    const order = [...views].sort((a, b) => (rank[cands.find((x) => x.id === a.id)?.type] ?? 9) - (rank[cands.find((x) => x.id === b.id)?.type] ?? 9));
+    for (const w of order) {
       const v = cands.find((x) => x.id === w.id), cam = this.viewCam(d, v), bb = w.bbox;
       w.lines = []; w.holes = []; w.arcs = [];
       const horiz = bb.x1 - bb.x0 >= bb.y1 - bb.y0;
       let best = null;
-      for (const pts of groups.values()) {
-        if (pts.length < 2) continue;
+      for (const [gid, pts] of groups) {
+        if (pts.length < 2 || usedGroups.has(gid)) continue;
         const q = pts.map((p) => projectPoint(p, cam.dir, cam.up)), u = q.map((x) => (horiz ? x[0] : x[1]));
         const span = Math.max(...u) - Math.min(...u), distinct = new Set(u.map((x) => Math.round(x))).size;
         if (distinct < 2 || span < 0.3 * (horiz ? bb.x1 - bb.x0 : bb.y1 - bb.y0)) continue;
-        if (!best || distinct > best.distinct) best = { u: [...new Set(u.map((x) => Math.round(x * 10) / 10))], distinct };
+        if (!best || distinct > best.distinct) best = { gid, u: [...new Set(u.map((x) => Math.round(x * 10) / 10))], distinct };
       }
       if (!best) continue;
+      usedGroups.add(best.gid);
       const mid = horiz ? (bb.y0 + bb.y1) / 2 : (bb.x0 + bb.x1) / 2;
-      w.arcs = best.u.map((x) => ({ cx: horiz ? x : mid, cy: horiz ? mid : x, r: 0.01, full: true }));
+      // Ersatzkreise je Ansicht mit eigenem Mini-Radius: planAutoDims bemaßt jeden Radius nur einmal im Blatt
+      const rr = 0.01 * (1 + usedGroups.size);
+      w.arcs = best.u.map((x) => ({ cx: horiz ? x : mid, cy: horiz ? mid : x, r: rr, full: true }));
     }
     return true;
   }
