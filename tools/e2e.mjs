@@ -1439,6 +1439,9 @@ try {
         let done = false;
         const run = a.files.exportMappe(a.doc("beispiel_bg")).finally(() => { done = true; });
         while (!done) {
+          // Inhalt der Mappe (A5): Vorgabe alles → »Erstellen«
+          const mk = [...document.querySelectorAll(".dialog footer .btn")].find((x) => x.textContent === "Erstellen");
+          if (mk) mk.click();
           const b = [...document.querySelectorAll(".dialog footer .btn")].find((x) => x.textContent === "Trotzdem erstellen");
           if (b) { asked = b.closest(".dialog").querySelector(".body").textContent; b.click(); }
           await new Promise((r) => setTimeout(r, 50));
@@ -1452,6 +1455,27 @@ try {
     });
     step("Einzelteilzeichnungen und Fertigungsmappe", ez.after === 3 && ez.made === 3 - ez.before && ez.made > 0 && ez.again === 0 && ez.info.every((x) => x.views >= 2 && x.dims > 0 && !x.pend) && /_Fertigungsmappe\.zip$/.test(ez.name) && ez.pages >= 4 && ez.lists && ez.dxf >= 3 && ez.pos && ez.laser && ez.step && ez.xlsx,
       JSON.stringify(ez));
+  }
+
+  // Werkstattweg mit Zeitgrenze (C1): Geländer als Baugruppe → Zeichnung mit Ansichten, Maßen und Positionsnummern,
+  // dazu DSTV-NC. Fällt auf, wenn eine Ansicht wieder minutenlang rechnet (achsparallele HLR war einmal 8 Minuten).
+  {
+    const t1 = Date.now();
+    await evalApp(() => { const a = window.__werkcad; a.generatorAssembly("gelaender"); });
+    await idle(240000);
+    const tBuild = (Date.now() - t1) / 1000;
+    const t2 = Date.now();
+    await evalApp(() => { const a = window.__werkcad, asm = a.project.docs.filter((x) => x.generator?.gen === "gelaender").pop(); a.newDrawing({ kind: "assembly", id: asm.id }); });
+    await page.waitForFunction(() => { const d = window.__werkcad.activeDoc(); return d?.kind === "drawing" && !d.pendingAutoViews && d.views.length >= 2 && d.balloons?.length > 0; }, null, { timeout: 240000 }).catch(() => null);
+    await idle(240000);
+    const tDraw = (Date.now() - t2) / 1000;
+    const ws = await evalApp(async () => {
+      const a = window.__werkcad, d = a.activeDoc(), asm = a.doc(d.source.id);
+      const t = Date.now(); const nc = await a.files.dstvFiles(asm);
+      return { views: d.views.length, dims: d.dims.length, balloons: d.balloons?.length || 0, balloonViews: new Set((d.balloons || []).map((b) => b.view)).size, nc: nc.files.length, tNc: (Date.now() - t) / 1000 };
+    });
+    step("Werkstattweg Geländer mit Zeitgrenze", ws.views >= 3 && ws.dims >= 2 && ws.balloons >= 5 && ws.balloonViews >= 2 && ws.nc > 0 && tBuild < 240 && tDraw < 180 && ws.tNc < 120,
+      JSON.stringify({ ...ws, tBuild, tDraw }));
   }
 
   // Problemliste (FU15) und Freigabe (FU13): Fehler einbauen, Liste zeigt ihn, Klick springt zum Feature;

@@ -601,7 +601,7 @@ export class Ribbon {
             B("dd_posalign", "Pos. ausrichten", "align", { disabled: !dr.doc?.balloons?.length, run: () => dr.alignBalloonRows() }),
             B("dd_bom", "Stückliste", "bom", { on: !!dr.doc?.bomTable?.show, run: () => dr.toggleBomTable() }),
           ] },
-          { label: "Blatt", buttons: [B("dd_fit", "Blatt einpassen", "fit", { run: () => dr.fitSheet() }), B("dd_tpl", "Vorlage", "settings", { run: () => dr.templateDialog() })] },
+          { label: "Blatt", buttons: [B("dd_fit", "Blatt einpassen", "fit", { run: () => dr.fitSheet() }), B("dd_sheet", "Neues Blatt", "plus", { run: () => dr.newSheet() }), B("dd_tpl", "Vorlage", "settings", { run: () => dr.templateDialog() })] },
         ] },
         this.exportTab("drawing"),
       ];

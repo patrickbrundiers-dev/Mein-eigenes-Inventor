@@ -15,7 +15,7 @@ import { v3, matApply, matApplyDir, placementMatrix, decomposePlacement } from "
 import { flattenAssembly } from "../core/subasm.js";
 import { assemblyForView, viewStateKey } from "../core/darstellungen.js";
 import { hatchLines } from "../core/hatch.js";
-import { balloonAnchors, placeBalloons, projectPoint } from "../core/balloons.js";
+import { balloonAnchors, placeBalloons, placeBalloonsEdges, assignBalloonViews, projectPoint, partCenter } from "../core/balloons.js";
 import { gridViewSvg } from "./achsraster.js";
 import { weldSymbol } from "../core/weld.js";
 import { clipProjection } from "../core/clip.js";
@@ -27,6 +27,8 @@ import { bendNote, bendTableCells } from "../core/blech.js";
 import { sheetFlatView } from "../core/blechplus.js";
 import { bendRule } from "../core/bendtable.js";
 import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
+import { mappeHtml } from "../core/mappe.js";
+import { sheetCount, currentSheet, switchSheet, addSheet, removeSheet, moveViewToSheet, eachSheet, sheetLabel } from "../core/blaetter.js";
 import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange, autoBreaks } from "../core/bruch.js";
 import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat, parseScale } from "../core/zeichnung.js";
 
@@ -71,6 +73,50 @@ export class DrawingEditor {
       this.offscreen = null;
       this.proj = keep;
     }
+  }
+  /** Alle Blätter einer Zeichnung exportieren (B2): je Blatt { svg, dxf, width, height, name } – Name ab Blatt 2 mit _Blatt_k */
+  async sheetExports(d) {
+    if (sheetCount(d) < 2) return [await this.sheetExport(d)];
+    return eachSheet(d, async (k) => { const r = await this.sheetExport(d); return k ? { ...r, name: `${r.name}_Blatt_${k + 1}` } : r; });
+  }
+  /** Zum Blatt k der geöffneten Zeichnung wechseln (B2) */
+  goSheet(k) {
+    const d = this.doc;
+    if (!d || !switchSheet(d, k)) return;
+    this.sel = null;
+    this.proj = new Map();
+    this.app.changed({ rebuild: false });
+    this.update().then(() => this.fitSheet?.());
+  }
+  newSheet() {
+    const d = this.doc;
+    if (!d) return;
+    this.app.edit("Neues Blatt", () => { addSheet(d); }, { rebuild: false });
+    this.sel = null;
+    this.proj = new Map();
+    this.update().then(() => this.fitSheet?.());
+    toast(`Blatt ${currentSheet(d) + 1} angelegt – Ansichten über »Ansicht hinzufügen« oder in einer Ansicht »Auf Blatt …«`, { kind: "ok" });
+  }
+  deleteSheet() {
+    const d = this.doc;
+    if (!d || sheetCount(d) < 2) return;
+    const k = currentSheet(d);
+    this.app.edit("Blatt löschen", () => { removeSheet(d, k); }, { rebuild: false });
+    this.sel = null;
+    this.proj = new Map();
+    this.update().then(() => this.fitSheet?.());
+  }
+  /** Ansicht samt Maßen und Positionsnummern auf ein anderes Blatt (neues Blatt: k = Anzahl) */
+  viewToSheet(id, k) {
+    const d = this.doc;
+    if (!d) return;
+    const cur = currentSheet(d);
+    this.app.edit("Ansicht auf anderes Blatt", () => {
+      if (k >= sheetCount(d)) { addSheet(d); switchSheet(d, cur); }
+      moveViewToSheet(d, id, k);
+    }, { rebuild: false });
+    this.sel = null;
+    this.render();
   }
   /**
    * Nur das Blatt als SVG-Element für die Ansicht »Nebeneinander« (Q5). Läuft ohne die Zeichnung zu öffnen; wurde währenddessen
@@ -152,7 +198,11 @@ export class DrawingEditor {
       await this.autoViews({ silentUndo: true, autoFormat: true });
       if (d.pendingAutoDims) { delete d.pendingAutoDims; await this.autoDims({ silent: true }); }
       // Baugruppe: Positionsnummern und Stückliste gleich mit (Platz dafür hält autoViews über dem Schriftfeld frei)
-      else if (this.app.doc(d.source.id)?.kind === "assembly" && !d.balloons?.length) this.autoBalloons({ silent: true });
+      else if (this.app.doc(d.source.id)?.kind === "assembly" && !d.balloons?.length) {
+        // Gesamtmaße und Teilungen (B3), danach Positionsnummern an die freien Seiten
+        await this.autoDims({ silent: true });
+        this.autoBalloons({ silent: true });
+      }
       return;
     }
     this.deriveFlats(d);
@@ -1411,19 +1461,49 @@ export class DrawingEditor {
     const src = d?.source && this.app.doc(d.source.id);
     const say = (t) => (silent ? null : toast(t));
     if (src?.kind !== "assembly") return say("Positionsnummern gibt es nur in Zeichnungen von Baugruppen");
-    const v = (this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id)) || d.views.find((x) => x.type === "iso") || d.views[0];
+    const picked = this.sel?.type === "view" && d.views.find((x) => x.id === this.sel.id);
+    const v = picked || d.views.find((x) => x.type === "iso") || d.views[0];
     if (!v || !this.proj.get(v.id)) return say("Zuerst Ansichten erzeugen");
     // Positionsnummern je Bauteil der Mengenstückliste, auch aus Unterbaugruppen
     const st = this.viewState(d, v);
     const flat = { components: flattenAssembly(st ? assemblyForView(src, { state: st }) : src, (id) => this.app.doc(id), { bom: true }).map((o) => ({ part: o.part.id, ...decomposePlacement(o.matrix) })) };
     const anchors = balloonAnchors(flat, (pid) => this.app.results.get(pid));
     if (!anchors.length) return say("Die Bauteile sind noch nicht berechnet – bitte kurz warten");
-    const cam = this.viewCam(d, v);
-    const xf = this.viewXf(v);
-    const at = anchors.map((a) => ({ key: a.part, at: xf.to(...projectPoint(a.p3, cam.dir, cam.up)) }));
-    const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
-    const pos = placeBalloons(at, { x0, y0, x1, y1 });
+    // Ansicht gewählt: alle Kreise dort; sonst auf alle Ansichten verteilt (B1), Normalansichten mit Kreisen an den freien Seiten
+    const cands = (picked ? [v] : d.views.filter((x) => this.proj.get(x.id) && x.type !== "detail")).map((x) => {
+      const cam = this.viewCam(d, x), xf = this.viewXf(x);
+      const [x0, y0] = xf.to(xf.bb.x0, xf.bb.y1), [x1, y1] = xf.to(xf.bb.x1, xf.bb.y0);
+      const at = new Map(anchors.map((a) => [a.part, xf.to(...projectPoint(a.p3, cam.dir, cam.up))]));
+      return { id: x.id, iso: x.type === "iso" || picked, box: { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) }, at };
+    });
     const [W, H] = this.sheetSize(d);
+    const tbH0 = 46 + (this.template().extra.length ? 9 : 0) + 6 * (this.bomRowsOf(d).length + 1);
+    const tbBox = { x0: W - 10 - 180, y0: H - 10 - tbH0, x1: W - 10, y1: H - 10 };
+    for (const c of cands) {
+      if (c.iso) { const R = Math.hypot(c.box.x1 - c.box.x0, c.box.y1 - c.box.y0) / 2 + 14; c.cap = Math.floor((0.7 * 2 * Math.PI * R) / 10); continue; }
+      // Seite frei, wenn dort keine andere Ansicht und nicht das Schriftfeld zu nah liegt und der Rahmen Platz lässt;
+      // mit Maßen an der Ansicht stehen die Kreise weiter außen (hinter den Maßlinien)
+      c.gap = (d.dims || []).some((m) => m.view === c.id) ? 24 : 8;
+      const need = c.gap + 20;
+      const others = [...cands.filter((o) => o !== c).map((o) => o.box), tbBox];
+      const free = (sd) => others.every((o) => {
+        const ov = sd === "t" || sd === "b" ? o.x0 < c.box.x1 && o.x1 > c.box.x0 : o.y0 < c.box.y1 && o.y1 > c.box.y0;
+        if (!ov) return true;
+        const dist = sd === "t" ? c.box.y0 - o.y1 : sd === "b" ? o.y0 - c.box.y1 : sd === "l" ? c.box.x0 - o.x1 : o.x0 - c.box.x1;
+        return dist < -1 || dist > need;
+      }) && (sd === "t" ? c.box.y0 > 10 + need : sd === "b" ? c.box.y1 < H - 10 - need : sd === "l" ? c.box.x0 > 20 + need : c.box.x1 < W - 10 - need);
+      c.sides = [..."tblr"].filter(free).join("");
+      c.cap = c.sides ? Math.floor([...c.sides].reduce((t, sd) => t + (sd === "t" || sd === "b" ? c.box.x1 - c.box.x0 : c.box.y1 - c.box.y0), 0) / 10) : 0;
+    }
+    const usable = cands.filter((c) => c.cap > 0);
+    const assign = usable.length > 1 ? assignBalloonViews(usable, anchors.map((a) => a.part), { prefer: usable.find((c) => c.iso)?.id }) : new Map(anchors.map((a) => [a.part, (usable[0] || cands[0]).id]));
+    const pos = new Map(), viewOf = new Map();
+    for (const c of cands) {
+      const list = anchors.filter((a) => assign.get(a.part) === c.id).map((a) => ({ key: a.part, at: c.at.get(a.part) }));
+      if (!list.length) continue;
+      const p = c.iso ? placeBalloons(list, c.box) : placeBalloonsEdges(list, c.box, { sides: c.sides, gap: c.gap });
+      for (const [k, q] of p) { pos.set(k, q); viewOf.set(k, c.id); }
+    }
     // Schriftfeld mit Stückliste rechts unten freihalten: Kreise darin nach oben oder links heraus, je nachdem was näher ist
     const tbH = 46 + (this.template().extra.length ? 9 : 0) + 6 * (this.bomRowsOf(d).length + 1);
     const tbX = W - 10 - 180 - 6, tbY = H - 10 - tbH - 6;
@@ -1433,7 +1513,7 @@ export class DrawingEditor {
       pos.set(k, [x, y]);
     }
     const apply = () => {
-      d.balloons = anchors.map((a) => ({ id: uid("b"), view: v.id, part: a.part, p3: a.p3, at: pos.get(a.part) }));
+      d.balloons = anchors.filter((a) => pos.has(a.part)).map((a) => ({ id: uid("b"), view: viewOf.get(a.part) || v.id, part: a.part, p3: a.p3, at: pos.get(a.part) }));
       d.bomTable = { show: true };
     };
     if (silent) { apply(); this.app.changed({ rebuild: false }); }
@@ -1590,7 +1670,7 @@ export class DrawingEditor {
     label(x0 + 120, y0 + 28, "Gezeichnet"); value(x0 + 120, y0 + 34.8, t.ersteller, 2.8);
     label(x0, y0 + 36, "Zeichnungsnummer"); value(x0, y0 + 44.3, t.nummer || src?.number || "", 4.2);
     label(x0 + 120, y0 + 36, "Rev."); value(x0 + 120, y0 + 44.3, currentRevision(d), 3.5);
-    label(x0 + 150, y0 + 36, "Blatt"); value(x0 + 150, y0 + 44.3, t.blatt || "1/1", 3.5);
+    label(x0 + 150, y0 + 36, "Blatt"); value(x0 + 150, y0 + 44.3, t.blatt || sheetLabel(d), 3.5);
     // Projektionssymbol Methode 1
     const sx = x0 + 70, sy = y0 + 15;
     const sym = svgEl("g", { "stroke-width": 0.25 });
@@ -2123,7 +2203,8 @@ export class DrawingEditor {
       const c = this.viewCam(d, v), p = this.proj.get(v.id);
       return { id: v.id, axes: v.type === "flat" ? ["F1", "F2"] : viewAxes(c.dir, c.up), bbox: p.bbox, arcs: p.arcs, lines: p.visible, holes };
     });
-    const planned = planAutoDims(views, used);
+    // Baugruppe (B3): nur Gesamtmaße und Teilungen gleicher Teile (Pfostenabstände), keine Einzelheiten der Bauteile
+    const planned = src?.kind === "assembly" ? this.assemblyDimViews(d, src, views, cands) && planAutoDims(views, { ...used, wall: true, noRadii: true }).filter((m) => m.kind !== "dia" && m.kind !== "rad" && m.kind !== "fase") : planAutoDims(views, used);
     // Stab aus Generator/Gestell: Bohrungen längs des Stabs in der Vorderansicht bemaßen
     const front = used.profile?.member && cands.find((v) => v.type === "front" && views.some((x) => x.id === v.id));
     if (front) planned.push(...(await this.memberHoleDims(d, front)));
@@ -2191,6 +2272,39 @@ export class DrawingEditor {
    * Bohrbild eines Stabs, dessen Bohrungen die Ansicht von der Seite zeigt (Rohr mit Bohrungen für Stäbe): Lagemaße der
    * Bohrungsachsen längs des Stabs (Teilung oder Bezugsmaße wie bei Kreisen) und je Ø ein Hinweis »n× Ø d«.
    */
+  /**
+   * Baugruppenzeichnung: Ansichten für planAutoDims auf Gesamtmaße und Teilungen umstellen. Je Ansicht das Bauteil, das am
+   * öftesten vorkommt und dessen Exemplare quer zur Blickrichtung nebeneinander stehen (Pfosten, Stäbe), als Teilung längs
+   * der Hauptrichtung; Linien und Bohrungen der Bauteile zählen nicht. Gibt true zurück.
+   */
+  assemblyDimViews(d, src, views, cands) {
+    let flat = [];
+    try { flat = flattenAssembly(src, (id) => this.app.doc(id), { bom: true }); } catch { /* ohne Teilungen */ }
+    const groups = new Map();
+    for (const o of flat) {
+      const c = partCenter(this.app.results.get(o.part.id));
+      if (!c) continue;
+      if (!groups.has(o.part.id)) groups.set(o.part.id, []);
+      groups.get(o.part.id).push(matApply(o.matrix, c));
+    }
+    for (const w of views) {
+      const v = cands.find((x) => x.id === w.id), cam = this.viewCam(d, v), bb = w.bbox;
+      w.lines = []; w.holes = []; w.arcs = [];
+      const horiz = bb.x1 - bb.x0 >= bb.y1 - bb.y0;
+      let best = null;
+      for (const pts of groups.values()) {
+        if (pts.length < 2) continue;
+        const q = pts.map((p) => projectPoint(p, cam.dir, cam.up)), u = q.map((x) => (horiz ? x[0] : x[1]));
+        const span = Math.max(...u) - Math.min(...u), distinct = new Set(u.map((x) => Math.round(x))).size;
+        if (distinct < 2 || span < 0.3 * (horiz ? bb.x1 - bb.x0 : bb.y1 - bb.y0)) continue;
+        if (!best || distinct > best.distinct) best = { u: [...new Set(u.map((x) => Math.round(x * 10) / 10))], distinct };
+      }
+      if (!best) continue;
+      const mid = horiz ? (bb.y0 + bb.y1) / 2 : (bb.x0 + bb.x1) / 2;
+      w.arcs = best.u.map((x) => ({ cx: horiz ? x : mid, cy: horiz ? mid : x, r: 0.01, full: true }));
+    }
+    return true;
+  }
   async memberHoleDims(d, v) {
     const src = d.source && this.app.doc(d.source.id);
     if (src?.kind !== "part") return [];
@@ -2403,12 +2517,17 @@ export class DrawingEditor {
           P.text("Beschriftung", v.label || "", (t) => app.edit("Beschriftung", () => { v.label = t; }, { rebuild: false })),
           ...this.stateProps(P, d, v),
           ...this.breakProps(P, v),
-          h("div", { class: "btn-row" }, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.addSectionDialog() }, "Schnitt erzeugen") : null, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.startAux() }, "Hilfsansicht") : null, h("button", { class: "btn", onclick: () => this.startDetail() }, "Detail erzeugen"), h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Ansicht löschen"))));
+          h("div", { class: "btn-row" }, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.addSectionDialog() }, "Schnitt erzeugen") : null, v.type !== "iso" ? h("button", { class: "btn", onclick: () => this.startAux() }, "Hilfsansicht") : null, h("button", { class: "btn", onclick: () => this.startDetail() }, "Detail erzeugen"), h("button", { class: "btn danger", onclick: () => this.deleteView(v.id) }, "Ansicht löschen")),
+          h("div", { class: "btn-row" }, ...Array.from({ length: sheetCount(d) + 1 }, (_, k) => k).filter((k) => k !== currentSheet(d)).map((k) => h("button", { class: "btn", onclick: () => this.viewToSheet(v.id, k) }, k < sheetCount(d) ? `Auf Blatt ${k + 1}` : "Auf neues Blatt")))));
         return out;
       }
     }
     const src = d.source && app.doc(d.source.id);
+    const nSheets = sheetCount(d), curSheet = currentSheet(d);
     out.push(P.section("Blatt",
+      h("div", { class: "btn-row sheet-tabs" }, ...Array.from({ length: nSheets }, (_, k) => h("button", { class: "btn" + (k === curSheet ? " primary" : ""), title: `Blatt ${k + 1}`, onclick: () => this.goSheet(k) }, `Blatt ${k + 1}`)),
+        h("button", { class: "btn", title: "Neues Blatt (Übersicht + Details)", onclick: () => this.newSheet() }, "+ Blatt"),
+        nSheets > 1 ? h("button", { class: "btn danger", title: "Dieses Blatt löschen", onclick: () => this.deleteSheet() }, "Blatt löschen") : null),
       P.seg("Format", Object.keys(SHEETS).map((k) => [k, k]), d.sheet.format, (f) => app.edit("Format", () => { d.sheet.format = f; }, { rebuild: false })),
       P.seg("Lage", [["quer", "Quer"], ["hoch", "Hoch"]], d.sheet.orientation, (o) => app.edit("Lage", () => { d.sheet.orientation = o; }, { rebuild: false })),
       h("dl", { class: "kv" }, h("dt", {}, "Quelle"), h("dd", {}, src ? src.name : "–")),
@@ -2443,6 +2562,7 @@ export class DrawingEditor {
   }
   async exportPdf() {
     const d = this.doc;
+    if (sheetCount(d) > 1) return this.exportPdfSheets(d);
     const [W, H] = this.sheetSize(d);
     const svg = this.exportSvgString();
     if (window.werkcad?.printPdf) {
@@ -2453,6 +2573,26 @@ export class DrawingEditor {
     const w = window.open("", "_blank");
     if (!w) return toast("Druckfenster wurde blockiert", { kind: "err" });
     w.document.write(`<!doctype html><html><head><title>${this.fileBase()}</title><style>@page{size:${W}mm ${H}mm;margin:0}html,body{margin:0}svg{display:block;width:${W}mm;height:${H}mm}</style></head><body>${svg.replace(/^<\?xml[^>]*>/, "")}</body></html>`);
+    w.document.close();
+    setTimeout(() => w.print(), 300);
+  }
+  /** Zeichnung mit mehreren Blättern als ein PDF (je Blatt eine Seite) */
+  async exportPdfSheets(d) {
+    const pages = await eachSheet(d, async () => {
+      this.proj = new Map();
+      await this.update();
+      const [W, H] = this.sheetSize(d);
+      return { svg: this.exportSvgString().replace(/^<\?xml[^>]*>/, ""), width: W, height: H };
+    });
+    this.proj = new Map(); await this.update();
+    const bridge = this.app.files?.bridge, html = mappeHtml(pages, { title: this.fileBase() });
+    if (bridge?.renderPdf) {
+      await this.app.files.saveBinary(new Uint8Array(await bridge.renderPdf(html)), this.fileBase() + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+      return;
+    }
+    const w = window.open("", "_blank");
+    if (!w) return toast("Druckfenster wurde blockiert", { kind: "err" });
+    w.document.write(html);
     w.document.close();
     setTimeout(() => w.print(), 300);
   }

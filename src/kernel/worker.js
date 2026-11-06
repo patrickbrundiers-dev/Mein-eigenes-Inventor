@@ -200,6 +200,7 @@ const handlers = {
       try {
         if (b.kind === "member") {
           if (m.bends?.length || m.knicks) return { index, name, kind: "skip", reason: "gebogen – Abwicklung über die Biegeliste" };
+          if (m.rolled) return { index, name, kind: "skip", reason: "gewendelt/gewalzt – Rollbiegeliste in der Fertigungsmappe" };
           if (!m.axis || !m.sec) return { index, name, kind: "skip", reason: "ohne Stabachse" };
           const flat = m.sec.kind === "flach";
           const { holes, skipped, centers } = memberHoles(K, b.shape, m.axis, { flat });

@@ -38,7 +38,7 @@ import { applyRules } from "../core/regeln.js";
 import { quadrantPoint } from "../core/fangpunkte.js";
 import { holeText } from "../core/autodims.js";
 import { bendRule, ruleSummary } from "../core/bendtable.js";
-import { pathAxes, pathPoint, pathLength as tubeLength, pathDistance, bendRadius, splitPath } from "../core/biegeteil.js";
+import { pathAxes, pathPoint, pathLength as tubeLength, pathDistance, bendRadius, splitPath, rollHoles } from "../core/biegeteil.js";
 import { effectiveSheet } from "../core/blechregeln.js";
 import { planBlechkasten, boxFromBody, boxSideFrame } from "../core/blechkasten.js";
 import { NORM_THREADS, NORM_KINDS, checkNorm, normDesignation, boltSizeForHole, boltSet } from "../core/normteile.js";
@@ -1373,12 +1373,17 @@ export function createKernel(R) {
             const cacheId = `${part.id}/${f.id}`, oldC = genPartCache.get(cacheId) || new Map(), newC = new Map();
             const keyOf = (x) => JSON.stringify(x, (k, v) => (k === "name" || k === "segName" || k === "target" ? undefined : v));
             /** Teile aus dem Zwischenspeicher (Kopie) oder neu gebaut: build() → [{ solid, meta, name }] */
-            const memo = (key, build) => {
+            // gleiche Teile an anderer Stelle (Staketen, Stufen, Pfosten gleicher Länge): einmal bauen und vernetzen, sonst
+            // nur verschieben (rel = { key: Schlüssel ohne Lage, o: Bezugspunkt }); Netz und Körperwerte werden mitverschoben
+            const memo = (key, build, rel = null) => {
               let e = newC.get(key) || oldC.get(key);
+              if (!e && rel && !globalThis.__NO_SHIFT) { const r = relC.get(rel.key); if (r) e = shiftEntry(r.e, v3.sub(rel.o, r.o)); }
               if (!e) e = build();
               newC.set(key, e);
+              if (rel && !relC.has(rel.key)) relC.set(rel.key, { e, o: rel.o });
               return e.map((x) => { const c = { ...x, solid: x.solid.clone(), meta: JSON.parse(JSON.stringify(x.meta)) }; meshSrc.set(c.solid, x); return c; });
             };
+            const relC = new Map();
             const metaOf = (sec, solid, fr, extra = {}) => { const ax = memberAxis(solid, fr, sec.geom); return { section: sectionName(sec.kind, sec.dims), profileId: profileId(sec.kind, sec.dims), area: sec.geom.area, length: ax.hi - ax.lo, miterStart: 0, miterEnd: 0, frameZ: fr.z, axis: ax, generator: f.gen, sec: { kind: sec.kind, dims: sec.dims }, ...extra }; };
             // Bohrungen (z. B. Handlaufhalter): Zylinder ab p in Richtung dir, nur am Stab, durch dessen Achse p geht
             const drillsOf = (name, A, B, size) => (plan.drills || []).filter((d) => {
@@ -1418,7 +1423,8 @@ export function createKernel(R) {
               const L = v3.dist(m.a, m.b);
               if (!(L > 1e-6)) continue;
               const ds0 = drillsOf(m.target || m.name, m.a, m.b, Math.hypot(m.section.geom.width, m.section.geom.height));
-              const [x] = memo(keyOf(["m", f.gen, cut, { ...m, section: { kind: m.section.kind, dims: m.section.dims }, copes: (m.copes || []).map((c) => ({ ...c, section: { kind: c.section.kind, dims: c.section.dims } })) }, ds0]), () => {
+              const mk = ["m", f.gen, cut, { ...m, section: { kind: m.section.kind, dims: m.section.dims }, copes: (m.copes || []).map((c) => ({ ...c, section: { kind: c.section.kind, dims: c.section.dims } })) }, ds0];
+              const [x] = memo(keyOf(mk), () => {
               const fr = memberFrame(m.a, v3.sub(m.b, m.a), m.rot || 0, m.up);
               const cuts = m.cuts || { start: [], end: [] };
               // plain: ebener Sägeschnitt ohne Laser-Endbearbeitung (Fachwerk-Füllstäbe an Gurtflächen)
@@ -1434,7 +1440,7 @@ export function createKernel(R) {
               // einzelner Stab: alle Bohrungen am Umfang (auch Schlitze nahe der Ecken, daher Diagonale)
               const ds = ds0;
               return [{ solid: drill(solid, ds), meta: metaOf(m.section, solid, fr, { miterStart: cutAngle(cuts.start, fr.z), miterEnd: cutAngle(cuts.end, fr.z), miterParts: { A: cutParts(cuts.start, fr), B: cutParts(cuts.end, fr) }, ...(m.copes?.length ? { coped: true } : {}), ...(m.density ? { density: m.density } : {}), ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) }) }];
-              });
+              }, { key: keyOf(shiftPoints(mk, m.a)), o: m.a });
               add(x.solid, x.meta, m.name);
             }
             // gebogene/gewalzte Profile (Wendel-Handlauf, Ring, Bogen): ein Körper entlang der Mittellinie
@@ -1454,7 +1460,7 @@ export function createKernel(R) {
               });
               const solid = pieces.length > 1 ? R.makeCompound(pieces) : pieces[0];
               const meta = { section: sectionName(tb.section.kind, tb.section.dims), profileId: profileId(tb.section.kind, tb.section.dims), area: g.area, length: tubeLength(tb.path), miterStart: 0, miterEnd: 0, generator: f.gen, sec: { kind: tb.section.kind, dims: tb.section.dims },
-                rolled: { radius: bendRadius(tb.path), angle: Math.abs(tb.path.sweep), rise: tb.path.rise || 0 }, center: { path: tb.path }, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) };
+                rolled: { radius: bendRadius(tb.path), angle: Math.abs(tb.path.sweep), rise: tb.path.rise || 0, r: tb.path.r, holes: rollHoles(tb.path, ds) }, center: { path: tb.path }, ...(ds.length ? { drills: ds.length, drillD: ds[0].d ?? `${ds[0].w}x${ds[0].h}` } : {}) };
               return [{ solid, meta }];
               });
               add(x.solid, x.meta, tb.name);
@@ -3597,17 +3603,55 @@ export function createKernel(R) {
    * auch die unveränderten (bei 400 Körpern ~3 s); jetzt nur die neu gebauten.
    */
   const meshSrc = new WeakMap();
+  /** Punkte (Felder a, b, p, c, center, origin) eines Bauplan-Eintrags um −o verschieben – Schlüssel ohne Lage */
+  const POINT_KEYS = new Set(["a", "b", "p", "c", "center", "origin"]);
+  function shiftPoints(x, o, key = "") {
+    if (Array.isArray(x)) {
+      if (POINT_KEYS.has(key) && x.length === 3 && x.every((n) => typeof n === "number")) return x.map((n, k) => Math.round((n - o[k]) * 1e6) / 1e6);
+      return x.map((y) => shiftPoints(y, o, key === "points" ? "p" : ""));
+    }
+    if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, shiftPoints(v, o, k)]));
+    return x;
+  }
+  /** Generator-Eintrag (Körper + Werte) um d verschoben; Netz und Körperwerte kommen verschoben aus dem Ausgangseintrag */
+  function shiftEntry(e, d) {
+    return e.map((x) => {
+      const meta = JSON.parse(JSON.stringify(x.meta));
+      if (meta.axis?.origin) meta.axis.origin = v3.add(meta.axis.origin, d);
+      if (meta.center?.path?.c) meta.center.path.c = v3.add(meta.center.path.c, d);
+      return { ...x, solid: x.solid.clone().translate(d), meta, shiftFrom: { src: x, d }, meshes: undefined, props: undefined };
+    });
+  }
+  const addP = (p, d) => (p ? [p[0] + d[0], p[1] + d[1], p[2] + d[2]] : p);
+  const addF32 = (a, d) => { const b = new Float32Array(a.length); for (let i = 0; i < a.length; i += 3) { b[i] = a[i] + d[0]; b[i + 1] = a[i + 1] + d[1]; b[i + 2] = a[i + 2] + d[2]; } return b; };
+  function shiftMesh(m, d) {
+    return {
+      ...m, positions: addF32(m.positions, d),
+      faces: m.faces.map((f) => ({ ...f, ...(f.point ? { point: addP(f.point, d) } : {}), ...(f.axisP ? { axisP: addP(f.axisP, d) } : {}) })),
+      edges: m.edges.map((e) => ({ ...e, positions: addF32(e.positions, d), ...(e.mid ? { mid: addP(e.mid, d) } : {}), ...(e.center ? { center: addP(e.center, d) } : {}) })),
+    };
+  }
+  function shiftProps(p, d) {
+    return { ...p, center: addP(p.center, d), bbox: p.bbox ? [addP(p.bbox[0], d), addP(p.bbox[1], d)] : p.bbox, holes: (p.holes || []).map((h) => ({ ...h, p: addP(h.p, d) })) };
+  }
   const normMeshSrc = new Map(); // Normteil + Lage → Speichereintrag (Schraubensätze werden bei jedem Bau neu gesetzt)
   function meshBodyCached(shape, quality = "normal", opts = {}) {
     const src = meshSrc.get(shape);
     if (!src) return meshBody(shape, quality, opts);
     const k = quality + (opts.swept ? "/s" : "");
     src.meshes ||= {};
+    if (!src.meshes[k] && src.shiftFrom) src.meshes[k] = shiftMesh(meshOfEntry(src.shiftFrom.src, quality, opts), src.shiftFrom.d);
     return (src.meshes[k] ||= meshBody(shape, quality, opts));
+  }
+  function meshOfEntry(x, quality, opts) {
+    const k = quality + (opts.swept ? "/s" : "");
+    x.meshes ||= {};
+    return (x.meshes[k] ||= meshBody(x.solid, quality, opts));
   }
   function bodyPropsCached(shape) {
     const src = meshSrc.get(shape);
     if (!src) return bodyProps(shape);
+    if (!src.props && src.shiftFrom) { const o = src.shiftFrom.src; src.props = shiftProps((o.props ||= bodyProps(o.solid)), src.shiftFrom.d); }
     return (src.props ||= bodyProps(shape));
   }
   function meshBody(shape, quality = "normal", { swept = false } = {}) {

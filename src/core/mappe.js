@@ -1,6 +1,7 @@
 // Fertigungsmappe (Erweiterung E3): alle Zeichnungen und Listen einer Position als ein druckfertiges Dokument.
 // Reine Texterzeugung; das PDF entsteht in Electron aus demselben HTML (pdf:render), im Browser über Drucken.
 import { fmt as fmtNum } from "./expr.js";
+import { holeText } from "./biegerohr.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const A4 = [210, 297];
@@ -50,7 +51,7 @@ const ROWS_PER_PAGE = 42;
  * bends = [{ name, bends: [{ straight, rotation, angle, arc }], last, length }] je Biegerohr.
  * Gibt Seiten für mappeHtml zurück; leere Listen entfallen.
  */
-export function listPages({ title = "", number = "", status = "", bom = [], cut = [], bends = [] } = {}) {
+export function listPages({ title = "", number = "", status = "", bom = [], cut = [], bends = [], rolls = [] } = {}) {
   const head = (name, part, of) => `<h1>${esc(name)}${of > 1 ? ` (${part}/${of})` : ""}</h1><div class="sub">${esc([title, number, status && "Stand: " + status].filter(Boolean).join(" · "))}</div>`;
   const pages = [];
   const chunked = (rows, name, render) => {
@@ -86,6 +87,24 @@ export function listPages({ title = "", number = "", status = "", bom = [], cut 
     }
     per.push(cur);
     per.forEach((c, i) => pages.push({ html: `<div class="lst">${head("Biegeliste", i + 1, per.length)}${c.join("")}</div>`, width: A4[0], height: A4[1] }));
+  }
+  // Rollbiegeliste je gewendeltem/gewalztem Teil (Wendeltreppen-Handlauf, Ring): Walzdaten und Bohrungen ab Anfang
+  if (rolls.length) {
+    const blocks = rolls.map((r) => {
+      const pitch = r.angle > 0 ? (r.rise * 360) / r.angle : 0;
+      const data = table([["Profil"], ["Radius Mitte mm", 1], ["Biegeradius mm", 1], ["Drehwinkel °", 1], ["Höhe mm", 1], ["Steigung/Umdr. mm", 1], ["Zuschnitt mm", 1]],
+        [[r.section, fmtNum(r.r, 1), fmtNum(r.radius, 1), fmtNum(r.angle, 1), fmtNum(r.rise, 1), fmtNum(pitch, 1), fmtNum(r.length, 1)]]);
+      const holes = (r.holes || []).length ? table([["Nr", 1], ["Abstand ab Anfang mm", 1], ["Bohrung"], ["Lage"]], r.holes.map((h, i) => [i + 1, fmtNum(h.s, 1), holeText(h), h.side])) : "";
+      return { html: `<h2>${esc(r.name)}</h2>${data}${holes}`, n: (r.holes || []).length + 6 };
+    });
+    const per = [];
+    let cur = [], rows = 0;
+    for (const b of blocks) {
+      if (cur.length && rows + b.n > ROWS_PER_PAGE) { per.push(cur); cur = []; rows = 0; }
+      cur.push(b.html); rows += b.n;
+    }
+    per.push(cur);
+    per.forEach((c, i) => pages.push({ html: `<div class="lst">${head("Rollbiegeliste", i + 1, per.length)}${c.join("")}</div>`, width: A4[0], height: A4[1] }));
   }
   return pages;
 }
