@@ -961,3 +961,11 @@ test("Kalkulation: Material über den Stangenplan, Zeiten, Oberfläche, Zuschlä
   assert.ok(Math.abs(c.net - c.base * 1.15 * 1.1) < 0.02);
   assert.deepEqual(surfaceOf(["feuerverzinkt", "RAL 7016"]), { verzinken: true, pulvern: true });
 });
+
+test("Nahtgruppen: links/rechts, -n, Anfang/Ende zählen als eine Stoßart", async () => {
+  const { jointType, weldKindKey } = await import("../src/core/genwelds.js");
+  assert.equal(jointType("Geländer rechts Knieleiste-1 an Geländer rechts Pfosten 3"), jointType("Geländer links Knieleiste an Geländer links Pfosten"));
+  assert.equal(jointType("Handlauf an Handlauf Endkappe Anfang"), jointType("Handlauf an Handlauf Endkappe Ende"));
+  assert.notEqual(jointType("Pfosten an Fußplatte"), jointType("Stab an Untergurt"));
+  assert.equal(weldKindKey({ kind: "kehl", a: 2, around: true }), weldKindKey({ kind: "kehl", a: 2, around: true, name: "x" }));
+});

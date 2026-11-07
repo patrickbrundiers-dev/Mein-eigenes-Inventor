@@ -18,7 +18,7 @@ import { hatchLines } from "../core/hatch.js";
 import { balloonAnchors, placeBalloons, placeBalloonsEdges, assignBalloonViews, projectPoint, partCenter } from "../core/balloons.js";
 import { gridViewSvg } from "./achsraster.js";
 import { weldSymbol } from "../core/weld.js";
-import { weldKey } from "../core/genwelds.js";
+import { weldKey, weldKindKey } from "../core/genwelds.js";
 import { clipProjection } from "../core/clip.js";
 import { planAutoDims, viewAxes, visibleHidden, layoutAutoDims, LEAD, textWidth, dimLabel, holeSpecs, profileSpec, chooseViews, wallThickness, circlesFromLines } from "../core/autodims.js";
 import { angleValue, cleanupDrawing, angleFromSegments } from "../core/aufraeumen.js";
@@ -728,10 +728,23 @@ export class DrawingEditor {
     const g = svgEl("g", { fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
     if (xf.bm) {
       const ax = xf.bm.axis, [b0, b1] = ax === "u" ? [p.bbox.y0, p.bbox.y1] : [p.bbox.x0, p.bbox.x1];
-      for (const pair of xf.bm.cuts) for (const x of pair) {
-        const pts = zigzag(x, b0, b1, ax, { amp: 1.5 / v.scale, over: 2 / v.scale }).map((q) => xf.toB(...q));
+      // Bruchlinie nur so lang, wie dort Körperkanten durchlaufen (Draufsicht einer Ecke: nicht durch die leere Fläche)
+      const i = ax === "u" ? 0 : 1, span = (x) => {
+        let lo = Infinity, hi = -Infinity;
+        for (const pl of p.visible || []) for (let k = 0; k + 1 < pl.length; k++) {
+          const a = pl[k], c = pl[k + 1];
+          if ((a[i] - x) * (c[i] - x) > 0 || a[i] === c[i]) continue;
+          const t = (x - a[i]) / (c[i] - a[i]), y = a[1 - i] + t * (c[1 - i] - a[1 - i]);
+          lo = Math.min(lo, y); hi = Math.max(hi, y);
+        }
+        return lo <= hi ? [lo, hi] : [b0, b1];
+      };
+      const brs = xf.bm.breaks;
+      xf.bm.cuts.forEach((pair, j) => pair.forEach((x, e) => {
+        const [c0, c1] = brs[j] ? span(e ? brs[j].b : brs[j].a) : [b0, b1];
+        const pts = zigzag(x, c0, c1, ax, { amp: 1.5 / v.scale, over: 2 / v.scale }).map((q) => xf.toB(...q));
         g.append(svgEl("polyline", { points: pts.map((q) => q.map(r3).join(",")).join(" ") }));
-      }
+      }));
     }
     for (const b of v.breakouts || []) {
       const [cx, cy] = xf.to(...b.c);
@@ -1566,9 +1579,10 @@ export class DrawingEditor {
     }
     if (!anchors.length) return silent ? 0 : toast("Keine Schweißnähte im Modell – Naht an Kanten setzen oder an Platte/Rippe ein a-Maß eintragen");
     // gleiche Nähte zusammenfassen: ein Symbol je Nahtart und -maß an der ersten Stelle, Anzahl in der Gabel
-    const groups = new Map();
-    for (const a of anchors) { const k = weldKey(a.w); if (!groups.has(k)) groups.set(k, { ...a, key: k, count: 0 }); groups.get(k).count++; }
-    const reps = [...groups.values()];
+    const groupBy = (fk) => { const g = new Map(); for (const a of anchors) { const k = fk(a.w); if (!g.has(k)) g.set(k, { ...a, key: k, count: 0 }); g.get(k).count++; } return [...g.values()]; };
+    // mehr als 8 Symbole wären unlesbar (Treppe mit zwei Geländern): dann nur nach Nahtart und a-Maß zusammenfassen
+    let reps = groupBy(weldKey);
+    if (reps.length > 8) reps = groupBy(weldKindKey);
     const cam = this.viewCam(d, v);
     const xf = this.viewXf(v);
     const at = reps.map((a) => ({ key: a.key, at: xf.to(...projectPoint(a.p3, cam.dir, cam.up)) }));
