@@ -102,4 +102,7 @@ export function planWelds(plan, { tol = 2 } = {}) {
 /** Nähte gleicher Art zusammenfassen (Zeichnung): Art, Maß, Seite, umlaufend, Montage und Stoßart (Name ohne Nummern) */
 export const weldKey = (w) => [w.kind, Math.round((w.a || 0) * 10), w.side || "pfeil", !!w.around, !!w.field, jointType(w.name)].join("|");
 /** »Stab 1.3 an Untergurt 2« → »Stab an Untergurt«; Name des Gegenstücks zählt, damit Pfosten/Fußplatte und Stab/Gurt getrennt bleiben */
-export const jointType = (name) => String(name || "").replace(/\s+#\d+$/, "").replace(/\s+\d+(\.\d+)*(?=\s|$)/g, "").replace(/\b(Ober|Unter)gurt\b/g, "Gurt").trim();
+export const jointType = (name) => String(name || "").replace(/\s+#\d+$/, "").replace(/\s+\d+(\.\d+)*(?=\s|$)/g, "").replace(/-\d+\b/g, "").replace(/\s*\(\d+\)/g, "")
+  .replace(/\s+(links|rechts|Anfang|Ende)\b/g, "").replace(/\b(Ober|Unter)gurt\b/g, "Gurt").replace(/\s+/g, " ").trim();
+/** Gröbere Gruppe, wenn es zu viele Nahtarten gibt (Zeichnung bleibt lesbar): nur Art, Maß, Seite, umlaufend, Montage */
+export const weldKindKey = (w) => [w.kind, Math.round((w.a || 0) * 10), w.side || "pfeil", !!w.around, !!w.field].join("|");

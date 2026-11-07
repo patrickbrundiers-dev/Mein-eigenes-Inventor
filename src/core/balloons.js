@@ -31,13 +31,19 @@ export function balloonAnchors(asm, resultOf) {
   const seen = new Set();
   for (const c of asm.components || []) {
     if (c.hidden) continue;
-    const ctr = partCenter(resultOf(c.part));
+    const res = resultOf(c.part), ctr = partCenter(res);
     if (!ctr) continue;
-    const p3 = matApply(placementMatrix(c.pos, c.rot), ctr);
-    // weitere Exemplare als Ausweich-Anker (Bruchansicht: das erste kann im herausgebrochenen Bereich liegen)
-    if (seen.has(c.part)) { out.find((a) => a.part === c.part)?.alts.push(p3); continue; }
+    // Teil aus vielen getrennten Körpern (Verbindungsmittel): Mitte der Hüllbox liegt oft im Leeren – Körper nahe der Mitte nehmen
+    const bbs = (res.bodies || []).map((b) => b.props?.bbox).filter(Boolean);
+    const mids = bbs.map((bb) => bb[0].map((x, k) => (x + bb[1][k]) / 2));
+    const d2 = (p) => (p[0] - ctr[0]) ** 2 + (p[1] - ctr[1]) ** 2 + (p[2] - ctr[2]) ** 2;
+    const inside = bbs.some((bb) => ctr.every((x, k) => x >= bb[0][k] - 1e-6 && x <= bb[1][k] + 1e-6));
+    const pts = inside ? [ctr, ...mids] : [...mids].sort((a, b) => d2(a) - d2(b));
+    const M = placementMatrix(c.pos, c.rot), p3s = pts.map((p) => matApply(M, p)), p3 = p3s[0];
+    // weitere Exemplare und Körper als Ausweich-Anker (Bruchansicht: der erste kann im herausgebrochenen Bereich liegen)
+    if (seen.has(c.part)) { out.find((a) => a.part === c.part)?.alts.push(...p3s); continue; }
     seen.add(c.part);
-    out.push({ part: c.part, p3, alts: [p3] });
+    out.push({ part: c.part, p3, alts: p3s });
   }
   return out;
 }
