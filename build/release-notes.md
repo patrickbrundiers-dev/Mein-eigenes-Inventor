@@ -1,4 +1,10 @@
-**Neu in 0.49.1**
+**Neu in 0.50.0**
 
-- **Schweißsymbole übersichtlicher:** Gleiche Nähte links und rechts werden zusammengefasst. Große Baugruppen zeigen nur noch wenige Symbole.
-- **Positionsnummern und Bruchlinien:** Positionsnummern bei Verbindungsmitteln zeigen auf ein Bauteil. Bruchlinien laufen nur noch über Kanten.
+- **Maß bis zum Kreisrand:** Linien, Punkte und Kreise lassen sich bis zum Rand eines Kreises bemaßen.
+- **Erstes Maß skaliert:** Das erste Maß einer Skizze skaliert die ganze Zeichnung.
+- **Parameter im Maßfeld:** Mit »breite = 50« im Maßfeld wird gleich ein Parameter angelegt.
+- **Verlängern bis zum Schnitt:** Mit Umschalt+Klick werden zwei Linien bis zu ihrem Schnittpunkt gezogen.
+- **Bestimmtheit im Browser:** Das Skizzensymbol zeigt, ob die Skizze voll bestimmt ist.
+- **Getriebene Maße:** Sie werden ohne Rückfrage gesetzt.
+- **Neue Einstellungen (aus):** Tangentialbogen durch Verweilen, und die Ausrichtung als Bedingung behalten.
+- **Behoben:** Ein Klick genau auf eine Maßzahl kam nicht an.
