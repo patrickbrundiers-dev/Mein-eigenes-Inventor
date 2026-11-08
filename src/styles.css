@@ -189,6 +189,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .node .badge { position: absolute; right: -4px; bottom: -3px; min-width: 9px; height: 9px; border-radius: 5px; font: 700 8px/9px var(--din, sans-serif); color: #fff; text-align: center; box-shadow: 0 0 0 1px var(--steel-0); }
 .node .badge.err { background: var(--err); }
 .node .badge.warn { background: var(--warn); color: #222; }
+.node.sk-under > .ico-wrap > .ico { color: var(--sk-line); }
+.node.sk-full > .ico-wrap > .ico { color: var(--sk-full); }
 .node .badge.dof { background: var(--dye); width: 7px; min-width: 7px; height: 7px; right: -3px; bottom: -2px; }
 .node .detail { color: var(--steel-4); font-size: 11.5px; }
 .node .eye-btn { flex: none; border: 0; background: transparent; padding: 0 2px; margin-left: 2px; line-height: 0; color: var(--steel-4); cursor: pointer; visibility: hidden; }

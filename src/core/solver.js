@@ -3,6 +3,7 @@
 
 import { evaluate } from "./expr.js";
 import { splineNearest } from "./spline.js";
+import { edgeDistanceGeometry } from "./kantenmass.js";
 
 const DEG = Math.PI / 180;
 
@@ -301,6 +302,32 @@ export function buildResiduals(sketch, scope = {}, extra = []) {
           const r1 = radiusFn(e1), r2 = radiusFn(e2);
           add(c.id, (x) => r2(x) - r1(x) - k * v);
         }
+        break;
+      }
+      case "edgeDistance": { // Kantenmaß bis zum Kreisrand (src/core/kantenmass.js)
+        const v = val(c), m = c.m || 1, e2 = E(c.e2), cc = centerIdx(e2), r2 = radiusFn(e2);
+        if (c.p) {
+          const p = P(c.p);
+          add(c.id, (x) => m * (Math.hypot(x[p] - x[cc], x[p + 1] - x[cc + 1]) - r2(x)) - v);
+          break;
+        }
+        const e1 = E(c.e1);
+        if (e1.type === "line") {
+          const [a, b] = lineIdx(e1);
+          // Seite der Mitte zur Linie beim Aufbau festhalten (glatt statt Betrag, wie beim Abstand h/v)
+          const side = (vars.x[b] - vars.x[a]) * (vars.x[cc + 1] - vars.x[a + 1]) - (vars.x[b + 1] - vars.x[a + 1]) * (vars.x[cc] - vars.x[a]) < 0 ? -1 : 1;
+          add(c.id, (x) => {
+            const dx = x[b] - x[a], dy = x[b + 1] - x[a + 1], L = Math.hypot(dx, dy) || 1e-12;
+            return m * ((side * (dx * (x[cc + 1] - x[a + 1]) - dy * (x[cc] - x[a]))) / L - r2(x)) - v;
+          });
+          break;
+        }
+        const c1 = centerIdx(e1), r1 = radiusFn(e1);
+        const D = (x) => Math.hypot(x[cc] - x[c1], x[cc + 1] - x[c1 + 1]);
+        if (c.mode === "innen") {
+          const big1 = r1(vars.x) >= r2(vars.x);
+          add(c.id, (x) => (big1 ? r1(x) - r2(x) : r2(x) - r1(x)) - D(x) - v);
+        } else add(c.id, (x) => m * (D(x) - r1(x) - r2(x)) - v);
         break;
       }
       case "length": {
@@ -712,6 +739,7 @@ export function measureConstraint(sketch, c) {
     case "semiAxis": { const e = ents.get(c.e); return c.axis === "b" ? Math.abs(e.r) : Math.hypot(P(e.a).x - P(e.c).x, P(e.a).y - P(e.c).y); }
     case "axisAngle": { const e = ents.get(c.e); return (Math.atan2(P(e.a).y - P(e.c).y, P(e.a).x - P(e.c).x) * 180) / Math.PI; }
     case "lineAngle": { const e = ents.get(c.e), d = (Math.atan2(P(e.p2).y - P(e.p1).y, P(e.p2).x - P(e.p1).x) * 180) / Math.PI; return d < -1e-9 ? d + 360 : Math.max(0, d); }
+    case "edgeDistance": return edgeDistanceGeometry(sketch, c)?.value ?? NaN;
     case "radius": return rad(ents.get(c.e));
     case "diameter": return 2 * rad(ents.get(c.e));
     case "angle": {
@@ -724,4 +752,4 @@ export function measureConstraint(sketch, c) {
   return NaN;
 }
 
-export const DIMENSION_TYPES = new Set(["distance", "length", "radius", "diameter", "angle", "offset", "semiAxis", "axisAngle", "lineAngle"]);
+export const DIMENSION_TYPES = new Set(["distance", "edgeDistance", "length", "radius", "diameter", "angle", "offset", "semiAxis", "axisAngle", "lineAngle"]);

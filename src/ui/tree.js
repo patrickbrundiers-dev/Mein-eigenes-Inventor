@@ -230,13 +230,17 @@ export class Tree {
       if (st && !st.ok) cls.push("err");
       else if (st?.warning) cls.push("warn");
       if (f.suppressed || i >= endAt || r?.ruleOff?.includes(f.id)) cls.push("suppressed");
+      // SolidCraft: Skizzensymbol in der Farbe ihres Zustands (unterbestimmt wie die Skizzenlinien, voll bestimmt dunkel)
+      const skState = f.type === "sketch" && st?.ok && this.app.prefs?.get?.("skizze.zustandSymbole") !== false && (f.entities || []).some((e) => !e.origin)
+        ? (st.dof > 0 ? "sk-under" : st.dof === 0 ? "sk-full" : null) : null;
+      if (skState) cls.push(skState);
       const consumedBy = part.features.filter((g) => sketchRefs(g).includes(f.id));
       const meta = f.type === "sketch" && st?.dof > 0 ? `${st.dof} FG` : "";
       const badge = st && !st.ok ? "err" : st?.warning ? "warn" : f.type === "sketch" && st?.dof > 0 ? "dof" : null;
       const nd = this.node({
         label: f.name || FEATURE_NAMES[f.type], ic: (f.type === "generator" && f.gen) || FICON[f.type], cls: cls.join(" "), meta, badge, rid: f.id,
         detail: opts.details ? featureDetail(f, part) : "",
-        title: i >= endAt ? "Hinter dem Bauteilende – wird nicht gerechnet" : st?.error ? "Fehler: " + st.error : st?.warning ? "Hinweis: " + st.warning : badge === "dof" ? `Skizze nicht voll bestimmt: ${st.dof} Freiheitsgrade` : f.name,
+        title: i >= endAt ? "Hinter dem Bauteilende – wird nicht gerechnet" : st?.error ? "Fehler: " + st.error : st?.warning ? "Hinweis: " + st.warning : badge === "dof" ? `Skizze nicht voll bestimmt: ${st.dof} Freiheitsgrad${st.dof === 1 ? "" : "e"}` : skState === "sk-full" ? `${f.name}: voll bestimmt` : f.name,
         onClick: () => app.selectFeature(f.id),
         onDbl: () => (f.type === "sketch" ? app.editSketch(f.id) : app.selectFeature(f.id)),
         onMenu: (e) => this.featureMenu(e, part, f, consumedBy),
