@@ -346,7 +346,7 @@ export function dimLabel(m) {
   // im Kettenmaß ohne Gesamtlänge (sie ergibt sich aus der Kette), sonst DIN 406-11 »n× t (=Gesamt)«
   if (m.pitch) return m.pitch.n + "× " + fmt(m.pitch.p) + (m.chain && !m.pitchTotal ? "" : " (=" + fmt(m.pitch.n * m.pitch.p) + ")") + (m.suffix || "");
   const val = m.kind === "dia" ? m.circle.r * 2 : m.kind === "rad" ? m.circle.r : m.kind === "h" ? Math.abs(m.p2[0] - m.p1[0]) : Math.abs(m.p2[1] - m.p1[1]);
-  return (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : "") + String(Math.round(val * 10) / 10).replace(".", ",") + (m.suffix || "");
+  return (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : m.prefix || "") + String(Math.round(val * 10) / 10).replace(".", ",") + (m.suffix || "");
 }
 
 /**
