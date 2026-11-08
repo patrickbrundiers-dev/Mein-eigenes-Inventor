@@ -13,6 +13,8 @@ import { inferLine, inferCircle } from "../core/autoconstraints.js";
 import { buildSlot, buildPolygon, buildTangentArc, buildRect3, tangentCircles3, pickTangentCircle, tangentArcCenter, constraintLabel, mirrorEntities, offsetEntities, entitiesInBox, patternEntities, transformEntities } from "../core/sketchshapes.js";
 import { splineSamples, splineNearest } from "../core/spline.js";
 import { specialSnap, alignSnap } from "../core/sketchsnap.js";
+import { edgeDistanceFrom, edgeDistanceGeometry } from "../core/kantenmass.js";
+import { scaleForFirstDimension } from "../core/erstesmass.js";
 import { glyphPath, sketchSnapKind } from "../core/fangpunkte.js";
 import { autoDimension } from "../core/autodim.js";
 import { cleanSketch, cleanReportText, CLEAN_KINDS, CLEAN_DEFAULTS } from "../core/sketchclean.js";
@@ -22,7 +24,7 @@ import { buildBlendCurve, nearestEnd, buildTangentAt, buildCircleTangent2, arcSl
 import { defaultText, textBox, textPolylines, partTextVars, TEXT_STYLES } from "../core/schrift.js";
 import { imageCorners, newImageEntity, rescaleImage, traceContours, imageToSketch } from "../core/skizzenbild.js";
 import { ellipseGeom, ellipseNearest, ellipseLocal, ellipsePoint, ellipseSamples } from "../core/ellipse.js";
-import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle } from "../core/dyninput.js";
+import { createDynInput, dynKey, dynTyped, dynValues, rectLive, rectCorner, buildRect, lineLive, lineEnd, axisAngle, paramDefinition, applyParamDefinitions } from "../core/dyninput.js";
 import { constraintOptions, SELECTION_CONSTRAINT_TOOLS } from "../core/bedingungsauswahl.js";
 import { buildRoundedRect, buildMidLine, buildCircle2, buildArcSlot, buildHelperLine, tangentPoints, commonTangents, bisectors, joinCorner, equationPoints, fitSplineCtrl, addSplineFromCtrl, conicPoints, copyEntities, pasteEntities, clipCenter, svgToPrims } from "../core/sketchtools.js";
 
@@ -57,7 +59,7 @@ export const SKETCH_TOOLS = {
   dimension: "Bemaßung: Linie, Kreis, zwei Punkte oder zwei Linien wählen, dann Lage klicken",
   project: "Kante des 3D-Modells anklicken, um sie in die Skizze zu übernehmen",
   trim: "Stutzen: Teil einer Linie, eines Kreises oder Bogens anklicken – oder mit gedrückter Maustaste über mehrere Stücke ziehen, alle gekreuzten fallen weg",
-  extend: "Verlängern: Linie oder Bogen nahe dem Ende anklicken, das bis zum nächsten Element verlängert wird",
+  extend: "Verlängern: Linie oder Bogen nahe dem Ende anklicken, das bis zum nächsten Element verlängert wird. Umschalt+Klick auf zwei Linien: beide bis zum Schnittpunkt",
   split: "Teilen: Linie oder Bogen an der Stelle anklicken, an der geteilt wird (nahe einem Schnittpunkt wird dort geteilt)",
   sfillet: "Rundung: Ecke anklicken, an der zwei Linien enden, dann Radius eingeben – vorher gewählte Ecken (Punkte) werden mitgerundet",
   schamfer: "Fase: Ecke anklicken, an der zwei Linien enden, dann Abstand eingeben (zwei Abstände mit Semikolon, z. B. 5;10, oder Abstand und Winkel, z. B. 5;30°)",
@@ -168,6 +170,10 @@ export class Sketcher {
     window.addEventListener("pointermove", this.onMove);
     window.addEventListener("pointerup", this.onUp);
     this.canvas.addEventListener("dblclick", this.onDbl);
+    // Maßtexte und Bedingungssymbole liegen in der SVG-Ebene über dem Zeichenfeld und fangen den Klick ab:
+    // weiterreichen, damit ein Klick genau auf die Zahl das Maß trifft (SolidCraft: »der Maßtext nimmt immer den Klick«)
+    this.svg.addEventListener("pointerdown", this.onDown);
+    this.svg.addEventListener("dblclick", this.onDbl);
     this.viewer.enterSketch(this.frame);
     this.solve();
     this.render();
@@ -179,6 +185,8 @@ export class Sketcher {
     window.removeEventListener("pointermove", this.onMove);
     window.removeEventListener("pointerup", this.onUp);
     this.canvas.removeEventListener("dblclick", this.onDbl);
+    this.svg.removeEventListener("pointerdown", this.onDown);
+    this.svg.removeEventListener("dblclick", this.onDbl);
     this.svg.replaceChildren();
     this.viewer.exitSketch();
   }
@@ -192,6 +200,7 @@ export class Sketcher {
     // erst wählen, dann Bedingung: passt die Auswahl, wird die Bedingung sofort gesetzt und die Auswahl bleibt bestehen
     if (this.sel.size && SELECTION_CONSTRAINT_TOOLS.includes(t) && this.applySelectionConstraint(t)) return;
     this.cancelInput();
+    this.pendingParams = null;
     this.tool = t;
     this.state = null;
     const fam = familyOf(t);
@@ -245,7 +254,17 @@ export class Sketcher {
   commit(label, fn) {
     this.app.checkpoint(label);
     const before = new Set(this.sk.entities.map((e) => e.id));
+    // »name = wert« aus einem Maßfeld: Parameter im selben Rückgängig-Schritt anlegen
+    if (this.pendingParams) { applyParamDefinitions(this.part, this.pendingParams); this.pendingParams = null; }
     fn(this.sk);
+    // Ausrichtungs-Bedingungen nur behalten, wenn sie nichts überbestimmen
+    for (const k of this.sk.constraints.filter((q) => q._align)) {
+      delete k._align;
+      const rest = { ...this.sk, constraints: this.sk.constraints.filter((q) => q !== k) };
+      let ok = false;
+      try { ok = checkNewConstraint(rest, k, this.scope()) === "ok"; } catch { /* weglassen */ }
+      if (!ok) this.sk.constraints = this.sk.constraints.filter((q) => q !== k);
+    }
     // SolidCraft: »Neue Formen vollständig bemaßen« (optional »vom Skizzenursprung aus positionieren«)
     if (this.prefs?.["skizze.vollBemassen"] && this.tool !== "select") {
       const fresh = this.sk.entities.filter((e) => !before.has(e.id) && !e.projected && !e.construction).map((e) => e.id);
@@ -380,6 +399,11 @@ export class Sketcher {
     if (sn.on) cons.push({ id: uid("k"), type: sn.onType === "line" ? "pointOnLine" : "pointOnCircle", p: id, e: sn.on });
     if (sn.on2) cons.push({ id: uid("k"), type: sn.onType2 === "line" ? "pointOnLine" : "pointOnCircle", p: id, e: sn.on2 });
     if (sn.mid) cons.push({ id: uid("k"), type: "midpoint", p: id, e: sn.mid });
+    // SolidCraft »Mit anderen Skizzenpunkten ausrichten«: die gefangene Ausrichtung bleibt als Bedingung (in commit geprüft)
+    if (this.prefs?.["skizze.ausrichtungHalten"]) {
+      if (sn.alignH && sn.alignH !== id && sk.points.some((p) => p.id === sn.alignH)) cons.push({ id: uid("k"), type: "horizontal", p: sn.alignH, q: id, _align: true });
+      if (sn.alignV && sn.alignV !== id && sk.points.some((p) => p.id === sn.alignV)) cons.push({ id: uid("k"), type: "vertical", p: sn.alignV, q: id, _align: true });
+    }
     return id;
   }
   addLine(a, b, opts = {}) {
@@ -439,7 +463,7 @@ export class Sketcher {
   /** Getippte Werte der laufenden Eingabe; null (mit Meldung), wenn ein Wert ungültig ist */
   dynResult(live) {
     const r = dynValues(this.state.dyn, live, this.scope());
-    if (r.ok) return r;
+    if (r.ok) { if (r.params.length) this.pendingParams = r.params; return r; }
     toast(this.state.dyn.fields.find((f) => f.error)?.error || "Ungültiger Wert", { kind: "err" });
     this.render();
     return null;
@@ -1043,9 +1067,14 @@ export class Sketcher {
       }
       const pt = picks.find((x) => x.kind === "point"), ln = picks.find((x) => E(x)?.type === "line");
       if (pt && ln) return { type: "distance", p: pt.id, e: ln.id, labelOffset: 0 };
+      // SolidCraft: Kreis am Rand angeklickt → Maß bis zum Kreisrand (Spalt, Steg, Wand); Mitte → Mittelpunkt anklicken
       const circs = picks.filter((x) => ["circle", "arc"].includes(E(x)?.type));
-      if (circs.length === 2) return { type: "distance", p: E(circs[0]).c, q: E(circs[1]).c, labelOffset: 12 / this.M.scale };
-      if (pt && circs.length === 1) return { type: "distance", p: pt.id, q: E(circs[0]).c, labelOffset: 12 / this.M.scale };
+      if (circs.length === 2) return edgeDistanceFrom(this.sk, { circle2: circs[0].id, circle: circs[1].id });
+      if (ln && circs.length === 1) return edgeDistanceFrom(this.sk, { line: ln.id, circle: circs[0].id });
+      if (pt && circs.length === 1) {
+        if (pt.id === E(circs[0]).c) return { type: E(circs[0]).type === "circle" ? "diameter" : "radius", e: circs[0].id, labelAngle: this.angleFor(P.get(pt.id), place) };
+        return edgeDistanceFrom(this.sk, { point: pt.id, circle: circs[0].id });
+      }
     }
     return null;
   }
@@ -1071,21 +1100,35 @@ export class Sketcher {
     const measured = measureConstraint(this.sk, { ...c, value: "0" });
     const res = checkNewConstraint(this.sk, { ...c, value: String(measured) }, this.scope());
     if (res !== "ok") {
+      // SolidCraft: ein Maß, das die Skizze schon festlegt, kommt ohne Rückfrage als getriebenes Maß (in Klammern)
       const why = this.blame({ ...c, value: String(measured) });
-      const ch = await choiceDialog("Maß würde überbestimmen", "Dieses Maß ist durch andere Bedingungen schon festgelegt" + (why ? ` (rot markiert: ${why})` : "") + ". Als getriebenes Maß (nur Anzeige, in Klammern) hinzufügen?", [{ label: "Abbrechen", value: null }, { label: "Getriebenes Maß", value: "driven", primary: true }]);
-      if (ch !== "driven") return;
+      if (this.prefs?.["skizze.getriebenFragen"]) {
+        const ch = await choiceDialog("Maß würde überbestimmen", "Dieses Maß ist durch andere Bedingungen schon festgelegt" + (why ? ` (rot markiert: ${why})` : "") + ". Als getriebenes Maß (nur Anzeige, in Klammern) hinzufügen?", [{ label: "Abbrechen", value: null }, { label: "Getriebenes Maß", value: "driven", primary: true }]);
+        if (ch !== "driven") return;
+      }
       c.driven = true;
       c.value = String(round4(measured));
       this.commit("Getriebenes Maß", (sk) => sk.constraints.push(c));
+      toast("Schon festgelegt – als getriebenes Maß (in Klammern) eingefügt" + (why ? `, festgelegt durch: ${why}` : ""));
       return;
     }
     this.askValue(sx, sy, round4(measured), (val) => {
       c.value = val;
-      this.commit("Bemaßung", (sk) => sk.constraints.push(c));
+      this.commit("Bemaßung", (sk) => {
+        // SolidCraft: das erste Längenmaß skaliert die verbundene Zeichnung mit, die Form bleibt wie gezeichnet
+        if (this.prefs?.["skizze.ersteMassSkaliert"] !== false) {
+          let target = NaN;
+          try { target = evaluate(val, this.scope()); } catch { /* bleibt NaN */ }
+          const f = scaleForFirstDimension(sk, c, measured, target);
+          if (f) toast(`Erstes Maß: Zeichnung mit Faktor ${fmtNum(f, 3)} skaliert`);
+        }
+        sk.constraints.push(c);
+      });
     });
   }
   askValue(sx, sy, initial, onOk, { allowList = false, angle = false } = {}) {
     this.cancelInput();
+    this.pendingParams = null;
     const scope = this.scope();
     const inp = h("input", { value: String(initial).replace(".", ","), spellcheck: "false" });
     // SolidCraft: Schritte für Pfeile, Auf/Ab und Mausrad; Bemaßungswerte in der Ansicht oder in einem Fenster
@@ -1103,13 +1146,19 @@ export class Sketcher {
     const box = h("div", { class: "dim-input" + (inWindow ? " im-fenster" : ""), style: pos }, ...(inWindow ? [h("span", { class: "hint" }, angle ? "Winkel" : "Maß")] : []), inp, ...arrows, h("button", { class: "btn primary", onclick: () => ok() }, "OK"));
     inp.addEventListener("wheel", (e) => { e.preventDefault(); stepBy(e.deltaY < 0 ? 1 : -1); }, { passive: false });
     const ok = () => {
-      const v = inp.value.trim();
+      let v = inp.value.trim();
       try {
+        const def = allowList ? null : paramDefinition(v);
+        if (def) {
+          if (def.name in scope && !(this.part?.params || []).some((p) => p.name === def.name)) throw new Error(`»${def.name}« ist schon vergeben`);
+          v = def.expr;
+        }
         for (const part of allowList ? v.split(";") : [v]) {
           const num = evaluate(part.trim(), scope);
           if (!(num > 0) && !part.includes("-")) throw new Error("Wert muss > 0 sein");
         }
         this.cancelInput();
+        if (def) { this.pendingParams = [def]; v = def.name; }
         onOk(v);
       } catch (err) {
         inp.style.borderColor = "var(--err)";
@@ -1335,6 +1384,17 @@ export class Sketcher {
     if (t === "extend" || t === "split") {
       const hit = this.hitTest(sx, sy, { points: false, dims: false });
       if (hit?.kind !== "entity") return toast("Linie oder Bogen anklicken");
+      // SolidCraft: Umschalt+Klick auf zwei Linien verlängert beide bis zum Schnittpunkt und verbindet sie dort
+      if (t === "extend" && (e.shiftKey || this.state?.cornerFirst)) {
+        if (this.entity(hit.id)?.type !== "line") return toast("Mit Umschalt: zwei Linien anklicken");
+        if (!this.state?.cornerFirst) { this.state = { cornerFirst: hit.id }; toast("Umschalt+Klick auf die zweite Linie"); this.render(); return; }
+        const first = this.state.cornerFirst;
+        this.state = null;
+        if (first !== hit.id) this.commitShape("Verlängern bis Schnitt", (sk) => joinCorner(sk, first, hit.id, { uid }));
+        this.hover = null;
+        this.render();
+        return;
+      }
       const [ox, oy] = this.L(sx, sy), [ux, uy] = this.L(sx + 10, sy);
       const tol = Math.hypot(ux - ox, uy - oy);
       const run = (sk) => (t === "extend" ? extendEntity(sk, hit.id, { x: lx, y: ly }, uid) : splitEntity(sk, hit.id, { x: lx, y: ly }, uid, tol));
@@ -1400,8 +1460,10 @@ export class Sketcher {
       return;
     }
     if (t === "dimension") {
-      const hit = this.hitTest(sx, sy, { dims: false });
       const st = this.state;
+      // SolidCraft: mit Bemaßung aktiv und noch nichts gewählt öffnet ein Klick auf ein Maß dessen Wert
+      if (!st) { const dh = this.hitTest(sx, sy, { points: false, curves: false }); if (dh?.kind === "dim") { this.editDimension(dh.id, sx, sy); return; } }
+      const hit = this.hitTest(sx, sy, { dims: false });
       if (st && !st.locked && st.picks.length === 1 && hit && hit.id !== st.picks[0].id) {
         this.state = { picks: [...st.picks, hit], place: true, locked: true };
       } else if (st && st.place) {
@@ -1487,6 +1549,7 @@ export class Sketcher {
     switch (t) {
       case "line":
         if (!this.state) this.state = { start: sn, dyn: createDynInput(["len", { key: "ang", signed: true }]), downAt: [sx, sy] };
+        else if (this.state.arcMode) this.finishLineArc(sn);
         else this.finishLine(sn);
         break;
       case "rect": case "rectc":
@@ -2077,7 +2140,8 @@ export class Sketcher {
       const hit = this.viewer.pick(e.clientX, e.clientY, { edges: true, faces: false, ghosts: true });
       this.viewer.highlight(hit ? [hit] : []);
     }
-    this.hover = this.hitTest(sx, sy, { dims: this.tool === "select" });
+    this.restToggle(sx, sy);
+    this.hover = this.hitTest(sx, sy, { dims: this.tool === "select" || (this.tool === "dimension" && !this.state) });
     if (!["select", "dimension", "project", "trim", "extend", "split", "sfillet", "schamfer", "pattern"].includes(this.tool) && !GLYPH[this.tool]) this.snapInfo = this.snap(sx, sy);
     else this.snapInfo = null;
     this.render();
@@ -2508,6 +2572,19 @@ export class Sketcher {
       rot = (Math.atan2(ddy, ddx) * 180) / Math.PI;
       if (rot > 90) rot -= 180;
       if (rot < -90) rot += 180;
+    } else if (c.type === "edgeDistance") {
+      const g = edgeDistanceGeometry(this.sk, c);
+      if (!g) return;
+      const sp = this.S(g.a.x, g.a.y), sf = this.S(g.b.x, g.b.y);
+      let ddx = sf[0] - sp[0], ddy = sf[1] - sp[1];
+      if (Math.hypot(ddx, ddy) < 1) { ddx = 1; ddy = 0; }
+      // kurze Hilfslinien über den Rand hinaus, damit man sieht, dass bis zur Kante gemessen wird
+      const L = Math.hypot(ddx, ddy), ux = ddx / L, uy = ddy / L, tick = (q) => `M${q[0] - uy * 5},${q[1] + ux * 5}L${q[0] + uy * 5},${q[1] - ux * 5}`;
+      grp.append(svgEl("path", { class: cls, d: `M${sp[0]},${sp[1]}L${sf[0]},${sf[1]}` + arrow(sf[0], sf[1], ddx, ddy) + arrow(sp[0], sp[1], -ddx, -ddy) + tick(sf) }));
+      tx = (sp[0] + sf[0]) / 2; ty = (sp[1] + sf[1]) / 2;
+      rot = (Math.atan2(ddy, ddx) * 180) / Math.PI;
+      if (rot > 90) rot -= 180;
+      if (rot < -90) rot += 180;
     } else if (c.type === "offset") {
       const e1 = this.entity(c.e1), e2 = this.entity(c.e2);
       if (!e1 || !e2) return;
@@ -2650,6 +2727,55 @@ export class Sketcher {
       this.glyphBoxes.push({ id: c.id, x0: gx - w / 2, x1: gx + w / 2, y0: gy - 7, y1: gy + 6 });
     }
   }
+  previewTangentArc(path, start, lineId, cur) {
+    const P0 = this.pts(), line = this.entity(lineId), s0 = P0.get(start.pointId), f = line && P0.get(line.p1 === start.pointId ? line.p2 : line.p1);
+    if (!s0 || !f) return;
+    const L = Math.hypot(s0.x - f.x, s0.y - f.y) || 1, a = tangentArcCenter(s0, { x: (s0.x - f.x) / L, y: (s0.y - f.y) / L }, cur);
+    if (!a) return;
+    const t0 = Math.atan2(s0.y - a.c.y, s0.x - a.c.x), t1 = Math.atan2(cur.y - a.c.y, cur.x - a.c.x);
+    let sw = t1 - t0;
+    if (a.ccw) { while (sw <= 0) sw += 2 * Math.PI; } else { while (sw >= 0) sw -= 2 * Math.PI; }
+    const pts = [];
+    for (let i = 0; i <= 48; i++) { const q = t0 + (sw * i) / 48; pts.push(this.S(a.c.x + a.r * Math.cos(q), a.c.y + a.r * Math.sin(q))); }
+    path("M" + pts.map((q) => q.join(",")).join("L"));
+  }
+  /**
+   * SolidCraft »Auf dem letzten Linienpunkt verweilen wechselt zum Tangentialbogen«: Maus vom letzten Punkt der
+   * Linienkette wegbewegen, zurückkommen und kurz stillhalten schaltet Linie ↔ Tangentialbogen.
+   */
+  restToggle(sx, sy) {
+    const st = this.state;
+    if (this.tool !== "line" || !st?.start?.pointId || !this.prefs?.["skizze.verweilenBogen"]) return;
+    const line = this.sk.entities.find((e) => e.type === "line" && !e.origin && (e.p2 === st.start.pointId || e.p1 === st.start.pointId));
+    if (!line) return;
+    const [px, py] = this.S(st.start.x, st.start.y), d = Math.hypot(sx - px, sy - py), R = Math.max(6, this.snapR);
+    if (d > 3 * R) { st.restLeft = true; clearTimeout(st.restTimer); st.restTimer = null; return; }
+    if (d > R) { clearTimeout(st.restTimer); st.restTimer = null; return; }
+    if (!st.restLeft || st.restTimer) return;
+    st.restTimer = setTimeout(() => {
+      if (this.state !== st) return;
+      st.restTimer = null;
+      st.restLeft = false;
+      st.arcMode = !st.arcMode;
+      st.arcLine = line.id;
+      st.dyn = st.arcMode ? null : createDynInput(["len", { key: "ang", signed: true }]);
+      this.render();
+    }, 330);
+  }
+  finishLineArc(sn) {
+    const st = this.state;
+    let res = null;
+    this.commitShape("Tangentialer Bogen", (sk) => { res = buildTangentArc(sk, st.start.pointId, st.arcLine, sn, { uid, usePoint: (s, p, cons) => this.usePoint(s, p, cons), construction: !!this.construction }); });
+    if (!res || this.state !== st) return;
+    const np = this.pts().get(res.end);
+    if (!np) { this.state = null; return; }
+    if (sn.pointId && sn.pointId === st.firstId) { this.state = null; return; }
+    // Kette geht mit einer Linie weiter (wie in SolidCraft: dieselbe Geste schaltet zurück)
+    st.start = { x: np.x, y: np.y, pointId: res.end };
+    st.arcMode = false;
+    st.restLeft = false;
+    st.dyn = createDynInput(["len", { key: "ang", signed: true }]);
+  }
   renderPreview(g, P) {
     const m = this.mouse;
     if (!m) return;
@@ -2671,7 +2797,13 @@ export class Sketcher {
     const cur = sn || { x: m.lx, y: m.ly };
     const path = (d) => g.append(svgEl("path", { d, class: "sk-preview" }));
     const S = (x, y) => this.S(x, y);
-    if (this.tool === "line" && st.start) {
+    if (this.tool === "line" && st.start && st.arcMode) {
+      // Tangentialbogen nach Verweilen am letzten Punkt (SolidCraft)
+      this.previewTangentArc(path, st.start, st.arcLine, cur);
+      const A = S(cur.x, cur.y), t = svgEl("text", { x: A[0] + 12, y: A[1] + 18, class: "sk-infer" });
+      t.textContent = "Tangentialbogen";
+      g.append(t);
+    } else if (this.tool === "line" && st.start) {
       const a = st.start;
       const typed = dynTyped(st.dyn);
       const live = lineLive(a, typed ? cur : this.inferHV(a, cur));
@@ -2768,18 +2900,7 @@ export class Sketcher {
       } else path("M" + pts.map((p) => S(p.x, p.y).join(",")).join("L"));
       for (const p of st.pts) { const q = S(p.x, p.y); g.append(svgEl("circle", { cx: q[0], cy: q[1], r: 3, class: "sk-snap" })); }
     } else if (this.tool === "arct" && st.start) {
-      const P0 = this.pts(), line = this.entity(st.line), s0 = P0.get(st.start.pointId), f = line && P0.get(line.p1 === st.start.pointId ? line.p2 : line.p1);
-      if (s0 && f) {
-        const L = Math.hypot(s0.x - f.x, s0.y - f.y) || 1, a = tangentArcCenter(s0, { x: (s0.x - f.x) / L, y: (s0.y - f.y) / L }, cur);
-        if (a) {
-          const t0 = Math.atan2(s0.y - a.c.y, s0.x - a.c.x), t1 = Math.atan2(cur.y - a.c.y, cur.x - a.c.x);
-          let sw = t1 - t0;
-          if (a.ccw) { while (sw <= 0) sw += 2 * Math.PI; } else { while (sw >= 0) sw -= 2 * Math.PI; }
-          const pts = [];
-          for (let i = 0; i <= 48; i++) { const q = t0 + (sw * i) / 48; pts.push(S(a.c.x + a.r * Math.cos(q), a.c.y + a.r * Math.sin(q))); }
-          path("M" + pts.map((q) => q.join(",")).join("L"));
-        }
-      }
+      this.previewTangentArc(path, st.start, st.line, cur);
     } else if (this.tool === "arc3" && st.pts) {
       const pts = [...st.pts, cur];
       if (this.tool === "arc3" && pts.length === 3) {

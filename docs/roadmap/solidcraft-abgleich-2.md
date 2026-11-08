@@ -51,3 +51,20 @@ Alles schaltbar in den Einstellungen; Standard bleibt das heutige Aussehen, nur 
   (Differenz/Vereinigen/neuer Körper) nach Lage; STEP-Import »Aufstellen« (Y oben → Z oben) mit Vorschlag nach dem Einfügen.
 - **Lücken aus dem Inventar** (siehe solidcraft-inventar.md, L1–L16): Klick-Durchschalten und »Andere auswählen…« (L1),
   Grenzen finden am Gelenk (L2), Quelle neu verknüpfen (L4), L/R/C mit zuletzt benutzter Variante (L7), Schwerpunkt mit Hauptachsen im Modell (L13).
+
+## Skizze, Runde 3 (08.11.2026)
+
+Patrick: »Skizze weiter verbessern, mehr an SolidCraft anlehnen«. Grundlage: SolidCraft-Handbuch »Sketching and constraints«
+und die Skizzen-Einstellungen. Bilder: optik/solidcraft/skizze-2026-11-08/, Prüfablauf `tools/skizze-solidcraft-bilder.mjs`.
+
+| SolidCraft | PBCAD vorher | jetzt |
+|---|---|---|
+| Linie–Kreis, Punkt–Kreis, Kreis–Kreis messen bis zum Kreisrand (Spalt, Überdeckung, engste Wand) | Linie–Kreis ging gar nicht, sonst Mittenabstand | neues Maß `edgeDistance` (src/core/kantenmass.js); Mittenabstand weiter über den Mittelpunkt |
+| Das erste Maß skaliert die Zeichnung | nur das bemaßte Element änderte sich | verbundene Form skaliert mit (src/core/erstesmass.js), Einstellung »Das erste Maß skaliert die Zeichnung« |
+| `breite = 20` im Maßfeld legt den Parameter an | – | im Maßfeld und in der Maßeingabe beim Zeichnen, ein Rückgängig-Schritt |
+| Maß mit aktiver Bemaßung anklicken öffnet den Wert; der Maßtext nimmt immer den Klick | Klick genau auf die Maßzahl kam nicht an (SVG fing ihn ab) | behoben, Klick öffnet den Wert |
+| Maß, das die Skizze schon festlegt, wird getrieben eingefügt | Rückfrage | ohne Rückfrage (Einstellung »Vor getriebenem Maß nachfragen«) |
+| Ausrichtung an anderen Punkten bleibt als Bedingung | nur Hilfslinie | Einstellung »Ausrichtung … als Bedingung behalten« (aus), nur wenn nichts überbestimmt |
+| Auf dem letzten Linienpunkt verweilen → Tangentialbogen | – | Einstellung (aus), gleiche Geste schaltet zurück |
+| Umschalt+Klick auf zwei Linien beim Verlängern: bis zum Schnitt | nur über »Ecke« | im Verlängern-Werkzeug |
+| Skizzensymbol im Browser in der Zustandsfarbe | Punkt-Plakette | Symbol blau (unterbestimmt) bzw. dunkel (voll bestimmt), Einstellung |

@@ -92,5 +92,7 @@ export function alignSnap(sk, x, y, tol, { refs = [], excludePoints = new Set() 
   if (vx) guides.push({ x1: vx.x, y1: vx.y, x2: nx, y2: ny });
   if (vy) guides.push({ x1: vy.x, y1: vy.y, x2: nx, y2: ny });
   const what = (p) => (p.mid ? "Linienmitte" : "Punkt");
-  return { x: nx, y: ny, label: vx && vy ? "Kreuzung der Hilfslinien" : vx ? `Senkrecht zu ${what(vx)}` : `Waagrecht zu ${what(vy)}`, guides };
+  // Quellpunkte mit id: damit kann der Klick die Ausrichtung als Bedingung behalten (SolidCraft »line up«)
+  const idOf = (p) => (p && !p.mid ? p.id || p.pointId || null : null);
+  return { x: nx, y: ny, label: vx && vy ? "Kreuzung der Hilfslinien" : vx ? `Senkrecht zu ${what(vx)}` : `Waagrecht zu ${what(vy)}`, guides, alignV: idOf(vx), alignH: idOf(vy) };
 }

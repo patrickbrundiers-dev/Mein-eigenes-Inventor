@@ -46,16 +46,19 @@ export const dynTyped = (st) => !!st && st.fields.some((f) => f.text.trim() !== 
  * Liefert { values, exprs, ok }; exprs[key] ist nur bei getippten Feldern gesetzt. Fehler landen in field.error.
  */
 export function dynValues(st, live, scope = {}) {
-  const values = {}, exprs = {};
+  const values = {}, exprs = {}, params = [];
   let ok = true;
   for (const f of st.fields) {
     const t = f.text.trim();
     if (!t) { values[f.key] = live[f.key]; continue; }
     try {
-      const v = evaluate(t, scope);
+      // SolidCraft: »breite = 20« legt den Parameter breite an und bemaßt mit ihm
+      const def = paramDefinition(t);
+      const v = evaluate(def ? def.expr : t, scope);
       if (!Number.isFinite(v) || (!f.signed && !(v > 0))) throw new Error("Wert muss > 0 sein");
       values[f.key] = v;
-      exprs[f.key] = t;
+      exprs[f.key] = def ? def.name : t;
+      if (def) params.push(def);
       f.error = null;
     } catch (err) {
       f.error = err.message;
@@ -63,7 +66,28 @@ export function dynValues(st, live, scope = {}) {
       ok = false;
     }
   }
-  return { values, exprs, ok };
+  return { values, exprs, ok, params };
+}
+
+/**
+ * »name = ausdruck« (auch »#name = ausdruck«) in einem Maßfeld: { name, expr } oder null.
+ * Wie in SolidCraft und Inventor wird daraus ein Benutzerparameter, das Maß bekommt den Namen als Wert.
+ */
+export function paramDefinition(text) {
+  const m = /^\s*#?\s*([A-Za-z_À-ɏ][A-Za-z0-9_À-ɏ]*)\s*=\s*(.+?)\s*$/.exec(String(text));
+  if (!m) return null;
+  return { name: m[1], expr: m[2] };
+}
+
+/** Parameter aus Maßfeldern ins Bauteil übernehmen (vorhandene bekommen den neuen Ausdruck) */
+export function applyParamDefinitions(part, defs) {
+  if (!part || !defs?.length) return;
+  part.params = part.params || [];
+  for (const d of defs) {
+    const p = part.params.find((q) => q.name === d.name);
+    if (p) p.expr = d.expr;
+    else part.params.push({ name: d.name, expr: d.expr, comment: "aus Skizzenmaß" });
+  }
 }
 
 const sgn = (d) => (d < 0 ? -1 : 1);
