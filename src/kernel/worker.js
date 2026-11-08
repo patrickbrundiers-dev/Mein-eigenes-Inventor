@@ -290,9 +290,11 @@ const handlers = {
             r.sectionLoops = groups.flat();
             r.sectionGroups = groups;
             r.axes = K.cylinderAxes(cutShape, v);
+            r.axisRadii = r.axes.radii;
           } else {
             r = K.projectView(shape, v);
             r.axes = K.cylinderAxes(shape, v);
+            r.axisRadii = r.axes.radii;
           }
           r.bbox = bbox2(r.visible.concat(r.hidden));
         } catch (e) {

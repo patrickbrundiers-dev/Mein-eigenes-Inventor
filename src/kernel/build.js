@@ -4077,7 +4077,7 @@ export function createKernel(R) {
       } catch { /* ignore */ }
     }
     const P2 = (p) => [v3.dot(p, right), v3.dot(p, Y)];
-    const out = [];
+    const out = [], radii = [];
     for (const g of groups) {
       if (g.sweep < Math.PI * 0.95 || g.t1 - g.t0 < 1e-6) continue;
       const a = P2(v3.add(g.foot, v3.mul(g.D, g.t0))), b = P2(v3.add(g.foot, v3.mul(g.D, g.t1)));
@@ -4093,10 +4093,13 @@ export function createKernel(R) {
         const n0 = Math.min(0, lo), n1 = Math.max(L, hi), O = o[0];
         o[0] = [O[0] + (ux / L) * n0, O[1] + (uy / L) * n0];
         o[1] = [O[0] + (ux / L) * n1, O[1] + (uy / L) * n1];
+        radii[out.indexOf(o)].add(Math.round(g.r * 1e4) / 1e4);
         return true;
       });
-      if (!dup) out.push([a, b]);
+      if (!dup) { out.push([a, b]); radii.push(new Set([Math.round(g.r * 1e4) / 1e4])); }
     }
+    // Radien je Achse (Ø-Erkennung von Längenmaßen in der Seitenansicht), als eigenes Feld: Arrays verlieren Zusatzfelder
+    out.radii = radii.map((x) => [...x]);
     return out;
   }
   /** Kamera aus Blickrichtung + Oben-Richtung */

@@ -385,6 +385,25 @@ try {
   await shot("14-zeichnung");
   const dw = await evalApp(() => { const d = window.__werkcad.drawing; return { views: d.doc.views.length, proj: [...d.proj.values()].map((p) => ({ vis: p.visible.length, hid: p.hidden.length, err: p.error })) }; });
   step("Zeichnungsansichten", dw.proj.length === dw.views && dw.proj.every((p) => p.vis > 0 && !p.err), JSON.stringify(dw));
+  // Durchmesser per Klick auf den Kreisumfang (früher fing ein Stützpunkt des Kreises den Klick)
+  {
+    const r = await evalApp(() => {
+      const dr = window.__werkcad.drawing, d = dr.doc, n0 = d.dims.length;
+      const v = d.views.find((x) => x.type !== "iso" && (dr.viewGeom(x)?.arcs || []).some((a) => a.full));
+      const a = v && dr.viewGeom(v).arcs.find((x) => x.full);
+      if (!a) return { kein: true };
+      dr.setTool("dim");
+      let hits = 0;
+      for (let k = 0; k < 12; k++) { const t = (k * Math.PI) / 6, [sx, sy] = dr.viewXf(v).to(a.cx + a.r * Math.cos(t), a.cy + a.r * Math.sin(t)); dr.pendingDim = null; dr.dimClick(sx, sy); if (dr.pendingDim?.m?.kind === "dia") hits++; }
+      const [sx, sy] = dr.viewXf(v).to(a.cx + a.r * 3, a.cy + a.r * 3);
+      dr.dimClick(sx, sy);
+      const n1 = d.dims.length, m = d.dims[n1 - 1];
+      d.dims = d.dims.slice(0, n0);
+      dr.setTool(null);
+      return { hits, placed: n1 === n0 + 1 && m?.kind === "dia" && Math.abs(m.circle.r - a.r) < 1e-9 };
+    });
+    step("Zeichnung: Durchmessermaß per Klick auf den Kreis", r.hits === 12 && r.placed, JSON.stringify(r));
+  }
   await evalApp(() => window.__werkcad.drawing.autoDims());
   await page.waitForTimeout(300);
   await shot("15-zeichnung-masse");

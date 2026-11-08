@@ -1,6 +1,6 @@
 // Zeichnungsableitung: Blatt, Ansichten (Projektionsmethode 1 / DIN ISO 5456-2), Bemaßung, Schriftfeld, Export
 import { templateOf, extraFields, LINE_GROUPS, DIM_TEXT_SIZES, MAX_EXTRA, validateTemplate } from "../core/zeichnungsvorlage.js";
-import { chainDims, alignRows, clockwiseOrder, alignBalloons, arcLength } from "../core/bemassung.js";
+import { chainDims, alignRows, clockwiseOrder, alignBalloons, arcLength, snapPoints, nearestArc, acrossAxis, DIM_PREFIXES } from "../core/bemassung.js";
 import { h, svgEl, toast, modal, promptDialog, fmtNum, downloadBlob } from "./dom.js";
 import { classOf, toleranceText, validateTolerance, TOL_KINDS } from "../core/tolerance.js";
 import { partMass } from "../core/mass.js";
@@ -1190,6 +1190,10 @@ export class DrawingEditor {
       svg.append(svgEl("rect", { x: r3(q.x - q.w / 2), y: r3(q.y - q.h / 2), width: r3(q.w), height: r3(q.h), fill: "none", stroke: "#ef7d1a", "stroke-width": 0.35, "stroke-dasharray": "2 1.5" }));
     }
     if (interactive && this.snapMark) svg.append(svgEl("circle", { cx: this.snapMark[0], cy: this.snapMark[1], r: 1.2, class: "dw-snap" }));
+    if (interactive && this.tool === "dim" && this.hoverCircle) {
+      const hc = this.hoverCircle, v = d.views.find((x) => x.id === hc.view);
+      if (v) { const [x, y] = this.viewXf(v).to(hc.circle.cx, hc.circle.cy); svg.append(svgEl("circle", { cx: r3(x), cy: r3(y), r: r3(hc.circle.r * v.scale), class: "dw-hovercircle", fill: "none", stroke: "#1f6feb", "stroke-width": 0.5, "pointer-events": "none" })); }
+    }
     if (interactive && this.pendingDim?.p1s) {
       const [x, y] = this.pendingDim.p1s;
       svg.append(svgEl("circle", { cx: x, cy: y, r: 1, fill: "#ef7d1a" }));
@@ -1321,6 +1325,13 @@ export class DrawingEditor {
     }
     return g;
   }
+  /** Längenmaß über einen Zylinder in der Seitenansicht (Rohr, Welle, Bohrung) bekommt von selbst ein Ø (DIN 406) */
+  autoPrefix(m) {
+    const p = this.proj.get(m.view);
+    if (acrossAxis(m, p?.axes, p?.axisRadii)) m.prefix = "Ø";
+    else delete m.prefix;
+    return m;
+  }
   dimValue(m) {
     if (m.kind === "ang") return angleValue(m);
     if (m.kind === "arc") return arcLength(m.circle.r, m.sweep);
@@ -1340,7 +1351,7 @@ export class DrawingEditor {
     const tol = m.kind === "ang" ? "" : toleranceText(m.tol, val, classOf(d.title?.toleranz), m.kind === "rad" ? "rad" : "lin");
     // Bohrungs- und Teilungsangaben bleiben, wie sie sind (Nennmaße der Bohrung); die Toleranz kommt dahinter
     const txt = m.kind === "ang" ? dimLabel(m) : (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m) + tol
-      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : m.kind === "arc" ? "⌒" : "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + tol + (m.suffix || "");
+      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : m.kind === "arc" ? "⌒" : m.prefix || "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + tol + (m.suffix || "");
     const arrowHead = (x, y, ux, uy) => {
       const L = 3, w = 0.9;
       return svgEl("path", { d: `M${r3(x)} ${r3(y)}L${r3(x - ux * L + uy * w)} ${r3(y - uy * L - ux * w)}L${r3(x - ux * L - uy * w)} ${r3(y - uy * L + ux * w)}Z`, fill: "#111a24", stroke: "none" });
@@ -1407,9 +1418,15 @@ export class DrawingEditor {
       const pOut = [cx + ux * (r + lead), cy + uy * (r + lead)];
       const start = m.kind === "dia" ? [cx - ux * r, cy - uy * r] : [cx, cy];
       const shelf = Math.max(10, txt.length * 2.1 + 2); // Bezugslinie so lang wie der Text (z. B. „5× Ø6,8“)
-      g.append(svgEl("path", { d: `M${r3(start[0])} ${r3(start[1])}L${r3(pOut[0])} ${r3(pOut[1])}h${r3(ux >= 0 ? shelf : -shelf)}` }));
-      g.append(arrowHead(pOn[0], pOn[1], ux, uy));
-      if (m.kind === "dia") g.append(arrowHead(start[0], start[1], -ux, -uy));
+      // kleiner Kreis (DIN 406-11): zwischen den Pfeilen ist kein Platz → Pfeile von außen, Maßlinie läuft durch
+      const tight = m.kind === "dia" && !m.pcd && 2 * r < 8;
+      const from = tight ? [cx - ux * (r + 4), cy - uy * (r + 4)] : start;
+      g.append(svgEl("path", { d: `M${r3(from[0])} ${r3(from[1])}L${r3(pOut[0])} ${r3(pOut[1])}h${r3(ux >= 0 ? shelf : -shelf)}` }));
+      if (tight) g.append(arrowHead(pOn[0], pOn[1], -ux, -uy), arrowHead(start[0], start[1], ux, uy));
+      else {
+        g.append(arrowHead(pOn[0], pOn[1], ux, uy));
+        if (m.kind === "dia") g.append(arrowHead(start[0], start[1], -ux, -uy));
+      }
       g.append(text(pOut[0] + (ux >= 0 ? shelf / 2 : -shelf / 2), pOut[1] - 1, 0));
       return g;
     }
@@ -1758,6 +1775,16 @@ export class DrawingEditor {
   }
 
   // ---------- Fangpunkte ----------
+  /** Fangpunkte einer Ansicht (Enden, Ecken, ohne Kreis-Stützpunkte), je Projektion einmal gerechnet */
+  snapPointsOf(v, p) {
+    const lines = p.visible.concat(v.hidden === false ? [] : p.hidden || []);
+    const cache = (this._snapCache ||= new WeakMap());
+    const hit = cache.get(p.visible);
+    if (hit && hit.lines === lines.length) return hit.pts;
+    const pts = snapPoints(lines, [...(p.arcs || []), ...(p.hiddenArcs || [])]);
+    cache.set(p.visible, { lines: lines.length, pts });
+    return pts;
+  }
   snapAt(sx, sy) {
     const d = this.doc;
     let best = null, bd = 2.2 / this.zoom;
@@ -1766,23 +1793,10 @@ export class DrawingEditor {
       const p = this.viewGeom(v);
       if (!p) continue;
       const xf = this.viewXf(v);
-      for (const pl of p.visible.concat(v.hidden === false ? [] : p.hidden || [])) {
-        for (const i of [0, pl.length - 1]) {
-          const [x, y] = xf.to(pl[i][0], pl[i][1]);
-          const dd = Math.hypot(x - sx, y - sy);
-          if (dd < bd) { bd = dd; best = { view: v.id, p: pl[i], s: [x, y] }; }
-        }
-        // Ecken innerhalb von Linienzügen (Richtungswechsel)
-        for (let i = 1; i < pl.length - 1; i++) {
-          const a = pl[i - 1], b = pl[i], c = pl[i + 1];
-          const cr = Math.abs((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]));
-          if (cr < 1e-6) continue;
-          const seg = Math.hypot(b[0] - a[0], b[1] - a[1]) + Math.hypot(c[0] - b[0], c[1] - b[1]);
-          if (cr / (seg * seg) < 0.02) continue; // Kurven-Stützpunkt, keine Ecke
-          const [x, y] = xf.to(b[0], b[1]);
-          const dd = Math.hypot(x - sx, y - sy);
-          if (dd < bd) { bd = dd; best = { view: v.id, p: b, s: [x, y] }; }
-        }
+      for (const q of this.snapPointsOf(v, p)) {
+        const [x, y] = xf.to(q[0], q[1]);
+        const dd = Math.hypot(x - sx, y - sy);
+        if (dd < bd) { bd = dd; best = { view: v.id, p: q, s: [x, y] }; }
       }
       for (const a of [...(p.arcs || []), ...(p.hiddenArcs || [])]) {
         const [x, y] = xf.to(a.cx, a.cy);
@@ -1790,26 +1804,34 @@ export class DrawingEditor {
         if (dd < bd) { bd = dd; best = { view: v.id, p: [a.cx, a.cy], s: [x, y], center: a }; }
       }
     }
+    if (best) best.dist = bd;
     return best;
   }
+  /** Kreis oder Bogen, dessen Umfang unter dem Mauszeiger liegt (der nächste, wenn mehrere in Reichweite sind) */
   circleAt(sx, sy) {
     const d = this.doc;
+    let best = null;
     for (const v of d.views) {
       if (v.type === "iso") continue;
       const p = this.viewGeom(v);
       if (!p) continue;
-      const xf = this.viewXf(v);
-      for (const a of p.arcs || []) {
-        const [x, y] = xf.to(a.cx, a.cy);
-        if (Math.abs(Math.hypot(x - sx, y - sy) - a.r * v.scale) < 1.5 / this.zoom) return { view: v.id, circle: { cx: a.cx, cy: a.cy, r: a.r }, full: a.full };
-      }
+      const xf = this.viewXf(v), k = v.scale * this.zoom;
+      const hit = nearestArc(p.arcs, xf.from(sx, sy), 1.5 / k);
+      if (hit && (!best || hit.dist * v.scale < best.dist)) best = { view: v.id, circle: { cx: hit.arc.cx, cy: hit.arc.cy, r: hit.arc.r }, full: !!hit.arc.full, dist: hit.dist * v.scale };
     }
-    return null;
+    return best;
+  }
+  /** Was ein Klick mit dem Bemaßungswerkzeug trifft: Kreisumfang vor Fangpunkt, wenn er näher liegt */
+  dimTargetAt(sx, sy) {
+    const s = this.snapAt(sx, sy), c = this.circleAt(sx, sy);
+    if (c && (!s || c.dist < s.dist)) return { circle: c };
+    return s ? { snap: s } : null;
   }
 
   // ---------- Werkzeuge ----------
   setTool(t) {
     this.tool = t;
+    this.hoverCircle = null;
     this.pendingDim = null;
     this.pendingAngle = null;
     this.pendingChain = null;
@@ -1942,8 +1964,10 @@ export class DrawingEditor {
         this.render();
       }
       if (this.tool === "dim") {
-        const s = this.snapAt(sx, sy);
-        this.snapMark = s ? s.s : null;
+        // Kreis unter dem Zeiger hervorheben, damit klar ist, dass der Klick ein Ø-/R-Maß setzt
+        const tg = this.pendingDim?.ready ? null : this.dimTargetAt(sx, sy);
+        this.snapMark = tg?.snap ? tg.snap.s : null;
+        this.hoverCircle = tg?.circle || null;
         if (this.pendingDim?.ready) {
           this.previewDim(sx, sy);
         }
@@ -2175,15 +2199,16 @@ export class DrawingEditor {
           m.kind = Math.abs(A[1] - B[1]) < 1e-6 ? "h" : Math.abs(A[0] - B[0]) < 1e-6 ? "v" : outY && !outX ? "h" : outX && !outY ? "v" : "a";
         }
         m.off = this.offsetFor(m, xf, sx, sy);
+        this.autoPrefix(m);
       }
       this.app.edit("Bemaßung", () => { d.dims.push(m); }, { rebuild: false });
       this.pendingDim = null;
       this.render();
       return;
     }
-    const s = this.snapAt(sx, sy);
+    const tg = this.dimTargetAt(sx, sy), s = tg?.snap;
     if (!s) {
-      const c = this.circleAt(sx, sy);
+      const c = tg?.circle;
       if (c) { this.pendingDim = { ready: true, m: { id: uid("m"), view: c.view, kind: c.full ? "dia" : "rad", circle: c.circle, angle: -Math.PI / 4 } }; this.render(); return; }
       // Kante: ihre Länge folgt der Maus; zweite Kante gibt Abstand oder Winkel
       const e = !pd && this.edgeHit(sx, sy);
@@ -2213,6 +2238,7 @@ export class DrawingEditor {
       const outX = sx < x0 || sx > x1, outY = sy < y0 || sy > y1;
       if (!m.fixedKind) m.kind = Math.abs(A[1] - B[1]) < 1e-6 ? "h" : Math.abs(A[0] - B[0]) < 1e-6 ? "v" : outY && !outX ? "h" : outX && !outY ? "v" : "a";
       m.off = this.offsetFor(m, xf, sx, sy);
+      this.autoPrefix(m);
     }
   }
   /** Getroffene gerade Kante einer Normalansicht: { view, seg, q, run } (run = ganze Kante) oder null */
@@ -2253,6 +2279,8 @@ export class DrawingEditor {
       title: "Maß bearbeiten",
       body: h("div", {},
         h("div", { class: "field" }, h("label", {}, "Wert"), h("div", {}, fmtNum(this.dimValue(m), 3) + " mm")),
+        (m.kind === "dia" || m.kind === "rad") && !m.hole && !m.pcd ? h("div", { class: "field" }, h("label", {}, "Art"), h("select", { class: "inp", id: "dm-art" }, h("option", { value: "dia", selected: m.kind === "dia" }, "Durchmesser Ø"), h("option", { value: "rad", selected: m.kind === "rad" }, "Radius R"))) : null,
+        m.kind === "h" || m.kind === "v" || m.kind === "a" ? h("div", { class: "field" }, h("label", {}, "Zeichen vor der Zahl"), h("select", { class: "inp", id: "dm-pre" }, ...DIM_PREFIXES.map((x) => h("option", { value: x, selected: (m.prefix || "") === x }, x || "keins")))) : null,
         h("div", { class: "field" }, h("label", {}, "Nachkommastellen"), h("input", { class: "inp", id: "dm-dec", type: "number", min: 0, max: 3, value: m.decimals ?? d.nachkomma ?? 1 })),
         h("div", { class: "field" }, h("label", {}, "Toleranz"), h("select", { class: "inp", id: "dm-tol", onchange: showTol }, ...TOL_KINDS.map((k) => h("option", { value: k.value, selected: (m.tol?.art || "") === k.value }, k.label)))),
         h("div", { class: "field dm-tol-f", "data-art": "sym" }, h("label", {}, "±"), h("input", { class: "inp", id: "dm-sym", value: m.tol?.art === "sym" ? fmtNum(m.tol.v, 3) : "" })),
@@ -2269,7 +2297,8 @@ export class DrawingEditor {
           const val = (id) => document.getElementById(id).value;
           const r = validateTolerance({ art: val("dm-tol"), v: val("dm-sym"), o: val("dm-o"), u: val("dm-u"), pass: val("dm-pass") });
           if (!r.ok) { toast(r.error, { kind: "err" }); return false; }
-          this.app.edit("Maß", () => { m.decimals = Math.max(0, Math.min(3, dec)); m.suffix = suf; if (r.value) m.tol = r.value; else delete m.tol; if (m.auto) m.touched = true; }, { rebuild: false });
+          const art = document.getElementById("dm-art")?.value, pre = document.getElementById("dm-pre")?.value;
+          this.app.edit("Maß", () => { m.decimals = Math.max(0, Math.min(3, dec)); m.suffix = suf; if (art) m.kind = art; if (pre != null) { if (pre) m.prefix = pre; else delete m.prefix; } if (r.value) m.tol = r.value; else delete m.tol; if (m.auto) m.touched = true; }, { rebuild: false });
           this.render();
         } }],
     });
@@ -2315,6 +2344,7 @@ export class DrawingEditor {
     const front = used.profile?.member && cands.find((v) => v.type === "front" && views.some((x) => x.id === v.id));
     if (front) planned.push(...(await this.memberHoleDims(d, front)));
     const add = planned.filter((m) => m.kind !== "fase").map((m) => ({ id: uid("m"), ...m, auto: true }));
+    for (const m of add) if (!m.count && !m.pitch && !m.ord && (m.kind === "h" || m.kind === "v")) this.autoPrefix(m);
     const fasen = planned.filter((m) => m.kind === "fase");
     const keepNotes = (d.notes || []).filter((n) => !(n.auto && !n.touched));
     const notes = []; // Profilangabe steht im Schriftfeld (Halbzeug)
