@@ -1,10 +1,6 @@
-**Neu in 0.50.0**
+**Neu in 0.50.1**
 
-- **Maß bis zum Kreisrand:** Linien, Punkte und Kreise lassen sich bis zum Rand eines Kreises bemaßen.
-- **Erstes Maß skaliert:** Das erste Maß einer Skizze skaliert die ganze Zeichnung.
-- **Parameter im Maßfeld:** Mit »breite = 50« im Maßfeld wird gleich ein Parameter angelegt.
-- **Verlängern bis zum Schnitt:** Mit Umschalt+Klick werden zwei Linien bis zu ihrem Schnittpunkt gezogen.
-- **Bestimmtheit im Browser:** Das Skizzensymbol zeigt, ob die Skizze voll bestimmt ist.
-- **Getriebene Maße:** Sie werden ohne Rückfrage gesetzt.
-- **Neue Einstellungen (aus):** Tangentialbogen durch Verweilen, und die Ausrichtung als Bedingung behalten.
-- **Behoben:** Ein Klick genau auf eine Maßzahl kam nicht an.
+- **Durchmessermaß per Klick:** Ein Klick mit »Bemaßung« auf einen Kreis setzt jetzt das Ø- oder R-Maß, auch bei kleinen Bohrungen. Die Kreismitte bleibt Fangpunkt, und der Kreis unter dem Zeiger wird blau hervorgehoben.
+- **Automatisch Ø:** Ein Längenmaß quer über Rohr, Welle oder Bohrung in der Seitenansicht bekommt automatisch das Ø-Zeichen, auch bei »Hauptmaße«.
+- **Maß bearbeiten:** Durchmesser und Radius lassen sich umschalten. Vor die Zahl kann ein Zeichen gesetzt werden (Ø, □, R, SØ, SR, M).
+- **Kleine Kreise:** Das Ø-Maß bekommt Pfeile von außen (DIN 406-11).
