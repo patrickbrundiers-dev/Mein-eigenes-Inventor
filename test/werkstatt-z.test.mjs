@@ -1,0 +1,225 @@
+// Vorschläge nach 0.50 (Z1–Z8): Reststücklager, Ladeliste, Laufzettel, Zeichnungsvergleich, Einbauort, Statik, Stücklistenspalten
+import test from "node:test";
+import assert from "node:assert/strict";
+import { planBars, newRemnants, bookRemnants, validateRemnants, remnantPage, barOptions } from "../src/core/stangen.js";
+import { validateValue, SETTINGS, settingDef } from "../src/core/settings.js";
+
+const row = (pos, length, qty, profileId = "QR 40x40x3", material = "S235") => ({ pos, profileId, material, length, qty, kgm: 3.4 });
+
+test("Z1: Reste werden vor neuen Stangen belegt, kürzester passender zuerst", () => {
+  const remnants = [
+    { id: "R1", profileId: "QR 40x40x3", material: "S235", length: 2500 },
+    { id: "R2", profileId: "QR 40x40x3", material: "S235", length: 1300 },
+    { id: "R3", profileId: "QR 40x40x3", material: "S355", length: 5000 }, // anderer Werkstoff
+    { id: "R4", profileId: "RR 30", material: "S235", length: 5000 }, // anderes Profil
+  ];
+  const p = planBars([row(1, 1200, 1), row(2, 2000, 1)], { stock: 6000, trim: 10, rest: 0, kerf: 0, remnants });
+  const g = p.groups[0];
+  assert.equal(g.buyBars, 0, "keine neue Stange nötig");
+  assert.deepEqual(new Set(p.remnantsUsed), new Set(["R1", "R2"]));
+  assert.equal(g.bars.find((b) => b.remnant.id === "R2").pieces[0].pos, 1);
+  assert.equal(g.buyKg, 0);
+  // ohne Reste: eine Stange
+  const q = planBars([row(1, 1200, 1), row(2, 2000, 1)], { stock: 6000, trim: 10 });
+  assert.equal(q.groups[0].buyBars, 1);
+  assert.equal(q.groups[0].bars[0].leftover, 6000 - 10 - 3200);
+});
+
+test("Z1: zu lange Teile gehen auf neue Stangen, Reste bleiben liegen", () => {
+  const p = planBars([row(1, 3000, 2)], { stock: 6000, remnants: [{ id: "R1", profileId: "QR 40x40x3", material: "S235", length: 900 }] });
+  assert.equal(p.remnantsUsed.length, 0);
+  assert.equal(p.groups[0].buyBars, 1);
+});
+
+test("Z1: Buchen entnimmt belegte Reste und legt neue ab der Mindestlänge ab", () => {
+  const stock = [{ id: "R1", profileId: "QR 40x40x3", material: "S235", length: 2500 }, { id: "R9", profileId: "FL 40x5", material: "S235", length: 800 }];
+  const p = planBars([row(1, 1000, 1), row(2, 5000, 1)], { stock: 6000, trim: 10, kerf: 2, remnants: stock });
+  let n = 0;
+  const r = bookRemnants(stock, p, { minLength: 500, from: "Auftrag 7", date: "2026-11-10", id: () => "N" + ++n });
+  assert.deepEqual(r.taken.map((x) => x.id), ["R1"]);
+  // Rest von R1: 2500 − 10 − 1000 − 2 = 1488; neue Stange 6000 − 10 − 5000 − 2 = 988
+  assert.deepEqual(r.added.map((x) => x.length).sort(), [1488, 988]);
+  assert.ok(r.stock.some((x) => x.id === "R9"));
+  assert.ok(!r.stock.some((x) => x.id === "R1"));
+  assert.equal(r.added[0].from, "Auftrag 7");
+  assert.equal(newRemnants(p, { minLength: 1000 }).length, 1);
+});
+
+test("Z1: Restlager in den Einstellungen geprüft, Seite druckbar", () => {
+  assert.ok(SETTINGS.find((s) => s.key === "fertigung.restlager"));
+  assert.equal(validateValue(settingDef("fertigung.restlager"), [{ id: "R1", profileId: "QR 40", length: 1200 }]).ok, true);
+  assert.equal(validateRemnants([{ id: "R1", profileId: "QR 40", length: 0 }]).ok, false);
+  assert.equal(validateRemnants([{ id: "R1", profileId: "QR 40", length: 10 }, { id: "R1", profileId: "QR 40", length: 10 }]).ok, false);
+  const page = remnantPage([{ id: "R1", profileId: "QR 40", material: "S235", length: 1200, place: "Regal 3" }]);
+  assert.match(page.html, /Regal 3/);
+  const get = (k) => ({ "fertigung.restlager": [{ id: "R1" }], "fertigung.resteNutzen": false })[k];
+  assert.deepEqual(barOptions(get).remnants, []);
+});
+
+import { ladeAbschnitte, ladePages, ladeCsv, fastenerKind, NO_SECTION } from "../src/core/ladeliste.js";
+
+test("Z3: Ladeliste gruppiert nach Abschnitt, Gewicht und Verbindungsmittel je Abschnitt", () => {
+  const pfosten = { name: "Pfosten", number: "P-1", qty: 1, mass: 5 }, gurt = { name: "Gurt", qty: 1, mass: 8 };
+  const schraube = { name: "ISO 4017 M12x40 8.8", qty: 4, mass: 0.05, norm: true }, anker = { name: "Bolzenanker FAZ II 12/10", qty: 2, mass: 0.2, norm: true };
+  const pos = { Pfosten: 1, Gurt: 2 };
+  const s = ladeAbschnitte([
+    { abschnitt: "Treppe EG", rows: [pfosten, schraube, anker] },
+    { abschnitt: "Treppe EG ", rows: [pfosten, gurt] },
+    { abschnitt: "", rows: [gurt] },
+    { abschnitt: "Balkon OG", rows: [pfosten, schraube] },
+  ], (r) => pos[r.name]);
+  assert.deepEqual(s.map((g) => g.name), ["Treppe EG", "Balkon OG", NO_SECTION]);
+  const eg = s[0];
+  assert.deepEqual(eg.parts.map((p) => [p.pos, p.qty]), [[1, 2], [2, 1]]);
+  assert.equal(eg.mass, 2 * 5 + 8 + 4 * 0.05 + 2 * 0.2);
+  assert.deepEqual(eg.fasteners.map((f) => f.kind), ["Dübel/Anker", "Schraube"]);
+  const pages = ladePages(s, { title: "Treppe", order: "2026-7" });
+  assert.equal(pages.length, 4);
+  assert.match(pages[0].html, /Lade- und Montageliste/);
+  assert.match(pages[1].html, /Bolzenanker/);
+  assert.match(pages[3].html, /Keine Normteile/);
+  assert.match(ladeCsv(s), /"Treppe EG";"Schraube";;"ISO 4017 M12x40 8\.8";;4;0,2/);
+  assert.equal(fastenerKind("ISO 7089 12"), "Scheibe");
+  assert.equal(fastenerKind("ISO 4032 M12"), "Mutter");
+});
+
+import { partOps, progressOf, progressText, laufzettelPages, laufzettelQr } from "../src/core/laufzettel.js";
+
+test("Z2: Arbeitsgänge aus dem Modell in Fertigungsreihenfolge", () => {
+  const bodies = [
+    { kind: "member", meta: { section: "QR 40x40x3", length: 1200, miterStart: 45, miterEnd: 45, drills: 2 } },
+    { kind: "member", meta: { section: "QR 40x40x3", length: 1200, miterStart: 45, miterEnd: 45 } },
+    { kind: "member", meta: { section: "RR 42,4x2", length: 900, contours: [{ kind: "bohrung" }] } },
+    { kind: "solid", meta: { plate: { t: 10, holes: 4 } } },
+    { kind: "solid", meta: { sheet: { t: 3, bends: [{ angle: 90 }, { angle: 90 }] } } },
+    { kind: "solid", meta: { norm: { kind: "iso4017" } } },
+  ];
+  const ops = partOps(bodies, { finish: "duplex", welds: 6 });
+  assert.deepEqual(ops.map((o) => o.op), ["Sägen", "Rohrlaser", "Laser/Brennen", "Bohren", "Kanten", "Schweißen", "Feuerverzinken", "Beschichten", "Kontrolle"]);
+  assert.match(ops[0].detail, /2 × QR 40x40x3, L = 1\.200 mm, Gehrung 45° \/ 45°/);
+  assert.match(ops.find((o) => o.op === "Laser/Brennen").detail, /2 Platten\/Blech, t = 3–10 mm, 4 Bohrungen/);
+  assert.equal(ops.find((o) => o.op === "Bohren").detail, "2 Bohrungen am Profil");
+  assert.equal(ops.find((o) => o.op === "Schweißen").detail, "6 Nähte laut Zeichnung");
+  assert.deepEqual(partOps([], {}).map((o) => o.op), ["Kontrolle"]);
+});
+
+test("Z2: Fortschritt, QR-Text und Seiten", () => {
+  const ops = [{ op: "Sägen", detail: "" }, { op: "Schweißen", detail: "" }, { op: "Kontrolle", detail: "" }];
+  const p = progressOf(ops, { Sägen: "2026-11-10" });
+  assert.deepEqual(p, { done: 1, total: 3, pct: 33, next: "Schweißen" });
+  assert.equal(progressText(p), "1/3 · weiter: Schweißen");
+  assert.equal(progressText(progressOf(ops, { Sägen: 1, Schweißen: 1, Kontrolle: 1 })), "✓ fertig");
+  assert.equal(progressText(progressOf(ops, {})), "");
+  assert.match(laufzettelQr({ order: "7", pos: 3, name: "Pfosten", qty: 4 }), /Auftrag 7\nPos 3 · Pfosten\n4 Stk/);
+  const pages = laufzettelPages([{ pos: 3, name: "Pfosten", qty: 4, ops, done: { Sägen: "2026-11-10" }, image: "data:image/png;base64,AAAA" }], { order: "7" });
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].height, 148);
+  assert.match(pages[0].html, /☑<\/td><td><b>Sägen/);
+  assert.match(pages[0].html, /<img src="data:image\/png/);
+  assert.match(pages[0].html, /<svg/);
+});
+
+import { einbauHtml, einbauMatch } from "../src/core/einbauort.js";
+
+test("Z5: Einbauorte – Suche nach Pos, QR-Text und Name, Seite ohne Internet", () => {
+  const it = { pos: 3, name: "Pfosten", number: "P-1", qty: 4, abschnitt: "Treppe EG" };
+  assert.equal(einbauMatch(it, "3"), true);
+  assert.equal(einbauMatch(it, "13"), false);
+  assert.equal(einbauMatch(it, "Pos 3"), true);
+  assert.equal(einbauMatch(it, "PBCAD Laufzettel\nAuftrag 7\nPos 3 · Pfosten\n4 Stk"), true);
+  assert.equal(einbauMatch(it, "Auftrag 7\nPos 31 · Gurt"), false);
+  assert.equal(einbauMatch(it, "treppe"), true);
+  const html = einbauHtml([{ ...it, image: "data:image/png;base64,AAAA" }, { pos: 4, name: "Gurt", qty: 1, image: null }], { title: "Treppe", order: "7" });
+  assert.match(html, /id="pos-3"/);
+  assert.match(html, /Kein Bild/);
+  assert.doesNotMatch(html, /<script src=|<link /);
+});
+
+import { drawingSnapshot, compareSnapshot, modelSignature, cloudPoints, hashOf } from "../src/core/aenderung.js";
+
+test("Z4: Zeichnungsvergleich findet geänderte, neue und entfallene Maße, Maßstab und Modell", () => {
+  const base = drawingSnapshot({ dims: [{ id: "a", text: "1.200" }, { id: "b", text: "Ø11" }, { id: "c", text: "40" }], views: [{ id: "v1", scale: "1:10" }], models: [{ id: "p", name: "Pfosten", sig: "x1" }], rev: "A", date: "2026-11-01" });
+  const same = compareSnapshot(base, base);
+  assert.equal(same.empty, true);
+  const cur = drawingSnapshot({ dims: [{ id: "a", text: "1.250" }, { id: "b", text: "Ø11" }, { id: "d", text: "80" }], views: [{ id: "v1", scale: "1:20" }], models: [{ id: "p", name: "Pfosten", sig: "x2" }] });
+  const c = compareSnapshot(base, cur);
+  assert.deepEqual(c.changed, [{ id: "a", from: "1.200", to: "1.250" }]);
+  assert.deepEqual(c.added.map((x) => x.id), ["d"]);
+  assert.deepEqual(c.removed.map((x) => x.text), ["40"]);
+  assert.deepEqual(c.marks, ["a", "d"]);
+  assert.deepEqual(c.models, ["Pfosten"]);
+  assert.equal(c.text, "Maß 1.200 → 1.250; Maß 80 neu; Maß 40 entfallen; Maßstab 1:10 → 1:20; Modell Pfosten geändert");
+  assert.ok(c.text.length <= 120);
+});
+
+test("Z4: Modellkennung ignoriert Verwaltungsfelder, Wolke umschließt das Rechteck", () => {
+  const doc = { id: "p", name: "A", features: [{ type: "box", w: 10 }] };
+  assert.equal(modelSignature(doc), modelSignature({ ...doc, name: "B", fertigungsstand: { x: 1 } }));
+  assert.notEqual(modelSignature(doc), modelSignature({ ...doc, features: [{ type: "box", w: 11 }] }));
+  assert.equal(hashOf("abc"), hashOf("abc"));
+  const pts = cloudPoints(10, 10, 30, 20, 4);
+  assert.ok(pts.length > 30);
+  assert.ok(pts.every(([x, y]) => x >= 7.9 && x <= 32.1 && y >= 7.9 && y <= 22.1));
+  assert.ok(Math.min(...pts.map((p) => p[1])) < 9.5, "Bögen gehen oben nach außen");
+});
+
+import { sectionProps, bendingAxis, railingStatics, staticsIssues, staticsPage, holmlast } from "../src/core/statik.js";
+import { sectionGeometry } from "../src/core/sections.js";
+
+test("Z6: Querschnittswerte stimmen mit den Tabellenwerten", () => {
+  const rohr = sectionProps(sectionGeometry("rohr", { D: 42.4, t: 2.6 }));
+  assert.ok(Math.abs(rohr.Iu / 1e4 - 6.46) < 0.02, "I 42,4×2,6 = 6,46 cm⁴: " + rohr.Iu);
+  assert.ok(Math.abs(rohr.Wu / 1e3 - 3.05) < 0.02);
+  const fl = sectionProps(sectionGeometry("flach", { B: 40, t: 10 }));
+  assert.ok(Math.abs(fl.Iv - (10 * 40 ** 3) / 12) < 1, "Flach starke Achse");
+  assert.ok(Math.abs(fl.Iu - (40 * 10 ** 3) / 12) < 1, "Flach schwache Achse");
+  const qr = sectionProps(sectionGeometry("vierkant", { B: 40, t: 3, r: 6 }));
+  assert.ok(qr.Iu / 1e4 > 8.5 && qr.Iu / 1e4 < 9.6, "QR 40×3 ≈ 9 cm⁴: " + qr.Iu / 1e4);
+  assert.equal(bendingAxis("flach", sectionGeometry("flach", { B: 40, t: 10 })).axis, "stark");
+});
+
+test("Z6: Geländer-Schnellprüfung mit Ampel, Dübelzug und Nachweisblatt", () => {
+  const post = { kind: "rohr", dims: { D: 42.4, t: 2.6 }, geom: sectionGeometry("rohr", { D: 42.4, t: 2.6 }) };
+  const ok = railingStatics({ q: 0.5, h: 1000, a: 1200, post, rail: post, mat: "S235", mount: { z: 80, perRow: 2 } });
+  const pf = ok.checks.find((c) => c.id === "post");
+  // M = 1,5 · 0,5 · 1200 · 1000 = 0,9 kNm; aufnehmbar Wpl 4124 · 235 = 0,969 kNm → 93 % (knapp)
+  assert.ok(Math.abs(pf.value - 0.9) < 1e-9);
+  assert.ok(pf.eta > 0.9 && pf.eta < 0.95, "eta " + pf.eta);
+  assert.equal(pf.light, "gelb");
+  // Edelstahl rechnet elastisch: 3049 · 230 = 0,70 kNm → 128 %
+  const va = railingStatics({ q: 0.5, h: 1000, a: 1200, post, rail: post, mat: "1.4301" });
+  assert.equal(va.checks.find((c) => c.id === "post").light, "rot");
+  assert.equal(ok.checks.find((c) => c.id === "anchor").value, 0.9e6 / 160 / 1000);
+  assert.equal(staticsIssues(ok).length, 0, "knapp = nur in der Zusammenfassung");
+  assert.match(ok.summary, /Pfosten 93 % \(knapp\)/);
+  assert.ok(staticsIssues(va).some((i) => i.level === "Warnung" && i.key === "post"));
+  const big = railingStatics({ q: 0.5, h: 1000, a: 1000, post: { kind: "rohr", geom: sectionGeometry("rohr", { D: 60.3, t: 4 }) }, rail: post, mat: "S355" });
+  assert.equal(big.checks.find((c) => c.id === "post").light, "grün");
+  assert.match(big.summary, /Pfosten \d+ %/);
+  assert.equal(holmlast("auto", "wohn"), 0.5);
+  assert.equal(holmlast("auto", "arbeit"), 1);
+  assert.equal(holmlast("2", "wohn"), 2);
+  assert.match(staticsPage(va, { title: "Geländer", input: [["Pfosten", "Rohr 42,4×2,6"]] }).html, /Vorbemessung.*ersetzt keinen/s);
+});
+
+import { availableBomColumns, bomColumns, bomGrid, moveBomColumn, DEFAULT_BOM_COLS } from "../src/core/bomspalten.js";
+import { listPages } from "../src/core/mappe.js";
+
+test("Z8: Stückliste mit gewählten Spalten und eigenen Eigenschaften", () => {
+  const rows = [
+    { pos: 1, name: "Pfosten", number: "P-1", qty: 4, material: "S235", mass: 2.5, part: { props: [{ name: "Kunde", value: "Müller" }, { name: "Lieferant", value: "Stahl AG" }] } },
+    { pos: 2, name: "ISO 4017 M12", qty: 8, mass: 0.05, norm: true },
+  ];
+  const all = availableBomColumns(rows).map((c) => c.key);
+  assert.ok(all.includes("prop:Kunde") && all.includes("prop:Lieferant") && all.includes("description"));
+  assert.deepEqual(bomColumns(null), DEFAULT_BOM_COLS);
+  assert.deepEqual(bomColumns(["pos", "name", "gibtsnicht", "name", "prop:Kunde"]), ["pos", "name", "prop:Kunde"]);
+  const g = bomGrid(rows, ["pos", "name", "prop:kunde", "qty", "massTotal"]);
+  assert.deepEqual(g.head, ["Pos", "Benennung", "kunde", "Menge", "kg gesamt"]);
+  assert.deepEqual(g.rows[0], [1, "Pfosten", "Müller", 4, "10"]);
+  assert.deepEqual(g.rows[1], [2, "ISO 4017 M12", "", 8, "0,4"]);
+  assert.deepEqual(moveBomColumn(["pos", "name", "qty"], "qty", -1), ["pos", "qty", "name"]);
+  const pages = listPages({ title: "T", bom: rows, bomGrid: g });
+  assert.match(pages[0].html, /<th>kunde<\/th>/);
+  assert.match(pages[0].html, /Müller/);
+});

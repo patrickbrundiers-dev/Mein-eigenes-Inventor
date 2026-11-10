@@ -1190,7 +1190,7 @@ try {
     const stored = await evalApp((id) => window.__werkcad.prefs.get("fertigung.stangenJeProfil")[id], pid);
     await page.keyboard.press("Escape");
     await evalApp(() => window.__werkcad.prefs.reset(["fertigung.stangenJeProfil"]));
-    step("Stangenplan", /Stangenplan: \d+ Stange/.test(before) && n0 > 0 && n1 > 0 && n1 <= n0 && stored === 12000, JSON.stringify({ before, pid, n0, n1, stored }));
+    step("Stangenplan", /Stangenplan: \d+ (neue )?Stange/.test(before) && n0 > 0 && n1 > 0 && n1 <= n0 && stored === 12000, JSON.stringify({ before, pid, n0, n1, stored }));
   }
 
   // Treppe L-Form mit Podest und Spindeltreppe (MegaCAD-Abgleich M14)

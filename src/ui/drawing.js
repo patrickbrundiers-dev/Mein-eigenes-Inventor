@@ -29,7 +29,8 @@ import { sheetFlatView } from "../core/blechplus.js";
 import { bendRule } from "../core/bendtable.js";
 import { SURFACE_KINDS, GDT_KINDS, surfaceSymbol, validateSurface, gdtFrame, validateGdt, datumSymbol, validateDatumLetter } from "../core/symbole.js";
 import { mappeHtml } from "../core/mappe.js";
-import { sheetCount, currentSheet, switchSheet, addSheet, removeSheet, moveViewToSheet, eachSheet, sheetLabel } from "../core/blaetter.js";
+import { sheetCount, currentSheet, switchSheet, addSheet, removeSheet, moveViewToSheet, eachSheet, sheetLabel, drawingSources } from "../core/blaetter.js";
+import { drawingSnapshot, compareSnapshot, modelSignature, cloudPoints } from "../core/aenderung.js";
 import { breakMap, clipBreaks, clipLoopsBreaks, zigzag, composeBreakout, depthRange, autoBreaks, fieldBreaks } from "../core/bruch.js";
 import { HATCH_STYLES, holeTable, holeCircles, holeTableCells, nearestSegment, edgeRun, parallelEdgeDim, auxiliaryCamera, noteSuggestion, nextRevision, validateRevision, currentRevision, hatchStyle, axisLines, sheetZones, projectedCamera, camType, layoutBaseViews, autoSheetFormat, parseScale } from "../core/zeichnung.js";
 
@@ -935,9 +936,38 @@ export class DrawingEditor {
   }
 
   // ---------- Änderungstabelle (DIN EN ISO 7200) ----------
-  addRevisionDialog() {
+  /** Jetzigen Stand des Blatts für den Zeichnungsvergleich (Z4): Maßtexte, Maßstäbe, Kennung der Modelle */
+  snapshotNow(d = this.doc) {
+    const models = drawingSources(d).map((s) => this.app.doc(s.id)).filter(Boolean).map((x) => ({ id: x.id, name: x.name, sig: modelSignature(x) }));
+    return drawingSnapshot({ dims: (d.dims || []).map((m) => ({ id: m.id, text: this.dimTextOf(d, m) })), views: d.views.map((v) => ({ id: v.id, scale: scaleLabel(v.scale) })), models, rev: currentRevision(d) });
+  }
+  /** Gemerkter Stand des aktuellen Blatts */
+  revBase(d = this.doc) { return d.revBase?.[currentSheet(d)] || null; }
+  setRevBase(d, snap) { d.revBase = { ...(d.revBase || {}), [currentSheet(d)]: snap }; }
+  /** Zeichnungsvergleich (Z4): jetzigen Stand gegen den beim letzten Index gemerkten, Änderung mit Wolken eintragen */
+  compareDialog() {
+    const d = this.doc, app = this.app;
+    const base = this.revBase(d), cur = this.snapshotNow(d);
+    if (!base) {
+      return modal({ title: "Zeichnungsvergleich", body: h("p", { style: { maxWidth: "56ch" } }, "Für dieses Blatt ist noch kein Stand gemerkt. Jetzt merken? Danach zeigt der Vergleich jede Änderung an Maßen, Maßstäben und Modell; »Änderung eintragen« merkt den Stand ab dann von selbst."),
+        buttons: [{ label: "Abbrechen" }, { label: "Stand merken", primary: true, run: () => { app.edit("Stand merken", () => this.setRevBase(d, cur), { rebuild: false }); toast("Stand gemerkt", { kind: "ok" }); } }] });
+    }
+    const c = compareSnapshot(base, cur);
+    const name = (id) => { const m = (d.dims || []).find((x) => x.id === id); return m ? (d.views.find((v) => v.id === m.view)?.label || "") : ""; };
+    const li = (t) => h("li", {}, t);
+    const body = c.empty ? h("p", {}, `Keine Änderung seit ${base.rev ? "Index " + base.rev + ", " : ""}${new Date(base.date).toLocaleDateString("de-DE")}.`)
+      : h("div", { class: "zw-vergleich" }, h("p", {}, `Seit ${base.rev ? "Index " + base.rev + " vom " : ""}${new Date(base.date).toLocaleDateString("de-DE")}:`),
+        h("ul", {}, ...c.changed.map((x) => li(`Maß ${x.from} → ${x.to}${name(x.id) ? " (" + name(x.id) + ")" : ""}`)), ...c.added.map((x) => li(`neu: ${x.text}`)), ...c.removed.map((x) => li(`entfallen: ${x.text}`)),
+          ...c.views.map((x) => li(`Maßstab ${x.from} → ${x.to}`)), ...c.models.map((x) => li(`Modell geändert: ${x}`))),
+        h("p", { class: "hint" }, "»Änderung eintragen« setzt den nächsten Index, schlägt den Text vor und markiert geänderte und neue Maße mit einer Wolke."));
+    modal({ title: "Zeichnungsvergleich", width: "560px", body, buttons: [
+      { label: "Schließen" },
+      { label: "Stand neu merken", run: () => { app.edit("Stand merken", () => this.setRevBase(d, cur), { rebuild: false }); toast("Stand gemerkt", { kind: "ok" }); } },
+      ...(c.empty ? [] : [{ label: "Änderung eintragen", primary: true, run: () => { setTimeout(() => this.addRevisionDialog({ text: c.text, marks: c.marks }), 0); } }])] });
+  }
+  addRevisionDialog(pre = {}) {
     const d = this.doc;
-    const f = { rev: nextRevision(d.revisions || [], d.title?.revision), datum: new Date().toLocaleDateString("de-DE"), text: "", name: d.title?.ersteller || "" };
+    const f = { rev: nextRevision(d.revisions || [], d.title?.revision), datum: new Date().toLocaleDateString("de-DE"), text: pre.text || "", name: d.title?.ersteller || "" };
     const inp = (k, ph) => h("input", { class: "inp", value: f[k], placeholder: ph || "", oninput: (e) => { f[k] = e.target.value; } });
     modal({
       title: "Änderung eintragen",
@@ -948,7 +978,12 @@ export class DrawingEditor {
         const r = validateRevision(f);
         if (!r.ok) { toast(r.error, { kind: "err" }); return false; }
         if ((d.revisions || []).some((x) => x.rev === r.value.rev)) { toast("Index " + r.value.rev + " gibt es schon", { kind: "err" }); return false; }
-        this.app.edit("Änderung", () => { d.revisions = (d.revisions || []).concat(r.value); }, { rebuild: false });
+        const marks = new Set(pre.marks || []);
+        this.app.edit("Änderung", () => {
+          d.revisions = (d.revisions || []).concat(r.value);
+          for (const m of d.dims || []) if (marks.has(m.id)) m.rev = r.value.rev;
+          this.setRevBase(d, this.snapshotNow(d)); // ab hier vergleicht »Vergleichen« gegen diesen Index
+        }, { rebuild: false });
         this.render();
         this.app.props.render();
       } }],
@@ -1165,7 +1200,14 @@ export class DrawingEditor {
     for (const v of d.views) svg.append(this.renderView(d, v, interactive));
     const cm = this.renderCenterMarks(d);
     if (cm) svg.append(cm);
-    for (const m of d.dims || []) { const g = this.renderDim(d, m, interactive); if (g) svg.append(g); }
+    const curRev = currentRevision(d);
+    for (const m of d.dims || []) {
+      const g = this.renderDim(d, m, interactive);
+      if (!g) continue;
+      svg.append(g);
+      // Änderungswolke (Z4): Maße der neuesten Änderung, abschaltbar
+      if (m.rev && m.rev === curRev && d.revClouds !== false) { const c = this.revCloud(g, m.rev); if (c) svg.append(c); }
+    }
     if (interactive && this.pendingChain) {
       const v = d.views.find((x) => x.id === this.pendingChain.view);
       if (v) for (const p of this.pendingChain.pts) { const [x, y] = this.viewXf(v).to(...p); svg.append(svgEl("circle", { cx: x, cy: y, r: 1, fill: "#ef7d1a" })); }
@@ -1342,16 +1384,59 @@ export class DrawingEditor {
     if (m.kind === "v") return Math.abs(b[1] - a[1]);
     return Math.hypot(b[0] - a[0], b[1] - a[1]);
   }
+  /** Maßtext wie auf dem Blatt (Wert, Toleranz, Vorsatz) – auch für den Zeichnungsvergleich (Z4) */
+  dimTextOf(d, m) {
+    const val = this.dimValue(m);
+    const tol = m.kind === "ang" ? "" : toleranceText(m.tol, val, classOf(d.title?.toleranz), m.kind === "rad" ? "rad" : "lin");
+    // Bohrungs- und Teilungsangaben bleiben, wie sie sind (Nennmaße der Bohrung); die Toleranz kommt dahinter
+    return m.kind === "ang" ? dimLabel(m) : (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m) + tol
+      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : m.kind === "arc" ? "⌒" : m.prefix || "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + tol + (m.suffix || "");
+  }
+  /** Umriss einer gezeichneten Gruppe aus ihren Koordinaten (ohne DOM-Messung, geht auch beim Export) */
+  groupBox(g) {
+    const lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+    const add = (x, y) => { if (Number.isFinite(x) && Number.isFinite(y)) { lo[0] = Math.min(lo[0], x); lo[1] = Math.min(lo[1], y); hi[0] = Math.max(hi[0], x); hi[1] = Math.max(hi[1], y); } };
+    for (const e of [g, ...g.querySelectorAll("*")]) {
+      const a = (k) => Number(e.getAttribute?.(k));
+      const tag = e.tagName?.toLowerCase();
+      if (tag === "line") { add(a("x1"), a("y1")); add(a("x2"), a("y2")); }
+      else if (tag === "circle") { const r = a("r"); add(a("cx") - r, a("cy") - r); add(a("cx") + r, a("cy") + r); }
+      else if (tag === "text") {
+        const fs = a("font-size") || 3.5, w = (e.textContent || "").length * fs * 0.62, x = a("x"), y = a("y");
+        const rot = /rotate\(/.test(e.getAttribute("transform") || "");
+        const anchor = e.getAttribute("text-anchor");
+        const x0 = anchor === "middle" ? x - w / 2 : anchor === "end" ? x - w : x;
+        if (rot) { const r = Math.max(w / 2, fs); add(x - r, y - r); add(x + r, y + r); } else { add(x0, y - fs); add(x0 + w, y + fs * 0.3); }
+      } else if (tag === "path") {
+        const n = (e.getAttribute("d") || "").match(/-?\d*\.?\d+(?:e-?\d+)?/gi)?.map(Number) || [];
+        if (!/[aA]/.test(e.getAttribute("d") || "")) for (let i = 0; i + 1 < n.length; i += 2) add(n[i], n[i + 1]);
+      } else if (tag === "polygon" || tag === "polyline") {
+        const n = (e.getAttribute("points") || "").split(/[\s,]+/).map(Number);
+        for (let i = 0; i + 1 < n.length; i += 2) add(n[i], n[i + 1]);
+      }
+    }
+    return hi[0] > lo[0] ? [lo[0], lo[1], hi[0], hi[1]] : null;
+  }
+  /** Änderungswolke mit Index-Dreieck um ein Maß (Z4) */
+  revCloud(g, rev) {
+    const b = this.groupBox(g);
+    if (!b) return null;
+    const pad = 1.5, x0 = b[0] - pad, y0 = b[1] - pad, x1 = b[2] + pad, y1 = b[3] + pad;
+    const out = svgEl("g", { "data-revcloud": rev, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
+    out.append(svgEl("polygon", { points: cloudPoints(x0, y0, x1, y1, 3).map((q) => q.join(",")).join(" ") }));
+    const tx = x1 + 1, ty = y0 - 1, s = 4.2;
+    out.append(svgEl("polygon", { points: `${r3(tx)},${r3(ty)} ${r3(tx + s)},${r3(ty)} ${r3(tx + s / 2)},${r3(ty - s * 0.87)}`, fill: "#fff" }));
+    const t = svgEl("text", { x: r3(tx + s / 2), y: r3(ty - 0.6), "text-anchor": "middle", "font-size": 2.4, fill: "#111a24", stroke: "none" });
+    t.textContent = rev;
+    out.append(t);
+    return out;
+  }
   renderDim(d, m, interactive) {
     const v = d.views.find((x) => x.id === m.view);
     if (!v) return null;
     const xf = this.viewXf(v);
     const g = svgEl("g", { "data-dim": m.id, class: interactive ? "dw-dimgrp" + (this.sel?.type === "dim" && this.sel.id === m.id ? " sel" : "") : undefined, fill: "none", stroke: "#111a24", "stroke-width": LW.thin });
-    const val = this.dimValue(m);
-    const tol = m.kind === "ang" ? "" : toleranceText(m.tol, val, classOf(d.title?.toleranz), m.kind === "rad" ? "rad" : "lin");
-    // Bohrungs- und Teilungsangaben bleiben, wie sie sind (Nennmaße der Bohrung); die Toleranz kommt dahinter
-    const txt = m.kind === "ang" ? dimLabel(m) : (m.kind === "dia" && (m.hole || m.pcd)) || m.pitch ? dimLabel(m) + tol
-      : (m.count > 1 ? m.count + "× " : "") + (m.kind === "dia" ? "Ø" : m.kind === "rad" ? "R" : m.kind === "arc" ? "⌒" : m.prefix || "") + fmtNum(val, m.decimals ?? d.nachkomma ?? 1) + tol + (m.suffix || "");
+    const txt = this.dimTextOf(d, m);
     const arrowHead = (x, y, ux, uy) => {
       const L = 3, w = 0.9;
       return svgEl("path", { d: `M${r3(x)} ${r3(y)}L${r3(x - ux * L + uy * w)} ${r3(y - uy * L - ux * w)}L${r3(x - ux * L - uy * w)} ${r3(y - uy * L + ux * w)}Z`, fill: "#111a24", stroke: "none" });
@@ -2713,7 +2798,8 @@ export class DrawingEditor {
     out.push(P.section("Änderungen",
       revs.length ? h("dl", { class: "kv" }, ...revs.flatMap((r, i) => [h("dt", {}, r.rev), h("dd", {}, `${r.text} (${r.datum || "–"}) `, h("button", { class: "btn", title: "Zeile löschen", onclick: () => { app.edit("Änderung löschen", () => { d.revisions = revs.filter((_, k) => k !== i); }, { rebuild: false }); this.render(); app.props.render(); } }, "×"))]))
         : h("p", { class: "hint" }, "Noch keine Änderung eingetragen – das Schriftfeld zeigt den Index aus »Revision«."),
-      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.addRevisionDialog() }, "Änderung eintragen"))));
+      h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.addRevisionDialog() }, "Änderung eintragen"), h("button", { class: "btn zw-compare", title: "Jetzigen Stand mit dem gemerkten vergleichen (Maße, Maßstab, Modell)", onclick: () => this.compareDialog() }, "Vergleichen")),
+      P.check ? P.check("Änderungswolken zeigen", d.revClouds !== false, (v) => { app.edit("Änderungswolken", () => { d.revClouds = v; }, { rebuild: false }); this.render(); }) : null));
     out.push(P.section("Beschriften", h("p", { class: "hint" }, "Maße ziehen zum Verschieben, Doppelklick zum Bearbeiten, Entf zum Löschen."),
       h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.setTool("dim") }, "Bemaßung"), h("button", { class: "btn", onclick: () => this.autoDims() }, "Hauptmaße"))));
     return out;

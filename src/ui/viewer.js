@@ -2015,6 +2015,27 @@ export class Viewer {
     }
     this.render();
   }
+  /**
+   * Einbauort-Bild (Z5): Komponenten kräftig orange färben – sichtbar deckend, verdeckte Teile durchscheinend.
+   * keys: Pickable-Schlüssel (z. B. »comp:<id>«); leere Liste löscht.
+   */
+  markForImage(keys) {
+    if (!this.imgGroup) { this.imgGroup = new THREE.Group(); this.scene.add(this.imgGroup); }
+    disposeTree(this.imgGroup);
+    this.imgGroup.clear();
+    const set = new Set(keys || []);
+    for (const p of this.pickables.filter((q) => set.has(q.key))) {
+      for (const [opacity, depthTest, order] of [[0.95, true, 16], [0.4, false, 17]]) {
+        const m = new THREE.Mesh(p.mesh.geometry, new THREE.MeshBasicMaterial({ color: 0xe8590c, transparent: true, opacity, depthTest, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide }));
+        m.userData.sharedGeo = true;
+        m.matrixAutoUpdate = false;
+        m.matrix.copy(p.mesh.matrixWorld);
+        m.renderOrder = order;
+        this.imgGroup.add(m);
+      }
+    }
+    this.needsRender = true;
+  }
   /** Körper zu einem Eingabefeld hervorheben (V5); leere Liste löscht */
   highlightBodies(bodies, key = "part") {
     if (!this.fieldGroup) { this.fieldGroup = new THREE.Group(); this.scene.add(this.fieldGroup); }

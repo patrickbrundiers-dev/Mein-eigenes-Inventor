@@ -545,7 +545,7 @@ export class App {
    * vor der Änderung wiederhergestellt (kein halb geändertes Modell). Rückgabe: true bei Erfolg.
    */
   edit(label, fn, opts) {
-    if (this.workshop) { toast("Werkstattmodus: nur ansehen und messen. Zum Ändern den Werkstattmodus beenden."); return false; }
+    if (this.workshop && !opts?.workshop) { toast("Werkstattmodus: nur ansehen und messen. Zum Ändern den Werkstattmodus beenden."); return false; }
     const redo = this.redoStack;
     this.checkpoint(label);
     // Verknüpfte Bauteile (M24) sind schreibgeschützt – geändert wird in ihrer Datei

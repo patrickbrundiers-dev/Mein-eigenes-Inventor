@@ -38,7 +38,9 @@ import { variantDialog, rulesDialog, macroDialog, variantSection, rulesSection }
 import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
-import { planBars, barText, barOptions, BAR_RULES } from "../core/stangen.js";
+import { mappeHtml } from "../core/mappe.js";
+import { availableBomColumns, bomColumns, bomColumnLabel, bomGrid, moveBomColumn } from "../core/bomspalten.js";
+import { planBars, barText, barOptions, BAR_RULES, bookRemnants, sortRemnants, remnantPage } from "../core/stangen.js";
 import { CALC_RULES } from "../core/kalkulation.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
 import { releaseSection } from "./pruefung.js";
@@ -2147,6 +2149,16 @@ export class Props {
     if (asm.generator && GENERATORS[asm.generator.gen]) {
       out.push(this.section(GENERATORS[asm.generator.gen].label, h("p", { class: "hint" }, "Jedes Rohr, jeder Stab und jedes Blech ist ein eigenes Bauteil (gleiche Teile einmal, mehrfach eingesetzt). Änderungen hier passen alle Einzelteile an; Features, die in einem Bauteil angehängt wurden, bleiben erhalten.")));
       out.push(...this.genFields(asm.generator, asm, (fn, label) => app.edit(label, () => { fn(asm.generator); app.syncGenAssembly(asm); })));
+      // Statik-Schnellprüfung (Z6): Ampel unter den Feldern, Nachweis im Dialog
+      if (asm.generator.gen === "gelaender") {
+        let st = null;
+        try { st = app.genPlan(asm).statik; } catch { st = null; }
+        if (st?.summary) {
+          const cls = { grün: "info", gelb: "warn", rot: "err" }[st.light] || "info";
+          out.push(this.section("Statik", h("div", { class: "msg " + cls + " statik-ampel" }, (st.light === "rot" ? "● nicht erfüllt – " : st.light === "gelb" ? "● knapp – " : "● erfüllt – ") + st.summary),
+            h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.statikDialog(asm) }, "Statik-Schnellprüfung…"))));
+        }
+      }
       out.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.paramsDialog() }, "Parameter…")));
     }
     if (asm.gestell) out.push(...gestellSections(this, asm));
@@ -2857,12 +2869,13 @@ export class Props {
       else if (form === "baukasten") body.replaceChildren(...modularBom(asm, docOf).map((x) => h("div", {}, h("h4", {}, x.asm.name), modularTable(x.rows, app))));
       else {
         const rows = bomRows(app, asm), own = rows.filter((r) => r.part).length;
-        const t = bomTable(rows);
+        const t = asm.bomCols ? bomGridTable(rows, asm.bomCols) : bomTable(rows);
         t.querySelector("thead tr")?.append(h("th", {}, ""));
         [...t.querySelectorAll("tbody tr")].forEach((tr, i) => tr.append(h("td", {}, i < own ? [
           h("button", { class: "btn", title: "nach oben", disabled: i === 0 ? true : undefined, onclick: () => move(i, -1) }, "↑"),
           h("button", { class: "btn", title: "nach unten", disabled: i === own - 1 ? true : undefined, onclick: () => move(i, 1) }, "↓")] : null)));
         body.replaceChildren(t, h("div", { class: "btn-row" },
+          h("button", { class: "btn bom-cols", title: "Spalten wählen und ordnen, auch eigene Eigenschaften (gilt für CSV und Fertigungsmappe)", onclick: () => this.bomColumnsDialog(asm, () => show("menge")) }, "Spalten…"),
           h("button", { class: "btn", onclick: () => sortBy("number") }, "Nach Teilenummer"),
           h("button", { class: "btn", onclick: () => sortBy("name") }, "Nach Benennung"),
           asm.bomOrder?.length ? h("button", { class: "btn", onclick: () => { app.edit("Stückliste Reihenfolge", () => { delete asm.bomOrder; }, { rebuild: false }); show("menge"); } }, "Wie eingefügt") : null),
@@ -2874,6 +2887,27 @@ export class Props {
     const setForm = (v) => { tabs.replaceChildren(this.seg("", [["menge", "Mengen"], ["struktur", "Struktur"], ["baukasten", "Baukasten"]], v, setForm)); show(v); };
     if (nested) setForm("menge"); else show("menge");
     modal({ title: `Stückliste – ${asm.name}`, width: "760px", body: h("div", {}, tabs, body, nested ? h("p", { class: "hint" }, "Mengen: alle Bauteile summiert. Struktur: Baum mit Ebenen (Menge je übergeordneter Einheit, Gesamt). Baukasten: je Baugruppe nur die direkten Bestandteile. Alle drei stehen auch in »Listen (Excel)«.") : null), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportBom() }] });
+  }
+  /** Spalten der Stückliste wählen und ordnen (Z8): feste Spalten und eigene Eigenschaften der Bauteile */
+  bomColumnsDialog(asm, after = null) {
+    const app = this.app;
+    const all = availableBomColumns(bomRows(app, asm));
+    let sel = bomColumns(asm.bomCols);
+    const box = h("div", { class: "bom-cols-dlg" });
+    const render = () => {
+      const rest = all.filter((c) => !sel.includes(c.key));
+      box.replaceChildren(
+        h("p", { class: "hint" }, "Haken = Spalte zeigen, Pfeile = Reihenfolge. Eigene Eigenschaften (z. B. Kunde, Lieferant) trägt man am Bauteil unter Eigenschaften ein."),
+        h("table", { class: "grid" }, h("tbody", {}, ...sel.map((k, i) => h("tr", { "data-col": k },
+          h("td", {}, h("label", { class: "chk" }, h("input", { type: "checkbox", checked: true, disabled: k === "pos" || k === "name" ? true : undefined, onchange: () => { sel = sel.filter((x) => x !== k); render(); } }), " " + bomColumnLabel(k))),
+          h("td", {}, h("button", { class: "btn", disabled: i === 0 ? true : undefined, onclick: () => { sel = moveBomColumn(sel, k, -1); render(); } }, "↑"), h("button", { class: "btn", disabled: i === sel.length - 1 ? true : undefined, onclick: () => { sel = moveBomColumn(sel, k, 1); render(); } }, "↓")))),
+          ...rest.map((c) => h("tr", { "data-col": c.key }, h("td", {}, h("label", { class: "chk" }, h("input", { type: "checkbox", onchange: () => { sel = [...sel, c.key]; render(); } }), " " + c.label + (c.key.startsWith("prop:") ? " (Eigenschaft)" : ""))), h("td", {}))))));
+    };
+    render();
+    modal({ title: "Spalten der Stückliste", width: "460px", body: box, buttons: [
+      { label: "Standard", run: () => { app.edit("Stücklistenspalten", () => { delete asm.bomCols; }, { rebuild: false }); after?.(); } },
+      { label: "Abbrechen" },
+      { label: "Übernehmen", primary: true, run: () => { app.edit("Stücklistenspalten", () => { asm.bomCols = [...sel]; }, { rebuild: false }); after?.(); } }] });
   }
   cutListDialog() {
     const app = this.app;
@@ -2932,23 +2966,72 @@ export class Props {
         if (!r.ok) toast(r.error, { kind: "err" });
         render();
       };
+      const used = plan.remnantsUsed.length;
+      const book = () => {
+        const d = app.activeDoc(), min = app.prefs.get("fertigung.restMin") || 500;
+        const r = bookRemnants(app.prefs.get("fertigung.restlager") || [], plan, { minLength: min, from: [d?.etiketten?.order && "Auftrag " + d.etiketten.order, d?.number || d?.name].filter(Boolean).join(" · ") });
+        const res = app.prefs.set("fertigung.restlager", r.stock);
+        if (!res.ok) return toast(res.error, { kind: "err" });
+        toast(`Restlager: ${r.taken.length} Rest(e) entnommen, ${r.added.length} neu abgelegt (ab ${fmtNum(min, 0)} mm)`, { kind: "ok" });
+        render();
+      };
       box.replaceChildren(
-        h("h4", {}, `Stangenplan: ${plan.bars} Stange(n), Verschnitt ${fmtNum(plan.wasteKg, 1)} kg von ${fmtNum(plan.buyKg, 1)} kg`),
+        h("h4", {}, `Stangenplan: ${plan.buyBars} neue Stange(n)${used ? ` + ${used} Rest(e) aus dem Lager` : ""}, Verschnitt ${fmtNum(plan.wasteKg, 1)} kg, kaufen ${fmtNum(plan.buyKg, 1)} kg`),
         h("table", { class: "grid" },
           h("thead", {}, h("tr", {}, h("th", {}, "Profil"), h("th", {}, "Stange mm"), h("th", {}, "Stangen"), h("th", {}, "Teile"), h("th", {}, "Verschnitt"), h("th", {}, "kg kaufen"))),
           h("tbody", {}, ...plan.groups.map((g) => {
             const inp = h("input", { class: "inp num bar-stock", value: String(g.stock), style: { width: "80px" }, title: "Lagerlänge dieses Profils" });
             inp.addEventListener("change", () => setStock(g.profileId, inp.value));
-            return h("tr", { "data-profile": g.profileId }, h("td", { style: { whiteSpace: "nowrap" } }, g.profileId), h("td", {}, inp), h("td", { class: "num" }, String(g.bars.length)), h("td", { class: "num" }, String(g.pieces)),
+            return h("tr", { "data-profile": g.profileId }, h("td", { style: { whiteSpace: "nowrap" } }, g.profileId), h("td", {}, inp), h("td", { class: "num" }, String(g.buyBars) + (g.remnantsUsed.length ? ` + ${g.remnantsUsed.length} Rest` : "")), h("td", { class: "num" }, String(g.pieces)),
               h("td", { class: "num" }, `${fmtNum(g.wastePct, 1)} % · ${fmtNum(g.wasteKg, 1)} kg`), h("td", { class: "num" }, fmtNum(g.buyKg, 1)));
           }))),
         ...plan.groups.filter((g) => g.tooLong.length).map((g) => h("div", { class: "msg err" }, `${g.profileId}: passt nicht auf ${g.stock} mm – ${g.tooLong.map((t) => `${t.qty} × ${fmtNum(t.length, 1)} (Pos ${t.pos})`).join(", ")}`)),
         h("details", {}, h("summary", {}, "Belegung je Stange"),
-          ...plan.groups.map((g) => h("div", {}, h("b", {}, g.profileId), h("ol", {}, ...g.bars.map((b) => h("li", {}, `${barText(b)} – Rest ${fmtNum(b.rest, 0)} mm`)))))),
+          ...plan.groups.map((g) => h("div", {}, h("b", {}, g.profileId), h("ol", {}, ...g.bars.map((b) => h("li", { class: b.remnant ? "bar-remnant" : null }, `${b.remnant ? `aus Rest ${b.remnant.id} (${fmtNum(b.remnant.length, 0)} mm): ` : ""}${barText(b)} – übrig ${fmtNum(b.leftover, 0)} mm`)))))),
+        h("div", { class: "btn-row" },
+          h("button", { class: "btn bar-book", title: "Belegte Reste aus dem Lager nehmen und neue Reste ab der Mindestlänge ablegen", onclick: book }, "Reste ins Lager buchen"),
+          h("button", { class: "btn", onclick: () => this.restlagerDialog(render) }, `Restlager (${(app.prefs.get("fertigung.restlager") || []).length})…`)),
         h("details", { class: "hint" }, h("summary", {}, "Regeln des Stangenplans"), h("ul", {}, ...BAR_RULES.map((t) => h("li", {}, t)))));
     };
     render();
     return box;
+  }
+  /** Reststücklager (Z1): Reste ansehen, von Hand anlegen, Lagerplatz eintragen, löschen und drucken */
+  restlagerDialog(after = null) {
+    const app = this.app, box = h("div", { class: "restlager" });
+    const save = (list) => { const r = app.prefs.set("fertigung.restlager", list); if (!r.ok) toast(r.error, { kind: "err" }); render(); after?.(); };
+    const render = () => {
+      const list = sortRemnants(app.prefs.get("fertigung.restlager") || []);
+      const prof = h("input", { class: "inp", placeholder: "Profil, z. B. QR 40x40x3", style: { width: "180px" } });
+      const mat = h("input", { class: "inp", placeholder: "Werkstoff", value: "S235", style: { width: "80px" } });
+      const len = h("input", { class: "inp num", placeholder: "Länge mm", style: { width: "80px" } });
+      const add = () => {
+        const n = Number(String(len.value).replace(",", "."));
+        if (!prof.value.trim() || !(n > 0)) return toast("Profil und Länge eingeben");
+        save([...list, { id: "R" + Date.now().toString(36).slice(-6).toUpperCase(), profileId: prof.value.trim(), material: mat.value.trim(), length: Math.round(n), from: "von Hand", date: new Date().toISOString().slice(0, 10) }]);
+      };
+      box.replaceChildren(
+        list.length ? h("table", { class: "grid" },
+          h("thead", {}, h("tr", {}, h("th", {}, "Nr"), h("th", {}, "Profil"), h("th", {}, "Werkstoff"), h("th", { class: "num" }, "Länge mm"), h("th", {}, "Lagerplatz"), h("th", {}, "Herkunft"), h("th", {}, ""))),
+          h("tbody", {}, ...list.map((x) => {
+            const place = h("input", { class: "inp", value: x.place || "", placeholder: "z. B. Regal 3", style: { width: "100px" } });
+            place.addEventListener("change", () => save(list.map((y) => (y.id === x.id ? { ...y, place: place.value.trim() } : y))));
+            return h("tr", { "data-rest": x.id }, h("td", {}, x.id), h("td", {}, x.profileId), h("td", {}, x.material), h("td", { class: "num" }, fmtNum(x.length, 0)), h("td", {}, place), h("td", {}, [x.from, x.date].filter(Boolean).join(" · ")),
+              h("td", {}, h("button", { class: "btn", title: "Rest entfernen (verbraucht oder verschrottet)", onclick: () => save(list.filter((y) => y.id !== x.id)) }, "✕")));
+          }))) : h("p", { class: "hint" }, "Noch keine Reste. Im Stangenplan der Zuschnittliste »Reste ins Lager buchen« oder hier von Hand anlegen."),
+        h("div", { class: "btn-row" }, prof, mat, len, h("button", { class: "btn", onclick: add }, "Rest anlegen")),
+        h("p", { class: "hint" }, `Reste ab ${fmtNum(app.prefs.get("fertigung.restMin") || 500, 0)} mm kommen ins Lager. Der Stangenplan belegt sie vor neuen Stangen${app.prefs.get("fertigung.resteNutzen") === false ? " (zurzeit abgeschaltet in den Einstellungen)" : ""}.`));
+    };
+    render();
+    modal({ title: "Restlager", width: "760px", body: box, buttons: [
+      { label: "Einstellungen…", run: () => { this.settingsDialog({ category: "fertigung" }); } },
+      { label: "Drucken", run: async () => {
+        const html = mappeHtml([remnantPage(app.prefs.get("fertigung.restlager") || [])], { title: "Restlager" });
+        const f = app.files;
+        if (f.bridge?.renderPdf) await f.saveBinary(new Uint8Array(await f.bridge.renderPdf(html)), "Restlager.pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+        else await f.saveText(html, "Restlager.html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+      } },
+      { label: "Schließen", primary: true }] });
   }
   /** Fertigungsprüfung Rohrlaser (src/core/dfm.js) unter der Zuschnittliste; Grenzen im Einstellungscenter */
   dfmList(rows, rules = false) {
@@ -3116,6 +3199,13 @@ function bomTable(rows, compact = false) {
   return h("table", { class: "grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Benennung"), compact ? null : h("th", {}, "Nummer"), h("th", {}, "Menge"), compact ? null : h("th", {}, "Werkstoff"), h("th", {}, "Masse kg"))),
     h("tbody", {}, ...rows.map((r) => h("tr", { class: r.sub ? "bom-sub" : null }, h("td", { class: "num" }, String(r.pos)), h("td", { style: r.sub ? { paddingLeft: "18px" } : null }, r.name, r.unit ? h("span", { class: "hint" }, r.unit === "kaufteil" ? " (Kaufteil)" : " (untrennbar)") : null), compact ? null : h("td", {}, r.number), h("td", { class: "num" }, String(r.qty)), compact ? null : h("td", {}, [r.material, finishLabel({ finish: r.part?.finish }, { short: true })].filter(Boolean).join(" · ")), h("td", { class: "num" }, fmtNum(r.mass, 3))))));
+}
+/** Stückliste mit gewählten Spalten (Z8) */
+function bomGridTable(rows, cols) {
+  const g = bomGrid(rows, cols);
+  return h("table", { class: "grid bom-grid" },
+    h("thead", {}, h("tr", {}, ...g.head.map((t, i) => h("th", { class: g.num[i] ? "num" : null }, t)))),
+    h("tbody", {}, ...g.rows.map((r, k) => h("tr", { class: rows[k].sub ? "bom-sub" : null }, ...r.map((v, i) => h("td", { class: g.num[i] ? "num" : null }, String(v ?? "")))))));
 }
 function structureTable(rows, app) {
   return h("table", { class: "grid" },
