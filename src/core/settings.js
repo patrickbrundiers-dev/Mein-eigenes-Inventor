@@ -1,3 +1,4 @@
+import { validateRemnants } from "./stangen.js";
 import { validateSheetRules, DEFAULT_SHEET_RULES } from "./blechregeln.js";
 import { DEFAULT_LAYOUT, validateLayout } from "./layout.js";
 import { validateMacros } from "./makros.js";
@@ -178,6 +179,9 @@ export const SETTINGS = [
   { key: "fertigung.lagerlaenge", cat: "fertigung", label: "Lagerlänge (Stangenplan)", unit: "mm", type: "number", default: 6000, min: 100, max: 30000, help: "Handelslänge der gekauften Stangen für den Stangenplan; je Profil abweichend in der Zuschnittliste einstellbar." },
   { key: "fertigung.schnittfuge", cat: "fertigung", label: "Schnittfuge (Stangenplan)", unit: "mm", type: "number", default: 0, min: 0, max: 20, help: "Materialverlust je Trennschnitt zwischen zwei Teilen im Stangenplan; Laser ≈ 0–1 mm, Säge ≈ 2–4 mm." },
   { key: "fertigung.stangenJeProfil", cat: "fertigung", label: "Stangenlänge je Profil", type: "stocklist", default: {}, custom: true, help: "Abweichende Lagerlänge je Profil-ID, im Stangenplan der Zuschnittliste einstellbar." },
+  { key: "fertigung.resteNutzen", cat: "fertigung", label: "Reste aus dem Restlager zuerst", type: "bool", default: true, help: "Der Stangenplan belegt passende Reste gleichen Profils und Werkstoffs vor neuen Stangen." },
+  { key: "fertigung.restMin", cat: "fertigung", label: "Rest ins Lager ab", unit: "mm", type: "number", default: 500, min: 50, max: 20000, help: "Kürzere Reste gelten als Schrott und werden nicht ins Restlager gebucht." },
+  { key: "fertigung.restlager", cat: "fertigung", label: "Restlager", type: "remnants", default: [], custom: true, help: "Reststücke mit Profil, Werkstoff und Länge; buchen im Stangenplan, ansehen und drucken über »Restlager«." },
   { key: "kalkulation.stundensatz", cat: "kalkulation", label: "Stundensatz Werkstatt", unit: "€/h", type: "number", default: 65, min: 0, max: 1000 },
   { key: "kalkulation.stahl", cat: "kalkulation", label: "Stahl", unit: "€/kg", type: "number", default: 1.4, min: 0, max: 100 },
   { key: "kalkulation.edelstahl", cat: "kalkulation", label: "Edelstahl", unit: "€/kg", type: "number", default: 5.5, min: 0, max: 100 },
@@ -377,6 +381,8 @@ export function validateValue(def, v) {
       if (e.some(([k, t]) => !k.trim() || k.length > 60 || typeof t !== "string" || t.length > 400000)) return { ok: false, error: "Ungültiges Profil" };
       return { ok: true, value: { ...v } };
     }
+    case "remnants":
+      return validateRemnants(v);
     case "stocklist": { // {Profil-ID: Stangenlänge mm}
       if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: "Stangenlängen erwartet" };
       const out = {};

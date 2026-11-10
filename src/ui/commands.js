@@ -154,6 +154,7 @@ export function commandRunners(app) {
     "asm.mirror": () => app.props.mirrorComponent(),
     "asm.bom": r("bom"),
     "asm.cutlist": () => app.props.cutListDialog(),
+    "file.restlager": () => app.props.restlagerDialog(),
     "asm.collide": () => app.props.collisionDialog(),
     "asm.joint": () => app.props.jointDialog(),
     "asm.animate": () => app.props.animateJoints(),

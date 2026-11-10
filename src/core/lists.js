@@ -43,7 +43,7 @@ export function listSheets({ cut = [], welds = [], bom = [], structure = [], mod
   if (bars?.groups.length) {
     const rows = [["Profil", "Werkstoff", "Stange mm", "Stange Nr.", "Belegung", "Rest mm", "Verschnitt %", "Verschnitt kg"]];
     for (const g of bars.groups) {
-      g.bars.forEach((b, i) => rows.push([g.profileId, g.material, g.stock, i + 1, barText(b), r(b.rest, 1), i === 0 ? r(g.wastePct, 1) : null, i === 0 ? r(g.wasteKg, 2) : null]));
+      g.bars.forEach((b, i) => rows.push([g.profileId, g.material, b.stock ?? g.stock, b.remnant ? "Rest " + b.remnant.id : i + 1, barText(b), r(b.leftover ?? b.rest, 1), i === 0 ? r(g.wastePct, 1) : null, i === 0 ? r(g.wasteKg, 2) : null]));
       for (const t of g.tooLong) rows.push([g.profileId, g.material, g.stock, null, `passt nicht: ${t.qty} × ${t.length} (Pos ${t.pos})`, null, null, null]);
     }
     rows.push([], ["Summe", null, null, bars.bars, null, null, null, r(bars.wasteKg, 2)]);

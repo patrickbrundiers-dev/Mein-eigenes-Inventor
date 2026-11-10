@@ -73,8 +73,8 @@ test("Fertigung: Knickrahmen-Schenkel und Wand, schwerste Stufe zuerst", () => {
 test("Fertigung: Grenzen kommen aus den Einstellungen, Startwerte gleich", () => {
   const d = defaultSettings();
   assert.deepEqual(dfmLimits((k) => d[k]), DFM_DEFAULTS);
-  // jede Grenze der Fertigungsprüfung hat eine Einstellung; dazu kommen die Stangenplan-Werte (E1)
-  const plan = ["fertigung.lagerlaenge", "fertigung.schnittfuge", "fertigung.stangenJeProfil"];
+  // jede Grenze der Fertigungsprüfung hat eine Einstellung; dazu kommen die Stangenplan-Werte (E1) und das Restlager (Z1)
+  const plan = ["fertigung.lagerlaenge", "fertigung.schnittfuge", "fertigung.stangenJeProfil", "fertigung.resteNutzen", "fertigung.restMin", "fertigung.restlager"];
   assert.deepEqual(SETTINGS.filter((s) => s.cat === "fertigung" && !plan.includes(s.key)).map((s) => s.key).sort(), Object.keys(DFM_DEFAULTS).map((k) => "fertigung." + k).sort());
   assert.equal(dfmLimits((k) => (k === "fertigung.stange" ? 3000 : undefined)).stange, 3000);
 });

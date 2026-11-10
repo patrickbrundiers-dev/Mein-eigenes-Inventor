@@ -126,6 +126,7 @@ export const COMMANDS = [
   { id: "file.urdf", label: "Als URDF exportieren (ROS)", group: "Export", scope: "assembly", keywords: "urdf ros roboter gazebo moveit gelenke kinematik" },
   { id: "part.listTopology", label: "Kanten und Flächen auflisten", group: "Prüfen", scope: "part", keywords: "kanten flächen liste topologie anzahl radius länge" },
   { id: "file.3mf", label: "Als 3MF exportieren (3D-Druck)", group: "Export", scope: "3d", keywords: "3mf 3d druck drucker slicer prusa cura bambu" },
+  { id: "file.restlager", label: "Restlager: Reststücke ansehen, anlegen, drucken", group: "Verwalten", scope: "global", keywords: "restlager reste reststück lager stangenplan verschnitt abschnitt" },
   { id: "file.listsXlsx", label: "Listen als Excel (.xlsx)", group: "Export", scope: "3d", keywords: "excel xlsx zuschnittliste stückliste nahtliste tabelle export" },
   { id: "file.angebot", label: "Angebotsblatt (PDF)", group: "Export", scope: "3d", keywords: "angebot kunde preis pdf bild" },
   { id: "file.ifc", label: "IFC exportieren (BIM, Stahlbau)", group: "Export", scope: "3d", keywords: "ifc bim ifc4 export stahlbau planer architekt tekla revit" },
