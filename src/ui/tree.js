@@ -1,4 +1,6 @@
 // Modellbrowser: Projekt-Dokumente und Feature-Liste des aktiven Bauteils
+import { partOps, progressOf, progressText } from "../core/laufzettel.js";
+import { finishOf } from "../core/oberflaeche.js";
 import { drawsDoc } from "../core/blaetter.js";
 import { planeLabel } from "../core/ebenennamen.js";
 import { h, icon, contextMenu, promptDialog } from "./dom.js";
@@ -159,6 +161,14 @@ export class Tree {
     // gewählte Zeile in Sicht holen, wenn die Auswahl gewechselt hat (Klick im 3D)
     const selKey = app.sel ? app.sel.type + ":" + app.sel.id : "";
     if (selKey !== this.lastSel) { this.lastSel = selKey; if (selKey) this.el.querySelector(".tree ul ul .node.sel")?.scrollIntoView({ block: "nearest" }); }    app.verlauf?.render();
+  }
+  /** Fertigungsstand (Z2) einer Position am Bauteil-Eintrag: »2/5 · weiter: Schweißen« bzw. »✓ fertig« */
+  fertigungMeta(asm, p) {
+    const done = p && asm.fertigungsstand?.[p.id];
+    if (!done) return "";
+    if (p.kind === "assembly") return `${Object.keys(done).length} Arbeitsg. erledigt`;
+    const ops = partOps(this.app.results.get(p.id)?.bodies || [], { finish: finishOf(p).kind, welds: this.app.results.get(p.id)?.welds?.length || 0 });
+    return progressText(progressOf(ops, done));
   }
   node({ label, ic, cls = "", twist = "", onTwist, onClick, onDbl, onMenu, meta, title, rid, badge, eye, detail }) {
     // Plakette am Symbol (Inventor/SolidWorks): Fehler, Warnung, unterbestimmte Skizze
@@ -355,7 +365,7 @@ export class Tree {
         label: c.name || p?.name || "?", ic: sub ? "assembly" : "part", rid: c.id, badge: !p || myCons.some((x) => app.asmErrors?.[x.id]) ? "err" : null,
         cls: (sel ? "sel" : "") + (c.hidden ? " suppressed" : "") + (!p ? " err" : "") + (myCons.some((x) => app.asmErrors?.[x.id]) ? " err" : ""),
         eye: { on: !c.hidden, run: () => app.edit("Sichtbarkeit", () => { c.hidden = !c.hidden; }) },
-        meta: [sub ? "Unterbaugruppe" : "", c.skelett ? "Skelett" : "", c.skelett ? "" : dofLabel(componentDof(asm, c.id))].filter(Boolean).join(" · "),
+        meta: [sub ? "Unterbaugruppe" : "", c.skelett ? "Skelett" : "", c.skelett ? "" : dofLabel(componentDof(asm, c.id)), this.fertigungMeta(asm, p)].filter(Boolean).join(" · "),
         twist: myCons.length ? (consOpen ? "▾" : "▸") : "", onTwist: () => this.toggle(consKey),
         onClick: () => { app.sel = { type: "component", id: c.id }; app.refreshSelectionHits(); this.render(); app.props.render(); },
         onDbl: () => p && app.openDoc(p.id),

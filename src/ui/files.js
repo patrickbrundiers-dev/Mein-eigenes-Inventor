@@ -20,7 +20,7 @@ import { simplifyOf, simplifyAction, ENVELOPES } from "../core/vereinfachen.js";
 import { EXC_LEVELS, PROCESSES, weldPlanOf, weldPlanRows, weldPlanPage, weldPlanCsv } from "../core/schweissplan.js";
 import { collectNorm } from "../core/normteile.js";
 import { orderRows, orderCsv, orderPages, ORDER_GROUPS } from "../core/bestellliste.js";
-import { flattenAssembly, structureBom, modularBom } from "../core/subasm.js";
+import { flattenAssembly, structureBom, modularBom, isReference } from "../core/subasm.js";
 import { decomposePlacement } from "../core/geom.js";
 import { buildXlsx, zipFiles } from "../core/xlsx.js";
 import { writeObj, write3mf, groupMeshes, meshGroups } from "../core/meshexport.js";
@@ -30,10 +30,13 @@ import { partTextVars } from "../core/schrift.js";
 import { releaseText } from "../core/pruefung.js";
 import { angebotPage } from "../core/angebot.js";
 import { LABEL_FORMATS, labelItems, labelPages, shippingPage, boxDims } from "../core/etiketten.js";
+import { ladeAbschnitte, ladePages, ladeCsv } from "../core/ladeliste.js";
 import { bendListCsv, rollListCsv } from "../core/biegerohr.js";
 import { partMass } from "../core/mass.js";
 import { materialOf } from "../core/materials.js";
-import { finishLabel } from "../core/oberflaeche.js";
+import { finishLabel, finishOf } from "../core/oberflaeche.js";
+import { partOps, progressOf, laufzettelPages } from "../core/laufzettel.js";
+import { einbauHtml } from "../core/einbauort.js";
 import { listSheets } from "../core/lists.js";
 import { fmtNum } from "./dom.js";
 import { piecesOf, groupPieces, withSignature, dstvText, dstvFileName, stablePositions, piecesCsv, pieceMass } from "../core/dstv.js";
@@ -917,6 +920,164 @@ export class Files {
       const base = mappeName("Versandliste_" + (d.number || d.name));
       if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
       else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+    });
+  }
+  /**
+   * Lade- und Montageliste (Z3): Komponenten der Baugruppe einem Bauabschnitt / einer Montagestelle zuordnen (c.abschnitt),
+   * je Abschnitt Teile, Paketgewicht und Verbindungsmittel; als PDF (Electron) bzw. HTML, dazu CSV.
+   */
+  async exportLadeliste(d = this.app.activeDoc()) {
+    const app = this.app;
+    if (d?.kind !== "assembly") return toast("Die Lade- und Montageliste gibt es für Baugruppen");
+    const comps = d.components.filter((c) => !isReference(c) && app.doc(c.part));
+    if (!comps.length) return toast("Die Baugruppe hat keine Komponenten");
+    const val = new Map(comps.map((c) => [c.id, c.abschnitt || ""]));
+    const known = () => [...new Set([...val.values()].map((x) => x.trim()).filter(Boolean))];
+    const listId = "abschnitte-" + d.id;
+    const dl = h("datalist", { id: listId }, ...known().map((x) => h("option", { value: x })));
+    const rowsEl = comps.map((c) => {
+      const inp = h("input", { class: "inp lade-abschnitt", list: listId, value: val.get(c.id), placeholder: "z. B. Treppe EG", "data-comp": c.id, style: { width: "180px" } });
+      inp.addEventListener("change", () => { val.set(c.id, inp.value.trim()); dl.replaceChildren(...known().map((x) => h("option", { value: x }))); });
+      return h("tr", {}, h("td", {}, c.name || app.doc(c.part)?.name || c.id), h("td", {}, app.doc(c.part)?.name || ""), h("td", {}, inp));
+    });
+    const how = await new Promise((res) => modal({
+      title: "Lade- und Montageliste", width: "620px", onClose: (r) => res(r || null),
+      body: h("div", {}, h("p", { class: "hint" }, "Jeder Komponente einen Bauabschnitt oder eine Montagestelle geben. Je Abschnitt entsteht eine Seite mit den Teilen, dem Paketgewicht und den Schrauben, Dübeln und Scheiben für diese Stelle."), dl,
+        h("div", { style: { maxHeight: "50vh", overflow: "auto" } }, h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Komponente"), h("th", {}, "Bauteil"), h("th", {}, "Abschnitt / Montagestelle"))), h("tbody", {}, ...rowsEl)))),
+      buttons: [{ label: "Abbrechen" }, { label: "Als CSV", value: "csv" }, { label: "Erstellen", primary: true, value: "pdf" }],
+    }));
+    if (!how) return;
+    if (comps.some((c) => (c.abschnitt || "") !== val.get(c.id))) app.edit("Bauabschnitte zuordnen", () => { for (const c of d.components) if (val.has(c.id)) { if (val.get(c.id)) c.abschnitt = val.get(c.id); else delete c.abschnitt; } }, { rebuild: false });
+    await this.withBusy("Lade- und Montageliste", async () => {
+      await app.builtParts(d);
+      const all = bomRows(app, d);
+      const posById = new Map(all.filter((r) => r.part).map((r) => [r.part.id, r.pos]));
+      const sections = ladeAbschnitte(comps.map((c) => ({ abschnitt: val.get(c.id), rows: bomRows(app, { ...d, components: [c], bomOrder: null }) })), (r) => (r.part ? posById.get(r.part.id) ?? null : null));
+      const base = mappeName("Ladeliste_" + (d.number || d.name));
+      if (how === "csv") return this.saveText(ladeCsv(sections), base + ".csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
+      const html = mappeHtml(ladePages(sections, { title: d.name, number: d.number, order: d.etiketten?.order || "", customer: d.angebot?.kunde?.split("\n")[0] || "" }), { title: "Ladeliste " + d.name });
+      if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+      else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+      toast(`${sections.length} Abschnitt${sections.length === 1 ? "" : "e"}`, { kind: "ok" });
+    });
+  }
+  /** Positionen mit Arbeitsgängen für Laufzettel und Fertigungsstand (Z2); Normteile entfallen */
+  laufzettelItems(d) {
+    const app = this.app;
+    return this.partRows(d).filter((r) => r.part && !r.norm).map((r) => {
+      const p = r.part;
+      let bodies = app.results.get(p.id)?.bodies || [], welds = app.results.get(p.id)?.welds?.length || 0;
+      if (p.kind === "assembly") { // untrennbare Baugruppe / Schweißbaugruppe als eine Position
+        const occ = flattenAssembly(p, (id) => app.doc(id));
+        bodies = occ.flatMap((o) => app.results.get(o.part.id)?.bodies || []);
+        welds = occ.reduce((s, o) => s + (app.results.get(o.part.id)?.welds?.length || 0), 0) + app.assemblyWeldSources(p).reduce((s, x) => s + x.result.welds.length, 0);
+      }
+      const ops = partOps(bodies, { finish: finishOf(p).kind, welds });
+      return { ...r, ops, done: d.fertigungsstand?.[p.id] || {} };
+    });
+  }
+  /**
+   * Bilder »Wo wird das Teil eingebaut?« (Z5): die Baugruppe in der aktuellen Ansicht, die Position farbig hervorgehoben.
+   * Nur wenn die Baugruppe gerade im 3D-Fenster offen ist; Rückgabe Map partId → PNG (data-URL).
+   */
+  einbauBilder(d, rows, { width = 520, height = 340 } = {}) {
+    const app = this.app, v = app.viewer, out = new Map();
+    if (d?.kind !== "assembly" || app.activeId !== d.id || !v?.thumbnail) return out;
+    const keep = v.selectedHits || [];
+    const holds = new Map(d.components.map((c) => [c.id, new Set(flattenAssembly({ id: d.id, components: [c] }, (id) => app.doc(id)).map((o) => o.part.id))]));
+    try {
+      for (const r of rows) {
+        if (!r.part) continue;
+        const comps = d.components.filter((c) => c.part === r.part.id || holds.get(c.id)?.has(r.part.id));
+        if (!comps.length) continue;
+        v.setSelectionHits(comps.map((c) => ({ kind: "group", key: "comp:" + c.id })));
+        const img = v.thumbnail({ width, height });
+        if (img) out.set(r.part.id, img);
+      }
+    } finally { v.setSelectionHits(keep); }
+    return out;
+  }
+  /** Laufzettel je Position (Z2) mit QR-Code und Einbauort-Bild, als PDF (Electron) bzw. HTML */
+  async exportLaufzettel(d = this.app.activeDoc()) {
+    const app = this.app;
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Laufzettel gibt es für Bauteile und Baugruppen");
+    const v = { order: d.etiketten?.order || "", bild: d.kind === "assembly", ...(d.laufzettel || {}) };
+    const order = h("input", { class: "inp", placeholder: "z. B. 2026-114" }); order.value = v.order; order.addEventListener("input", () => { v.order = order.value; });
+    const bild = h("input", { type: "checkbox", checked: v.bild ? true : undefined, disabled: d.kind !== "assembly" ? true : undefined, onchange: (e) => { v.bild = e.target.checked; } });
+    const how = await new Promise((res) => modal({
+      title: "Laufzettel", width: "500px", onClose: (r) => res(r || null),
+      body: h("div", {},
+        h("div", { class: "field" }, h("label", {}, "Auftrag"), order),
+        h("label", { class: "chk" }, bild, "Einbauort-Bild auf jedem Zettel (Baugruppe in der aktuellen Ansicht, Teil hervorgehoben)"),
+        h("p", { class: "hint" }, "Je Position ein Zettel (A5 quer) mit den Arbeitsgängen aus dem Modell: Zuschnitt, Bohren, Biegen/Kanten, Schweißen, Oberfläche, Kontrolle. Abhaken am Tablet über »Fertigungsstand« – das geht auch im Werkstattmodus.")),
+      buttons: [{ label: "Abbrechen" }, { label: "Fertigungsstand…", value: "stand" }, { label: "Erstellen", primary: true, value: "pdf" }],
+    }));
+    if (!how) return;
+    if (how === "stand") return this.fertigungsstandDialog(d);
+    if (!app.workshop) app.edit("Laufzettel-Angaben", () => { d.laufzettel = { ...v }; if (v.order && !d.etiketten?.order) d.etiketten = { ...(d.etiketten || {}), order: v.order }; }, { rebuild: false });
+    await this.withBusy("Laufzettel", async () => {
+      await app.builtParts(d);
+      const items = this.laufzettelItems(d);
+      if (!items.length) return toast("Keine Positionen");
+      const imgs = v.bild ? this.einbauBilder(d, items) : new Map();
+      const pages = laufzettelPages(items.map((it) => ({ ...it, image: imgs.get(it.part.id) || null })), { order: v.order.trim(), project: d.number || d.name });
+      const html = mappeHtml(pages, { title: "Laufzettel " + d.name });
+      const base = mappeName("Laufzettel_" + (d.number || d.name));
+      if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+      else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+      toast(`${pages.length} Laufzettel`, { kind: "ok" });
+    });
+  }
+  /** Fertigungsstand (Z2): Arbeitsgänge je Position abhaken (auch im Werkstattmodus), Stand im Modellbaum */
+  async fertigungsstandDialog(d = this.app.activeDoc()) {
+    const app = this.app;
+    if (d?.kind !== "part" && d?.kind !== "assembly") return toast("Fertigungsstand gibt es für Bauteile und Baugruppen");
+    await app.builtParts(d);
+    const items = this.laufzettelItems(d);
+    if (!items.length) return toast("Keine Positionen");
+    const box = h("div", { class: "fertigungsstand" });
+    const set = (pid, op, on) => {
+      app.edit("Fertigungsstand", () => {
+        const all = { ...(d.fertigungsstand || {}) }, cur = { ...(all[pid] || {}) };
+        if (on) cur[op] = new Date().toISOString().slice(0, 10); else delete cur[op];
+        if (Object.keys(cur).length) all[pid] = cur; else delete all[pid];
+        if (Object.keys(all).length) d.fertigungsstand = all; else delete d.fertigungsstand;
+      }, { rebuild: false, workshop: true });
+      render();
+      app.tree?.render?.();
+    };
+    const render = () => {
+      const list = this.laufzettelItems(d);
+      const total = list.reduce((s, it) => s + it.ops.length * it.qty, 0), done = list.reduce((s, it) => s + progressOf(it.ops, it.done).done * it.qty, 0);
+      box.replaceChildren(
+        h("p", {}, `Erledigt: ${total ? Math.round((100 * done) / total) : 0} % der Arbeitsgänge (nach Stückzahl gewichtet).`),
+        h("div", { style: { maxHeight: "60vh", overflow: "auto" } }, h("table", { class: "grid" },
+          h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Benennung"), h("th", { class: "num" }, "Stk"), h("th", {}, "Arbeitsgänge (antippen = erledigt)"), h("th", { class: "num" }, "Stand"))),
+          h("tbody", {}, ...list.map((it) => {
+            const pr = progressOf(it.ops, it.done);
+            return h("tr", { "data-pos": String(it.pos) }, h("td", {}, String(it.pos)), h("td", {}, it.name), h("td", { class: "num" }, String(it.qty)),
+              h("td", {}, h("div", { class: "btn-row", style: { flexWrap: "wrap" } }, ...it.ops.map((o) => h("button", { class: "btn fs-op" + (it.done[o.op] ? " primary" : ""), title: o.detail + (it.done[o.op] ? ` · erledigt ${new Date(it.done[o.op]).toLocaleDateString("de-DE")}` : ""), onclick: () => set(it.part.id, o.op, !it.done[o.op]) }, (it.done[o.op] ? "✓ " : "") + o.op)))),
+              h("td", { class: "num" }, pr.done >= pr.total ? "fertig" : `${pr.pct} %`));
+          })))));
+    };
+    render();
+    modal({ title: "Fertigungsstand – " + d.name, width: "860px", body: box, buttons: [{ label: "Schließen", primary: true }] });
+  }
+  /**
+   * Einbauorte fürs Handy (Z5): eine HTML-Datei ohne Internet, je Position ein Bild der Baugruppe mit dem Teil
+   * hervorgehoben, Suche nach Pos oder Name (z. B. aus dem QR-Code des Etiketts oder Laufzettels).
+   */
+  async exportEinbauorte(d = this.app.activeDoc()) {
+    const app = this.app;
+    if (d?.kind !== "assembly") return toast("Einbauorte gibt es für Baugruppen");
+    if (app.activeId !== d.id) return toast("Die Baugruppe zuerst im 3D-Fenster öffnen");
+    await this.withBusy("Einbauorte", async () => {
+      await app.builtParts(d);
+      const rows = bomRows(app, d).filter((r) => r.part);
+      const imgs = this.einbauBilder(d, rows, { width: 900, height: 620 });
+      const html = einbauHtml(rows.map((r) => ({ pos: r.pos, name: r.name, number: r.number, qty: r.qty, abschnitt: [...new Set(d.components.filter((c) => c.part === r.part.id).map((c) => c.abschnitt).filter(Boolean))].join(", "), image: imgs.get(r.part.id) || null })), { title: d.name, order: d.etiketten?.order || "" });
+      await this.saveText(html, mappeName("Einbauorte_" + (d.number || d.name)) + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+      toast(`${imgs.size} Einbauort-Bilder – Datei aufs Handy kopieren, sie läuft ohne Internet`, { kind: "ok", timeout: 6000 });
     });
   }
   /** Kalkulation (R4) für Bauteil oder Baugruppe: Mengen aus Stückliste, Zuschnitt, Stangenplan und Nahtliste */
