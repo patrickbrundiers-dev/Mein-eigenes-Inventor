@@ -519,7 +519,6 @@ export const GELAENDER = {
     const total = runs.reduce((a, b) => a + b, 0);
     let info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "") + (railJoints ? `, Handlauf ${railPiece} Stücke (${railJoints} Stoß${railJoints > 1 ? "e" : ""}${p.railJoint === "stumpf" ? ", stumpf" : " mit Einschiebling"})` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, kind === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "");
     if (toeOn) info += `, Fußleiste ${toeH} × 5 mm`;
-    if (statik?.summary) info += `. ${statik.summary}`;
     return { chains, members, plates, drills, norms, tubes, info, issues, sections: SEC, statik };
   },
 

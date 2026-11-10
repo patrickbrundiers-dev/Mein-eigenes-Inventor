@@ -955,7 +955,7 @@ export class Files {
       await app.builtParts(d);
       const all = bomRows(app, d);
       const posById = new Map(all.filter((r) => r.part).map((r) => [r.part.id, r.pos]));
-      const sections = ladeAbschnitte(comps.map((c) => ({ abschnitt: val.get(c.id), rows: bomRows(app, { ...d, components: [c], bomOrder: null }) })), (r) => (r.part ? posById.get(r.part.id) ?? null : null));
+      const sections = ladeAbschnitte(comps.map((c) => ({ abschnitt: val.get(c.id), rows: bomRows(app, { ...d, components: [c], bomOrder: undefined }) })), (r) => (r.part ? posById.get(r.part.id) ?? null : null));
       const base = mappeName("Ladeliste_" + (d.number || d.name));
       if (how === "csv") return this.saveText(ladeCsv(sections), base + ".csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
       const html = mappeHtml(ladePages(sections, { title: d.name, number: d.number, order: d.etiketten?.order || "", customer: d.angebot?.kunde?.split("\n")[0] || "" }), { title: "Ladeliste " + d.name });
@@ -988,16 +988,18 @@ export class Files {
     if (d?.kind !== "assembly" || app.activeId !== d.id || !v?.thumbnail) return out;
     const keep = v.selectedHits || [];
     const holds = new Map(d.components.map((c) => [c.id, new Set(flattenAssembly({ id: d.id, components: [c] }, (id) => app.doc(id)).map((o) => o.part.id))]));
+    v.setSelectionHits([]);
+    v.fit?.(); // ganze Baugruppe im Bild, Blickrichtung bleibt
     try {
       for (const r of rows) {
         if (!r.part) continue;
         const comps = d.components.filter((c) => c.part === r.part.id || holds.get(c.id)?.has(r.part.id));
         if (!comps.length) continue;
-        v.setSelectionHits(comps.map((c) => ({ kind: "group", key: "comp:" + c.id })));
+        v.markForImage(comps.map((c) => "comp:" + c.id));
         const img = v.thumbnail({ width, height });
         if (img) out.set(r.part.id, img);
       }
-    } finally { v.setSelectionHits(keep); }
+    } finally { v.markForImage([]); v.setSelectionHits(keep); }
     return out;
   }
   /** Laufzettel je Position (Z2) mit QR-Code und Einbauort-Bild, als PDF (Electron) bzw. HTML */

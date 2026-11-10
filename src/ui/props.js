@@ -2149,6 +2149,16 @@ export class Props {
     if (asm.generator && GENERATORS[asm.generator.gen]) {
       out.push(this.section(GENERATORS[asm.generator.gen].label, h("p", { class: "hint" }, "Jedes Rohr, jeder Stab und jedes Blech ist ein eigenes Bauteil (gleiche Teile einmal, mehrfach eingesetzt). Änderungen hier passen alle Einzelteile an; Features, die in einem Bauteil angehängt wurden, bleiben erhalten.")));
       out.push(...this.genFields(asm.generator, asm, (fn, label) => app.edit(label, () => { fn(asm.generator); app.syncGenAssembly(asm); })));
+      // Statik-Schnellprüfung (Z6): Ampel unter den Feldern, Nachweis im Dialog
+      if (asm.generator.gen === "gelaender") {
+        let st = null;
+        try { st = app.genPlan(asm).statik; } catch { st = null; }
+        if (st?.summary) {
+          const cls = { grün: "info", gelb: "warn", rot: "err" }[st.light] || "info";
+          out.push(this.section("Statik", h("div", { class: "msg " + cls + " statik-ampel" }, (st.light === "rot" ? "● nicht erfüllt – " : st.light === "gelb" ? "● knapp – " : "● erfüllt – ") + st.summary),
+            h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => app.files.statikDialog(asm) }, "Statik-Schnellprüfung…"))));
+        }
+      }
       out.push(h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => this.paramsDialog() }, "Parameter…")));
     }
     if (asm.gestell) out.push(...gestellSections(this, asm));

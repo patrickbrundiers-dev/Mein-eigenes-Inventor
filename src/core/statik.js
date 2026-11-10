@@ -145,16 +145,17 @@ export function railingStatics({ q, h, a, post, rail, mat = "S235", mount = null
   const checks = [];
   const pct = (x) => Math.round(x * 100);
   const n1 = (x) => String(Math.round(x * 10) / 10).replace(".", ",");
+  const n2 = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
   if (post?.geom && h > 0 && a > 0) {
     const s = bendingAxis(post.kind, post.geom, post.dims);
     const W = M.plastic && s.Wpl ? s.Wpl : s.W, wl = M.plastic && s.Wpl ? "Wpl" : "Wel";
     const F = q * a, Med = 1.5 * F * h, eta = Med / (W * M.fy);
-    checks.push({ id: "post", name: "Pfosten Biegung", value: Med / 1e6, unit: "kNm", limit: (W * M.fy) / 1e6, eta, light: ampel(eta), text: `M = 1,5 · ${n1(q)} kN/m · ${n1(a / 1000)} m · ${n1(h / 1000)} m = ${n1(Med / 1e6)} kNm, aufnehmbar ${n1((W * M.fy) / 1e6)} kNm (${wl} = ${n1(W / 1000)} cm³) → ${pct(eta)} %` });
+    checks.push({ id: "post", name: "Pfosten Biegung", value: Med / 1e6, unit: "kNm", limit: (W * M.fy) / 1e6, eta, light: ampel(eta), text: `M = 1,5 · ${n1(q)} kN/m · ${n2(a / 1000)} m · ${n2(h / 1000)} m = ${n2(Med / 1e6)} kNm, aufnehmbar ${n2((W * M.fy) / 1e6)} kNm (${wl} = ${n1(W / 1000)} cm³) → ${pct(eta)} %` });
     const f = (F * h ** 3) / (3 * M.E * s.I), fl = h / 60;
     checks.push({ id: "postDef", name: "Pfosten Kopfverschiebung", value: f, unit: "mm", limit: fl, eta: f / fl, light: soft(f / fl), text: `f = ${n1(f)} mm, Richtwert H/60 = ${n1(fl)} mm (I = ${n1(s.I / 1e4)} cm⁴) → ${pct(f / fl)} %` });
     if (mount?.z > 0 && mount.perRow > 0) {
       const Z = Med / (mount.z * mount.perRow);
-      checks.push({ id: "anchor", name: "Zug je Dübel/Schraube", value: Z / 1000, unit: "kN", limit: null, eta: null, light: "info", text: `Z = ${n1(Med / 1e6)} kNm ÷ (${Math.round(mount.z)} mm × ${mount.perRow}) = ${n1(Z / 1000)} kN (Bemessungswert) – mit der Zulassung des Dübels vergleichen${mount.label ? " (" + mount.label + ")" : ""}` });
+      checks.push({ id: "anchor", name: "Zug je Dübel/Schraube", value: Z / 1000, unit: "kN", limit: null, eta: null, light: "info", text: `Z = ${n2(Med / 1e6)} kNm ÷ (${Math.round(mount.z)} mm × ${mount.perRow}) = ${n1(Z / 1000)} kN (Bemessungswert) – mit der Zulassung des Dübels vergleichen${mount.label ? " (" + mount.label + ")" : ""}` });
     }
   }
   if (rail?.geom && a > 0) {
@@ -163,7 +164,7 @@ export function railingStatics({ q, h, a, post, rail, mat = "S235", mount = null
     const Wpl = plasticModulus(rail.kind, rail.dims || {}, "schwach"), s = { ...weak };
     const W = M.plastic && Wpl ? Wpl : s.W;
     const Med = (1.5 * q * a * a) / 8, eta = Med / (W * M.fy);
-    checks.push({ id: "rail", name: "Handlauf Biegung", value: Med / 1e6, unit: "kNm", limit: (W * M.fy) / 1e6, eta, light: ampel(eta), text: `M = 1,5 · ${n1(q)} · ${n1(a / 1000)}² / 8 = ${n1(Med / 1e6)} kNm, aufnehmbar ${n1((W * M.fy) / 1e6)} kNm → ${pct(eta)} %` });
+    checks.push({ id: "rail", name: "Handlauf Biegung", value: Med / 1e6, unit: "kNm", limit: (W * M.fy) / 1e6, eta, light: ampel(eta), text: `M = 1,5 · ${n1(q)} · ${n2(a / 1000)}² / 8 = ${n2(Med / 1e6)} kNm, aufnehmbar ${n2((W * M.fy) / 1e6)} kNm → ${pct(eta)} %` });
     const f = (5 * q * a ** 4) / (384 * M.E * s.I), fl = a / 200;
     checks.push({ id: "railDef", name: "Handlauf Durchbiegung", value: f, unit: "mm", limit: fl, eta: f / fl, light: soft(f / fl), text: `f = ${n1(f)} mm, Richtwert Feld/200 = ${n1(fl)} mm → ${pct(f / fl)} %` });
   }
