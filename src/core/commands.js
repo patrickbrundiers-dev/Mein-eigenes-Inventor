@@ -130,6 +130,7 @@ export const COMMANDS = [
   { id: "file.fertigungsstand", label: "Fertigungsstand: Arbeitsgänge abhaken", group: "Verwalten", scope: "3d", keywords: "fertigungsstand abhaken erledigt arbeitsgang werkstatt fortschritt stand" },
   { id: "file.ladeliste", label: "Lade- und Montageliste nach Bauabschnitt", group: "Export", scope: "assembly", keywords: "ladeliste montageliste bauabschnitt montagestelle paket gewicht schrauben dübel verladen baustelle" },
   { id: "file.einbauorte", label: "Einbauorte fürs Handy (HTML mit Bild je Position)", group: "Export", scope: "assembly", keywords: "einbauort einbauorte handy montage position bild wo qr" },
+  { id: "draw.compare", label: "Zeichnungsvergleich: Änderungen seit dem letzten Index", group: "Zeichnung", scope: "drawing", keywords: "vergleich vergleichen änderung änderungsindex revision index wolke stand unterschied" },
   { id: "file.restlager", label: "Restlager: Reststücke ansehen, anlegen, drucken", group: "Verwalten", scope: "global", keywords: "restlager reste reststück lager stangenplan verschnitt abschnitt" },
   { id: "file.listsXlsx", label: "Listen als Excel (.xlsx)", group: "Export", scope: "3d", keywords: "excel xlsx zuschnittliste stückliste nahtliste tabelle export" },
   { id: "file.angebot", label: "Angebotsblatt (PDF)", group: "Export", scope: "3d", keywords: "angebot kunde preis pdf bild" },

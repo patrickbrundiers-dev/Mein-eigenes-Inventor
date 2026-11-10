@@ -134,3 +134,31 @@ test("Z5: Einbauorte – Suche nach Pos, QR-Text und Name, Seite ohne Internet",
   assert.match(html, /Kein Bild/);
   assert.doesNotMatch(html, /<script src=|<link /);
 });
+
+import { drawingSnapshot, compareSnapshot, modelSignature, cloudPoints, hashOf } from "../src/core/aenderung.js";
+
+test("Z4: Zeichnungsvergleich findet geänderte, neue und entfallene Maße, Maßstab und Modell", () => {
+  const base = drawingSnapshot({ dims: [{ id: "a", text: "1.200" }, { id: "b", text: "Ø11" }, { id: "c", text: "40" }], views: [{ id: "v1", scale: "1:10" }], models: [{ id: "p", name: "Pfosten", sig: "x1" }], rev: "A", date: "2026-11-01" });
+  const same = compareSnapshot(base, base);
+  assert.equal(same.empty, true);
+  const cur = drawingSnapshot({ dims: [{ id: "a", text: "1.250" }, { id: "b", text: "Ø11" }, { id: "d", text: "80" }], views: [{ id: "v1", scale: "1:20" }], models: [{ id: "p", name: "Pfosten", sig: "x2" }] });
+  const c = compareSnapshot(base, cur);
+  assert.deepEqual(c.changed, [{ id: "a", from: "1.200", to: "1.250" }]);
+  assert.deepEqual(c.added.map((x) => x.id), ["d"]);
+  assert.deepEqual(c.removed.map((x) => x.text), ["40"]);
+  assert.deepEqual(c.marks, ["a", "d"]);
+  assert.deepEqual(c.models, ["Pfosten"]);
+  assert.equal(c.text, "Maß 1.200 → 1.250; Maß 80 neu; Maß 40 entfallen; Maßstab 1:10 → 1:20; Modell Pfosten geändert");
+  assert.ok(c.text.length <= 120);
+});
+
+test("Z4: Modellkennung ignoriert Verwaltungsfelder, Wolke umschließt das Rechteck", () => {
+  const doc = { id: "p", name: "A", features: [{ type: "box", w: 10 }] };
+  assert.equal(modelSignature(doc), modelSignature({ ...doc, name: "B", fertigungsstand: { x: 1 } }));
+  assert.notEqual(modelSignature(doc), modelSignature({ ...doc, features: [{ type: "box", w: 11 }] }));
+  assert.equal(hashOf("abc"), hashOf("abc"));
+  const pts = cloudPoints(10, 10, 30, 20, 4);
+  assert.ok(pts.length > 30);
+  assert.ok(pts.every(([x, y]) => x >= 7.9 && x <= 32.1 && y >= 7.9 && y <= 22.1));
+  assert.ok(Math.min(...pts.map((p) => p[1])) < 9.5, "Bögen gehen oben nach außen");
+});

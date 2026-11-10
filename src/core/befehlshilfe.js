@@ -217,6 +217,7 @@ export const BEFEHLSHILFE = {
   dd_datum: "Bezugsbuchstaben für Form- und Lagetoleranzen setzen.",
   dd_weld: "Schweißnahtsymbole aus dem Modell auf die Zeichnung übernehmen.",
   dd_rev: "Änderungszeile im Schriftfeld eintragen.",
+  dd_compare: "Zeichnung mit dem letzten Index vergleichen; Änderung mit Wolke eintragen.",
   dd_pos: "Positionsnummern an die Bauteile der Ansicht setzen.",
   dd_posnum: "Positionsnummern neu und lückenlos vergeben.",
   dd_posalign: "Positionsnummern in einer Reihe ausrichten.",

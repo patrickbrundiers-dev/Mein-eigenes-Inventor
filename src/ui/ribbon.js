@@ -595,6 +595,7 @@ export class Ribbon {
             B("dd_datum", "Bezug", "dimension", { on: dr.tool === "datum", run: () => dr.setTool(dr.tool === "datum" ? null : "datum") }),
             B("dd_weld", "Schweißnähte", "naht", { run: () => dr.autoWelds() }),
             B("dd_rev", "Änderung", "text", { run: () => dr.addRevisionDialog() }),
+            B("dd_compare", "Vergleichen", "text", { run: () => dr.compareDialog() }),
           ] },
           { label: "Baugruppe", buttons: [
             B("dd_pos", "Pos.-Nummern", "circle", { run: () => dr.autoBalloons() }),
