@@ -39,6 +39,7 @@ import { uid } from "../core/examples.js";
 import { KNICK_LIMITS, KNICK_SECTIONS } from "../core/knickrahmen.js";
 import { cutListRows, cutListTotals, endsText, partsText, CUT_RULES } from "../core/cutlist.js";
 import { mappeHtml } from "../core/mappe.js";
+import { availableBomColumns, bomColumns, bomColumnLabel, bomGrid, moveBomColumn } from "../core/bomspalten.js";
 import { planBars, barText, barOptions, BAR_RULES, bookRemnants, sortRemnants, remnantPage } from "../core/stangen.js";
 import { CALC_RULES } from "../core/kalkulation.js";
 import { checkCutList, dfmLimits, DFM_RULES } from "../core/dfm.js";
@@ -2858,12 +2859,13 @@ export class Props {
       else if (form === "baukasten") body.replaceChildren(...modularBom(asm, docOf).map((x) => h("div", {}, h("h4", {}, x.asm.name), modularTable(x.rows, app))));
       else {
         const rows = bomRows(app, asm), own = rows.filter((r) => r.part).length;
-        const t = bomTable(rows);
+        const t = asm.bomCols ? bomGridTable(rows, asm.bomCols) : bomTable(rows);
         t.querySelector("thead tr")?.append(h("th", {}, ""));
         [...t.querySelectorAll("tbody tr")].forEach((tr, i) => tr.append(h("td", {}, i < own ? [
           h("button", { class: "btn", title: "nach oben", disabled: i === 0 ? true : undefined, onclick: () => move(i, -1) }, "↑"),
           h("button", { class: "btn", title: "nach unten", disabled: i === own - 1 ? true : undefined, onclick: () => move(i, 1) }, "↓")] : null)));
         body.replaceChildren(t, h("div", { class: "btn-row" },
+          h("button", { class: "btn bom-cols", title: "Spalten wählen und ordnen, auch eigene Eigenschaften (gilt für CSV und Fertigungsmappe)", onclick: () => this.bomColumnsDialog(asm, () => show("menge")) }, "Spalten…"),
           h("button", { class: "btn", onclick: () => sortBy("number") }, "Nach Teilenummer"),
           h("button", { class: "btn", onclick: () => sortBy("name") }, "Nach Benennung"),
           asm.bomOrder?.length ? h("button", { class: "btn", onclick: () => { app.edit("Stückliste Reihenfolge", () => { delete asm.bomOrder; }, { rebuild: false }); show("menge"); } }, "Wie eingefügt") : null),
@@ -2875,6 +2877,27 @@ export class Props {
     const setForm = (v) => { tabs.replaceChildren(this.seg("", [["menge", "Mengen"], ["struktur", "Struktur"], ["baukasten", "Baukasten"]], v, setForm)); show(v); };
     if (nested) setForm("menge"); else show("menge");
     modal({ title: `Stückliste – ${asm.name}`, width: "760px", body: h("div", {}, tabs, body, nested ? h("p", { class: "hint" }, "Mengen: alle Bauteile summiert. Struktur: Baum mit Ebenen (Menge je übergeordneter Einheit, Gesamt). Baukasten: je Baugruppe nur die direkten Bestandteile. Alle drei stehen auch in »Listen (Excel)«.") : null), buttons: [{ label: "Schließen" }, { label: "Als CSV exportieren", primary: true, run: () => app.files.exportBom() }] });
+  }
+  /** Spalten der Stückliste wählen und ordnen (Z8): feste Spalten und eigene Eigenschaften der Bauteile */
+  bomColumnsDialog(asm, after = null) {
+    const app = this.app;
+    const all = availableBomColumns(bomRows(app, asm));
+    let sel = bomColumns(asm.bomCols);
+    const box = h("div", { class: "bom-cols-dlg" });
+    const render = () => {
+      const rest = all.filter((c) => !sel.includes(c.key));
+      box.replaceChildren(
+        h("p", { class: "hint" }, "Haken = Spalte zeigen, Pfeile = Reihenfolge. Eigene Eigenschaften (z. B. Kunde, Lieferant) trägt man am Bauteil unter Eigenschaften ein."),
+        h("table", { class: "grid" }, h("tbody", {}, ...sel.map((k, i) => h("tr", { "data-col": k },
+          h("td", {}, h("label", { class: "chk" }, h("input", { type: "checkbox", checked: true, disabled: k === "pos" || k === "name" ? true : undefined, onchange: () => { sel = sel.filter((x) => x !== k); render(); } }), " " + bomColumnLabel(k))),
+          h("td", {}, h("button", { class: "btn", disabled: i === 0 ? true : undefined, onclick: () => { sel = moveBomColumn(sel, k, -1); render(); } }, "↑"), h("button", { class: "btn", disabled: i === sel.length - 1 ? true : undefined, onclick: () => { sel = moveBomColumn(sel, k, 1); render(); } }, "↓")))),
+          ...rest.map((c) => h("tr", { "data-col": c.key }, h("td", {}, h("label", { class: "chk" }, h("input", { type: "checkbox", onchange: () => { sel = [...sel, c.key]; render(); } }), " " + c.label + (c.key.startsWith("prop:") ? " (Eigenschaft)" : ""))), h("td", {}))))));
+    };
+    render();
+    modal({ title: "Spalten der Stückliste", width: "460px", body: box, buttons: [
+      { label: "Standard", run: () => { app.edit("Stücklistenspalten", () => { delete asm.bomCols; }, { rebuild: false }); after?.(); } },
+      { label: "Abbrechen" },
+      { label: "Übernehmen", primary: true, run: () => { app.edit("Stücklistenspalten", () => { asm.bomCols = [...sel]; }, { rebuild: false }); after?.(); } }] });
   }
   cutListDialog() {
     const app = this.app;
@@ -3166,6 +3189,13 @@ function bomTable(rows, compact = false) {
   return h("table", { class: "grid" },
     h("thead", {}, h("tr", {}, h("th", {}, "Pos"), h("th", {}, "Benennung"), compact ? null : h("th", {}, "Nummer"), h("th", {}, "Menge"), compact ? null : h("th", {}, "Werkstoff"), h("th", {}, "Masse kg"))),
     h("tbody", {}, ...rows.map((r) => h("tr", { class: r.sub ? "bom-sub" : null }, h("td", { class: "num" }, String(r.pos)), h("td", { style: r.sub ? { paddingLeft: "18px" } : null }, r.name, r.unit ? h("span", { class: "hint" }, r.unit === "kaufteil" ? " (Kaufteil)" : " (untrennbar)") : null), compact ? null : h("td", {}, r.number), h("td", { class: "num" }, String(r.qty)), compact ? null : h("td", {}, [r.material, finishLabel({ finish: r.part?.finish }, { short: true })].filter(Boolean).join(" · ")), h("td", { class: "num" }, fmtNum(r.mass, 3))))));
+}
+/** Stückliste mit gewählten Spalten (Z8) */
+function bomGridTable(rows, cols) {
+  const g = bomGrid(rows, cols);
+  return h("table", { class: "grid bom-grid" },
+    h("thead", {}, h("tr", {}, ...g.head.map((t, i) => h("th", { class: g.num[i] ? "num" : null }, t)))),
+    h("tbody", {}, ...g.rows.map((r, k) => h("tr", { class: rows[k].sub ? "bom-sub" : null }, ...r.map((v, i) => h("td", { class: g.num[i] ? "num" : null }, String(v ?? "")))))));
 }
 function structureTable(rows, app) {
   return h("table", { class: "grid" },

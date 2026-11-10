@@ -52,14 +52,19 @@ const ROWS_PER_PAGE = 42;
  * bends = [{ name, bends: [{ straight, rotation, angle, arc }], last, length }] je Biegerohr.
  * Gibt Seiten für mappeHtml zurück; leere Listen entfallen.
  */
-export function listPages({ title = "", number = "", status = "", bom = [], cut = [], bends = [], rolls = [], bars = null } = {}) {
+export function listPages({ title = "", number = "", status = "", bom = [], bomGrid = null, cut = [], bends = [], rolls = [], bars = null } = {}) {
   const head = (name, part, of) => `<h1>${esc(name)}${of > 1 ? ` (${part}/${of})` : ""}</h1><div class="sub">${esc([title, number, status && "Stand: " + status].filter(Boolean).join(" · "))}</div>`;
   const pages = [];
   const chunked = (rows, name, render) => {
     const n = Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE));
     for (let i = 0; i < n; i++) pages.push({ html: `<div class="lst">${head(name, i + 1, n)}${render(rows.slice(i * ROWS_PER_PAGE, (i + 1) * ROWS_PER_PAGE), i === n - 1)}</div>`, width: A4[0], height: A4[1] });
   };
-  if (bom.length) {
+  if (bom.length && bomGrid) {
+    // gewählte Spalten (Z8): Kopf und Zellen kommen fertig aus bomGrid
+    const head = bomGrid.head.map((t, i) => [t, bomGrid.num[i]]);
+    const idx = bomGrid.rows.map((_, i) => i);
+    chunked(idx, "Stückliste", (part) => table(head, part.map((i) => bomGrid.rows[i])));
+  } else if (bom.length) {
     const total = bom.reduce((a, r) => a + (Number.isFinite(r.mass) ? r.mass * r.qty : 0), 0);
     chunked(bom, "Stückliste", (rows, last) => table(
       [["Pos", 1], ["Benennung"], ["Teilenummer"], ["Menge", 1], ["Werkstoff"], ["Oberfläche"], ["kg/Stk", 1], ["kg gesamt", 1]],

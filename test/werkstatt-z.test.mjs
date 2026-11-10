@@ -201,3 +201,25 @@ test("Z6: Geländer-Schnellprüfung mit Ampel, Dübelzug und Nachweisblatt", () 
   assert.equal(holmlast("2", "wohn"), 2);
   assert.match(staticsPage(va, { title: "Geländer", input: [["Pfosten", "Rohr 42,4×2,6"]] }).html, /Vorbemessung.*ersetzt keinen/s);
 });
+
+import { availableBomColumns, bomColumns, bomGrid, moveBomColumn, DEFAULT_BOM_COLS } from "../src/core/bomspalten.js";
+import { listPages } from "../src/core/mappe.js";
+
+test("Z8: Stückliste mit gewählten Spalten und eigenen Eigenschaften", () => {
+  const rows = [
+    { pos: 1, name: "Pfosten", number: "P-1", qty: 4, material: "S235", mass: 2.5, part: { props: [{ name: "Kunde", value: "Müller" }, { name: "Lieferant", value: "Stahl AG" }] } },
+    { pos: 2, name: "ISO 4017 M12", qty: 8, mass: 0.05, norm: true },
+  ];
+  const all = availableBomColumns(rows).map((c) => c.key);
+  assert.ok(all.includes("prop:Kunde") && all.includes("prop:Lieferant") && all.includes("description"));
+  assert.deepEqual(bomColumns(null), DEFAULT_BOM_COLS);
+  assert.deepEqual(bomColumns(["pos", "name", "gibtsnicht", "name", "prop:Kunde"]), ["pos", "name", "prop:Kunde"]);
+  const g = bomGrid(rows, ["pos", "name", "prop:kunde", "qty", "massTotal"]);
+  assert.deepEqual(g.head, ["Pos", "Benennung", "kunde", "Menge", "kg gesamt"]);
+  assert.deepEqual(g.rows[0], [1, "Pfosten", "Müller", 4, "10"]);
+  assert.deepEqual(g.rows[1], [2, "ISO 4017 M12", "", 8, "0,4"]);
+  assert.deepEqual(moveBomColumn(["pos", "name", "qty"], "qty", -1), ["pos", "qty", "name"]);
+  const pages = listPages({ title: "T", bom: rows, bomGrid: g });
+  assert.match(pages[0].html, /<th>kunde<\/th>/);
+  assert.match(pages[0].html, /Müller/);
+});

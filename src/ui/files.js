@@ -33,6 +33,7 @@ import { releaseText } from "../core/pruefung.js";
 import { angebotPage } from "../core/angebot.js";
 import { LABEL_FORMATS, labelItems, labelPages, shippingPage, boxDims } from "../core/etiketten.js";
 import { ladeAbschnitte, ladePages, ladeCsv } from "../core/ladeliste.js";
+import { bomGrid } from "../core/bomspalten.js";
 import { bendListCsv, rollListCsv } from "../core/biegerohr.js";
 import { partMass } from "../core/mass.js";
 import { materialOf } from "../core/materials.js";
@@ -1249,7 +1250,7 @@ export class Files {
       // Schweißplan (W11), sobald es Nähte gibt
       const wRows = weldPlanRows(collectWelds([...cutSrc, ...app.assemblyWeldSources(d)]), weldPlanOf(app.project));
       const wPage = wRows.length ? [weldPlanPage({ title: d.name, number: d.number, order: d.etiketten?.order || "", plan: weldPlanOf(app.project), rows: wRows })] : [];
-      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, cut, bends, rolls, bars: cut.length && opt.listen !== false ? planBars(cut, barOptions((k) => app.prefs.get(k))) : null }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
+      const html = mappeHtml([...sheets, ...listPages({ title: d.name, number: d.number, status, bom, bomGrid: d.kind === "assembly" && d.bomCols ? bomGrid(bom, d.bomCols) : null, cut, bends, rolls, bars: cut.length && opt.listen !== false ? planBars(cut, barOptions((k) => app.prefs.get(k))) : null }), ...wPage, ...(open.length ? [openPointsPage(d, open)] : [])], { title: "Fertigungsmappe " + d.name });
       const files = [];
       const pdf = this.bridge?.renderPdf ? await this.bridge.renderPdf(html) : null;
       files.push(pdf ? [base + "_Fertigungsmappe.pdf", new Uint8Array(pdf)] : [base + "_Fertigungsmappe.html", html]);
@@ -1311,8 +1312,9 @@ export class Files {
     const d = app.activeDoc();
     if (d.kind !== "assembly") return;
     const rows = bomRows(app, d);
-    const head = ["Pos", "Benennung", "Teilenummer", "Menge", "Werkstoff", "Oberfläche", "Masse kg/Stk", "Masse kg gesamt"];
-    const lines = rows.map((r) => [r.pos, r.name, r.number, r.qty, r.material, r.finish || "", num(r.mass, 3), num(r.mass * r.qty, 3)]);
+    let head = ["Pos", "Benennung", "Teilenummer", "Menge", "Werkstoff", "Oberfläche", "Masse kg/Stk", "Masse kg gesamt"];
+    let lines = rows.map((r) => [r.pos, r.name, r.number, r.qty, r.material, r.finish || "", num(r.mass, 3), num(r.mass * r.qty, 3)]);
+    if (d.bomCols) { const g = bomGrid(rows, d.bomCols); head = g.head; lines = g.rows; } // gewählte Spalten (Z8)
     await this.saveText(csv([head, ...lines]), safeName(d.number || d.name) + "_Stueckliste.csv", "text/csv", [{ name: "CSV (Excel)", extensions: ["csv"] }]);
   }
   /** Platte/Blechteil als DXF 1:1 (Kontur und Bohrungen), z. B. für den Flachbettlaser */
