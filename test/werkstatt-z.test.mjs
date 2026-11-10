@@ -162,3 +162,42 @@ test("Z4: Modellkennung ignoriert Verwaltungsfelder, Wolke umschließt das Recht
   assert.ok(pts.every(([x, y]) => x >= 7.9 && x <= 32.1 && y >= 7.9 && y <= 22.1));
   assert.ok(Math.min(...pts.map((p) => p[1])) < 9.5, "Bögen gehen oben nach außen");
 });
+
+import { sectionProps, bendingAxis, railingStatics, staticsIssues, staticsPage, holmlast } from "../src/core/statik.js";
+import { sectionGeometry } from "../src/core/sections.js";
+
+test("Z6: Querschnittswerte stimmen mit den Tabellenwerten", () => {
+  const rohr = sectionProps(sectionGeometry("rohr", { D: 42.4, t: 2.6 }));
+  assert.ok(Math.abs(rohr.Iu / 1e4 - 6.46) < 0.02, "I 42,4×2,6 = 6,46 cm⁴: " + rohr.Iu);
+  assert.ok(Math.abs(rohr.Wu / 1e3 - 3.05) < 0.02);
+  const fl = sectionProps(sectionGeometry("flach", { B: 40, t: 10 }));
+  assert.ok(Math.abs(fl.Iv - (10 * 40 ** 3) / 12) < 1, "Flach starke Achse");
+  assert.ok(Math.abs(fl.Iu - (40 * 10 ** 3) / 12) < 1, "Flach schwache Achse");
+  const qr = sectionProps(sectionGeometry("vierkant", { B: 40, t: 3, r: 6 }));
+  assert.ok(qr.Iu / 1e4 > 8.5 && qr.Iu / 1e4 < 9.6, "QR 40×3 ≈ 9 cm⁴: " + qr.Iu / 1e4);
+  assert.equal(bendingAxis("flach", sectionGeometry("flach", { B: 40, t: 10 })).axis, "stark");
+});
+
+test("Z6: Geländer-Schnellprüfung mit Ampel, Dübelzug und Nachweisblatt", () => {
+  const post = { kind: "rohr", dims: { D: 42.4, t: 2.6 }, geom: sectionGeometry("rohr", { D: 42.4, t: 2.6 }) };
+  const ok = railingStatics({ q: 0.5, h: 1000, a: 1200, post, rail: post, mat: "S235", mount: { z: 80, perRow: 2 } });
+  const pf = ok.checks.find((c) => c.id === "post");
+  // M = 1,5 · 0,5 · 1200 · 1000 = 0,9 kNm; aufnehmbar Wpl 4124 · 235 = 0,969 kNm → 93 % (knapp)
+  assert.ok(Math.abs(pf.value - 0.9) < 1e-9);
+  assert.ok(pf.eta > 0.9 && pf.eta < 0.95, "eta " + pf.eta);
+  assert.equal(pf.light, "gelb");
+  // Edelstahl rechnet elastisch: 3049 · 230 = 0,70 kNm → 128 %
+  const va = railingStatics({ q: 0.5, h: 1000, a: 1200, post, rail: post, mat: "1.4301" });
+  assert.equal(va.checks.find((c) => c.id === "post").light, "rot");
+  assert.equal(ok.checks.find((c) => c.id === "anchor").value, 0.9e6 / 160 / 1000);
+  assert.equal(staticsIssues(ok).length, 0, "knapp = nur in der Zusammenfassung");
+  assert.match(ok.summary, /Pfosten 93 % \(knapp\)/);
+  assert.ok(staticsIssues(va).some((i) => i.level === "Warnung" && i.key === "post"));
+  const big = railingStatics({ q: 0.5, h: 1000, a: 1000, post: { kind: "rohr", geom: sectionGeometry("rohr", { D: 60.3, t: 4 }) }, rail: post, mat: "S355" });
+  assert.equal(big.checks.find((c) => c.id === "post").light, "grün");
+  assert.match(big.summary, /Pfosten \d+ %/);
+  assert.equal(holmlast("auto", "wohn"), 0.5);
+  assert.equal(holmlast("auto", "arbeit"), 1);
+  assert.equal(holmlast("2", "wohn"), 2);
+  assert.match(staticsPage(va, { title: "Geländer", input: [["Pfosten", "Rohr 42,4×2,6"]] }).html, /Vorbemessung.*ersetzt keinen/s);
+});

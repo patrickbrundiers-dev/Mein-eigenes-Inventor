@@ -155,6 +155,7 @@ export function commandRunners(app) {
     "asm.bom": r("bom"),
     "asm.cutlist": () => app.props.cutListDialog(),
     "file.restlager": () => app.props.restlagerDialog(),
+    "file.statik": () => app.files.statikDialog(),
     "draw.compare": () => app.drawing.compareDialog(),
     "file.laufzettel": () => app.files.exportLaufzettel(),
     "file.fertigungsstand": () => app.files.fertigungsstandDialog(),

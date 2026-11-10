@@ -13,6 +13,7 @@ import { splitList } from "./expr.js";
 import { holderSchema, holderDrop, holderParts, innerReach, entryDepth } from "./handlaufhalter.js";
 import { orientRot, rotExtent } from "./orient.js";
 import { normSchema, normRules, railingIssues } from "./gelaendernorm.js";
+import { LOADS, STATIK_MAT_OPTIONS, holmlast, railingStatics, staticsIssues } from "./statik.js";
 import { sectionGeometry } from "./sections.js";
 import { bentChain } from "./biegeteil.js";
 import { jointStations, splitPolyline, paramOf, arcLengths, pointAt, sleeveFor } from "./handlaufstoss.js";
@@ -23,6 +24,17 @@ const GLASS_T = [8.76, 10.76, 12.76, 16.76, 20.76];
 /** Ganzglas: Glasscheiben tragen selbst, keine Pfosten, Gurte und Pfostenbefestigung */
 const allGlass = (p) => p.fill === "glas" && (p.glassMount === "boden" || p.glassMount === "punkt");
 const mountKind = (p) => (p.base === "oben" || p.base === "seitlich" ? p.base : null);
+/** Hebelarm des Pfostens für die Statik: Befestigung bis OK Handlauf (seitlich an der Deckenstirn: bis Plattenmitte) */
+const postLever = (p, H) => (p.base === "seitlich" && p.mTarget !== "profil" ? H + (p.mSlab || 0) / 2 - (p.sZ || 0) : H);
+/** Abstand der Bohrreihen in Lastrichtung (quer zum Lauf) und Befestigungsmittel je Reihe für den Dübelzug */
+function mountLever(p, kind) {
+  if (p.base === "fussplatte") return { z: Math.max(0, (p.baseSize || 0) - 40), perRow: 2, label: "einfache Fußplatte, 4 Bohrungen 20 mm vom Rand angenommen" };
+  if (!kind) return null;
+  const pat = kind === "oben" ? p.oHoles : p.sHoles, size = kind === "oben" ? p.oW : p.sH, e = p.mE || 0;
+  if (pat === "frei") return null;
+  if (pat === "2l") return { z: size / 2, perRow: 2, label: "Bohrungen in einer Reihe – Hebel bis zum Plattenrand" };
+  return { z: Math.max(0, size - 2 * e), perRow: pat === "2q" ? 1 : 2, label: kind === "oben" ? "Fußplatte" : "Befestigungsblech" };
+}
 const SEC = { rohr: "Rundrohr", vierkant: "Quadratrohr", rechteck: "Rechteckrohr", flach: "Flachstahl", rund: "Rundstahl", vierkantvoll: "Vierkantstahl" };
 
 /**
@@ -110,6 +122,10 @@ export const GELAENDER = {
     { key: "glassT", label: "Glas (VSG)", type: "select", options: GLASS_T.map((t) => [String(t), `VSG ${String(t).replace(".", ",")} mm`]), default: "10.76", group: "Füllung", when: (p) => p.fill === "glas" && p.glassMount !== "lasche" },
     { key: "panelT", label: "Dicke", type: "num", default: "3", group: "Füllung", when: (p) => p.fill === "blech" || (p.fill === "glas" && p.glassMount === "lasche") },
     { key: "panelGap", label: "Abstand zu Pfosten/Gurt", type: "num", default: "15", group: "Füllung", when: (p) => ["blech", "glas", "rahmen"].includes(p.fill) },
+    // Statik-Schnellprüfung (Z6): neue Geländer prüfen, ältere erst nach Einschalten
+    { key: "stCheck", label: "Statik-Schnellprüfung (Vorbemessung)", type: "check", default: true, missing: false, group: "Statik", when: (p) => !allGlass(p) },
+    { key: "stLoad", label: "Holmlast", type: "select", options: LOADS, default: "auto", group: "Statik", when: (p) => !allGlass(p) && p.stCheck },
+    { key: "stMat", label: "Werkstoff für die Prüfung", type: "select", options: STATIK_MAT_OPTIONS, default: "S235", group: "Statik", when: (p) => !allGlass(p) && p.stCheck },
   ],
 
   /** Bauplan aus aufgelösten Parametern (Zahlen, Profile mit geom) */
@@ -494,10 +510,17 @@ export const GELAENDER = {
     const bottomEdge = p.bottom ? zBot - beltExt([1, 0], [0, 0, 1]).high / 2 : ["blech", "glas", "rahmen"].includes(p.fill) ? fillLo + p.panelGap : 0;
     const gapKey = ["staketen", "quer", "rahmen"].includes(p.fill) ? "gapMax" : ["blech", "glas"].includes(p.fill) ? "panelGap" : p.fill === "kreuz" ? (p.ring ? "ringD" : "fill") : "fill";
     issues.push(...railingIssues({ use: p.use, fall: p.fall, height: H, fill: p.fill, toe: toeOn, gap: gapMaxSeen, bottom: bottomEdge, open: fillHi - fillLo, rail }, { height: "height", fill: "fill", gap: gapKey, bottom: p.bottom ? "bottomZ" : "fill", rail: "rail", use: "use" }));
+    // Statik-Schnellprüfung (Z6): Pfosten als Kragarm über das größte Feld, Handlauf, Zug je Dübel
+    let statik = null;
+    if (p.stCheck) {
+      statik = railingStatics({ q: holmlast(p.stLoad, p.use), h: postLever(p, H), a: Math.max(...fields.map((f) => f.len)), post, rail, mat: p.stMat, mount: mountLever(p, kind) });
+      issues.push(...staticsIssues(statik));
+    }
     const total = runs.reduce((a, b) => a + b, 0);
     let info = `${posts.length} Pfosten, ${fields.length} Feld(er) à ${fields.map((f) => Math.round(f.len)).filter((x, i, a) => a.indexOf(x) === i).join(" / ")} mm` + (nBars ? `, ${nBars} Stäbe` : "") + `, Lauflänge ${Math.round(total)} mm` + (holder ? `, ${posts.length} Handlaufhalter (Bohrung Ø ${String(Math.round((p.holderD + 0.1) * 100) / 100).replace(".", ",")})` : "") + (through ? `, Gurte durchgesteckt (${nBelts} Stück, Aufmaß ${String(allow).replace(".", ",")} mm)` : "") + (railJoints ? `, Handlauf ${railPiece} Stücke (${railJoints} Stoß${railJoints > 1 ? "e" : ""}${p.railJoint === "stumpf" ? ", stumpf" : " mit Einschiebling"})` : "") + (mounted.length ? `; Befestigung: ${mountInfo(mounted, kind === "seitlich" ? "Befestigungsbleche" : "Fußplatten")}` : "");
     if (toeOn) info += `, Fußleiste ${toeH} × 5 mm`;
-    return { chains, members, plates, drills, norms, tubes, info, issues, sections: SEC };
+    if (statik?.summary) info += `. ${statik.summary}`;
+    return { chains, members, plates, drills, norms, tubes, info, issues, sections: SEC, statik };
   },
 
   views: ["front", "top"],

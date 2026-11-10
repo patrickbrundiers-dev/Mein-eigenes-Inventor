@@ -6,7 +6,9 @@ import { toast, choiceDialog, downloadBlob, h, modal } from "./dom.js";
 import { sketchToDxf, DxfWriter } from "../core/dxf.js";
 import { sheetFlatDxf } from "../core/blechplus.js";
 import { bendRule } from "../core/bendtable.js";
-import { evaluate } from "../core/expr.js";
+import { evaluate, resolveParams } from "../core/expr.js";
+import { GENERATORS, resolveGenParams } from "../core/generator.js";
+import { staticsPage, STATIK_RULES } from "../core/statik.js";
 import { newPart, uid } from "../core/examples.js";
 import { serializeProject, loadProject, validateProject, parseProject } from "../core/project.js";
 import { linkCandidates, findLinkedDoc, applyLinked, partProject, makeLink, baseName, packProject } from "../core/links.js";
@@ -1079,6 +1081,44 @@ export class Files {
       await this.saveText(html, mappeName("Einbauorte_" + (d.number || d.name)) + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
       toast(`${imgs.size} Einbauort-Bilder – Datei aufs Handy kopieren, sie läuft ohne Internet`, { kind: "ok", timeout: 6000 });
     });
+  }
+  /**
+   * Statik-Schnellprüfung (Z6): Ergebnis des Geländer-Generators (Baugruppe oder Generator-Feature im Bauteil) als
+   * Übersicht mit Ampel und als Nachweisblatt (PDF/HTML). Vorbemessung, kein Standsicherheitsnachweis.
+   */
+  async statikDialog(d = this.app.activeDoc()) {
+    const app = this.app;
+    let plan = null, params = null, name = d?.name || "";
+    try {
+      if (d?.kind === "assembly" && d.generator?.gen === "gelaender") { plan = app.genPlan(d); params = d.generator.params; }
+      else if (d?.kind === "part") {
+        const sel = app.sel?.type === "feature" ? d.features.find((f) => f.id === app.sel.id) : null;
+        const f = sel?.type === "generator" && sel.gen === "gelaender" ? sel : d.features.find((x) => x.type === "generator" && x.gen === "gelaender" && !x.suppressed);
+        if (f) {
+          const scope = resolveParams(d.params || []).values;
+          params = f.params;
+          plan = GENERATORS.gelaender.plan(resolveGenParams("gelaender", f.params, (x) => evaluate(String(x), scope)));
+          name = f.name || name;
+        }
+      }
+    } catch (e) { return toast("Statik-Schnellprüfung: " + e.message, { kind: "err" }); }
+    if (!plan) return toast("Statik-Schnellprüfung gibt es für Geländer aus dem Generator – Geländer-Baugruppe öffnen oder das Geländer-Feature wählen");
+    if (!plan.statik) return toast("Im Geländer ist die Statik-Schnellprüfung ausgeschaltet (Gruppe »Statik«)");
+    const r = plan.statik;
+    const col = { grün: "#2e7d32", gelb: "#b8860b", rot: "#c62828", info: "#666" }, word = { grün: "erfüllt", gelb: "knapp", rot: "nicht erfüllt", info: "vergleichen" };
+    const sec = (v) => (v?.kind ? `${v.kind} ${v.size}` : "");
+    const input = [["Pfosten", sec(params.post)], ["Handlauf", sec(params.rail)], ["Höhe OK Handlauf", `${params.height} mm`], ["Befestigung", params.base || ""], ["Nutzung", params.use || ""]];
+    const body = h("div", { class: "statik" },
+      h("p", { class: "msg warn" }, "Vorbemessung – ersetzt keinen Standsicherheitsnachweis durch einen Tragwerksplaner."),
+      h("table", { class: "grid" }, h("thead", {}, h("tr", {}, h("th", {}, "Nachweis"), h("th", {}, "Rechnung"), h("th", {}, "Ergebnis"))),
+        h("tbody", {}, ...r.checks.map((c) => h("tr", { "data-check": c.id }, h("td", {}, c.name), h("td", {}, c.text), h("td", { style: { color: col[c.light], fontWeight: "bold", whiteSpace: "nowrap" } }, "● " + word[c.light]))))),
+      h("details", { class: "hint" }, h("summary", {}, "Annahmen"), h("ul", {}, ...STATIK_RULES.map((t) => h("li", {}, t)))));
+    modal({ title: "Statik-Schnellprüfung – " + name, width: "820px", body, buttons: [{ label: "Schließen" }, { label: "Nachweisblatt", primary: true, run: async () => {
+      const html = mappeHtml([staticsPage(r, { title: name, number: d.number || "", input })], { title: "Statik " + name });
+      const base = mappeName("Statik_" + (d.number || name));
+      if (this.bridge?.renderPdf) await this.saveBinary(new Uint8Array(await this.bridge.renderPdf(html)), base + ".pdf", [{ name: "PDF", extensions: ["pdf"] }]);
+      else await this.saveText(html, base + ".html", "text/html", [{ name: "HTML", extensions: ["html"] }]);
+    } }] });
   }
   /** Kalkulation (R4) für Bauteil oder Baugruppe: Mengen aus Stückliste, Zuschnitt, Stangenplan und Nahtliste */
   async calcFor(d, surface = null) {

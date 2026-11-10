@@ -298,6 +298,7 @@ export const BEFEHLSHILFE = {
   x_fstand: "Arbeitsgänge je Position abhaken; der Stand erscheint im Modellbaum.",
   ws_fstand: "Arbeitsgänge je Position abhaken, auch im Werkstattmodus.",
   x_restlager: "Reststücke ansehen, von Hand anlegen, Lagerplatz eintragen und drucken.",
+  x_statik: "Statik-Schnellprüfung des Geländers mit Ampel und Nachweisblatt (Vorbemessung).",
   x_ladeliste: "Teile, Paketgewicht und Verbindungsmittel je Bauabschnitt oder Montagestelle.",
   x_einbau: "HTML-Datei fürs Handy: je Position ein Bild, wo das Teil eingebaut wird.",
   x_versand: "Versandliste mit Packstücken, Gewicht und Hüllmaß zum Abhaken beim Verladen.",
